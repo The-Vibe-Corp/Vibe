@@ -12,18 +12,18 @@
  "files": [
   {
    "path": "bin/vibe",
-   "sha256": "05ffde34c8a1c8562ad0bad4f3020f21c2bc165b4d39f9655d3762d3b18abfb5",
-   "bytes": 51003
+   "sha256": "8eaa8b5fb1888c1464d7ab2a860b4e6cc6a7cdc0e5905cc7e8382834a31d9085",
+   "bytes": 53396
   },
   {
    "path": "bin/vibe-run.sh",
-   "sha256": "deca3a9f6fc53d2d8dc69dd525523b2a4511747bd8c9be1aa79a80aee6b71a3c",
-   "bytes": 3367
+   "sha256": "8a4e7fc36ae8a61f76e14337e0b13ea6447dfc10a5e4f4d38a021ee0af68c910",
+   "bytes": 4111
   },
   {
    "path": "bin/vibe-web.py",
-   "sha256": "99174e33f8da374a40d33204bacc807fe6237f00a0b911550ce550deb8921ff7",
-   "bytes": 52266
+   "sha256": "575a55630942cd6649afc50e4889fb87e59f8e4a1f014daaa04477f3496c8836",
+   "bytes": 53952
   },
   {
    "path": "bin/vibe_mcp.py",
@@ -147,6 +147,16 @@
    "grund": "Dynamische Schreibrechte je Projekt: editierbare Verzeichnisliste mit Standard /tmp/opencode und Projektverzeichnis, Anwendung auf Projektagenten, CLI und Dashboard.",
    "dateien": [
     "bin/vibe",
+    "bin/vibe-web.py"
+   ]
+  },
+  {
+   "arbeitspaket": "F4",
+   "datum": "2026-10-25",
+   "grund": "Pause nach dem aktuellen Arbeitspaket: einmalige Laufzeitmarkierung, die der Paket-Läufer zwischen zwei Paketen verbraucht; CLI, Dashboard und Projektstatus zeigen und schalten die Anforderung. Der Agent wird nicht unterbrochen.",
+   "dateien": [
+    "bin/vibe",
+    "bin/vibe-run.sh",
     "bin/vibe-web.py"
    ]
   }

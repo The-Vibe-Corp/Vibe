@@ -136,6 +136,7 @@ Codestelle und die in dieser Sitzung tatsächlich beobachtete Prüfung.
 | CLI | `vibe attach` | vorhanden, noch nicht geprüft | `bin/vibe:231-233`; interaktive tmux-Anhängung, nicht ausgeführt |
 | CLI | `vibe logs` | vorhanden, noch nicht geprüft | `bin/vibe:235-239`; blockierendes `tail -f`, nicht ausgeführt |
 | CLI | `vibe stop` | vorhanden, noch nicht geprüft | `bin/vibe:241-242`; beendet tmux-Sitzung, nicht ausgeführt |
+| CLI | `vibe pause` | vorhanden und automatisiert geprüft | `bin/vibe:404-448`; `tests/unit/test_pause_after_package.py` prüft Anfordern, Status, Aufheben und die Ablehnung unbekannter Projekte ohne Markierung; `bin/vibe-run.sh:31-65` verbraucht die Markierung und startet kein neues Paket |
 | CLI | `vibe verify` | teilweise vorhanden | `bin/vibe:244-255`; Fehlerfall ohne Prüfbefehl ausgeführt (Exit 1); Rückgabecode des Prüfbefehls wird nicht weitergereicht |
 | CLI | `vibe feedback` | vorhanden, noch nicht geprüft | `bin/vibe:257-274`; interaktiver Schreibvorgang, nicht ausgeführt |
 | CLI | `vibe new` | vorhanden, noch nicht geprüft | `bin/vibe:308-327`; legt Projekt und Git-Repo an, nicht ausgeführt |
@@ -183,6 +184,7 @@ vorhanden“ nennt bereits sichtbare Lücken, die in V-004 zu beheben sind.
 | API | `GET /api/stream` | teilweise vorhanden | `bin/vibe-web.py:110,188-207`; Token im Query-String möglich, keine Origin-Prüfung; nicht ausgeführt |
 | API | `POST /api/run` | teilweise vorhanden | `bin/vibe-web.py:124`; Token/Host geprüft, aber keine Origin-/CSRF-/Größenprüfung (V-004); nicht ausgeführt |
 | API | `POST /api/stop` | teilweise vorhanden | `bin/vibe-web.py:125`; Auth-Lücke wie `/api/run`; nicht ausgeführt |
+| API | `POST /api/pause` | vorhanden und automatisiert geprüft | `bin/vibe-web.py:192-204`; `tests/unit/test_pause_after_package.py` prüft Anfordern, Aufheben, unbekannte Aktion, wahrheitsgemäße Meldung ohne Anforderung und Tokenpflicht gegen ein isoliertes Dashboard |
 | API | `POST /api/verify` | teilweise vorhanden | `bin/vibe-web.py:126`; Auth-Lücke wie `/api/run`; nicht ausgeführt |
 | API | `POST /api/init` | teilweise vorhanden | `bin/vibe-web.py:127`; Auth-Lücke wie `/api/run`; nicht ausgeführt |
 | API | `POST /api/feedback` | teilweise vorhanden | `bin/vibe-web.py:128-130`; Auth-Lücke, ID-Vergabe nicht gegen Parallelzugriff gesichert (V-009) |
@@ -216,6 +218,8 @@ headless) geprüft.
 | UI | `Log-Stream` | vorhanden, noch nicht geprüft | `bin/vibe-web.py:282-291`; EventSource auf `/api/stream`; kein Browsertest |
 | UI | `Projektdetail: Schreibrechte` | vorhanden und automatisiert geprüft | `bin/vibe-web.py:369-379`; `tests/browser/test_write_dirs_ui.py` bedient Liste, Hinzufügen, Entfernen, Zurücksetzen und Anwenden (Chromium, headless); die Liste begrenzt `edit`, nicht `bash` |
 | UI | `Agenteneditor: Schreibrechts-Hinweis` | vorhanden und automatisiert geprüft | `bin/vibe-web.py:434-444`; Hinweis und Vorlage folgen dem gewählten Bereich (global/projekt); `tests/browser/test_write_dirs_ui.py` (Chromium, headless) |
+| UI | `Projektdetail: Arbeitspaket-Pause` | vorhanden und automatisiert geprüft | `bin/vibe-web.py:356,371-375`; `tests/browser/test_pause_after_package_ui.py` fordert die Pause an, prüft den Zustand und hebt sie wieder auf (Chromium, headless); Screenshot `docs/features/F4-pause.png` |
+| UI | `Projektliste: Pause-Markierung` | vorhanden und automatisiert geprüft | `bin/vibe-web.py:330`; `tests/browser/test_pause_after_package_ui.py` prüft die Markierung „Pause“ in der Projektzeile (Chromium, headless) |
 
 ## 8. Funktionsbereiche aus SPEC.md
 

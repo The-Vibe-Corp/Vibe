@@ -28,9 +28,17 @@ next_item() {
 SERVER_ARGS="--standalone"
 if curl -sf --max-time 2 http://127.0.0.1:4096/global/health > /dev/null 2>&1; then SERVER_ARGS="--server http://127.0.0.1:4096"; fi
 echo "Modus: $SERVER_ARGS, Agent: $AGENT, höchstens $MAXP Durchgänge" | tee -a "$LOG"
+PAUSE_FLAG="$VIBE/_logs/$NAME.pause-after"
+PAUSED=0; LAST_ID=""
 declare -A TRY; SKIP=""
 for n in $(seq 1 "$MAXP"); do
   check_hash
+  if [ -f "$PAUSE_FLAG" ]; then
+    rm -f "$PAUSE_FLAG"; PAUSED=1
+    if [ -n "$LAST_ID" ]; then echo "PAUSE: Arbeitspaket $LAST_ID beendet. Kein neues Paket gestartet." | tee -a "$LOG"
+    else echo "PAUSE: Pause war vor dem Start angefordert. Kein Arbeitspaket gestartet." | tee -a "$LOG"; fi
+    break
+  fi
   if ! next_item; then echo "Keine offenen Arbeitspakete mehr."; break; fi
   TRY[$ID]=$(( ${TRY[$ID]:-0} + 1 ))
   if [ "${TRY[$ID]}" -gt 3 ]; then echo "Überspringe $ID nach 3 Versuchen (von Hand prüfen)."; SKIP="$SKIP,$ID"; continue; fi
@@ -41,12 +49,20 @@ Bearbeite NUR dieses Arbeitspaket gemäß deinem Workflow. Commit-Präfix: '$ID:
   opencode run $SERVER_ARGS --auto --thinking --agent "$AGENT" --title "$NAME $ID" "$PROMPT" 2>&1 | tee -a "$LOG"
   RC=${PIPESTATUS[0]}
   echo "=== Agent beendet, Exit-Code $RC ===" | tee -a "$LOG"
+  LAST_ID="$ID"
   if [ "$RC" != 0 ]; then
     printf '\a\a\a'; echo "Agent mit Fehler beendet (z. B. Request-Limit)." | tee -a "$LOG"
     if [ -x "$FRITZ_PY" ] && [ -f "$HOME/.config/fritz.env" ] && [ -f "$FRITZ_SCRIPT" ] && "$FRITZ_PY" "$FRITZ_SCRIPT"; then sleep 20
     else read -r -p "Neue IP manuell anfordern, dann Enter (Strg+C = Abbruch): " _; fi
   fi
 done
+if [ "$PAUSED" != 1 ] && [ -f "$PAUSE_FLAG" ]; then
+  rm -f "$PAUSE_FLAG"; PAUSED=1
+  echo "PAUSE: Pause angefordert. Kein weiteres Arbeitspaket gestartet." | tee -a "$LOG"
+fi
+if [ "$PAUSED" = 1 ]; then
+  printf '\a'; echo "Angehalten auf Wunsch. Die Abschlussprüfung wurde nicht ausgeführt. Nächster Start: vibe run $NAME" | tee -a "$LOG"; exit 0
+fi
 echo "=== Abschlussprüfung ===" | tee -a "$LOG"
 VOUT=$(final_verify 2>&1); VRC=$?
 echo "$VOUT" | tee -a "$LOG"

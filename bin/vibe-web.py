@@ -49,7 +49,8 @@ def tail(path, n=120):
 def project_row(n):
     br, dirty, last = vibe.git_info(n); items = vibe.open_items(n)
     return {"name": n, "type": vibe.ptype(n), "branch": br, "dirty": dirty, "last": last, "open": len(items), "path": vibe.ppath(n),
-            "running": vibe.tmux_has(n), "init": vibe.is_init(n), "log": os.path.exists(vibe.logpath(n))}
+            "running": vibe.tmux_has(n), "init": vibe.is_init(n), "log": os.path.exists(vibe.logpath(n)),
+            "pause_after": vibe.pause_after_active(n)}
 
 def project_detail(n):
     d = project_row(n)
@@ -137,7 +138,7 @@ class H(BaseHTTPRequestHandler):
         try:
             n = int(self.headers.get("Content-Length", "0")); body = json.loads(self.rfile.read(n) or b"{}")
             name = body.get("name", "")
-            if u.path in ("/api/run", "/api/stop", "/api/verify", "/api/feedback", "/api/init", "/api/rights"): known(name)
+            if u.path in ("/api/run", "/api/stop", "/api/verify", "/api/feedback", "/api/init", "/api/rights", "/api/pause"): known(name)
             extra = {}
             if u.path == "/api/run": ok, msg = call(vibe.cmd_run, name, body.get("agent") or None)
             elif u.path == "/api/stop": ok, msg = call(vibe.cmd_stop, name)
@@ -186,6 +187,19 @@ class H(BaseHTTPRequestHandler):
                     if dirs is not None:
                         extra["write_dirs"] = dirs; extra["custom"] = vibe.write_dirs_custom(name)
                     if changed is not None: extra["changed"] = changed
+                except ValueError as e:
+                    ok, msg = False, str(e)
+            elif u.path == "/api/pause":
+                act = body.get("action") or "on"; ok, msg = True, ""
+                try:
+                    if act in ("on", "an", "request"):
+                        vibe.pause_after_request(name); msg = "Pause nach dem aktuellen Arbeitspaket angefordert"
+                    elif act in ("off", "aus", "cancel"):
+                        released = vibe.pause_after_cancel(name)
+                        msg = "Pause-Anforderung aufgehoben" if released else "Keine Pause angefordert"
+                    else:
+                        ok, msg = False, "Unbekannte Aktion"
+                    extra["pause_after"] = vibe.pause_after_active(name)
                 except ValueError as e:
                     ok, msg = False, str(e)
             elif u.path == "/api/agent_template":
@@ -313,7 +327,7 @@ async function projects(){
  const render=async()=>{const ps=await api('/api/projects');
   const tb=el('table',{},el('tr',{},...['Projekt','Typ','Branch','Offen','Änd.','Lauf','Letzter Commit'].map(h=>el('th',{},h))));
   ps.forEach(p=>tb.append(el('tr',{class:'row',on:{click:()=>detail(p.name).catch(showErr)}},el('td',{},p.name,p.init?null:el('span',{class:'warn'},' ●')),el('td',{},p.type),el('td',{},p.branch),
-   el('td',{class:p.open?'warn':'ok'},p.open),el('td',{},p.dirty),el('td',{},el('span',{class:'pill '+(p.running?'run':'')},p.running?'läuft':'-')),el('td',{class:'mut'},p.last))));
+   el('td',{class:p.open?'warn':'ok'},p.open),el('td',{},p.dirty),el('td',{},el('span',{class:'pill '+(p.running?'run':'')},p.running?'läuft':'-'),p.pause_after?el('span',{class:'pill warn',title:'Nach dem aktuellen Arbeitspaket wird kein neues gestartet'},' Pause'):null),el('td',{class:'mut'},p.last))));
   const rc=await rootsCard();
   main.replaceChildren(el('div',{class:'card'},ps.length?tb:el('span',{class:'mut'},'Keine Projekte gefunden. Entwicklungsordner unten hinzufügen.'),ps.some(p=>!p.init)?el('div',{class:'warn',style:'margin-top:8px'},'● = noch nicht für vibe vorbereitet (Projekt öffnen → „Für vibe vorbereiten“)'):null),rc,newForm())};
  await render();timer=setInterval(()=>{if(tab==='projects'&&!document.activeElement.matches('input,textarea,select'))render().catch(()=>{})},5000)}
@@ -339,6 +353,7 @@ async function detail(name){clearInterval(timer);if(es){es.close();es=null}exitL
  LOG={card:logCard,pre:logEl,button:fullBtn,fit:fitLog};
  main.replaceChildren(...[el('div',{class:'bar'},el('button',{class:'b',on:{click:()=>setTab('projects')}},'← zurück'),el('h2',{style:'margin:0'},name),el('span',{class:'pill '+(d.running?'run':'')},d.running?'läuft':'gestoppt'),el('span',{class:'mut'},d.type+' · '+d.branch+' · '+d.dirty+' Änderungen · '+d.path)),
   initCard,
+  pauseCard(d,name),
   el('div',{class:'bar'},el('button',{class:'b p',on:{click:act('/api/run',{name})}},'Agentenlauf starten'),el('button',{class:'b',on:{click:act('/api/stop',{name})}},'Stoppen'),
    el('button',{class:'b',on:{click:()=>{act('/api/verify',{name,mode:'quick'})();stream('verify')}}},'Prüfung quick'),el('button',{class:'b',on:{click:()=>{act('/api/verify',{name,mode:'full'})();stream('verify')}}},'Prüfung full'),
    el('button',{class:'b',on:{click:()=>stream('run')}},'Lauf-Log'),el('a',{href:'http://127.0.0.1:4096',target:'_blank'},'opencode-Weboberfläche')),
@@ -353,6 +368,11 @@ async function detail(name){clearInterval(timer);if(es){es.close();es=null}exitL
  function stream(kind){if(es)es.close();logEl.textContent='';logPaused=false;logBuf='';pauseBtn.textContent='Pause';pauseBtn.classList.remove('p');es=new EventSource('/api/stream?name='+encodeURIComponent(name)+'&kind='+kind+'&t='+encodeURIComponent(T));
   es.onmessage=ev=>{const chunk=JSON.parse(ev.data).join('\n')+'\n';if(logPaused){logBuf=(logBuf+chunk).slice(-80000);return}appendLog(chunk)}}
  stream('run')}
+function pauseCard(d,name){
+ const active=!!d.pause_after;
+ const btn=el('button',{class:'b'+(active?' p':''),on:{click:async()=>{const r=await api('/api/pause',{name,action:active?'off':'on'});toast(r.message);if(r.ok)detail(name).catch(showErr)}}},active?'Pause aufheben':'Nach aktuellem Paket anhalten');
+ return el('div',{class:'card'},el('div',{class:'bar'},el('b',{},'Arbeitspaket-Pause'),el('span',{class:'pill '+(active?'warn':'mut')},active?'Pause angefordert':'keine Pause'),btn),
+  el('div',{class:'mut'},'Der laufende Agent wird nicht unterbrochen. Nach dem aktuellen Arbeitspaket startet der Läufer kein neues Paket; die Anforderung gilt einmalig und wird beim Anhalten verbraucht.'))}
 function feedbackCard(d,name){const list=el('div',{});const cls=s=>s==='erledigt'?'ok':s==='BLOCKIERT'?'bad':'warn';
  const draw=()=>{list.replaceChildren(...(d.feedback.length?d.feedback.map(i=>{const row=el('div',{class:'fbentry','data-id':i.id},
    el('div',{},el('span',{class:'pill '+cls(i.state)},i.state),el('b',{},' '+i.id+' '+i.title)),i.description?el('div',{class:'mut fbdesc'},i.description):null,

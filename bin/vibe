@@ -8,6 +8,7 @@ Aufruf:  vibe                 interaktives Menü
          vibe attach <p>      an laufende Sitzung anhängen
          vibe logs <p>        Log verfolgen
          vibe stop <p>        Lauf beenden
+         vibe pause <p> [on|off]  nach dem aktuellen Arbeitspaket anhalten
          vibe verify <p> [quick|full]
          vibe feedback <p>    neuen Punkt in FEEDBACK.md eintragen
          vibe new <name> <typ> [vorlage]   Typen: vibe types
@@ -400,6 +401,51 @@ def cmd_rights(name, action=None, path=None):
 def sess(name): return "vibe-" + safe(name)
 def tmux_has(name): return sh(f"tmux has-session -t {sess(name)}")[0] == 0
 
+# ---------- Pause nach dem aktuellen Arbeitspaket ----------
+def pause_after_path(name):
+    """Markierung im Laufzeitordner; sie gilt für genau einen Lauf."""
+    return os.path.join(LOGS, safe(name) + ".pause-after")
+
+def pause_after_active(name):
+    return os.path.exists(pause_after_path(name))
+
+def pause_after_request(name):
+    """Fordert an, nach dem laufenden Arbeitspaket kein neues zu starten."""
+    os.makedirs(LOGS, exist_ok=True)
+    try:
+        _write_text_atomic(pause_after_path(name), "Pause nach dem aktuellen Arbeitspaket\n")
+    except OSError as error:
+        raise ValueError("Pause-Anforderung nicht speicherbar: " + str(error))
+
+def pause_after_cancel(name):
+    fp = pause_after_path(name)
+    try:
+        if not os.path.exists(fp): return False
+        os.remove(fp)
+        return True
+    except OSError as error:
+        raise ValueError("Pause-Anforderung nicht aufhebbar: " + str(error))
+
+def cmd_pause(name, action=None):
+    ppath(name)
+    released = False
+    try:
+        if action in (None, "status", "list"): pass
+        elif action in ("on", "an", "request"): pause_after_request(name)
+        elif action in ("off", "aus", "cancel"): released = pause_after_cancel(name)
+        else: sys.exit("vibe pause <projekt> [on|off]")
+    except ValueError as e:
+        sys.exit(str(e))
+    if pause_after_active(name):
+        print(col("y", "Pause nach dem aktuellen Arbeitspaket: angefordert"))
+        print(col("d", "Der laufende Agent wird nicht unterbrochen. Danach wird kein neues Paket gestartet; die Anforderung gilt einmalig."))
+    elif released:
+        print("Pause nach dem aktuellen Arbeitspaket: aufgehoben")
+    else:
+        print("Pause nach dem aktuellen Arbeitspaket: nicht angefordert")
+        print(col("d", "Anfordern: vibe pause " + name + " on"))
+
+
 def git_info(name):
     p = ppath(name)
     br = sh("git symbolic-ref --short HEAD 2>/dev/null", cwd=p)[1] or "-"
@@ -423,6 +469,7 @@ def cmd_status(name):
     print(col("b", f"{name}  ({ptype(name)})"), f" Branch {br}, {dirty} geänderte Dateien")
     print("Pfad:", ppath(name)); print("Letzter Commit:", last)
     print("Lauf:", col("g", "aktiv (vibe attach " + name + ")") if tmux_has(name) else "keiner")
+    if pause_after_active(name): print(col("y", "Pause nach dem aktuellen Arbeitspaket angefordert (vibe pause " + name + " off hebt sie auf)"))
     if not is_init(name): print(col("y", "Nicht für vibe vorbereitet: vibe init " + name))
     items = open_items(name)
     print(col("b", f"Offene Arbeitspakete: {len(items)}"))
@@ -435,6 +482,7 @@ def cmd_run(name, agent=None):
     p = ppath(name)
     if tmux_has(name): print("Läuft bereits. vibe attach", name); return
     if not is_init(name): sys.exit("Projekt ist nicht für vibe vorbereitet: vibe init " + name)
+    if pause_after_active(name): print(col("y", "Pause angefordert: der Lauf startet kein Arbeitspaket. Aufheben: vibe pause " + name + " off"))
     os.makedirs(LOGS, exist_ok=True)
     env = penv(name); agent = agent or env.get("AGENT", "coding-agent_deepseek")
     inner = f'source ~/.bashrc; export VIBE_LOGNAME={safe(name)}; bash "{BIN}/vibe-run.sh" "{p}" "{agent}"; echo; echo "[Lauf beendet] Enter zum Schließen"; read'
@@ -914,7 +962,7 @@ def pick(title, options):
 
 def project_menu(name):
     acts = ["Status / offene Arbeitspakete", "Agentenlauf starten", "An Lauf anhängen (tmux)", "Log verfolgen", "Lauf beenden",
-            "Prüfung quick", "Prüfung full", "Feedback eintragen", "Git-Verlauf (10)", "opencode-Sitzungen", "Lauf mit anderem Agent", "Für vibe vorbereiten (init)", "Neuer Projekt-Agent", "MCP-Tools des Projekts", "Schreibrechte (Verzeichnisse)"]
+            "Prüfung quick", "Prüfung full", "Feedback eintragen", "Git-Verlauf (10)", "opencode-Sitzungen", "Lauf mit anderem Agent", "Für vibe vorbereiten (init)", "Neuer Projekt-Agent", "MCP-Tools des Projekts", "Schreibrechte (Verzeichnisse)", "Pause nach aktuellem Arbeitspaket (an/aus)"]
     while True:
         i = pick(f"Projekt {name} ({ptype(name)})", acts)
         if i is None: return
@@ -923,7 +971,8 @@ def project_menu(name):
          5: lambda: cmd_verify(name, "quick"), 6: lambda: cmd_verify(name, "full"), 7: lambda: cmd_feedback(name),
          8: lambda: print(sh("git log --oneline -10", cwd=p)[1]), 9: lambda: print(sh("opencode session list", cwd=p)[1]),
          10: lambda: cmd_run(name, input("Agent-Name: ").strip() or None), 11: lambda: cmd_init(name),
-         12: lambda: cmd_agent("new", input("Agent-Name: ").strip(), name), 13: lambda: cmd_mcp("list", None, name), 14: lambda: cmd_rights(name)}[i]()
+         12: lambda: cmd_agent("new", input("Agent-Name: ").strip(), name), 13: lambda: cmd_mcp("list", None, name), 14: lambda: cmd_rights(name),
+         15: lambda: cmd_pause(name, "off" if pause_after_active(name) else "on")}[i]()
 
 def menu():
     while True:
@@ -966,6 +1015,7 @@ def main():
     try:
         table = {"list": lambda: cmd_list(), "status": lambda: cmd_status(r[0]), "run": lambda: cmd_run(r[0], r[1] if len(r) > 1 else None),
                  "attach": lambda: cmd_attach(r[0]), "logs": lambda: cmd_logs(r[0]), "stop": lambda: cmd_stop(r[0]),
+                 "pause": lambda: cmd_pause(r[0], r[1] if len(r) > 1 else None),
                  "verify": lambda: cmd_verify(r[0], r[1] if len(r) > 1 else "quick"), "feedback": lambda: cmd_feedback(r[0]),
                  "new": lambda: cmd_new(r[0], r[1] if len(r) > 1 else "generic", r[2] if len(r) > 2 else None),
                  "init": lambda: cmd_init(r[0], r[1] if len(r) > 1 else None),
