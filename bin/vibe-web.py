@@ -58,6 +58,14 @@ def project_detail(n):
     d["tail"] = tail(vibe.logpath(n), 80)
     d["verify_cmd"] = bool(vibe.verify_command(n, "quick"))
     d["env"] = vibe.penv(n)
+    try:
+        d["write_dirs"] = vibe.write_dirs(n)
+        d["write_dirs_error"] = None
+    except ValueError as e:
+        d["write_dirs"] = []
+        d["write_dirs_error"] = str(e)
+    d["write_dirs_default"] = vibe.write_dirs_default(n)
+    d["write_dirs_custom"] = vibe.write_dirs_custom(n)
     return d
 
 def roots_info():
@@ -68,9 +76,18 @@ def roots_info():
 
 def agents_info():
     info = vibe.models_info()
-    return {"agents": vibe.agents_all(), "projects": vibe.projects(), "models": vibe.models_list(),
+    ps = vibe.projects()
+    write_dirs, write_dirs_errors = {}, {}
+    for p in ps:
+        try:
+            write_dirs[p] = vibe.write_dirs(p)
+        except ValueError as e:
+            write_dirs[p] = []
+            write_dirs_errors[p] = str(e)
+    return {"agents": vibe.agents_all(), "projects": ps, "models": vibe.models_list(),
             "info": {m["id"]: m for m in info.get("models", [])}, "stand": info.get("stand", ""), "hinweis": info.get("hinweis", ""),
-            "perms": vibe.PERM_LABELS, "profiles": vibe.profiles_load()}
+            "perms": vibe.PERM_LABELS, "perms_project": vibe.PERM_LABELS_PROJECT,
+            "write_dirs": write_dirs, "write_dirs_errors": write_dirs_errors, "profiles": vibe.profiles_load()}
 
 def verify_bg(n, mode):
     cmd = vibe.verify_command(n, mode)
@@ -120,7 +137,7 @@ class H(BaseHTTPRequestHandler):
         try:
             n = int(self.headers.get("Content-Length", "0")); body = json.loads(self.rfile.read(n) or b"{}")
             name = body.get("name", "")
-            if u.path in ("/api/run", "/api/stop", "/api/verify", "/api/feedback", "/api/init"): known(name)
+            if u.path in ("/api/run", "/api/stop", "/api/verify", "/api/feedback", "/api/init", "/api/rights"): known(name)
             extra = {}
             if u.path == "/api/run": ok, msg = call(vibe.cmd_run, name, body.get("agent") or None)
             elif u.path == "/api/stop": ok, msg = call(vibe.cmd_stop, name)
@@ -152,8 +169,29 @@ class H(BaseHTTPRequestHandler):
                     ok, msg = True, (f"{len(found)} Projekt(e) in {p}: {', '.join(found) or '-'}" if act == "add" else "OK")
                 except ValueError as e:
                     ok, msg = False, str(e)
+            elif u.path == "/api/rights":
+                act = body.get("action"); ok, msg, changed = True, "", None
+                try:
+                    if act == "add":
+                        dirs = vibe.write_dirs_add(name, body.get("path", "")); msg = "Verzeichnis hinzugefügt"
+                    elif act in ("remove", "rm"):
+                        dirs = vibe.write_dirs_remove(name, body.get("path", "")); msg = "Verzeichnis entfernt"
+                    elif act == "reset":
+                        dirs = vibe.write_dirs_reset(name); msg = "Standardverzeichnisse wiederhergestellt"
+                    elif act == "apply":
+                        dirs = vibe.write_dirs(name); changed = vibe.apply_write_dirs_to_project(name)
+                        msg = ("Schreibrechte auf " + str(len(changed)) + " Projektagent(en) angewendet: " + ", ".join(changed)) if changed else "Nichts geändert – keine Projektagenten mit Schreibrecht vorhanden"
+                    else:
+                        ok, msg, dirs = False, "Unbekannte Aktion", None
+                    if dirs is not None:
+                        extra["write_dirs"] = dirs; extra["custom"] = vibe.write_dirs_custom(name)
+                    if changed is not None: extra["changed"] = changed
+                except ValueError as e:
+                    ok, msg = False, str(e)
             elif u.path == "/api/agent_template":
-                ok, msg = True, vibe.agent_template(body.get("description", ""), body.get("mode", "subagent"), body.get("model", ""), body.get("temperature", ""), body.get("steps", ""), body.get("perm", "lesen"), body.get("prompt", ""))
+                scope = known_scope(body.get("scope", "global"))
+                dirs = vibe.write_dirs(scope) if scope != "global" else None
+                ok, msg = True, vibe.agent_template(body.get("description", ""), body.get("mode", "subagent"), body.get("model", ""), body.get("temperature", ""), body.get("steps", ""), body.get("perm", "lesen"), body.get("prompt", ""), write_dirs=dirs)
             elif u.path == "/api/agent":
                 act = body.get("action"); scope = known_scope(body.get("scope", "global")); an = body.get("name", "")
                 try:
@@ -306,6 +344,7 @@ async function detail(name){clearInterval(timer);if(es){es.close();es=null}exitL
    el('button',{class:'b',on:{click:()=>stream('run')}},'Lauf-Log'),el('a',{href:'http://127.0.0.1:4096',target:'_blank'},'opencode-Weboberfläche')),
   el('div',{class:'grid'},el('div',{},el('div',{class:'card'},el('b',{},'Offene Arbeitspakete ('+d.items.length+')'),items),
    feedbackCard(d,name),
+   rightsCard(d,name),
    el('div',{class:'card'},el('b',{},'Feedback eintragen'),el('label',{},'Titel'),f.t,el('label',{},'Beschreibung'),f.b,
     el('div',{class:'bar'},el('button',{class:'b p',on:{click:async()=>{const r=await api('/api/feedback',{name,title:f.t.value,description:f.b.value});toast(r.message);detail(name).catch(showErr)}}},'Eintragen')))),
    logCard)].filter(Boolean));
@@ -327,6 +366,17 @@ function feedbackCard(d,name){const list=el('div',{});const cls=s=>s==='erledigt
   row.replaceWith(ed)};
  draw();
  return el('div',{class:'card'},el('b',{},'Feedback ('+d.feedback.length+')'),list)}
+function rightsCard(d,name){const inp=el('input',{placeholder:'/absoluter/pfad','aria-label':'Schreibverzeichnis'});
+ const rows=el('div',{},...(d.write_dirs.length?d.write_dirs.map(p=>el('div',{class:'bar'},el('span',{class:'mut'},p),
+   el('button',{class:'b d',on:{click:async()=>{const r=await api('/api/rights',{name,action:'remove',path:p});toast(r.message);if(r.ok)detail(name).catch(showErr)}}},'Entfernen'))):[el('span',{class:'mut'},'Keine Verzeichnisse – Schreiben ist gesperrt.')]));
+ return el('div',{class:'card'},el('b',{},'Schreibrechte (Agenten)'),
+  el('div',{class:'mut'},'Verzeichnisse für das Schreibwerkzeug (edit) der Projektagenten. Voreingestellt sind /tmp/opencode und das Projektverzeichnis. Agenten ohne Schreibrecht bleiben unverändert. Shell-Befehle (bash) bleiben erlaubt und können Dateien außerhalb dieser Liste ändern – die Liste ist keine Sandbox.'),
+  d.write_dirs_error?el('div',{class:'bad'},'Liste nicht lesbar: '+d.write_dirs_error):null,
+  rows,
+  el('div',{class:'bar'},inp,el('button',{class:'b p',on:{click:async()=>{const r=await api('/api/rights',{name,action:'add',path:inp.value});toast(r.message);if(r.ok)detail(name).catch(showErr)}}},'Hinzufügen')),
+  el('div',{class:'bar'},el('button',{class:'b',on:{click:async()=>{if(!confirm('Standardverzeichnisse wiederherstellen?'))return;const r=await api('/api/rights',{name,action:'reset'});toast(r.message);if(r.ok)detail(name).catch(showErr)}}},'Standard wiederherstellen'),
+   el('button',{class:'b',on:{click:async()=>{const r=await api('/api/rights',{name,action:'apply'});toast(r.message);if(r.ok)detail(name).catch(showErr)}}},'Auf Projektagenten anwenden')),
+  el('div',{class:'mut'},d.write_dirs_custom?'Eigene Liste aktiv.':'Standardliste aktiv.'))}
 
 /* ---------- Agenten, Modelle, Profile ---------- */
 let AG=null,AGFILTER='alle';
@@ -381,19 +431,27 @@ async function agentForm(scope,name){const d=AG||await api('/api/agents');const 
  const cur=!isNew&&(/^model:\s*(\S+)/m.exec(text)||[])[1];
  const mo=modelSelect(d.models,d.info,cur||'','— Standardmodell —');
  const tp=el('input',{placeholder:'z. B. 0.1',value:'0.1'}),st=el('input',{placeholder:'z. B. 60'});
- const pm=el('select',{},...Object.entries(d.perms).map(([k,v])=>el('option',{value:k},v)));pm.value='lesen';
+ const pm=el('select',{});const perms=()=>sc.value==='global'?d.perms:d.perms_project;
+ const setPerms=()=>{const cur=pm.value;pm.replaceChildren(...Object.entries(perms()).map(([k,v])=>el('option',{value:k},v)));pm.value=perms()[cur]?cur:'lesen'};
+ setPerms();pm.value='lesen';
+ const hint=el('div',{class:'mut'});
+ const updHint=()=>{const dirs=sc.value==='global'?null:(d.write_dirs[sc.value]||[]);const err=sc.value==='global'?null:(d.write_dirs_errors||{})[sc.value];
+ hint.textContent=err?'Schreibrechte nicht lesbar: '+err:(sc.value==='global'?'Global: volle Schreibrechte ohne Verzeichnisgrenze.':'Schreibrechte (edit, voll) nur in: '+(dirs&&dirs.length?dirs.join(', '):'keine Verzeichnisse – Schreiben gesperrt')+'. Shell (bash) bleibt erlaubt.')};
+ updHint();
  const pr=el('textarea',{rows:5,placeholder:'System-Prompt: Rolle, Regeln, Ausgabeformat'});
  const raw=el('textarea',{class:'raw'});raw.value=text;
- const gen=async()=>{const r=await api('/api/agent_template',{description:ds.value,mode:md.value,model:mo.value,temperature:tp.value,steps:st.value,perm:pm.value,prompt:pr.value});raw.value=r.message};
+ const gen=async()=>{const r=await api('/api/agent_template',{description:ds.value,mode:md.value,model:mo.value,temperature:tp.value,steps:st.value,perm:pm.value,prompt:pr.value,scope:sc.value});raw.value=r.message};
+ sc.addEventListener('change',()=>{setPerms();updHint();if(isNew)gen().catch(showErr)});
  mo.addEventListener('change',()=>{if(!isNew){const v=mo.value;if(!v)return;raw.value=/^model:/m.test(raw.value)?raw.value.replace(/^model:.*$/m,'model: '+v):raw.value.replace(/\n---/,'\nmodel: '+v+'\n---')}else gen()});
  const core=!isNew&&d.agents.some(a=>a.name===name&&a.scope===scope&&a.core);
  const cp=el('select',{},el('option',{value:''},'Kopieren nach …'),...['global',...d.projects].filter(x=>x!==scope).map(x=>el('option',{value:x},x==='global'?'global':'Projekt: '+x)));
  const kopf=isNew?el('div',{},el('div',{class:'grid'},el('div',{},el('label',{},'Name'),nm),el('div',{},el('label',{},'Geltung'),sc)),el('label',{},'Beschreibung'),ds,
    el('div',{class:'grid3'},el('div',{},el('label',{},'Modus'),md),el('div',{},el('label',{},'Modell'),mo),el('div',{},el('label',{},'Rechte'),pm)),
+   hint,
    el('div',{class:'grid'},el('div',{},el('label',{},'Temperatur'),tp),el('div',{},el('label',{},'Max. Schritte'),st)),el('label',{},'Prompt'),pr,
    el('div',{class:'bar'},el('button',{class:'b',on:{click:gen}},'Datei aus Eingaben erzeugen'),el('span',{class:'mut'},'Das Ergebnis unten kann vor dem Speichern frei bearbeitet werden.'))):
   el('div',{},el('div',{class:'bar'},el('b',{},name),el('span',{class:'pill'},scope==='global'?'global':'Projekt: '+scope),core?el('span',{class:'pill warn'},'◆ Kernagent: Änderungen können die Manipulationsprüfung schwächen'):null),
-   el('label',{},'Modell schnell wechseln (schreibt die model:-Zeile in den Text unten)'),mo);
+   el('label',{},'Modell schnell wechseln (schreibt die model:-Zeile in den Text unten)'),mo,hint);
  if(isNew)setTimeout(gen,0);
  main.replaceChildren(el('div',{class:'bar'},el('button',{class:'b',on:{click:()=>agents().catch(showErr)}},'← zurück'),el('h2',{style:'margin:0'},isNew?'Neuer Agent':'Agent bearbeiten')),
   el('div',{class:'card'},kopf,el('label',{},'Datei (Frontmatter + Prompt)'),raw,

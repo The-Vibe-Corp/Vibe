@@ -12,8 +12,8 @@
  "files": [
   {
    "path": "bin/vibe",
-   "sha256": "9a9e264b1df44b7aa3c156a6254739aabbd3ce9ebbe18e387708c21e86514755",
-   "bytes": 41745
+   "sha256": "05ffde34c8a1c8562ad0bad4f3020f21c2bc165b4d39f9655d3762d3b18abfb5",
+   "bytes": 51003
   },
   {
    "path": "bin/vibe-run.sh",
@@ -22,8 +22,8 @@
   },
   {
    "path": "bin/vibe-web.py",
-   "sha256": "f7c6ec9b4af24bd101d9b5ea27344b24cd90bdde62bdd64c296690647a26ab28",
-   "bytes": 47513
+   "sha256": "99174e33f8da374a40d33204bacc807fe6237f00a0b911550ce550deb8921ff7",
+   "bytes": 52266
   },
   {
    "path": "bin/vibe_mcp.py",
@@ -136,6 +136,15 @@
    "arbeitspaket": "F2",
    "datum": "2026-10-25",
    "grund": "Projektdetail: vorhandene Feedback-Punkte bearbeiten und löschen, Live-Ausgabe pausierbar, bildschirmfüllend vergrößerbar und mit voller verfügbarer Höhe.",
+   "dateien": [
+    "bin/vibe",
+    "bin/vibe-web.py"
+   ]
+  },
+  {
+   "arbeitspaket": "F3",
+   "datum": "2026-10-25",
+   "grund": "Dynamische Schreibrechte je Projekt: editierbare Verzeichnisliste mit Standard /tmp/opencode und Projektverzeichnis, Anwendung auf Projektagenten, CLI und Dashboard.",
    "dateien": [
     "bin/vibe",
     "bin/vibe-web.py"

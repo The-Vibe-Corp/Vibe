@@ -143,6 +143,7 @@ Codestelle und die in dieser Sitzung tatsächlich beobachtete Prüfung.
 | CLI | `vibe roots` | vorhanden und manuell geprüft | `bin/vibe:135-151`; ausgeführt, Exit 0, ein Entwicklungsordner mit 7 Projekten |
 | CLI | `vibe scan` | vorhanden und manuell geprüft | `bin/vibe:653`; Alias auf `cmd_roots()`, ausgeführt, Exit 0 |
 | CLI | `vibe agents` | vorhanden und manuell geprüft | `bin/vibe:349-364,428-435`; ausgeführt, Exit 0, globale Agenten plausibel |
+| CLI | `vibe rights` | vorhanden und automatisiert geprüft | `bin/vibe:324-397`; `tests/unit/test_project_write_dirs.py` prüft Liste, Hinzufügen, Entfernen und Zurücksetzen ohne Schreibzugriff auf produktive Konfiguration |
 | CLI | `vibe agent` | vorhanden, noch nicht geprüft | `bin/vibe:441-457`; `new/edit/show/rm`, Editor und Schreibzugriff nicht ausgeführt |
 | CLI | `vibe models` | vorhanden und manuell geprüft | `bin/vibe:459-466`; ausgeführt, Exit 0; Daten aus `data/models.json` bleiben ungeprüfte Altdaten (V-011) |
 | CLI | `vibe model` | vorhanden, noch nicht geprüft | `bin/vibe:468-477`; schreibt Agentendatei, nicht ausgeführt |
@@ -185,6 +186,7 @@ vorhanden“ nennt bereits sichtbare Lücken, die in V-004 zu beheben sind.
 | API | `POST /api/verify` | teilweise vorhanden | `bin/vibe-web.py:126`; Auth-Lücke wie `/api/run`; nicht ausgeführt |
 | API | `POST /api/init` | teilweise vorhanden | `bin/vibe-web.py:127`; Auth-Lücke wie `/api/run`; nicht ausgeführt |
 | API | `POST /api/feedback` | teilweise vorhanden | `bin/vibe-web.py:128-130`; Auth-Lücke, ID-Vergabe nicht gegen Parallelzugriff gesichert (V-009) |
+| API | `POST /api/rights` | vorhanden und automatisiert geprüft | `bin/vibe-web.py:172-190`; `tests/unit/test_project_write_dirs.py` prüft Hinzufügen, Entfernen, Zurücksetzen, Anwenden und die Tokenpflicht |
 | API | `POST /api/new` | teilweise vorhanden | `bin/vibe-web.py:131`; Auth-Lücke wie `/api/run`; nicht ausgeführt |
 | API | `POST /api/roots` | teilweise vorhanden | `bin/vibe-web.py:132-141`; Auth-Lücke wie `/api/run`; nicht ausgeführt |
 | API | `POST /api/agent_template` | teilweise vorhanden | `bin/vibe-web.py:142-143`; Auth-Lücke wie `/api/run`; nicht ausgeführt |
@@ -199,7 +201,9 @@ vorhanden“ nennt bereits sichtbare Lücken, die in V-004 zu beheben sind.
 
 Die Oberfläche ist eine eingebettete HTML/JS-Seite (`bin/vibe-web.py:209-410`).
 In V-001 wurde sie nicht im Browser geöffnet; alle Einträge sind daher
-„vorhanden, noch nicht geprüft“.
+„vorhanden, noch nicht geprüft“. Die beiden Zeilen zu den F3-Funktionen wurden
+später ergänzt und in einem isolierten Dashboard mit Playwright (Chromium,
+headless) geprüft.
 
 | Typ | Funktion | Status | Beleg |
 | --- | --- | --- | --- |
@@ -210,6 +214,8 @@ In V-001 wurde sie nicht im Browser geöffnet; alle Einträge sind daher
 | UI | `Kopfzeile opencode Start/Stop` | vorhanden, noch nicht geprüft | `bin/vibe-web.py:242-245`; ruft `POST /api/server`; kein Browsertest |
 | UI | `Kopfzeile Dashboard beenden` | vorhanden, noch nicht geprüft | `bin/vibe-web.py:244`; ruft `POST /api/shutdown`; kein Browsertest |
 | UI | `Log-Stream` | vorhanden, noch nicht geprüft | `bin/vibe-web.py:282-291`; EventSource auf `/api/stream`; kein Browsertest |
+| UI | `Projektdetail: Schreibrechte` | vorhanden und automatisiert geprüft | `bin/vibe-web.py:369-379`; `tests/browser/test_write_dirs_ui.py` bedient Liste, Hinzufügen, Entfernen, Zurücksetzen und Anwenden (Chromium, headless); die Liste begrenzt `edit`, nicht `bash` |
+| UI | `Agenteneditor: Schreibrechts-Hinweis` | vorhanden und automatisiert geprüft | `bin/vibe-web.py:434-444`; Hinweis und Vorlage folgen dem gewählten Bereich (global/projekt); `tests/browser/test_write_dirs_ui.py` (Chromium, headless) |
 
 ## 8. Funktionsbereiche aus SPEC.md
 

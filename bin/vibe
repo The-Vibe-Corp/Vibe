@@ -15,6 +15,7 @@ Aufruf:  vibe                 interaktives Menü
          vibe roots [add <pfad>|rm <pfad>]  Entwicklungsordner verwalten und Projekte einlesen
          vibe agents          alle Agenten (global und projektspezifisch)
          vibe agent new|edit|show|rm <name> [global|<projekt>]
+         vibe rights <projekt> [list|add <pfad>|rm <pfad>|reset]  erlaubte Schreibverzeichnisse
          vibe models          Modellübersicht mit Einschätzung und Preis
          vibe model <agent> <modell> [global|<projekt>]
          vibe profile [list|use <name>]   Modellprofile (z. B. kostenlos / bezahlt) für Rollen
@@ -317,6 +318,85 @@ def feedback_delete(name, fid):
     del raw[entry["start"]:entry["end"]]
     _write_text_atomic(fp, "".join(raw))
 
+# ---------- Schreibrechte je Projekt ----------
+WRITE_DIRS_DEFAULT = "/tmp/opencode"
+
+def _norm_write_dir(value):
+    """Prüft und normalisiert ein erlaubtes Schreibverzeichnis."""
+    if not isinstance(value, str): raise ValueError("Pfad muss Text sein")
+    text = value.strip()
+    if not text: raise ValueError("Pfad fehlt")
+    if any(c in text for c in ("\x00", "\n", "\r")): raise ValueError("Pfad enthält unerlaubte Steuerzeichen")
+    expanded = os.path.expanduser(text)
+    if not os.path.isabs(expanded): raise ValueError("Pfad muss absolut sein: " + text)
+    path = os.path.realpath(os.path.abspath(expanded))
+    if path == os.sep: raise ValueError("Das Wurzelverzeichnis / ist nicht als Schreibverzeichnis erlaubt")
+    return path
+
+def write_dirs_path(name): return os.path.join(ppath(name), ".vibe", "permissions.json")
+
+def write_dirs_default(name): return [_norm_write_dir(WRITE_DIRS_DEFAULT), os.path.realpath(ppath(name))]
+
+def write_dirs_custom(name): return os.path.exists(write_dirs_path(name))
+
+def write_dirs(name):
+    """Erlaubte Schreibverzeichnisse des Projekts; ohne Datei gelten die Standards."""
+    fp = write_dirs_path(name)
+    if not os.path.exists(fp): return write_dirs_default(name)
+    try:
+        with open(fp, encoding="utf-8") as f: data = json.load(f)
+    except (OSError, json.JSONDecodeError) as e:
+        raise ValueError("Schreibrechte nicht lesbar: " + str(e))
+    if not isinstance(data, dict) or not isinstance(data.get("write_dirs"), list):
+        raise ValueError("Schreibrechte nicht lesbar: 'write_dirs' fehlt oder ist keine Liste")
+    out = []
+    for value in data["write_dirs"]:
+        path = _norm_write_dir(value)
+        if path not in out: out.append(path)
+    return out
+
+def write_dirs_save(name, paths):
+    normalized = []
+    for value in paths:
+        path = _norm_write_dir(value)
+        if path not in normalized: normalized.append(path)
+    fp = write_dirs_path(name)
+    os.makedirs(os.path.dirname(fp), exist_ok=True)
+    _write_text_atomic(fp, json.dumps({"write_dirs": normalized}, indent=1, ensure_ascii=False) + "\n")
+    return normalized
+
+def write_dirs_add(name, path):
+    dirs = write_dirs(name); target = _norm_write_dir(path)
+    if target in dirs: raise ValueError("Verzeichnis ist bereits erlaubt: " + target)
+    return write_dirs_save(name, dirs + [target])
+
+def write_dirs_remove(name, path):
+    dirs = write_dirs(name); target = _norm_write_dir(path)
+    if target not in dirs: raise ValueError("Verzeichnis ist nicht in der Liste: " + target)
+    return write_dirs_save(name, [d for d in dirs if d != target])
+
+def write_dirs_reset(name):
+    fp = write_dirs_path(name)
+    if os.path.exists(fp): os.remove(fp)
+    return write_dirs_default(name)
+
+def cmd_rights(name, action=None, path=None):
+    try:
+        if action in ("add", "rm", "remove"):
+            if not path: sys.exit("Pfad fehlt: vibe rights <projekt> " + action + " <pfad>")
+            if action == "add": write_dirs_add(name, path)
+            else: write_dirs_remove(name, path)
+        elif action == "reset": write_dirs_reset(name)
+        elif action not in (None, "list"): sys.exit("vibe rights <projekt> [list|add <pfad>|rm <pfad>|reset]")
+        dirs = write_dirs(name)
+    except ValueError as e:
+        sys.exit(str(e))
+    defaults = write_dirs_default(name)
+    print(col("b", f"Schreibrechte für {name}:") + ("" if write_dirs_custom(name) else "  (Standard)"))
+    for d in dirs: print(f"  {d}" + ("  (Standard)" if d in defaults else ""))
+    print(col("d", "Anpassen: vibe rights " + name + " add|rm <pfad>, zurücksetzen: vibe rights " + name + " reset"))
+    print(col("d", "Die Liste begrenzt edit, nicht Shell-Befehle (bash): Agenten mit Shellzugriff können außerhalb der Liste schreiben."))
+
 def sess(name): return "vibe-" + safe(name)
 def tmux_has(name): return sh(f"tmux has-session -t {sess(name)}")[0] == 0
 
@@ -467,6 +547,24 @@ PERMS = {
  "lesen_git": '  read: allow\n  glob: allow\n  grep: allow\n  list: allow\n  edit: deny\n  bash:\n    "*": deny\n    "git status --short": allow\n    "git diff *": allow\n    "git show *": allow\n    "git log *": allow\n  task: deny\n  webfetch: deny\n  websearch: deny',
 }
 PERM_LABELS = {"voll": "Voll (lesen, schreiben, Shell)", "lesen": "Nur lesen", "lesen_git": "Nur lesen + Git lesend"}
+PERM_LABELS_PROJECT = dict(PERM_LABELS, voll="Voll (edit nur in erlaubten Verzeichnissen, Shell erlaubt)")
+
+def edit_permission_lines(write_dirs):
+    """YAML-Zeilen für edit-Rechte, die nur die erlaubten Verzeichnisse zulassen."""
+    if not write_dirs: return ["  edit: deny"]
+    lines = ["  edit:"]
+    for d in write_dirs:
+        lines.append(f'    {json.dumps(d, ensure_ascii=False)}: allow')
+        lines.append(f'    {json.dumps(d + "/**", ensure_ascii=False)}: allow')
+    lines.append('    "*": deny')
+    return lines
+
+def permission_block(perm="lesen", write_dirs=None):
+    if perm not in PERMS: perm = "lesen"
+    block = PERMS[perm]
+    if perm == "voll" and write_dirs is not None:
+        block = block.replace("  edit: allow", "\n".join(edit_permission_lines(write_dirs)))
+    return block
 
 def agent_dir(scope):
     return AGENTS_DIR if scope == "global" else os.path.join(ppath(scope), ".opencode", "agents")
@@ -537,16 +635,103 @@ def agent_delete(scope, name):
 
 def agent_copy(scope, name, to_scope):
     if scope == to_scope: raise ValueError("Quelle und Ziel sind gleich.")
-    return agent_write(to_scope, name, agent_read(scope, name), create=True)
+    text = agent_read(scope, name)
+    if to_scope != "global" and _edit_grants_write(text):
+        text = _rewrite_edit_block(text, write_dirs(to_scope))
+    return agent_write(to_scope, name, text, create=True)
 
-def agent_template(description, mode="subagent", model="", temperature="", steps="", perm="lesen", prompt=""):
+def agent_template(description, mode="subagent", model="", temperature="", steps="", perm="lesen", prompt="", write_dirs=None):
     if perm not in PERMS: perm = "lesen"
     lines = ["---", f"description: {description.strip() or 'Beschreibung fehlt'}", f"mode: {mode if mode in ('primary','subagent','all') else 'subagent'}"]
     if model: lines.append(f"model: {model}")
     if str(temperature).strip(): lines.append(f"temperature: {temperature}")
     if str(steps).strip(): lines.append(f"steps: {steps}")
-    lines += ["permission:", PERMS[perm], "---", "", prompt.strip() or "You are a helpful agent. Describe the task, rules and output format here."]
+    lines += ["permission:", permission_block(perm, write_dirs), "---", "", prompt.strip() or "You are a helpful agent. Describe the task, rules and output format here."]
     return "\n".join(lines) + "\n"
+
+def _rewrite_edit_block(text, write_dirs):
+    """Ersetzt im Frontmatter nur den edit-Block und erhält alle anderen Zeilen."""
+    m = re.match(r"---[ \t]*\r?\n(.*?)\r?\n---[ \t]*(\r?\n|$)", text, flags=re.S)
+    if not m: raise ValueError("Die Datei muss mit einem Frontmatter-Block beginnen (--- ... ---).")
+    fm = m.group(1); sep = "\r\n" if "\r\n" in fm else "\n"; lines = fm.splitlines()
+    for line in lines:
+        inline = re.match(r"^permission:[ \t]*(.*)$", line)
+        if inline and inline.group(1).strip():
+            raise ValueError("permission: wird nur in Blockform unterstützt; Inline-Rechte werden nicht verändert.")
+    block = edit_permission_lines(write_dirs)
+    p_idx = next((i for i, l in enumerate(lines) if re.match(r"^permission:\s*$", l)), None)
+    if p_idx is None:
+        new_fm = sep.join(lines + ["permission:"] + block)
+        return text[:m.start(1)] + new_fm + text[m.end(1):]
+    p_end = p_idx + 1
+    while p_end < len(lines) and (lines[p_end].startswith((" ", "\t")) or not lines[p_end].strip()): p_end += 1
+    while p_end > p_idx + 1 and not lines[p_end - 1].strip(): p_end -= 1
+    e_idx = next((i for i in range(p_idx + 1, p_end) if re.match(r"^  edit:.*$", lines[i])), None)
+    if e_idx is None:
+        lines[p_idx + 1:p_idx + 1] = block
+    else:
+        e_end = e_idx + 1
+        while e_end < p_end and (lines[e_end].startswith(("   ", "\t")) or not lines[e_end].strip()): e_end += 1
+        while e_end > e_idx + 1 and not lines[e_end - 1].strip(): e_end -= 1
+        lines[e_idx:e_end] = block
+    return text[:m.start(1)] + sep.join(lines) + text[m.end(1):]
+
+def _edit_grants_write(text):
+    """True, wenn das Frontmatter Schreiben erlaubt (fehlender edit-Eintrag = Standard allow)."""
+    m = re.match(r"---[ \t]*\r?\n(.*?)\r?\n---[ \t]*(\r?\n|$)", text, flags=re.S)
+    if not m: return False
+    lines = m.group(1).splitlines()
+    for i, line in enumerate(lines):
+        inline = re.match(r"^permission:[ \t]*(.*)$", line)
+        if inline and inline.group(1).strip():
+            value = re.search(r"\bedit\s*:\s*[\"']?([A-Za-z]+)", inline.group(1))
+            return value is None or value.group(1) != "deny"
+        hit = re.match(r"^  edit:[ \t]*(.*)$", line)
+        if not hit: continue
+        value = hit.group(1).strip()
+        if value: return value != "deny"
+        for follow in lines[i + 1:]:
+            if follow and not follow.startswith((" ", "\t")): break
+            if re.match(r"^ {0,2}\S", follow): break
+            sub = re.match(r'^ {4}"?[^"]*"?[ \t]*:[ \t]*(\S+)\s*$', follow)
+            if sub and sub.group(1) != "deny": return True
+        return False
+    return True
+
+def _planned_write_dirs(scope, name, write_dirs):
+    """(Pfad, alt, neu) für einen Agenten mit Schreibrecht; sonst None (Recht bleibt deny)."""
+    p = agent_path(scope, name)
+    if not os.path.exists(p): raise ValueError("Agent nicht gefunden: " + name)
+    with open(p, encoding="utf-8") as f: old = f.read()
+    if not _edit_grants_write(old): return None
+    new = _rewrite_edit_block(old, write_dirs)
+    agent_validate(new)
+    if not new.endswith("\n"): new += "\n"
+    return p, old, new
+
+def apply_write_dirs(scope, name, write_dirs):
+    """Schreibt die erlaubten Verzeichnisse in den edit-Block eines Agenten mit Schreibrecht."""
+    planned = _planned_write_dirs(scope, name, write_dirs)
+    if planned is None: return agent_read(scope, name)
+    p, old, new = planned
+    _backup(scope, name, old)
+    _write_text_atomic(p, new)
+    return new
+
+def apply_write_dirs_to_project(name):
+    """Aktualisiert alle schreibberechtigten Projektagenten mit der aktuellen Verzeichnisliste."""
+    dirs = write_dirs(name); folder = agent_dir(name); changed = []
+    if not os.path.isdir(folder): return changed
+    planned = []
+    for f in sorted(os.listdir(folder)):
+        if not f.endswith(".md") or not NAME_RE.match(f[:-3]): continue
+        item = _planned_write_dirs(name, f[:-3], dirs)
+        if item is not None: planned.append((f[:-3], item))
+    for agent_name, (p, old, new) in planned:
+        _backup(name, agent_name, old)
+        _write_text_atomic(p, new)
+        changed.append(agent_name)
+    return changed
 
 def models_list():
     """Alle Modelle verbundener Anbieter (opencode models), z. B. opencode/..., anthropic/..."""
@@ -729,7 +914,7 @@ def pick(title, options):
 
 def project_menu(name):
     acts = ["Status / offene Arbeitspakete", "Agentenlauf starten", "An Lauf anhängen (tmux)", "Log verfolgen", "Lauf beenden",
-            "Prüfung quick", "Prüfung full", "Feedback eintragen", "Git-Verlauf (10)", "opencode-Sitzungen", "Lauf mit anderem Agent", "Für vibe vorbereiten (init)", "Neuer Projekt-Agent", "MCP-Tools des Projekts"]
+            "Prüfung quick", "Prüfung full", "Feedback eintragen", "Git-Verlauf (10)", "opencode-Sitzungen", "Lauf mit anderem Agent", "Für vibe vorbereiten (init)", "Neuer Projekt-Agent", "MCP-Tools des Projekts", "Schreibrechte (Verzeichnisse)"]
     while True:
         i = pick(f"Projekt {name} ({ptype(name)})", acts)
         if i is None: return
@@ -738,7 +923,7 @@ def project_menu(name):
          5: lambda: cmd_verify(name, "quick"), 6: lambda: cmd_verify(name, "full"), 7: lambda: cmd_feedback(name),
          8: lambda: print(sh("git log --oneline -10", cwd=p)[1]), 9: lambda: print(sh("opencode session list", cwd=p)[1]),
          10: lambda: cmd_run(name, input("Agent-Name: ").strip() or None), 11: lambda: cmd_init(name),
-         12: lambda: cmd_agent("new", input("Agent-Name: ").strip(), name), 13: lambda: cmd_mcp("list", None, name)}[i]()
+         12: lambda: cmd_agent("new", input("Agent-Name: ").strip(), name), 13: lambda: cmd_mcp("list", None, name), 14: lambda: cmd_rights(name)}[i]()
 
 def menu():
     while True:
@@ -786,6 +971,7 @@ def main():
                  "init": lambda: cmd_init(r[0], r[1] if len(r) > 1 else None),
                  "roots": lambda: cmd_roots(r[0] if r else None, r[1] if len(r) > 1 else None), "scan": lambda: cmd_roots(),
                  "agents": lambda: cmd_agents(), "agent": lambda: cmd_agent(r[0], r[1], r[2] if len(r) > 2 else "global"),
+                 "rights": lambda: cmd_rights(r[0], r[1] if len(r) > 1 else None, r[2] if len(r) > 2 else None),
                  "models": lambda: cmd_models(), "model": lambda: cmd_model(r[0], r[1], r[2] if len(r) > 2 else "global"),
                  "profile": lambda: cmd_profile(r[0] if r else "list", r[1] if len(r) > 1 else None),
                  "mcp": lambda: cmd_mcp(r[0] if r else "list", r[1] if len(r) > 1 else None, r[2] if len(r) > 2 else "global"),
