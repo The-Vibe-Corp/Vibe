@@ -32,7 +32,10 @@ Regeln (werden maschinell geprüft):
   Commit: 4637c27; Test: WriteDirsModelTest.test_default_list_contains_tmp_opencode_and_project_directory (tests/unit/test_project_write_dirs.py, 40 Tests; Browser: WriteDirsBrowserTest, 4 Tests)
   Test-Fix: 137c542 (Browsertest-Stabilisierung, tests/browser/test_write_dirs_ui.py)
 
-- [ ] F4 Feature: Nach aktuellen Arbeitspaket stoppen
+- [x] F4 Feature: Nach aktuellen Arbeitspaket stoppen
   Schritte: 
   Erwartet: Das Feature ermöglicht ein gezieltes pausieren, ohne den Agent mitten im lauf unterbrechen zu müssen. Der Nutzer soll dies aktivieren können, sofern das aktiviert ist, wird der laufende Arbeitspaket beendet und danach kein neues Paket gestartet.
   Ist: 
+  Commit: 5dc9529; Test: PauseModelTest.test_cli_requests_reports_and_releases_the_pause, RunnerPauseTest.test_runner_finishes_the_current_package_and_starts_no_new_one, RunnerPauseTest.test_pause_at_the_package_limit_is_consumed_after_the_loop, PauseBrowserTest.test_pause_is_requested_without_stopping_the_run_and_can_be_released (tests/unit/test_pause_after_package.py, 16 Tests; tests/browser/test_pause_after_package_ui.py, 2 Tests; gesamt 115 Unit-Tests, 9 Browsertests)
+  Review: docs/reviews/F4-review-1.md, docs/reviews/F4-review-2.md, docs/reviews/F4-review-3.md (PASS)
+  Doku: docs/features/F4.md; Trilium `hcX8exIYkgWR`
