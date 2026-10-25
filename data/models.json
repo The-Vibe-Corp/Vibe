@@ -1,0 +1,390 @@
+{
+ "stand": "2026-10-25",
+ "hinweis": "Einschätzung aus öffentlichen Quellen (Test von bigiron.cc vom 19.10.2026 mit vier kleinen Aufgaben mit Testorakel, OpenCode-Dokumentation inkl. Zen-Preisliste, models.dev, pi-freeflow-Katalog, OpenRouter). Nicht an deinen Projekten gemessen; die Bewertung für Coder und Reviewer ist eine Schlussfolgerung daraus, keine Messung. Preise in US-Dollar je 1 Mio. Tokens (Eingabe / Ausgabe) laut Zen-Liste, Aufschlag für Guthaben-Aufladung nicht enthalten. Die Liste der freien Modelle ändert sich ohne Vorwarnung.",
+ "models": [
+  {
+   "id": "opencode/glm-5.3-flash-free",
+   "name": "GLM 5.3 Flash",
+   "lab": "Zhipu AI",
+   "preis": "kostenlos",
+   "ctx": "1 Mio. veröffentlicht, ca. 297K gemessen; Ausgabe 131K",
+   "tempo": "sehr schnell",
+   "aufwand": "gering",
+   "daten": "gut",
+   "daten_text": "Zero-Retention, kein Training",
+   "vision": "ja",
+   "coder": "geeignet",
+   "reviewer": "geeignet",
+   "staerken": [
+    "Im Test schnellster Kandidat bei Ein- und Zwei-Dateien-Aufgabe (10 s / 26 s)",
+    "Wenig Anfragen und Tokens (4 Aufrufe / 31K bzw. 6 / 52K)",
+    "Bildverständnis (Screenshots prüfbar)"
+   ],
+   "schwaechen": [
+    "Keine Aussage zu großen, langen Läufen",
+    "Tatsächlich nutzbarer Kontext kleiner als veröffentlicht",
+    "Frei nur zeitlich begrenzt, mit Anfragelimit"
+   ],
+   "quellen": "bigiron.cc-Test, OpenCode-Docs, pi-freeflow"
+  },
+  {
+   "id": "opencode/deepseek-v4.1-flash-free",
+   "name": "DeepSeek V4.1 Flash",
+   "lab": "DeepSeek",
+   "preis": "kostenlos",
+   "ctx": "1 Mio. veröffentlicht; Ausgabe bis ca. 393K",
+   "tempo": "schnell",
+   "aufwand": "gering",
+   "daten": "gut",
+   "daten_text": "Zero-Retention, kein Training",
+   "vision": "ja",
+   "coder": "geeignet",
+   "reviewer": "geeignet",
+   "staerken": [
+    "Schnellste Zwei-Dateien-Lösung im Test (20 s)",
+    "Sehr großer Ausgabe- und Kontextrahmen",
+    "Zero-Retention"
+   ],
+   "schwaechen": [
+    "Bei Auslastung Wartezeiten möglich (freie Hosts)",
+    "Bei kleinen Aufgaben leicht langsamer als GLM"
+   ],
+   "quellen": "bigiron.cc-Test, OpenCode-Docs, pi-freeflow"
+  },
+  {
+   "id": "opencode/beam-free",
+   "name": "Beam 1.0",
+   "lab": "Reflection AI",
+   "preis": "kostenlos",
+   "ctx": "1 Mio.; Ausgabe 131K",
+   "tempo": "sehr schnell",
+   "aufwand": "hoch",
+   "daten": "mittel",
+   "daten_text": "Kein Training, 30 Tage gespeichert, regional gesperrt (u. a. Russland, China, Iran)",
+   "vision": "nein",
+   "coder": "bedingt",
+   "reviewer": "bedingt",
+   "staerken": [
+    "Schnellste Antwort bei der Ein-Fehler-Aufgabe (6 s)",
+    "Große Modellgröße laut models.dev: 501B gesamt / 23B aktiv"
+   ],
+   "schwaechen": [
+    "Doppelt so viele Anfragen wie GLM bei der Zwei-Dateien-Aufgabe (12 / 107K): belastet Tageslimits",
+    "Keine Bilder"
+   ],
+   "quellen": "bigiron.cc-Test, OpenCode-Docs, models.dev, pi-freeflow"
+  },
+  {
+   "id": "opencode/nemotron-3-ultra-free",
+   "name": "Nemotron 3 Ultra",
+   "lab": "NVIDIA",
+   "preis": "kostenlos",
+   "ctx": "keine verlässliche Angabe",
+   "tempo": "schnell",
+   "aufwand": "mittel",
+   "daten": "eingeschränkt",
+   "daten_text": "NVIDIA-Testbedingungen: protokolliert, keine vertraulichen Daten",
+   "vision": "unklar",
+   "coder": "bedingt",
+   "reviewer": "bedingt",
+   "staerken": [
+    "Solide im Test (14 s / 26 s; 5 bzw. 7 Aufrufe)",
+    "Als Reviewer unabhängig von DeepSeek/GLM"
+   ],
+   "schwaechen": [
+    "Nutzung wird protokolliert: nicht für vertrauliche Projekte",
+    "Zwischen 13 s und 33 s schwankend"
+   ],
+   "quellen": "bigiron.cc-Test, OpenCode-Docs"
+  },
+  {
+   "id": "opencode/nemotron-3.5-lightning-free",
+   "name": "Nemotron 3.5 Lightning",
+   "lab": "NVIDIA",
+   "preis": "kostenlos",
+   "ctx": "1 Mio.; Ausgabe 235K",
+   "tempo": "schnell",
+   "aufwand": "mittel",
+   "daten": "eingeschränkt",
+   "daten_text": "NVIDIA-Testbedingungen: protokolliert, keine vertraulichen Daten",
+   "vision": "nein",
+   "coder": "bedingt",
+   "reviewer": "bedingt",
+   "staerken": [
+    "Mixture-of-Experts mit 3B aktiven von 30B Parametern, ausgelegt für durchsatzstarke Agenten-Läufe",
+    "Im Test stabil (12 s / 21 s)"
+   ],
+   "schwaechen": [
+    "Wenig aktive Parameter: bei schwierigen Aufgaben vermutlich schwächer (Vermutung, nicht gemessen)",
+    "Protokollierung der Eingaben"
+   ],
+   "quellen": "bigiron.cc-Test, OpenRouter, pi-freeflow"
+  },
+  {
+   "id": "opencode/nemotron-3.5-super-vl-free",
+   "name": "Nemotron 3.5 Super VL",
+   "lab": "NVIDIA",
+   "preis": "kostenlos",
+   "ctx": "keine verlässliche Angabe",
+   "tempo": "mittel",
+   "aufwand": "mittel",
+   "daten": "eingeschränkt",
+   "daten_text": "NVIDIA-Testbedingungen: protokolliert, keine vertraulichen Daten",
+   "vision": "ja",
+   "coder": "bedingt",
+   "reviewer": "bedingt",
+   "staerken": [
+    "Vision-Sprachmodell: kann Screenshots auswerten",
+    "Im Test lauffähig (13 s Median; 47 s Zwei-Dateien-Aufgabe)"
+   ],
+   "schwaechen": [
+    "Einzelner Ausreißer von 308 s",
+    "Langsamster der Nemotron-Reihe bei der Zwei-Dateien-Aufgabe",
+    "Protokollierung der Eingaben"
+   ],
+   "quellen": "bigiron.cc-Test, OpenCode-Docs"
+  },
+  {
+   "id": "opencode/mimo-v2.6-flash-free",
+   "name": "MiMo V2.6 Flash",
+   "lab": "Xiaomi",
+   "preis": "kostenlos",
+   "ctx": "widersprüchlich: 200K (models.dev) bzw. 1 Mio. veröffentlicht, ca. 348K gemessen",
+   "tempo": "langsam",
+   "aufwand": "hoch",
+   "daten": "mittel",
+   "daten_text": "Daten dürfen zur Verbesserung des Modells genutzt werden",
+   "vision": "nein",
+   "coder": "bedingt",
+   "reviewer": "bedingt",
+   "staerken": [
+    "Große Ausgabelänge (128K laut pi-freeflow)"
+   ],
+   "schwaechen": [
+    "Einziger Fehlschlag im Test: ein Timeout nach 420 s",
+    "Langsamste Zwei-Dateien-Lösung (81 s) mit 10 Aufrufen / 98K Tokens",
+    "Daten fließen in die Modellverbesserung"
+   ],
+   "quellen": "bigiron.cc-Test, OpenCode-Docs, models.dev, pi-freeflow"
+  },
+  {
+   "id": "opencode/big-pickle",
+   "name": "Big Pickle",
+   "lab": "unbekannt (Stealth-Modell)",
+   "preis": "kostenlos",
+   "ctx": "200K beworben",
+   "tempo": "langsam",
+   "aufwand": "mittel",
+   "daten": "mittel",
+   "daten_text": "Daten dürfen zur Verbesserung des Modells genutzt werden",
+   "vision": "unklar",
+   "coder": "nicht empfohlen",
+   "reviewer": "bedingt",
+   "staerken": [
+    "Laut Nutzerberichten gut beim Lesen von Code, Dokumentation und Planung"
+   ],
+   "schwaechen": [
+    "Im Test langsamster Kandidat mit Ausreißern bis 337 s",
+    "Nutzerbericht (Januar 2026): Qualitätsverlust ab ca. 50.000 bis 70.000 Tokens, lange Dateien nur teilweise gelesen, AGENTS.md teils ignoriert",
+    "Nutzerbericht: Git-Befehl hat nicht committete Arbeit gelöscht"
+   ],
+   "quellen": "bigiron.cc-Test und dort zitierte Nutzerberichte, OpenCode-Docs"
+  },
+  {
+   "id": "opencode/flint-40b-free",
+   "name": "Flint 40B",
+   "lab": "Recursive",
+   "preis": "kostenlos",
+   "ctx": "262K; Ausgabe 65K",
+   "tempo": "unbekannt",
+   "aufwand": "unbekannt",
+   "daten": "mittel",
+   "daten_text": "Daten dürfen zur Verbesserung genutzt werden, 30 Tage gespeichert",
+   "vision": "nein",
+   "coder": "keine Daten",
+   "reviewer": "keine Daten",
+   "staerken": [
+    "Keine Testdaten gefunden, daher keine belegte Stärke"
+   ],
+   "schwaechen": [
+    "Kleinster Kontext der Liste",
+    "Keine unabhängige Messung vorhanden"
+   ],
+   "quellen": "OpenCode-Docs, models.dev, pi-freeflow"
+  },
+  {
+   "id": "opencode/glm-5.3-flash",
+   "name": "GLM 5.3 Flash (bezahlt)",
+   "lab": "Zhipu AI",
+   "preis": "$0,15 / $0,50",
+   "ctx": "siehe Anbieter",
+   "tempo": "sehr schnell",
+   "aufwand": "gering",
+   "daten": "gut",
+   "daten_text": "Zero-Retention, kein Training (laut Zen-Datenschutz)",
+   "vision": "ja",
+   "coder": "geeignet",
+   "reviewer": "geeignet",
+   "staerken": [
+    "Gleiche Modellfamilie wie die freie Variante, aber ohne Free-Limit und ohne Ablaufdatum",
+    "Sehr günstig"
+   ],
+   "schwaechen": [
+    "Messwerte stammen von der freien Variante (Annahme: gleiches Verhalten)"
+   ],
+   "quellen": "OpenCode-Docs (Zen-Preisliste und Datenschutz)"
+  },
+  {
+   "id": "opencode/deepseek-v4.1-flash",
+   "name": "DeepSeek V4.1 Flash (bezahlt)",
+   "lab": "DeepSeek",
+   "preis": "$0,30 / $1,20",
+   "ctx": "siehe Anbieter",
+   "tempo": "schnell",
+   "aufwand": "gering",
+   "daten": "gut",
+   "daten_text": "Zero-Retention, kein Training (laut Zen-Datenschutz)",
+   "vision": "ja",
+   "coder": "geeignet",
+   "reviewer": "geeignet",
+   "staerken": [
+    "Gleiche Modellfamilie wie die freie Variante, ohne Free-Limit",
+    "Günstiger Cache-Lesepreis ($0,006 je 1M)"
+   ],
+   "schwaechen": [
+    "Messwerte stammen von der freien Variante (Annahme: gleiches Verhalten)"
+   ],
+   "quellen": "OpenCode-Docs (Zen-Preisliste und Datenschutz)"
+  },
+  {
+   "id": "opencode/glm-5.3",
+   "name": "GLM 5.3",
+   "lab": "Zhipu AI",
+   "preis": "$1,40 / $4,40",
+   "ctx": "siehe Anbieter",
+   "tempo": "unbekannt",
+   "aufwand": "unbekannt",
+   "daten": "gut",
+   "daten_text": "Zero-Retention, kein Training (laut Zen-Datenschutz)",
+   "vision": "unklar",
+   "coder": "keine Daten",
+   "reviewer": "keine Daten",
+   "staerken": [
+    "Größeres Modell derselben Familie wie GLM 5.3 Flash"
+   ],
+   "schwaechen": [
+    "Keine Testdaten gefunden"
+   ],
+   "quellen": "OpenCode-Docs (Zen-Preisliste und Datenschutz)"
+  },
+  {
+   "id": "opencode/deepseek-v4-pro",
+   "name": "DeepSeek V4 Pro",
+   "lab": "DeepSeek",
+   "preis": "$1,74 / $3,48",
+   "ctx": "siehe Anbieter",
+   "tempo": "unbekannt",
+   "aufwand": "unbekannt",
+   "daten": "gut",
+   "daten_text": "Zero-Retention, kein Training (laut Zen-Datenschutz)",
+   "vision": "unklar",
+   "coder": "keine Daten",
+   "reviewer": "keine Daten",
+   "staerken": [
+    "Größeres Modell derselben Familie wie V4.1 Flash"
+   ],
+   "schwaechen": [
+    "Keine Testdaten gefunden"
+   ],
+   "quellen": "OpenCode-Docs (Zen-Preisliste und Datenschutz)"
+  },
+  {
+   "id": "opencode/claude-haiku-5-5",
+   "name": "Claude Haiku 5.5",
+   "lab": "Anthropic",
+   "preis": "$0,10 / $0,50 (bis 100K Kontext)",
+   "ctx": "siehe Anbieter",
+   "tempo": "unbekannt",
+   "aufwand": "unbekannt",
+   "daten": "mittel",
+   "daten_text": "Anfragen werden laut Zen-Datenschutz 30 Tage bei Anthropic gespeichert",
+   "vision": "ja",
+   "coder": "keine Daten",
+   "reviewer": "keine Daten",
+   "staerken": [
+    "Sehr günstiger Einstieg in die Claude-Familie"
+   ],
+   "schwaechen": [
+    "Preis steigt über 100K Kontext auf $0,50 / $2,50",
+    "Keine Testdaten gefunden"
+   ],
+   "quellen": "OpenCode-Docs (Zen-Preisliste und Datenschutz)"
+  },
+  {
+   "id": "opencode/claude-sonnet-5-5",
+   "name": "Claude Sonnet 5.5",
+   "lab": "Anthropic",
+   "preis": "$2,00 / $10,00",
+   "ctx": "siehe Anbieter",
+   "tempo": "unbekannt",
+   "aufwand": "unbekannt",
+   "daten": "mittel",
+   "daten_text": "Anfragen werden laut Zen-Datenschutz 30 Tage bei Anthropic gespeichert",
+   "vision": "ja",
+   "coder": "keine Daten",
+   "reviewer": "keine Daten",
+   "staerken": [
+    "Mittlere Preisklasse der Claude-Familie"
+   ],
+   "schwaechen": [
+    "Keine Testdaten gefunden",
+    "Kosten wachsen mit langen autonomen Läufen schnell"
+   ],
+   "quellen": "OpenCode-Docs (Zen-Preisliste und Datenschutz)"
+  },
+  {
+   "id": "opencode/claude-opus-5-5",
+   "name": "Claude Opus 5.5",
+   "lab": "Anthropic",
+   "preis": "$4,00 / $20,00",
+   "ctx": "siehe Anbieter",
+   "tempo": "unbekannt",
+   "aufwand": "unbekannt",
+   "daten": "mittel",
+   "daten_text": "Anfragen werden laut Zen-Datenschutz 30 Tage bei Anthropic gespeichert",
+   "vision": "ja",
+   "coder": "keine Daten",
+   "reviewer": "keine Daten",
+   "staerken": [
+    "Obere Preisklasse der Claude-Familie, laut Preisliste günstiger als Opus 5"
+   ],
+   "schwaechen": [
+    "Keine Testdaten gefunden",
+    "Bei autonomen Dauerläufen teuer: Kostenbremse setzen"
+   ],
+   "quellen": "OpenCode-Docs (Zen-Preisliste und Datenschutz)"
+  },
+  {
+   "id": "opencode/gpt-6-sol",
+   "name": "GPT 6 Sol",
+   "lab": "OpenAI",
+   "preis": "$2,00 / $10,00 (bis 272K Kontext)",
+   "ctx": "siehe Anbieter",
+   "tempo": "unbekannt",
+   "aufwand": "unbekannt",
+   "daten": "mittel",
+   "daten_text": "Anfragen werden laut Zen-Datenschutz 30 Tage bei OpenAI gespeichert",
+   "vision": "unklar",
+   "coder": "keine Daten",
+   "reviewer": "keine Daten",
+   "staerken": [
+    "Mittlere Preisklasse der GPT-Familie"
+   ],
+   "schwaechen": [
+    "Preis steigt über 272K Kontext",
+    "Keine Testdaten gefunden"
+   ],
+   "quellen": "OpenCode-Docs (Zen-Preisliste und Datenschutz)"
+  }
+ ]
+}

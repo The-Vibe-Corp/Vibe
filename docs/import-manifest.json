@@ -1,0 +1,124 @@
+{
+ "version": 1,
+ "stand": "2026-10-25",
+ "quelle": "Übernommener Programmstand aus der lokalen Installation unter $VIBE/_toolchain; die aktive Installation enthält zusätzlich lokale Geheimnis-Hooks (siehe docs/baseline.md, Abschnitt 3).",
+ "hinweis": "SHA-256 der übernommenen Programmdateien. Beabsichtigte Änderungen an diesen Dateien sind nur zulässig, wenn dieser Eintrag im selben Arbeitspaket aktualisiert und begründet wird. Laufzeitdaten, Sicherungen und Geheimnisse sind nicht Bestandteil des Imports.",
+ "scopes": [
+  "install-vibe.sh",
+  "bin",
+  "data/models.json",
+  "templates"
+ ],
+ "files": [
+  {
+   "path": "bin/vibe",
+   "sha256": "5205ec8d2b9642deb76358c4016dcde0b768c3c2c454f4a45ccd2e30d1d1ed4d",
+   "bytes": 36157
+  },
+  {
+   "path": "bin/vibe-run.sh",
+   "sha256": "deca3a9f6fc53d2d8dc69dd525523b2a4511747bd8c9be1aa79a80aee6b71a3c",
+   "bytes": 3367
+  },
+  {
+   "path": "bin/vibe-web.py",
+   "sha256": "ac7215a3dd6cc18002a0a75989831e07dc025e5ee5e3916072c77c91d25ee162",
+   "bytes": 43366
+  },
+  {
+   "path": "bin/vibe_mcp.py",
+   "sha256": "3e460bd1dbc44b4d45fdd2721ffe832a1a55d8f7aba1e2367b4c63c5c4a0c99d",
+   "bytes": 19279
+  },
+  {
+   "path": "data/models.json",
+   "sha256": "3f4842520afd54ffe2e32a792f5a6633bba1fb12878c5666a108caec374bf3d6",
+   "bytes": 12600
+  },
+  {
+   "path": "install-vibe.sh",
+   "sha256": "bf697f229230184cbbc2db0325612277f24bd59bc9b6c698f7183c030602ce42",
+   "bytes": 1664
+  },
+  {
+   "path": "templates/android/.vibe/project.env",
+   "sha256": "b9264a319a20a75948e97c82fa0503ddbe16bdb6d2aeaf8e9fab689b03ca236a",
+   "bytes": 201
+  },
+  {
+   "path": "templates/android/AGENTS.md",
+   "sha256": "7292095b841f0aada95307f3bf6b043b04f3f1e66e21bd1ae9e99bc9f24af2df",
+   "bytes": 1079
+  },
+  {
+   "path": "templates/android/scripts/emulator-start.sh",
+   "sha256": "70b7415a36c7c1409838ee998b22c3b2576d6965c1b09334fe5b917300235fa9",
+   "bytes": 522
+  },
+  {
+   "path": "templates/android/scripts/emulator-stop.sh",
+   "sha256": "b9ebb326ec3a44655c9ab0ee4341a53e367d65d81fb103cb9206db15e533aee6",
+   "bytes": 87
+  },
+  {
+   "path": "templates/android/scripts/verify.sh",
+   "sha256": "d9972b72b48d370baf15a0e495c7bc3bf5b44e53bc63332da7d31e7eb69287c5",
+   "bytes": 138
+  },
+  {
+   "path": "templates/common/FEEDBACK.md",
+   "sha256": "5837613ac9d1bc39a672efae34cd75c8c10d7ba46aa188df7144ece639496658",
+   "bytes": 445
+  },
+  {
+   "path": "templates/common/TICKETS.md",
+   "sha256": "85601551f67bde402c5f7b50626f949653825696b80921b4a2f3d7207af16c9c",
+   "bytes": 195
+  },
+  {
+   "path": "templates/common/opencode.json",
+   "sha256": "2cf66ebdb7c6cacd36ad8a2f069738ef2e65632776c4fc16f09247f2abb2be70",
+   "bytes": 105
+  },
+  {
+   "path": "templates/docker/.vibe/project.env",
+   "sha256": "8b06dd1c6083d66d8dfbcafddecdd3bdf5276fd2c248279cf9f83ad4fc800f90",
+   "bytes": 190
+  },
+  {
+   "path": "templates/docker/AGENTS.md",
+   "sha256": "22bc66e73dfd6cb1be67ec1d72d198982e4a7324bef6af7eb00fe808c4d65249",
+   "bytes": 974
+  },
+  {
+   "path": "templates/generic/.vibe/project.env",
+   "sha256": "2a8668d479024bd52220e792d3414406314444660e4898ac1a93fca7ac8e94e7",
+   "bytes": 191
+  },
+  {
+   "path": "templates/generic/AGENTS.md",
+   "sha256": "29696775aa3ef8b9eeb34b8dce8da9101679756f3e7a0f7e0b3deeda0ffc6ea1",
+   "bytes": 462
+  },
+  {
+   "path": "templates/openwrt/.vibe/project.env",
+   "sha256": "92092973935830967fe70151c3e014e92e4fc668b3907cbd1cc07a1cf3b91bb6",
+   "bytes": 191
+  },
+  {
+   "path": "templates/openwrt/AGENTS.md",
+   "sha256": "9be35bb7eabbbf1118861e5d25d0056976bc916a59b92757ffe469c5c8591062",
+   "bytes": 1095
+  },
+  {
+   "path": "templates/web/.vibe/project.env",
+   "sha256": "b4bac328bea015f8f85fbe56cb482e4b1e6f8c92551d4197cb5a783ca8acc3e0",
+   "bytes": 252
+  },
+  {
+   "path": "templates/web/AGENTS.md",
+   "sha256": "c5a8cfeb192dedc6110bd8e750576e7905dcbb2adf54c6238e92d9e1e217b044",
+   "bytes": 826
+  }
+ ]
+}

@@ -1,0 +1,665 @@
+#!/usr/bin/env python3
+"""vibe — zentrale Steuerung für alle Vibe-Coding-Projekte (nur Python-Standardbibliothek).
+
+Aufruf:  vibe                 interaktives Menü
+         vibe list            alle Projekte mit Status
+         vibe status <p>      offene Arbeitspakete, Git, Lauf
+         vibe run <p> [agent] Agentenlauf in tmux starten
+         vibe attach <p>      an laufende Sitzung anhängen
+         vibe logs <p>        Log verfolgen
+         vibe stop <p>        Lauf beenden
+         vibe verify <p> [quick|full]
+         vibe feedback <p>    neuen Punkt in FEEDBACK.md eintragen
+         vibe new <name> <typ> [vorlage]   Typen: vibe types
+         vibe init <p> [typ]  vorhandenes Projekt für vibe vorbereiten (ergänzt fehlende Dateien)
+         vibe roots [add <pfad>|rm <pfad>]  Entwicklungsordner verwalten und Projekte einlesen
+         vibe agents          alle Agenten (global und projektspezifisch)
+         vibe agent new|edit|show|rm <name> [global|<projekt>]
+         vibe models          Modellübersicht mit Einschätzung und Preis
+         vibe model <agent> <modell> [global|<projekt>]
+         vibe profile [list|use <name>]   Modellprofile (z. B. kostenlos / bezahlt) für Rollen
+         vibe mcp list|show|test|on|off|rm [name] [global|<projekt>]   MCP-Tools verwalten
+         vibe emu start|stop  Emulator (Android)
+         vibe ui [stop]       Dashboard im Browser (nur localhost)
+         vibe server [start|stop|status]  gemeinsamer opencode-Server mit Weboberfläche
+         vibe types           verfügbare Projekttypen
+         vibe doctor          Umgebung prüfen
+"""
+import os, sys, re, json, subprocess, shutil, time, tempfile
+
+if __name__ == "__main__": sys.modules["vibe"] = sys.modules[__name__]
+sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
+
+VIBE = os.environ.get("VIBE", "/var/mnt/data/Dokumente/Informatik/VibeCode")
+TOOLS = os.path.join(VIBE, "_toolchain")
+BIN, TPL, VERIFY = (os.path.join(TOOLS, x) for x in ("bin", "templates", "verify"))
+CONF = os.path.join(TOOLS, "vibe.json")
+MODELS_FILE = os.path.join(TOOLS, "models.json")
+PROFILES_FILE = os.path.join(TOOLS, "profiles.json")
+BACKUPS = os.path.join(TOOLS, "agent-backups")
+LOGS = os.path.join(VIBE, "_logs")
+AGENTS_DIR = os.path.expanduser("~/.config/opencode/agents")
+CONTAINER = os.environ.get("VIBE_CONTAINER", "android-dev")
+OC_URL = "http://127.0.0.1:4096"
+UI_PORT = 8787
+CORE_AGENTS = {"coding-agent_deepseek", "code-reviewer_glm"}
+NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
+C = {"g": "\033[32m", "r": "\033[31m", "y": "\033[33m", "b": "\033[1m", "d": "\033[2m", "0": "\033[0m"}
+def col(c, s): return f"{C[c]}{s}{C['0']}" if sys.stdout.isatty() else s
+
+def sh(cmd, cwd=None, timeout=60):
+    try:
+        p = subprocess.run(cmd, shell=True, cwd=cwd, capture_output=True, text=True, timeout=timeout)
+        return p.returncode, (p.stdout + p.stderr).strip()
+    except Exception as e:
+        return 1, str(e)
+
+def shquote(s): return "'" + s.replace("'", "'\\''") + "'"
+def in_container(): return os.path.exists("/run/.containerenv") or bool(os.environ.get("CONTAINER_ID"))
+def safe(name): return re.sub(r"[^A-Za-z0-9_-]", "_", name)
+def logpath(name, kind="run"): return os.path.join(LOGS, safe(name) + (".verify.log" if kind == "verify" else ".log"))
+
+# ---------- Entwicklungsordner (Roots) und Projekte ----------
+BAD_ROOTS = {"/", "/usr", "/etc", "/bin", "/sbin", "/lib", "/lib64", "/proc", "/sys", "/dev", "/boot", "/root", "/run", "/var", "/tmp", "/home", "/opt", "/mnt", "/media"}
+
+def conf_extra():
+    try: return [str(x) for x in json.load(open(CONF)).get("roots", [])]
+    except Exception: return []
+
+def roots():
+    out = [VIBE]
+    for r in conf_extra():
+        p = os.path.abspath(os.path.expanduser(r))
+        if os.path.isdir(p) and p not in out: out.append(p)
+    return out
+
+def roots_save(extra):
+    os.makedirs(TOOLS, exist_ok=True); json.dump({"roots": extra}, open(CONF, "w"), indent=1)
+
+def root_add(path):
+    p = os.path.abspath(os.path.expanduser(path.strip()))
+    if p in BAD_ROOTS or p == os.path.expanduser("~"): raise ValueError("Pfad zu allgemein, bitte einen Entwicklungsordner wählen: " + p)
+    if not os.path.isdir(p): raise ValueError("Ordner existiert nicht: " + p)
+    extra = conf_extra()
+    if p != VIBE and p not in extra: extra.append(p); roots_save(extra)
+    _pm.clear()
+    return p
+
+def root_remove(path):
+    p = os.path.abspath(os.path.expanduser(path.strip()))
+    if p == VIBE: raise ValueError("Der Standardordner kann nicht entfernt werden.")
+    roots_save([x for x in conf_extra() if os.path.abspath(os.path.expanduser(x)) != p]); _pm.clear()
+
+_pm = {}
+def project_map():
+    if _pm.get("t", 0) > time.time() - 2: return _pm["m"]
+    m = {}
+    for root in roots():
+        try: names = sorted(os.listdir(root))
+        except OSError: continue
+        for n in names:
+            p = os.path.join(root, n)
+            if n.startswith(("_", ".")) or not os.path.isdir(p): continue
+            if os.path.exists(os.path.join(p, ".git")) or os.path.isdir(os.path.join(p, ".vibe")):
+                key = n if n not in m else f"{n}@{os.path.basename(root) or 'root'}"
+                m[key] = p
+    _pm["t"], _pm["m"] = time.time(), m
+    return m
+
+def projects(): return list(project_map())
+
+def ppath(name):
+    p = project_map().get(name)
+    if not p: sys.exit(f"Projekt '{name}' nicht gefunden. Entwicklungsordner: {', '.join(roots())}")
+    return p
+
+def read_env(path):
+    d = {}
+    if os.path.exists(path):
+        for l in open(path, encoding="utf-8"):
+            m = re.match(r'\s*([A-Z_]+)=(.*)', l)
+            if m: d[m.group(1)] = m.group(2).strip().strip('"').strip("'")
+    return d
+
+def penv(name): return read_env(os.path.join(ppath(name), ".vibe", "project.env"))
+def is_init(name): return os.path.exists(os.path.join(ppath(name), ".vibe", "project.env"))
+
+def ptype(name):
+    p = ppath(name)
+    t = penv(name).get("TYPE")
+    if t: return t
+    for f, ty in (("gradlew", "android"), ("pubspec.yaml", "flutter"), ("package.json", "web"), ("pyproject.toml", "python"), ("docker-compose.yml", "docker"), ("compose.yaml", "docker")):
+        if os.path.exists(os.path.join(p, f)): return ty
+    return "generic"
+
+def cmd_roots(action=None, path=None):
+    try:
+        if action == "add" and path:
+            p = root_add(path); print(col("g", "Eingelesen: " + p))
+        elif action in ("rm", "remove") and path:
+            root_remove(path); print("Entfernt:", path)
+        elif action:
+            sys.exit("vibe roots [add <pfad>|rm <pfad>]")
+    except ValueError as e:
+        sys.exit(str(e))
+    print(col("b", "Entwicklungsordner:"))
+    pm = project_map()
+    for r in roots():
+        n = [k for k, v in pm.items() if os.path.dirname(v) == r]
+        print(f"  {r}  ({len(n)} Projekte{': ' + ', '.join(n) if n else ''})")
+    uninit = [k for k in pm if not is_init(k)]
+    if uninit: print(col("y", "Nicht für vibe vorbereitet: " + ", ".join(uninit) + "  -> vibe init <projekt>"))
+
+# ---------- Arbeitspakete ----------
+def _blocks(text):
+    text = re.sub(r"<!--.*?-->", "", text, flags=re.S)
+    cur, out = None, []
+    for line in text.splitlines():
+        if line.startswith("- "):
+            if cur: out.append(cur)
+            cur = line
+        elif cur is not None and (line.startswith((" ", "\t")) or not line.strip()):
+            cur += "\n" + line
+        else:
+            if cur: out.append(cur); cur = None
+    if cur: out.append(cur)
+    return out
+
+def _proof_ok(root, b):
+    c = re.search(r"Commit:\s*([0-9a-f]{7,40})", b)
+    if not c or sh(f"git cat-file -e {c.group(1)}^{{commit}}", cwd=root)[0] != 0: return False
+    return bool(re.search(r"Test:\s*\S+|Datei:\s*\S+", b))
+
+def open_items(name):
+    root = ppath(name); res = []
+    for fname, need_proof in (("FEEDBACK.md", True), ("TICKETS.md", False)):
+        fp = os.path.join(root, fname)
+        if not os.path.exists(fp): continue
+        for b in _blocks(open(fp, encoding="utf-8", errors="replace").read()):
+            m = re.match(r"- (?:\[[ x]\]\s*)?(\S+)\s*(.*)", b.splitlines()[0])
+            pid, title = (m.group(1), m.group(2)[:60]) if m else ("?", b[:60])
+            if "BLOCKIERT:" in b: res.append((pid, title, "BLOCKIERT"))
+            elif not b.startswith("- [x]"): res.append((pid, title, "offen"))
+            elif need_proof and not _proof_ok(root, b): res.append((pid, title, "ohne Nachweis"))
+    return res
+
+def sess(name): return "vibe-" + safe(name)
+def tmux_has(name): return sh(f"tmux has-session -t {sess(name)}")[0] == 0
+
+def git_info(name):
+    p = ppath(name)
+    br = sh("git symbolic-ref --short HEAD 2>/dev/null", cwd=p)[1] or "-"
+    dirty = len([l for l in sh("git status --porcelain 2>/dev/null", cwd=p)[1].splitlines() if l.strip()])
+    rc, last = sh("git log -1 --format='%h %s (%cr)' 2>/dev/null", cwd=p)
+    last = last[:70] if rc == 0 and last else "(noch kein Commit)"
+    return br, dirty, last
+
+def cmd_list():
+    ps = projects()
+    if not ps: print(f"Keine Projekte. Entwicklungsordner: {', '.join(roots())}. Neu: vibe new <name> <typ> oder vibe roots add <pfad>"); return
+    print(col("b", f"{'Projekt':22}{'Typ':9}{'Branch':14}{'Offen':6}{'Änd.':5}{'Lauf':7}Letzter Commit"))
+    for n in ps:
+        br, dirty, last = git_info(n)
+        run = col("g", "läuft") if tmux_has(n) else "-"
+        flag = "" if is_init(n) else col("y", " [nicht vorbereitet]")
+        print(f"{n[:21]:22}{ptype(n):9}{br[:13]:14}{len(open_items(n)):<6}{dirty:<5}{run:7}{last}{flag}")
+
+def cmd_status(name):
+    br, dirty, last = git_info(name)
+    print(col("b", f"{name}  ({ptype(name)})"), f" Branch {br}, {dirty} geänderte Dateien")
+    print("Pfad:", ppath(name)); print("Letzter Commit:", last)
+    print("Lauf:", col("g", "aktiv (vibe attach " + name + ")") if tmux_has(name) else "keiner")
+    if not is_init(name): print(col("y", "Nicht für vibe vorbereitet: vibe init " + name))
+    items = open_items(name)
+    print(col("b", f"Offene Arbeitspakete: {len(items)}"))
+    for pid, title, st in items[:25]:
+        print(f"  {col('y' if st != 'BLOCKIERT' else 'r', st):14} {pid:8} {title}")
+    lg = logpath(name)
+    if os.path.exists(lg): print("Log:", lg, time.strftime("(%d.%m. %H:%M)", time.localtime(os.path.getmtime(lg))))
+
+def cmd_run(name, agent=None):
+    p = ppath(name)
+    if tmux_has(name): print("Läuft bereits. vibe attach", name); return
+    if not is_init(name): sys.exit("Projekt ist nicht für vibe vorbereitet: vibe init " + name)
+    os.makedirs(LOGS, exist_ok=True)
+    env = penv(name); agent = agent or env.get("AGENT", "coding-agent_deepseek")
+    inner = f'source ~/.bashrc; export VIBE_LOGNAME={safe(name)}; bash "{BIN}/vibe-run.sh" "{p}" "{agent}"; echo; echo "[Lauf beendet] Enter zum Schließen"; read'
+    rc, out = sh(f'tmux new-session -d -s {sess(name)} -c {shquote(p)} bash -lc {shquote(inner)}')
+    print(col("g", f"Gestartet: tmux-Sitzung {sess(name)}, Agent {agent}") if rc == 0 else col("r", out))
+    print("Zuschauen: vibe attach", name, "| Log: vibe logs", name)
+
+def cmd_attach(name):
+    if not tmux_has(name): sys.exit("Keine laufende Sitzung für " + name)
+    subprocess.run(["tmux", "attach", "-t", sess(name)])
+
+def cmd_logs(name):
+    lg = logpath(name)
+    if not os.path.exists(lg): sys.exit("Noch kein Log: " + lg)
+    try: subprocess.run(["tail", "-n", "60", "-f", lg])
+    except KeyboardInterrupt: pass
+
+def cmd_stop(name):
+    sh(f"tmux kill-session -t {sess(name)}"); print("Beendet:", name)
+
+def verify_command(name, mode="quick"):
+    p = ppath(name); env = penv(name)
+    if ptype(name) == "android" and os.path.exists(os.path.join(VERIFY, "verify.sh")):
+        return f'bash "{VERIFY}/verify.sh" "{p}" {mode}'
+    cmd = env.get("VERIFY_FULL" if mode == "full" else "VERIFY_QUICK", "")
+    if not cmd or "TODO" in cmd: return None
+    return cmd
+
+def cmd_verify(name, mode="quick"):
+    cmd = verify_command(name, mode)
+    if not cmd: sys.exit(f"Keine Prüfbefehle in {ppath(name)}/.vibe/project.env (VERIFY_QUICK / VERIFY_FULL).")
+    subprocess.run(["bash", "-lc", "source ~/.bashrc; " + cmd], cwd=ppath(name))
+
+def next_feedback_number(path):
+    nums = [int(m.group(1)) for m in re.finditer(r"^- (?:\[[ x]\]\s*)?F(\d+)\b", open(path, encoding="utf-8").read(), flags=re.M)] if os.path.exists(path) else []
+    return (max(nums) + 1) if nums else 1
+
+def add_feedback(name, title, steps="", exp="", ist=""):
+    fp = os.path.join(ppath(name), "FEEDBACK.md")
+    n = next_feedback_number(fp)
+    block = f"\n- [ ] F{n} {title}\n  Schritte: {steps}\n  Erwartet: {exp}\n  Ist: {ist}\n"
+    with open(fp, "a", encoding="utf-8") as f: f.write(block)
+    return n
+
+def cmd_feedback(name):
+    print("Neuer Punkt für", name, "(leere Titelzeile = Abbruch)")
+    title = input("Titel: ").strip()
+    if not title: return
+    steps, exp, ist = (input(f"{k}: ").strip() for k in ("Schritte", "Erwartet", "Ist"))
+    n = add_feedback(name, title, steps, exp, ist)
+    print(col("g", f"F{n} eingetragen. Starten mit: vibe run {name}"))
+
+# ---------- Typen, neue und vorhandene Projekte ----------
+def types():
+    return sorted(t for t in os.listdir(TPL) if t != "common" and os.path.isdir(os.path.join(TPL, t))) if os.path.isdir(TPL) else []
+
+def cmd_types():
+    print("Projekttypen (Ordner unter " + TPL + "):")
+    for t in types():
+        e = read_env(os.path.join(TPL, t, ".vibe", "project.env"))
+        print(f"  {t:10} quick: {e.get('VERIFY_QUICK','-')}")
+    print("Neuen Typ anlegen = Ordner templates/<typ>/ mit AGENTS.md und .vibe/project.env.")
+
+def copy_tree(src, dst, name):
+    created = []
+    if not os.path.isdir(src): return created
+    for root, _, files in os.walk(src):
+        for f in files:
+            s = os.path.join(root, f); rel = os.path.relpath(s, src); d = os.path.join(dst, rel)
+            if os.path.exists(d): continue
+            os.makedirs(os.path.dirname(d), exist_ok=True)
+            open(d, "w", encoding="utf-8").write(open(s, encoding="utf-8").read().replace("{{NAME}}", name))
+            if f.endswith(".sh"): os.chmod(d, 0o755)
+            created.append(rel)
+    return created
+
+def cmd_init(name, typ=None):
+    p = ppath(name); typ = typ or ptype(name)
+    if typ not in types(): typ = "generic"
+    created = copy_tree(os.path.join(TPL, "common"), p, name) + copy_tree(os.path.join(TPL, typ), p, name)
+    print(col("g", f"{name}: als '{typ}' vorbereitet.") + (" Neu angelegt: " + ", ".join(created) if created else " Nichts zu ergänzen."))
+    print("Vorhandene Dateien wurden nicht verändert. Nicht committet: bitte prüfen und selbst committen.")
+    if typ not in ("android",): print("Prüfbefehle in .vibe/project.env eintragen (VERIFY_QUICK / VERIFY_FULL), sonst bricht die Abschlussprüfung ab.")
+
+def cmd_new(name, typ, tpl=None):
+    if not re.fullmatch(r"[a-z0-9][a-z0-9_-]*", name): sys.exit("Name: nur a-z, 0-9, _ und -")
+    if typ not in types(): sys.exit(f"Unbekannter Typ '{typ}'. Vorhanden: {', '.join(types())}")
+    p = os.path.join(VIBE, name)
+    if os.path.exists(p): sys.exit("Existiert schon: " + p)
+    if typ == "android":
+        if not tpl:
+            if not sys.stdin.isatty(): sys.exit("Android braucht eine Vorlage (Parameter vorlage).")
+            print(sh("android create --list", timeout=60)[1]); tpl = input("Vorlage (aus der Liste, z. B. die Compose-Vorlage): ").strip()
+        rc, out = sh(f'android create --name={name.capitalize()} --output={shquote(p)} {tpl}', timeout=300); print(out)
+        if rc != 0 or not os.path.isdir(p): sys.exit("android create fehlgeschlagen")
+    else:
+        os.makedirs(p)
+    copy_tree(os.path.join(TPL, "common"), p, name); copy_tree(os.path.join(TPL, typ), p, name)
+    ident = "" if sh("git config user.email")[1] else "-c user.name=vibe -c user.email=vibe@localhost "
+    rc, out = sh(f"git init -q && git config core.fileMode false && git add -A && git {ident}commit -q -m 'init: vibe-Vorlage'", cwd=p)
+    if rc != 0: print(col("y", "Git-Hinweis: " + out))
+    _pm.clear()
+    print(col("g", f"Projekt {name} ({typ}) angelegt: {p}"))
+    print("Als Nächstes: SPEC.md und TICKETS.md füllen, dann vibe run", name)
+
+# ---------- Agenten (global und projektspezifisch) ----------
+PERMS = {
+ "voll": "  read: allow\n  glob: allow\n  grep: allow\n  list: allow\n  edit: allow\n  bash: allow\n  webfetch: deny\n  websearch: deny",
+ "lesen": "  read: allow\n  glob: allow\n  grep: allow\n  list: allow\n  edit: deny\n  bash: deny\n  task: deny\n  webfetch: deny\n  websearch: deny",
+ "lesen_git": '  read: allow\n  glob: allow\n  grep: allow\n  list: allow\n  edit: deny\n  bash:\n    "*": deny\n    "git status --short": allow\n    "git diff *": allow\n    "git show *": allow\n    "git log *": allow\n  task: deny\n  webfetch: deny\n  websearch: deny',
+}
+PERM_LABELS = {"voll": "Voll (lesen, schreiben, Shell)", "lesen": "Nur lesen", "lesen_git": "Nur lesen + Git lesend"}
+
+def agent_dir(scope):
+    return AGENTS_DIR if scope == "global" else os.path.join(ppath(scope), ".opencode", "agents")
+
+def parse_front(text):
+    m = re.match(r"---[ \t]*\n(.*?)\n---[ \t]*(\n|$)", text, flags=re.S)
+    d = {}
+    if m:
+        for line in m.group(1).splitlines():
+            k = re.match(r"^([A-Za-z_]+):[ \t]*(.*)$", line)
+            if k: d[k.group(1)] = k.group(2).strip()
+    return d, bool(m)
+
+def agents_all():
+    out, scopes = [], ["global"] + projects()
+    for scope in scopes:
+        try: d = agent_dir(scope)
+        except SystemExit: continue
+        if not os.path.isdir(d): continue
+        for f in sorted(os.listdir(d)):
+            if not f.endswith(".md"): continue
+            n = f[:-3]
+            fm, ok = parse_front(open(os.path.join(d, f), encoding="utf-8", errors="replace").read())
+            out.append({"name": n, "scope": scope, "model": fm.get("model", "-"), "mode": fm.get("mode", "all"), "description": fm.get("description", "")[:110],
+                        "valid": ok and "description" in fm, "core": n in CORE_AGENTS and scope == "global"})
+    cnt = {}
+    for a in out: cnt[a["name"]] = cnt.get(a["name"], 0) + 1
+    for a in out: a["shadow"] = cnt[a["name"]] > 1
+    return out
+
+def agent_path(scope, name):
+    if not NAME_RE.match(name or ""): raise ValueError("Name: nur a-z, 0-9, _ und -")
+    return os.path.join(agent_dir(scope), name + ".md")
+
+def agent_read(scope, name):
+    p = agent_path(scope, name)
+    if not os.path.exists(p): raise ValueError("Agent nicht gefunden: " + name)
+    return open(p, encoding="utf-8").read()
+
+def agent_validate(text):
+    fm, ok = parse_front(text)
+    if not ok: raise ValueError("Die Datei muss mit einem Frontmatter-Block beginnen (--- ... ---).")
+    if not fm.get("description"): raise ValueError("Im Frontmatter fehlt 'description' (Pflichtfeld in opencode).")
+    if fm["description"] in ("Kurzbeschreibung eintragen", "Beschreibung fehlt"): raise ValueError("Bitte die Beschreibung (description) anpassen, sie ist noch der Platzhalter.")
+    if fm.get("mode") and fm["mode"] not in ("primary", "subagent", "all"): raise ValueError("mode muss primary, subagent oder all sein.")
+    if not text.split("\n---", 1)[-1].strip(): raise ValueError("Der Prompt (Text nach dem Frontmatter) ist leer.")
+    return fm
+
+def _backup(scope, name, text):
+    d = os.path.join(BACKUPS, safe(scope)); os.makedirs(d, exist_ok=True)
+    open(os.path.join(d, f"{name}-{time.strftime('%Y%m%d-%H%M%S')}.md"), "w", encoding="utf-8").write(text)
+
+def agent_write(scope, name, text, create=False):
+    fm = agent_validate(text); p = agent_path(scope, name)
+    if create and os.path.exists(p): raise ValueError(f"Agent '{name}' existiert in diesem Bereich schon.")
+    if os.path.exists(p): _backup(scope, name, open(p, encoding="utf-8").read())
+    os.makedirs(os.path.dirname(p), exist_ok=True)
+    open(p, "w", encoding="utf-8").write(text if text.endswith("\n") else text + "\n")
+    warn = []
+    ml = models_list()
+    if fm.get("model") and ml and fm["model"] not in ml: warn.append(f"Modell '{fm['model']}' steht nicht in 'opencode models' (Anbieter verbunden?).")
+    return warn
+
+def agent_delete(scope, name):
+    p = agent_path(scope, name)
+    if not os.path.exists(p): raise ValueError("Agent nicht gefunden: " + name)
+    _backup(scope, name, open(p, encoding="utf-8").read()); os.remove(p)
+
+def agent_copy(scope, name, to_scope):
+    if scope == to_scope: raise ValueError("Quelle und Ziel sind gleich.")
+    return agent_write(to_scope, name, agent_read(scope, name), create=True)
+
+def agent_template(description, mode="subagent", model="", temperature="", steps="", perm="lesen", prompt=""):
+    if perm not in PERMS: perm = "lesen"
+    lines = ["---", f"description: {description.strip() or 'Beschreibung fehlt'}", f"mode: {mode if mode in ('primary','subagent','all') else 'subagent'}"]
+    if model: lines.append(f"model: {model}")
+    if str(temperature).strip(): lines.append(f"temperature: {temperature}")
+    if str(steps).strip(): lines.append(f"steps: {steps}")
+    lines += ["permission:", PERMS[perm], "---", "", prompt.strip() or "You are a helpful agent. Describe the task, rules and output format here."]
+    return "\n".join(lines) + "\n"
+
+def models_list():
+    """Alle Modelle verbundener Anbieter (opencode models), z. B. opencode/..., anthropic/..."""
+    rc, out = sh("opencode models", timeout=30)
+    return [l.strip() for l in out.splitlines() if "/" in l and " " not in l.strip()] if rc == 0 else []
+
+def models_info():
+    try: return json.load(open(MODELS_FILE, encoding="utf-8"))
+    except Exception: return {"stand": "", "hinweis": "Keine models.json gefunden.", "models": []}
+
+def models_info_map(): return {m["id"]: m for m in models_info().get("models", [])}
+
+def cmd_agents():
+    rows = agents_all()
+    if not rows: sys.exit("Keine Agenten gefunden. Globaler Ordner: " + AGENTS_DIR)
+    print(col("b", f"{'Agent':28}{'Geltung':16}{'Modus':10}{'Modell':40}Beschreibung"))
+    for a in rows:
+        tag = " ◆" if a["core"] else (" (doppelt)" if a["shadow"] else "") + ("" if a["valid"] else " (defekt)")
+        print(f"{(a['name'] + tag)[:27]:28}{('global' if a['scope'] == 'global' else 'Projekt ' + a['scope'])[:15]:16}{a['mode']:10}{a['model'][:39]:40}{a['description'][:50]}")
+    print(col("d", "◆ = Kernagent der Manipulationsprüfung. Projektagenten liegen in <projekt>/.opencode/agents/."))
+
+def _editor(path):
+    ed = os.environ.get("EDITOR") or shutil.which("nano") or shutil.which("vi") or "vi"
+    subprocess.run([ed, path])
+
+def cmd_agent(action, name, scope="global"):
+    try:
+        if scope != "global" and scope not in projects(): sys.exit("Unbekannter Bereich '" + scope + "' (global oder Projektname).")
+        if action == "show": print(agent_read(scope, name)); return
+        if action == "rm":
+            agent_delete(scope, name); print("Gelöscht (Sicherung in " + BACKUPS + "):", name); return
+        if action in ("new", "edit"):
+            tf = tempfile.NamedTemporaryFile("w", suffix=".md", delete=False, encoding="utf-8")
+            tf.write(agent_template("Kurzbeschreibung eintragen", prompt="") if action == "new" else agent_read(scope, name)); tf.close()
+            _editor(tf.name); text = open(tf.name, encoding="utf-8").read(); os.unlink(tf.name)
+            warn = agent_write(scope, name, text, create=(action == "new"))
+            print(col("g", "Gespeichert: " + agent_path(scope, name)))
+            for x in warn: print(col("y", "Hinweis: " + x))
+            return
+        sys.exit("vibe agent new|edit|show|rm <name> [global|<projekt>]")
+    except ValueError as e:
+        sys.exit(str(e))
+
+def cmd_models():
+    info = models_info(); mp = {m["id"]: m for m in info.get("models", [])}
+    ids = models_list(); ids = [i for i in ids if i in mp or i.startswith("opencode/")] or list(mp)
+    print(col("b", f"{'Modell':36}{'Preis /1M ein/aus':20}{'Tempo':13}{'Daten':14}{'Coder':18}Reviewer"))
+    for mid in ids:
+        m = mp.get(mid, {})
+        print(f"{mid[:35]:36}{m.get('preis','?')[:19]:20}{m.get('tempo','?'):13}{m.get('daten','?'):14}{m.get('coder','?'):18}{m.get('reviewer','?')}")
+    print(col("d", "\nStand " + info.get("stand", "?") + ". " + info.get("hinweis", "")))
+
+def cmd_model(agent, model, scope="global"):
+    try:
+        t = agent_read(scope, agent)
+        ml = models_list()
+        if ml and model not in ml: sys.exit(f"Modell '{model}' nicht in 'opencode models' (Anbieter per /connect verbinden).")
+        m = re.search(r"^model:[ \t]*(\S+)", t, flags=re.M)
+        t2 = t.replace(m.group(1), model) if m else t.replace("\n---", f"\nmodel: {model}\n---", 1)
+        agent_write(scope, agent, t2); print("Modell von", agent, "->", model)
+    except ValueError as e:
+        sys.exit(str(e))
+
+# ---------- Profile: Modelle pro Rolle umschalten (kostenlos / bezahlt) ----------
+DEFAULT_PROFILES = {
+ "aktiv": "kostenlos",
+ "rollen": {"coding-agent_deepseek": "coder", "code-reviewer_glm": "reviewer"},
+ "profile": {
+  "kostenlos": {"coder": "opencode/deepseek-v4.1-flash-free", "reviewer": "opencode/glm-5.3-flash-free"},
+  "guenstig": {"coder": "opencode/deepseek-v4.1-flash", "reviewer": "opencode/glm-5.3-flash"},
+  "stark": {"coder": "", "reviewer": ""}}}
+
+def profiles_load():
+    try: d = json.load(open(PROFILES_FILE, encoding="utf-8"))
+    except Exception: d = json.loads(json.dumps(DEFAULT_PROFILES))
+    for k, v in DEFAULT_PROFILES.items(): d.setdefault(k, json.loads(json.dumps(v)))
+    return d
+
+def profiles_save(d):
+    os.makedirs(TOOLS, exist_ok=True); json.dump(d, open(PROFILES_FILE, "w", encoding="utf-8"), indent=1, ensure_ascii=False)
+
+def profile_apply(name):
+    d = profiles_load()
+    if name not in d["profile"]: raise ValueError("Unbekanntes Profil: " + name)
+    prof, ml, done, skipped = d["profile"][name], models_list(), [], []
+    for agent, role in d["rollen"].items():
+        model = prof.get(role, "")
+        if not model: skipped.append(f"{agent}: für Rolle '{role}' ist im Profil kein Modell gesetzt"); continue
+        if ml and model not in ml: raise ValueError(f"Modell '{model}' ist bei opencode nicht verfügbar. Anbieter zuerst per /connect (TUI) oder 'opencode auth login' verbinden. Nichts wurde geändert.")
+    for agent, role in d["rollen"].items():
+        model = prof.get(role, "")
+        if not model: continue
+        try: t = agent_read("global", agent)
+        except ValueError: skipped.append(f"{agent}: Agent nicht gefunden"); continue
+        m = re.search(r"^model:[ \t]*(\S+)", t, flags=re.M)
+        agent_write("global", agent, t.replace(m.group(1), model) if m else t.replace("\n---", f"\nmodel: {model}\n---", 1)); done.append(f"{agent} -> {model}")
+    d["aktiv"] = name; profiles_save(d)
+    return done, skipped
+
+def cmd_profile(action="list", name=None):
+    d = profiles_load()
+    try:
+        if action == "use" and name:
+            done, skipped = profile_apply(name); print(col("g", f"Profil '{name}' angewendet:"))
+            for x in done: print("  ", x)
+            for x in skipped: print(col("y", "   übersprungen: " + x))
+            return
+    except ValueError as e:
+        sys.exit(str(e))
+    print(col("b", "Profile") + f" (aktiv: {d['aktiv']})")
+    for pn, pv in d["profile"].items(): print(f"  {'*' if pn == d['aktiv'] else ' '} {pn:10} " + ", ".join(f"{r}={m or '—'}" for r, m in pv.items()))
+    print("Rollen:", ", ".join(f"{a}={r}" for a, r in d["rollen"].items()))
+    print("Anwenden: vibe profile use <name>")
+
+# ---------- Emulator, Server, Dashboard, Doctor ----------
+def cmd_emu(action):
+    p = next((project_map()[n] for n in projects() if ptype(n) == "android"), None)
+    if not p: sys.exit("Kein Android-Projekt vorhanden")
+    subprocess.run(["bash", "-lc", f"source ~/.bashrc; bash {shquote(p + '/scripts/emulator-' + action + '.sh')}"])
+
+def server_health():
+    rc, out = sh(f"curl -sf --max-time 2 {OC_URL}/global/health")
+    return out if rc == 0 else None
+
+def cmd_server(action="status"):
+    if action == "start":
+        if server_health(): print("opencode-Server läuft:", OC_URL); return
+        sh(f"tmux new-session -d -s vibe-server bash -lc {shquote('source ~/.bashrc; opencode web --port 4096 --hostname 127.0.0.1')}")
+        time.sleep(4); print("Gestartet:" if server_health() else "Start angestoßen, Server antwortet noch nicht (tmux attach -t vibe-server):", OC_URL)
+    elif action == "stop":
+        sh("tmux kill-session -t vibe-server"); print("opencode-Server beendet.")
+    else:
+        h = server_health(); print("opencode-Server:", col("g", "läuft " + OC_URL + " " + h) if h else "aus")
+
+def cmd_ui(action="start"):
+    if action == "stop":
+        sh("tmux kill-session -t vibe-ui"); print("Dashboard beendet."); return
+    os.makedirs(LOGS, exist_ok=True)
+    if sh("tmux has-session -t vibe-ui")[0] != 0:
+        sh(f"tmux new-session -d -s vibe-ui bash -lc {shquote('source ~/.bashrc; python3 ' + BIN + '/vibe-web.py')}")
+        time.sleep(2)
+    tokf = os.path.join(LOGS, "web.token")
+    tok = open(tokf).read().strip() if os.path.exists(tokf) else "?"
+    print(col("g", f"Dashboard: http://127.0.0.1:{UI_PORT}/#t={tok}"))
+    print("(nur lokal erreichbar; Beenden: Knopf im Dashboard oder vibe ui stop)")
+
+def doctor_checks():
+    r = []
+    def chk(label, ok, hint=""): r.append((label, bool(ok), hint))
+    chk("im Container", in_container(), "distrobox enter " + CONTAINER)
+    chk(f"VIBE-Ordner beschreibbar ({VIBE})", os.access(VIBE, os.W_OK))
+    for tool, hint in (("git", ""), ("tmux", "sudo dnf install -y tmux"), ("opencode", "Host-Installation prüfen"), ("java", "sudo dnf install -y java-25-openjdk-devel"), ("android", "Android CLI installieren"), ("adb", "android sdk install platform-tools"), ("python3", ""), ("curl", ""), ("flock", "util-linux")):
+        chk(tool, shutil.which(tool) is not None, hint)
+    chk("/dev/kvm", os.path.exists("/dev/kvm"), "KVM fehlt")
+    chk("ANDROID_HOME gesetzt", bool(os.environ.get("ANDROID_HOME")), "source ~/.bashrc im Container")
+    chk("Abnahme-Dateien + Prüfsummen", os.path.exists(os.path.join(VERIFY, "verify.sh")) and sh(f'cd "{VERIFY}" && sha256sum -c ~/.config/schreibfuchs-verify.sha --quiet')[0] == 0, "install.sh / install2.sh ausführen")
+    for a in sorted(CORE_AGENTS): chk("Agent " + a, os.path.exists(os.path.join(AGENTS_DIR, a + ".md")))
+    chk("models.json (Modell-Einschätzung)", os.path.exists(MODELS_FILE), "install-vibe.sh ausführen")
+    if os.path.isdir(VIBE):
+        st = shutil.disk_usage(VIBE); chk(f"freier Platz auf Datenpartition: {st.free // 2**30} GB", st.free > 10 * 2**30, "unter 10 GB")
+    h = shutil.disk_usage(os.path.expanduser("~")); chk(f"freier Platz im Home: {h.free // 2**30} GB", h.free > 5 * 2**30, "unter 5 GB")
+    return r
+
+def cmd_doctor():
+    print(col("b", "Umgebung"))
+    for label, ok, hint in doctor_checks():
+        print(f"  {col('g','OK  ') if ok else col('r','FEHL')} {label}" + (f"  -> {hint}" if not ok and hint else ""))
+
+def cmd_mcp(action="list", name=None, scope="global"):
+    import vibe_mcp
+    vibe_mcp.cli(action, name, scope)
+
+# ---------- Menü ----------
+def pick(title, options):
+    print("\n" + col("b", title))
+    for i, o in enumerate(options, 1): print(f"  {i}) {o}")
+    print("  0) zurück")
+    s = input("> ").strip()
+    return int(s) - 1 if s.isdigit() and 1 <= int(s) <= len(options) else None
+
+def project_menu(name):
+    acts = ["Status / offene Arbeitspakete", "Agentenlauf starten", "An Lauf anhängen (tmux)", "Log verfolgen", "Lauf beenden",
+            "Prüfung quick", "Prüfung full", "Feedback eintragen", "Git-Verlauf (10)", "opencode-Sitzungen", "Lauf mit anderem Agent", "Für vibe vorbereiten (init)", "Neuer Projekt-Agent", "MCP-Tools des Projekts"]
+    while True:
+        i = pick(f"Projekt {name} ({ptype(name)})", acts)
+        if i is None: return
+        p = ppath(name)
+        {0: lambda: cmd_status(name), 1: lambda: cmd_run(name), 2: lambda: cmd_attach(name), 3: lambda: cmd_logs(name), 4: lambda: cmd_stop(name),
+         5: lambda: cmd_verify(name, "quick"), 6: lambda: cmd_verify(name, "full"), 7: lambda: cmd_feedback(name),
+         8: lambda: print(sh("git log --oneline -10", cwd=p)[1]), 9: lambda: print(sh("opencode session list", cwd=p)[1]),
+         10: lambda: cmd_run(name, input("Agent-Name: ").strip() or None), 11: lambda: cmd_init(name),
+         12: lambda: cmd_agent("new", input("Agent-Name: ").strip(), name), 13: lambda: cmd_mcp("list", None, name)}[i]()
+
+def menu():
+    while True:
+        ps = projects()
+        print(); cmd_list()
+        i = pick("Hauptmenü", ["Projekt öffnen", "Neues Projekt", "Entwicklungsordner verwalten", "Agenten anzeigen", "Agent anlegen/bearbeiten (global)", "Modelle (Einschätzung, Preis)", "Modell eines Agenten ändern",
+                               "Profil wechseln (kostenlos/bezahlt)", "MCP-Tools anzeigen", "Emulator starten", "Emulator stoppen", "Dashboard (Browser) starten", "opencode-Server (Weboberfläche) starten", "Projekttypen anzeigen", "Doctor (Umgebung prüfen)"])
+        if i is None: return
+        if i == 0:
+            if not ps: print("Keine Projekte."); continue
+            j = pick("Projekt wählen", ps)
+            if j is not None: project_menu(ps[j])
+        elif i == 1:
+            n = input("Name (a-z, 0-9, -): ").strip(); ts = types(); k = pick("Typ", ts)
+            if n and k is not None: cmd_new(n, ts[k])
+        elif i == 2:
+            cmd_roots(); p = input("Pfad hinzufügen (leer = nichts): ").strip()
+            if p: cmd_roots("add", p)
+        elif i == 3: cmd_agents()
+        elif i == 4:
+            n = input("Agent-Name: ").strip()
+            if n: cmd_agent("edit" if os.path.exists(os.path.join(AGENTS_DIR, n + ".md")) else "new", n, "global")
+        elif i == 5: cmd_models()
+        elif i == 6: cmd_model(input("Agent: ").strip(), input("Modell (z. B. opencode/glm-5.3-flash-free): ").strip())
+        elif i == 7: cmd_profile("list"); n = input("Profil anwenden (leer = nichts): ").strip(); (cmd_profile("use", n) if n else None)
+        elif i == 8: cmd_mcp("list")
+        elif i == 9: cmd_emu("start")
+        elif i == 10: cmd_emu("stop")
+        elif i == 11: cmd_ui("start")
+        elif i == 12: cmd_server("start")
+        elif i == 13: cmd_types()
+        elif i == 14: cmd_doctor()
+
+def main():
+    if not in_container() and not os.environ.get("VIBE_NO_CONTAINER") and shutil.which("distrobox"):
+        os.execvp("distrobox", ["distrobox", "enter", CONTAINER, "--", "python3", os.path.realpath(__file__)] + sys.argv[1:])
+    a = sys.argv[1:]
+    if not a: return menu()
+    c, r = a[0], a[1:]
+    try:
+        table = {"list": lambda: cmd_list(), "status": lambda: cmd_status(r[0]), "run": lambda: cmd_run(r[0], r[1] if len(r) > 1 else None),
+                 "attach": lambda: cmd_attach(r[0]), "logs": lambda: cmd_logs(r[0]), "stop": lambda: cmd_stop(r[0]),
+                 "verify": lambda: cmd_verify(r[0], r[1] if len(r) > 1 else "quick"), "feedback": lambda: cmd_feedback(r[0]),
+                 "new": lambda: cmd_new(r[0], r[1] if len(r) > 1 else "generic", r[2] if len(r) > 2 else None),
+                 "init": lambda: cmd_init(r[0], r[1] if len(r) > 1 else None),
+                 "roots": lambda: cmd_roots(r[0] if r else None, r[1] if len(r) > 1 else None), "scan": lambda: cmd_roots(),
+                 "agents": lambda: cmd_agents(), "agent": lambda: cmd_agent(r[0], r[1], r[2] if len(r) > 2 else "global"),
+                 "models": lambda: cmd_models(), "model": lambda: cmd_model(r[0], r[1], r[2] if len(r) > 2 else "global"),
+                 "profile": lambda: cmd_profile(r[0] if r else "list", r[1] if len(r) > 1 else None),
+                 "mcp": lambda: cmd_mcp(r[0] if r else "list", r[1] if len(r) > 1 else None, r[2] if len(r) > 2 else "global"),
+                 "emu": lambda: cmd_emu(r[0]), "ui": lambda: cmd_ui(r[0] if r else "start"), "server": lambda: cmd_server(r[0] if r else "status"),
+                 "types": lambda: cmd_types(), "doctor": lambda: cmd_doctor()}
+        table[c]()
+    except (KeyError, IndexError):
+        print(__doc__)
+
+if __name__ == "__main__":
+    main()
