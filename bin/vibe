@@ -258,10 +258,10 @@ def next_feedback_number(path):
     nums = [int(m.group(1)) for m in re.finditer(r"^- (?:\[[ x]\]\s*)?F(\d+)\b", open(path, encoding="utf-8").read(), flags=re.M)] if os.path.exists(path) else []
     return (max(nums) + 1) if nums else 1
 
-def add_feedback(name, title, steps="", exp="", ist=""):
+def add_feedback(name, title, description=""):
     fp = os.path.join(ppath(name), "FEEDBACK.md")
     n = next_feedback_number(fp)
-    block = f"\n- [ ] F{n} {title}\n  Schritte: {steps}\n  Erwartet: {exp}\n  Ist: {ist}\n"
+    block = f"\n- [ ] F{n} {title}\n  Beschreibung: {description}\n"
     with open(fp, "a", encoding="utf-8") as f: f.write(block)
     return n
 
@@ -269,8 +269,8 @@ def cmd_feedback(name):
     print("Neuer Punkt für", name, "(leere Titelzeile = Abbruch)")
     title = input("Titel: ").strip()
     if not title: return
-    steps, exp, ist = (input(f"{k}: ").strip() for k in ("Schritte", "Erwartet", "Ist"))
-    n = add_feedback(name, title, steps, exp, ist)
+    description = input("Beschreibung: ").strip()
+    n = add_feedback(name, title, description)
     print(col("g", f"F{n} eingetragen. Starten mit: vibe run {name}"))
 
 # ---------- Typen, neue und vorhandene Projekte ----------

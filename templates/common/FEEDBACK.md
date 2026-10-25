@@ -7,5 +7,5 @@ Regeln (werden maschinell geprüft):
 
 <!-- Vorlage (nicht abhaken):
   - [ ] F99 Kurztitel
-    Schritte: ...  Erwartet: ...  Ist: ...
+    Beschreibung: ...
 -->

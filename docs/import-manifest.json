@@ -12,8 +12,8 @@
  "files": [
   {
    "path": "bin/vibe",
-   "sha256": "5205ec8d2b9642deb76358c4016dcde0b768c3c2c454f4a45ccd2e30d1d1ed4d",
-   "bytes": 36157
+   "sha256": "782483bd8e28def2d3086bd65684283dad6508e2b6030219ec28d507a9b923a2",
+   "bytes": 36081
   },
   {
    "path": "bin/vibe-run.sh",
@@ -22,8 +22,8 @@
   },
   {
    "path": "bin/vibe-web.py",
-   "sha256": "ac7215a3dd6cc18002a0a75989831e07dc025e5ee5e3916072c77c91d25ee162",
-   "bytes": 43366
+   "sha256": "5674c64d133ecf4227ebebd057fb3fb63d4ac1bd96bff4fba5241aa18d723471",
+   "bytes": 43250
   },
   {
    "path": "bin/vibe_mcp.py",
@@ -67,8 +67,8 @@
   },
   {
    "path": "templates/common/FEEDBACK.md",
-   "sha256": "5837613ac9d1bc39a672efae34cd75c8c10d7ba46aa188df7144ece639496658",
-   "bytes": 445
+   "sha256": "e843730d69d4f02f4bb9158a3a88826cb5074654c9c3077a5d2868cbf9343f35",
+   "bytes": 424
   },
   {
    "path": "templates/common/TICKETS.md",
@@ -119,6 +119,18 @@
    "path": "templates/web/AGENTS.md",
    "sha256": "c5a8cfeb192dedc6110bd8e750576e7905dcbb2adf54c6238e92d9e1e217b044",
    "bytes": 826
+  }
+ ],
+ "aenderungen": [
+  {
+   "arbeitspaket": "F1",
+   "datum": "2026-10-25",
+   "grund": "Feedback-Erfassung bietet nur noch Titel und Beschreibung; die Felder Schritte, Erwartet und Ist entfallen, Erwartet wird zu Beschreibung.",
+   "dateien": [
+    "bin/vibe",
+    "bin/vibe-web.py",
+    "templates/common/FEEDBACK.md"
+   ]
   }
  ]
 }

@@ -127,7 +127,7 @@ class H(BaseHTTPRequestHandler):
             elif u.path == "/api/init": ok, msg = call(vibe.cmd_init, name, body.get("type") or None)
             elif u.path == "/api/feedback":
                 t = (body.get("title") or "").strip(); assert t, "Titel fehlt"
-                num = vibe.add_feedback(name, t, body.get("steps", ""), body.get("expected", ""), body.get("ist", "")); ok, msg = True, f"F{num} eingetragen"
+                num = vibe.add_feedback(name, t, body.get("description", "")); ok, msg = True, f"F{num} eingetragen"
             elif u.path == "/api/new": ok, msg = call(vibe.cmd_new, name, body.get("type", "generic"), body.get("tpl") or None)
             elif u.path == "/api/roots":
                 act = body.get("action"); path = body.get("path", "")
@@ -265,7 +265,7 @@ function newForm(){const types=el('select',{});api('/api/types').then(t=>t.forEa
 async function detail(name){clearInterval(timer);if(es){es.close();es=null}
  const d=await api('/api/project?name='+encodeURIComponent(name));const logEl=el('pre',{id:'log'},(d.tail||[]).join('\n')||'(noch keine Ausgabe)');
  const items=el('div',{},d.items.length?d.items.map(i=>el('div',{},el('span',{class:i.state==='BLOCKIERT'?'bad':'warn'},i.state+' '),el('b',{},i.id+' '),i.title)):el('span',{class:'ok'},'Alles abgehakt'));
- const f={t:el('input',{}),s:el('textarea',{rows:2}),e:el('textarea',{rows:2}),i:el('textarea',{rows:2})};
+ const f={t:el('input',{}),b:el('textarea',{rows:3,placeholder:'Was soll geändert oder ergänzt werden?'})};
  const act=(p,b)=>async()=>{const r=await api(p,b);toast(r.message);detail(name).catch(showErr)};
  const tsel=el('select',{});api('/api/types').then(t=>t.forEach(x=>{const o=el('option',{},x);if(x===d.type)o.selected=true;tsel.append(o)}));
  const initCard=d.init?null:el('div',{class:'card'},el('b',{class:'warn'},'Noch nicht für vibe vorbereitet'),el('div',{class:'mut'},'Ergänzt fehlende Dateien (FEEDBACK.md, TICKETS.md, AGENTS.md, .vibe/project.env). Vorhandenes wird nie überschrieben, es wird nichts committet.'),
@@ -276,8 +276,8 @@ async function detail(name){clearInterval(timer);if(es){es.close();es=null}
    el('button',{class:'b',on:{click:()=>{act('/api/verify',{name,mode:'quick'})();stream('verify')}}},'Prüfung quick'),el('button',{class:'b',on:{click:()=>{act('/api/verify',{name,mode:'full'})();stream('verify')}}},'Prüfung full'),
    el('button',{class:'b',on:{click:()=>stream('run')}},'Lauf-Log'),el('a',{href:'http://127.0.0.1:4096',target:'_blank'},'opencode-Weboberfläche')),
   el('div',{class:'grid'},el('div',{},el('div',{class:'card'},el('b',{},'Offene Arbeitspakete ('+d.items.length+')'),items),
-   el('div',{class:'card'},el('b',{},'Feedback eintragen'),el('label',{},'Titel'),f.t,el('label',{},'Schritte'),f.s,el('label',{},'Erwartet'),f.e,el('label',{},'Ist'),f.i,
-    el('div',{class:'bar'},el('button',{class:'b p',on:{click:async()=>{const r=await api('/api/feedback',{name,title:f.t.value,steps:f.s.value,expected:f.e.value,ist:f.i.value});toast(r.message);detail(name).catch(showErr)}}},'Eintragen')))),
+   el('div',{class:'card'},el('b',{},'Feedback eintragen'),el('label',{},'Titel'),f.t,el('label',{},'Beschreibung'),f.b,
+    el('div',{class:'bar'},el('button',{class:'b p',on:{click:async()=>{const r=await api('/api/feedback',{name,title:f.t.value,description:f.b.value});toast(r.message);detail(name).catch(showErr)}}},'Eintragen')))),
    el('div',{class:'card'},el('b',{},'Live-Ausgabe'),logEl))].filter(Boolean));
  function stream(kind){if(es)es.close();logEl.textContent='';es=new EventSource('/api/stream?name='+encodeURIComponent(name)+'&kind='+kind+'&t='+encodeURIComponent(T));
   es.onmessage=ev=>{const near=logEl.scrollHeight-logEl.scrollTop-logEl.clientHeight<60;logEl.textContent+=(JSON.parse(ev.data).join('\n'))+'\n';if(logEl.textContent.length>80000)logEl.textContent=logEl.textContent.slice(-60000);if(near)logEl.scrollTop=logEl.scrollHeight}}
