@@ -262,6 +262,7 @@ class WriteDirsBrowserTest(unittest.TestCase):
         agent = self.write_agent()
         self.open_detail()
         card = self.rights_card()
+        previous_card = card.element_handle()
 
         card.get_by_role("button", name="Auf Projektagenten anwenden").click()
         self.wait_until(
@@ -276,8 +277,17 @@ class WriteDirsBrowserTest(unittest.TestCase):
         self.assertIn("  bash: allow", text)
         self.assertIn("Du änderst ausschließlich Dateien im Projekt.", text)
 
+        # Nach dem Anwenden lädt detail(name) das Projektdetail neu. Erst wenn die
+        # alte Karte aus dem DOM entfernt und die neue aufgebaut ist, ist der
+        # Screenshot stabil; sonst kann Playwright ein abgelöstes Element treffen.
+        self.page.wait_for_function(
+            "element => !element.isConnected", arg=previous_card
+        )
+        shot_card = self.rights_card()
+        shot_card.get_by_text("Standardliste aktiv.").wait_for()
+
         SHOT.parent.mkdir(parents=True, exist_ok=True)
-        self.rights_card().screenshot(path=str(SHOT))
+        shot_card.screenshot(path=str(SHOT))
         self.assertTrue(SHOT.exists() and SHOT.stat().st_size > 0)
 
 
