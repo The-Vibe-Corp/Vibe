@@ -7,7 +7,7 @@ Abhaken nur nach erfüllten Kriterien, erfolgreichen relevanten Tests und Review
 Nachweise unter dem Ticket: Commit, Testbefehle, Reviewdatei, Dokumentation.
 Ein fehlender externer Dienst bedeutet BLOCKIERT, nicht erledigt.
 
-- [ ] V-001 Unveränderten Bestand aufnehmen und absichern
+- [x] V-001 Unveränderten Bestand aufnehmen und absichern
   Priorität: P0
   Abhängigkeiten: keine
   Umfang: Importmanifest prüfen, Dateien und externe Abhängigkeiten erfassen,
