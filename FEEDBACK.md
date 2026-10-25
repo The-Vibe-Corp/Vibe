@@ -16,13 +16,14 @@ Regeln (werden maschinell geprüft):
   Ist: 
   Commit: ca6c224; Test: FeedbackMarkdownTest.test_writes_only_title_and_description (tests/unit/test_feedback_capture.py, 8 Tests)
 
-- [ ] F2 Project detail ui anpassungen
+- [x] F2 Project detail ui anpassungen
   Schritte: 
   Erwartet: Bestehende Feedback punkte müssen bearbeitbar und löschbar sein.
-Live ausgabe sollte pausiert werden können
-Live ausgabe sollte die gesamte verfügbare UI höhe nutzen
-Live ausgabe sollte über einen button deutlich vergrößert werden können (fast bildschimfüllend)
+  Live ausgabe sollte pausiert werden können
+  Live ausgabe sollte die gesamte verfügbare UI höhe nutzen
+  Live ausgabe sollte über einen button deutlich vergrößert werden können (fast bildschimfüllend)
   Ist: 
+  Commit: a467953; Test: FeedbackBrowserTest.test_edit_and_delete_existing_feedback_entries, FeedbackBrowserTest.test_live_output_can_be_paused_and_resumed, FeedbackBrowserTest.test_live_output_uses_available_height_and_can_be_enlarged (tests/browser/test_feedback_ui.py; 59 Unit-Tests OK)
 
 - [ ] F3 Dynamische Agenten rechte
   Schritte: 
