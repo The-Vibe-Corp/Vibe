@@ -7,5 +7,29 @@ Regeln (werden maschinell geprüft):
 
 <!-- Vorlage (nicht abhaken):
   - [ ] F99 Kurztitel
-    Schritte: ...  Erwartet: ...  Ist: ...
+    Beschreibung: ...
 -->
+
+- [x] F1 Projet detail verbesserungen
+  Schritte: 
+  Erwartet: Feedback erfassung anpassen: Nur felder Titel und beschreibung (aktuell "erwartet"). "Schritte" und "ist" benötige ich nicht.
+  Ist: 
+  Commit: ca6c224; Test: FeedbackMarkdownTest.test_writes_only_title_and_description (tests/unit/test_feedback_capture.py, 8 Tests)
+
+- [ ] F2 Project detail ui anpassungen
+  Schritte: 
+  Erwartet: Bestehende Feedback punkte müssen bearbeitbar und löschbar sein.
+Live ausgabe sollte pausiert werden können
+Live ausgabe sollte die gesamte verfügbare UI höhe nutzen
+Live ausgabe sollte über einen button deutlich vergrößert werden können (fast bildschimfüllend)
+  Ist: 
+
+- [ ] F3 Dynamische Agenten rechte
+  Schritte: 
+  Erwartet: Jedes Projekte sollte eine liste an erlaubten verzeichnissen mit schreibrechten haben. diese liste muss vom nutzer angepasst werden können. default verzeichnisse: /tmp/opencode; das jeweils eigene projektverzeichnis
+  Ist: 
+
+- [ ] F4 Feature: Nach aktuellen Arbeitspaket stoppen
+  Schritte: 
+  Erwartet: Das Feature ermöglicht ein gezieltes pausieren, ohne den Agent mitten im lauf unterbrechen zu müssen. Der Nutzer soll dies aktivieren können, sofern das aktiviert ist, wird der laufende Arbeitspaket beendet und danach kein neues Paket gestartet.
+  Ist: 
