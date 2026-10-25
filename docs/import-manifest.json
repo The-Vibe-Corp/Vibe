@@ -12,8 +12,8 @@
  "files": [
   {
    "path": "bin/vibe",
-   "sha256": "782483bd8e28def2d3086bd65684283dad6508e2b6030219ec28d507a9b923a2",
-   "bytes": 36081
+   "sha256": "9a9e264b1df44b7aa3c156a6254739aabbd3ce9ebbe18e387708c21e86514755",
+   "bytes": 41745
   },
   {
    "path": "bin/vibe-run.sh",
@@ -22,8 +22,8 @@
   },
   {
    "path": "bin/vibe-web.py",
-   "sha256": "5674c64d133ecf4227ebebd057fb3fb63d4ac1bd96bff4fba5241aa18d723471",
-   "bytes": 43250
+   "sha256": "f7c6ec9b4af24bd101d9b5ea27344b24cd90bdde62bdd64c296690647a26ab28",
+   "bytes": 47513
   },
   {
    "path": "bin/vibe_mcp.py",
@@ -130,6 +130,15 @@
     "bin/vibe",
     "bin/vibe-web.py",
     "templates/common/FEEDBACK.md"
+   ]
+  },
+  {
+   "arbeitspaket": "F2",
+   "datum": "2026-10-25",
+   "grund": "Projektdetail: vorhandene Feedback-Punkte bearbeiten und löschen, Live-Ausgabe pausierbar, bildschirmfüllend vergrößerbar und mit voller verfügbarer Höhe.",
+   "dateien": [
+    "bin/vibe",
+    "bin/vibe-web.py"
    ]
   }
  ]

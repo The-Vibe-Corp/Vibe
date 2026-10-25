@@ -54,6 +54,7 @@ def project_row(n):
 def project_detail(n):
     d = project_row(n)
     d["items"] = [{"id": i, "title": t, "state": s} for i, t, s in vibe.open_items(n)]
+    d["feedback"] = vibe.feedback_items(n)
     d["tail"] = tail(vibe.logpath(n), 80)
     d["verify_cmd"] = bool(vibe.verify_command(n, "quick"))
     d["env"] = vibe.penv(n)
@@ -126,8 +127,20 @@ class H(BaseHTTPRequestHandler):
             elif u.path == "/api/verify": ok, msg = verify_bg(name, "full" if body.get("mode") == "full" else "quick")
             elif u.path == "/api/init": ok, msg = call(vibe.cmd_init, name, body.get("type") or None)
             elif u.path == "/api/feedback":
-                t = (body.get("title") or "").strip(); assert t, "Titel fehlt"
-                num = vibe.add_feedback(name, t, body.get("description", "")); ok, msg = True, f"F{num} eingetragen"
+                act = body.get("action") or "add"
+                try:
+                    if act == "add":
+                        t = (body.get("title") or "").strip(); assert t, "Titel fehlt"
+                        num = vibe.add_feedback(name, t, body.get("description", "")); ok, msg = True, f"F{num} eingetragen"
+                    elif act == "update":
+                        fid = (body.get("id") or "").strip(); assert fid, "Feedback-ID fehlt"
+                        vibe.feedback_update(name, fid, body.get("title"), body.get("description", "")); ok, msg = True, f"{fid} gespeichert"
+                    elif act == "delete":
+                        fid = (body.get("id") or "").strip(); assert fid, "Feedback-ID fehlt"
+                        vibe.feedback_delete(name, fid); ok, msg = True, f"{fid} gelöscht"
+                    else: ok, msg = False, "Unbekannte Aktion"
+                except ValueError as e:
+                    ok, msg = False, str(e)
             elif u.path == "/api/new": ok, msg = call(vibe.cmd_new, name, body.get("type", "generic"), body.get("tpl") or None)
             elif u.path == "/api/roots":
                 act = body.get("action"); path = body.get("path", "")
@@ -220,11 +233,15 @@ tr.row{cursor:pointer}tr.row:hover{background:#1a1d23}.pill{padding:2px 8px;bord
 button.b{background:#2a2f38;color:var(--tx);border:1px solid var(--line);padding:6px 12px;border-radius:6px;cursor:pointer}button.b:hover{border-color:var(--ac)}
 button.p{background:var(--ac);color:#06121f;border-color:var(--ac)}button.d{border-color:var(--bad);color:var(--bad)}button.quit{background:#5a1d1d;border-color:var(--bad);color:#fff;font-weight:600}
 .card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:14px;margin-bottom:14px}
-pre#log{background:#0d0f12;border:1px solid var(--line);border-radius:6px;padding:10px;height:420px;overflow:auto;white-space:pre-wrap;font:12px/1.4 ui-monospace,monospace;margin:0}
+pre#log{background:#0d0f12;border:1px solid var(--line);border-radius:6px;padding:10px;height:320px;overflow:auto;white-space:pre-wrap;font:12px/1.4 ui-monospace,monospace;margin:0}
 input,textarea,select{background:#0d0f12;color:var(--tx);border:1px solid var(--line);border-radius:6px;padding:6px;width:100%}label{display:block;margin:8px 0 2px;color:var(--mut);font-size:12px}
 input[type=checkbox]{width:auto}textarea.raw{font:12px/1.4 ui-monospace,monospace;min-height:360px}details summary{cursor:pointer;font-weight:600}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}.bar{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0;align-items:center}a{color:var(--ac)}
-.err{border-color:var(--bad)}.detail td{background:#181b20}ul.l{margin:4px 0 8px 18px;padding:0}.sep{width:1px;height:22px;background:var(--line)}@media(max-width:900px){.grid,.grid3{grid-template-columns:1fr}}</style></head><body>
+.err{border-color:var(--bad)}.detail td{background:#181b20}ul.l{margin:4px 0 8px 18px;padding:0}.sep{width:1px;height:22px;background:var(--line)}@media(max-width:900px){.grid,.grid3{grid-template-columns:1fr}}
+.logcard{display:flex;flex-direction:column;min-height:0}.logcard.full{position:fixed;inset:8px;z-index:100;margin:0;box-shadow:0 0 0 1px var(--line),0 12px 40px #000a}
+.logcard.full pre#log{flex:1 1 auto;height:auto;min-height:0}body.logfull{overflow:hidden}
+.fbentry{border-top:1px solid var(--line);padding:8px 0}.fbentry:first-child{border-top:0}.fbdesc{white-space:pre-wrap;margin:2px 0 6px}.fbentry .bar{margin:4px 0 0}
+</style></head><body>
 <header><h1>vibe</h1><nav id="nav"></nav><span id="srv" style="margin-left:auto;display:flex;gap:8px;align-items:center"></span></header><main id="main"></main>
 <script>
 const T=(()=>{const m=location.hash.match(/t=([^&]+)/);if(m){sessionStorage.t=m[1];history.replaceState(null,'',location.pathname)}return sessionStorage.t||''})();
@@ -232,11 +249,15 @@ async function api(p,body){const o=body?{method:'POST',headers:{'X-Token':T,'Con
  const r=await fetch(p,o);const j=await r.json().catch(()=>({}));if(!r.ok&&!body)throw new Error(j.error||('HTTP '+r.status));return j}
 function el(t,a={},...c){const e=document.createElement(t);for(const[k,v]of Object.entries(a)){if(k==='on')for(const[ev,f]of Object.entries(v))e.addEventListener(ev,f);else if(k==='class')e.className=v;else if(k==='value')e.value=v;else e.setAttribute(k,v)}
  for(const x of c.flat())if(x!==null&&x!==undefined&&x!==false)e.append(x.nodeType?x:document.createTextNode(String(x)));return e}
-const main=document.getElementById('main'),nav=document.getElementById('nav'),srvbox=document.getElementById('srv');let tab='projects',es=null,timer=null;
+const main=document.getElementById('main'),nav=document.getElementById('nav'),srvbox=document.getElementById('srv');let tab='projects',es=null,timer=null,LOG=null;
 function showErr(e){main.replaceChildren(el('div',{class:'card err'},el('b',{class:'bad'},'Fehler: '),String(e&&e.message||e)),el('button',{class:'b',on:{click:()=>setTab('projects')}},'← zur Projektliste'))}
-function setTab(t){tab=t;if(es){es.close();es=null}clearInterval(timer);[...nav.children].forEach(b=>b.classList.toggle('on',b.dataset.t===t));Promise.resolve(({projects,agents,mcp,env}[t])()).catch(showErr);header()}
+function setTab(t){exitLogFull();LOG=null;tab=t;if(es){es.close();es=null}clearInterval(timer);[...nav.children].forEach(b=>b.classList.toggle('on',b.dataset.t===t));Promise.resolve(({projects,agents,mcp,env}[t])()).catch(showErr);header()}
 [['projects','Projekte'],['agents','Agenten & Modelle'],['mcp','MCP-Tools'],['env','Umgebung']].forEach(([k,l])=>nav.append(el('button',{'data-t':k,on:{click:()=>setTab(k)}},l)));
 function toast(m){alert(m)}
+function setLogFull(on){if(!LOG)return;LOG.card.classList.toggle('full',on);document.body.classList.toggle('logfull',on);LOG.button.textContent=on?'Verkleinern':'Vergrößern';if(on)LOG.pre.style.height='auto';else LOG.fit()}
+function exitLogFull(){if(LOG&&LOG.card.classList.contains('full'))setLogFull(false)}
+window.addEventListener('keydown',e=>{if(e.key==='Escape')exitLogFull()});
+window.addEventListener('resize',()=>{if(LOG)LOG.fit()});
 const GOOD=['sehr schnell','schnell','gering','geeignet','gut','ja'],MID=['mittel','bedingt','unklar'],BAD=['langsam','hoch','eingeschränkt','nicht empfohlen','nein'];
 function badge(v){v=v||'?';return el('span',{class:'pill '+(GOOD.includes(v)?'ok':MID.includes(v)?'warn':BAD.includes(v)?'bad':'mut')},v)}
 async function header(){try{const s=await api('/api/server');srvbox.replaceChildren(el('span',{class:s.up?'ok':'mut'},'opencode-Server: '+(s.up?'an':'aus')),
@@ -262,7 +283,7 @@ function newForm(){const types=el('select',{});api('/api/types').then(t=>t.forEa
  const nm=el('input',{placeholder:'projektname (a-z, 0-9, -)'}),tp=el('input',{placeholder:'nur Android: Vorlage aus "android create --list"'});
  return el('div',{class:'card',id:'nf'},el('b',{},'Neues Projekt (im Standardordner)'),el('div',{class:'grid'},el('div',{},el('label',{},'Name'),nm),el('div',{},el('label',{},'Typ'),types)),el('label',{},'Android-Vorlage'),tp,
   el('div',{class:'bar'},el('button',{class:'b p',on:{click:async()=>{const r=await api('/api/new',{name:nm.value,type:types.value,tpl:tp.value});toast(r.message);setTab('projects')}}},'Anlegen')))}
-async function detail(name){clearInterval(timer);if(es){es.close();es=null}
+async function detail(name){clearInterval(timer);if(es){es.close();es=null}exitLogFull();LOG=null;window.scrollTo(0,0);
  const d=await api('/api/project?name='+encodeURIComponent(name));const logEl=el('pre',{id:'log'},(d.tail||[]).join('\n')||'(noch keine Ausgabe)');
  const items=el('div',{},d.items.length?d.items.map(i=>el('div',{},el('span',{class:i.state==='BLOCKIERT'?'bad':'warn'},i.state+' '),el('b',{},i.id+' '),i.title)):el('span',{class:'ok'},'Alles abgehakt'));
  const f={t:el('input',{}),b:el('textarea',{rows:3,placeholder:'Was soll geändert oder ergänzt werden?'})};
@@ -270,18 +291,42 @@ async function detail(name){clearInterval(timer);if(es){es.close();es=null}
  const tsel=el('select',{});api('/api/types').then(t=>t.forEach(x=>{const o=el('option',{},x);if(x===d.type)o.selected=true;tsel.append(o)}));
  const initCard=d.init?null:el('div',{class:'card'},el('b',{class:'warn'},'Noch nicht für vibe vorbereitet'),el('div',{class:'mut'},'Ergänzt fehlende Dateien (FEEDBACK.md, TICKETS.md, AGENTS.md, .vibe/project.env). Vorhandenes wird nie überschrieben, es wird nichts committet.'),
    el('div',{class:'bar'},tsel,el('button',{class:'b p',on:{click:act('/api/init',{name,type:tsel.value})}},'Für vibe vorbereiten')));
+ let logPaused=false,logBuf='';
+ const pauseBtn=el('button',{class:'b'},'Pause'),fullBtn=el('button',{class:'b'},'Vergrößern');
+ const logCard=el('div',{class:'card logcard'});
+ const appendLog=t=>{const near=logEl.scrollHeight-logEl.scrollTop-logEl.clientHeight<60;logEl.textContent+=t;if(logEl.textContent.length>80000)logEl.textContent=logEl.textContent.slice(-60000);if(near)logEl.scrollTop=logEl.scrollHeight};
+ const fitLog=()=>{if(logCard.classList.contains('full'))return;const h=Math.max(240,window.innerHeight-logEl.getBoundingClientRect().top-18);logEl.style.height=h+'px'};
+ pauseBtn.addEventListener('click',()=>{logPaused=!logPaused;pauseBtn.textContent=logPaused?'Fortsetzen':'Pause';pauseBtn.classList.toggle('p',logPaused);if(!logPaused&&logBuf){appendLog(logBuf);logBuf='';logEl.scrollTop=logEl.scrollHeight}});
+ fullBtn.addEventListener('click',()=>setLogFull(!logCard.classList.contains('full')));
+ LOG={card:logCard,pre:logEl,button:fullBtn,fit:fitLog};
  main.replaceChildren(...[el('div',{class:'bar'},el('button',{class:'b',on:{click:()=>setTab('projects')}},'← zurück'),el('h2',{style:'margin:0'},name),el('span',{class:'pill '+(d.running?'run':'')},d.running?'läuft':'gestoppt'),el('span',{class:'mut'},d.type+' · '+d.branch+' · '+d.dirty+' Änderungen · '+d.path)),
   initCard,
   el('div',{class:'bar'},el('button',{class:'b p',on:{click:act('/api/run',{name})}},'Agentenlauf starten'),el('button',{class:'b',on:{click:act('/api/stop',{name})}},'Stoppen'),
    el('button',{class:'b',on:{click:()=>{act('/api/verify',{name,mode:'quick'})();stream('verify')}}},'Prüfung quick'),el('button',{class:'b',on:{click:()=>{act('/api/verify',{name,mode:'full'})();stream('verify')}}},'Prüfung full'),
    el('button',{class:'b',on:{click:()=>stream('run')}},'Lauf-Log'),el('a',{href:'http://127.0.0.1:4096',target:'_blank'},'opencode-Weboberfläche')),
   el('div',{class:'grid'},el('div',{},el('div',{class:'card'},el('b',{},'Offene Arbeitspakete ('+d.items.length+')'),items),
+   feedbackCard(d,name),
    el('div',{class:'card'},el('b',{},'Feedback eintragen'),el('label',{},'Titel'),f.t,el('label',{},'Beschreibung'),f.b,
     el('div',{class:'bar'},el('button',{class:'b p',on:{click:async()=>{const r=await api('/api/feedback',{name,title:f.t.value,description:f.b.value});toast(r.message);detail(name).catch(showErr)}}},'Eintragen')))),
-   el('div',{class:'card'},el('b',{},'Live-Ausgabe'),logEl))].filter(Boolean));
- function stream(kind){if(es)es.close();logEl.textContent='';es=new EventSource('/api/stream?name='+encodeURIComponent(name)+'&kind='+kind+'&t='+encodeURIComponent(T));
-  es.onmessage=ev=>{const near=logEl.scrollHeight-logEl.scrollTop-logEl.clientHeight<60;logEl.textContent+=(JSON.parse(ev.data).join('\n'))+'\n';if(logEl.textContent.length>80000)logEl.textContent=logEl.textContent.slice(-60000);if(near)logEl.scrollTop=logEl.scrollHeight}}
+   logCard)].filter(Boolean));
+ logCard.append(el('div',{class:'bar'},el('b',{},'Live-Ausgabe'),pauseBtn,fullBtn),logEl);
+ fitLog();
+ function stream(kind){if(es)es.close();logEl.textContent='';logPaused=false;logBuf='';pauseBtn.textContent='Pause';pauseBtn.classList.remove('p');es=new EventSource('/api/stream?name='+encodeURIComponent(name)+'&kind='+kind+'&t='+encodeURIComponent(T));
+  es.onmessage=ev=>{const chunk=JSON.parse(ev.data).join('\n')+'\n';if(logPaused){logBuf=(logBuf+chunk).slice(-80000);return}appendLog(chunk)}}
  stream('run')}
+function feedbackCard(d,name){const list=el('div',{});const cls=s=>s==='erledigt'?'ok':s==='BLOCKIERT'?'bad':'warn';
+ const draw=()=>{list.replaceChildren(...(d.feedback.length?d.feedback.map(i=>{const row=el('div',{class:'fbentry','data-id':i.id},
+   el('div',{},el('span',{class:'pill '+cls(i.state)},i.state),el('b',{},' '+i.id+' '+i.title)),i.description?el('div',{class:'mut fbdesc'},i.description):null,
+   el('div',{class:'bar'},el('button',{class:'b',on:{click:()=>edit(i,row)}},'Bearbeiten'),
+    el('button',{class:'b d',on:{click:async()=>{if(!confirm('Feedback '+i.id+' wirklich löschen?'))return;const r=await api('/api/feedback',{name,action:'delete',id:i.id});toast(r.message);if(r.ok)detail(name).catch(showErr)}}},'Löschen')));
+   return row}):[el('span',{class:'mut'},'Noch kein Feedback vorhanden.')]))};
+ const edit=(i,row)=>{const t=el('input',{value:i.title}),b=el('textarea',{rows:4,value:i.description||''});
+  const ed=el('div',{class:'fbentry','data-id':i.id},el('label',{},'Titel'),t,el('label',{},'Beschreibung'),b,
+   el('div',{class:'bar'},el('button',{class:'b p',on:{click:async()=>{const r=await api('/api/feedback',{name,action:'update',id:i.id,title:t.value,description:b.value});toast(r.message);if(r.ok)detail(name).catch(showErr)}}},'Speichern'),
+    el('button',{class:'b',on:{click:()=>ed.replaceWith(row)}},'Abbrechen')));
+  row.replaceWith(ed)};
+ draw();
+ return el('div',{class:'card'},el('b',{},'Feedback ('+d.feedback.length+')'),list)}
 
 /* ---------- Agenten, Modelle, Profile ---------- */
 let AG=null,AGFILTER='alle';

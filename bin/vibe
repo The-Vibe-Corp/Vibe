@@ -183,6 +183,140 @@ def open_items(name):
             elif need_proof and not _proof_ok(root, b): res.append((pid, title, "ohne Nachweis"))
     return res
 
+# ---------- Feedback-Punkte lesen, ändern und löschen ----------
+_FEEDBACK_LABEL = re.compile(r"^[ \t]+(Beschreibung|Erwartet|Schritte|Ist|Commit|BLOCKIERT):[ \t]?(.*)$")
+
+def _feedback_scan(text):
+    """Liefert Feedback-Blöcke als (start, end, Zeilen) ohne HTML-Kommentare.
+
+    start/end sind Zeilenindizes in ``text.splitlines()``; end zeigt hinter die
+    letzte nichtleere Zeile des Blocks. Die Kommentarvorlage in FEEDBACK.md
+    wird ignoriert.
+    """
+    entries, cur, in_comment = [], None, False
+    for idx, line in enumerate(text.splitlines()):
+        stripped = line.strip()
+        if in_comment:
+            if "-->" in line: in_comment = False
+            if cur: entries.append(cur); cur = None
+            continue
+        if stripped.startswith("<!--"):
+            if cur: entries.append(cur); cur = None
+            if "-->" not in stripped: in_comment = True
+            continue
+        if line.startswith("- "):
+            if cur: entries.append(cur)
+            cur = {"start": idx, "end": idx + 1, "lines": [line]}
+        elif cur is not None and (line.startswith((" ", "\t")) or not stripped):
+            cur["lines"].append(line)
+            if stripped: cur["end"] = idx + 1
+        else:
+            if cur: entries.append(cur)
+            cur = None
+    if cur: entries.append(cur)
+    return entries
+
+def _feedback_parse(entry, root):
+    first = entry["lines"][0]
+    m = re.match(r"- (?:\[([ x])\]\s*)?(\S+)\s*(.*)$", first)
+    if not m: return None
+    desc, desc_start, desc_end, i = [], None, None, 1
+    while i < len(entry["lines"]):
+        lm = _FEEDBACK_LABEL.match(entry["lines"][i])
+        if lm and lm.group(1) in ("Beschreibung", "Erwartet"):
+            desc_start = i
+            if lm.group(2).strip(): desc.append(lm.group(2).strip())
+            i += 1
+            while i < len(entry["lines"]):
+                if _FEEDBACK_LABEL.match(entry["lines"][i]): break
+                if entry["lines"][i].strip(): desc.append(entry["lines"][i].strip())
+                i += 1
+            desc_end = i
+            break
+        i += 1
+    block = "\n".join(entry["lines"])
+    checked = m.group(1) == "x"
+    if "BLOCKIERT:" in block: state = "BLOCKIERT"
+    elif not checked: state = "offen"
+    elif root and not _proof_ok(root, block): state = "ohne Nachweis"
+    else: state = "erledigt"
+    return {"id": m.group(2), "title": m.group(3), "description": "\n".join(desc),
+            "state": state, "checked": checked, "desc_start": desc_start, "desc_end": desc_end}
+
+def feedback_path(name):
+    return os.path.join(ppath(name), "FEEDBACK.md")
+
+def _read_text(path):
+    with open(path, encoding="utf-8", errors="replace") as f: return f.read()
+
+def feedback_items(name):
+    """Alle Feedback-Punkte mit Titel, Beschreibung und Status."""
+    fp = feedback_path(name)
+    if not os.path.exists(fp): return []
+    text = _read_text(fp)
+    root = ppath(name); out = []
+    for entry in _feedback_scan(text):
+        item = _feedback_parse(entry, root)
+        if item:
+            out.append({k: item[k] for k in ("id", "title", "description", "state")})
+    return out
+
+def _feedback_target(name, fid):
+    fp = feedback_path(name)
+    if not os.path.exists(fp): raise ValueError("Keine FEEDBACK.md vorhanden")
+    text = _read_text(fp)
+    for entry in _feedback_scan(text):
+        item = _feedback_parse(entry, ppath(name))
+        if item and item["id"] == fid:
+            return fp, text, entry, item
+    raise ValueError("Feedback-Punkt nicht gefunden: " + fid)
+
+def _write_text_atomic(path, text):
+    """Schreibt über eine temporäre Datei im Zielordner, damit kein Teilstück entsteht."""
+    try: mode = os.stat(path).st_mode & 0o7777
+    except OSError: mode = None
+    fd, tmp = tempfile.mkstemp(prefix=".vibe-feedback-", suffix=".tmp", dir=os.path.dirname(path) or ".")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="") as f: f.write(text)
+        if mode is not None: os.chmod(tmp, mode)
+        os.replace(tmp, path)
+    except BaseException:
+        try: os.unlink(tmp)
+        except OSError: pass
+        raise
+
+def feedback_update(name, fid, title, description=""):
+    """Ändert Titel und Beschreibung eines vorhandenen Feedback-Punkts."""
+    title = (title or "").strip()
+    if not title: raise ValueError("Titel fehlt")
+    if "\n" in title or "\r" in title: raise ValueError("Titel darf keinen Zeilenumbruch enthalten")
+    fp, text, entry, item = _feedback_target(name, fid)
+    raw = text.splitlines(keepends=True)
+    sep = "\r\n" if raw[entry["start"]].endswith("\r\n") else "\n"
+    first = raw[entry["start"]].rstrip("\r\n")
+    m = re.match(r"- (?:\[[ x]\]\s*)?(\S+)\s*(.*)$", first)
+    if not m: raise ValueError("Feedback-Punkt nicht lesbar: " + fid)
+    prefix = first[:m.start(2)]
+    raw[entry["start"]] = prefix + title + sep
+    desc = (description or "").strip()
+    parts = desc.splitlines() if desc else [""]
+    new_lines = ["  Beschreibung:" + (" " + parts[0] if parts[0] else "") + sep]
+    for extra in parts[1:]: new_lines.append("  " + extra + sep)
+    if item["desc_start"] is not None:
+        begin = entry["start"] + item["desc_start"]
+        end = entry["start"] + item["desc_end"]
+        raw[begin:end] = new_lines
+    else:
+        raw[entry["start"] + 1:entry["start"] + 1] = new_lines
+    _write_text_atomic(fp, "".join(raw))
+
+def feedback_delete(name, fid):
+    """Entfernt genau einen Feedback-Punkt; andere Einträge bleiben erhalten."""
+    fp, text, entry, _ = _feedback_target(name, fid)
+    raw = text.splitlines(keepends=True)
+    del raw[entry["start"]:entry["end"]]
+    _write_text_atomic(fp, "".join(raw))
+
 def sess(name): return "vibe-" + safe(name)
 def tmux_has(name): return sh(f"tmux has-session -t {sess(name)}")[0] == 0
 
