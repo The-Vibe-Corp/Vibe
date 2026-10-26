@@ -9,8 +9,6 @@ cd "$P" || exit 1
 [ -f .vibe/project.env ] && set -a && . ./.vibe/project.env && set +a
 AGENT="${2:-${AGENT:-coding-agent_deepseek}}"
 MAXP="${VIBE_MAX_PACKAGES:-${MAX_PACKAGES:-80}}"
-FRITZ_PY="$VIBE/_toolchain/fritz-venv/bin/python"; [ -x "$FRITZ_PY" ] || FRITZ_PY="$HOME/.venvs/fritz/bin/python"
-FRITZ_SCRIPT="$BIN/fritz-reconnect.py"
 HASHFILE="$HOME/.config/schreibfuchs-verify.sha"
 check_hash() { [ -f "$HASHFILE" ] && (cd "$V" && sha256sum -c "$HASHFILE" --quiet) || { echo "ABBRUCH: Abnahme-Dateien fehlen oder wurden verändert."; exit 3; }; }
 final_verify() {
@@ -52,7 +50,9 @@ Bearbeite NUR dieses Arbeitspaket gemäß deinem Workflow. Commit-Präfix: '$ID:
   LAST_ID="$ID"
   if [ "$RC" != 0 ]; then
     printf '\a\a\a'; echo "Agent mit Fehler beendet (z. B. Request-Limit)." | tee -a "$LOG"
-    if [ -x "$FRITZ_PY" ] && [ -f "$HOME/.config/fritz.env" ] && [ -f "$FRITZ_SCRIPT" ] && "$FRITZ_PY" "$FRITZ_SCRIPT"; then sleep 20
+    FRITZ_OUT="$(python3 "$BIN/vibe" fritz auto 2>&1)"; FRITZ_RC=$?
+    if [ -n "$FRITZ_OUT" ]; then printf '%s\n' "$FRITZ_OUT" | tee -a "$LOG"; fi
+    if [ "$FRITZ_RC" = 0 ]; then sleep 20
     else read -r -p "Neue IP manuell anfordern, dann Enter (Strg+C = Abbruch): " _; fi
   fi
 done

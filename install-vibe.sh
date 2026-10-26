@@ -7,11 +7,10 @@ case "$KIT" in "$VIBE"/[!_]*) echo "FEHLER: Kit liegt in einem Projektordner. En
 command -v tmux > /dev/null || { echo "FEHLER: tmux fehlt: sudo dnf install -y tmux"; exit 1; }
 command -v flock > /dev/null || { echo "FEHLER: flock fehlt: sudo dnf install -y util-linux"; exit 1; }
 mkdir -p "$VIBE/_toolchain/bin" "$VIBE/_toolchain/templates" "$VIBE/_logs" "$HOME/.local/bin"
-cp "$KIT/bin/vibe" "$KIT/bin/vibe-run.sh" "$KIT/bin/vibe-web.py" "$KIT/bin/vibe_mcp.py" "$VIBE/_toolchain/bin/"
-chmod +x "$VIBE/_toolchain/bin/vibe" "$VIBE/_toolchain/bin/vibe-run.sh" "$VIBE/_toolchain/bin/vibe-web.py"
+cp "$KIT/bin/vibe" "$KIT/bin/vibe-run.sh" "$KIT/bin/vibe-web.py" "$KIT/bin/vibe_mcp.py" "$KIT/bin/fritz-reconnect.py" "$VIBE/_toolchain/bin/"
+chmod +x "$VIBE/_toolchain/bin/vibe" "$VIBE/_toolchain/bin/vibe-run.sh" "$VIBE/_toolchain/bin/vibe-web.py" "$VIBE/_toolchain/bin/fritz-reconnect.py"
 cp -r "$KIT/templates/." "$VIBE/_toolchain/templates/"
 cp "$KIT/data/models.json" "$VIBE/_toolchain/models.json"
-for f in "$VIBE"/*/scripts/fritz-reconnect.py; do [ -f "$f" ] && cp "$f" "$VIBE/_toolchain/bin/" && break; done || true
 ln -sf "$VIBE/_toolchain/bin/vibe" "$HOME/.local/bin/vibe"
 tmux kill-session -t vibe-ui 2>/dev/null || true
 for d in "$VIBE"/*/; do

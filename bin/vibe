@@ -9,6 +9,7 @@ Aufruf:  vibe                 interaktives Menü
          vibe logs <p>        Log verfolgen
          vibe stop <p>        Lauf beenden
          vibe pause <p> [on|off]  nach dem aktuellen Arbeitspaket anhalten
+         vibe fritz [status|on|off|reconnect]  FRITZ!Box-Reconnect (Automatik/manuel)
          vibe verify <p> [quick|full]
          vibe feedback <p>    neuen Punkt in FEEDBACK.md eintragen
          vibe new <name> <typ> [vorlage]   Typen: vibe types
@@ -118,9 +119,10 @@ def ppath(name):
 def read_env(path):
     d = {}
     if os.path.exists(path):
-        for l in open(path, encoding="utf-8"):
-            m = re.match(r'\s*([A-Z_]+)=(.*)', l)
-            if m: d[m.group(1)] = m.group(2).strip().strip('"').strip("'")
+        with open(path, encoding="utf-8") as f:
+            for l in f:
+                m = re.match(r'\s*([A-Z_]+)=(.*)', l)
+                if m: d[m.group(1)] = m.group(2).strip().strip('"').strip("'")
     return d
 
 def penv(name): return read_env(os.path.join(ppath(name), ".vibe", "project.env"))
@@ -444,6 +446,153 @@ def cmd_pause(name, action=None):
     else:
         print("Pause nach dem aktuellen Arbeitspaket: nicht angefordert")
         print(col("d", "Anfordern: vibe pause " + name + " on"))
+
+
+# ---------- FRITZ!Box-Reconnect (optionale Altintegration) ----------
+# Die Automatik ist laut SPEC.md standardmäßig aus. Sie löst nur nach einem
+# fehlgeschlagenen Agentenlauf aus. Der Zustand liegt als Laufzeitdatei in
+# $VIBE/_toolchain/fritz.json und gehört nicht ins Repository.
+FRITZ_SETTINGS = os.path.join(TOOLS, "fritz.json")
+FRITZ_TIMEOUT = 200
+FRITZ_REQUIRED = ("FRITZ_ADDR", "FRITZ_USER", "FRITZ_PASS")
+
+def _fritz_env_path():
+    return os.path.abspath(os.path.expanduser(
+        os.environ.get("VIBE_FRITZ_ENV") or "~/.config/fritz.env"))
+
+def _fritz_python():
+    """Interpreter mit fritzconnection; überschreibbar für Tests."""
+    override = os.environ.get("VIBE_FRITZ_PYTHON")
+    if override: return override
+    for path in (os.path.join(TOOLS, "fritz-venv", "bin", "python"),
+                 os.path.expanduser("~/.venvs/fritz/bin/python")):
+        if os.access(path, os.X_OK): return path
+    return None
+
+def _fritz_script():
+    """Reconnect-Helfer; installiert unter _toolchain/bin, in Tests überschreibbar."""
+    override = os.environ.get("VIBE_FRITZ_SCRIPT")
+    if override: return override
+    preferred = os.path.join(BIN, "fritz-reconnect.py")
+    if os.path.isfile(preferred): return preferred
+    return os.path.join(os.path.dirname(os.path.realpath(__file__)), "fritz-reconnect.py")
+
+def fritz_automation():
+    """True nur bei ausdrücklich gespeicherter Automatik; kaputte Datei gilt als aus."""
+    try:
+        with open(FRITZ_SETTINGS, encoding="utf-8") as f: data = json.load(f)
+    except (OSError, ValueError):
+        return False
+    return isinstance(data, dict) and data.get("automation") is True
+
+def fritz_automation_set(enabled):
+    if not isinstance(enabled, bool):
+        raise ValueError("enabled muss true oder false sein")
+    os.makedirs(TOOLS, exist_ok=True)
+    try:
+        _write_text_atomic(FRITZ_SETTINGS,
+                           json.dumps({"automation": enabled}, indent=1) + "\n")
+    except OSError as error:
+        raise ValueError("Fritzbox-Automatik nicht speicherbar: " + str(error))
+    return enabled
+
+def fritz_status():
+    """Zustand ohne Zugangsdaten und ohne Netzwerkzugriff."""
+    env_path = _fritz_env_path()
+    try:
+        values = read_env(env_path) if os.path.isfile(env_path) else {}
+    except (OSError, UnicodeDecodeError):
+        values = {}
+    configured = all(values.get(key) for key in FRITZ_REQUIRED)
+    script = _fritz_script()
+    python = _fritz_python()
+    script_ok = os.path.isfile(script)
+    python_ok = bool(python) and os.access(python, os.X_OK)
+    return {"automation": fritz_automation(), "configured": configured,
+            "env": env_path, "env_exists": os.path.isfile(env_path),
+            "script": script, "script_ok": script_ok,
+            "python": python or "", "python_ok": python_ok,
+            "ready": configured and script_ok and python_ok}
+
+def fritz_reconnect(timeout=FRITZ_TIMEOUT):
+    """Startet den Helfer ohne Shell; liefert Ergebnis statt Prozessabbruch."""
+    status = fritz_status()
+    if not status["configured"]:
+        raise ValueError("Fritzbox ist nicht konfiguriert: " + status["env"]
+                         + " fehlt oder enthält nicht FRITZ_ADDR, FRITZ_USER und FRITZ_PASS.")
+    if not status["script_ok"]:
+        raise ValueError("Fritzbox-Helfer fehlt: " + status["script"])
+    if not status["python_ok"]:
+        raise ValueError("Python mit fritzconnection fehlt: " + (status["python"] or "nicht gefunden"))
+    env = dict(os.environ); env["FRITZ_ENV"] = status["env"]
+    try:
+        finished = subprocess.run([status["python"], status["script"]], env=env,
+                                  capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired as error:
+        partial = b""
+        for chunk in (error.stdout, error.stderr):
+            if isinstance(chunk, bytes): partial += chunk
+            elif chunk: partial += chunk.encode("utf-8", "replace")
+        return {"ok": False, "returncode": None,
+                "output": partial.decode("utf-8", "replace").strip(),
+                "message": f"Zeitüberschreitung nach {timeout:g} s; der Reconnect wurde abgebrochen."}
+    except OSError as error:
+        return {"ok": False, "returncode": None, "output": "",
+                "message": "Reconnect nicht ausführbar: " + str(error)}
+    output = ((finished.stdout or "") + (finished.stderr or "")).strip()
+    if len(output) > 4000: output = output[-4000:]
+    ok = finished.returncode == 0
+    return {"ok": ok, "returncode": finished.returncode, "output": output,
+            "message": "Neue Internet-IP angefordert" if ok else
+                       f"Reconnect fehlgeschlagen (Exit-Code {finished.returncode})"}
+
+def fritz_auto(timeout=FRITZ_TIMEOUT):
+    """Automatik für den Paket-Läufer: nur bei eingeschalteter Automatik handeln."""
+    if not fritz_automation():
+        return {"ran": False, "result": None,
+                "message": "Fritzbox-Automatik ist aus; keine Router-Neuverbindung angefordert."}
+    try:
+        result = fritz_reconnect(timeout)
+    except ValueError as error:
+        return {"ran": False, "result": None, "message": str(error)}
+    return {"ran": True, "result": result, "message": result["message"]}
+
+def cmd_fritz(action=None):
+    if action in (None, "status", "list"):
+        status = fritz_status()
+        print("Automatik: " + ("an" if status["automation"] else "aus"))
+        print("Konfiguration:", status["env"],
+              "(vorhanden)" if status["configured"] else "(fehlt oder unvollständig)")
+        print("Helfer:", status["script"], "(vorhanden)" if status["script_ok"] else "(fehlt)")
+        print("Python:", status["python"] or "(nicht gefunden)",
+              "(ausführbar)" if status["python_ok"] else "(nicht ausführbar)")
+        print("Bereit:", "ja" if status["ready"] else "nein")
+        print(col("d", "Schalten: vibe fritz on|off | manuell: vibe fritz reconnect"))
+        return
+    if action in ("on", "an"):
+        fritz_automation_set(True)
+        print("Automatik: an")
+        print(col("d", "Nach einem fehlgeschlagenen Agentenlauf wird eine neue IP angefordert. Standardmäßig aus."))
+    elif action in ("off", "aus"):
+        fritz_automation_set(False)
+        print("Automatik: aus")
+    elif action in ("reconnect", "jetzt"):
+        try:
+            result = fritz_reconnect()
+        except ValueError as error:
+            sys.exit(str(error))
+        if result["output"]: print(result["output"])
+        print(result["message"])
+        if not result["ok"]: sys.exit(1)
+    elif action in ("auto", "automatik"):
+        outcome = fritz_auto()
+        print(outcome["message"])
+        if outcome["result"] and outcome["result"]["output"]:
+            print(outcome["result"]["output"])
+        if outcome["ran"] and outcome["result"] and outcome["result"]["ok"]: return
+        sys.exit(1 if outcome["ran"] else 3)
+    else:
+        sys.exit("vibe fritz [status|on|off|reconnect]")
 
 
 def git_info(name):
@@ -1016,6 +1165,7 @@ def main():
         table = {"list": lambda: cmd_list(), "status": lambda: cmd_status(r[0]), "run": lambda: cmd_run(r[0], r[1] if len(r) > 1 else None),
                  "attach": lambda: cmd_attach(r[0]), "logs": lambda: cmd_logs(r[0]), "stop": lambda: cmd_stop(r[0]),
                  "pause": lambda: cmd_pause(r[0], r[1] if len(r) > 1 else None),
+                 "fritz": lambda: cmd_fritz(r[0] if r else None),
                  "verify": lambda: cmd_verify(r[0], r[1] if len(r) > 1 else "quick"), "feedback": lambda: cmd_feedback(r[0]),
                  "new": lambda: cmd_new(r[0], r[1] if len(r) > 1 else "generic", r[2] if len(r) > 2 else None),
                  "init": lambda: cmd_init(r[0], r[1] if len(r) > 1 else None),

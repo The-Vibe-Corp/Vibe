@@ -125,6 +125,7 @@ class H(BaseHTTPRequestHandler):
                 scope = known_scope(q["scope"][0]); return self._send(200, vibe_mcp.get_entry(scope, q["name"][0]))
             if u.path == "/api/types": return self._send(200, vibe.types())
             if u.path == "/api/doctor": return self._send(200, [{"label": a, "ok": b, "hint": c} for a, b, c in vibe.doctor_checks()])
+            if u.path == "/api/fritz": return self._send(200, vibe.fritz_status())
             if u.path == "/api/server": h = vibe.server_health(); return self._send(200, {"up": bool(h), "url": vibe.OC_URL, "info": h})
             if u.path == "/api/stream": return self.stream(known(q["name"][0]), q.get("kind", ["run"])[0])
         except (AssertionError, ValueError) as e:
@@ -202,6 +203,23 @@ class H(BaseHTTPRequestHandler):
                     extra["pause_after"] = vibe.pause_after_active(name)
                 except ValueError as e:
                     ok, msg = False, str(e)
+            elif u.path == "/api/fritz":
+                act = body.get("action"); ok, msg = True, ""
+                try:
+                    if act in ("automation", "on", "off", "set"):
+                        enabled = (act == "on") if act in ("on", "off") else body.get("enabled")
+                        if not isinstance(enabled, bool):
+                            raise ValueError("enabled muss true oder false sein")
+                        vibe.fritz_automation_set(enabled)
+                        msg = "Fritzbox-Automatik " + ("an" if enabled else "aus")
+                    elif act == "reconnect":
+                        result = vibe.fritz_reconnect(); extra["result"] = result
+                        ok, msg = result["ok"], result["message"]
+                    else:
+                        ok, msg = False, "Unbekannte Aktion"
+                except ValueError as e:
+                    ok, msg = False, str(e)
+                extra["fritz"] = vibe.fritz_status()
             elif u.path == "/api/agent_template":
                 scope = known_scope(body.get("scope", "global"))
                 dirs = vibe.write_dirs(scope) if scope != "global" else None
@@ -527,8 +545,27 @@ async function mcpForm(scope,name){const d=await api('/api/mcp');let e={type:'lo
    el('div',{class:'bar'},el('button',{class:'b p',on:{click:async()=>{const r=await api('/api/mcp',{action:'save',scope:isNew?sc.value:scope,name:nm.value,old_name:isNew?'':name,create:isNew,entry:build()});toast(r.message);if(r.ok)mcp().catch(showErr)}}},'Speichern'),
     el('button',{class:'b',on:{click:async()=>{res.replaceChildren(el('div',{class:'mut'},'Teste … (kann bis zu einer Minute dauern, z. B. wenn npx Pakete lädt)'));const r=await api('/api/mcp',{action:'test',scope:isNew?sc.value:scope,name:isNew?'':name,entry:build()});mcpResult(r,res)}}},'Testen (mit den Werten oben)'),
     isNew?null:el('button',{class:'b d',on:{click:async()=>{if(!confirm('MCP-Server „'+name+'“ löschen?'))return;const r=await api('/api/mcp',{action:'delete',scope,name});toast(r.message);if(r.ok)mcp().catch(showErr)}}},'Löschen'))),res)}
-async function env(){const d=await api('/api/doctor');
- main.replaceChildren(el('div',{class:'card'},el('b',{},'Umgebungsprüfung'),...d.map(c=>el('div',{},el('span',{class:c.ok?'ok':'bad'},c.ok?'OK   ':'FEHL '),c.label,c.ok||!c.hint?null:el('span',{class:'mut'},'  → '+c.hint)))))}
+async function env(){const d=await api('/api/doctor');const f=await api('/api/fritz');
+ main.replaceChildren(el('div',{class:'card'},el('b',{},'Umgebungsprüfung'),...d.map(c=>el('div',{},el('span',{class:c.ok?'ok':'bad'},c.ok?'OK   ':'FEHL '),c.label,c.ok||!c.hint?null:el('span',{class:'mut'},'  → '+c.hint)))),fritzCard(f))}
+function fritzCard(f){
+ const cb=el('input',{type:'checkbox'});cb.checked=!!f.automation;
+ const state=el('span',{class:'pill '+(f.automation?'warn':'mut')},'Automatik: '+(f.automation?'an':'aus'));
+ const ready=el('span',{class:'pill '+(f.ready?'ok':'bad')},f.ready?'bereit':'nicht bereit');
+ const resultBox=el('div',{});
+ const recon=el('button',{class:'b p'},'Jetzt neu verbinden');
+ recon.disabled=!f.ready;
+ recon.addEventListener('click',async()=>{if(!confirm('FRITZ!Box neu verbinden? Die Internetverbindung wird kurz getrennt; alle Geräte im Netz sind betroffen.'))return;
+  recon.disabled=true;resultBox.replaceChildren(el('div',{class:'mut'},'Reconnect läuft … (die FRITZ!Box prüft bis zu drei Minuten auf eine neue IP)'));
+  try{const r=await api('/api/fritz',{action:'reconnect'});
+   resultBox.replaceChildren(el('div',{class:'card '+(r.ok?'':'err')},el('b',{class:r.ok?'ok':'bad'},r.ok?'Reconnect erfolgreich':'Reconnect fehlgeschlagen'),
+    el('pre',{style:'white-space:pre-wrap;margin:8px 0 0'},(r.result&&r.result.output)||r.message||'')))}catch(e){resultBox.replaceChildren(el('div',{class:'card err'},String(e&&e.message||e)))}finally{recon.disabled=!f.ready}});
+ return el('div',{class:'card'},el('div',{class:'bar'},el('b',{},'Fritzbox-Reconnect'),state,ready,recon),
+  el('div',{class:'mut'},'Optionale Altintegration: Nach einem fehlgeschlagenen Agentenlauf kann eine neue Internet-IP angefordert werden (z. B. nach einem Anbieter-Limit). Ein Reconnect trennt die Internetverbindung der FRITZ!Box kurz; das betrifft alle Geräte im Netz. Die Automatik ist standardmäßig aus und greift nur nach einem Fehler, nie während eines laufenden Pakets.'),
+  el('div',{class:'mut'},'Konfiguration: '+f.env+' (nicht im Repository)'+(f.configured?' – vorhanden':' – fehlt oder unvollständig')),
+  el('div',{class:'mut'},'Helfer: '+f.script+(f.script_ok?'':' (fehlt)')+' · Python: '+(f.python||'nicht gefunden')+(f.python_ok?'':' (nicht ausführbar)')+' · Voraussetzung: fritzconnection im Python installiert'),
+  el('div',{class:'bar'},el('label',{style:'margin:0'},el('span',{},' Automatik nach fehlgeschlagenem Agentenlauf '),cb),
+   el('button',{class:'b',on:{click:async()=>{const r=await api('/api/fritz',{action:'automation',enabled:cb.checked});toast(r.message);if(r.ok)env().catch(showErr)}}},'Automatik übernehmen')),
+  resultBox)}
 window.addEventListener('unhandledrejection',e=>showErr(e.reason));
 setTab('projects');
 </script></body></html>"""

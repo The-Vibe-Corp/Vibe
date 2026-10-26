@@ -11,3 +11,4 @@ Zuordnung der Projekt-Dokumentation zu den Notizen in Trilium (Stand 2026-10-25)
 | vibe | Features | F2 Projektdetail: Feedback bearbeiten, Ausgabe steuern | `4etfKlTUj9ah` |
 | vibe | Features | F3 Dynamische Schreibrechte je Projekt | `22bjPTSyr3CS` |
 | vibe | Features | F4 Nach dem aktuellen Arbeitspaket stoppen | `hcX8exIYkgWR` |
+| vibe | Features | F5 Fritzbox-Reconnect in der UI | `8DoXPxXg7jnD` |

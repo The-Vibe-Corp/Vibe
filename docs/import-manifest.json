@@ -11,19 +11,24 @@
  ],
  "files": [
   {
+   "path": "bin/fritz-reconnect.py",
+   "sha256": "16a2b80ed79313ae87c88dc7fc5041115a8a256dc805eb668845501eeb983ce2",
+   "bytes": 3293
+  },
+  {
    "path": "bin/vibe",
-   "sha256": "8eaa8b5fb1888c1464d7ab2a860b4e6cc6a7cdc0e5905cc7e8382834a31d9085",
-   "bytes": 53396
+   "sha256": "7a888085b83a0651ab9723608396d5533ae8e8e5784643e2021b05e14f0bab7d",
+   "bytes": 60586
   },
   {
    "path": "bin/vibe-run.sh",
-   "sha256": "8a4e7fc36ae8a61f76e14337e0b13ea6447dfc10a5e4f4d38a021ee0af68c910",
-   "bytes": 4111
+   "sha256": "2853d7d68da5049b70c5701b100c9301d8b7d3499bfad34943d5ce9b020b2205",
+   "bytes": 4014
   },
   {
    "path": "bin/vibe-web.py",
-   "sha256": "575a55630942cd6649afc50e4889fb87e59f8e4a1f014daaa04477f3496c8836",
-   "bytes": 53952
+   "sha256": "10c32310310879d4bca76202d65fe368c35e11caafcd0b4e11830c624b4eab3b",
+   "bytes": 57435
   },
   {
    "path": "bin/vibe_mcp.py",
@@ -37,8 +42,8 @@
   },
   {
    "path": "install-vibe.sh",
-   "sha256": "bf697f229230184cbbc2db0325612277f24bd59bc9b6c698f7183c030602ce42",
-   "bytes": 1664
+   "sha256": "ce87e5bf8ff00c6cc78ac6c2376da5f8ce0427ed6c2b0acbd831d51189c1e722",
+   "bytes": 1616
   },
   {
    "path": "templates/android/.vibe/project.env",
@@ -158,6 +163,18 @@
     "bin/vibe",
     "bin/vibe-run.sh",
     "bin/vibe-web.py"
+   ]
+  },
+  {
+   "arbeitspaket": "F5",
+   "datum": "2026-10-26",
+   "grund": "Fritzbox-Reconnect in der Oberfläche: Automatik (Standard aus) und manueller Reconnect im Tab Umgebung, CLI und Paket-Läufer nutzen dieselbe Einstellung; Reconnect-Helfer reproduzierbar im Repository und bei der Installation kopiert.",
+   "dateien": [
+    "bin/vibe",
+    "bin/vibe-run.sh",
+    "bin/vibe-web.py",
+    "bin/fritz-reconnect.py",
+    "install-vibe.sh"
    ]
   }
  ]
