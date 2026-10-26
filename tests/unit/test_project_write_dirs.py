@@ -579,9 +579,11 @@ class WriteDirsApiFixture(unittest.TestCase):
 
     def permissions(self):
         path = self.project / ".vibe" / "permissions.json"
-        if not path.exists():
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))["write_dirs"]
+        except FileNotFoundError:
+            # The server may rewrite the file between exists() and read().
             return None
-        return json.loads(path.read_text(encoding="utf-8"))["write_dirs"]
 
     def write_agent(self, name, text=AGENT_TEMPLATE):
         folder = self.project / ".opencode" / "agents"

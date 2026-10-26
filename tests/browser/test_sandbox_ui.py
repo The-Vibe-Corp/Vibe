@@ -18,7 +18,7 @@ from playwright.sync_api import sync_playwright
 
 REPO = Path(__file__).resolve().parents[2]
 WEB = REPO / "bin" / "vibe-web.py"
-SHOT = REPO / "docs" / "features" / "F7-sandbox.png"
+SHOT = Path(os.environ.get("VIBE_VERIFY_SCREENSHOT_DIR", REPO / "docs" / "features")) / "F7-sandbox.png"
 
 
 def free_port():

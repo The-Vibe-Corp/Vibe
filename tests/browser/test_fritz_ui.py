@@ -21,7 +21,7 @@ from playwright.sync_api import sync_playwright
 
 REPO = Path(__file__).resolve().parents[2]
 WEB = REPO / "bin" / "vibe-web.py"
-SHOT = REPO / "docs" / "features" / "F5-fritz.png"
+SHOT = Path(os.environ.get("VIBE_VERIFY_SCREENSHOT_DIR", REPO / "docs" / "features")) / "F5-fritz.png"
 
 FAKE_HELPER = '''import json, os, sys
 log = os.environ.get("FAKE_FRITZ_LOG")

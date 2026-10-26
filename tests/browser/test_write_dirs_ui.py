@@ -20,7 +20,7 @@ from playwright.sync_api import sync_playwright
 
 REPO = Path(__file__).resolve().parents[2]
 WEB = REPO / "bin" / "vibe-web.py"
-SHOT = REPO / "docs" / "features" / "F3-schreibrechte.png"
+SHOT = Path(os.environ.get("VIBE_VERIFY_SCREENSHOT_DIR", REPO / "docs" / "features")) / "F3-schreibrechte.png"
 
 AGENT = """---
 description: Projektagent für die Browserprüfung
@@ -159,9 +159,11 @@ class WriteDirsBrowserTest(unittest.TestCase):
 
     def stored_dirs(self):
         path = self.project / ".vibe" / "permissions.json"
-        if not path.exists():
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))["write_dirs"]
+        except FileNotFoundError:
+            # The server may rewrite the file between exists() and read().
             return None
-        return json.loads(path.read_text(encoding="utf-8"))["write_dirs"]
 
     def write_agent(self):
         folder = self.project / ".opencode" / "agents"
