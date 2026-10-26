@@ -8,7 +8,15 @@ LOG="$VIBE/_logs/$NAME.log"; mkdir -p "$VIBE/_logs"
 cd "$P" || exit 1
 [ -f .vibe/project.env ] && set -a && . ./.vibe/project.env && set +a
 AGENT="${2:-${AGENT:-coding-agent_deepseek}}"
+if ! [[ "$AGENT" =~ ^[A-Za-z0-9][A-Za-z0-9_-]*$ ]]; then
+  echo "ABBRUCH: Agentenname ungültig (erlaubt: Buchstaben, Ziffern, _ und -)." | tee -a "$LOG"
+  exit 2
+fi
 MAXP="${VIBE_MAX_PACKAGES:-${MAX_PACKAGES:-80}}"
+if ! [[ "$MAXP" =~ ^[0-9]+$ ]]; then
+  echo "ABBRUCH: MAX_PACKAGES muss eine Zahl sein." | tee -a "$LOG"
+  exit 2
+fi
 HASHFILE="$HOME/.config/schreibfuchs-verify.sha"
 check_hash() { [ -f "$HASHFILE" ] && (cd "$V" && sha256sum -c "$HASHFILE" --quiet) || { echo "ABBRUCH: Abnahme-Dateien fehlen oder wurden verändert."; exit 3; }; }
 final_verify() {

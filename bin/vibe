@@ -29,7 +29,7 @@ Aufruf:  vibe                 interaktives Menü
          vibe types           verfügbare Projekttypen
          vibe doctor          Umgebung prüfen
 """
-import os, sys, re, json, subprocess, shutil, time, tempfile
+import os, sys, re, json, subprocess, shutil, time, tempfile, shlex
 
 if __name__ == "__main__": sys.modules["vibe"] = sys.modules[__name__]
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
@@ -51,14 +51,38 @@ NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 C = {"g": "\033[32m", "r": "\033[31m", "y": "\033[33m", "b": "\033[1m", "d": "\033[2m", "0": "\033[0m"}
 def col(c, s): return f"{C[c]}{s}{C['0']}" if sys.stdout.isatty() else s
 
-def sh(cmd, cwd=None, timeout=60):
-    try:
-        p = subprocess.run(cmd, shell=True, cwd=cwd, capture_output=True, text=True, timeout=timeout)
-        return p.returncode, (p.stdout + p.stderr).strip()
-    except Exception as e:
-        return 1, str(e)
+def run(argv, cwd=None, timeout=60, env=None):
+    """Startet ein Programm ohne Shell und liefert (Exitcode, Ausgabe).
 
-def shquote(s): return "'" + s.replace("'", "'\\''") + "'"
+    ``argv`` ist eine Liste aus Programm und Argumenten. Namen, Pfade und
+    Agenten bleiben getrennte Listenelemente und werden nie von einer Shell
+    ausgewertet. Exitcode 127 bedeutet "Programm nicht gefunden", 124 eine
+    Zeitüberschreitung.
+    """
+    if (not isinstance(argv, (list, tuple)) or not argv
+            or not all(isinstance(arg, str) for arg in argv)):
+        raise ValueError("Argumentliste erwartet: Programm und Argumente als Zeichenketten")
+    argv = list(argv)
+    try:
+        p = subprocess.run(argv, cwd=cwd, env=env, capture_output=True, text=True, timeout=timeout)
+        return p.returncode, (p.stdout + p.stderr).strip()
+    except FileNotFoundError:
+        return 127, "Programm nicht gefunden: " + argv[0]
+    except subprocess.TimeoutExpired:
+        return 124, f"Zeitüberschreitung nach {timeout:g} s: {argv[0]}"
+    except OSError as error:
+        return 126, f"Programm nicht ausführbar: {argv[0]}: {error}"
+
+def git_run(root, *args):
+    """Liest Git-Informationen, ohne Projekt-Hooks (core.fsmonitor) auszuführen."""
+    return run(["git", "--no-pager", "-c", "core.fsmonitor=false", *args], cwd=root)
+
+def require_agent(agent):
+    """Bricht bei Agentennamen ab, die keine Shell als ein Wort sehen würde."""
+    if not NAME_RE.match(agent or ""):
+        sys.exit("Agentenname: nur a-z, 0-9, _ und - (keine Leerzeichen oder Shellzeichen)")
+    return agent
+
 def in_container(): return os.path.exists("/run/.containerenv") or bool(os.environ.get("CONTAINER_ID"))
 def safe(name): return re.sub(r"[^A-Za-z0-9_-]", "_", name)
 def logpath(name, kind="run"): return os.path.join(LOGS, safe(name) + (".verify.log" if kind == "verify" else ".log"))
@@ -172,7 +196,7 @@ def _blocks(text):
 
 def _proof_ok(root, b):
     c = re.search(r"Commit:\s*([0-9a-f]{7,40})", b)
-    if not c or sh(f"git cat-file -e {c.group(1)}^{{commit}}", cwd=root)[0] != 0: return False
+    if not c or git_run(root, "cat-file", "-e", f"{c.group(1)}^{{commit}}")[0] != 0: return False
     return bool(re.search(r"Test:\s*\S+|Datei:\s*\S+", b))
 
 def open_items(name):
@@ -483,7 +507,7 @@ def cmd_sandbox(name, action=None, value=None):
     print(col("d", "Anpassen: vibe sandbox " + name + " on|off|tools \"git node npm\". Die Sandbox begrenzt Schreiben auf diese Verzeichnisse und Tool-Caches; /tmp ist privat und schreibgeschützt, Temporärdateien liegen im Zustandsordner. MCP und Netzwerk bleiben erlaubt, Lesezugriffe werden nicht eingeschränkt."))
 
 def sess(name): return "vibe-" + safe(name)
-def tmux_has(name): return sh(f"tmux has-session -t {sess(name)}")[0] == 0
+def tmux_has(name): return run(["tmux", "has-session", "-t", sess(name)])[0] == 0
 
 # ---------- Pause nach dem aktuellen Arbeitspaket ----------
 def pause_after_path(name):
@@ -679,9 +703,11 @@ def cmd_fritz(action=None):
 
 def git_info(name):
     p = ppath(name)
-    br = sh("git symbolic-ref --short HEAD 2>/dev/null", cwd=p)[1] or "-"
-    dirty = len([l for l in sh("git status --porcelain 2>/dev/null", cwd=p)[1].splitlines() if l.strip()])
-    rc, last = sh("git log -1 --format='%h %s (%cr)' 2>/dev/null", cwd=p)
+    rc, out = git_run(p, "symbolic-ref", "--short", "HEAD")
+    br = out if rc == 0 and out else "-"
+    rc, out = git_run(p, "status", "--porcelain")
+    dirty = len([l for l in out.splitlines() if l.strip()]) if rc == 0 else 0
+    rc, last = git_run(p, "log", "-1", "--format=%h %s (%cr)")
     last = last[:70] if rc == 0 and last else "(noch kein Commit)"
     return br, dirty, last
 
@@ -716,6 +742,7 @@ def cmd_status(name):
 
 def cmd_run(name, agent=None):
     p = ppath(name)
+    if agent is not None: require_agent(agent)
     if tmux_has(name): print("Läuft bereits. vibe attach", name); return
     if not is_init(name): sys.exit("Projekt ist nicht für vibe vorbereitet: vibe init " + name)
     sandbox = sandbox_status(name)
@@ -724,9 +751,12 @@ def cmd_run(name, agent=None):
         if not checked["ok"]: sys.exit(checked["message"])
     if pause_after_active(name): print(col("y", "Pause angefordert: der Lauf startet kein Arbeitspaket. Aufheben: vibe pause " + name + " off"))
     os.makedirs(LOGS, exist_ok=True)
-    env = penv(name); agent = agent or env.get("AGENT", "coding-agent_deepseek")
-    inner = f'source ~/.bashrc; export VIBE_LOGNAME={safe(name)}; bash "{BIN}/vibe-run.sh" "{p}" "{agent}"; echo; echo "[Lauf beendet] Enter zum Schließen"; read'
-    rc, out = sh(f'tmux new-session -d -s {sess(name)} -c {shquote(p)} bash -lc {shquote(inner)}')
+    env = penv(name); agent = require_agent(agent or env.get("AGENT", "coding-agent_deepseek"))
+    # Pfad und Agent bleiben Argumente; das Skript selbst ist konstant.
+    inner = ('source ~/.bashrc; export VIBE_LOGNAME="$1"; bash "$2" "$3" "$4"; '
+             'echo; echo "[Lauf beendet] Enter zum Schließen"; read')
+    rc, out = run(["tmux", "new-session", "-d", "-s", sess(name), "-c", p,
+                   "bash", "-lc", inner, name, safe(name), os.path.join(BIN, "vibe-run.sh"), p, agent])
     print(col("g", f"Gestartet: tmux-Sitzung {sess(name)}, Agent {agent}") if rc == 0 else col("r", out))
     print("Zuschauen: vibe attach", name, "| Log: vibe logs", name)
 
@@ -741,20 +771,26 @@ def cmd_logs(name):
     except KeyboardInterrupt: pass
 
 def cmd_stop(name):
-    sh(f"tmux kill-session -t {sess(name)}"); print("Beendet:", name)
+    run(["tmux", "kill-session", "-t", sess(name)]); print("Beendet:", name)
 
 def verify_command(name, mode="quick"):
     p = ppath(name); env = penv(name)
     if ptype(name) == "android" and os.path.exists(os.path.join(VERIFY, "verify.sh")):
-        return f'bash "{VERIFY}/verify.sh" "{p}" {mode}'
+        return shlex.join(["bash", os.path.join(VERIFY, "verify.sh"), p, mode])
     cmd = env.get("VERIFY_FULL" if mode == "full" else "VERIFY_QUICK", "")
     if not cmd or "TODO" in cmd: return None
     return cmd
 
-def cmd_verify(name, mode="quick"):
+def verify_argv(name, mode="quick"):
+    """Einzige Shellgrenze für projektkonfigurierte Prüfbefehle."""
     cmd = verify_command(name, mode)
-    if not cmd: sys.exit(f"Keine Prüfbefehle in {ppath(name)}/.vibe/project.env (VERIFY_QUICK / VERIFY_FULL).")
-    subprocess.run(["bash", "-lc", "source ~/.bashrc; " + cmd], cwd=ppath(name))
+    if not cmd: return None
+    return ["bash", "-lc", "source ~/.bashrc; " + cmd]
+
+def cmd_verify(name, mode="quick"):
+    argv = verify_argv(name, mode)
+    if not argv: sys.exit(f"Keine Prüfbefehle in {ppath(name)}/.vibe/project.env (VERIFY_QUICK / VERIFY_FULL).")
+    subprocess.run(argv, cwd=ppath(name))
 
 def next_feedback_number(path):
     nums = [int(m.group(1)) for m in re.finditer(r"^- (?:\[[ x]\]\s*)?F(\d+)\b", open(path, encoding="utf-8").read(), flags=re.M)] if os.path.exists(path) else []
@@ -807,22 +843,38 @@ def cmd_init(name, typ=None):
     print("Vorhandene Dateien wurden nicht verändert. Nicht committet: bitte prüfen und selbst committen.")
     if typ not in ("android",): print("Prüfbefehle in .vibe/project.env eintragen (VERIFY_QUICK / VERIFY_FULL), sonst bricht die Abschlussprüfung ab.")
 
+def _check_template(value):
+    if any(char in value for char in ("\x00", "\n", "\r")):
+        sys.exit("Vorlage enthält unerlaubte Steuerzeichen.")
+    return value
+
+def _init_git(p):
+    """Legt das Projekt-Repository an; jeder Schritt ist ein eigener Aufruf."""
+    ident = [] if run(["git", "config", "user.email"])[1] else ["-c", "user.name=vibe", "-c", "user.email=vibe@localhost"]
+    rc, out = 0, ""
+    for argv in (["git", "init", "-q"], ["git", "config", "core.fileMode", "false"],
+                 ["git", "add", "-A"], ["git"] + ident + ["commit", "-q", "-m", "init: vibe-Vorlage"]):
+        rc, out = run(argv, cwd=p)
+        if rc != 0: break
+    return rc, out
+
 def cmd_new(name, typ, tpl=None):
     if not re.fullmatch(r"[a-z0-9][a-z0-9_-]*", name): sys.exit("Name: nur a-z, 0-9, _ und -")
     if typ not in types(): sys.exit(f"Unbekannter Typ '{typ}'. Vorhanden: {', '.join(types())}")
     p = os.path.join(VIBE, name)
     if os.path.exists(p): sys.exit("Existiert schon: " + p)
     if typ == "android":
+        if tpl is not None: _check_template(tpl)
         if not tpl:
             if not sys.stdin.isatty(): sys.exit("Android braucht eine Vorlage (Parameter vorlage).")
-            print(sh("android create --list", timeout=60)[1]); tpl = input("Vorlage (aus der Liste, z. B. die Compose-Vorlage): ").strip()
-        rc, out = sh(f'android create --name={name.capitalize()} --output={shquote(p)} {tpl}', timeout=300); print(out)
+            print(run(["android", "create", "--list"], timeout=60)[1])
+            tpl = _check_template(input("Vorlage (aus der Liste, z. B. die Compose-Vorlage): ").strip())
+        rc, out = run(["android", "create", f"--name={name.capitalize()}", f"--output={p}", tpl], timeout=300); print(out)
         if rc != 0 or not os.path.isdir(p): sys.exit("android create fehlgeschlagen")
     else:
         os.makedirs(p)
     copy_tree(os.path.join(TPL, "common"), p, name); copy_tree(os.path.join(TPL, typ), p, name)
-    ident = "" if sh("git config user.email")[1] else "-c user.name=vibe -c user.email=vibe@localhost "
-    rc, out = sh(f"git init -q && git config core.fileMode false && git add -A && git {ident}commit -q -m 'init: vibe-Vorlage'", cwd=p)
+    rc, out = _init_git(p)
     if rc != 0: print(col("y", "Git-Hinweis: " + out))
     _pm.clear()
     print(col("g", f"Projekt {name} ({typ}) angelegt: {p}"))
@@ -1023,7 +1075,7 @@ def apply_write_dirs_to_project(name):
 
 def models_list():
     """Alle Modelle verbundener Anbieter (opencode models), z. B. opencode/..., anthropic/..."""
-    rc, out = sh("opencode models", timeout=30)
+    rc, out = run(["opencode", "models"], timeout=30)
     return [l.strip() for l in out.splitlines() if "/" in l and " " not in l.strip()] if rc == 0 else []
 
 def models_info():
@@ -1136,30 +1188,36 @@ def cmd_profile(action="list", name=None):
 
 # ---------- Emulator, Server, Dashboard, Doctor ----------
 def cmd_emu(action):
+    if action not in ("start", "stop"):
+        sys.exit("Unbekannte Emulator-Aktion '" + str(action) + "' (start|stop)")
     p = next((project_map()[n] for n in projects() if ptype(n) == "android"), None)
     if not p: sys.exit("Kein Android-Projekt vorhanden")
-    subprocess.run(["bash", "-lc", f"source ~/.bashrc; bash {shquote(p + '/scripts/emulator-' + action + '.sh')}"])
+    script = os.path.join(p, "scripts", "emulator-" + action + ".sh")
+    rc, out = run(["bash", "-lc", 'source ~/.bashrc; exec bash "$1"', "vibe-emu", script], timeout=300)
+    if out: print(out)
 
 def server_health():
-    rc, out = sh(f"curl -sf --max-time 2 {OC_URL}/global/health")
+    rc, out = run(["curl", "-sf", "--max-time", "2", OC_URL + "/global/health"])
     return out if rc == 0 else None
 
 def cmd_server(action="status"):
     if action == "start":
         if server_health(): print("opencode-Server läuft:", OC_URL); return
-        sh(f"tmux new-session -d -s vibe-server bash -lc {shquote('source ~/.bashrc; opencode web --port 4096 --hostname 127.0.0.1')}")
+        run(["tmux", "new-session", "-d", "-s", "vibe-server", "bash", "-lc",
+             "source ~/.bashrc; exec opencode web --port 4096 --hostname 127.0.0.1"])
         time.sleep(4); print("Gestartet:" if server_health() else "Start angestoßen, Server antwortet noch nicht (tmux attach -t vibe-server):", OC_URL)
     elif action == "stop":
-        sh("tmux kill-session -t vibe-server"); print("opencode-Server beendet.")
+        run(["tmux", "kill-session", "-t", "vibe-server"]); print("opencode-Server beendet.")
     else:
         h = server_health(); print("opencode-Server:", col("g", "läuft " + OC_URL + " " + h) if h else "aus")
 
 def cmd_ui(action="start"):
     if action == "stop":
-        sh("tmux kill-session -t vibe-ui"); print("Dashboard beendet."); return
+        run(["tmux", "kill-session", "-t", "vibe-ui"]); print("Dashboard beendet."); return
     os.makedirs(LOGS, exist_ok=True)
-    if sh("tmux has-session -t vibe-ui")[0] != 0:
-        sh(f"tmux new-session -d -s vibe-ui bash -lc {shquote('source ~/.bashrc; python3 ' + BIN + '/vibe-web.py')}")
+    if run(["tmux", "has-session", "-t", "vibe-ui"])[0] != 0:
+        run(["tmux", "new-session", "-d", "-s", "vibe-ui", "bash", "-lc",
+             'source ~/.bashrc; exec python3 "$1"', "vibe-ui", os.path.join(BIN, "vibe-web.py")])
         time.sleep(2)
     tokf = os.path.join(LOGS, "web.token")
     tok = open(tokf).read().strip() if os.path.exists(tokf) else "?"
@@ -1175,7 +1233,7 @@ def doctor_checks():
         chk(tool, shutil.which(tool) is not None, hint)
     chk("/dev/kvm", os.path.exists("/dev/kvm"), "KVM fehlt")
     chk("ANDROID_HOME gesetzt", bool(os.environ.get("ANDROID_HOME")), "source ~/.bashrc im Container")
-    chk("Abnahme-Dateien + Prüfsummen", os.path.exists(os.path.join(VERIFY, "verify.sh")) and sh(f'cd "{VERIFY}" && sha256sum -c ~/.config/schreibfuchs-verify.sha --quiet')[0] == 0, "install.sh / install2.sh ausführen")
+    chk("Abnahme-Dateien + Prüfsummen", os.path.exists(os.path.join(VERIFY, "verify.sh")) and run(["sha256sum", "-c", os.path.expanduser("~/.config/schreibfuchs-verify.sha"), "--quiet"], cwd=VERIFY)[0] == 0, "install.sh / install2.sh ausführen")
     for a in sorted(CORE_AGENTS): chk("Agent " + a, os.path.exists(os.path.join(AGENTS_DIR, a + ".md")))
     chk("models.json (Modell-Einschätzung)", os.path.exists(MODELS_FILE), "install-vibe.sh ausführen")
     if os.path.isdir(VIBE):
@@ -1209,7 +1267,7 @@ def project_menu(name):
         p = ppath(name)
         {0: lambda: cmd_status(name), 1: lambda: cmd_run(name), 2: lambda: cmd_attach(name), 3: lambda: cmd_logs(name), 4: lambda: cmd_stop(name),
          5: lambda: cmd_verify(name, "quick"), 6: lambda: cmd_verify(name, "full"), 7: lambda: cmd_feedback(name),
-         8: lambda: print(sh("git log --oneline -10", cwd=p)[1]), 9: lambda: print(sh("opencode session list", cwd=p)[1]),
+         8: lambda: print(git_run(p, "log", "--oneline", "-10")[1]), 9: lambda: print(run(["opencode", "session", "list"], cwd=p)[1]),
          10: lambda: cmd_run(name, input("Agent-Name: ").strip() or None), 11: lambda: cmd_init(name),
          12: lambda: cmd_agent("new", input("Agent-Name: ").strip(), name), 13: lambda: cmd_mcp("list", None, name), 14: lambda: cmd_rights(name),
          15: lambda: cmd_pause(name, "off" if pause_after_active(name) else "on"), 16: lambda: cmd_sandbox(name)}[i]()

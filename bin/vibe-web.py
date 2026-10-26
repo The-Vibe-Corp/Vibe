@@ -96,11 +96,11 @@ def agents_info():
             "write_dirs": write_dirs, "write_dirs_errors": write_dirs_errors, "profiles": vibe.profiles_load()}
 
 def verify_bg(n, mode):
-    cmd = vibe.verify_command(n, mode)
-    if not cmd: return False, "Keine Prüfbefehle in .vibe/project.env"
+    argv = vibe.verify_argv(n, mode)
+    if not argv: return False, "Keine Prüfbefehle in .vibe/project.env"
     lg = open(vibe.logpath(n, "verify"), "w")
-    lg.write(f"$ {cmd}\n"); lg.flush()
-    subprocess.Popen(["bash", "-lc", "source ~/.bashrc; " + cmd], cwd=vibe.ppath(n), stdout=lg, stderr=subprocess.STDOUT)
+    lg.write(f"$ {vibe.verify_command(n, mode)}\n"); lg.flush()
+    subprocess.Popen(argv, cwd=vibe.ppath(n), stdout=lg, stderr=subprocess.STDOUT)
     return True, "Prüfung gestartet"
 
 class H(BaseHTTPRequestHandler):

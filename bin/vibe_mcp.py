@@ -100,7 +100,7 @@ def jsonc_set_top(text, key, value):
 
 # ---------- Konfigurationsdateien ----------
 def oc_major():
-    rc, out = vibe.sh("opencode --version", timeout=15)
+    rc, out = vibe.run(["opencode", "--version"], timeout=15)
     m = re.search(r"(\d+)\.\d+", out or "")
     return int(m.group(1)) if m else 0
 
@@ -239,7 +239,11 @@ def test_local(entry, cwd):
     timeout = max(5, min((entry.get("timeout") or 30000) / 1000.0, 90))
     wd = entry.get("cwd") or cwd
     if wd and not os.path.isabs(wd): wd = os.path.join(cwd, wd)
-    try: proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=wd if wd and os.path.isdir(wd) else None, env=env, text=True, bufsize=1)
+    if wd and not os.path.isdir(wd):
+        res["error"] = f"Arbeitsordner nicht gefunden: {wd}"
+        res["hint"] = "Der Arbeitsordner muss existieren; 'cwd' prüfen oder leer lassen."
+        return res
+    try: proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=wd or None, env=env, text=True, bufsize=1)
     except FileNotFoundError:
         res["error"] = f"Programm nicht gefunden: {cmd[0]}"; res["hint"] = "Ist es im Container installiert (z. B. npx über nodejs/npm)? Pfad oder Installation prüfen."; return res
     except Exception as ex:
@@ -277,6 +281,11 @@ def test_local(entry, cwd):
     finally:
         try: proc.kill()
         except Exception: pass
+        try: proc.wait(timeout=5)
+        except Exception: pass
+        for stream in (proc.stdin, proc.stdout, proc.stderr):
+            try: stream.close()
+            except Exception: pass
     return res
 
 def _parse_http(resp_text, ctype, id_):

@@ -19,23 +19,23 @@
   },
   {
    "path": "bin/vibe",
-   "sha256": "6ba43e4a0c499f3273afd840deee8f39d7665d6477049782968b50d1d28cc1c8",
-   "bytes": 64816
+   "sha256": "aad2bb08fbe7d5dceaa7af7e8733d75930e74bd06fdf6ed96fb7381e14141220",
+   "bytes": 67442
   },
   {
    "path": "bin/vibe-run.sh",
-   "sha256": "1ce3a5205060c3e11c4dc1a4736b566fafc3dfc414f70845fce81830c91067ba",
-   "bytes": 5505
+   "sha256": "b4207f2ae0df047ffc78fe5067ce7f14cc8ea75e40956c3878407e5efc2725e0",
+   "bytes": 5788
   },
   {
    "path": "bin/vibe-web.py",
-   "sha256": "5078c89eeb41e2e365306a4a599015ade1ddd9adb133290793c58da6872907dd",
-   "bytes": 62036
+   "sha256": "658728f7402204bdc3ea2c14ef4f50737aca197741bf1b98bc40597a7990592a",
+   "bytes": 62021
   },
   {
    "path": "bin/vibe_mcp.py",
-   "sha256": "3e460bd1dbc44b4d45fdd2721ffe832a1a55d8f7aba1e2367b4c63c5c4a0c99d",
-   "bytes": 19279
+   "sha256": "bd2e3fbe53401b17d8cbc561217dc395d3ebb7e63948c796ab15a49712984ba6",
+   "bytes": 19657
   },
   {
    "path": "bin/vibe_sandbox.py",
@@ -219,6 +219,17 @@
     "templates/generic/.vibe/project.env",
     "templates/openwrt/.vibe/project.env",
     "templates/web/.vibe/project.env"
+   ]
+  },
+  {
+   "arbeitspaket": "V-003",
+   "datum": "2026-10-26",
+   "grund": "Prozessaufrufe abgesichert: externe Programme starten mit Argumentlisten statt über eine Shell; projektkonfigurierte Prüfbefehle laufen nur an einer ausdrücklich benannten Shellgrenze; Agenten-, Emulator- und Projektnamen werden vor dem Start geprüft; Leseaktionen rufen Git ohne Projekt-Hooks (core.fsmonitor) auf.",
+   "dateien": [
+    "bin/vibe",
+    "bin/vibe-run.sh",
+    "bin/vibe-web.py",
+    "bin/vibe_mcp.py"
    ]
   }
  ]
