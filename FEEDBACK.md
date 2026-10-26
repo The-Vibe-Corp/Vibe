@@ -39,3 +39,13 @@ Regeln (werden maschinell geprüft):
   Commit: 5dc9529; Test: PauseModelTest.test_cli_requests_reports_and_releases_the_pause, RunnerPauseTest.test_runner_finishes_the_current_package_and_starts_no_new_one, RunnerPauseTest.test_pause_at_the_package_limit_is_consumed_after_the_loop, PauseBrowserTest.test_pause_is_requested_without_stopping_the_run_and_can_be_released (tests/unit/test_pause_after_package.py, 16 Tests; tests/browser/test_pause_after_package_ui.py, 2 Tests; gesamt 115 Unit-Tests, 9 Browsertests)
   Review: docs/reviews/F4-review-1.md, docs/reviews/F4-review-2.md, docs/reviews/F4-review-3.md (PASS)
   Doku: docs/features/F4.md; Trilium `hcX8exIYkgWR`
+
+- [x] F5 Fritzbox Reconnect in UI
+  Schritte: 
+  Erwartet: Es soll die möglichkeit geben den Fritzbox reconenct über die UI einzustellen und zu steuern (Automatik:an/aus; manuell)
+
+  Ist: 
+  Commit: 7229d07; Test: FritzModelTest.test_automation_is_off_by_default, FritzModelTest.test_manual_reconnect_runs_the_helper_with_the_configured_env, FritzApiTest.test_api_switches_the_automation, RunnerFritzTest.test_runner_reconnects_automatically_when_the_gate_allows_it, FritzBrowserTest.test_automation_and_manual_reconnect_are_controllable (tests/unit/test_fritz_reconnect.py, 27 Tests; tests/browser/test_fritz_ui.py, 1 Test; gesamt 142 Unit-Tests, 10 Browsertests)
+  Review: docs/reviews/F5-review-1.md, docs/reviews/F5-review-2.md (PASS)
+  Doku: docs/features/F5.md; Trilium `8DoXPxXg7jnD`
+
