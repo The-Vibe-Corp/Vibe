@@ -31,7 +31,7 @@ Ein fehlender externer Dienst bedeutet BLOCKIERT, nicht erledigt.
   Review: docs/reviews/V-002-review-1.md (PASS, keine Critical/High/Medium)
   Dokumentation: docs/features/V-002.md; Trilium `fo1x30HjK74P`
 
-- [ ] V-003 Prozessaufrufe und Eingaben absichern
+- [x] V-003 Prozessaufrufe und Eingaben absichern
   Priorität: P0
   Abhängigkeiten: V-002
   Umfang: alle externen Aufrufe und Pfadübergaben prüfen.
@@ -40,6 +40,10 @@ Ein fehlender externer Dienst bedeutet BLOCKIERT, nicht erledigt.
   Leseaktionen führen keine Projektprogramme aus.
   Tests: Leerzeichen, Anführungszeichen, Shellmetazeichen, ungültige Pfade,
   fehlerhafte Programme und Timeout.
+  Commit: ba0dafe; Test: tests.unit.test_process_safety.ProcessRunnerTest.test_argument_list_keeps_spaces_quotes_and_shell_metacharacters
+  Prüfungen: `bash scripts/verify.sh quick` Exit 0; `bash scripts/verify.sh full` Exit 0 (275 Tests erkannt)
+  Review: docs/reviews/V-003-review-1.md (PASS, keine Critical/High/Medium; 2 Minor)
+  Dokumentation: docs/features/V-003.md; Trilium `yaaK4lPOlg99`
 
 - [ ] V-004 Web-API absichern und Health-Endpunkt ergänzen
   Priorität: P0
