@@ -1,13 +1,15 @@
 {
  "version": 1,
- "stand": "2026-10-25",
+ "stand": "2026-10-26",
  "quelle": "Übernommener Programmstand aus der lokalen Installation unter $VIBE/_toolchain; die aktive Installation enthält zusätzlich lokale Geheimnis-Hooks (siehe docs/baseline.md, Abschnitt 3).",
  "hinweis": "SHA-256 der übernommenen Programmdateien. Beabsichtigte Änderungen an diesen Dateien sind nur zulässig, wenn dieser Eintrag im selben Arbeitspaket aktualisiert und begründet wird. Laufzeitdaten, Sicherungen und Geheimnisse sind nicht Bestandteil des Imports.",
  "scopes": [
   "install-vibe.sh",
   "bin",
   "data/models.json",
-  "templates"
+  "templates",
+  "scripts/setup-vibe.py",
+  "setup-vibe.cmd"
  ],
  "files": [
   {
@@ -42,8 +44,18 @@
   },
   {
    "path": "install-vibe.sh",
-   "sha256": "ce87e5bf8ff00c6cc78ac6c2376da5f8ce0427ed6c2b0acbd831d51189c1e722",
-   "bytes": 1616
+   "sha256": "1f1379cda496e6adc5a981adf7263916af72e2f2c29aa6c20c1f863aa4e66ad3",
+   "bytes": 370
+  },
+  {
+   "path": "scripts/setup-vibe.py",
+   "sha256": "08281a56ad7fda9715f4e62c175b7d49fc34866eef064cef345a321cdf65a3e3",
+   "bytes": 30831
+  },
+  {
+   "path": "setup-vibe.cmd",
+   "sha256": "eba97b935ea1d943c402c41cac96872d782a0f62e724f0e96f29e9e16a500c52",
+   "bytes": 377
   },
   {
    "path": "templates/android/.vibe/project.env",
@@ -175,6 +187,16 @@
     "bin/vibe-web.py",
     "bin/fritz-reconnect.py",
     "install-vibe.sh"
+   ]
+  },
+  {
+   "arbeitspaket": "F6",
+   "datum": "2026-10-26",
+   "grund": "Universeller, interaktiver Setup: plattformübergreifendes Python-Skript (Linux/Container/Windows), Werkzeugprüfung mit Zustimmung, Wiederverwendung oder Aktualisierung einer bestehenden Installation ohne Überschreiben von Laufzeitdaten, Windows-Einstieg; install-vibe.sh delegiert nur noch.",
+   "dateien": [
+    "install-vibe.sh",
+    "scripts/setup-vibe.py",
+    "setup-vibe.cmd"
    ]
   }
  ]

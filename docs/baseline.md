@@ -123,6 +123,20 @@ Python-Standardbibliothek verwendet; es gibt keine `requirements.txt`, kein
 | Netzwerk Loopback | Dashboard 8787, opencode 4096, MCP-Tests | nicht in V-001 gestartet | nicht geprüft |
 | `~/.config/opencode/` | Agenten, opencode-Konfiguration | gelesen (nur lesend) | vorhanden |
 | `fritzconnection` (optional, eigenes venv) + `~/.config/fritz.env` | `bin/fritz-reconnect.py` (F5) | nicht in V-001; F5 prüft nur mit Attrappen | optional; fehlend wird im Dashboard als „nicht bereit“ gemeldet |
+| `scripts/setup-vibe.py` (F6) | Installation, Werkzeugprüfung, Wiederverwendung | `tests/unit/test_setup_vibe.py` (45 Tests) mit simulierten Plattformen und temporären Zielordnern | vorhanden und automatisiert geprüft (Linux/Container/Windows-Planung); kein echter Paketmanager- oder Windows-Lauf |
+| `install-vibe.sh` (F6) | Kompatibler Linux-Einstieg | Wrapper-Test startet den echten Setup in temporärem `VIBE`/`HOME` | vorhanden und automatisiert geprüft |
+| `setup-vibe.cmd` (F6) | Windows-Einstieg, bootstrappt Python über `winget` | nur statisch geprüft (Datei und Aufruf), kein Windows-Lauf | vorhanden, nicht auf Windows ausgeführt |
+| npm (optional, F6) | Installation von `opencode` über `opencode-ai` | Aufrufplan im Test; `npm view opencode-ai name` in dieser Umgebung geprüft | vorhanden; nur mit Zustimmung ausgeführt |
+| WSL2/Docker unter Windows (F6) | `tmux`/`flock` für Agentenläufe | nicht ausgeführt; Setup meldet die Grenze | fehlt nativ unter Windows; dokumentierte Voraussetzung |
+
+Der Setup kopiert Programmdateien und Vorlagen, legt den Startbefehl an und
+registriert vorhandene Git-Projekte. Laufzeitdaten (`vibe.json`,
+`models.json`, `profiles.json`, `fritz.json`, `_logs`) und vorhandene
+`.vibe/project.env` werden nicht überschrieben. `install-vibe.sh` beendet
+anders als der frühere Stand keine laufende Dashboard-Sitzung mehr; ein
+laufendes Dashboard wird erst beim nächsten Start auf den neuen Stand
+zurückgreifen.
+
 
 Keine echten Modellaufrufe: `vibe models` liest mit `opencode models` nur den
 Modellkatalog; es wurde keine Inferenzanfrage gesendet. MCP-Tests und

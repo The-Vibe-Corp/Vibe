@@ -49,3 +49,7 @@ Regeln (werden maschinell geprüft):
   Review: docs/reviews/F5-review-1.md, docs/reviews/F5-review-2.md (PASS)
   Doku: docs/features/F5.md; Trilium `8DoXPxXg7jnD`
 
+- [ ] F6 Universeller Setup Prozess
+  Schritte: 
+  Erwartet: Es soll einen interaktiven Setup prozess geben, welcher sowohl für Windows oder Linux (Ubuntu/Fedora/Bazzite/Docker) funktioniert und es ermöglicht vibe auf jedem system inklusiver aller notwendigen abhängigkeiten und tools zu installieren. Es muss die möglichkeit geben auf bestehendes zurückzugreifen.
+  Ist: 

@@ -30,8 +30,35 @@ V-002 richtet folgende Kommandos ein:
 
 ## Installation
 
-Die produktive Installation bleibt während der Projektübernahme unverändert.
-Reproduzierbare Installation und Rollback werden in V-018 umgesetzt.
+Universeller, interaktiver Setup (Linux, Container, Windows):
+
+    python3 scripts/setup-vibe.py
+
+Unter Windows:
+
+    setup-vibe.cmd
+
+Der Setup erkennt Ubuntu/Debian, Fedora, Bazzite, Container (Docker/Podman/
+Toolbx/Distrobox) und Windows, prüft die Werkzeuge und bietet fehlende
+Pakete nur mit Zustimmung an. Eine bestehende Installation wird standardmäßig
+wiederverwendet; `--update` ersetzt Programmdateien mit Sicherung. Laufzeitdaten
+(`vibe.json`, `models.json`, `profiles.json`, `fritz.json`, `_logs`) und
+vorhandene `.vibe/project.env` werden nie überschrieben.
+
+Der bisherige Einstieg bleibt kompatibel:
+
+    VIBE=/pfad/zu/VibeCode bash install-vibe.sh
+
+Nicht-interaktive Varianten und Vorschau:
+
+    python3 scripts/setup-vibe.py --yes --vibe /pfad/zu/VibeCode
+    python3 scripts/setup-vibe.py --dry-run --vibe /pfad/zu/VibeCode
+    python3 scripts/setup-vibe.py --yes --install-deps --vibe /pfad/zu/VibeCode
+
+Windows kann die vibe-Dateien und die Oberfläche installieren. Agentenläufe
+benötigen `tmux` und `flock` und damit WSL2 oder Docker; der Setup weist darauf
+hin. Reproduzierbare Installation und Rollback im Sinne von V-018 bleiben ein
+eigenes Arbeitspaket.
 
 ## Erster Auftrag
 
