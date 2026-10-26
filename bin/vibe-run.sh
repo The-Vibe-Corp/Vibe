@@ -24,8 +24,39 @@ next_item() {
   rm -rf "$T"; return $rc
 }
 SERVER_ARGS="--standalone"
-if curl -sf --max-time 2 http://127.0.0.1:4096/global/health > /dev/null 2>&1; then SERVER_ARGS="--server http://127.0.0.1:4096"; fi
-echo "Modus: $SERVER_ARGS, Agent: $AGENT, höchstens $MAXP Durchgänge" | tee -a "$LOG"
+SANDBOX_WRAP=(); SANDBOX_STATE=off
+# Eine einzige Quelle für die Auswertung von SANDBOX: das Sandbox-Modul.
+# Dadurch startet kein Lauf ungeschützt, nur weil der Wert anders geschrieben
+# ist (z. B. TRUE, yes, 1).
+if [ -f "$BIN/vibe_sandbox.py" ]; then
+  SANDBOX_VERDICT=$(python3 "$BIN/vibe_sandbox.py" "$P" --enabled 2>>"$LOG")
+  SANDBOX_RC=$?
+  case "$SANDBOX_RC:$SANDBOX_VERDICT" in
+    0:on) SANDBOX_STATE=on ;;
+    1:off) SANDBOX_STATE=off ;;
+    *)
+      echo "ABBRUCH: Sandbox-Zustand nicht lesbar (Exit $SANDBOX_RC, Antwort '$SANDBOX_VERDICT')." | tee -a "$LOG"
+      exit 2
+      ;;
+  esac
+elif [ -n "${SANDBOX:-}" ] && [ "${SANDBOX:-off}" != "off" ]; then
+  echo "ABBRUCH: SANDBOX ist in .vibe/project.env gesetzt, aber $BIN/vibe_sandbox.py fehlt. Der Lauf startet nicht ungeschützt." | tee -a "$LOG"
+  exit 2
+fi
+if [ "$SANDBOX_STATE" = "on" ]; then
+  # Eine Sandbox muss den gesamten Agenten inklusive Werkzeugausführung
+  # enthalten. Deshalb immer ein privater Server im selben bubblewrap-Prozess;
+  # ein vorhandener gemeinsamer Server würde die Werkzeuge außerhalb der
+  # Sandbox ausführen.
+  SERVER_ARGS="--standalone"
+  python3 "$BIN/vibe_sandbox.py" "$P" --check 2>&1 | tee -a "$LOG"
+  if [ "${PIPESTATUS[0]}" != 0 ]; then
+    echo "ABBRUCH: Sandbox ist eingeschaltet, aber nicht startbar. Der Agent läuft nicht ohne Sandbox." | tee -a "$LOG"
+    exit 2
+  fi
+  SANDBOX_WRAP=(python3 "$BIN/vibe_sandbox.py" "$P" --)
+elif curl -sf --max-time 2 http://127.0.0.1:4096/global/health > /dev/null 2>&1; then SERVER_ARGS="--server http://127.0.0.1:4096"; fi
+echo "Modus: $SERVER_ARGS, Agent: $AGENT, Sandbox: $SANDBOX_STATE, höchstens $MAXP Durchgänge" | tee -a "$LOG"
 PAUSE_FLAG="$VIBE/_logs/$NAME.pause-after"
 PAUSED=0; LAST_ID=""
 declare -A TRY; SKIP=""
@@ -44,7 +75,7 @@ for n in $(seq 1 "$MAXP"); do
   PROMPT="Arbeitspaket $ID. Der Punkt steht in FEEDBACK.md bzw. TICKETS.md des Projektordners. Wortlaut:
 $BLOCK
 Bearbeite NUR dieses Arbeitspaket gemäß deinem Workflow. Commit-Präfix: '$ID:'."
-  opencode run $SERVER_ARGS --auto --thinking --agent "$AGENT" --title "$NAME $ID" "$PROMPT" 2>&1 | tee -a "$LOG"
+  "${SANDBOX_WRAP[@]}" opencode run $SERVER_ARGS --auto --thinking --agent "$AGENT" --title "$NAME $ID" "$PROMPT" 2>&1 | tee -a "$LOG"
   RC=${PIPESTATUS[0]}
   echo "=== Agent beendet, Exit-Code $RC ===" | tee -a "$LOG"
   LAST_ID="$ID"

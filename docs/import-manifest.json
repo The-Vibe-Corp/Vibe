@@ -19,23 +19,28 @@
   },
   {
    "path": "bin/vibe",
-   "sha256": "7a888085b83a0651ab9723608396d5533ae8e8e5784643e2021b05e14f0bab7d",
-   "bytes": 60586
+   "sha256": "fd14f597de6720a4bba110cfefc89ac331ca01ff95efe59ea3cbd913aeb6b50b",
+   "bytes": 64407
   },
   {
    "path": "bin/vibe-run.sh",
-   "sha256": "2853d7d68da5049b70c5701b100c9301d8b7d3499bfad34943d5ce9b020b2205",
-   "bytes": 4014
+   "sha256": "1ce3a5205060c3e11c4dc1a4736b566fafc3dfc414f70845fce81830c91067ba",
+   "bytes": 5505
   },
   {
    "path": "bin/vibe-web.py",
-   "sha256": "10c32310310879d4bca76202d65fe368c35e11caafcd0b4e11830c624b4eab3b",
-   "bytes": 57435
+   "sha256": "492c979b17bdf78ae193826576f0d925593fe84e9d3caa6d14d5d182b75030b5",
+   "bytes": 61291
   },
   {
    "path": "bin/vibe_mcp.py",
    "sha256": "3e460bd1dbc44b4d45fdd2721ffe832a1a55d8f7aba1e2367b4c63c5c4a0c99d",
    "bytes": 19279
+  },
+  {
+   "path": "bin/vibe_sandbox.py",
+   "sha256": "fd2aa19219e603301e4f993b5a6121125359f902cc9fbcdaf03a96b3386d7cfd",
+   "bytes": 20133
   },
   {
    "path": "data/models.json",
@@ -49,8 +54,8 @@
   },
   {
    "path": "scripts/setup-vibe.py",
-   "sha256": "08281a56ad7fda9715f4e62c175b7d49fc34866eef064cef345a321cdf65a3e3",
-   "bytes": 30831
+   "sha256": "edda295c03dd25191aba498d97a9eed2f7a209657a3b8dccdf331fb1e245332a",
+   "bytes": 30850
   },
   {
    "path": "setup-vibe.cmd",
@@ -59,8 +64,8 @@
   },
   {
    "path": "templates/android/.vibe/project.env",
-   "sha256": "b9264a319a20a75948e97c82fa0503ddbe16bdb6d2aeaf8e9fab689b03ca236a",
-   "bytes": 201
+   "sha256": "1425cb458cd6e747afcacaf42c4f36f6fa68873222efd2f5e95a4e32ce214ee9",
+   "bytes": 249
   },
   {
    "path": "templates/android/AGENTS.md",
@@ -99,8 +104,8 @@
   },
   {
    "path": "templates/docker/.vibe/project.env",
-   "sha256": "8b06dd1c6083d66d8dfbcafddecdd3bdf5276fd2c248279cf9f83ad4fc800f90",
-   "bytes": 190
+   "sha256": "f372480f29b0e7c1e5ab21b16fa8042397143cab1651b44d032bf5d6a7b2831a",
+   "bytes": 228
   },
   {
    "path": "templates/docker/AGENTS.md",
@@ -109,8 +114,8 @@
   },
   {
    "path": "templates/generic/.vibe/project.env",
-   "sha256": "2a8668d479024bd52220e792d3414406314444660e4898ac1a93fca7ac8e94e7",
-   "bytes": 191
+   "sha256": "806719f932f4a04ac2714dec37116a674ea46590c9e8a7f75fd2fa1b7fbc3230",
+   "bytes": 230
   },
   {
    "path": "templates/generic/AGENTS.md",
@@ -119,8 +124,8 @@
   },
   {
    "path": "templates/openwrt/.vibe/project.env",
-   "sha256": "92092973935830967fe70151c3e014e92e4fc668b3907cbd1cc07a1cf3b91bb6",
-   "bytes": 191
+   "sha256": "38e66fdd7e9a87ee9c78ccb7af6616766e95635641546ef9fdd753c3cbc38ddf",
+   "bytes": 231
   },
   {
    "path": "templates/openwrt/AGENTS.md",
@@ -129,8 +134,8 @@
   },
   {
    "path": "templates/web/.vibe/project.env",
-   "sha256": "b4bac328bea015f8f85fbe56cb482e4b1e6f8c92551d4197cb5a783ca8acc3e0",
-   "bytes": 252
+   "sha256": "b3035f726d9d1e08070ed0f2904a7d9e24212b2c96b58ac4d6af3646595bc29e",
+   "bytes": 292
   },
   {
    "path": "templates/web/AGENTS.md",
@@ -197,6 +202,23 @@
     "install-vibe.sh",
     "scripts/setup-vibe.py",
     "setup-vibe.cmd"
+   ]
+  },
+  {
+   "arbeitspaket": "F7",
+   "datum": "2026-10-26",
+   "grund": "Optionale Shell-Sandbox je Projekt mit bubblewrap: Das Wurzeldateisystem wird nur lesend eingebunden, Schreibzugriffe sind auf die F3-Schreibverzeichnisse, konfigurierte Build-Tool-Caches und den opencode-Zustand begrenzt. CLI, Dashboard und Projektvorlagen schalten die Sandbox ein; ein sandboxed Lauf erzwingt --standalone. Fehlt bubblewrap, bricht der Start ab, statt ungeschützt zu laufen.",
+   "dateien": [
+    "bin/vibe",
+    "bin/vibe-run.sh",
+    "bin/vibe-web.py",
+    "bin/vibe_sandbox.py",
+    "scripts/setup-vibe.py",
+    "templates/android/.vibe/project.env",
+    "templates/docker/.vibe/project.env",
+    "templates/generic/.vibe/project.env",
+    "templates/openwrt/.vibe/project.env",
+    "templates/web/.vibe/project.env"
    ]
   }
  ]

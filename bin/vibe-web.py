@@ -67,6 +67,11 @@ def project_detail(n):
         d["write_dirs_error"] = str(e)
     d["write_dirs_default"] = vibe.write_dirs_default(n)
     d["write_dirs_custom"] = vibe.write_dirs_custom(n)
+    try:
+        d["sandbox"] = vibe.sandbox_status(n)
+    except Exception as e:
+        d["sandbox"] = {"enabled": False, "tools": [], "write_dirs": [], "tool_caches": [],
+                        "missing_tools": [], "bwrap": "", "state_dir": "", "error": str(e)}
     return d
 
 def roots_info():
@@ -139,7 +144,7 @@ class H(BaseHTTPRequestHandler):
         try:
             n = int(self.headers.get("Content-Length", "0")); body = json.loads(self.rfile.read(n) or b"{}")
             name = body.get("name", "")
-            if u.path in ("/api/run", "/api/stop", "/api/verify", "/api/feedback", "/api/init", "/api/rights", "/api/pause"): known(name)
+            if u.path in ("/api/run", "/api/stop", "/api/verify", "/api/feedback", "/api/init", "/api/rights", "/api/pause", "/api/sandbox"): known(name)
             extra = {}
             if u.path == "/api/run": ok, msg = call(vibe.cmd_run, name, body.get("agent") or None)
             elif u.path == "/api/stop": ok, msg = call(vibe.cmd_stop, name)
@@ -188,6 +193,23 @@ class H(BaseHTTPRequestHandler):
                     if dirs is not None:
                         extra["write_dirs"] = dirs; extra["custom"] = vibe.write_dirs_custom(name)
                     if changed is not None: extra["changed"] = changed
+                except ValueError as e:
+                    ok, msg = False, str(e)
+            elif u.path == "/api/sandbox":
+                act = body.get("action"); ok, msg, status = True, "", None
+                try:
+                    if act == "on":
+                        status = vibe.sandbox_set(name, True); msg = "Sandbox eingeschaltet"
+                    elif act == "off":
+                        status = vibe.sandbox_set(name, False); msg = "Sandbox ausgeschaltet"
+                    elif act == "tools":
+                        status = vibe.sandbox_tools(name, body.get("tools", "")); msg = "Build-Werkzeuge gespeichert"
+                    elif act == "check":
+                        checked = vibe.sandbox_check(name); ok, msg = checked["ok"], checked["message"]
+                        status = vibe.sandbox_status(name); extra["check"] = checked
+                    else:
+                        ok, msg = False, "Unbekannte Aktion"
+                    if status is not None: extra["sandbox"] = status
                 except ValueError as e:
                     ok, msg = False, str(e)
             elif u.path == "/api/pause":
@@ -378,6 +400,7 @@ async function detail(name){clearInterval(timer);if(es){es.close();es=null}exitL
   el('div',{class:'grid'},el('div',{},el('div',{class:'card'},el('b',{},'Offene Arbeitspakete ('+d.items.length+')'),items),
    feedbackCard(d,name),
    rightsCard(d,name),
+   sandboxCard(d,name),
    el('div',{class:'card'},el('b',{},'Feedback eintragen'),el('label',{},'Titel'),f.t,el('label',{},'Beschreibung'),f.b,
     el('div',{class:'bar'},el('button',{class:'b p',on:{click:async()=>{const r=await api('/api/feedback',{name,title:f.t.value,description:f.b.value});toast(r.message);detail(name).catch(showErr)}}},'Eintragen')))),
    logCard)].filter(Boolean));
@@ -407,14 +430,33 @@ function feedbackCard(d,name){const list=el('div',{});const cls=s=>s==='erledigt
 function rightsCard(d,name){const inp=el('input',{placeholder:'/absoluter/pfad','aria-label':'Schreibverzeichnis'});
  const rows=el('div',{},...(d.write_dirs.length?d.write_dirs.map(p=>el('div',{class:'bar'},el('span',{class:'mut'},p),
    el('button',{class:'b d',on:{click:async()=>{const r=await api('/api/rights',{name,action:'remove',path:p});toast(r.message);if(r.ok)detail(name).catch(showErr)}}},'Entfernen'))):[el('span',{class:'mut'},'Keine Verzeichnisse – Schreiben ist gesperrt.')]));
+ const sandboxOn=!!(d.sandbox&&d.sandbox.enabled);
  return el('div',{class:'card'},el('b',{},'Schreibrechte (Agenten)'),
-  el('div',{class:'mut'},'Verzeichnisse für das Schreibwerkzeug (edit) der Projektagenten. Voreingestellt sind /tmp/opencode und das Projektverzeichnis. Agenten ohne Schreibrecht bleiben unverändert. Shell-Befehle (bash) bleiben erlaubt und können Dateien außerhalb dieser Liste ändern – die Liste ist keine Sandbox.'),
+  el('div',{class:'mut'},sandboxOn
+   ? 'Sandbox aktiv: Schreibwerkzeug (edit) und Shell-Befehle (bash) können nur in diesen Verzeichnissen, den Caches der Build-Werkzeuge und /tmp/opencode schreiben. MCP und Netzwerk bleiben erlaubt; Lesezugriffe werden nicht eingeschränkt.'
+   : 'Verzeichnisse für das Schreibwerkzeug (edit) der Projektagenten. Voreingestellt sind /tmp/opencode und das Projektverzeichnis. Agenten ohne Schreibrecht bleiben unverändert. Shell-Befehle (bash) bleiben erlaubt und können Dateien außerhalb dieser Liste ändern – die Liste ist keine Sandbox.'),
   d.write_dirs_error?el('div',{class:'bad'},'Liste nicht lesbar: '+d.write_dirs_error):null,
   rows,
   el('div',{class:'bar'},inp,el('button',{class:'b p',on:{click:async()=>{const r=await api('/api/rights',{name,action:'add',path:inp.value});toast(r.message);if(r.ok)detail(name).catch(showErr)}}},'Hinzufügen')),
   el('div',{class:'bar'},el('button',{class:'b',on:{click:async()=>{if(!confirm('Standardverzeichnisse wiederherstellen?'))return;const r=await api('/api/rights',{name,action:'reset'});toast(r.message);if(r.ok)detail(name).catch(showErr)}}},'Standard wiederherstellen'),
    el('button',{class:'b',on:{click:async()=>{const r=await api('/api/rights',{name,action:'apply'});toast(r.message);if(r.ok)detail(name).catch(showErr)}}},'Auf Projektagenten anwenden')),
   el('div',{class:'mut'},d.write_dirs_custom?'Eigene Liste aktiv.':'Standardliste aktiv.'))}
+function sandboxCard(d,name){const s=d.sandbox||{enabled:false,tools:[],write_dirs:[],missing_tools:[],error:null,bwrap:''};
+ const active=!!s.enabled,missing=s.missing_tools||[],dirs=s.write_dirs||[],tools=s.tools||[];
+ const state=!active?'aus':(s.error?'Fehler':(!s.bwrap?'bubblewrap fehlt':(missing.length?'Werkzeuge fehlen':'bereit')));
+ const tone=!active?'mut':(s.error||!s.bwrap||missing.length?'bad':'ok');
+ const inp=el('input',{value:tools.join(' '),placeholder:'git node npm','aria-label':'Build-Werkzeuge'});
+ return el('div',{class:'card',id:'sandbox'},el('div',{class:'bar'},el('b',{},'Sandbox (Shell und Build-Werkzeuge)'),el('span',{class:'pill '+tone},state),
+   el('button',{class:'b'+(active?'':' p'),on:{click:async()=>{const r=await api('/api/sandbox',{name,action:active?'off':'on'});toast(r.message);if(r.ok)detail(name).catch(showErr)}}},active?'Sandbox ausschalten':'Sandbox einschalten'),
+   el('button',{class:'b',on:{click:async()=>{const r=await api('/api/sandbox',{name,action:'check'});toast(r.message)}}},'Prüfen')),
+  el('div',{class:'mut'},'Aktiv läuft der Agent mit eigenem opencode-Server in bubblewrap. Schreiben ist nur in den Verzeichnissen unten, in den Caches der Build-Werkzeuge und in einem privaten Temporärordner möglich; /tmp ist sonst schreibgeschützt. MCP und Netzwerk bleiben verfügbar; Lesezugriffe werden nicht eingeschränkt.'),
+  el('div',{class:'mut'},'Die Sandbox-Konfiguration (.vibe/project.env, .vibe/permissions.json) ist im Lauf schreibgeschützt.'),
+  s.error?el('div',{class:'bad'},'Fehler: '+s.error):null,
+  missing.length?el('div',{class:'bad'},'Fehlende Werkzeuge: '+missing.join(', ')):null,
+  !active?el('div',{class:'mut'},'Ohne Sandbox bleiben Shell-Befehle (bash) außerhalb der Liste möglich.'):null,
+  el('label',{},'Build-Werkzeuge (Leerzeichen oder Komma)'),inp,
+  el('div',{class:'bar'},el('button',{class:'b',on:{click:async()=>{const r=await api('/api/sandbox',{name,action:'tools',tools:inp.value});toast(r.message);if(r.ok)detail(name).catch(showErr)}}},'Werkzeuge speichern')),
+  el('details',{},el('summary',{},'Erlaubte Schreibverzeichnisse ('+dirs.length+')'),el('div',{},...dirs.map(p=>el('div',{class:'mut'},p)))))}
 
 /* ---------- Agenten, Modelle, Profile ---------- */
 let AG=null,AGFILTER='alle';

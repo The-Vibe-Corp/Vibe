@@ -18,6 +18,7 @@ Aufruf:  vibe                 interaktives Menü
          vibe agents          alle Agenten (global und projektspezifisch)
          vibe agent new|edit|show|rm <name> [global|<projekt>]
          vibe rights <projekt> [list|add <pfad>|rm <pfad>|reset]  erlaubte Schreibverzeichnisse
+         vibe sandbox <projekt> [status|on|off|tools "<liste>"|check]  Shell-Sandbox (bubblewrap)
          vibe models          Modellübersicht mit Einschätzung und Preis
          vibe model <agent> <modell> [global|<projekt>]
          vibe profile [list|use <name>]   Modellprofile (z. B. kostenlos / bezahlt) für Rollen
@@ -325,38 +326,22 @@ def feedback_delete(name, fid):
 WRITE_DIRS_DEFAULT = "/tmp/opencode"
 
 def _norm_write_dir(value):
-    """Prüft und normalisiert ein erlaubtes Schreibverzeichnis."""
-    if not isinstance(value, str): raise ValueError("Pfad muss Text sein")
-    text = value.strip()
-    if not text: raise ValueError("Pfad fehlt")
-    if any(c in text for c in ("\x00", "\n", "\r")): raise ValueError("Pfad enthält unerlaubte Steuerzeichen")
-    expanded = os.path.expanduser(text)
-    if not os.path.isabs(expanded): raise ValueError("Pfad muss absolut sein: " + text)
-    path = os.path.realpath(os.path.abspath(expanded))
-    if path == os.sep: raise ValueError("Das Wurzelverzeichnis / ist nicht als Schreibverzeichnis erlaubt")
-    return path
+    """Prüft und normalisiert ein erlaubtes Schreibverzeichnis (Quelle: vibe_sandbox)."""
+    import vibe_sandbox
+    return vibe_sandbox.normalize_dir(value)
 
 def write_dirs_path(name): return os.path.join(ppath(name), ".vibe", "permissions.json")
 
-def write_dirs_default(name): return [_norm_write_dir(WRITE_DIRS_DEFAULT), os.path.realpath(ppath(name))]
+def write_dirs_default(name):
+    import vibe_sandbox
+    return [vibe_sandbox.normalize_dir(vibe_sandbox.WRITE_DIRS_DEFAULT), os.path.realpath(ppath(name))]
 
 def write_dirs_custom(name): return os.path.exists(write_dirs_path(name))
 
 def write_dirs(name):
     """Erlaubte Schreibverzeichnisse des Projekts; ohne Datei gelten die Standards."""
-    fp = write_dirs_path(name)
-    if not os.path.exists(fp): return write_dirs_default(name)
-    try:
-        with open(fp, encoding="utf-8") as f: data = json.load(f)
-    except (OSError, json.JSONDecodeError) as e:
-        raise ValueError("Schreibrechte nicht lesbar: " + str(e))
-    if not isinstance(data, dict) or not isinstance(data.get("write_dirs"), list):
-        raise ValueError("Schreibrechte nicht lesbar: 'write_dirs' fehlt oder ist keine Liste")
-    out = []
-    for value in data["write_dirs"]:
-        path = _norm_write_dir(value)
-        if path not in out: out.append(path)
-    return out
+    import vibe_sandbox
+    return vibe_sandbox.project_write_dirs(ppath(name))
 
 def write_dirs_save(name, paths):
     normalized = []
@@ -399,6 +384,94 @@ def cmd_rights(name, action=None, path=None):
     for d in dirs: print(f"  {d}" + ("  (Standard)" if d in defaults else ""))
     print(col("d", "Anpassen: vibe rights " + name + " add|rm <pfad>, zurücksetzen: vibe rights " + name + " reset"))
     print(col("d", "Die Liste begrenzt edit, nicht Shell-Befehle (bash): Agenten mit Shellzugriff können außerhalb der Liste schreiben."))
+
+# ---------- Shell-Sandbox je Projekt ----------
+def set_env_values(name, values):
+    """Ersetzt oder ergänzt Schlüssel in .vibe/project.env und erhält alle anderen Zeilen."""
+    fp = os.path.join(ppath(name), ".vibe", "project.env")
+    if not os.path.exists(fp):
+        raise ValueError("Nicht für vibe vorbereitet: " + fp)
+    with open(fp, encoding="utf-8", newline="") as f: text = f.read()
+    newline = "\r\n" if "\r\n" in text else "\n"
+    lines = text.splitlines(True)
+    for key, value in values.items():
+        if not re.fullmatch(r"[A-Z_]+", key):
+            raise ValueError("Ungültiger Einstellungsschlüssel: " + key)
+        text_value = str(value)
+        if any(c in text_value for c in ("\x00", "\n", "\r")):
+            raise ValueError("Einstellung enthält unerlaubte Steuerzeichen: " + key)
+        line = f'{key}="{text_value}"' if text_value else f'{key}=""'
+        pattern = re.compile(r"^\s*" + re.escape(key) + r"\s*=")
+        replaced = False
+        target = None
+        for i, current in enumerate(lines):
+            if pattern.match(current): target = i
+        if target is not None:
+            current = lines[target]
+            ending = "\r\n" if current.endswith("\r\n") else ("\n" if current.endswith("\n") else "")
+            lines[target] = line + ending
+            replaced = True
+        if not replaced:
+            if lines and not lines[-1].endswith(("\n", "\r")): lines[-1] += newline
+            lines.append(line + newline)
+    _write_text_atomic(fp, "".join(lines))
+
+def sandbox_tools_default(typ):
+    import vibe_sandbox
+    return list(vibe_sandbox.TOOL_DEFAULTS.get(typ, vibe_sandbox.TOOL_DEFAULTS["generic"]))
+
+def sandbox_status(name):
+    """Sandbox-Zustand eines Projekts; lesend, ohne Programme zu starten."""
+    import vibe_sandbox
+    return vibe_sandbox.status(ppath(name))
+
+def sandbox_check(name):
+    import vibe_sandbox
+    return vibe_sandbox.check(ppath(name))
+
+def sandbox_set(name, enabled):
+    if enabled:
+        values = {"SANDBOX": "on"}
+        if not penv(name).get("SANDBOX_TOOLS"):
+            values["SANDBOX_TOOLS"] = " ".join(sandbox_tools_default(ptype(name)))
+        set_env_values(name, values)
+    else:
+        set_env_values(name, {"SANDBOX": "off"})
+    return sandbox_status(name)
+
+def sandbox_tools(name, tools):
+    import vibe_sandbox
+    normalized = vibe_sandbox.normalize_tools(tools)
+    set_env_values(name, {"SANDBOX_TOOLS": " ".join(normalized)})
+    return sandbox_status(name)
+
+def cmd_sandbox(name, action=None, value=None):
+    try:
+        if action in ("on", "off"):
+            st = sandbox_set(name, action == "on")
+        elif action == "tools":
+            if value is None: sys.exit("Liste fehlt: vibe sandbox <projekt> tools \"git node npm\"")
+            st = sandbox_tools(name, value)
+        elif action == "check":
+            result = sandbox_check(name)
+            print(result["message"])
+            sys.exit(0 if result["ok"] else 1)
+        elif action in (None, "status", "list"):
+            st = sandbox_status(name)
+        else:
+            sys.exit("vibe sandbox <projekt> [status|on|off|tools \"<liste>\"|check]")
+    except ValueError as e:
+        sys.exit(str(e))
+    state = "an" if st["enabled"] else "aus"
+    print(col("b", f"Sandbox für {name}: {state}"))
+    print("bubblewrap:", st["bwrap"] or "fehlt")
+    print("Build-Werkzeuge:", " ".join(st["tools"]) or "(keine)")
+    if st["missing_tools"]: print(col("r", "Fehlende Werkzeuge: " + ", ".join(st["missing_tools"])))
+    print("Schreibverzeichnisse:")
+    for d in st["write_dirs"]: print("  " + d)
+    print("opencode-Zustand:", st["state_dir"])
+    if st["error"]: print(col("r", "Fehler: " + st["error"]))
+    print(col("d", "Anpassen: vibe sandbox " + name + " on|off|tools \"git node npm\". Die Sandbox begrenzt Schreiben auf diese Verzeichnisse und Tool-Caches; /tmp ist privat und schreibgeschützt, Temporärdateien liegen im Zustandsordner. MCP und Netzwerk bleiben erlaubt, Lesezugriffe werden nicht eingeschränkt."))
 
 def sess(name): return "vibe-" + safe(name)
 def tmux_has(name): return sh(f"tmux has-session -t {sess(name)}")[0] == 0
@@ -618,6 +691,11 @@ def cmd_status(name):
     print(col("b", f"{name}  ({ptype(name)})"), f" Branch {br}, {dirty} geänderte Dateien")
     print("Pfad:", ppath(name)); print("Letzter Commit:", last)
     print("Lauf:", col("g", "aktiv (vibe attach " + name + ")") if tmux_has(name) else "keiner")
+    try:
+        sb = sandbox_status(name)
+        print("Sandbox:", (col("g", "an") if sb["enabled"] else "aus") + ("" if not sb["enabled"] else (", bereit" if not sb["error"] and sb["bwrap"] else ", nicht startbar")))
+    except Exception as e:
+        print("Sandbox:", col("r", str(e)))
     if pause_after_active(name): print(col("y", "Pause nach dem aktuellen Arbeitspaket angefordert (vibe pause " + name + " off hebt sie auf)"))
     if not is_init(name): print(col("y", "Nicht für vibe vorbereitet: vibe init " + name))
     items = open_items(name)
@@ -631,6 +709,10 @@ def cmd_run(name, agent=None):
     p = ppath(name)
     if tmux_has(name): print("Läuft bereits. vibe attach", name); return
     if not is_init(name): sys.exit("Projekt ist nicht für vibe vorbereitet: vibe init " + name)
+    sandbox = sandbox_status(name)
+    if sandbox["enabled"]:
+        checked = sandbox_check(name)
+        if not checked["ok"]: sys.exit(checked["message"])
     if pause_after_active(name): print(col("y", "Pause angefordert: der Lauf startet kein Arbeitspaket. Aufheben: vibe pause " + name + " off"))
     os.makedirs(LOGS, exist_ok=True)
     env = penv(name); agent = agent or env.get("AGENT", "coding-agent_deepseek")
@@ -1111,7 +1193,7 @@ def pick(title, options):
 
 def project_menu(name):
     acts = ["Status / offene Arbeitspakete", "Agentenlauf starten", "An Lauf anhängen (tmux)", "Log verfolgen", "Lauf beenden",
-            "Prüfung quick", "Prüfung full", "Feedback eintragen", "Git-Verlauf (10)", "opencode-Sitzungen", "Lauf mit anderem Agent", "Für vibe vorbereiten (init)", "Neuer Projekt-Agent", "MCP-Tools des Projekts", "Schreibrechte (Verzeichnisse)", "Pause nach aktuellem Arbeitspaket (an/aus)"]
+            "Prüfung quick", "Prüfung full", "Feedback eintragen", "Git-Verlauf (10)", "opencode-Sitzungen", "Lauf mit anderem Agent", "Für vibe vorbereiten (init)", "Neuer Projekt-Agent", "MCP-Tools des Projekts", "Schreibrechte (Verzeichnisse)", "Pause nach aktuellem Arbeitspaket (an/aus)", "Sandbox (Shell und Build-Tools)"]
     while True:
         i = pick(f"Projekt {name} ({ptype(name)})", acts)
         if i is None: return
@@ -1121,7 +1203,7 @@ def project_menu(name):
          8: lambda: print(sh("git log --oneline -10", cwd=p)[1]), 9: lambda: print(sh("opencode session list", cwd=p)[1]),
          10: lambda: cmd_run(name, input("Agent-Name: ").strip() or None), 11: lambda: cmd_init(name),
          12: lambda: cmd_agent("new", input("Agent-Name: ").strip(), name), 13: lambda: cmd_mcp("list", None, name), 14: lambda: cmd_rights(name),
-         15: lambda: cmd_pause(name, "off" if pause_after_active(name) else "on")}[i]()
+         15: lambda: cmd_pause(name, "off" if pause_after_active(name) else "on"), 16: lambda: cmd_sandbox(name)}[i]()
 
 def menu():
     while True:
@@ -1172,6 +1254,7 @@ def main():
                  "roots": lambda: cmd_roots(r[0] if r else None, r[1] if len(r) > 1 else None), "scan": lambda: cmd_roots(),
                  "agents": lambda: cmd_agents(), "agent": lambda: cmd_agent(r[0], r[1], r[2] if len(r) > 2 else "global"),
                  "rights": lambda: cmd_rights(r[0], r[1] if len(r) > 1 else None, r[2] if len(r) > 2 else None),
+                 "sandbox": lambda: cmd_sandbox(r[0], r[1] if len(r) > 1 else None, r[2] if len(r) > 2 else None),
                  "models": lambda: cmd_models(), "model": lambda: cmd_model(r[0], r[1], r[2] if len(r) > 2 else "global"),
                  "profile": lambda: cmd_profile(r[0] if r else "list", r[1] if len(r) > 1 else None),
                  "mcp": lambda: cmd_mcp(r[0] if r else "list", r[1] if len(r) > 1 else None, r[2] if len(r) > 2 else "global"),

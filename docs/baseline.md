@@ -164,7 +164,8 @@ Codestelle und die in dieser Sitzung tatsächlich beobachtete Prüfung.
 | CLI | `vibe roots` | vorhanden und manuell geprüft | `bin/vibe:135-151`; ausgeführt, Exit 0, ein Entwicklungsordner mit 7 Projekten |
 | CLI | `vibe scan` | vorhanden und manuell geprüft | `bin/vibe:653`; Alias auf `cmd_roots()`, ausgeführt, Exit 0 |
 | CLI | `vibe agents` | vorhanden und manuell geprüft | `bin/vibe:349-364,428-435`; ausgeführt, Exit 0, globale Agenten plausibel |
-| CLI | `vibe rights` | vorhanden und automatisiert geprüft | `bin/vibe:324-397`; `tests/unit/test_project_write_dirs.py` prüft Liste, Hinzufügen, Entfernen und Zurücksetzen ohne Schreibzugriff auf produktive Konfiguration |
+| CLI | `vibe rights` | vorhanden und automatisiert geprüft | `bin/vibe:371-386`; `tests/unit/test_project_write_dirs.py` prüft Liste, Hinzufügen, Entfernen und Zurücksetzen ohne Schreibzugriff auf produktive Konfiguration |
+| CLI | `vibe sandbox` | vorhanden und automatisiert geprüft | `bin/vibe:388-474`; `tests/unit/test_sandbox.py` prüft Status, Ein-/Ausschalten, Werkzeugliste, Ablehnung von Steuerzeichen, bubblewrap-Argumente, die `/tmp`-Grenze, die schreibgeschützte `.vibe`-Konfiguration und echte sandboxed Schreibversuche |
 | CLI | `vibe agent` | vorhanden, noch nicht geprüft | `bin/vibe:441-457`; `new/edit/show/rm`, Editor und Schreibzugriff nicht ausgeführt |
 | CLI | `vibe models` | vorhanden und manuell geprüft | `bin/vibe:459-466`; ausgeführt, Exit 0; Daten aus `data/models.json` bleiben ungeprüfte Altdaten (V-011) |
 | CLI | `vibe model` | vorhanden, noch nicht geprüft | `bin/vibe:468-477`; schreibt Agentendatei, nicht ausgeführt |
@@ -211,6 +212,7 @@ vorhanden“ nennt bereits sichtbare Lücken, die in V-004 zu beheben sind.
 | API | `POST /api/init` | teilweise vorhanden | `bin/vibe-web.py:127`; Auth-Lücke wie `/api/run`; nicht ausgeführt |
 | API | `POST /api/feedback` | teilweise vorhanden | `bin/vibe-web.py:128-130`; Auth-Lücke, ID-Vergabe nicht gegen Parallelzugriff gesichert (V-009) |
 | API | `POST /api/rights` | vorhanden und automatisiert geprüft | `bin/vibe-web.py:172-190`; `tests/unit/test_project_write_dirs.py` prüft Hinzufügen, Entfernen, Zurücksetzen, Anwenden und die Tokenpflicht |
+| API | `POST /api/sandbox` | vorhanden und automatisiert geprüft | `bin/vibe-web.py:198-214`; `tests/unit/test_sandbox.py` prüft Ein-/Ausschalten, Werkzeuge, Prüfung und die Tokenpflicht gegen ein isoliertes Dashboard |
 | API | `POST /api/new` | teilweise vorhanden | `bin/vibe-web.py:131`; Auth-Lücke wie `/api/run`; nicht ausgeführt |
 | API | `POST /api/roots` | teilweise vorhanden | `bin/vibe-web.py:132-141`; Auth-Lücke wie `/api/run`; nicht ausgeführt |
 | API | `POST /api/agent_template` | teilweise vorhanden | `bin/vibe-web.py:142-143`; Auth-Lücke wie `/api/run`; nicht ausgeführt |
@@ -240,6 +242,7 @@ headless) geprüft.
 | UI | `Kopfzeile Dashboard beenden` | vorhanden, noch nicht geprüft | `bin/vibe-web.py:244`; ruft `POST /api/shutdown`; kein Browsertest |
 | UI | `Log-Stream` | vorhanden, noch nicht geprüft | `bin/vibe-web.py:282-291`; EventSource auf `/api/stream`; kein Browsertest |
 | UI | `Projektdetail: Schreibrechte` | vorhanden und automatisiert geprüft | `bin/vibe-web.py:369-379`; `tests/browser/test_write_dirs_ui.py` bedient Liste, Hinzufügen, Entfernen, Zurücksetzen und Anwenden (Chromium, headless); die Liste begrenzt `edit`, nicht `bash` |
+| UI | `Projektdetail: Sandbox` | vorhanden und automatisiert geprüft | `bin/vibe-web.py:444-459`; `tests/browser/test_sandbox_ui.py` schaltet die Sandbox ein und aus, speichert Build-Werkzeuge, prüft den bereiten Zustand und den Hinweis in den Schreibrechten (Chromium, headless); Screenshot `docs/features/F7-sandbox.png` |
 | UI | `Agenteneditor: Schreibrechts-Hinweis` | vorhanden und automatisiert geprüft | `bin/vibe-web.py:434-444`; Hinweis und Vorlage folgen dem gewählten Bereich (global/projekt); `tests/browser/test_write_dirs_ui.py` (Chromium, headless) |
 | UI | `Projektdetail: Arbeitspaket-Pause` | vorhanden und automatisiert geprüft | `bin/vibe-web.py:356,371-375`; `tests/browser/test_pause_after_package_ui.py` fordert die Pause an, prüft den Zustand und hebt sie wieder auf (Chromium, headless); Screenshot `docs/features/F4-pause.png` |
 | UI | `Projektliste: Pause-Markierung` | vorhanden und automatisiert geprüft | `bin/vibe-web.py:330`; `tests/browser/test_pause_after_package_ui.py` prüft die Markierung „Pause“ in der Projektzeile (Chromium, headless) |
