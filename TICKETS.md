@@ -17,7 +17,7 @@ Ein fehlender externer Dienst bedeutet BLOCKIERT, nicht erledigt.
   aktive Installation unverändert; fehlende ursprüngliche Installer dokumentiert.
   Tests: reproduzierbare Manifestprüfung; Syntaxchecks; keine echten Modellaufrufe.
 
-- [ ] V-002 Sichere Entwicklungs- und Prüfumgebung einrichten
+- [x] V-002 Sichere Entwicklungs- und Prüfumgebung einrichten
   Priorität: P0
   Abhängigkeiten: V-001
   Umfang: scripts/verify.sh quick|full, Teststruktur, isolierte Fixtures.
@@ -26,6 +26,10 @@ Ein fehlender externer Dienst bedeutet BLOCKIERT, nicht erledigt.
   Projekt über .vibe/project.env ohne Android-Abnahme prüfbar.
   Tests: erfolgreicher Check, absichtlich fehlschlagender Check, unbekannter Modus,
   fehlende Werkzeuge; produktive Konfiguration bleibt unverändert.
+  Commit: 8db7223; Test: tests.unit.test_verify_script.VerifyQuickTest.test_successful_check_runs_isolated_and_cleans_up
+  Prüfungen: `bash scripts/verify.sh quick` Exit 0; `bash scripts/verify.sh full` Exit 0 (257 Tests erkannt)
+  Review: docs/reviews/V-002-review-1.md (PASS, keine Critical/High/Medium)
+  Dokumentation: docs/features/V-002.md; Trilium `fo1x30HjK74P`
 
 - [ ] V-003 Prozessaufrufe und Eingaben absichern
   Priorität: P0
