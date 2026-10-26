@@ -4,6 +4,7 @@ Regeln (werden maschinell geprüft):
 1. Jeder Block, der mit `- ` beginnt und nicht mit `- [x]`, ist OFFEN.
 2. Abhaken nur mit Nachweis darunter: `Commit: <hash>; Test: <Testmethode>` oder `Commit: <hash>; Datei: <Pfad>`.
 3. Nicht lösbar? Darunter `BLOCKIERT: <Grund>` schreiben und NICHT abhaken.
+4. Fortsetzungszeilen eines Punktes müssen eingerückt sein. Eine nicht eingerückte Zeile beendet den Block; der Nachweis zählt dann nicht mehr zum Punkt.
 
 <!-- Vorlage (nicht abhaken):
   - [ ] F99 Kurztitel
@@ -60,7 +61,7 @@ Regeln (werden maschinell geprüft):
 - [x] F7 Sandbox (wenn möglich)
   Beschreibung: aktueller stand: "Verzeichnisse für das Schreibwerkzeug (edit) der Projektagenten. Voreingestellt sind /tmp/opencode und das Projektverzeichnis. Agenten ohne Schreibrecht bleiben unverändert. Shell-Befehle (bash) bleiben erlaubt und können Dateien außerhalb dieser Liste ändern – die Liste ist keine Sandbox."
 
-ist es möglich, die agenten auch über die shell befehle zu begrenzen und somit eine sandbox aufzubauen, welche nur die verzeichnisse mit schreibrechten, mcp, und notwendige build tools erlaubt? die build tools sollten idealerweise je projekt konfigurierbar sein und mit dem projekt templates bereits vorausgewählt mitgeliefert werden.
+  ist es möglich, die agenten auch über die shell befehle zu begrenzen und somit eine sandbox aufzubauen, welche nur die verzeichnisse mit schreibrechten, mcp, und notwendige build tools erlaubt? die build tools sollten idealerweise je projekt konfigurierbar sein und mit dem projekt templates bereits vorausgewählt mitgeliefert werden.
   Commit: 0406429; Test: SandboxConfigTest.test_cli_off_replaces_the_last_of_duplicate_keys, SandboxRunnerTest.test_runner_fails_closed_when_sandbox_module_is_broken, SandboxCommandTest.test_real_sandbox_allows_write_dirs_and_denies_unlisted_paths (tests/unit/test_sandbox.py, 31 Tests; gesamt 218 Unit-Tests, 11 Browsertests)
   Review: docs/reviews/F7-review-1.md, docs/reviews/F7-review-2.md, docs/reviews/F7-review-3.md (PASS)
   Doku: docs/features/F7.md; Trilium `ZzVeElHG2ifr`
