@@ -1,0 +1,40 @@
+VERDICT: PASS
+
+FINDINGS:
+- [Minor] `bin/vibe-web.py:429` — Leerliste-Hinweis hat sich nebenbei geändert
+  - Evidence: Vorher zeigte die Feedback-Karte bei leerem `d.feedback` „Noch kein Feedback vorhanden.“; jetzt zeigt sie bei leerer Liste (showDone=false) „Keine offenen Feedback-Punkte.“ Diese Nebeneffekt-Änderung ist vom Ticket nicht gedeckt und wird von keinem Test geprüft (grep nach beiden Texten in tests/ schlug fehl).
+  - Required fix: — (bewusst lassen oder in der Doku erwähnen)
+- [Minor] `bin/vibe-web.py:442` — Ergebnisanzeige bei HTTP 400 funktioniert, aber unter dem Punkt wird „Bearbeiten“ beim Speichern eines (nun abgelehnten) erledigten Punkts theoretisch erreichbar, fallsabenrial eine FAQ-Flugbahn…
+  - Evidence: Ohne Beleg ins Feld geführt — nach nochmaliger Prüfung (feedbackCard rendert für `completed` keinen „Bearbeiten“-Knopf, `edit(i,row)` ist nur über den Knopf erreichbar, Tests `test_completed_entry_offers_no_edit_control` und API-Test decken beide Ebenen ab) ist kein reales Bypass-Fenster erkennbar. Ich ziehe diesen Punkt zurück; er bleibt als „geprüft und widerlegt“ dokumentiert, nicht als Befund.
+  - Required fix: —
+
+(Effektive Befunde nach Rückzug des zweiten Punkts: 1 × Minor. Kein Critical, kein High, kein Medium.)
+
+Abnahme je Kriterium (Evidenz):
+
+| Kriterium | Umsetzung | Prüfung |
+|---|---|---|
+| Abgeschlossene Punkte im Standard ausgeblendet | `bin/vibe-web.py:418` (`done`/`pending`-Split) und `:428` (`shown=showDone?d.feedback:pending`) | Browser-Test `test_completed_entries_are_hidden_by_default_and_can_be_shown` (F1 count=0, F3 count=1, „anzeigen (1)“) plus Screenshot `docs/features/F8-standard.png` (625×266, von mir als Bild gelesen: nur F3/F4 sichtbar, „Abgeschlossene anzeigen (2)“) |
+| Umschalter mit Anzahl, Ein-/Ausblenden | `bin/vibe-web.py:430-432, 438` | Derselbe Browser-Test (ein- und ausblenden, „ausblenden“-Text); Knopf ohne abgeschlossene Punkte `display:none` `.432` — logisch nachvollzogen, kein separater Test, aber trivialer Zweig |
+| „Abgeschlossen“ = `erledigt` (Checkbox + Nachweis) | `bin/vibe:272` (`row["completed"] = item["state"] == "erledigt"`), abgeleitet aus derselben `_feedback_parse`-Logik (`bin/vibe:243-247`), konsistent mit SPEC.md „Erledigt bedeutet: … Nachweise vorhanden“ | Unit `test_flags_only_entries_with_proof_as_completed` (erledigt/ohne Nachweis/offen), Browser `test_checked_entry_without_proof_stays_visible_and_editable` |
+| Nicht bearbeitbar über die UI | Modellgrenze `bin/vibe:306-307` (ValueError, bevor die Dateien gelesen/geschrieben werden — liegt translucent: `:305` liest, `:307` wirft vor jeder Schreiboperation); `feedbackCard` rendert für `completed` keinen „Bearbeiten“-Knopf, sondern Hinweis (`bin/vibe-web.py:425`) | Unit `test_update_rejects_completed_entry_without_changing_file`, API `test_api_rejects_update_of_completed_entry_and_keeps_file` (400 + unveränderte Datei); `self._send(200 if ok else 400, …)` in `bin/vibe-web.py:288` deckt die 400-Antwort ab. Browser `test_completed_entry_offers_no_edit_control`; Screenshot `F8-erledigt.png` gelesen: F1/F2 „erledigt“, „abgeschlossen – nicht bearbeitbar“, kein „Bearbeiten“, „Löschen“ vorhanden |
+| `[x]` ohne Nachweis bleibt sichtbar + bearbeitbar | überegelt durch „ohne Nachweis“ ≠ „erledigt“ | Unit double (`F2`-Zweig in `test_flags_only_entries_with_proof_as_completed`) + Browser-Test; auch bestehender F2-Test `test_update_keeps_done_checkbox` (tests/unit/test_feedback_edit_delete.py:202) bleibt unverändert bestehen |
+| Umgehung Update über die API | `known(name)` + ValueError → 400 | `test_api_rejects_update_of_completed_entry_and_keeps_file` |
+| Race/TOCTOU | Guard parst beim Request frisch (`_feedback_target` → `_feedback_parse`), atomarer Schreibpfad unverändert; das generische Read-Write-Fenster ist keine F8-Neuentstehung und deckt ALLE Feedbackschreiboperationen schon vor F8 ab | — |
+| Löschen bleibt erlaubt | `feedback_delete` (`bin/vibe:327`) unverändert; Unit + API + Browser je 1 Test | Ticket F8 sagt wortgetreu nur „muslimisch/… nicht über die ui bearbeitbar“ (JSON: „nicht bearbeitbar“) — nichts verlangt Löschen-Sperre; F2-historische Löschfunktion mit Bestätigungsdialog bleibt intakt. Verbunden mit F8 thematisch akzeptiert; Hand-Editing von FEEDBACK.md (Datei als Quelle der Wahrheit) bleibt ohnehin möglich — that is documented in F8.md „Grenzen“ |
+|uí + Importmanifest + Doku | `docs/import-manifest.json` (neue Hashes/Größen von `bin/vibe`, `bin/vibe-web.py` — von mir nur als Dateiinhalte gelesen; Neuberechnung ohne Shell unmöglich, hier agentengestützt); `docs/features/F8.md` + `docs/trilium-index.md:17` | Manifesterbringung agent-gestützt OK; Tests verifizierten 227 Unit / 14 Browser OK (agent-gemeldet, Rot-Phasen-Output beigebracht) |
+
+Test-Integritätsprüfung: keine leeren Tests, keine Skip/Ignore, keine „glatte“ Assertions; Rot-Phasen-Output nachweisbar (KeyError 'completed', 200 != 400, fehlender Umschalter-Text; Browser 3× TimeoutError vor Implementierung); Framing-Schutz `window.confirm = () => true` im Browsertest umgeht nur den Lösch-Dialog, der im Test-Ablauf kein zu prüfendes Verhalten verstellt. API-Fixturtest startet reales `bin/vibe-web.py` mit isoliertem VIBE und eigenem Port (SPEC „Qualität und Abnahme“ erfüllt).
+
+Trilium-Verifizierung (durch mich gelesen, nicht nur geglaubt): Notiz `6U4QBUkWcwg1` „F8 Abgeschlossene Feedback-Punkte ausblenden und schützen“ existiert, Inhalt fachlich-korrekt mit Repo-Doku konsistent, Elternnotiz = „Features“ (neben F1–F7). `docs/trilium-index.md:17` stimmt zur Notiz-ID.
+
+Sicherheits-/Eigenheits-Abgrenzung (fremde Screenshots F3/F5/F7): Berechtigter Nebeneffekt — die zugrundeliegenden Browser-Tests schreiben ihre Screenshots dauerhaft nach `docs/features/` (belegt: tests/browser/test_sandbox_ui.py:21 `SHOT = REPO/"docs"/"features"/"F7-sandbox.png"`; analog `test_fritz_ui.py:177`, `test_write_dirs_ui.py:290`). Der Ausführungsstatus präzisiert korrekt: nicht gestagen, nicht committen, nicht Teil des F8-Pakets. Sauber abgegrenzt.
+
+Geprüfte Dateien (vollständig oder in relevantem Umfang): `AGENTS.md`, `SPEC.md` (Arbeitspakete/Feedback, Qualität/Abnahme, Nicht-im-Umfang, Decisions-locked), `.vibe/project.env`, `FEEDBACK.md` (inkl. F8-Eintrag, unverändert offen), `bin/vibe` (Feedback-Block 160–359), `bin/vibe-web.py` (API-Handling 119–218, JS `feedbackCard` 417–440, `el`/`toast`/`showErr`), `docs/import-manifest.json`, `docs/trilium-index.md`, `docs/features/F8.md`, `tests/unit/test_feedback_completed.py`, `tests/browser/test_feedback_completed_ui.py`, `tests/unit/test_feedback_edit_delete.py` (nur relevant: F2-Regressionen, keine Abschwächung), `docs/features/F8-standard.png` und `F8-erledigt.png` (beide als Bild gelesen und den Behauptungen entsprechend), Trilium-Notiz F8 + Elternnotiz „Features“ (per Trilium-MCP gelesen). `/tmp/opencode/f8/review-input.txt` vollständig gelesen.
+
+Verbleibende Risiken:
+- Shell/git-Zugriff in meiner Sitzung permanent abgelehnt (Permission denied): Ich kann weder `git status`/`git diff` selbst ausführen noch die SHA256-Hashes im Importmanifest oder die mitgelieferten Testläufe (227/14/…-Outputs) mechanisch nachrechnen. Grundlage ist die beigelegte Differenz + direkte Dateilektüre; die agentengemeldeten Prüfergebnisse sind konsistent und plausibel, aber nicht von mir reproduziert.
+- `scripts/verify.sh quick/full` gibt es nicht (`VERIFY_* = echo TODO`); der spezifische Projektblock V-002 bleibt eine projektsweets weite offene Baustelle und ist für F8 nicht behebbar. F8 behauptet keinen verify-Lauf — korrekt deklariert.
+- Der Lösch-Pfad für abgeschlossene Punkte ist bewusst offen; wer das schärfere „auch nicht löschbar“ will, müsste ein Nachfolgeticket öffnen — nach F8- und SPEC-Text heute keine Pflicht.
+- Der „Umschalter-Knopf ohne abgeschlossene Punkte versteckt“-Zweig (`toggle.style.display=done.length?'':'none'`) hat keinen dedizierten Test; vorhersehbar korrekt, reine Logiklese-Evidenz.
+- Leerlisten-Wortlautänderung (Hinweis oben, einmal Minor).

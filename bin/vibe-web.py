@@ -415,18 +415,29 @@ function pauseCard(d,name){
  return el('div',{class:'card'},el('div',{class:'bar'},el('b',{},'Arbeitspaket-Pause'),el('span',{class:'pill '+(active?'warn':'mut')},active?'Pause angefordert':'keine Pause'),btn),
   el('div',{class:'mut'},'Der laufende Agent wird nicht unterbrochen. Nach dem aktuellen Arbeitspaket startet der Läufer kein neues Paket; die Anforderung gilt einmalig und wird beim Anhalten verbraucht.'))}
 function feedbackCard(d,name){const list=el('div',{});const cls=s=>s==='erledigt'?'ok':s==='BLOCKIERT'?'bad':'warn';
- const draw=()=>{list.replaceChildren(...(d.feedback.length?d.feedback.map(i=>{const row=el('div',{class:'fbentry','data-id':i.id},
-   el('div',{},el('span',{class:'pill '+cls(i.state)},i.state),el('b',{},' '+i.id+' '+i.title)),i.description?el('div',{class:'mut fbdesc'},i.description):null,
-   el('div',{class:'bar'},el('button',{class:'b',on:{click:()=>edit(i,row)}},'Bearbeiten'),
-    el('button',{class:'b d',on:{click:async()=>{if(!confirm('Feedback '+i.id+' wirklich löschen?'))return;const r=await api('/api/feedback',{name,action:'delete',id:i.id});toast(r.message);if(r.ok)detail(name).catch(showErr)}}},'Löschen')));
-   return row}):[el('span',{class:'mut'},'Noch kein Feedback vorhanden.')]))};
+ const done=d.feedback.filter(i=>i.completed),pending=d.feedback.filter(i=>!i.completed);let showDone=false;
+ const toggle=el('button',{class:'b'});
+ const delBtn=i=>el('button',{class:'b d',on:{click:async()=>{if(!confirm('Feedback '+i.id+' wirklich löschen?'))return;const r=await api('/api/feedback',{name,action:'delete',id:i.id});toast(r.message);if(r.ok)detail(name).catch(showErr)}}},'Löschen');
+ const rowFor=i=>{const row=el('div',{class:'fbentry','data-id':i.id});
+  row.append(el('div',{},el('span',{class:'pill '+cls(i.state)},i.state),el('b',{},' '+i.id+' '+i.title)),
+   ...(i.description?[el('div',{class:'mut fbdesc'},i.description)]:[]),
+   el('div',{class:'bar'},
+    ...(i.completed?[el('span',{class:'mut'},'abgeschlossen – nicht bearbeitbar')]:[el('button',{class:'b',on:{click:()=>edit(i,row)}},'Bearbeiten')]),
+    delBtn(i)));
+  return row};
+ const draw=()=>{const shown=showDone?d.feedback:pending;
+  list.replaceChildren(...(shown.length?shown.map(rowFor):[el('span',{class:'mut'},showDone?'Noch kein Feedback vorhanden.':'Keine offenen Feedback-Punkte.')]));
+  toggle.textContent=showDone?'Abgeschlossene ausblenden':'Abgeschlossene anzeigen ('+done.length+')';
+  toggle.classList.toggle('p',showDone);toggle.setAttribute('aria-expanded',showDone?'true':'false');
+  toggle.style.display=done.length?'':'none'};
  const edit=(i,row)=>{const t=el('input',{value:i.title}),b=el('textarea',{rows:4,value:i.description||''});
   const ed=el('div',{class:'fbentry','data-id':i.id},el('label',{},'Titel'),t,el('label',{},'Beschreibung'),b,
    el('div',{class:'bar'},el('button',{class:'b p',on:{click:async()=>{const r=await api('/api/feedback',{name,action:'update',id:i.id,title:t.value,description:b.value});toast(r.message);if(r.ok)detail(name).catch(showErr)}}},'Speichern'),
     el('button',{class:'b',on:{click:()=>ed.replaceWith(row)}},'Abbrechen')));
   row.replaceWith(ed)};
+ toggle.addEventListener('click',()=>{showDone=!showDone;draw()});
  draw();
- return el('div',{class:'card'},el('b',{},'Feedback ('+d.feedback.length+')'),list)}
+ return el('div',{class:'card',id:'feedback'},el('div',{class:'bar'},el('b',{},'Feedback ('+d.feedback.length+')'),toggle),list)}
 function rightsCard(d,name){const inp=el('input',{placeholder:'/absoluter/pfad','aria-label':'Schreibverzeichnis'});
  const rows=el('div',{},...(d.write_dirs.length?d.write_dirs.map(p=>el('div',{class:'bar'},el('span',{class:'mut'},p),
    el('button',{class:'b d',on:{click:async()=>{const r=await api('/api/rights',{name,action:'remove',path:p});toast(r.message);if(r.ok)detail(name).catch(showErr)}}},'Entfernen'))):[el('span',{class:'mut'},'Keine Verzeichnisse – Schreiben ist gesperrt.')]));

@@ -14,3 +14,4 @@ Zuordnung der Projekt-Dokumentation zu den Notizen in Trilium (Stand 2026-10-26)
 | vibe | Features | F5 Fritzbox-Reconnect in der UI | `8DoXPxXg7jnD` |
 | vibe | Features | F6 Universeller Setup-Prozess | `sHzUT9bBs8NI` |
 | vibe | Features | F7 Sandbox für Shell und Build-Werkzeuge | `ZzVeElHG2ifr` |
+| vibe | Features | F8 Abgeschlossene Feedback-Punkte ausblenden und schützen | `6U4QBUkWcwg1` |

@@ -19,8 +19,8 @@
   },
   {
    "path": "bin/vibe",
-   "sha256": "fd14f597de6720a4bba110cfefc89ac331ca01ff95efe59ea3cbd913aeb6b50b",
-   "bytes": 64407
+   "sha256": "6ba43e4a0c499f3273afd840deee8f39d7665d6477049782968b50d1d28cc1c8",
+   "bytes": 64816
   },
   {
    "path": "bin/vibe-run.sh",
@@ -29,8 +29,8 @@
   },
   {
    "path": "bin/vibe-web.py",
-   "sha256": "492c979b17bdf78ae193826576f0d925593fe84e9d3caa6d14d5d182b75030b5",
-   "bytes": 61291
+   "sha256": "5078c89eeb41e2e365306a4a599015ade1ddd9adb133290793c58da6872907dd",
+   "bytes": 62036
   },
   {
    "path": "bin/vibe_mcp.py",

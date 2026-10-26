@@ -255,7 +255,12 @@ def _read_text(path):
     with open(path, encoding="utf-8", errors="replace") as f: return f.read()
 
 def feedback_items(name):
-    """Alle Feedback-Punkte mit Titel, Beschreibung und Status."""
+    """Alle Feedback-Punkte mit Titel, Beschreibung, Status und Abschlussflag.
+
+    ``completed`` ist nur bei ``state == "erledigt"`` wahr, also bei gesetzter
+    Checkbox *und* vorhandenem Nachweis. Ein gesetztes Häkchen ohne Nachweis
+    bleibt bearbeitbar.
+    """
     fp = feedback_path(name)
     if not os.path.exists(fp): return []
     text = _read_text(fp)
@@ -263,7 +268,9 @@ def feedback_items(name):
     for entry in _feedback_scan(text):
         item = _feedback_parse(entry, root)
         if item:
-            out.append({k: item[k] for k in ("id", "title", "description", "state")})
+            row = {k: item[k] for k in ("id", "title", "description", "state")}
+            row["completed"] = item["state"] == "erledigt"
+            out.append(row)
     return out
 
 def _feedback_target(name, fid):
@@ -296,6 +303,8 @@ def feedback_update(name, fid, title, description=""):
     if not title: raise ValueError("Titel fehlt")
     if "\n" in title or "\r" in title: raise ValueError("Titel darf keinen Zeilenumbruch enthalten")
     fp, text, entry, item = _feedback_target(name, fid)
+    if item["state"] == "erledigt":
+        raise ValueError("Abgeschlossene Feedback-Punkte sind nicht bearbeitbar: " + fid)
     raw = text.splitlines(keepends=True)
     sep = "\r\n" if raw[entry["start"]].endswith("\r\n") else "\n"
     first = raw[entry["start"]].rstrip("\r\n")
