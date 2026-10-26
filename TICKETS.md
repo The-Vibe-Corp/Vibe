@@ -45,7 +45,7 @@ Ein fehlender externer Dienst bedeutet BLOCKIERT, nicht erledigt.
   Review: docs/reviews/V-003-review-1.md (PASS, keine Critical/High/Medium; 2 Minor)
   Dokumentation: docs/features/V-003.md; Trilium `yaaK4lPOlg99`
 
-- [ ] V-004 Web-API absichern und Health-Endpunkt ergänzen
+- [x] V-004 Web-API absichern und Health-Endpunkt ergänzen
   Priorität: P0
   Abhängigkeiten: V-002
   Umfang: Authentisierung, Host-/Origin-Prüfung, Requestlimits, Health.
@@ -54,6 +54,10 @@ Ein fehlender externer Dienst bedeutet BLOCKIERT, nicht erledigt.
   keine Tokens in Logs; strukturierte Fehler.
   Tests: fehlendes/falsches Token, fremder Origin/Host, ungültiges JSON,
   übergroße Requests, parallele Anfragen.
+  Commit: 94893cd; Test: tests/unit/test_web_api_security.py (22 Tests)
+  Prüfungen: bash scripts/verify.sh quick (Exit 0); bash scripts/verify.sh full (Exit 0, 297 Tests)
+  Review: docs/reviews/V-004-review-1.md (PASS), -2.md (PASS), -3.md (PASS)
+  Dokumentation: docs/features/V-004.md; Trilium `VrwC3K1wD5hI`
 
 - [ ] V-005 Atomare Dateizugriffe und sichere Sicherungen
   Priorität: P0
