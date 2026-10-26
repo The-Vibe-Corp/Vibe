@@ -56,3 +56,11 @@ Regeln (werden maschinell geprüft):
   Commit: c2ef5e2; Test: PlatformDetectionTest.test_ubuntu_uses_apt, DependencyPlanTest.test_missing_linux_tools_become_one_argument_list, InstallFilesTest.test_reuse_keeps_existing_programs_and_only_adds_missing_ones, CliFlowTest.test_failed_package_command_is_reported, WrapperTest.test_install_vibe_sh_uses_the_python_setup (tests/unit/test_setup_vibe.py, 45 Tests; gesamt 187 Unit-Tests, 10 Browsertests)
   Review: docs/reviews/F6-review-1.md, docs/reviews/F6-review-2.md, docs/reviews/F6-review-3.md (PASS)
   Doku: docs/features/F6.md; Trilium `sHzUT9bBs8NI`
+
+- [x] F7 Sandbox (wenn möglich)
+  Beschreibung: aktueller stand: "Verzeichnisse für das Schreibwerkzeug (edit) der Projektagenten. Voreingestellt sind /tmp/opencode und das Projektverzeichnis. Agenten ohne Schreibrecht bleiben unverändert. Shell-Befehle (bash) bleiben erlaubt und können Dateien außerhalb dieser Liste ändern – die Liste ist keine Sandbox."
+
+ist es möglich, die agenten auch über die shell befehle zu begrenzen und somit eine sandbox aufzubauen, welche nur die verzeichnisse mit schreibrechten, mcp, und notwendige build tools erlaubt? die build tools sollten idealerweise je projekt konfigurierbar sein und mit dem projekt templates bereits vorausgewählt mitgeliefert werden.
+  Commit: 0406429; Test: SandboxConfigTest.test_cli_off_replaces_the_last_of_duplicate_keys, SandboxRunnerTest.test_runner_fails_closed_when_sandbox_module_is_broken, SandboxCommandTest.test_real_sandbox_allows_write_dirs_and_denies_unlisted_paths (tests/unit/test_sandbox.py, 31 Tests; gesamt 218 Unit-Tests, 11 Browsertests)
+  Review: docs/reviews/F7-review-1.md, docs/reviews/F7-review-2.md, docs/reviews/F7-review-3.md (PASS)
+  Doku: docs/features/F7.md; Trilium `ZzVeElHG2ifr`
