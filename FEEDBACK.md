@@ -64,3 +64,9 @@ ist es möglich, die agenten auch über die shell befehle zu begrenzen und somit
   Commit: 0406429; Test: SandboxConfigTest.test_cli_off_replaces_the_last_of_duplicate_keys, SandboxRunnerTest.test_runner_fails_closed_when_sandbox_module_is_broken, SandboxCommandTest.test_real_sandbox_allows_write_dirs_and_denies_unlisted_paths (tests/unit/test_sandbox.py, 31 Tests; gesamt 218 Unit-Tests, 11 Browsertests)
   Review: docs/reviews/F7-review-1.md, docs/reviews/F7-review-2.md, docs/reviews/F7-review-3.md (PASS)
   Doku: docs/features/F7.md; Trilium `ZzVeElHG2ifr`
+
+- [x] F8 Überarbeitung feedback system
+  Beschreibung: abgeschlossene feedback aufgaben müssen nicht über die ui bearbeitbar sein, diese sollen im standard ausgeblendet sein.
+  Commit: c3cf99b; Test: FeedbackCompletedModelTest.test_flags_only_entries_with_proof_as_completed, FeedbackCompletedModelTest.test_update_rejects_completed_entry_without_changing_file, FeedbackCompletedApiTest.test_api_rejects_update_of_completed_entry_and_keeps_file, FeedbackCompletedBrowserTest.test_completed_entries_are_hidden_by_default_and_can_be_shown, FeedbackCompletedBrowserTest.test_completed_entry_offers_no_edit_control (tests/unit/test_feedback_completed.py, 9 Tests; tests/browser/test_feedback_completed_ui.py, 3 Tests; gesamt 227 Unit-Tests, 14 Browsertests)
+  Review: docs/reviews/F8-review-1.md (PASS, 1 Minor)
+  Doku: docs/features/F8.md; Trilium `6U4QBUkWcwg1`
