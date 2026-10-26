@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """vibe-web — lokales Dashboard (nur Standardbibliothek). Start über: vibe ui"""
-import os, sys, json, re, time, secrets, threading, subprocess, io, contextlib
+import os, sys, json, re, time, secrets, threading, subprocess, io, contextlib, ipaddress
 import importlib.util, importlib.machinery
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
@@ -14,12 +14,85 @@ vibe = importlib.util.module_from_spec(_spec); sys.modules["vibe"] = vibe; _load
 import vibe_mcp
 
 PORT = int(os.environ.get("VIBE_UI_PORT", vibe.UI_PORT))
+MAX_BODY = 1024 * 1024
+LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
+
+def loopback_bind(value):
+    """Akzeptiert nur IPv4-Loopback; alles andere verhindert den Start."""
+    text = (value or "").strip()
+    if text == "localhost":
+        return "127.0.0.1"
+    try:
+        address = ipaddress.ip_address(text)
+    except ValueError:
+        raise SystemExit("vibe-web bindet nur an Loopback (z. B. 127.0.0.1); "
+                         "VIBE_UI_BIND=" + repr(text) + " ist keine IP-Adresse.")
+    if address.version != 4 or not address.is_loopback:
+        raise SystemExit("vibe-web bindet nur an Loopback; "
+                         "VIBE_UI_BIND=" + repr(text) + " ist nicht erlaubt.")
+    return str(address)
+
+BIND = loopback_bind(os.environ.get("VIBE_UI_BIND", "127.0.0.1"))
 os.makedirs(vibe.LOGS, exist_ok=True)
 TOKFILE = os.path.join(vibe.LOGS, "web.token")
+INSTFILE = os.path.join(vibe.LOGS, "web.instance")
 TOKEN = secrets.token_urlsafe(24)
-open(TOKFILE, "w").write(TOKEN)
+INSTANCE = secrets.token_hex(8)
+STARTED = time.time()
 ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
 SRV = None
+
+def write_private(path, text):
+    """Schreibt Laufzeitkennungen und setzt, soweit möglich, Rechte 0600."""
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write(text)
+    try:
+        os.chmod(path, 0o600)
+    except OSError:
+        pass
+
+write_private(INSTFILE, INSTANCE)
+write_private(TOKFILE, TOKEN)
+
+def redact(text):
+    """Entfernt das Token aus jeder nach außen gegebenen Meldung."""
+    return str(text).replace(TOKEN, "[entfernt]")
+
+def split_host(value):
+    text = (value or "").strip().lower()
+    if text.startswith("["):
+        end = text.find("]")
+        return text[1:end] if end >= 0 else ""
+    if text.count(":") == 1:
+        return text.split(":", 1)[0]
+    return text
+
+def host_allowed(value):
+    return split_host(value) in LOOPBACK_HOSTS
+
+def origin_allowed(value):
+    """Origin muss auf diese Loopback-Instanz zeigen (Port inklusive)."""
+    if not value:
+        return True
+    try:
+        parsed = urlparse(value)
+        port = parsed.port
+    except ValueError:
+        return False
+    if parsed.scheme != "http":
+        return False
+    if (parsed.hostname or "").lower() not in LOOPBACK_HOSTS:
+        return False
+    effective_port = port if port is not None else 80
+    return effective_port == PORT
+
+class RequestError(Exception):
+    def __init__(self, status, code, message):
+        super().__init__(message)
+        self.status = status
+        self.code = code
+        self.message = message
+
 
 def call(fn, *a, **k):
     buf = io.StringIO()
@@ -105,19 +178,108 @@ def verify_bg(n, mode):
 
 class H(BaseHTTPRequestHandler):
     def log_message(self, *a): pass
+
+    def log_request(self, code="-", size="-"):
+        """Zugriffslog ohne Query-String: Tokens gelangen nicht in Logs."""
+        try:
+            path = urlparse(getattr(self, "path", "")).path
+            sys.stderr.write(f"[vibe] {self.command} {path} -> {code}\n")
+            sys.stderr.flush()
+        except Exception:
+            pass
+
     def _send(self, code, body, ctype="application/json"):
         b = body if isinstance(body, bytes) else (json.dumps(body, ensure_ascii=False).encode() if ctype == "application/json" else body.encode())
         self.send_response(code); self.send_header("Content-Type", ctype + "; charset=utf-8")
-        self.send_header("Content-Length", str(len(b))); self.send_header("Cache-Control", "no-store"); self.end_headers(); self.wfile.write(b)
-    def _ok(self, q=None):
-        host = self.headers.get("Host", "").split(":")[0]
-        if host not in ("127.0.0.1", "localhost"): return False
-        t = self.headers.get("X-Token") or (q or {}).get("t", [""])[0]
-        return secrets.compare_digest(t, TOKEN)
+        self.send_header("Content-Length", str(len(b))); self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff"); self.send_header("Referrer-Policy", "no-referrer")
+        self.end_headers(); self.wfile.write(b)
+
+    def _error(self, code, slug, message):
+        """Strukturierte Fehlerantwort; Meldungen werden vom Token bereinigt."""
+        message = redact(message)
+        self._send(code, {"ok": False, "error": {"code": slug, "message": message}, "message": message})
+
+    def _authorized(self, allow_query=False):
+        value = self.headers.get("X-Token") or ""
+        if not value and allow_query:
+            value = parse_qs(urlparse(self.path).query).get("t", [""])[0]
+        if not value:
+            return False
+        # Als Bytes vergleichen: compare_digest wirft bei Nicht-ASCII-str einen
+        # TypeError. Ein falsch kodiertes Token soll aber strukturiert als 403
+        # abgelehnt werden statt die Verbindung unbehandelt abzubrechen.
+        return secrets.compare_digest(value.encode("utf-8"), TOKEN.encode("utf-8"))
+
+    def _guard(self, write):
+        if not host_allowed(self.headers.get("Host")):
+            self._error(403, "forbidden_host", "Host ist nicht Loopback")
+            return False
+        if write:
+            origin = self.headers.get("Origin")
+            if origin and not origin_allowed(origin):
+                self._error(403, "forbidden_origin", "Origin gehört nicht zu dieser Instanz")
+                return False
+            site = self.headers.get("Sec-Fetch-Site")
+            if site and site not in ("same-origin", "none"):
+                self._error(403, "forbidden_origin", "Anfrage kommt von einer fremden Seite")
+                return False
+        return True
+
+    def _read_json(self):
+        ctype = (self.headers.get("Content-Type") or "").split(";")[0].strip().lower()
+        if ctype != "application/json":
+            self.close_connection = True
+            raise RequestError(415, "unsupported_media_type", "Content-Type muss application/json sein")
+        raw = self.headers.get("Content-Length")
+        if raw is None:
+            self.close_connection = True
+            raise RequestError(411, "length_required", "Content-Length fehlt")
+        try:
+            length = int(raw)
+        except ValueError:
+            self.close_connection = True
+            raise RequestError(400, "invalid_length", "Content-Length ist keine Zahl")
+        if length < 0:
+            self.close_connection = True
+            raise RequestError(400, "invalid_length", "Content-Length ist negativ")
+        if length > MAX_BODY:
+            # Nicht lesen: die Verbindung wird geschlossen, der Body verworfen.
+            self.close_connection = True
+            raise RequestError(413, "request_too_large", f"Anfrage ist größer als {MAX_BODY} Bytes")
+        data = self.rfile.read(length) if length else b""
+        if len(data) != length:
+            self.close_connection = True
+            raise RequestError(400, "incomplete_body", "Anfrage unvollständig")
+        if not data.strip():
+            return {}
+        try:
+            value = json.loads(data.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            raise RequestError(400, "invalid_json", "Ungültiges JSON")
+        if not isinstance(value, dict):
+            raise RequestError(400, "invalid_request", "JSON-Objekt erwartet")
+        return value
+
+    def _health(self):
+        self._send(200, {
+            "ok": True,
+            "app": "vibe",
+            "api": 1,
+            "instance": INSTANCE,
+            "bind": BIND,
+            "port": PORT,
+            "pid": os.getpid(),
+            "started": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(STARTED)),
+        })
+
     def do_GET(self):
         u = urlparse(self.path); q = parse_qs(u.query)
+        if not self._guard(False): return
         if u.path == "/": return self._send(200, PAGE, "text/html")
-        if not self._ok(q): return self._send(403, {"error": "Token fehlt oder falsch"})
+        if u.path == "/api/health": return self._health()
+        if not self._authorized(allow_query=(u.path == "/api/stream")):
+            return self._error(403, "unauthorized", "Token fehlt oder falsch")
         try:
             if u.path == "/api/projects": return self._send(200, [project_row(n) for n in vibe.projects()])
             if u.path == "/api/project": return self._send(200, project_detail(known(q["name"][0])))
@@ -134,15 +296,21 @@ class H(BaseHTTPRequestHandler):
             if u.path == "/api/server": h = vibe.server_health(); return self._send(200, {"up": bool(h), "url": vibe.OC_URL, "info": h})
             if u.path == "/api/stream": return self.stream(known(q["name"][0]), q.get("kind", ["run"])[0])
         except (AssertionError, ValueError) as e:
-            return self._send(404, {"error": str(e)})
+            return self._error(404, "not_found", str(e))
+        except KeyError as e:
+            return self._error(400, "invalid_request", "Parameter fehlt: " + str(e))
         except Exception as e:
-            return self._send(500, {"error": f"{type(e).__name__}: {e}"})
-        self._send(404, {"error": "nicht gefunden"})
+            return self._error(500, "internal_error", f"{type(e).__name__}: {e}")
+        self._error(404, "not_found", "nicht gefunden")
     def do_POST(self):
         u = urlparse(self.path)
-        if not self._ok(): return self._send(403, {"error": "Token fehlt oder falsch"})
+        if not self._guard(True): return
+        if not self._authorized(): return self._error(403, "unauthorized", "Token fehlt oder falsch")
         try:
-            n = int(self.headers.get("Content-Length", "0")); body = json.loads(self.rfile.read(n) or b"{}")
+            body = self._read_json()
+        except RequestError as e:
+            return self._error(e.status, e.code, e.message)
+        try:
             name = body.get("name", "")
             if u.path in ("/api/run", "/api/stop", "/api/verify", "/api/feedback", "/api/init", "/api/rights", "/api/pause", "/api/sandbox"): known(name)
             extra = {}
@@ -283,13 +451,18 @@ class H(BaseHTTPRequestHandler):
             elif u.path == "/api/shutdown":
                 self._send(200, {"ok": True, "message": "Dashboard wird beendet"})
                 threading.Thread(target=lambda: (time.sleep(0.5), SRV.shutdown()), daemon=True).start(); return
-            else: return self._send(404, {"error": "nicht gefunden"})
-            out = {"ok": ok, "message": msg}; out.update(extra)
+            else: return self._error(404, "not_found", "nicht gefunden")
+            message = redact(msg)
+            out = {"ok": ok, "message": message}
+            if not ok: out["error"] = {"code": "rejected", "message": message}
+            out.update(extra)
             self._send(200 if ok else 400, out)
         except AssertionError as e:
-            self._send(400, {"ok": False, "message": str(e)})
+            self._error(400, "invalid_request", str(e))
+        except ValueError as e:
+            self._error(400, "invalid_request", str(e))
         except Exception as e:
-            self._send(500, {"ok": False, "message": f"{type(e).__name__}: {e}"})
+            self._error(500, "internal_error", f"{type(e).__name__}: {e}")
     def stream(self, name, kind):
         path = vibe.logpath(name, "verify" if kind == "verify" else "run")
         self.send_response(200); self.send_header("Content-Type", "text/event-stream"); self.send_header("Cache-Control", "no-store"); self.end_headers()
@@ -337,8 +510,9 @@ input[type=checkbox]{width:auto}textarea.raw{font:12px/1.4 ui-monospace,monospac
 <header><h1>vibe</h1><nav id="nav"></nav><span id="srv" style="margin-left:auto;display:flex;gap:8px;align-items:center"></span></header><main id="main"></main>
 <script>
 const T=(()=>{const m=location.hash.match(/t=([^&]+)/);if(m){sessionStorage.t=m[1];history.replaceState(null,'',location.pathname)}return sessionStorage.t||''})();
+function errText(j,status){const e=j&&j.error;return (e&&(e.message||e))||(j&&j.message)||('HTTP '+status)}
 async function api(p,body){const o=body?{method:'POST',headers:{'X-Token':T,'Content-Type':'application/json'},body:JSON.stringify(body)}:{headers:{'X-Token':T}};
- const r=await fetch(p,o);const j=await r.json().catch(()=>({}));if(!r.ok&&!body)throw new Error(j.error||('HTTP '+r.status));return j}
+ const r=await fetch(p,o);const j=await r.json().catch(()=>({}));if(!r.ok&&!body)throw new Error(errText(j,r.status));return j}
 function el(t,a={},...c){const e=document.createElement(t);for(const[k,v]of Object.entries(a)){if(k==='on')for(const[ev,f]of Object.entries(v))e.addEventListener(ev,f);else if(k==='class')e.className=v;else if(k==='value')e.value=v;else e.setAttribute(k,v)}
  for(const x of c.flat())if(x!==null&&x!==undefined&&x!==false)e.append(x.nodeType?x:document.createTextNode(String(x)));return e}
 const main=document.getElementById('main'),nav=document.getElementById('nav'),srvbox=document.getElementById('srv');let tab='projects',es=null,timer=null,LOG=null;
@@ -624,8 +798,8 @@ setTab('projects');
 </script></body></html>"""
 
 if __name__ == "__main__":
-    SRV = ThreadingHTTPServer(("127.0.0.1", PORT), H)
+    SRV = ThreadingHTTPServer((BIND, PORT), H)
     SRV.daemon_threads = True
-    print(f"vibe-web läuft auf http://127.0.0.1:{PORT}/  (Token in {TOKFILE})", flush=True)
+    print(f"vibe-web läuft auf http://{BIND}:{PORT}/  (Token in {TOKFILE})", flush=True)
     SRV.serve_forever()
     print("vibe-web beendet.", flush=True)

@@ -29,8 +29,8 @@
   },
   {
    "path": "bin/vibe-web.py",
-   "sha256": "658728f7402204bdc3ea2c14ef4f50737aca197741bf1b98bc40597a7990592a",
-   "bytes": 62021
+   "sha256": "6c836dbabce8abeaf3997951af021ac9a1981455acea409f7c1067545f2713d8",
+   "bytes": 68788
   },
   {
    "path": "bin/vibe_mcp.py",
@@ -230,6 +230,14 @@
     "bin/vibe-run.sh",
     "bin/vibe-web.py",
     "bin/vibe_mcp.py"
+   ]
+  },
+  {
+   "arbeitspaket": "V-004",
+   "datum": "2026-10-26",
+   "grund": "Web-API abgesichert: Bindung nur an Loopback (andere VIBE_UI_BIND-Werte brechen den Start ab), Health-Endpunkt mit vibe-/Instanzkennung ohne Geheimnisse, Host-/Origin-/Sec-Fetch-Site-Prüfung, Token nur per Header (Ausnahme EventSource-Stream), 1-MiB-Requestlimit, Pflicht zu application/json und Content-Length, strukturierte Fehler und tokenfreie Zugriffslogs.",
+   "dateien": [
+    "bin/vibe-web.py"
    ]
   }
  ]

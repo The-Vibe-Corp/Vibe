@@ -181,47 +181,55 @@ Codestelle und die in dieser Sitzung tatsächlich beobachtete Prüfung.
 
 ## 6. HTTP-API-Routen
 
-Alle Routen liegen in `bin/vibe-web.py`. Der Server bindet nur an
-`127.0.0.1` (`bin/vibe-web.py:414`). Authentisierung: `_ok()` prüft den
-`Host`-Header und vergleicht das Token; das Token wird als `X-Token` oder als
-Query-Parameter `t` akzeptiert (`bin/vibe-web.py:88-92`). In V-001 wurde
-**kein** Webserver gestartet (es läuft bereits eine produktive Instanz); alle
-API-Funktionen sind daher „noch nicht geprüft“. Die Einstufung „teilweise
-vorhanden“ nennt bereits sichtbare Lücken, die in V-004 zu beheben sind.
+Alle Routen liegen in `bin/vibe-web.py`. Der Server bindet nur an Loopback
+(`VIBE_UI_BIND`, Standard `127.0.0.1`; jede andere Adresse bricht den Start
+ab). Seit V-004 prüft `_guard()` zentral den `Host`-Header (nur Loopback) und
+bei Schreibzugriffen zusätzlich `Origin` und `Sec-Fetch-Site`. `_authorized()`
+verlangt ein gültiges Token per `X-Token`; nur `/api/stream` akzeptiert
+zusätzlich `t` im Query-String, weil EventSource keine Header setzen kann.
+Zugriffslogs enthalten nur Methode und Pfad ohne Query-String. `POST` verlangt
+`Content-Type: application/json`, eine `Content-Length` und höchstens 1 MiB;
+Fehler sind strukturiert (`ok`, `error.code`, `error.message`).
+`GET /api/health` ist ohne Token lesbar und nennt `app`, `instance`, `bind`,
+`port`, `pid` und `started`, aber keine Geheimnisse. Transport, Health und
+Requestlimits sind in `tests/unit/test_web_api_security.py` geprüft; die
+fachlichen Routen darunter bleiben, soweit unten nicht anders belegt, ohne
+eigenen Test.
 
 | Typ | Funktion | Status | Beleg |
 | --- | --- | --- | --- |
-| API | `GET /` | vorhanden, noch nicht geprüft | `bin/vibe-web.py:95`; liefert die eingebettete Seite, nicht ausgeführt |
-| API | `GET /api/projects` | vorhanden, noch nicht geprüft | `bin/vibe-web.py:98`; nicht ausgeführt |
-| API | `GET /api/project` | vorhanden, noch nicht geprüft | `bin/vibe-web.py:99`; nicht ausgeführt |
-| API | `GET /api/roots` | vorhanden, noch nicht geprüft | `bin/vibe-web.py:100`; nicht ausgeführt |
-| API | `GET /api/agents` | vorhanden, noch nicht geprüft | `bin/vibe-web.py:101`; nicht ausgeführt |
-| API | `GET /api/agent` | vorhanden, noch nicht geprüft | `bin/vibe-web.py:102-103`; nicht ausgeführt |
-| API | `GET /api/mcp` | vorhanden, noch nicht geprüft | `bin/vibe-web.py:104`; nicht ausgeführt |
-| API | `GET /api/mcp_entry` | vorhanden, noch nicht geprüft | `bin/vibe-web.py:105-106`; nicht ausgeführt |
-| API | `GET /api/types` | vorhanden, noch nicht geprüft | `bin/vibe-web.py:107`; nicht ausgeführt |
-| API | `GET /api/doctor` | vorhanden, noch nicht geprüft | `bin/vibe-web.py:108`; nicht ausgeführt |
-| API | `GET /api/fritz` | vorhanden und automatisiert geprüft | `bin/vibe-web.py:128`; `tests/unit/test_fritz_reconnect.py` prüft Status, Tokenpflicht und dass das Passwort nicht in der Antwort steht |
-| API | `POST /api/fritz` | vorhanden und automatisiert geprüft | `bin/vibe-web.py:206-222`; `tests/unit/test_fritz_reconnect.py` prüft Automatik an/aus, manuellen Reconnect, Fehlerfall, fehlende Konfiguration, unbekannte Aktion und Tokenpflicht |
-| API | `GET /api/server` | vorhanden, noch nicht geprüft | `bin/vibe-web.py:109`; nicht ausgeführt |
-| API | `GET /api/stream` | teilweise vorhanden | `bin/vibe-web.py:110,188-207`; Token im Query-String möglich, keine Origin-Prüfung; nicht ausgeführt |
-| API | `POST /api/run` | teilweise vorhanden | `bin/vibe-web.py:124`; Token/Host geprüft, aber keine Origin-/CSRF-/Größenprüfung (V-004); nicht ausgeführt |
-| API | `POST /api/stop` | teilweise vorhanden | `bin/vibe-web.py:125`; Auth-Lücke wie `/api/run`; nicht ausgeführt |
-| API | `POST /api/pause` | vorhanden und automatisiert geprüft | `bin/vibe-web.py:192-204`; `tests/unit/test_pause_after_package.py` prüft Anfordern, Aufheben, unbekannte Aktion, wahrheitsgemäße Meldung ohne Anforderung und Tokenpflicht gegen ein isoliertes Dashboard |
-| API | `POST /api/verify` | teilweise vorhanden | `bin/vibe-web.py:126`; Auth-Lücke wie `/api/run`; nicht ausgeführt |
-| API | `POST /api/init` | teilweise vorhanden | `bin/vibe-web.py:127`; Auth-Lücke wie `/api/run`; nicht ausgeführt |
-| API | `POST /api/feedback` | teilweise vorhanden | `bin/vibe-web.py:128-130`; Auth-Lücke, ID-Vergabe nicht gegen Parallelzugriff gesichert (V-009) |
-| API | `POST /api/rights` | vorhanden und automatisiert geprüft | `bin/vibe-web.py:172-190`; `tests/unit/test_project_write_dirs.py` prüft Hinzufügen, Entfernen, Zurücksetzen, Anwenden und die Tokenpflicht |
-| API | `POST /api/sandbox` | vorhanden und automatisiert geprüft | `bin/vibe-web.py:198-214`; `tests/unit/test_sandbox.py` prüft Ein-/Ausschalten, Werkzeuge, Prüfung und die Tokenpflicht gegen ein isoliertes Dashboard |
-| API | `POST /api/new` | teilweise vorhanden | `bin/vibe-web.py:131`; Auth-Lücke wie `/api/run`; nicht ausgeführt |
-| API | `POST /api/roots` | teilweise vorhanden | `bin/vibe-web.py:132-141`; Auth-Lücke wie `/api/run`; nicht ausgeführt |
-| API | `POST /api/agent_template` | teilweise vorhanden | `bin/vibe-web.py:142-143`; Auth-Lücke wie `/api/run`; nicht ausgeführt |
-| API | `POST /api/agent` | teilweise vorhanden | `bin/vibe-web.py:144-152`; Auth-Lücke, Schreibvorgang nicht atomar (V-005) |
-| API | `POST /api/mcp` | teilweise vorhanden | `bin/vibe-web.py:153-162`; Auth-Lücke, JSONC-Verlustgrenzen (V-013) |
-| API | `POST /api/profiles` | teilweise vorhanden | `bin/vibe-web.py:163-175`; Auth-Lücke, Anwendung nicht transaktional (V-012) |
-| API | `POST /api/model` | teilweise vorhanden | `bin/vibe-web.py:176`; Auth-Lücke wie `/api/run`; nicht ausgeführt |
-| API | `POST /api/server` | teilweise vorhanden | `bin/vibe-web.py:177`; Auth-Lücke wie `/api/run`; nicht ausgeführt |
-| API | `POST /api/shutdown` | teilweise vorhanden | `bin/vibe-web.py:178-180`; Auth-Lücke wie `/api/run`; nicht ausgeführt |
+| API | `GET /` | vorhanden, noch nicht geprüft | `do_GET`; liefert die eingebettete Seite, kein eigener Test |
+| API | `GET /api/health` | vorhanden und automatisiert geprüft | `_health()`; `tests/unit/test_web_api_security.py` prüft Identität (vibe, Instanz, Port, PID), Stabilität, fremden Host und dass weder Token noch Token-Wort in der Antwort stehen |
+| API | `GET /api/projects` | vorhanden, noch nicht geprüft | `do_GET`; Transportprüfung zentral in V-004, Fachfunktion nicht ausgeführt |
+| API | `GET /api/project` | vorhanden, noch nicht geprüft | `do_GET`; Transportprüfung zentral in V-004, Fachfunktion nicht ausgeführt |
+| API | `GET /api/roots` | vorhanden, noch nicht geprüft | `do_GET`; Transportprüfung zentral in V-004, Fachfunktion nicht ausgeführt |
+| API | `GET /api/agents` | vorhanden, noch nicht geprüft | `do_GET`; Transportprüfung zentral in V-004, Fachfunktion nicht ausgeführt |
+| API | `GET /api/agent` | vorhanden, noch nicht geprüft | `do_GET`; Transportprüfung zentral in V-004, Fachfunktion nicht ausgeführt |
+| API | `GET /api/mcp` | vorhanden, noch nicht geprüft | `do_GET`; Transportprüfung zentral in V-004, Fachfunktion nicht ausgeführt |
+| API | `GET /api/mcp_entry` | vorhanden, noch nicht geprüft | `do_GET`; Transportprüfung zentral in V-004, Fachfunktion nicht ausgeführt |
+| API | `GET /api/types` | vorhanden, noch nicht geprüft | `do_GET`; Transportprüfung zentral in V-004, Fachfunktion nicht ausgeführt |
+| API | `GET /api/doctor` | vorhanden, noch nicht geprüft | `do_GET`; Transportprüfung zentral in V-004, Fachfunktion nicht ausgeführt |
+| API | `GET /api/fritz` | vorhanden und automatisiert geprüft | `do_GET`; `tests/unit/test_fritz_reconnect.py` prüft Status, Tokenpflicht und dass das Passwort nicht in der Antwort steht |
+| API | `POST /api/fritz` | vorhanden und automatisiert geprüft | `do_POST`; `tests/unit/test_fritz_reconnect.py` prüft Automatik an/aus, manuellen Reconnect, Fehlerfall, fehlende Konfiguration, unbekannte Aktion und Tokenpflicht |
+| API | `GET /api/server` | vorhanden, noch nicht geprüft | `do_GET`; Transportprüfung zentral in V-004, Fachfunktion nicht ausgeführt |
+| API | `GET /api/stream` | teilweise vorhanden | `stream()`; Token nur im Query-String (EventSource), Host geprüft; Origin nicht anwendbar; nicht ausgeführt |
+| API | `POST /api/run` | vorhanden, noch nicht geprüft | `do_POST`; Transportprüfung zentral in V-004, Fachfunktion nicht ausgeführt |
+| API | `POST /api/stop` | vorhanden, noch nicht geprüft | `do_POST`; Transportprüfung zentral in V-004, Fachfunktion nicht ausgeführt |
+| API | `POST /api/pause` | vorhanden und automatisiert geprüft | `do_POST`; `tests/unit/test_pause_after_package.py` prüft Anfordern, Aufheben, unbekannte Aktion und wahrheitsgemäße Meldung; `tests/unit/test_web_api_security.py` nutzt die Route für Token-, Host-, Origin-, JSON- und Größenprüfungen |
+| API | `POST /api/verify` | vorhanden, noch nicht geprüft | `do_POST`; Transportprüfung zentral in V-004, Fachfunktion nicht ausgeführt |
+| API | `POST /api/init` | vorhanden, noch nicht geprüft | `do_POST`; Transportprüfung zentral in V-004, Fachfunktion nicht ausgeführt |
+| API | `POST /api/feedback` | vorhanden, noch nicht geprüft | `do_POST`; Transportprüfung zentral in V-004, ID-Vergabe nicht gegen Parallelzugriff gesichert (V-009) |
+| API | `POST /api/rights` | vorhanden und automatisiert geprüft | `do_POST`; `tests/unit/test_project_write_dirs.py` prüft Hinzufügen, Entfernen, Zurücksetzen, Anwenden und die Tokenpflicht |
+| API | `POST /api/sandbox` | vorhanden und automatisiert geprüft | `do_POST`; `tests/unit/test_sandbox.py` prüft Ein-/Ausschalten, Werkzeuge, Prüfung und die Tokenpflicht gegen ein isoliertes Dashboard |
+| API | `POST /api/new` | vorhanden, noch nicht geprüft | `do_POST`; Transportprüfung zentral in V-004, Fachfunktion nicht ausgeführt |
+| API | `POST /api/roots` | vorhanden, noch nicht geprüft | `do_POST`; Transportprüfung zentral in V-004, Fachfunktion nicht ausgeführt |
+| API | `POST /api/agent_template` | vorhanden, noch nicht geprüft | `do_POST`; Transportprüfung zentral in V-004, Fachfunktion nicht ausgeführt |
+| API | `POST /api/agent` | vorhanden, noch nicht geprüft | `do_POST`; Transportprüfung zentral in V-004, Schreibvorgang nicht atomar (V-005) |
+| API | `POST /api/mcp` | vorhanden, noch nicht geprüft | `do_POST`; Transportprüfung zentral in V-004, JSONC-Verlustgrenzen (V-013) |
+| API | `POST /api/profiles` | vorhanden, noch nicht geprüft | `do_POST`; Transportprüfung zentral in V-004, Anwendung nicht transaktional (V-012) |
+| API | `POST /api/model` | vorhanden, noch nicht geprüft | `do_POST`; Transportprüfung zentral in V-004, Fachfunktion nicht ausgeführt |
+| API | `POST /api/server` | vorhanden, noch nicht geprüft | `do_POST`; Transportprüfung zentral in V-004, Fachfunktion nicht ausgeführt |
+| API | `POST /api/shutdown` | vorhanden, noch nicht geprüft | `do_POST`; Transportprüfung zentral in V-004, Fachfunktion nicht ausgeführt |
 
 ## 7. UI-Funktionen
 
@@ -265,7 +273,7 @@ headless) geprüft.
 | Bazzite-Startmenü | fehlt | Kein Desktopstarter, kein Icon, kein Installer im Repository (V-017) |
 | Diagnose | teilweise vorhanden | `vibe doctor` prüft Werkzeuge, Pfade, Prüfsummen; opencode-Version und unterstützte Funktionen werden nicht ermittelt (V-007) |
 | Installation/Aktualisierung/Rollback | fehlt | Nur `install-vibe.sh` (kopiert Dateien); keine Versionierung, Sicherung oder Rollback (V-018) |
-| Webserver-Sicherheit | teilweise vorhanden | Loopback-Bindung und Token vorhanden; Origin-/CSRF-Prüfung, Requestlimits, strukturierte Fehler fehlen (V-004) |
+| Webserver-Sicherheit | vorhanden und automatisiert geprüft | Loopback-Bindung, Token, Host-/Origin-Prüfung, Requestlimit, strukturierte Fehler und Health in V-004; `tests/unit/test_web_api_security.py` prüft fehlendes/falsches Token, fremden Host/Origin, ungültiges JSON, fehlende Content-Length, übergroße Requests, parallele Anfragen und tokenfreie Logs |
 | Automatisierte Tests | fehlt (vor V-001) | Vor diesem Paket existierten im Repository keine Tests; V-001 ergänzt nur Prüfungen für den Importbestand, keine App-Tests |
 
 ## 9. Sicherheitsbefunde (nur erfasst, nicht behoben)
@@ -280,7 +288,9 @@ genannten Folgepaketen.
    Prüfung mit 0 enden. → V-002/V-015.
 3. Token wird zusätzlich als URL-Query-Parameter akzeptiert
    (`bin/vibe-web.py:91`); keine Origin-/CSRF-Prüfung, keine Begrenzung der
-   Request-Größe (`bin/vibe-web.py:116-121`). → V-004.
+   Request-Größe (`bin/vibe-web.py:116-121`). → V-004. **In V-004 behoben:**
+   Query-Token nur noch für `/api/stream`, Host-/Origin-/Sec-Fetch-Site-Prüfung,
+   1-MiB-Limit, strukturierte Fehler und tokenfreie Logs.
 4. Feedback-IDs werden als „höchste vorhandene + 1“ ohne Sperre vergeben
    (`bin/vibe:257-259`). → V-009.
 5. Profilanwendung schreibt Agenten nacheinander ohne Transaktion
