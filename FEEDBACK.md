@@ -49,7 +49,10 @@ Regeln (werden maschinell geprüft):
   Review: docs/reviews/F5-review-1.md, docs/reviews/F5-review-2.md (PASS)
   Doku: docs/features/F5.md; Trilium `8DoXPxXg7jnD`
 
-- [ ] F6 Universeller Setup Prozess
+- [x] F6 Universeller Setup Prozess
   Schritte: 
   Erwartet: Es soll einen interaktiven Setup prozess geben, welcher sowohl für Windows oder Linux (Ubuntu/Fedora/Bazzite/Docker) funktioniert und es ermöglicht vibe auf jedem system inklusiver aller notwendigen abhängigkeiten und tools zu installieren. Es muss die möglichkeit geben auf bestehendes zurückzugreifen.
   Ist: 
+  Commit: c2ef5e2; Test: PlatformDetectionTest.test_ubuntu_uses_apt, DependencyPlanTest.test_missing_linux_tools_become_one_argument_list, InstallFilesTest.test_reuse_keeps_existing_programs_and_only_adds_missing_ones, CliFlowTest.test_failed_package_command_is_reported, WrapperTest.test_install_vibe_sh_uses_the_python_setup (tests/unit/test_setup_vibe.py, 45 Tests; gesamt 187 Unit-Tests, 10 Browsertests)
+  Review: docs/reviews/F6-review-1.md, docs/reviews/F6-review-2.md (PASS)
+  Doku: docs/features/F6.md; Trilium `sHzUT9bBs8NI`
