@@ -65,6 +65,7 @@ Regeln (werden maschinell geprüft):
   Commit: 0406429; Test: SandboxConfigTest.test_cli_off_replaces_the_last_of_duplicate_keys, SandboxRunnerTest.test_runner_fails_closed_when_sandbox_module_is_broken, SandboxCommandTest.test_real_sandbox_allows_write_dirs_and_denies_unlisted_paths (tests/unit/test_sandbox.py, 31 Tests; gesamt 218 Unit-Tests, 11 Browsertests)
   Review: docs/reviews/F7-review-1.md, docs/reviews/F7-review-2.md, docs/reviews/F7-review-3.md (PASS)
   Doku: docs/features/F7.md; Trilium `ZzVeElHG2ifr`
+  Nachweis-Fix: 6d59e8f (FEEDBACK-Block F7 zusammengeführt, tests/unit/test_feedback_entries.py; Review docs/reviews/F7-review-4.md)
 
 - [x] F8 Überarbeitung feedback system
   Beschreibung: abgeschlossene feedback aufgaben müssen nicht über die ui bearbeitbar sein, diese sollen im standard ausgeblendet sein.
