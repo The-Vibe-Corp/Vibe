@@ -59,7 +59,7 @@ Ein fehlender externer Dienst bedeutet BLOCKIERT, nicht erledigt.
   Review: docs/reviews/V-004-review-1.md (PASS), -2.md (PASS), -3.md (PASS)
   Dokumentation: docs/features/V-004.md; Trilium `VrwC3K1wD5hI`
 
-- [ ] V-005 Atomare Dateizugriffe und sichere Sicherungen
+- [x] V-005 Atomare Dateizugriffe und sichere Sicherungen
   Priorität: P0
   Abhängigkeiten: V-002
   Umfang: gemeinsame Storage-Schicht für Konfigurationen und Agenten.
@@ -68,6 +68,15 @@ Ein fehlender externer Dienst bedeutet BLOCKIERT, nicht erledigt.
   kein falsches Sicherheitsversprechen auf FUSE/NTFS.
   Tests: gleichzeitiges Speichern, Schreibfehler, unterbrochener Write,
   Namenskollision bei Sicherungen, Restore.
+  Commit: c9cdd49; Test: tests/unit/test_storage.py (32 Tests, u. a.
+  test_concurrent_saving_allows_exactly_one_writer,
+  test_interrupted_write_leaves_target_untouched,
+  test_backups_in_the_same_microsecond_do_not_collide)
+  Prüfungen: `bash scripts/verify.sh quick` Exit 0; `bash scripts/verify.sh full` Exit 0
+  (317 Unit- + 14 Browser-Tests, 331 erkannt) im geprüften Stand /tmp/vibe-v005-build
+  Review: docs/reviews/V-005-review-1.md (CHANGES REQUIRED), -2.md (CHANGES REQUIRED),
+  -3.md (CHANGES REQUIRED), -4.md (PASS, keine Critical/High/Medium/Minor)
+  Dokumentation: docs/features/V-005.md; Trilium `XQO2Qcrg1tvI`
 
 - [ ] V-006 Quellen-, Installations- und Laufzeitpfade trennen
   Priorität: P0
