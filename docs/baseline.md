@@ -224,7 +224,7 @@ eigenen Test.
 | API | `POST /api/new` | vorhanden, noch nicht geprüft | `do_POST`; Transportprüfung zentral in V-004, Fachfunktion nicht ausgeführt |
 | API | `POST /api/roots` | vorhanden, noch nicht geprüft | `do_POST`; Transportprüfung zentral in V-004, Fachfunktion nicht ausgeführt |
 | API | `POST /api/agent_template` | vorhanden, noch nicht geprüft | `do_POST`; Transportprüfung zentral in V-004, Fachfunktion nicht ausgeführt |
-| API | `POST /api/agent` | vorhanden, noch nicht geprüft | `do_POST`; Transportprüfung zentral in V-004, Schreibvorgang nicht atomar (V-005) |
+| API | `POST /api/agent` | vorhanden, noch nicht geprüft | `do_POST`; Transportprüfung zentral in V-004, atomarer Write mit Prüfsummenkontrolle (V-005, `409 conflict` bei veraltetem `expected`), Browserworkflow nicht automatisiert geprüft (V-010) |
 | API | `POST /api/mcp` | vorhanden, noch nicht geprüft | `do_POST`; Transportprüfung zentral in V-004, JSONC-Verlustgrenzen (V-013) |
 | API | `POST /api/profiles` | vorhanden, noch nicht geprüft | `do_POST`; Transportprüfung zentral in V-004, Anwendung nicht transaktional (V-012) |
 | API | `POST /api/model` | vorhanden, noch nicht geprüft | `do_POST`; Transportprüfung zentral in V-004, Fachfunktion nicht ausgeführt |
@@ -262,7 +262,7 @@ headless) geprüft.
 | Projekte und Entwicklungsordner | teilweise vorhanden | Einlesen, Liste, Detail, Roots vorhanden; gleichnamige Projekte werden nur als `name@root` unterschieden, URLs/IDs sind nicht kollisionsfrei (V-008) |
 | Projektvorlagen | teilweise vorhanden | Fünf Typen plus `common` vorhanden; unbekannter Typ fällt still auf `generic` zurück; Android-Prüfung ist nicht global (V-008) |
 | Arbeitspakete und Feedback | teilweise vorhanden | Kommentare werden ignoriert, `BLOCKIERT` bleibt offen; Nachweisprüfung vorhanden; ID-Vergabe ohne Sperre (V-009) |
-| Agenten | teilweise vorhanden | Liste, Anlegen, Bearbeiten, Kopieren, Löschen, Sicherung vorhanden; Wiederherstellung, atomare Writes und verlustfreie Feldpflege fehlen (V-005/V-010) |
+| Agenten | teilweise vorhanden | Liste, Anlegen, Bearbeiten, Kopieren, Löschen, kollisionsfreie Sicherung und Wiederherstellung vorhanden; atomare Writes und Konflikterkennung über `vibe_storage` (V-005); verlustfreie Feldpflege und Browserworkflow fehlen (V-010) |
 | Modelle und Anbieter | teilweise vorhanden | Modelllisting über opencode, Katalogdatei; Altdaten ohne Quellen-/Datumsnachweis, keine Anbieter-Trennung (V-011) |
 | Modelltabelle | teilweise vorhanden | Tabelle und Detailfelder in `data/models.json`/UI vorhanden; unbekannte Werte, Quellen, Preiseinheiten nicht durchgängig belegt (V-011) |
 | Modellprofile | teilweise vorhanden | Profile vorhanden; keine Änderungsvorschau, keine Transaktion, kein Rollback, leeres Profil wird nicht als Fehler behandelt (V-012) |
@@ -295,8 +295,12 @@ genannten Folgepaketen.
    (`bin/vibe:257-259`). → V-009.
 5. Profilanwendung schreibt Agenten nacheinander ohne Transaktion
    (`bin/vibe:497-513`). → V-012.
-6. Agenten-/Konfigurationssicherungen nutzen Sekunden-Zeitstempel und sind
-   nicht kollisionsfrei (`bin/vibe:384-386`, `bin/vibe_mcp.py:124-127`). → V-005.
+6. Agenten-/Konfigurationssicherungen nutzten Sekunden-Zeitstempel und waren
+   nicht kollisionsfrei (`bin/vibe:384-386`, `bin/vibe_mcp.py:124-127`).
+   **In V-005 behoben:** gemeinsame Storage-Schicht `bin/vibe_storage.py` mit
+   atomarem Ersetzen, Sperre, Prüfsummenkontrolle, kollisionsfreien Sicherungen
+   (`O_EXCL`, Mikrosekunden, Zufallsteil, Zähler) und Wiederherstellung; auf
+   FUSE/NTFS wird keine Atomarität oder Rechtewirkung zugesichert.
 7. Der Import enthält keine Geheimnis-Injektion; die aktive Installation lädt
    `_secrets.env` über eigene Hooks. Diese Hooks sind nicht versioniert und
    müssen in V-006/V-018 sicher neu aufgebaut werden.

@@ -16,13 +16,13 @@ Aufruf:  vibe                 interaktives Menü
          vibe init <p> [typ]  vorhandenes Projekt für vibe vorbereiten (ergänzt fehlende Dateien)
          vibe roots [add <pfad>|rm <pfad>]  Entwicklungsordner verwalten und Projekte einlesen
          vibe agents          alle Agenten (global und projektspezifisch)
-         vibe agent new|edit|show|rm <name> [global|<projekt>]
+         vibe agent new|edit|show|rm|backups|restore <name> [global|<projekt>] [sicherung]
          vibe rights <projekt> [list|add <pfad>|rm <pfad>|reset]  erlaubte Schreibverzeichnisse
          vibe sandbox <projekt> [status|on|off|tools "<liste>"|check]  Shell-Sandbox (bubblewrap)
          vibe models          Modellübersicht mit Einschätzung und Preis
          vibe model <agent> <modell> [global|<projekt>]
          vibe profile [list|use <name>]   Modellprofile (z. B. kostenlos / bezahlt) für Rollen
-         vibe mcp list|show|test|on|off|rm [name] [global|<projekt>]   MCP-Tools verwalten
+         vibe mcp list|show|test|on|off|rm|backups|restore [name] [global|<projekt>] [sicherung]   MCP-Tools verwalten
          vibe emu start|stop  Emulator (Android)
          vibe ui [stop]       Dashboard im Browser (nur localhost)
          vibe server [start|stop|status]  gemeinsamer opencode-Server mit Weboberfläche
@@ -33,6 +33,7 @@ import os, sys, re, json, subprocess, shutil, time, tempfile, shlex
 
 if __name__ == "__main__": sys.modules["vibe"] = sys.modules[__name__]
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
+import vibe_storage
 
 VIBE = os.environ.get("VIBE", "/var/mnt/data/Dokumente/Informatik/VibeCode")
 TOOLS = os.path.join(VIBE, "_toolchain")
@@ -101,22 +102,29 @@ def roots():
         if os.path.isdir(p) and p not in out: out.append(p)
     return out
 
-def roots_save(extra):
-    os.makedirs(TOOLS, exist_ok=True); json.dump({"roots": extra}, open(CONF, "w"), indent=1)
+def roots_save(extra, expected=None):
+    os.makedirs(TOOLS, exist_ok=True)
+    vibe_storage.write_text(CONF, json.dumps({"roots": extra}, indent=1), expected=expected)
 
 def root_add(path):
     p = os.path.abspath(os.path.expanduser(path.strip()))
     if p in BAD_ROOTS or p == os.path.expanduser("~"): raise ValueError("Pfad zu allgemein, bitte einen Entwicklungsordner wählen: " + p)
     if not os.path.isdir(p): raise ValueError("Ordner existiert nicht: " + p)
+    before = vibe_storage.read_snapshot(CONF)
     extra = conf_extra()
-    if p != VIBE and p not in extra: extra.append(p); roots_save(extra)
+    if p != VIBE and p not in extra:
+        extra.append(p)
+        roots_save(extra, expected=before.digest if before.exists else vibe_storage.MISSING)
     _pm.clear()
     return p
 
 def root_remove(path):
     p = os.path.abspath(os.path.expanduser(path.strip()))
     if p == VIBE: raise ValueError("Der Standardordner kann nicht entfernt werden.")
-    roots_save([x for x in conf_extra() if os.path.abspath(os.path.expanduser(x)) != p]); _pm.clear()
+    before = vibe_storage.read_snapshot(CONF)
+    roots_save([x for x in conf_extra() if os.path.abspath(os.path.expanduser(x)) != p],
+               expected=before.digest if before.exists else vibe_storage.MISSING)
+    _pm.clear()
 
 _pm = {}
 def project_map():
@@ -300,33 +308,26 @@ def feedback_items(name):
 def _feedback_target(name, fid):
     fp = feedback_path(name)
     if not os.path.exists(fp): raise ValueError("Keine FEEDBACK.md vorhanden")
+    # Prüfsumme vor dem Text lesen: Ändert jemand die Datei dazwischen, schlägt
+    # das Schreiben als Konflikt fehl, statt den fremden Stand zu überschreiben.
+    expected = vibe_storage.file_digest(fp)
     text = _read_text(fp)
     for entry in _feedback_scan(text):
         item = _feedback_parse(entry, ppath(name))
         if item and item["id"] == fid:
-            return fp, text, entry, item
+            return fp, text, expected, entry, item
     raise ValueError("Feedback-Punkt nicht gefunden: " + fid)
 
-def _write_text_atomic(path, text):
-    """Schreibt über eine temporäre Datei im Zielordner, damit kein Teilstück entsteht."""
-    try: mode = os.stat(path).st_mode & 0o7777
-    except OSError: mode = None
-    fd, tmp = tempfile.mkstemp(prefix=".vibe-feedback-", suffix=".tmp", dir=os.path.dirname(path) or ".")
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8", newline="") as f: f.write(text)
-        if mode is not None: os.chmod(tmp, mode)
-        os.replace(tmp, path)
-    except BaseException:
-        try: os.unlink(tmp)
-        except OSError: pass
-        raise
+def _write_text_atomic(path, text, expected=None):
+    """Schreibt über die gemeinsame Storage-Schicht (V-005), nie halb geschrieben."""
+    return vibe_storage.write_text(path, text, expected=expected)
 
 def feedback_update(name, fid, title, description=""):
     """Ändert Titel und Beschreibung eines vorhandenen Feedback-Punkts."""
     title = (title or "").strip()
     if not title: raise ValueError("Titel fehlt")
     if "\n" in title or "\r" in title: raise ValueError("Titel darf keinen Zeilenumbruch enthalten")
-    fp, text, entry, item = _feedback_target(name, fid)
+    fp, text, expected, entry, item = _feedback_target(name, fid)
     if item["state"] == "erledigt":
         raise ValueError("Abgeschlossene Feedback-Punkte sind nicht bearbeitbar: " + fid)
     raw = text.splitlines(keepends=True)
@@ -346,14 +347,14 @@ def feedback_update(name, fid, title, description=""):
         raw[begin:end] = new_lines
     else:
         raw[entry["start"] + 1:entry["start"] + 1] = new_lines
-    _write_text_atomic(fp, "".join(raw))
+    _write_text_atomic(fp, "".join(raw), expected=expected)
 
 def feedback_delete(name, fid):
     """Entfernt genau einen Feedback-Punkt; andere Einträge bleiben erhalten."""
-    fp, text, entry, _ = _feedback_target(name, fid)
+    fp, text, expected, entry, _ = _feedback_target(name, fid)
     raw = text.splitlines(keepends=True)
     del raw[entry["start"]:entry["end"]]
-    _write_text_atomic(fp, "".join(raw))
+    _write_text_atomic(fp, "".join(raw), expected=expected)
 
 # ---------- Schreibrechte je Projekt ----------
 WRITE_DIRS_DEFAULT = "/tmp/opencode"
@@ -376,25 +377,31 @@ def write_dirs(name):
     import vibe_sandbox
     return vibe_sandbox.project_write_dirs(ppath(name))
 
-def write_dirs_save(name, paths):
+def write_dirs_save(name, paths, expected=None):
     normalized = []
     for value in paths:
         path = _norm_write_dir(value)
         if path not in normalized: normalized.append(path)
     fp = write_dirs_path(name)
     os.makedirs(os.path.dirname(fp), exist_ok=True)
-    _write_text_atomic(fp, json.dumps({"write_dirs": normalized}, indent=1, ensure_ascii=False) + "\n")
+    vibe_storage.write_text(fp, json.dumps({"write_dirs": normalized}, indent=1, ensure_ascii=False) + "\n", expected=expected)
     return normalized
 
+def _write_dirs_expectation(name):
+    snapshot = vibe_storage.read_snapshot(write_dirs_path(name))
+    return snapshot.digest if snapshot.exists else vibe_storage.MISSING
+
 def write_dirs_add(name, path):
+    expected = _write_dirs_expectation(name)
     dirs = write_dirs(name); target = _norm_write_dir(path)
     if target in dirs: raise ValueError("Verzeichnis ist bereits erlaubt: " + target)
-    return write_dirs_save(name, dirs + [target])
+    return write_dirs_save(name, dirs + [target], expected=expected)
 
 def write_dirs_remove(name, path):
+    expected = _write_dirs_expectation(name)
     dirs = write_dirs(name); target = _norm_write_dir(path)
     if target not in dirs: raise ValueError("Verzeichnis ist nicht in der Liste: " + target)
-    return write_dirs_save(name, [d for d in dirs if d != target])
+    return write_dirs_save(name, [d for d in dirs if d != target], expected=expected)
 
 def write_dirs_reset(name):
     fp = write_dirs_path(name)
@@ -422,9 +429,10 @@ def cmd_rights(name, action=None, path=None):
 def set_env_values(name, values):
     """Ersetzt oder ergänzt Schlüssel in .vibe/project.env und erhält alle anderen Zeilen."""
     fp = os.path.join(ppath(name), ".vibe", "project.env")
-    if not os.path.exists(fp):
+    snapshot = vibe_storage.read_snapshot(fp)
+    if not snapshot.exists:
         raise ValueError("Nicht für vibe vorbereitet: " + fp)
-    with open(fp, encoding="utf-8", newline="") as f: text = f.read()
+    text = snapshot.text
     newline = "\r\n" if "\r\n" in text else "\n"
     lines = text.splitlines(True)
     for key, value in values.items():
@@ -447,7 +455,7 @@ def set_env_values(name, values):
         if not replaced:
             if lines and not lines[-1].endswith(("\n", "\r")): lines[-1] += newline
             lines.append(line + newline)
-    _write_text_atomic(fp, "".join(lines))
+    _write_text_atomic(fp, "".join(lines), expected=snapshot.digest)
 
 def sandbox_tools_default(typ):
     import vibe_sandbox
@@ -953,32 +961,68 @@ def agent_validate(text):
     if not text.split("\n---", 1)[-1].strip(): raise ValueError("Der Prompt (Text nach dem Frontmatter) ist leer.")
     return fm
 
-def _backup(scope, name, text):
-    d = os.path.join(BACKUPS, safe(scope)); os.makedirs(d, exist_ok=True)
-    open(os.path.join(d, f"{name}-{time.strftime('%Y%m%d-%H%M%S')}.md"), "w", encoding="utf-8").write(text)
+def agent_backup_dir(scope):
+    return os.path.join(BACKUPS, safe(scope))
 
-def agent_write(scope, name, text, create=False):
+def agent_backups(scope, name):
+    """Vorhandene Sicherungen eines Agenten, älteste zuerst."""
+    if not NAME_RE.match(name or ""): raise ValueError("Name: nur a-z, 0-9, _ und -")
+    return vibe_storage.list_backups(agent_backup_dir(scope), label=name)
+
+def agent_restore(scope, name, backup=None):
+    """Stellt eine Sicherung wieder her; ohne Angabe die neueste."""
+    items = agent_backups(scope, name)
+    if not items:
+        raise ValueError(f"Keine Sicherung für Agent '{name}' in {agent_backup_dir(scope)}")
+    chosen = backup or items[-1]
+    if chosen not in items:
+        raise ValueError("Sicherung gehört nicht zu diesem Agenten: " + chosen)
+    p = agent_path(scope, name)
+    current = vibe_storage.read_snapshot(p)
+    expected = current.digest if current.exists else vibe_storage.MISSING
+    return vibe_storage.restore_backup(agent_backup_dir(scope), chosen, p,
+                                      expected=expected, label=name)
+
+def agent_snapshot(scope, name):
+    """Inhalt und Prüfsumme eines Agenten für konfliktfreies Speichern."""
+    p = agent_path(scope, name)
+    snapshot = vibe_storage.read_snapshot(p)
+    if not snapshot.exists: raise ValueError("Agent nicht gefunden: " + name)
+    return snapshot
+
+def agent_write(scope, name, text, create=False, expected=None):
     fm = agent_validate(text); p = agent_path(scope, name)
-    if create and os.path.exists(p): raise ValueError(f"Agent '{name}' existiert in diesem Bereich schon.")
-    if os.path.exists(p): _backup(scope, name, open(p, encoding="utf-8").read())
-    os.makedirs(os.path.dirname(p), exist_ok=True)
-    open(p, "w", encoding="utf-8").write(text if text.endswith("\n") else text + "\n")
+    snapshot = vibe_storage.read_snapshot(p)
+    if create and snapshot.exists: raise ValueError(f"Agent '{name}' existiert in diesem Bereich schon.")
+    if expected is not None:
+        vibe_storage.check_expected(p, snapshot, expected)
+    content = text if text.endswith("\n") else text + "\n"
+    vibe_storage.write_text_with_backup(
+        p, content, agent_backup_dir(scope), label=name,
+        expected=snapshot.digest if snapshot.exists else vibe_storage.MISSING)
     warn = []
     ml = models_list()
     if fm.get("model") and ml and fm["model"] not in ml: warn.append(f"Modell '{fm['model']}' steht nicht in 'opencode models' (Anbieter verbunden?).")
+    notes = vibe_storage.filesystem_notes(p)
+    if notes["warning"]: warn.append(notes["warning"])
     return warn
 
 def agent_delete(scope, name):
     p = agent_path(scope, name)
-    if not os.path.exists(p): raise ValueError("Agent nicht gefunden: " + name)
-    _backup(scope, name, open(p, encoding="utf-8").read()); os.remove(p)
+    # Sicherung und Löschen unter derselben Sperre: kein Speichervorgang kann
+    # dazwischen den neuesten Stand schreiben, der dann nicht gesichert wäre.
+    with vibe_storage.locked(p):
+        snapshot = vibe_storage.read_snapshot(p)
+        if not snapshot.exists: raise ValueError("Agent nicht gefunden: " + name)
+        vibe_storage.backup_bytes(p, snapshot.data, agent_backup_dir(scope), label=name)
+        os.remove(p)
 
 def agent_copy(scope, name, to_scope):
     if scope == to_scope: raise ValueError("Quelle und Ziel sind gleich.")
     text = agent_read(scope, name)
     if to_scope != "global" and _edit_grants_write(text):
         text = _rewrite_edit_block(text, write_dirs(to_scope))
-    return agent_write(to_scope, name, text, create=True)
+    return agent_write(to_scope, name, text, create=True, expected=vibe_storage.MISSING)
 
 def agent_template(description, mode="subagent", model="", temperature="", steps="", perm="lesen", prompt="", write_dirs=None):
     if perm not in PERMS: perm = "lesen"
@@ -1039,23 +1083,24 @@ def _edit_grants_write(text):
     return True
 
 def _planned_write_dirs(scope, name, write_dirs):
-    """(Pfad, alt, neu) für einen Agenten mit Schreibrecht; sonst None (Recht bleibt deny)."""
+    """(Pfad, Snapshot, neu) für einen Agenten mit Schreibrecht; sonst None."""
     p = agent_path(scope, name)
-    if not os.path.exists(p): raise ValueError("Agent nicht gefunden: " + name)
-    with open(p, encoding="utf-8") as f: old = f.read()
+    snapshot = vibe_storage.read_snapshot(p)
+    if not snapshot.exists: raise ValueError("Agent nicht gefunden: " + name)
+    old = snapshot.text
     if not _edit_grants_write(old): return None
     new = _rewrite_edit_block(old, write_dirs)
     agent_validate(new)
     if not new.endswith("\n"): new += "\n"
-    return p, old, new
+    return p, snapshot, new
 
 def apply_write_dirs(scope, name, write_dirs):
     """Schreibt die erlaubten Verzeichnisse in den edit-Block eines Agenten mit Schreibrecht."""
     planned = _planned_write_dirs(scope, name, write_dirs)
     if planned is None: return agent_read(scope, name)
-    p, old, new = planned
-    _backup(scope, name, old)
-    _write_text_atomic(p, new)
+    p, snapshot, new = planned
+    vibe_storage.write_text_with_backup(p, new, agent_backup_dir(scope),
+                                        label=name, expected=snapshot.digest)
     return new
 
 def apply_write_dirs_to_project(name):
@@ -1067,9 +1112,9 @@ def apply_write_dirs_to_project(name):
         if not f.endswith(".md") or not NAME_RE.match(f[:-3]): continue
         item = _planned_write_dirs(name, f[:-3], dirs)
         if item is not None: planned.append((f[:-3], item))
-    for agent_name, (p, old, new) in planned:
-        _backup(name, agent_name, old)
-        _write_text_atomic(p, new)
+    for agent_name, (p, snapshot, new) in planned:
+        vibe_storage.write_text_with_backup(p, new, agent_backup_dir(name),
+                                            label=agent_name, expected=snapshot.digest)
         changed.append(agent_name)
     return changed
 
@@ -1097,21 +1142,41 @@ def _editor(path):
     ed = os.environ.get("EDITOR") or shutil.which("nano") or shutil.which("vi") or "vi"
     subprocess.run([ed, path])
 
-def cmd_agent(action, name, scope="global"):
+def cmd_agent(action, name, scope="global", backup=None):
     try:
         if scope != "global" and scope not in projects(): sys.exit("Unbekannter Bereich '" + scope + "' (global oder Projektname).")
         if action == "show": print(agent_read(scope, name)); return
+        if action == "backups":
+            rows = agent_backups(scope, name)
+            folder = agent_backup_dir(scope)
+            if not rows: print("Keine Sicherung für", name, "in", folder); return
+            print(col("b", f"Sicherungen für {name} ({folder}):"))
+            for row in reversed(rows):
+                path = os.path.join(folder, row)
+                print(f"  {row}  ({os.path.getsize(path)} Bytes)")
+            print(col("d", "Wiederherstellen: vibe agent restore " + name + " " + scope + " <sicherung>"))
+            return
+        if action == "restore":
+            result = agent_restore(scope, name, backup)
+            print(col("g", "Wiederhergestellt: " + agent_path(scope, name) + " aus " + result["backup"]))
+            if result["safety"]: print("Vorheriger Stand gesichert:", result["safety"])
+            return
         if action == "rm":
             agent_delete(scope, name); print("Gelöscht (Sicherung in " + BACKUPS + "):", name); return
         if action in ("new", "edit"):
+            if action == "new":
+                base_text, expected = agent_template("Kurzbeschreibung eintragen", prompt=""), vibe_storage.MISSING
+            else:
+                snapshot = agent_snapshot(scope, name)
+                base_text, expected = snapshot.text, snapshot.digest
             tf = tempfile.NamedTemporaryFile("w", suffix=".md", delete=False, encoding="utf-8")
-            tf.write(agent_template("Kurzbeschreibung eintragen", prompt="") if action == "new" else agent_read(scope, name)); tf.close()
+            tf.write(base_text); tf.close()
             _editor(tf.name); text = open(tf.name, encoding="utf-8").read(); os.unlink(tf.name)
-            warn = agent_write(scope, name, text, create=(action == "new"))
+            warn = agent_write(scope, name, text, create=(action == "new"), expected=expected)
             print(col("g", "Gespeichert: " + agent_path(scope, name)))
             for x in warn: print(col("y", "Hinweis: " + x))
             return
-        sys.exit("vibe agent new|edit|show|rm <name> [global|<projekt>]")
+        sys.exit("vibe agent new|edit|show|rm|backups|restore <name> [global|<projekt>] [sicherung]")
     except ValueError as e:
         sys.exit(str(e))
 
@@ -1126,12 +1191,13 @@ def cmd_models():
 
 def cmd_model(agent, model, scope="global"):
     try:
-        t = agent_read(scope, agent)
+        snapshot = agent_snapshot(scope, agent)
+        t = snapshot.text
         ml = models_list()
         if ml and model not in ml: sys.exit(f"Modell '{model}' nicht in 'opencode models' (Anbieter per /connect verbinden).")
         m = re.search(r"^model:[ \t]*(\S+)", t, flags=re.M)
         t2 = t.replace(m.group(1), model) if m else t.replace("\n---", f"\nmodel: {model}\n---", 1)
-        agent_write(scope, agent, t2); print("Modell von", agent, "->", model)
+        agent_write(scope, agent, t2, expected=snapshot.digest); print("Modell von", agent, "->", model)
     except ValueError as e:
         sys.exit(str(e))
 
@@ -1144,17 +1210,19 @@ DEFAULT_PROFILES = {
   "guenstig": {"coder": "opencode/deepseek-v4.1-flash", "reviewer": "opencode/glm-5.3-flash"},
   "stark": {"coder": "", "reviewer": ""}}}
 
-def profiles_load():
-    try: d = json.load(open(PROFILES_FILE, encoding="utf-8"))
+def profiles_load(return_snapshot=False):
+    snapshot = vibe_storage.read_snapshot(PROFILES_FILE)
+    try: d = json.loads(snapshot.text) if snapshot.exists else json.loads(json.dumps(DEFAULT_PROFILES))
     except Exception: d = json.loads(json.dumps(DEFAULT_PROFILES))
     for k, v in DEFAULT_PROFILES.items(): d.setdefault(k, json.loads(json.dumps(v)))
-    return d
+    return (d, snapshot) if return_snapshot else d
 
-def profiles_save(d):
-    os.makedirs(TOOLS, exist_ok=True); json.dump(d, open(PROFILES_FILE, "w", encoding="utf-8"), indent=1, ensure_ascii=False)
+def profiles_save(d, expected=None):
+    os.makedirs(TOOLS, exist_ok=True)
+    vibe_storage.write_text(PROFILES_FILE, json.dumps(d, indent=1, ensure_ascii=False), expected=expected)
 
 def profile_apply(name):
-    d = profiles_load()
+    d, before = profiles_load(return_snapshot=True)
     if name not in d["profile"]: raise ValueError("Unbekanntes Profil: " + name)
     prof, ml, done, skipped = d["profile"][name], models_list(), [], []
     for agent, role in d["rollen"].items():
@@ -1164,11 +1232,13 @@ def profile_apply(name):
     for agent, role in d["rollen"].items():
         model = prof.get(role, "")
         if not model: continue
-        try: t = agent_read("global", agent)
+        try: snapshot = agent_snapshot("global", agent)
         except ValueError: skipped.append(f"{agent}: Agent nicht gefunden"); continue
+        t = snapshot.text
         m = re.search(r"^model:[ \t]*(\S+)", t, flags=re.M)
-        agent_write("global", agent, t.replace(m.group(1), model) if m else t.replace("\n---", f"\nmodel: {model}\n---", 1)); done.append(f"{agent} -> {model}")
-    d["aktiv"] = name; profiles_save(d)
+        agent_write("global", agent, t.replace(m.group(1), model) if m else t.replace("\n---", f"\nmodel: {model}\n---", 1), expected=snapshot.digest); done.append(f"{agent} -> {model}")
+    d["aktiv"] = name
+    profiles_save(d, expected=before.digest if before.exists else vibe_storage.MISSING)
     return done, skipped
 
 def cmd_profile(action="list", name=None):
@@ -1246,9 +1316,9 @@ def cmd_doctor():
     for label, ok, hint in doctor_checks():
         print(f"  {col('g','OK  ') if ok else col('r','FEHL')} {label}" + (f"  -> {hint}" if not ok and hint else ""))
 
-def cmd_mcp(action="list", name=None, scope="global"):
+def cmd_mcp(action="list", name=None, scope="global", backup=None):
     import vibe_mcp
-    vibe_mcp.cli(action, name, scope)
+    vibe_mcp.cli(action, name, scope, backup)
 
 # ---------- Menü ----------
 def pick(title, options):
@@ -1319,12 +1389,12 @@ def main():
                  "new": lambda: cmd_new(r[0], r[1] if len(r) > 1 else "generic", r[2] if len(r) > 2 else None),
                  "init": lambda: cmd_init(r[0], r[1] if len(r) > 1 else None),
                  "roots": lambda: cmd_roots(r[0] if r else None, r[1] if len(r) > 1 else None), "scan": lambda: cmd_roots(),
-                 "agents": lambda: cmd_agents(), "agent": lambda: cmd_agent(r[0], r[1], r[2] if len(r) > 2 else "global"),
+                 "agents": lambda: cmd_agents(), "agent": lambda: cmd_agent(r[0], r[1], r[2] if len(r) > 2 else "global", r[3] if len(r) > 3 else None),
                  "rights": lambda: cmd_rights(r[0], r[1] if len(r) > 1 else None, r[2] if len(r) > 2 else None),
                  "sandbox": lambda: cmd_sandbox(r[0], r[1] if len(r) > 1 else None, r[2] if len(r) > 2 else None),
                  "models": lambda: cmd_models(), "model": lambda: cmd_model(r[0], r[1], r[2] if len(r) > 2 else "global"),
                  "profile": lambda: cmd_profile(r[0] if r else "list", r[1] if len(r) > 1 else None),
-                 "mcp": lambda: cmd_mcp(r[0] if r else "list", r[1] if len(r) > 1 else None, r[2] if len(r) > 2 else "global"),
+                 "mcp": lambda: cmd_mcp(r[0] if r else "list", r[1] if len(r) > 1 else None, r[2] if len(r) > 2 else "global", r[3] if len(r) > 3 else None),
                  "emu": lambda: cmd_emu(r[0]), "ui": lambda: cmd_ui(r[0] if r else "start"), "server": lambda: cmd_server(r[0] if r else "status"),
                  "types": lambda: cmd_types(), "doctor": lambda: cmd_doctor()}
         table[c]()

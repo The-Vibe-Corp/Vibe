@@ -1,6 +1,6 @@
 {
  "version": 1,
- "stand": "2026-10-26",
+ "stand": "2026-10-27",
  "quelle": "Übernommener Programmstand aus der lokalen Installation unter $VIBE/_toolchain; die aktive Installation enthält zusätzlich lokale Geheimnis-Hooks (siehe docs/baseline.md, Abschnitt 3).",
  "hinweis": "SHA-256 der übernommenen Programmdateien. Beabsichtigte Änderungen an diesen Dateien sind nur zulässig, wenn dieser Eintrag im selben Arbeitspaket aktualisiert und begründet wird. Laufzeitdaten, Sicherungen und Geheimnisse sind nicht Bestandteil des Imports.",
  "scopes": [
@@ -19,8 +19,8 @@
   },
   {
    "path": "bin/vibe",
-   "sha256": "aad2bb08fbe7d5dceaa7af7e8733d75930e74bd06fdf6ed96fb7381e14141220",
-   "bytes": 67442
+   "sha256": "6edff59a8ca16d1c15227bc335c2de27161a2dd1940550e31f669c99e25b28a2",
+   "bytes": 71572
   },
   {
    "path": "bin/vibe-run.sh",
@@ -29,18 +29,23 @@
   },
   {
    "path": "bin/vibe-web.py",
-   "sha256": "6c836dbabce8abeaf3997951af021ac9a1981455acea409f7c1067545f2713d8",
-   "bytes": 68788
+   "sha256": "f406bf64fe1b54eaf0956142649bd6ac9985bd93efbc235454f08c1bd6425acd",
+   "bytes": 69367
   },
   {
    "path": "bin/vibe_mcp.py",
-   "sha256": "bd2e3fbe53401b17d8cbc561217dc395d3ebb7e63948c796ab15a49712984ba6",
-   "bytes": 19657
+   "sha256": "e1bf07184522edb2fc0a993c5ee42a6d9cf41126ae627e867b0bd61b2541ef17",
+   "bytes": 22249
   },
   {
    "path": "bin/vibe_sandbox.py",
    "sha256": "fd2aa19219e603301e4f993b5a6121125359f902cc9fbcdaf03a96b3386d7cfd",
    "bytes": 20133
+  },
+  {
+   "path": "bin/vibe_storage.py",
+   "sha256": "2fad84e426278fa693c4f1b1fa14d33b97acb0942aaad803c9bd58728427b75f",
+   "bytes": 19810
   },
   {
    "path": "data/models.json",
@@ -238,6 +243,17 @@
    "grund": "Web-API abgesichert: Bindung nur an Loopback (andere VIBE_UI_BIND-Werte brechen den Start ab), Health-Endpunkt mit vibe-/Instanzkennung ohne Geheimnisse, Host-/Origin-/Sec-Fetch-Site-Prüfung, Token nur per Header (Ausnahme EventSource-Stream), 1-MiB-Requestlimit, Pflicht zu application/json und Content-Length, strukturierte Fehler und tokenfreie Zugriffslogs.",
    "dateien": [
     "bin/vibe-web.py"
+   ]
+  },
+  {
+   "arbeitspaket": "V-005",
+   "datum": "2026-10-26",
+   "grund": "Gemeinsame Storage-Schicht für Konfigurationen und Agenten: atomare Writes über temporäre Datei und os.replace, Sperrdatei und Prüfsummenkontrolle gegen konkurrierende Änderungen, kollisionsfreie Sicherungen mit O_EXCL, Wiederherstellung mit vorheriger Sicherung sowie ehrliche Einordnung von FUSE/NTFS (keine zugesicherte Atomarität oder Unix-Rechte). CLI und Dashboard liefern und prüfen Prüfsummen beim Speichern; Agenten- und MCP-Sicherungen sind über CLI auflistbar und wiederherstellbar.",
+   "dateien": [
+    "bin/vibe",
+    "bin/vibe-web.py",
+    "bin/vibe_mcp.py",
+    "bin/vibe_storage.py"
    ]
   }
  ]

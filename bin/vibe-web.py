@@ -8,6 +8,7 @@ from urllib.parse import urlparse, parse_qs
 HERE = os.path.dirname(os.path.realpath(__file__))
 sys.path.insert(0, HERE)
 os.environ.setdefault("VIBE_NO_CONTAINER", "1")
+import vibe_storage
 _loader = importlib.machinery.SourceFileLoader("vibe", os.path.join(HERE, "vibe"))
 _spec = importlib.util.spec_from_loader("vibe", _loader)
 vibe = importlib.util.module_from_spec(_spec); sys.modules["vibe"] = vibe; _loader.exec_module(vibe)
@@ -43,13 +44,12 @@ ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
 SRV = None
 
 def write_private(path, text):
-    """Schreibt Laufzeitkennungen und setzt, soweit möglich, Rechte 0600."""
-    with open(path, "w", encoding="utf-8") as handle:
-        handle.write(text)
-    try:
-        os.chmod(path, 0o600)
-    except OSError:
-        pass
+    """Schreibt Laufzeitkennungen atomar und setzt, soweit möglich, Rechte 0600.
+
+    Auf FUSE/NTFS wirken Unix-Rechte nicht zwingend; die Oberfläche und die
+    Dokumentation behaupten das auch nicht.
+    """
+    vibe_storage.write_text(path, text, mode=0o600)
 
 write_private(INSTFILE, INSTANCE)
 write_private(TOKFILE, TOKEN)
@@ -286,7 +286,8 @@ class H(BaseHTTPRequestHandler):
             if u.path == "/api/roots": return self._send(200, roots_info())
             if u.path == "/api/agents": return self._send(200, agents_info())
             if u.path == "/api/agent":
-                scope = known_scope(q["scope"][0]); return self._send(200, {"text": vibe.agent_read(scope, q["name"][0])})
+                scope = known_scope(q["scope"][0]); snapshot = vibe.agent_snapshot(scope, q["name"][0])
+                return self._send(200, {"text": snapshot.text, "digest": snapshot.digest})
             if u.path == "/api/mcp": return self._send(200, {"servers": vibe_mcp.list_all(), "projects": vibe.projects()})
             if u.path == "/api/mcp_entry":
                 scope = known_scope(q["scope"][0]); return self._send(200, vibe_mcp.get_entry(scope, q["name"][0]))
@@ -417,20 +418,24 @@ class H(BaseHTTPRequestHandler):
             elif u.path == "/api/agent":
                 act = body.get("action"); scope = known_scope(body.get("scope", "global")); an = body.get("name", "")
                 try:
-                    if act == "save": warn = vibe.agent_write(scope, an, body.get("text", ""), create=bool(body.get("create"))); ok, msg = True, "Gespeichert" + (" – Hinweis: " + " ".join(warn) if warn else "")
+                    if act == "save": warn = vibe.agent_write(scope, an, body.get("text", ""), create=bool(body.get("create")), expected=body.get("expected")); ok, msg = True, "Gespeichert" + (" – Hinweis: " + " ".join(warn) if warn else "")
                     elif act == "delete": vibe.agent_delete(scope, an); ok, msg = True, "Gelöscht (Sicherung in agent-backups)"
                     elif act == "copy": vibe.agent_copy(scope, an, known_scope(body.get("to", "global"))); ok, msg = True, "Kopiert"
                     else: ok, msg = False, "Unbekannte Aktion"
+                except vibe_storage.ConcurrentChangeError as e:
+                    return self._error(409, "conflict", str(e))
                 except ValueError as e:
                     ok, msg = False, str(e)
             elif u.path == "/api/mcp":
                 act = body.get("action"); scope = known_scope(body.get("scope", "global")); entry = body.get("entry")
                 try:
-                    if act == "save": p = vibe_mcp.save(scope, name, entry, body.get("old_name") or None, bool(body.get("create"))); ok, msg = True, "Gespeichert in " + p + " (Sicherung in config-backups). opencode liest die Konfiguration beim nächsten Start."
+                    if act == "save": p = vibe_mcp.save(scope, name, entry, body.get("old_name") or None, bool(body.get("create")), expected=body.get("expected")); ok, msg = True, "Gespeichert in " + p + " (Sicherung in config-backups). opencode liest die Konfiguration beim nächsten Start."
                     elif act == "delete": vibe_mcp.delete(scope, name); ok, msg = True, "Gelöscht (Sicherung in config-backups)"
                     elif act == "toggle": en = vibe_mcp.toggle(scope, name); ok, msg = True, "aktiviert" if en else "deaktiviert"
                     elif act == "test": extra["result"] = vibe_mcp.test(scope, name or None, entry); ok, msg = True, "Test beendet"
                     else: ok, msg = False, "Unbekannte Aktion"
+                except vibe_storage.ConcurrentChangeError as e:
+                    return self._error(409, "conflict", str(e))
                 except ValueError as e:
                     ok, msg = False, str(e)
             elif u.path == "/api/profiles":
@@ -687,8 +692,8 @@ function modelsCard(d){const used={};d.agents.forEach(a=>{(used[a.model]=used[a.
    el('td',{},badge(m.coder)),el('td',{},badge(m.reviewer)),el('td',{class:'mut'},(used[id]||[]).join(', ')||'—')));tb.append(det)});
  return el('div',{class:'card'},el('details',{},el('summary',{},'Modelle – Einschätzung und Preis (aufklappen, Zeile anklicken für Details)'),
    el('div',{class:'mut',style:'margin:8px 0'},'Stand '+d.stand+'. '+d.hinweis),tb,Object.keys(other).length?el('div',{class:'mut',style:'margin-top:8px'},'Weitere verbundene Anbieter (ohne Einschätzung): '+Object.entries(other).map(([k,v])=>k+' ('+v+' Modelle)').join(', ')):null))}
-async function agentForm(scope,name){const d=AG||await api('/api/agents');const isNew=!name;let text='';
- if(!isNew)text=(await api('/api/agent?scope='+encodeURIComponent(scope)+'&name='+encodeURIComponent(name))).text;
+async function agentForm(scope,name){const d=AG||await api('/api/agents');const isNew=!name;let text='',digest=null;
+ if(!isNew){const loaded=await api('/api/agent?scope='+encodeURIComponent(scope)+'&name='+encodeURIComponent(name));text=loaded.text;digest=loaded.digest}
  const nm=el('input',{placeholder:'name (a-z, 0-9, -, _)'});if(!isNew){nm.value=name;nm.setAttribute('disabled','disabled')}
  const sc=el('select',{},el('option',{value:'global'},'global (alle Projekte)'),...d.projects.map(p=>el('option',{value:p},'Projekt: '+p)));sc.value=scope||'global';if(!isNew)sc.setAttribute('disabled','disabled');
  const ds=el('input',{placeholder:'Wofür ist der Agent da? (Pflicht)'});
@@ -720,7 +725,7 @@ async function agentForm(scope,name){const d=AG||await api('/api/agents');const 
  if(isNew)setTimeout(gen,0);
  main.replaceChildren(el('div',{class:'bar'},el('button',{class:'b',on:{click:()=>agents().catch(showErr)}},'← zurück'),el('h2',{style:'margin:0'},isNew?'Neuer Agent':'Agent bearbeiten')),
   el('div',{class:'card'},kopf,el('label',{},'Datei (Frontmatter + Prompt)'),raw,
-   el('div',{class:'bar'},el('button',{class:'b p',on:{click:async()=>{const n=isNew?nm.value:name,s=isNew?sc.value:scope;const r=await api('/api/agent',{action:'save',scope:s,name:n,text:raw.value,create:isNew});toast(r.message);if(r.ok)agents().catch(showErr)}}},'Speichern'),
+   el('div',{class:'bar'},el('button',{class:'b p',on:{click:async()=>{const n=isNew?nm.value:name,s=isNew?sc.value:scope;const r=await api('/api/agent',{action:'save',scope:s,name:n,text:raw.value,create:isNew,expected:digest});toast(r.message);if(r.ok)agents().catch(showErr)}}},'Speichern'),
     isNew?null:cp,isNew?null:el('button',{class:'b',on:{click:async()=>{if(!cp.value)return toast('Ziel wählen');const r=await api('/api/agent',{action:'copy',scope,name,to:cp.value});toast(r.message)}}},'Kopieren'),
     isNew?null:el('button',{class:'b d',on:{click:async()=>{if(!confirm('Agent „'+name+'“ löschen? Eine Sicherung bleibt in agent-backups.'))return;const r=await api('/api/agent',{action:'delete',scope,name});toast(r.message);if(r.ok)agents().catch(showErr)}}},'Löschen'))))}
 
@@ -745,8 +750,8 @@ function mcpResult(r,into){const t=r.result;const box=into||document.getElementB
 const lines=s=>s.split('\n').map(x=>x.trim()).filter(Boolean);
 const kv=(s,sep)=>{const o={};lines(s).forEach(l=>{const i=l.indexOf(sep);if(i>0)o[l.slice(0,i).trim()]=l.slice(i+1).trim()});return o};
 const unkv=(o,sep)=>Object.entries(o||{}).map(([a,b])=>a+sep+b).join('\n');
-async function mcpForm(scope,name){const d=await api('/api/mcp');let e={type:'local',command:[],enabled:true};
- if(name)e=(await api('/api/mcp_entry?scope='+encodeURIComponent(scope)+'&name='+encodeURIComponent(name))).entry;
+async function mcpForm(scope,name){const d=await api('/api/mcp');let e={type:'local',command:[],enabled:true},digest=null;
+ if(name){const loaded=await api('/api/mcp_entry?scope='+encodeURIComponent(scope)+'&name='+encodeURIComponent(name));e=loaded.entry;digest=loaded.digest}
  const isNew=!name;const nm=el('input',{value:name||'',placeholder:'name (Buchstaben, Ziffern, _ -)'});
  const sc=el('select',{},el('option',{value:'global'},'global (alle Projekte)'),...d.projects.map(p=>el('option',{value:p},'Projekt: '+p)));sc.value=scope||'global';if(!isNew)sc.setAttribute('disabled','disabled');
  const ty=el('select',{},el('option',{value:'local'},'local (Programm starten, stdio)'),el('option',{value:'remote'},'remote (URL, Streamable HTTP)'));ty.value=e.type||'local';
@@ -769,7 +774,7 @@ async function mcpForm(scope,name){const d=await api('/api/mcp');let e={type:'lo
   el('div',{class:'card'},el('div',{class:'grid'},el('div',{},el('label',{},'Name (Werkzeuge erscheinen mit diesem Präfix)'),nm),el('div',{},el('label',{},'Geltung'),sc)),
    el('div',{class:'grid'},el('div',{},el('label',{},'Typ'),ty),el('div',{},el('label',{},'Timeout (ms)'),to)),loc,rem,el('label',{},el('span',{},'aktiv '),en),
    el('div',{class:'mut',style:'margin-top:6px'},'Maskierte Werte (***) bleiben beim Speichern unverändert. Zum Ändern den ganzen Wert neu eintragen.'),
-   el('div',{class:'bar'},el('button',{class:'b p',on:{click:async()=>{const r=await api('/api/mcp',{action:'save',scope:isNew?sc.value:scope,name:nm.value,old_name:isNew?'':name,create:isNew,entry:build()});toast(r.message);if(r.ok)mcp().catch(showErr)}}},'Speichern'),
+   el('div',{class:'bar'},el('button',{class:'b p',on:{click:async()=>{const r=await api('/api/mcp',{action:'save',scope:isNew?sc.value:scope,name:nm.value,old_name:isNew?'':name,create:isNew,entry:build(),expected:digest});toast(r.message);if(r.ok)mcp().catch(showErr)}}},'Speichern'),
     el('button',{class:'b',on:{click:async()=>{res.replaceChildren(el('div',{class:'mut'},'Teste … (kann bis zu einer Minute dauern, z. B. wenn npx Pakete lädt)'));const r=await api('/api/mcp',{action:'test',scope:isNew?sc.value:scope,name:isNew?'':name,entry:build()});mcpResult(r,res)}}},'Testen (mit den Werten oben)'),
     isNew?null:el('button',{class:'b d',on:{click:async()=>{if(!confirm('MCP-Server „'+name+'“ löschen?'))return;const r=await api('/api/mcp',{action:'delete',scope,name});toast(r.message);if(r.ok)mcp().catch(showErr)}}},'Löschen'))),res)}
 async function env(){const d=await api('/api/doctor');const f=await api('/api/fritz');

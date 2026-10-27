@@ -2,6 +2,7 @@
 import os, re, json, sys, time, queue, threading, subprocess, shutil
 import urllib.request, urllib.error
 import vibe
+import vibe_storage
 
 SECRET_MASK = "***"
 NAME_OK = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
@@ -113,25 +114,51 @@ def cfg_path(scope):
 
 def load(scope):
     p = cfg_path(scope)
-    text = open(p, encoding="utf-8").read() if os.path.exists(p) else ""
+    snapshot = vibe_storage.read_snapshot(p)
+    text = snapshot.text if snapshot.exists else ""
     data = jsonc_loads(text)
     mcp = data.get("mcp")
     if isinstance(mcp, dict) and isinstance(mcp.get("servers"), dict): layout, servers = "v2", mcp["servers"]
     elif isinstance(mcp, dict) and mcp: layout, servers = "klassisch", {k: v for k, v in mcp.items() if isinstance(v, dict)}
     else: layout, servers = ("v2" if oc_major() >= 2 else "klassisch"), {}
-    return p, text, data, layout, servers
+    digest = snapshot.digest if snapshot.exists else vibe_storage.MISSING
+    return p, text, data, layout, servers, digest
 
-def _store(scope, p, text, data, layout, servers):
-    if os.path.exists(p):
-        d = os.path.join(vibe.TOOLS, "config-backups"); os.makedirs(d, exist_ok=True)
-        shutil.copy2(p, os.path.join(d, f"{vibe.safe(scope)}-{os.path.basename(p)}-{time.strftime('%Y%m%d-%H%M%S')}"))
+def backup_dir():
+    return os.path.join(vibe.TOOLS, "config-backups")
+
+def backup_label(scope, p):
+    return f"{vibe.safe(scope)}-{os.path.basename(p)}"
+
+def backups(scope):
+    """Vorhandene Sicherungen der Konfiguration, älteste zuerst."""
+    p = cfg_path(scope)
+    return vibe_storage.list_backups(backup_dir(), label=backup_label(scope, p))
+
+def restore(scope, backup=None):
+    """Stellt eine Sicherung der Konfiguration wieder her; ohne Angabe die neueste."""
+    p = cfg_path(scope)
+    items = backups(scope)
+    if not items:
+        raise ValueError("Keine Sicherung für " + p + " in " + backup_dir())
+    chosen = backup or items[-1]
+    if chosen not in items:
+        raise ValueError("Sicherung gehört nicht zu dieser Konfiguration: " + chosen)
+    snapshot = vibe_storage.read_snapshot(p)
+    expected = snapshot.digest if snapshot.exists else vibe_storage.MISSING
+    return vibe_storage.restore_backup(backup_dir(), chosen, p, expected=expected,
+                                      label=backup_label(scope, p))
+
+def _store(scope, p, text, data, layout, servers, expected=None):
     mcp = data.get("mcp") if isinstance(data.get("mcp"), dict) else {}
     if layout == "v2":
         mcp = dict(mcp); mcp["servers"] = servers
     else:
         mcp = {k: v for k, v in mcp.items() if not isinstance(v, dict)}; mcp.update(servers)
     os.makedirs(os.path.dirname(p), exist_ok=True)
-    open(p, "w", encoding="utf-8").write(jsonc_set_top(text, "mcp", mcp))
+    vibe_storage.write_text_with_backup(
+        p, jsonc_set_top(text, "mcp", mcp), backup_dir(),
+        label=backup_label(scope, p), expected=expected)
 
 # ---------- Schutz von Geheimnissen ----------
 URL_SECRET = re.compile(r"((?:token|key|secret|password|auth|apikey|api_key)=)[^&#\s]+", re.I)
@@ -164,7 +191,7 @@ def merge_masked(new, old):
 def list_all():
     out = []
     for scope in ["global"] + vibe.projects():
-        try: p, _, _, layout, servers = load(scope)
+        try: p, _, _, layout, servers, _digest = load(scope)
         except Exception as ex:
             out.append({"scope": scope, "name": "(Konfiguration nicht lesbar)", "error": str(ex), "path": cfg_path(scope)}); continue
         for name, e in servers.items():
@@ -174,9 +201,10 @@ def list_all():
     return out
 
 def get_entry(scope, name):
-    _, _, _, layout, servers = load(scope)
+    _, _, _, layout, servers, digest = load(scope)
     if name not in servers: raise ValueError("MCP-Server nicht gefunden: " + name)
-    return {"entry": mask_entry(servers[name]), "layout": layout, "path": cfg_path(scope)}
+    return {"entry": mask_entry(servers[name]), "layout": layout, "path": cfg_path(scope),
+            "digest": None if digest is vibe_storage.MISSING else digest}
 
 def validate(entry):
     if not isinstance(entry, dict): raise ValueError("Eintrag ungültig")
@@ -194,9 +222,9 @@ def validate(entry):
     if "timeout" in entry and not isinstance(entry["timeout"], int): raise ValueError("'timeout' muss eine Zahl (Millisekunden) sein.")
     return entry
 
-def save(scope, name, entry, old_name=None, create=False):
+def save(scope, name, entry, old_name=None, create=False, expected=None):
     if not NAME_OK.match(name or ""): raise ValueError("Name: Buchstaben, Ziffern, _ und - (Werkzeuge werden mit dem Namen als Präfix angeboten).")
-    p, text, data, layout, servers = load(scope)
+    p, text, data, layout, servers, digest = load(scope)
     old = servers.get(old_name or name)
     entry = validate(merge_masked(entry, old))
     if old_name and old_name != name:
@@ -204,19 +232,24 @@ def save(scope, name, entry, old_name=None, create=False):
         servers.pop(old_name, None)
     elif create and name in servers: raise ValueError(f"'{name}' existiert schon. Zum Ändern bearbeiten statt neu anlegen.")
     servers[name] = entry
-    _store(scope, p, text, data, layout, servers)
+    _store(scope, p, text, data, layout, servers,
+           expected=expected if expected is not None else digest)
     return p
 
-def delete(scope, name):
-    p, text, data, layout, servers = load(scope)
+def delete(scope, name, expected=None):
+    p, text, data, layout, servers, digest = load(scope)
     if name not in servers: raise ValueError("MCP-Server nicht gefunden: " + name)
-    servers.pop(name); _store(scope, p, text, data, layout, servers)
+    servers.pop(name)
+    _store(scope, p, text, data, layout, servers,
+           expected=expected if expected is not None else digest)
 
-def toggle(scope, name, enabled=None):
-    p, text, data, layout, servers = load(scope)
+def toggle(scope, name, enabled=None, expected=None):
+    p, text, data, layout, servers, digest = load(scope)
     if name not in servers: raise ValueError("MCP-Server nicht gefunden: " + name)
     e = servers[name]; e["enabled"] = (not (e.get("enabled", True) is not False)) if enabled is None else bool(enabled)
-    _store(scope, p, text, data, layout, servers); return e["enabled"]
+    _store(scope, p, text, data, layout, servers,
+           expected=expected if expected is not None else digest)
+    return e["enabled"]
 
 # ---------- Testen: MCP-Handshake (initialize, tools/list) ----------
 PROTO = "2025-03-26"
@@ -341,7 +374,7 @@ def test(scope, name=None, entry=None):
     return test_local(entry, cwd) if entry["type"] == "local" else test_remote(entry, name)
 
 # ---------- Terminal ----------
-def cli(action="list", name=None, scope="global"):
+def cli(action="list", name=None, scope="global", backup=None):
     try:
         if action == "list":
             rows = list_all()
@@ -353,6 +386,22 @@ def cli(action="list", name=None, scope="global"):
             print(vibe.col("d", "Echten Status je nach opencode-Version: 'opencode mcp list'. Geheimnisse werden hier maskiert."))
         elif action == "show":
             print(json.dumps(get_entry(scope, name)["entry"], indent=2, ensure_ascii=False))
+        elif action in ("backups", "restore"):
+            target_scope = name or "global"
+            # Aufruf: vibe mcp restore <global|projekt> <sicherung>. Der Bereich
+            # steht schon in `name`; das nächste Argument ist die Sicherung.
+            chosen = backup if backup is not None else (scope if scope not in (None, "", "global") else None)
+            if target_scope != "global": vibe.ppath(target_scope)
+            rows = backups(target_scope)
+            if action == "backups":
+                if not rows: print("Keine Sicherung für Konfiguration von", target_scope); return
+                print(vibe.col("b", f"Sicherungen für {cfg_path(target_scope)}:"))
+                for row in reversed(rows): print("  " + row)
+                print(vibe.col("d", "Wiederherstellen: vibe mcp restore " + target_scope + " <sicherung>"))
+                return
+            result = restore(target_scope, chosen)
+            print(vibe.col("g", "Wiederhergestellt: " + cfg_path(target_scope) + " aus " + result["backup"]))
+            if result["safety"]: print("Vorheriger Stand gesichert:", result["safety"])
         elif action == "test":
             r = test(scope, name); print((vibe.col("g", "OK") if r["ok"] else vibe.col("r", "FEHLER")), name, r.get("server") or "")
             for s in r["steps"]: print("  ", s)
@@ -363,6 +412,6 @@ def cli(action="list", name=None, scope="global"):
             toggle(scope, name, action == "on"); print(name, "aktiviert" if action == "on" else "deaktiviert")
         elif action == "rm":
             delete(scope, name); print("Gelöscht (Sicherung in config-backups):", name)
-        else: sys.exit("vibe mcp list|show|test|on|off|rm [name] [global|<projekt>]")
+        else: sys.exit("vibe mcp list|show|test|on|off|rm [name] [global|<projekt>] | vibe mcp backups|restore <global|projekt> [sicherung]")
     except ValueError as e:
         sys.exit(str(e))
