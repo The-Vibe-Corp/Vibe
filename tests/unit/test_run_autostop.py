@@ -97,6 +97,10 @@ class RunnerSessionEndTest(unittest.TestCase):
 
     def env(self):
         env = os.environ.copy()
+        # Ein geerbtes TMUX zeigt sonst auf den Server der Sitzung, in der der
+        # Test gestartet wurde; kill-server würde fremde Läufe beenden.
+        env.pop("TMUX", None)
+        env.pop("TMUX_PANE", None)
         env.update(
             {
                 "VIBE": str(self.root),

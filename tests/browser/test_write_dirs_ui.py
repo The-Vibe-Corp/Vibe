@@ -151,6 +151,7 @@ class WriteDirsBrowserTest(unittest.TestCase):
         row = self.page.locator("tr.row", has_text="proj").first
         row.wait_for()
         row.click()
+        self.page.get_by_role("tab", name="Einstellungen", exact=True).click()
         self.page.get_by_text("Schreibrechte (Agenten)").wait_for()
 
     def rights_card(self):

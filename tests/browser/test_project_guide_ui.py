@@ -143,6 +143,7 @@ class ProjectGuideBrowserTest(unittest.TestCase):
         row = self.page.locator("tr.row", has_text="proj").first
         row.wait_for()
         row.click()
+        self.page.get_by_role("tab", name="Assistent", exact=True).click()
         self.page.locator("#guide").wait_for()
         self.page.locator('.gstep[data-step="ziel"]').wait_for()
 

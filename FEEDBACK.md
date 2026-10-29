@@ -98,3 +98,10 @@ Regeln (werden maschinell geprüft):
   Commit: de69ff8; Test: CommandLineTest.test_costs_command_prints_the_project_overview, CostsBrowserTest.test_project_overview_lists_tokens_and_costs (tests/unit/test_costs.py, 36 Tests; tests/browser/test_costs_ui.py, 4 Tests)
   Review: docs/reviews/F12-review-1.md, docs/reviews/F12-review-2.md (PASS, 0 Critical/High/Medium)
   Doku: docs/features/F12.md; Trilium `IwU7vi5DgDdd`
+
+- [ ] F13 Projekt detail UI überarbeitung
+  Beschreibung: Die Projekt detail UI ist stark gewachsen und nicht mehr nutzerfreundlich.
+
+es sind sehr viele informationen im default sichtbar. wichtige felder sind schwer zu erreichen, weniger wichtige felder sind sehr präsent.
+
+erstelle die ui von grund auf neu, die aktuellen inhalte und funktionen sind gut und sollen erhalten bleiben, jedoch neu strukturiert. baue nicht auf der bestehenden ui auf, sondern denke neu, nach modernen standards.

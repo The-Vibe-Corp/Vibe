@@ -1,6 +1,6 @@
 # Trilium-Index
 
-Zuordnung der Projekt-Dokumentation zu den Notizen in Trilium (Stand 2026-10-26).
+Zuordnung der Projekt-Dokumentation zu den Notizen in Trilium (Stand 2026-10-30).
 
 | Projekt | Bereich | Notiz | Notiz-ID |
 | --- | --- | --- | --- |
@@ -23,3 +23,4 @@ Zuordnung der Projekt-Dokumentation zu den Notizen in Trilium (Stand 2026-10-26)
 | vibe | Features | F10 Agentenlauf endet automatisch | `srn5HaKQXjsu` |
 | vibe | Features | F11 Weniger modale Browserdialoge | `0A6oTTAbOeGH` |
 | vibe | Features | F12 Kostenermittlung je AP/Projekt | `IwU7vi5DgDdd` |
+| vibe | Features | F13 Projektdetail neu strukturiert | `ppnQBKTcRlLQ` |

@@ -29,8 +29,8 @@
   },
   {
    "path": "bin/vibe-web.py",
-   "sha256": "faf463871b45f520bf915d6199410dd130624be9f8a1059529a2ccc1b3bec0cf",
-   "bytes": 84530
+   "sha256": "b1f684032c7d2e3483a0818bc816364dfef35e8dafdaed1a5912c4a9a77ae5a0",
+   "bytes": 89760
   },
   {
    "path": "bin/vibe_guide.py",
@@ -294,6 +294,14 @@
    "grund": "Kostenermittlung je Arbeitspaket und Projekt: Die opencode-Sitzungsdatenbank wird ausschließlich lesend ausgewertet (Eingabe inklusive gecachter Tokens, Ausgabe inklusive Reasoning), je Arbeitspaket und Agent/Modell in Euro umgerechnet und in CLI, HTTP-API und Dashboard dargestellt. Unbekannte Preise werden mit 0 angesetzt; eigene Preise je Projekt werden in _toolchain/costs.json gespeichert und überschreiben systemische Preise.",
    "dateien": [
     "bin/vibe",
+    "bin/vibe-web.py"
+   ]
+  },
+  {
+   "arbeitspaket": "F13",
+   "datum": "2026-10-30",
+   "grund": "Projektdetail neu strukturiert: feste Kopfleiste mit Projektname, Laufzustand und den Hauptaktionen, Kennzahlenkacheln und vier Register (Arbeit, Ausgabe, Assistent, Einstellungen) mit Tastaturbedienung und ARIA-Verknüpfung. Weniger wichtige Bereiche sind nicht mehr gleichzeitig sichtbar; die Prüfungsausgabe wird im Register Ausgabe gestreamt.",
+   "dateien": [
     "bin/vibe-web.py"
    ]
   }

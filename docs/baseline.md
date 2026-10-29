@@ -247,6 +247,7 @@ headless) geprüft.
 | Typ | Funktion | Status | Beleg |
 | --- | --- | --- | --- |
 | UI | `Tab Projekte` | vorhanden, noch nicht geprüft | `bin/vibe-web.py:237-291`; Projektliste, Detail, Roots, Neuanlage; kein Browsertest |
+| UI | `Projektdetail: Struktur` | vorhanden und automatisiert geprüft | `bin/vibe-web.py` `detail`/`detailTabs`/`showDetailTab`; feste Kopfleiste mit Laufzustand und Hauptaktionen, Kennzahlenkacheln und die Register Arbeit, Ausgabe, Assistent und Einstellungen mit ARIA-Verknüpfung und Tastaturbedienung; `tests/browser/test_project_detail_ui.py` prüft Standardbild, Maus- und Tastaturwechsel, Verknüpfung, sichtbare Hauptaktionen, Prüfungsausgabe und die schmale Ansicht (Chromium, headless); Screenshots `docs/features/F13-uebersicht.png` und `docs/features/F13-einstellungen.png` |
 | UI | `Tab Agenten & Modelle` | vorhanden, noch nicht geprüft | `bin/vibe-web.py:292-358`; Agentenliste, Formular, Roh-Editor, Profile; kein Browsertest |
 | UI | `Tab MCP-Tools` | vorhanden, noch nicht geprüft | `bin/vibe-web.py:360-406`; Liste, Formular, Test, Aktivierung; kein Browsertest |
 | UI | `Tab Umgebung` | vorhanden und automatisiert geprüft | `bin/vibe-web.py:548-568`; der Tab lädt Doctor- und Fritzbox-Karte; `tests/browser/test_fritz_ui.py` öffnet ihn (Chromium, headless, isoliertes Dashboard) |

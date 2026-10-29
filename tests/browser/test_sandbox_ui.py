@@ -129,6 +129,7 @@ class SandboxBrowserTest(unittest.TestCase):
         row = self.page.locator("tr.row", has_text="proj").first
         row.wait_for()
         row.click()
+        self.page.get_by_role("tab", name="Einstellungen", exact=True).click()
         self.page.locator("#sandbox").wait_for()
 
     def sandbox_card(self):

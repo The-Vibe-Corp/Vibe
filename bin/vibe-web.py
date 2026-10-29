@@ -566,6 +566,28 @@ input[type=checkbox]{width:auto}textarea.raw{font:12px/1.4 ui-monospace,monospac
 .toast{display:flex;gap:10px;align-items:flex-start;background:#232830;border:1px solid var(--line);border-left:3px solid var(--ac);border-radius:8px;padding:10px 12px;box-shadow:0 8px 24px #0008}
 .toast .toasttext{white-space:pre-wrap;overflow-wrap:anywhere}.toast .x{padding:2px 8px;margin-left:auto;cursor:pointer;flex:0 0 auto}
 .confirm{display:inline-flex;gap:8px;align-items:center;flex-wrap:wrap;background:#2a2416;border:1px solid var(--warn);border-radius:6px;padding:4px 8px}
+/* Projektdetail: feste Kopfleiste, Register und Kennzahlen (F13) */
+.tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin:0 0 16px;overflow-x:auto;scrollbar-width:thin}
+.tabs [role=tab]{background:none;border:0;border-bottom:2px solid transparent;color:var(--mut);padding:10px 14px;cursor:pointer;font-size:14px;white-space:nowrap}
+.tabs [role=tab]:hover{color:var(--tx)}
+.tabs [role=tab][aria-selected=true]{color:var(--tx);border-bottom-color:var(--ac)}
+.detailbar{position:sticky;top:0;z-index:60;background:var(--bg);border-bottom:1px solid var(--line);margin:0 0 14px;padding:10px 0;align-items:center}
+.dhead{display:flex;gap:10px;align-items:center;flex-wrap:wrap;min-width:0}
+.dhead h2{font-size:18px}
+.dmeta{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:48ch}
+.dactions{margin:0 0 0 auto;flex-wrap:nowrap}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px}
+.tile{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:10px 12px;min-width:0}
+.tile .k{color:var(--mut);font-size:11px;text-transform:uppercase;letter-spacing:.05em}
+.tile .v{font-size:20px;font-weight:600;margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tile .v.small{font-size:13px;font-weight:500}
+.item{padding:4px 0}.item+.item{border-top:1px solid var(--line)}
+.warnbox{border-color:var(--warn)}
+.factrow{display:flex;gap:12px;justify-content:space-between;padding:5px 0;border-top:1px solid var(--line);font-size:13px}
+.factrow:first-of-type{border-top:0}.factrow span:last-child{text-align:right;overflow-wrap:anywhere}
+button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible,[role=tab]:focus-visible{outline:2px solid var(--ac);outline-offset:2px}
+[role=tabpanel][hidden]{display:none}
+@media(max-width:640px){.detailbar{position:static}.dactions{margin-left:0;flex-wrap:wrap}.dmeta{display:none}}
 </style></head><body>
 <header><h1>vibe</h1><nav id="nav"></nav><span id="srv" style="margin-left:auto;display:flex;gap:8px;align-items:center"></span></header><main id="main"></main>
 <script>
@@ -577,7 +599,7 @@ function el(t,a={},...c){const e=document.createElement(t);for(const[k,v]of Obje
  for(const x of c.flat())if(x!==null&&x!==undefined&&x!==false)e.append(x.nodeType?x:document.createTextNode(String(x)));return e}
 const main=document.getElementById('main'),nav=document.getElementById('nav'),srvbox=document.getElementById('srv');let tab='projects',es=null,timer=null,LOG=null;
 function showErr(e){main.replaceChildren(el('div',{class:'card err'},el('b',{class:'bad'},'Fehler: '),String(e&&e.message||e)),el('button',{class:'b',on:{click:()=>setTab('projects')}},'← zur Projektliste'))}
-function setTab(t){exitLogFull();LOG=null;tab=t;if(es){es.close();es=null}clearInterval(timer);[...nav.children].forEach(b=>b.classList.toggle('on',b.dataset.t===t));Promise.resolve(({projects,agents,mcp,env,costs}[t])()).catch(showErr);header()}
+function setTab(t){exitLogFull();LOG=null;DTAB='arbeit';tab=t;if(es){es.close();es=null}clearInterval(timer);[...nav.children].forEach(b=>b.classList.toggle('on',b.dataset.t===t));Promise.resolve(({projects,agents,mcp,env,costs}[t])()).catch(showErr);header()}
 [['projects','Projekte'],['agents','Agenten & Modelle'],['mcp','MCP-Tools'],['env','Umgebung'],['costs','Kosten']].forEach(([k,l])=>nav.append(el('button',{'data-t':k,on:{click:()=>setTab(k)}},l)));
 const toastBox=el('div',{id:'toasts',class:'toasts',role:'status','aria-live':'polite','aria-atomic':'false'});
 document.body.append(toastBox);
@@ -621,45 +643,63 @@ function newForm(){const types=el('select',{});api('/api/types').then(t=>t.forEa
  const nm=el('input',{placeholder:'projektname (a-z, 0-9, -)'}),tp=el('input',{placeholder:'nur Android: Vorlage aus "android create --list"'});
  return el('div',{class:'card',id:'nf'},el('b',{},'Neues Projekt (im Standardordner)'),el('div',{class:'grid'},el('div',{},el('label',{},'Name'),nm),el('div',{},el('label',{},'Typ'),types)),el('label',{},'Android-Vorlage'),tp,
   el('div',{class:'mut'},'Nach dem Anlegen öffnet der Projektassistent die fachlichen Schritte und legt SPEC.md sowie fehlende Grundlagen an.'),
-  el('div',{class:'bar'},el('button',{class:'b p',on:{click:async()=>{const r=await api('/api/new',{name:nm.value,type:types.value,tpl:tp.value});toast(r.message);if(r.ok)detail(nm.value).catch(showErr);else setTab('projects')}}},'Anlegen und Assistent öffnen')))}
-async function detail(name){clearInterval(timer);if(es){es.close();es=null}exitLogFull();LOG=null;window.scrollTo(0,0);
- const d=await api('/api/project?name='+encodeURIComponent(name));const logEl=el('pre',{id:'log'},(d.tail||[]).join('\n')||'(noch keine Ausgabe)');
+  el('div',{class:'bar'},el('button',{class:'b p',on:{click:async()=>{const r=await api('/api/new',{name:nm.value,type:types.value,tpl:tp.value});toast(r.message);if(r.ok){DTAB='assistent';detail(nm.value).catch(showErr)}else setTab('projects')}}},'Anlegen und Assistent öffnen')))}
+let DTAB='arbeit';
+const DTABS=[['arbeit','Arbeit'],['ausgabe','Ausgabe'],['assistent','Assistent'],['einstellungen','Einstellungen']];
+function tile(k,v,tone){return el('div',{class:'tile'},el('div',{class:'k'},k),el('div',{class:'v'+(tone?' '+tone:'')},String(v)))}
+function tabPanel(key,...c){return el('section',{class:'tabpanel',role:'tabpanel',id:'panel-'+key,'data-panel':key,'aria-labelledby':'tab-'+key,hidden:''},...c)}
+function showDetailTab(key,panels,btns,focus){DTAB=key;
+ DTABS.forEach(([k])=>{const on=k===key;btns[k].setAttribute('aria-selected',on?'true':'false');btns[k].tabIndex=on?0:-1;panels[k].hidden=!on});
+ if(key!=='ausgabe')exitLogFull();if(key==='ausgabe'&&LOG)LOG.fit();if(focus&&btns[key])btns[key].focus()}
+function detailTabs(panels){const btns={},list=el('div',{class:'tabs',role:'tablist','aria-label':'Projektbereiche'});
+ DTABS.forEach(([k,label])=>{const b=el('button',{type:'button',role:'tab',id:'tab-'+k,'aria-controls':'panel-'+k},label);
+  b.addEventListener('click',()=>showDetailTab(k,panels,btns));btns[k]=b;list.append(b)});
+ list.addEventListener('keydown',e=>{const keys=DTABS.map(d=>d[0]);const i=Math.max(0,keys.indexOf(DTAB));let n=null;
+  if(e.key==='ArrowRight')n=(i+1)%keys.length;else if(e.key==='ArrowLeft')n=(i-1+keys.length)%keys.length;
+  else if(e.key==='Home')n=0;else if(e.key==='End')n=keys.length-1;else return;
+  e.preventDefault();showDetailTab(keys[n],panels,btns,true)});
+ showDetailTab(DTAB in panels?DTAB:'arbeit',panels,btns);
+ return {list,btns}}
+async function detail(name){
+ clearInterval(timer);if(es){es.close();es=null}exitLogFull();LOG=null;window.scrollTo(0,0);
+ const d=await api('/api/project?name='+encodeURIComponent(name));
  const runPill=el('span',{id:'runstate',class:'pill '+(d.running?'run':''),title:d.running?'Der Paket-Läufer ist aktiv.':'Der Agentenlauf ist beendet.'},d.running?'läuft':'gestoppt');
  const refreshRun=async()=>{const s=await api('/api/run-state?name='+encodeURIComponent(name));
   runPill.textContent=s.running?'läuft':'gestoppt';runPill.className='pill '+(s.running?'run':'');
   runPill.title=s.running?'Der Paket-Läufer ist aktiv.':'Der Agentenlauf ist beendet.'};
- const items=el('div',{},d.items.length?d.items.map(i=>el('div',{},el('span',{class:i.state==='BLOCKIERT'?'bad':'warn'},i.state+' '),el('b',{},i.id+' '),i.title)):el('span',{class:'ok'},'Alles abgehakt'));
- const f={t:el('input',{}),b:el('textarea',{rows:3,placeholder:'Was soll geändert oder ergänzt werden?'})};
  const act=(p,b)=>async()=>{const r=await api(p,b);toast(r.message);detail(name).catch(showErr)};
+ let openTab=()=>{};
+ const items=el('div',{class:'itemlist'},d.items.length?d.items.map(i=>el('div',{class:'item'},el('span',{class:'pill '+(i.state==='BLOCKIERT'?'bad':'warn')},i.state),el('span',{},el('b',{},i.id+' '),i.title))):el('span',{class:'ok'},'Alles abgehakt'));
+ const itemsCard=el('div',{class:'card'},el('div',{class:'bar'},el('b',{},'Offene Arbeitspakete ('+d.items.length+')')),items);
+ const fact=(k,v)=>el('div',{class:'factrow'},el('span',{class:'mut'},k),el('span',{},String(v)));
+ const factsCard=el('div',{class:'card'},el('b',{},'Projekt'),fact('Pfad',d.path),fact('Typ',d.type),fact('Branch',d.branch),fact('Letzter Commit',d.last||'—'),fact('Vorbereitet',d.init?'ja':'nein'));
+ const startVerify=mode=>async()=>{openTab('ausgabe');const r=await api('/api/verify',{name,mode});toast(r.message);if(r.ok)stream('verify')};
+ const checksCard=el('div',{class:'card'},el('b',{},'Prüfungen'),
+  el('div',{class:'mut'},'quick prüft Struktur und Sicherheit, full zusätzlich Unit- und Browsertests. Die Ausgabe erscheint im Bereich „Ausgabe“.'),
+  el('div',{class:'bar'},el('button',{class:'b',type:'button',on:{click:startVerify('quick')}},'Prüfung quick'),
+   el('button',{class:'b',type:'button',on:{click:startVerify('full')}},'Prüfung full'),
+   el('a',{href:'http://127.0.0.1:4096',target:'_blank'},'opencode-Weboberfläche')));
  const tsel=el('select',{});api('/api/types').then(t=>t.forEach(x=>{const o=el('option',{},x);if(x===d.type)o.selected=true;tsel.append(o)}));
- const initCard=d.init?null:el('div',{class:'card'},el('b',{class:'warn'},'Noch nicht für vibe vorbereitet'),el('div',{class:'mut'},'Ergänzt fehlende Dateien (FEEDBACK.md, TICKETS.md, AGENTS.md, .vibe/project.env). Vorhandenes wird nie überschrieben, es wird nichts committet.'),
-   el('div',{class:'bar'},tsel,el('button',{class:'b p',on:{click:act('/api/init',{name,type:tsel.value})}},'Für vibe vorbereiten')));
- let logPaused=false,logBuf='';
- const pauseBtn=el('button',{class:'b'},'Pause'),fullBtn=el('button',{class:'b'},'Vergrößern');
- const logCard=el('div',{class:'card logcard'});
- const appendLog=t=>{const near=logEl.scrollHeight-logEl.scrollTop-logEl.clientHeight<60;logEl.textContent+=t;if(logEl.textContent.length>80000)logEl.textContent=logEl.textContent.slice(-60000);if(near)logEl.scrollTop=logEl.scrollHeight};
- const fitLog=()=>{if(logCard.classList.contains('full'))return;const h=Math.max(240,window.innerHeight-logEl.getBoundingClientRect().top-18);logEl.style.height=h+'px'};
- pauseBtn.addEventListener('click',()=>{logPaused=!logPaused;pauseBtn.textContent=logPaused?'Fortsetzen':'Pause';pauseBtn.classList.toggle('p',logPaused);if(!logPaused&&logBuf){appendLog(logBuf);logBuf='';logEl.scrollTop=logEl.scrollHeight}});
- fullBtn.addEventListener('click',()=>setLogFull(!logCard.classList.contains('full')));
- LOG={card:logCard,pre:logEl,button:fullBtn,fit:fitLog};
- main.replaceChildren(...[el('div',{class:'bar'},el('button',{class:'b',on:{click:()=>setTab('projects')}},'← zurück'),el('h2',{style:'margin:0'},name),runPill,el('span',{class:'mut'},d.type+' · '+d.branch+' · '+d.dirty+' Änderungen · '+d.path)),
-  initCard,
-  guideCard(name),
-  pauseCard(d,name),
-  el('div',{class:'bar'},el('button',{class:'b p',on:{click:act('/api/run',{name})}},'Agentenlauf starten'),el('button',{class:'b',on:{click:act('/api/stop',{name})}},'Stoppen'),
-   el('button',{class:'b',on:{click:()=>{act('/api/verify',{name,mode:'quick'})();stream('verify')}}},'Prüfung quick'),el('button',{class:'b',on:{click:()=>{act('/api/verify',{name,mode:'full'})();stream('verify')}}},'Prüfung full'),
-   el('button',{class:'b',on:{click:()=>stream('run')}},'Lauf-Log'),el('a',{href:'http://127.0.0.1:4096',target:'_blank'},'opencode-Weboberfläche')),
-  el('div',{class:'grid'},el('div',{},el('div',{class:'card'},el('b',{},'Offene Arbeitspakete ('+d.items.length+')'),items),
-   feedbackCard(d,name),
-   rightsCard(d,name),
-   sandboxCard(d,name),
-   el('div',{class:'card'},el('b',{},'Feedback eintragen'),el('label',{},'Titel'),f.t,el('label',{},'Beschreibung'),f.b,
-    el('div',{class:'bar'},el('button',{class:'b p',on:{click:async()=>{const r=await api('/api/feedback',{name,title:f.t.value,description:f.b.value});toast(r.message);detail(name).catch(showErr)}}},'Eintragen')))),
-   logCard)].filter(Boolean));
- logCard.append(el('div',{class:'bar'},el('b',{},'Live-Ausgabe'),pauseBtn,fullBtn),logEl);
- fitLog();
- function stream(kind){if(es)es.close();logEl.textContent='';logPaused=false;logBuf='';pauseBtn.textContent='Pause';pauseBtn.classList.remove('p');es=new EventSource('/api/stream?name='+encodeURIComponent(name)+'&kind='+kind+'&t='+encodeURIComponent(T));
-  es.onmessage=ev=>{const chunk=JSON.parse(ev.data).join('\n')+'\n';if(logPaused){logBuf=(logBuf+chunk).slice(-80000);return}appendLog(chunk)}}
+ const initCard=d.init?null:el('div',{class:'card warnbox'},el('b',{class:'warn'},'Noch nicht für vibe vorbereitet'),el('div',{class:'mut'},'Ergänzt fehlende Dateien (FEEDBACK.md, TICKETS.md, AGENTS.md, .vibe/project.env). Vorhandenes wird nie überschrieben, es wird nichts committet.'),
+  el('div',{class:'bar'},tsel,el('button',{class:'b p',type:'button',on:{click:act('/api/init',{name,type:tsel.value})}},'Für vibe vorbereiten')));
+ const head=el('div',{class:'bar detailbar'},
+  el('button',{class:'b',type:'button',on:{click:()=>setTab('projects')}},'← zurück'),
+  el('div',{class:'dhead'},el('h2',{},name),runPill,el('span',{class:'mut dmeta',title:d.path},d.type+' · '+d.branch+' · '+d.dirty+' Änderungen · '+d.path)),
+  el('div',{class:'bar dactions'},el('button',{class:'b p',type:'button',on:{click:act('/api/run',{name})}},'Agentenlauf starten'),el('button',{class:'b',type:'button',on:{click:act('/api/stop',{name})}},'Stoppen')));
+ const tiles=el('div',{class:'tiles'},tile('Offene Arbeitspakete',d.items.length,d.items.length?'warn':'ok'),tile('Änderungen',d.dirty,d.dirty?'warn':'ok'),tile('Branch',d.branch,'small'),tile('Letzter Commit',d.last||'—','small'));
+ const L=logView(d,()=>stream('run'));
+ const panels={arbeit:tabPanel('arbeit',tiles,el('div',{class:'grid'},
+   el('div',{},itemsCard,feedbackCard(d,name),feedbackFormCard(d,name)),
+   el('div',{},pauseCard(d,name),checksCard,factsCard))),
+  ausgabe:tabPanel('ausgabe',L.card),
+  assistent:tabPanel('assistent',guideCard(name)),
+  einstellungen:tabPanel('einstellungen',el('div',{class:'grid'},rightsCard(d,name),sandboxCard(d,name)))};
+ const tabs=detailTabs(panels);
+ openTab=k=>showDetailTab(k,panels,tabs.btns);
+ main.replaceChildren(...[head,initCard,tabs.list,panels.arbeit,panels.ausgabe,panels.assistent,panels.einstellungen].filter(Boolean));
+ L.fit();
+ function stream(kind){if(es)es.close();L.clear();es=new EventSource('/api/stream?name='+encodeURIComponent(name)+'&kind='+kind+'&t='+encodeURIComponent(T));
+  es.onmessage=ev=>L.feed(JSON.parse(ev.data).join('\n')+'\n')}
  stream('run');
  timer=setInterval(()=>{refreshRun().catch(()=>{})},3000)}
 function pauseCard(d,name){
@@ -723,6 +763,24 @@ function feedbackCard(d,name){const list=el('div',{});const cls=s=>s==='erledigt
  toggle.addEventListener('click',()=>{showDone=!showDone;draw()});
  draw();
  return el('div',{class:'card',id:'feedback'},el('div',{class:'bar'},el('b',{},'Feedback ('+d.feedback.length+')'),toggle),list)}
+function feedbackFormCard(d,name){
+ const f={t:el('input',{}),b:el('textarea',{rows:3,placeholder:'Was soll geändert oder ergänzt werden?'})};
+ return el('div',{class:'card',id:'feedback-new'},el('b',{},'Feedback eintragen'),el('label',{},'Titel'),f.t,el('label',{},'Beschreibung'),f.b,
+  el('div',{class:'bar'},el('button',{class:'b p',type:'button',on:{click:async()=>{const r=await api('/api/feedback',{name,title:f.t.value,description:f.b.value});toast(r.message);detail(name).catch(showErr)}}},'Eintragen')))}
+function logView(d,onRun){
+ const pre=el('pre',{id:'log'},(d.tail||[]).join('\n')||'(noch keine Ausgabe)');
+ let logPaused=false,logBuf='';
+ function append(text){const near=pre.scrollHeight-pre.scrollTop-pre.clientHeight<60;pre.textContent+=text;if(pre.textContent.length>80000)pre.textContent=pre.textContent.slice(-60000);if(near)pre.scrollTop=pre.scrollHeight}
+ const pauseBtn=el('button',{class:'b',type:'button'},'Pause'),fullBtn=el('button',{class:'b',type:'button'},'Vergrößern');
+ const runBtn=el('button',{class:'b',type:'button',title:'Verbindet die Ausgabe wieder mit dem Agentenlauf',on:{click:onRun}},'Lauf-Log');
+ const card=el('div',{class:'card logcard'});
+ const fit=()=>{if(card.classList.contains('full'))return;const h=Math.max(240,window.innerHeight-pre.getBoundingClientRect().top-18);pre.style.height=h+'px'};
+ pauseBtn.addEventListener('click',()=>{logPaused=!logPaused;pauseBtn.textContent=logPaused?'Fortsetzen':'Pause';pauseBtn.classList.toggle('p',logPaused);
+  if(!logPaused&&logBuf){append(logBuf);logBuf='';pre.scrollTop=pre.scrollHeight}});
+ fullBtn.addEventListener('click',()=>setLogFull(!card.classList.contains('full')));
+ card.append(el('div',{class:'bar'},el('b',{},'Live-Ausgabe'),el('span',{class:'mut'},'Lauf-Ausgabe des aktuellen Projekts'),runBtn,pauseBtn,fullBtn),pre);
+ LOG={card,pre,button:fullBtn,fit};
+ return {card,fit,clear:()=>{pre.textContent=''},feed:text=>{if(logPaused){logBuf=(logBuf+text).slice(-80000);return}append(text)}}}
 function rightsCard(d,name){const inp=el('input',{placeholder:'/absoluter/pfad','aria-label':'Schreibverzeichnis'});
  const reset=el('button',{class:'b',on:{click:()=>askInline(reset,'Standardverzeichnisse wiederherstellen?','Ja, zurücksetzen',async()=>{const r=await api('/api/rights',{name,action:'reset'});toast(r.message);if(r.ok)detail(name).catch(showErr)})}},'Standard wiederherstellen');
  const rows=el('div',{},...(d.write_dirs.length?d.write_dirs.map(p=>el('div',{class:'bar'},el('span',{class:'mut'},p),

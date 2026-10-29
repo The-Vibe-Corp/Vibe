@@ -128,6 +128,10 @@ class FeedbackBrowserTest(unittest.TestCase):
         row.wait_for()
         row.click()
         self.page.get_by_text("Feedback eintragen").wait_for()
+        self.page.get_by_role("tab", name="Arbeit", exact=True).wait_for()
+
+    def open_log(self):
+        self.page.get_by_role("tab", name="Ausgabe", exact=True).click()
         self.page.locator("#log").wait_for()
 
     def test_edit_and_delete_existing_feedback_entries(self):
@@ -162,6 +166,7 @@ class FeedbackBrowserTest(unittest.TestCase):
 
     def test_live_output_can_be_paused_and_resumed(self):
         self.open_detail()
+        self.open_log()
         log = self.page.locator("#log")
         self.wait_until(
             lambda: "Startzeile" in log.inner_text(),
@@ -194,6 +199,7 @@ class FeedbackBrowserTest(unittest.TestCase):
 
     def test_live_output_uses_available_height_and_can_be_enlarged(self):
         self.open_detail()
+        self.open_log()
         log = self.page.locator("#log")
         self.page.wait_for_timeout(300)
         viewport = self.page.viewport_size

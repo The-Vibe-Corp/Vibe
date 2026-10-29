@@ -53,6 +53,10 @@ class RunAutostopBrowserTest(unittest.TestCase):
         cls.log_dir = cls.root / "_logs"
         cls.port = free_port()
         env = os.environ.copy()
+        # Ein geerbtes TMUX zeigt sonst auf den Server der Sitzung, in der der
+        # Test gestartet wurde; kill-server würde fremde Läufe beenden.
+        env.pop("TMUX", None)
+        env.pop("TMUX_PANE", None)
         env.update(
             {
                 "VIBE": str(cls.root),
