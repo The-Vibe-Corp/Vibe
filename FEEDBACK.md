@@ -73,7 +73,10 @@ Regeln (werden maschinell geprüft):
   Review: docs/reviews/F8-review-1.md (PASS, 1 Minor)
   Doku: docs/features/F8.md; Trilium `6U4QBUkWcwg1`
 
-- [ ] F9 Guide für neue Projekte
+- [x] F9 Guide für neue Projekte
   Beschreibung: Ich benötige einen Assistenten für das fachliche aufsetzen neuer projekte. Er soll mich dabei führen und alle notwendigen fachlichen dateien erstellen. es soll die möglichkeit geben dateien bzw informationen mit Agenten unterstüzung gezielt zu verbessern oder zu erstellen, wenn input fehlt.
 
   Ziel ist ein sauberes fachliches projekt set up.
+  Commit: b51fa4e; Test: ProjectGuideModelTest.test_apply_creates_spec_and_all_missing_fachliche_files, ProjectGuideAgentTest.test_headings_inside_a_fenced_block_stay_unchanged, ProjectGuideApiTest.test_api_saves_answers_and_creates_fachliche_files, ProjectGuideBrowserTest.test_guide_lists_steps_and_writes_spec_and_missing_files (tests/unit/test_project_guide.py, 36 Tests; tests/browser/test_project_guide_ui.py, 4 Tests; gesamt 353 Unit-Tests, 18 Browsertests)
+  Review: docs/reviews/F9-review-7.md (PASS, 2 Minor)
+  Doku: docs/features/F9.md; Trilium `WIk1kdJ8vgom`
