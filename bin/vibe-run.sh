@@ -105,5 +105,5 @@ fi
 echo "=== Abschlussprüfung ===" | tee -a "$LOG"
 VOUT=$(final_verify 2>&1); VRC=$?
 echo "$VOUT" | tee -a "$LOG"
-if [ $VRC = 0 ]; then printf '\a'; echo "FERTIG: Abnahme bestanden. Jetzt selbst auf dem Zielgerät prüfen."; exit 0; fi
-echo "Noch Lücken (oder Durchgangsgrenze erreicht). Blockierte/übersprungene Punkte in FEEDBACK.md prüfen."; exit 1
+if [ $VRC = 0 ]; then printf '\a'; echo "FERTIG: Abnahme bestanden. Jetzt selbst auf dem Zielgerät prüfen." | tee -a "$LOG"; exit 0; fi
+echo "Noch Lücken (oder Durchgangsgrenze erreicht). Blockierte/übersprungene Punkte in FEEDBACK.md prüfen." | tee -a "$LOG"; exit 1

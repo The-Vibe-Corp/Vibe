@@ -293,6 +293,9 @@ class H(BaseHTTPRequestHandler):
             return self._error(403, "unauthorized", "Token fehlt oder falsch")
         try:
             if u.path == "/api/projects": return self._send(200, [project_row(n) for n in vibe.projects()])
+            if u.path == "/api/run-state":
+                n = known(q["name"][0])
+                return self._send(200, {"running": vibe.tmux_has(n), "pause_after": vibe.pause_after_active(n)})
             if u.path == "/api/project": return self._send(200, project_detail(known(q["name"][0])))
             if u.path == "/api/roots": return self._send(200, roots_info())
             if u.path == "/api/agents": return self._send(200, agents_info())
@@ -588,6 +591,10 @@ function newForm(){const types=el('select',{});api('/api/types').then(t=>t.forEa
   el('div',{class:'bar'},el('button',{class:'b p',on:{click:async()=>{const r=await api('/api/new',{name:nm.value,type:types.value,tpl:tp.value});toast(r.message);if(r.ok)detail(nm.value).catch(showErr);else setTab('projects')}}},'Anlegen und Assistent öffnen')))}
 async function detail(name){clearInterval(timer);if(es){es.close();es=null}exitLogFull();LOG=null;window.scrollTo(0,0);
  const d=await api('/api/project?name='+encodeURIComponent(name));const logEl=el('pre',{id:'log'},(d.tail||[]).join('\n')||'(noch keine Ausgabe)');
+ const runPill=el('span',{id:'runstate',class:'pill '+(d.running?'run':''),title:d.running?'Der Paket-Läufer ist aktiv.':'Der Agentenlauf ist beendet.'},d.running?'läuft':'gestoppt');
+ const refreshRun=async()=>{const s=await api('/api/run-state?name='+encodeURIComponent(name));
+  runPill.textContent=s.running?'läuft':'gestoppt';runPill.className='pill '+(s.running?'run':'');
+  runPill.title=s.running?'Der Paket-Läufer ist aktiv.':'Der Agentenlauf ist beendet.'};
  const items=el('div',{},d.items.length?d.items.map(i=>el('div',{},el('span',{class:i.state==='BLOCKIERT'?'bad':'warn'},i.state+' '),el('b',{},i.id+' '),i.title)):el('span',{class:'ok'},'Alles abgehakt'));
  const f={t:el('input',{}),b:el('textarea',{rows:3,placeholder:'Was soll geändert oder ergänzt werden?'})};
  const act=(p,b)=>async()=>{const r=await api(p,b);toast(r.message);detail(name).catch(showErr)};
@@ -602,7 +609,7 @@ async function detail(name){clearInterval(timer);if(es){es.close();es=null}exitL
  pauseBtn.addEventListener('click',()=>{logPaused=!logPaused;pauseBtn.textContent=logPaused?'Fortsetzen':'Pause';pauseBtn.classList.toggle('p',logPaused);if(!logPaused&&logBuf){appendLog(logBuf);logBuf='';logEl.scrollTop=logEl.scrollHeight}});
  fullBtn.addEventListener('click',()=>setLogFull(!logCard.classList.contains('full')));
  LOG={card:logCard,pre:logEl,button:fullBtn,fit:fitLog};
- main.replaceChildren(...[el('div',{class:'bar'},el('button',{class:'b',on:{click:()=>setTab('projects')}},'← zurück'),el('h2',{style:'margin:0'},name),el('span',{class:'pill '+(d.running?'run':'')},d.running?'läuft':'gestoppt'),el('span',{class:'mut'},d.type+' · '+d.branch+' · '+d.dirty+' Änderungen · '+d.path)),
+ main.replaceChildren(...[el('div',{class:'bar'},el('button',{class:'b',on:{click:()=>setTab('projects')}},'← zurück'),el('h2',{style:'margin:0'},name),runPill,el('span',{class:'mut'},d.type+' · '+d.branch+' · '+d.dirty+' Änderungen · '+d.path)),
   initCard,
   guideCard(name),
   pauseCard(d,name),
@@ -620,7 +627,8 @@ async function detail(name){clearInterval(timer);if(es){es.close();es=null}exitL
  fitLog();
  function stream(kind){if(es)es.close();logEl.textContent='';logPaused=false;logBuf='';pauseBtn.textContent='Pause';pauseBtn.classList.remove('p');es=new EventSource('/api/stream?name='+encodeURIComponent(name)+'&kind='+kind+'&t='+encodeURIComponent(T));
   es.onmessage=ev=>{const chunk=JSON.parse(ev.data).join('\n')+'\n';if(logPaused){logBuf=(logBuf+chunk).slice(-80000);return}appendLog(chunk)}}
- stream('run')}
+ stream('run');
+ timer=setInterval(()=>{refreshRun().catch(()=>{})},3000)}
 function pauseCard(d,name){
  const active=!!d.pause_after;
  const btn=el('button',{class:'b'+(active?' p':''),on:{click:async()=>{const r=await api('/api/pause',{name,action:active?'off':'on'});toast(r.message);if(r.ok)detail(name).catch(showErr)}}},active?'Pause aufheben':'Nach aktuellem Paket anhalten');

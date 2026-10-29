@@ -761,8 +761,9 @@ def cmd_run(name, agent=None):
     os.makedirs(LOGS, exist_ok=True)
     env = penv(name); agent = require_agent(agent or env.get("AGENT", "coding-agent_deepseek"))
     # Pfad und Agent bleiben Argumente; das Skript selbst ist konstant.
-    inner = ('source ~/.bashrc; export VIBE_LOGNAME="$1"; bash "$2" "$3" "$4"; '
-             'echo; echo "[Lauf beendet] Enter zum Schließen"; read')
+    # Kein abschließendes "read": Der Agentenlauf endet mit dem Läufer, damit
+    # vibe ihn nicht weiter als aktiv meldet. Die Ausgabe bleibt im Log.
+    inner = ('source ~/.bashrc; export VIBE_LOGNAME="$1"; bash "$2" "$3" "$4"')
     rc, out = run(["tmux", "new-session", "-d", "-s", sess(name), "-c", p,
                    "bash", "-lc", inner, name, safe(name), os.path.join(BIN, "vibe-run.sh"), p, agent])
     print(col("g", f"Gestartet: tmux-Sitzung {sess(name)}, Agent {agent}") if rc == 0 else col("r", out))

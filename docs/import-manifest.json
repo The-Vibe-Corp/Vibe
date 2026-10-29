@@ -19,18 +19,18 @@
   },
   {
    "path": "bin/vibe",
-   "sha256": "6edff59a8ca16d1c15227bc335c2de27161a2dd1940550e31f669c99e25b28a2",
-   "bytes": 71572
+   "sha256": "dffcccdbd07b8b205b9483fb11a34dd779cb4c42486d5b1fc0a8aefcd9b47825",
+   "bytes": 71653
   },
   {
    "path": "bin/vibe-run.sh",
-   "sha256": "b4207f2ae0df047ffc78fe5067ce7f14cc8ea75e40956c3878407e5efc2725e0",
-   "bytes": 5788
+   "sha256": "b3148abef2e1fe090755ca29e6858d969d0e4c64caf7eaa0b1ffd3735a0ae440",
+   "bytes": 5820
   },
   {
    "path": "bin/vibe-web.py",
-   "sha256": "3fb7d21198cf5f2c28a485d4480f61fbccc5157b901540eb98bc536cbe38a6fe",
-   "bytes": 74996
+   "sha256": "976e47675935f08d7ec430c65c9a5748cdc7449ebc5006eceb479c640062830b",
+   "bytes": 75653
   },
   {
    "path": "bin/vibe_guide.py",
@@ -268,6 +268,16 @@
     "bin/vibe-web.py",
     "bin/vibe_mcp.py",
     "bin/vibe_storage.py"
+   ]
+  },
+  {
+   "arbeitspaket": "F10",
+   "datum": "2026-10-29",
+   "grund": "Agentenlauf endet automatisch: Der Läufer beendet die tmux-Sitzung mit dem letzten Arbeitspaket und der Abschlussprüfung, statt auf Eingabe zu warten. Dadurch meldet vibe keinen aktiven Lauf mehr, obwohl der Agent fertig ist. Ergebnis und Fehlerhinweis stehen zusätzlich im Lauf-Log. Das Projektdetail fragt den Laufzustand regelmäßig ab und wechselt ohne Neuladen auf „gestoppt“.",
+   "dateien": [
+    "bin/vibe",
+    "bin/vibe-run.sh",
+    "bin/vibe-web.py"
    ]
   }
  ]
