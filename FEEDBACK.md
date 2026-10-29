@@ -86,3 +86,9 @@ Regeln (werden maschinell geprüft):
   Commit: 0fcd908; Test: RunnerSessionEndTest.test_session_ends_when_the_runner_has_finished, RunnerSessionEndTest.test_session_ends_even_when_the_run_pauses, RunAutostopBrowserTest.test_detail_switches_to_stopped_when_the_run_ends (tests/unit/test_run_autostop.py, 2 Tests; tests/browser/test_run_autostop_ui.py, 1 Test; gesamt 355 Unit-Tests, 19 Browsertests)
   Review: docs/reviews/F10-review-1.md (PASS, 2 Minor)
   Doku: docs/features/F10.md; Trilium `srn5HaKQXjsu`
+
+- [x] F11 Feature: weniger browser modale dialoge
+  Beschreibung: modale dialoge nerven - es muss eine bessere lösung geben
+  Commit: 205c1a3; Test: NonModalPageTest.test_page_offers_live_status_messages_and_inline_confirmation, NonModalPageTest.test_page_calls_no_blocking_browser_dialogs, NonModalBrowserTest.test_action_feedback_is_a_non_blocking_status_message, NonModalBrowserTest.test_delete_asks_inline_and_cancel_keeps_the_entry, NonModalBrowserTest.test_shutdown_asks_inline_and_cancel_keeps_the_dashboard_running (tests/unit/test_web_ui_nonmodal.py, 2 Tests; tests/browser/test_nonmodal_ui.py, 3 Tests)
+  Review: docs/reviews/F11-review-1.md (PASS, 3 Minor)
+  Doku: docs/features/F11.md; Trilium `0A6oTTAbOeGH`
