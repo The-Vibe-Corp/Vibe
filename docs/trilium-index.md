@@ -19,3 +19,4 @@ Zuordnung der Projekt-Dokumentation zu den Notizen in Trilium (Stand 2026-10-26)
 | vibe | Features | F6 Universeller Setup-Prozess | `sHzUT9bBs8NI` |
 | vibe | Features | F7 Sandbox für Shell und Build-Werkzeuge | `ZzVeElHG2ifr` |
 | vibe | Features | F8 Abgeschlossene Feedback-Punkte ausblenden und schützen | `6U4QBUkWcwg1` |
+| vibe | Features | F9 Projektassistent für neue Projekte | `WIk1kdJ8vgom` |

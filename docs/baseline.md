@@ -219,6 +219,8 @@ eigenen Test.
 | API | `POST /api/verify` | vorhanden, noch nicht geprüft | `do_POST`; Transportprüfung zentral in V-004, Fachfunktion nicht ausgeführt |
 | API | `POST /api/init` | vorhanden, noch nicht geprüft | `do_POST`; Transportprüfung zentral in V-004, Fachfunktion nicht ausgeführt |
 | API | `POST /api/feedback` | vorhanden, noch nicht geprüft | `do_POST`; Transportprüfung zentral in V-004, ID-Vergabe nicht gegen Parallelzugriff gesichert (V-009) |
+| API | `GET /api/guide` | vorhanden und automatisiert geprüft | `do_GET`; `tests/unit/test_project_guide.py` prüft Schritte, Dateien, Entwürfe, Agentenzustand und die Tokenpflicht |
+| API | `POST /api/guide` | vorhanden und automatisiert geprüft | `do_POST`; `tests/unit/test_project_guide.py` prüft Speichern mit Dateianlage, Ablehnung unbekannter Schritte ohne Schreiben sowie Übernehmen und Verwerfen von Entwürfen |
 | API | `POST /api/rights` | vorhanden und automatisiert geprüft | `do_POST`; `tests/unit/test_project_write_dirs.py` prüft Hinzufügen, Entfernen, Zurücksetzen, Anwenden und die Tokenpflicht |
 | API | `POST /api/sandbox` | vorhanden und automatisiert geprüft | `do_POST`; `tests/unit/test_sandbox.py` prüft Ein-/Ausschalten, Werkzeuge, Prüfung und die Tokenpflicht gegen ein isoliertes Dashboard |
 | API | `POST /api/new` | vorhanden, noch nicht geprüft | `do_POST`; Transportprüfung zentral in V-004, Fachfunktion nicht ausgeführt |
@@ -254,6 +256,7 @@ headless) geprüft.
 | UI | `Agenteneditor: Schreibrechts-Hinweis` | vorhanden und automatisiert geprüft | `bin/vibe-web.py:434-444`; Hinweis und Vorlage folgen dem gewählten Bereich (global/projekt); `tests/browser/test_write_dirs_ui.py` (Chromium, headless) |
 | UI | `Projektdetail: Arbeitspaket-Pause` | vorhanden und automatisiert geprüft | `bin/vibe-web.py:356,371-375`; `tests/browser/test_pause_after_package_ui.py` fordert die Pause an, prüft den Zustand und hebt sie wieder auf (Chromium, headless); Screenshot `docs/features/F4-pause.png` |
 | UI | `Projektliste: Pause-Markierung` | vorhanden und automatisiert geprüft | `bin/vibe-web.py:330`; `tests/browser/test_pause_after_package_ui.py` prüft die Markierung „Pause“ in der Projektzeile (Chromium, headless) |
+| UI | `Projektdetail: Projektassistent` | vorhanden und automatisiert geprüft | `bin/vibe-web.py` `guideCard`/`drawGuide`; `tests/browser/test_project_guide_ui.py` listet die fachlichen Schritte, speichert Antworten, legt SPEC.md und fehlende Grundlagen an, lässt gefüllte Abschnitte unverändert und übernimmt einen Agenten-Entwurf erst auf Knopfdruck (Chromium, headless) |
 
 ## 8. Funktionsbereiche aus SPEC.md
 

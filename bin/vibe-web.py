@@ -13,6 +13,7 @@ _loader = importlib.machinery.SourceFileLoader("vibe", os.path.join(HERE, "vibe"
 _spec = importlib.util.spec_from_loader("vibe", _loader)
 vibe = importlib.util.module_from_spec(_spec); sys.modules["vibe"] = vibe; _loader.exec_module(vibe)
 import vibe_mcp
+import vibe_guide
 
 PORT = int(os.environ.get("VIBE_UI_PORT", vibe.UI_PORT))
 MAX_BODY = 1024 * 1024
@@ -146,6 +147,16 @@ def project_detail(n):
         d["sandbox"] = {"enabled": False, "tools": [], "write_dirs": [], "tool_caches": [],
                         "missing_tools": [], "bwrap": "", "state_dir": "", "error": str(e)}
     return d
+
+def guide_info(n):
+    """Zustand des Projektassistenten inklusive laufendem Agentenauftrag."""
+    path = vibe.ppath(n)
+    data = vibe_guide.state(path, name=n)
+    status = vibe_guide.agent_status(path, name=n, log_dir=vibe.LOGS)
+    data["agent"] = {"session": status["session"], "running": status["running"],
+                     "agent": status["agent"], "log": status["log"],
+                     "log_tail": status["log_tail"]}
+    return data
 
 def roots_info():
     pm = vibe.project_map(); out = []
@@ -292,6 +303,7 @@ class H(BaseHTTPRequestHandler):
             if u.path == "/api/mcp_entry":
                 scope = known_scope(q["scope"][0]); return self._send(200, vibe_mcp.get_entry(scope, q["name"][0]))
             if u.path == "/api/types": return self._send(200, vibe.types())
+            if u.path == "/api/guide": return self._send(200, guide_info(known(q["name"][0])))
             if u.path == "/api/doctor": return self._send(200, [{"label": a, "ok": b, "hint": c} for a, b, c in vibe.doctor_checks()])
             if u.path == "/api/fritz": return self._send(200, vibe.fritz_status())
             if u.path == "/api/server": h = vibe.server_health(); return self._send(200, {"up": bool(h), "url": vibe.OC_URL, "info": h})
@@ -313,7 +325,7 @@ class H(BaseHTTPRequestHandler):
             return self._error(e.status, e.code, e.message)
         try:
             name = body.get("name", "")
-            if u.path in ("/api/run", "/api/stop", "/api/verify", "/api/feedback", "/api/init", "/api/rights", "/api/pause", "/api/sandbox"): known(name)
+            if u.path in ("/api/run", "/api/stop", "/api/verify", "/api/feedback", "/api/init", "/api/rights", "/api/pause", "/api/sandbox", "/api/guide"): known(name)
             extra = {}
             if u.path == "/api/run": ok, msg = call(vibe.cmd_run, name, body.get("agent") or None)
             elif u.path == "/api/stop": ok, msg = call(vibe.cmd_stop, name)
@@ -411,6 +423,25 @@ class H(BaseHTTPRequestHandler):
                 except ValueError as e:
                     ok, msg = False, str(e)
                 extra["fritz"] = vibe.fritz_status()
+            elif u.path == "/api/guide":
+                act = body.get("action") or "save"
+                path = vibe.ppath(name)
+                try:
+                    if act == "save":
+                        result = vibe_guide.apply(path, body.get("answers") or {}, replace=body.get("replace") or (), name=name, templates_dir=vibe.TPL)
+                        ok, msg = True, result["message"]; extra["guide"] = result
+                    elif act == "agent":
+                        started = vibe_guide.start_agent(path, body.get("step", ""), name=name, note=body.get("note", ""), log_dir=vibe.LOGS)
+                        ok, msg = True, "Agentenauftrag gestartet. Der Entwurf erscheint nach dem Lauf unter .vibe/guide/."; extra["agent"] = started
+                    elif act == "draft_apply":
+                        result = vibe_guide.draft_apply(path, body.get("step", ""), name=name, templates_dir=vibe.TPL)
+                        ok, msg = True, "Entwurf übernommen. " + result["message"]; extra["guide"] = result
+                    elif act == "draft_discard":
+                        vibe_guide.draft_discard(path, body.get("step", ""))
+                        ok, msg = True, "Entwurf verworfen."
+                    else: ok, msg = False, "Unbekannte Aktion"
+                except ValueError as e:
+                    ok, msg = False, str(e)
             elif u.path == "/api/agent_template":
                 scope = known_scope(body.get("scope", "global"))
                 dirs = vibe.write_dirs(scope) if scope != "global" else None
@@ -553,7 +584,8 @@ async function projects(){
 function newForm(){const types=el('select',{});api('/api/types').then(t=>t.forEach(x=>types.append(el('option',{},x))));
  const nm=el('input',{placeholder:'projektname (a-z, 0-9, -)'}),tp=el('input',{placeholder:'nur Android: Vorlage aus "android create --list"'});
  return el('div',{class:'card',id:'nf'},el('b',{},'Neues Projekt (im Standardordner)'),el('div',{class:'grid'},el('div',{},el('label',{},'Name'),nm),el('div',{},el('label',{},'Typ'),types)),el('label',{},'Android-Vorlage'),tp,
-  el('div',{class:'bar'},el('button',{class:'b p',on:{click:async()=>{const r=await api('/api/new',{name:nm.value,type:types.value,tpl:tp.value});toast(r.message);setTab('projects')}}},'Anlegen')))}
+  el('div',{class:'mut'},'Nach dem Anlegen öffnet der Projektassistent die fachlichen Schritte und legt SPEC.md sowie fehlende Grundlagen an.'),
+  el('div',{class:'bar'},el('button',{class:'b p',on:{click:async()=>{const r=await api('/api/new',{name:nm.value,type:types.value,tpl:tp.value});toast(r.message);if(r.ok)detail(nm.value).catch(showErr);else setTab('projects')}}},'Anlegen und Assistent öffnen')))}
 async function detail(name){clearInterval(timer);if(es){es.close();es=null}exitLogFull();LOG=null;window.scrollTo(0,0);
  const d=await api('/api/project?name='+encodeURIComponent(name));const logEl=el('pre',{id:'log'},(d.tail||[]).join('\n')||'(noch keine Ausgabe)');
  const items=el('div',{},d.items.length?d.items.map(i=>el('div',{},el('span',{class:i.state==='BLOCKIERT'?'bad':'warn'},i.state+' '),el('b',{},i.id+' '),i.title)):el('span',{class:'ok'},'Alles abgehakt'));
@@ -572,6 +604,7 @@ async function detail(name){clearInterval(timer);if(es){es.close();es=null}exitL
  LOG={card:logCard,pre:logEl,button:fullBtn,fit:fitLog};
  main.replaceChildren(...[el('div',{class:'bar'},el('button',{class:'b',on:{click:()=>setTab('projects')}},'← zurück'),el('h2',{style:'margin:0'},name),el('span',{class:'pill '+(d.running?'run':'')},d.running?'läuft':'gestoppt'),el('span',{class:'mut'},d.type+' · '+d.branch+' · '+d.dirty+' Änderungen · '+d.path)),
   initCard,
+  guideCard(name),
   pauseCard(d,name),
   el('div',{class:'bar'},el('button',{class:'b p',on:{click:act('/api/run',{name})}},'Agentenlauf starten'),el('button',{class:'b',on:{click:act('/api/stop',{name})}},'Stoppen'),
    el('button',{class:'b',on:{click:()=>{act('/api/verify',{name,mode:'quick'})();stream('verify')}}},'Prüfung quick'),el('button',{class:'b',on:{click:()=>{act('/api/verify',{name,mode:'full'})();stream('verify')}}},'Prüfung full'),
@@ -593,6 +626,38 @@ function pauseCard(d,name){
  const btn=el('button',{class:'b'+(active?' p':''),on:{click:async()=>{const r=await api('/api/pause',{name,action:active?'off':'on'});toast(r.message);if(r.ok)detail(name).catch(showErr)}}},active?'Pause aufheben':'Nach aktuellem Paket anhalten');
  return el('div',{class:'card'},el('div',{class:'bar'},el('b',{},'Arbeitspaket-Pause'),el('span',{class:'pill '+(active?'warn':'mut')},active?'Pause angefordert':'keine Pause'),btn),
   el('div',{class:'mut'},'Der laufende Agent wird nicht unterbrochen. Nach dem aktuellen Arbeitspaket startet der Läufer kein neues Paket; die Anforderung gilt einmalig und wird beim Anhalten verbraucht.'))}
+function guideCard(name){
+ const body=el('div',{},el('span',{class:'mut'},'Lade Projektassistent …'));
+ const load=async()=>{const g=await api('/api/guide?name='+encodeURIComponent(name));body.replaceChildren(...drawGuide(g,name))};
+ load().catch(e=>body.replaceChildren(el('div',{class:'bad'},'Projektassistent nicht verfügbar: '+String(e&&e.message||e))));
+ return el('div',{class:'card',id:'guide'},body)}
+function drawGuide(g,name){
+ const out=[],ask={};
+ const tone=s=>s==='gefüllt'?'ok':(s==='offen'?'warn':'mut');
+ const status=g.complete?el('span',{class:'pill ok'},'vollständig'):el('span',{class:'pill warn'},g.filled+'/'+g.total+' Pflichtschritte');
+ out.push(el('div',{class:'bar'},el('b',{},'Projektassistent'),el('span',{class:'mut'},'Fachliche Grundlagen'),status));
+ out.push(el('div',{class:'mut'},'Der Assistent schreibt SPEC.md und legt fehlende Grundlagen an. Vorhandene Dateien und gefüllte Abschnitte bleiben unverändert, außer du änderst sie hier ausdrücklich.'));
+ out.push(el('div',{class:'mut'},'Dateien: '+g.files.map(f=>(f.exists?'✓ ':'✗ ')+f.path).join(' · ')));
+ if(g.missing_files.length)out.push(el('div',{class:'warn'},'Fehlende Pflichtdateien: '+g.missing_files.join(', ')));
+ g.steps.forEach(s=>{const ta=el('textarea',{rows:4,value:s.value||''});ask[s.id]=ta;
+  const note=el('input',{placeholder:'Hinweis für den Agenten (optional)','aria-label':'Hinweis für '+s.title});
+  const block=el('div',{class:'gstep','data-step':s.id},
+   el('div',{class:'bar'},el('b',{},s.title),el('span',{class:'pill '+tone(s.status)},s.status),el('span',{class:'mut'},s.required?'Pflicht':'optional')),
+   el('label',{},s.question),ta,el('div',{class:'mut'},s.help),
+   el('div',{class:'bar'},el('button',{class:'b',on:{click:async()=>{const r=await api('/api/guide',{name,action:'agent',step:s.id,note:note.value});toast(r.message);if(r.ok)detail(name).catch(showErr)}}},'Mit Agent entwerfen'),note));
+  if(s.draft)block.append(el('div',{class:'mut'},el('b',{},'Entwurf des Agenten'),el('pre',{},g.drafts[s.id]||''),
+   el('div',{class:'bar'},el('button',{class:'b p',on:{click:async()=>{const r=await api('/api/guide',{name,action:'draft_apply',step:s.id});toast(r.message);if(r.ok)detail(name).catch(showErr)}}},'Entwurf übernehmen'),
+    el('button',{class:'b',on:{click:async()=>{const r=await api('/api/guide',{name,action:'draft_discard',step:s.id});toast(r.message);if(r.ok)detail(name).catch(showErr)}}},'Entwurf verwerfen'))));
+  out.push(block)});
+ if(g.agent&&(g.agent.running||g.agent.log))out.push(el('div',{class:'card'},el('div',{class:'bar'},el('b',{},'Agentenauftrag'),el('span',{class:'pill '+(g.agent.running?'run':'mut')},g.agent.running?'läuft':'beendet')),
+  el('div',{class:'mut'},'Sitzung '+g.agent.session+' · Agent '+(g.agent.agent||'?')+(g.agent.log?' · Log '+g.agent.log:'')),
+  el('pre',{},(g.agent.log_tail||[]).join('\n')||'(noch keine Ausgabe)')));
+ out.push(el('div',{class:'bar'},el('button',{class:'b p',on:{click:async()=>{
+   const answers={},replace=[];
+   g.steps.forEach(s=>{const v=(ask[s.id].value||'').trim();if(!v)return;answers[s.id]=v;if(s.value&&v!==s.value.trim())replace.push(s.id)});
+   if(!Object.keys(answers).length){toast('Noch keine Antworten eingetragen.');return}
+   const r=await api('/api/guide',{name,action:'save',answers,replace});toast(r.message);if(r.ok)detail(name).catch(showErr)}}},'Antworten speichern und Dateien anlegen')));
+ return out}
 function feedbackCard(d,name){const list=el('div',{});const cls=s=>s==='erledigt'?'ok':s==='BLOCKIERT'?'bad':'warn';
  const done=d.feedback.filter(i=>i.completed),pending=d.feedback.filter(i=>!i.completed);let showDone=false;
  const toggle=el('button',{class:'b'});

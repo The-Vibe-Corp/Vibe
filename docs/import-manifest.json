@@ -29,8 +29,13 @@
   },
   {
    "path": "bin/vibe-web.py",
-   "sha256": "f406bf64fe1b54eaf0956142649bd6ac9985bd93efbc235454f08c1bd6425acd",
-   "bytes": 69367
+   "sha256": "3fb7d21198cf5f2c28a485d4480f61fbccc5157b901540eb98bc536cbe38a6fe",
+   "bytes": 74996
+  },
+  {
+   "path": "bin/vibe_guide.py",
+   "sha256": "5d526f6135d3996e6d83afe33eca29450822a55433b61545204dff3adca8b61d",
+   "bytes": 26156
   },
   {
    "path": "bin/vibe_mcp.py",
@@ -224,6 +229,15 @@
     "templates/generic/.vibe/project.env",
     "templates/openwrt/.vibe/project.env",
     "templates/web/.vibe/project.env"
+   ]
+  },
+  {
+   "arbeitspaket": "F9",
+   "datum": "2026-10-26",
+   "grund": "Projektassistent für neue Projekte: führt in festen fachlichen Schritten durch Ziel, Nutzer, Umfang, Nicht-Umfang, Zielumgebung und Qualität; schreibt SPEC.md und ergänzt fehlende Grundlagen aus den Vorlagen, ohne vorhandene Dateien oder gefüllte Abschnitte zu überschreiben. Für fehlende Angaben kann ein Agent ausdrücklich einen Entwurf unter .vibe/guide/<schritt>.md erzeugen, der erst nach Bestätigung übernommen wird. Dashboard-Karte und Web-API, ohne CLI-Anbindung. Nachbesserung: Ein alter Entwurf wird vor dem Agentenstart beiseitegelegt statt danach gelöscht (kein Verlust eines frisch geschriebenen Entwurfs), innere ##-Überschriften eines Entwurfs werden eine Ebene tiefer gesetzt (sie erzeugen keine eigenen SPEC-Abschnitte), und die Karte zeigt die Ausgabe des letzten Agentenauftrags auch ohne Entwurf. Nachbesserung 2026-10-29: Zeilen innerhalb eingezäunter Codeblöcke eines Entwurfs bleiben beim Übernehmen wortgleich; nur echte ##-Überschriften werden eine Ebene tiefer gesetzt.",
+   "dateien": [
+    "bin/vibe-web.py",
+    "bin/vibe_guide.py"
    ]
   },
   {
