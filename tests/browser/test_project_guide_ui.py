@@ -126,7 +126,6 @@ class ProjectGuideBrowserTest(unittest.TestCase):
         if guide_log.exists():
             guide_log.unlink()
         self.page = self.browser.new_page(viewport={"width": 1400, "height": 1000})
-        self.page.add_init_script("window.alert = () => {};")
 
     def tearDown(self):
         self.page.close()

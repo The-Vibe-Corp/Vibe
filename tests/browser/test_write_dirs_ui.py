@@ -131,10 +131,6 @@ class WriteDirsBrowserTest(unittest.TestCase):
                 path.unlink()
             agents.rmdir()
         self.page = self.browser.new_page(viewport={"width": 1400, "height": 1000})
-        self.page.add_init_script(
-            "window.__alerts = []; window.alert = m => window.__alerts.push(m);"
-            "window.confirm = () => true;"
-        )
 
     def tearDown(self):
         self.page.close()
@@ -146,6 +142,9 @@ class WriteDirsBrowserTest(unittest.TestCase):
                 return
             time.sleep(0.05)
         self.fail(message)
+
+    def toasts(self):
+        return self.page.locator("#toasts .toast").all_inner_texts()
 
     def open_detail(self):
         self.page.goto(self.base + "/#t=" + self.token)
@@ -205,6 +204,7 @@ class WriteDirsBrowserTest(unittest.TestCase):
         )
 
         card.get_by_role("button", name="Standard wiederherstellen").click()
+        card.locator(".confirm").get_by_role("button", name="Ja, zurücksetzen").click()
         self.wait_until(
             lambda: self.stored_dirs() is None,
             message="Zurücksetzen entfernte die eigene Liste nicht",
@@ -255,7 +255,7 @@ class WriteDirsBrowserTest(unittest.TestCase):
         ).click()
 
         self.wait_until(
-            lambda: any("Nichts geändert" in m for m in self.page.evaluate("window.__alerts")),
+            lambda: any("Nichts geändert" in m for m in self.toasts()),
             message="Keine Rückmeldung für unveränderte Agenten",
         )
         self.assertEqual(path.read_text(encoding="utf-8"), READ_ONLY)

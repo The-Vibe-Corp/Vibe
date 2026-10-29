@@ -29,8 +29,8 @@
   },
   {
    "path": "bin/vibe-web.py",
-   "sha256": "976e47675935f08d7ec430c65c9a5748cdc7449ebc5006eceb479c640062830b",
-   "bytes": 75653
+   "sha256": "c81b92a76ea3f733c703fe6300e2cd5cac6659a5e9004b38ca8d9e196f70c8f0",
+   "bytes": 77712
   },
   {
    "path": "bin/vibe_guide.py",
@@ -277,6 +277,14 @@
    "dateien": [
     "bin/vibe",
     "bin/vibe-run.sh",
+    "bin/vibe-web.py"
+   ]
+  },
+  {
+   "arbeitspaket": "F11",
+   "datum": "2026-10-29",
+   "grund": "Weniger modale Browserdialoge: Rückmeldungen erscheinen als nicht blockierende Statusmeldungen in einem höflich angekündigten Bereich (role=status, aria-live=polite, höchstens vier Meldungen, automatisches Ausblenden nach acht Sekunden). Bestätigungen für Löschen, Zurücksetzen, Beenden und FRITZ!Box-Reconnect stehen als Inline-Gruppe direkt an der auslösenden Schaltfläche mit Abbrechen und Escape; alert, confirm und prompt werden nicht mehr verwendet.",
+   "dateien": [
     "bin/vibe-web.py"
    ]
   }

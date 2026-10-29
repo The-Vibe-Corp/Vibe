@@ -107,9 +107,6 @@ class FeedbackBrowserTest(unittest.TestCase):
         (self.project / "FEEDBACK.md").write_text(BASELINE, encoding="utf-8")
         (self.log_dir / "proj.log").write_text("Startzeile\n", encoding="utf-8")
         self.page = self.browser.new_page(viewport={"width": 1400, "height": 1000})
-        self.page.add_init_script(
-            "window.alert = () => {}; window.confirm = () => true;"
-        )
 
     def tearDown(self):
         self.page.close()
@@ -154,6 +151,7 @@ class FeedbackBrowserTest(unittest.TestCase):
 
         second = self.page.locator('.fbentry[data-id="F2"]')
         second.get_by_role("button", name="Löschen").click()
+        second.locator(".confirm").get_by_role("button", name="Ja, löschen").click()
         self.wait_until(
             lambda: "F2 Zweiter Punkt" not in self.feedback_text(),
             message="Feedback-Punkt wurde nicht gelöscht",

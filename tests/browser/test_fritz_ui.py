@@ -127,10 +127,6 @@ class FritzBrowserTest(unittest.TestCase):
         if self.fritz_log.exists():
             self.fritz_log.unlink()
         self.page = self.browser.new_page(viewport={"width": 1400, "height": 1100})
-        self.page.add_init_script(
-            "window.__alerts = []; window.alert = m => window.__alerts.push(m);"
-            "window.confirm = () => true;"
-        )
 
     def tearDown(self):
         self.page.close()
@@ -169,6 +165,7 @@ class FritzBrowserTest(unittest.TestCase):
         self.fritz_card().get_by_text("Automatik: an").wait_for()
 
         self.fritz_card().get_by_role("button", name="Jetzt neu verbinden").click()
+        self.fritz_card().locator(".confirm").get_by_role("button", name="Ja, verbinden").click()
         self.fritz_card().get_by_text("Reconnect erfolgreich").wait_for(timeout=30)
         self.assertIn("neue IP: 203.0.113.9", self.fritz_card().inner_text())
         self.assertTrue(self.fritz_log.is_file())

@@ -103,10 +103,6 @@ class PauseBrowserTest(unittest.TestCase):
         if self.flag.exists():
             self.flag.unlink()
         self.page = self.browser.new_page(viewport={"width": 1400, "height": 1000})
-        self.page.add_init_script(
-            "window.__alerts = []; window.alert = m => window.__alerts.push(m);"
-            "window.confirm = () => true;"
-        )
 
     def tearDown(self):
         self.page.close()

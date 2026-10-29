@@ -21,3 +21,4 @@ Zuordnung der Projekt-Dokumentation zu den Notizen in Trilium (Stand 2026-10-26)
 | vibe | Features | F8 Abgeschlossene Feedback-Punkte ausblenden und schützen | `6U4QBUkWcwg1` |
 | vibe | Features | F9 Projektassistent für neue Projekte | `WIk1kdJ8vgom` |
 | vibe | Features | F10 Agentenlauf endet automatisch | `srn5HaKQXjsu` |
+| vibe | Features | F11 Weniger modale Browserdialoge | `0A6oTTAbOeGH` |

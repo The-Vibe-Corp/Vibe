@@ -112,10 +112,6 @@ class SandboxBrowserTest(unittest.TestCase):
             "TYPE=generic\n", encoding="utf-8"
         )
         self.page = self.browser.new_page(viewport={"width": 1400, "height": 1000})
-        self.page.add_init_script(
-            "window.__alerts = []; window.alert = m => window.__alerts.push(m);"
-            "window.confirm = () => true;"
-        )
 
     def tearDown(self):
         self.page.close()
@@ -141,8 +137,8 @@ class SandboxBrowserTest(unittest.TestCase):
     def env_values(self):
         return read_env_file(self.project / ".vibe" / "project.env")
 
-    def alerts(self):
-        return self.page.evaluate("window.__alerts")
+    def toasts(self):
+        return self.page.locator("#toasts .toast").all_inner_texts()
 
     def test_card_switches_on_sets_tools_checks_and_switches_off(self):
         self.open_detail()
@@ -189,11 +185,11 @@ class SandboxBrowserTest(unittest.TestCase):
         card = self.sandbox_card()
         card.get_by_role("button", name="Prüfen").click()
         self.wait_until(
-            lambda: any("Sandbox bereit" in m for m in self.alerts()),
+            lambda: any("Sandbox bereit" in m for m in self.toasts()),
             message="Prüfung meldete keinen bereiten Zustand: "
-            + repr(self.alerts()),
+            + repr(self.toasts()),
         )
-        self.assertIn("git", " ".join(self.alerts()))
+        self.assertIn("git", " ".join(self.toasts()))
 
         SHOT.parent.mkdir(parents=True, exist_ok=True)
         self.sandbox_card().screenshot(path=str(SHOT))

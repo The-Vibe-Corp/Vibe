@@ -132,9 +132,6 @@ class FeedbackCompletedBrowserTest(unittest.TestCase):
         )
         (self.log_dir / "proj.log").write_text("Startzeile\n", encoding="utf-8")
         self.page = self.browser.new_page(viewport={"width": 1400, "height": 1000})
-        self.page.add_init_script(
-            "window.alert = () => {}; window.confirm = () => true;"
-        )
 
     def tearDown(self):
         self.page.close()
