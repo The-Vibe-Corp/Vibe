@@ -99,9 +99,12 @@ Regeln (werden maschinell geprüft):
   Review: docs/reviews/F12-review-1.md, docs/reviews/F12-review-2.md (PASS, 0 Critical/High/Medium)
   Doku: docs/features/F12.md; Trilium `IwU7vi5DgDdd`
 
-- [ ] F13 Projekt detail UI überarbeitung
+- [x] F13 Projekt detail UI überarbeitung
   Beschreibung: Die Projekt detail UI ist stark gewachsen und nicht mehr nutzerfreundlich.
 
 es sind sehr viele informationen im default sichtbar. wichtige felder sind schwer zu erreichen, weniger wichtige felder sind sehr präsent.
 
 erstelle die ui von grund auf neu, die aktuellen inhalte und funktionen sind gut und sollen erhalten bleiben, jedoch neu strukturiert. baue nicht auf der bestehenden ui auf, sondern denke neu, nach modernen standards.
+  Commit: 37a2156; Test: ProjectDetailUiTest.test_detail_groups_content_into_tabs_and_shows_only_the_active_area, ProjectDetailUiTest.test_tabs_can_be_switched_by_mouse_and_keyboard, ProjectDetailUiTest.test_chosen_tab_survives_an_action_and_resets_when_leaving_the_detail, ProjectDetailUiTest.test_verify_action_opens_the_output_area_and_streams_the_check_log, ProjectDetailUiTest.test_narrow_viewport_keeps_the_detail_usable_without_page_scroll, ProjectDetailUiTest.test_each_tab_is_linked_to_its_panel_for_assistive_technology, ProjectDetailUiTest.test_new_project_opens_the_assistant_area, ProjectDetailUiTest.test_primary_actions_and_run_state_stay_visible_in_every_area (tests/browser/test_project_detail_ui.py, 8 Tests)
+  Review: docs/reviews/F13-review-1.md, docs/reviews/F13-review-2.md (PASS, 0 Critical/High/Medium)
+  Doku: docs/features/F13.md; Trilium `ppnQBKTcRlLQ`
