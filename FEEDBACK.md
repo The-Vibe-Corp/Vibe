@@ -80,3 +80,9 @@ Regeln (werden maschinell geprüft):
   Commit: b51fa4e; Test: ProjectGuideModelTest.test_apply_creates_spec_and_all_missing_fachliche_files, ProjectGuideAgentTest.test_headings_inside_a_fenced_block_stay_unchanged, ProjectGuideApiTest.test_api_saves_answers_and_creates_fachliche_files, ProjectGuideBrowserTest.test_guide_lists_steps_and_writes_spec_and_missing_files (tests/unit/test_project_guide.py, 36 Tests; tests/browser/test_project_guide_ui.py, 4 Tests; gesamt 353 Unit-Tests, 18 Browsertests)
   Review: docs/reviews/F9-review-7.md (PASS, 2 Minor)
   Doku: docs/features/F9.md; Trilium `WIk1kdJ8vgom`
+
+- [x] F10 Bug: Kein automatischer stop
+  Beschreibung: wenn alle arbeitspakete beendet sind, stoppt der agent. vibe gibt jedoch weiterhin an, dass der agentlauf noch aktiv ist. wenn alles erledigt ist, soll der agentlauf automatisch enden
+  Commit: 0fcd908; Test: RunnerSessionEndTest.test_session_ends_when_the_runner_has_finished, RunnerSessionEndTest.test_session_ends_even_when_the_run_pauses, RunAutostopBrowserTest.test_detail_switches_to_stopped_when_the_run_ends (tests/unit/test_run_autostop.py, 2 Tests; tests/browser/test_run_autostop_ui.py, 1 Test; gesamt 355 Unit-Tests, 19 Browsertests)
+  Review: docs/reviews/F10-review-1.md (PASS, 2 Minor)
+  Doku: docs/features/F10.md; Trilium `srn5HaKQXjsu`
