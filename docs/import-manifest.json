@@ -19,8 +19,8 @@
   },
   {
    "path": "bin/vibe",
-   "sha256": "dffcccdbd07b8b205b9483fb11a34dd779cb4c42486d5b1fc0a8aefcd9b47825",
-   "bytes": 71653
+   "sha256": "0cbd6ba7343cef843be14b699d600ab3c6270105a019434cf037728c19f139e6",
+   "bytes": 96256
   },
   {
    "path": "bin/vibe-run.sh",
@@ -29,8 +29,8 @@
   },
   {
    "path": "bin/vibe-web.py",
-   "sha256": "c81b92a76ea3f733c703fe6300e2cd5cac6659a5e9004b38ca8d9e196f70c8f0",
-   "bytes": 77712
+   "sha256": "faf463871b45f520bf915d6199410dd130624be9f8a1059529a2ccc1b3bec0cf",
+   "bytes": 84530
   },
   {
    "path": "bin/vibe_guide.py",
@@ -285,6 +285,15 @@
    "datum": "2026-10-29",
    "grund": "Weniger modale Browserdialoge: Rückmeldungen erscheinen als nicht blockierende Statusmeldungen in einem höflich angekündigten Bereich (role=status, aria-live=polite, höchstens vier Meldungen, automatisches Ausblenden nach acht Sekunden). Bestätigungen für Löschen, Zurücksetzen, Beenden und FRITZ!Box-Reconnect stehen als Inline-Gruppe direkt an der auslösenden Schaltfläche mit Abbrechen und Escape; alert, confirm und prompt werden nicht mehr verwendet.",
    "dateien": [
+    "bin/vibe-web.py"
+   ]
+  },
+  {
+   "arbeitspaket": "F12",
+   "datum": "2026-10-29",
+   "grund": "Kostenermittlung je Arbeitspaket und Projekt: Die opencode-Sitzungsdatenbank wird ausschließlich lesend ausgewertet (Eingabe inklusive gecachter Tokens, Ausgabe inklusive Reasoning), je Arbeitspaket und Agent/Modell in Euro umgerechnet und in CLI, HTTP-API und Dashboard dargestellt. Unbekannte Preise werden mit 0 angesetzt; eigene Preise je Projekt werden in _toolchain/costs.json gespeichert und überschreiben systemische Preise.",
+   "dateien": [
+    "bin/vibe",
     "bin/vibe-web.py"
    ]
   }

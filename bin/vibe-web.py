@@ -299,6 +299,9 @@ class H(BaseHTTPRequestHandler):
             if u.path == "/api/project": return self._send(200, project_detail(known(q["name"][0])))
             if u.path == "/api/roots": return self._send(200, roots_info())
             if u.path == "/api/agents": return self._send(200, agents_info())
+            if u.path == "/api/costs":
+                n = q.get("name", [""])[0]
+                return self._send(200, vibe.costs_project(known(n)) if n else vibe.costs_overview())
             if u.path == "/api/agent":
                 scope = known_scope(q["scope"][0]); snapshot = vibe.agent_snapshot(scope, q["name"][0])
                 return self._send(200, {"text": snapshot.text, "digest": snapshot.digest})
@@ -328,7 +331,7 @@ class H(BaseHTTPRequestHandler):
             return self._error(e.status, e.code, e.message)
         try:
             name = body.get("name", "")
-            if u.path in ("/api/run", "/api/stop", "/api/verify", "/api/feedback", "/api/init", "/api/rights", "/api/pause", "/api/sandbox", "/api/guide"): known(name)
+            if u.path in ("/api/run", "/api/stop", "/api/verify", "/api/feedback", "/api/init", "/api/rights", "/api/pause", "/api/sandbox", "/api/guide", "/api/costs"): known(name)
             extra = {}
             if u.path == "/api/run": ok, msg = call(vibe.cmd_run, name, body.get("agent") or None)
             elif u.path == "/api/stop": ok, msg = call(vibe.cmd_stop, name)
@@ -407,6 +410,19 @@ class H(BaseHTTPRequestHandler):
                     else:
                         ok, msg = False, "Unbekannte Aktion"
                     extra["pause_after"] = vibe.pause_after_active(name)
+                except ValueError as e:
+                    ok, msg = False, str(e)
+            elif u.path == "/api/costs":
+                act = body.get("action") or "prices"; ok, msg = True, ""
+                try:
+                    if act == "prices":
+                        vibe.costs_set_prices(name, body.get("prices") or {}, expected=body.get("expected"))
+                        msg = "Preise gespeichert"
+                        extra["costs"] = vibe.costs_project(name)
+                    else:
+                        ok, msg = False, "Unbekannte Aktion"
+                except vibe_storage.ConcurrentChangeError as e:
+                    return self._error(409, "conflict", str(e))
                 except ValueError as e:
                     ok, msg = False, str(e)
             elif u.path == "/api/fritz":
@@ -531,6 +547,7 @@ header{display:flex;gap:16px;align-items:center;padding:10px 18px;border-bottom:
 header h1{font-size:16px;margin:0}nav button{background:none;border:0;color:var(--mut);padding:8px 12px;cursor:pointer;font-size:14px}
 nav button.on{color:var(--tx);border-bottom:2px solid var(--ac)}main{padding:18px;max-width:1300px;margin:auto}
 table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:8px;border-bottom:1px solid var(--line);vertical-align:top}th{color:var(--mut);font-weight:500}
+td.num{text-align:right;font-variant-numeric:tabular-nums}
 tr.row{cursor:pointer}tr.row:hover{background:#1a1d23}.pill{padding:2px 8px;border-radius:10px;font-size:12px;background:#2a2f38;white-space:nowrap}
 .run{background:#17382a;color:var(--ok)}.warn{color:var(--warn)}.bad{color:var(--bad)}.ok{color:var(--ok)}.mut{color:var(--mut)}
 .pill.ok{background:#17382a}.pill.warn{background:#3a3016}.pill.bad{background:#3d1d1d}.pill.mut{background:#2a2f38}
@@ -560,8 +577,8 @@ function el(t,a={},...c){const e=document.createElement(t);for(const[k,v]of Obje
  for(const x of c.flat())if(x!==null&&x!==undefined&&x!==false)e.append(x.nodeType?x:document.createTextNode(String(x)));return e}
 const main=document.getElementById('main'),nav=document.getElementById('nav'),srvbox=document.getElementById('srv');let tab='projects',es=null,timer=null,LOG=null;
 function showErr(e){main.replaceChildren(el('div',{class:'card err'},el('b',{class:'bad'},'Fehler: '),String(e&&e.message||e)),el('button',{class:'b',on:{click:()=>setTab('projects')}},'← zur Projektliste'))}
-function setTab(t){exitLogFull();LOG=null;tab=t;if(es){es.close();es=null}clearInterval(timer);[...nav.children].forEach(b=>b.classList.toggle('on',b.dataset.t===t));Promise.resolve(({projects,agents,mcp,env}[t])()).catch(showErr);header()}
-[['projects','Projekte'],['agents','Agenten & Modelle'],['mcp','MCP-Tools'],['env','Umgebung']].forEach(([k,l])=>nav.append(el('button',{'data-t':k,on:{click:()=>setTab(k)}},l)));
+function setTab(t){exitLogFull();LOG=null;tab=t;if(es){es.close();es=null}clearInterval(timer);[...nav.children].forEach(b=>b.classList.toggle('on',b.dataset.t===t));Promise.resolve(({projects,agents,mcp,env,costs}[t])()).catch(showErr);header()}
+[['projects','Projekte'],['agents','Agenten & Modelle'],['mcp','MCP-Tools'],['env','Umgebung'],['costs','Kosten']].forEach(([k,l])=>nav.append(el('button',{'data-t':k,on:{click:()=>setTab(k)}},l)));
 const toastBox=el('div',{id:'toasts',class:'toasts',role:'status','aria-live':'polite','aria-atomic':'false'});
 document.body.append(toastBox);
 function toast(m){const t=el('div',{class:'toast'},el('span',{class:'toasttext'},String(m)),el('button',{class:'b x',type:'button','aria-label':'Meldung schließen',title:'Meldung schließen',on:{click:()=>t.remove()}},'×'));
@@ -737,6 +754,67 @@ function sandboxCard(d,name){const s=d.sandbox||{enabled:false,tools:[],write_di
   el('label',{},'Build-Werkzeuge (Leerzeichen oder Komma)'),inp,
   el('div',{class:'bar'},el('button',{class:'b',on:{click:async()=>{const r=await api('/api/sandbox',{name,action:'tools',tools:inp.value});toast(r.message);if(r.ok)detail(name).catch(showErr)}}},'Werkzeuge speichern')),
   el('details',{},el('summary',{},'Erlaubte Schreibverzeichnisse ('+dirs.length+')'),el('div',{},...dirs.map(p=>el('div',{class:'mut'},p)))))}
+
+/* ---------- Kosten ---------- */
+const PRICE_SOURCE={user:'eigener Preis',system:'Systempreis',kostenlos:'kostenlos',unbekannt:'Preis unbekannt'};
+function fmtN(n){return Number(n||0).toLocaleString('de-DE')}
+function fmtEUR(v){return Number(v||0).toLocaleString('de-DE',{minimumFractionDigits:4,maximumFractionDigits:4})+' €'}
+function pricePill(src){return el('span',{class:'pill '+(src==='user'?'ok':src==='unbekannt'?'warn':'mut'),title:'Preisquelle: '+(PRICE_SOURCE[src]||src)},PRICE_SOURCE[src]||src)}
+function tokenCells(t){return [el('td',{class:'num'},fmtN(t.input)),el('td',{class:'num'},fmtN(t.cached)),el('td',{class:'num'},fmtN(t.output))]}
+function costsNote(d){return el('div',{class:'mut'},'Preise in '+d.currency+' je 1 Mio. Tokens. „Eingabe“ enthält die gecachten Tokens, „Ausgabe“ die Reasoning-Tokens. Unbekannte Modelle werden mit 0 € angesetzt, bis ein Preis eingetragen ist. Eigene Preise gelten nur für dieses Projekt und schlagen Systempreise.')}
+async function costs(){
+ const d=await api('/api/costs');
+ const head=['Projekt','Pakete','Sitzungen','Eingabe','davon cached','Ausgabe','Kosten'];
+ const tb=el('table',{},el('tr',{},...head.map(h=>el('th',{},h))));
+ d.projects.forEach(p=>tb.append(el('tr',{class:'row','data-project':p.name,on:{click:()=>costDetail(p.name).catch(showErr)}},
+  el('td',{},p.name),el('td',{class:'num'},fmtN(p.packages)),el('td',{class:'num'},fmtN(p.sessions)),...tokenCells(p.tokens),el('td',{class:'num'},fmtEUR(p.cost)))));
+ tb.append(el('tr',{},el('td',{},el('b',{},'Gesamt')),el('td',{}),el('td',{class:'num'},fmtN(d.total.sessions)),...tokenCells(d.total.tokens),el('td',{class:'num'},el('b',{},fmtEUR(d.total.cost)))));
+ main.replaceChildren(el('div',{class:'card',id:'costs'},el('div',{class:'bar'},el('b',{},'Kosten je Projekt'),el('span',{class:'mut'},'EUR je 1 Mio. Tokens')),
+  d.available?null:el('div',{class:'warn'},'Sitzungsdaten nicht verfügbar: '+(d.message||'unbekannt')),
+  d.projects.length?tb:el('span',{class:'mut'},'Keine Projekte gefunden.'),
+  el('div',{class:'mut',style:'margin-top:8px'},'Quelle: '+(d.db||'—')+' (nur lesend). Projekt anklicken für Arbeitspakete, Agenten und Modelle.'),
+  el('div',{class:'bar'},el('button',{class:'b',on:{click:()=>costs().catch(showErr)}},'Aktualisieren'))));
+}
+async function costDetail(name){
+ const d=await api('/api/costs?name='+encodeURIComponent(name));
+ const tb=el('table',{},el('tr',{},...['Paket / Modell','Sitzungen','Eingabe','davon cached','Ausgabe','Kosten'].map(h=>el('th',{},h))));
+ d.packages.forEach(p=>{
+  tb.append(el('tr',{class:'row','data-package':p.id||'ohne'},el('td',{},el('b',{},p.id||'Ohne Arbeitspaket'),p.title&&p.id?el('div',{class:'mut'},p.title):null),
+   el('td',{class:'num'},fmtN(p.sessions)),...tokenCells(p.tokens),el('td',{class:'num'},fmtEUR(p.cost))));
+  p.models.forEach(m=>tb.append(el('tr',{class:'mut','data-model-row':m.model},
+   el('td',{style:'padding-left:22px'},m.agent+' · '+m.model+' ',pricePill(m.price_source)),
+   el('td',{}),...tokenCells(m.tokens),el('td',{class:'num'},fmtEUR(m.cost)))));
+ });
+ tb.append(el('tr',{},el('td',{},el('b',{},'Summe Projekt')),el('td',{class:'num'},fmtN(d.total.sessions)),...tokenCells(d.total.tokens),el('td',{class:'num'},el('b',{},fmtEUR(d.total.cost)))));
+ const priceInputs=[];
+ const priceRows=d.models.map(m=>{
+  const cur=m.price||{input:0,cached_input:0,output:0};
+  const fields=[['input','Eingabe'],['cached_input','cached'],['output','Ausgabe']].map(([f,l])=>{
+   const inp=el('input',{type:'number',min:'0',step:'0.0001','data-model':m.model,'data-field':f,'aria-label':l+' '+m.model,value:String(cur[f]??0),style:'width:110px'});
+   priceInputs.push(inp);return el('label',{style:'display:inline-flex;gap:4px;align-items:center;margin-right:12px'},l,inp)});
+  const reset=el('button',{class:'b',on:{click:async()=>{const r=await api('/api/costs',{name,action:'prices',prices:{[m.model]:null}});toast(r.message);if(r.ok)costDetail(name).catch(showErr)}}},'Systempreis');
+  return el('div',{class:'bar','data-price-model':m.model},el('b',{},m.model),pricePill(m.price_source),...fields,reset)});
+ const save=el('button',{class:'b p',on:{click:async()=>{
+   const prices={};
+   for(const inp of priceInputs){const raw=String(inp.value).trim().replace(',','.');
+    if(raw===''){toast('Bitte für '+inp.dataset.model+' alle drei Preise eintragen.');inp.focus();return}
+    const num=Number(raw);
+    if(!Number.isFinite(num)||num<0){toast('Preis für '+inp.dataset.model+' ist ungültig.');inp.focus();return}
+    (prices[inp.dataset.model]=prices[inp.dataset.model]||{})[inp.dataset.field]=num}
+   const r=await api('/api/costs',{name,action:'prices',prices});toast(r.message);
+   if(r.ok)costDetail(name).catch(showErr)}}},'Preise speichern');
+ main.replaceChildren(
+  el('div',{class:'bar'},el('button',{class:'b',on:{click:()=>costs().catch(showErr)}},'← alle Projekte'),el('h2',{style:'margin:0'},name),el('span',{class:'mut'},'Kosten in '+d.currency)),
+  el('div',{class:'card',id:'cost-detail','data-project':name},
+   el('div',{class:'bar'},el('b',{},'Kosten je Arbeitspaket'),el('span',{class:'pill '+(d.available?'ok':'bad')},d.available?'Daten gelesen':'keine Daten')),
+   d.available?null:el('div',{class:'warn'},'Sitzungsdaten nicht verfügbar: '+(d.message||'unbekannt')),
+   costsNote(d),
+   d.packages.length?tb:el('span',{class:'mut'},'Keine Sitzungen für dieses Projekt gefunden.')),
+  el('div',{class:'card',id:'cost-prices'},el('b',{},'Preise je 1 Mio. Tokens (nur dieses Projekt)'),
+   el('div',{class:'mut'},'Eigene Preise schlagen systemische Preise. „Systempreis“ entfernt den eigenen Preis.'),
+   ...(priceRows.length?priceRows:[el('span',{class:'mut'},'Noch keine Modelle in diesem Projekt verwendet.')]),
+   priceRows.length?el('div',{class:'bar'},save):null));
+}
 
 /* ---------- Agenten, Modelle, Profile ---------- */
 let AG=null,AGFILTER='alle';

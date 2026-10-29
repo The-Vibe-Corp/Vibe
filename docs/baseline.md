@@ -170,6 +170,7 @@ Codestelle und die in dieser Sitzung tatsächlich beobachtete Prüfung.
 | CLI | `vibe models` | vorhanden und manuell geprüft | `bin/vibe:459-466`; ausgeführt, Exit 0; Daten aus `data/models.json` bleiben ungeprüfte Altdaten (V-011) |
 | CLI | `vibe model` | vorhanden, noch nicht geprüft | `bin/vibe:468-477`; schreibt Agentendatei, nicht ausgeführt |
 | CLI | `vibe profile` | teilweise vorhanden | `bin/vibe:515-528`; Liste ausgeführt, Exit 0; `use` schreibt Agenten und wurde nicht ausgeführt (V-012) |
+| CLI | `vibe costs` | vorhanden und automatisiert geprüft | `bin/vibe:1835-1873` (`cmd_costs`); `tests/unit/test_costs.py` prüft Übersicht, Paketzeilen, Summen, unbekannte Preise (0 €) und die Ausgabe in Euro; die opencode-Datenbank wird nur lesend gelesen |
 | CLI | `vibe mcp` | teilweise vorhanden | `bin/vibe:584-586`, `bin/vibe_mcp.py:335-358`; `list` ausgeführt (Exit 0), `show/test/on/off/rm` nicht geprüft; Transport-/Limitgrenzen fehlen (V-013/V-014) |
 | CLI | `vibe emu` | vorhanden, noch nicht geprüft | `bin/vibe:531-534`; startet Emulator, nicht ausgeführt |
 | CLI | `vibe ui` | vorhanden, noch nicht geprüft | `bin/vibe:550-560`; startet Dashboard in tmux, nicht ausgeführt |
@@ -204,6 +205,7 @@ eigenen Test.
 | API | `GET /api/project` | vorhanden, noch nicht geprüft | `do_GET`; Transportprüfung zentral in V-004, Fachfunktion nicht ausgeführt |
 | API | `GET /api/roots` | vorhanden, noch nicht geprüft | `do_GET`; Transportprüfung zentral in V-004, Fachfunktion nicht ausgeführt |
 | API | `GET /api/agents` | vorhanden, noch nicht geprüft | `do_GET`; Transportprüfung zentral in V-004, Fachfunktion nicht ausgeführt |
+| API | `GET /api/costs` | vorhanden und automatisiert geprüft | `do_GET`; `tests/unit/test_costs.py` prüft Übersicht, Projektdetail, Tokenpflicht (403) und unbekanntes Projekt (404); `tests/browser/test_costs_ui.py` öffnet die Kostenansicht im Browser |
 | API | `GET /api/agent` | vorhanden, noch nicht geprüft | `do_GET`; Transportprüfung zentral in V-004, Fachfunktion nicht ausgeführt |
 | API | `GET /api/mcp` | vorhanden, noch nicht geprüft | `do_GET`; Transportprüfung zentral in V-004, Fachfunktion nicht ausgeführt |
 | API | `GET /api/mcp_entry` | vorhanden, noch nicht geprüft | `do_GET`; Transportprüfung zentral in V-004, Fachfunktion nicht ausgeführt |
@@ -227,6 +229,7 @@ eigenen Test.
 | API | `POST /api/roots` | vorhanden, noch nicht geprüft | `do_POST`; Transportprüfung zentral in V-004, Fachfunktion nicht ausgeführt |
 | API | `POST /api/agent_template` | vorhanden, noch nicht geprüft | `do_POST`; Transportprüfung zentral in V-004, Fachfunktion nicht ausgeführt |
 | API | `POST /api/agent` | vorhanden, noch nicht geprüft | `do_POST`; Transportprüfung zentral in V-004, atomarer Write mit Prüfsummenkontrolle (V-005, `409 conflict` bei veraltetem `expected`), Browserworkflow nicht automatisiert geprüft (V-010) |
+| API | `POST /api/costs` | vorhanden und automatisiert geprüft | `do_POST`; `tests/unit/test_costs.py` prüft das Speichern von Nutzerpreisen je Projekt, die sofortige Neuberechnung, die Ablehnung ungültiger Preise ohne Schreibvorgang und die Persistenz; `tests/browser/test_costs_ui.py` prüft die Eingabe im Dashboard |
 | API | `POST /api/mcp` | vorhanden, noch nicht geprüft | `do_POST`; Transportprüfung zentral in V-004, JSONC-Verlustgrenzen (V-013) |
 | API | `POST /api/profiles` | vorhanden, noch nicht geprüft | `do_POST`; Transportprüfung zentral in V-004, Anwendung nicht transaktional (V-012) |
 | API | `POST /api/model` | vorhanden, noch nicht geprüft | `do_POST`; Transportprüfung zentral in V-004, Fachfunktion nicht ausgeführt |
@@ -247,6 +250,7 @@ headless) geprüft.
 | UI | `Tab Agenten & Modelle` | vorhanden, noch nicht geprüft | `bin/vibe-web.py:292-358`; Agentenliste, Formular, Roh-Editor, Profile; kein Browsertest |
 | UI | `Tab MCP-Tools` | vorhanden, noch nicht geprüft | `bin/vibe-web.py:360-406`; Liste, Formular, Test, Aktivierung; kein Browsertest |
 | UI | `Tab Umgebung` | vorhanden und automatisiert geprüft | `bin/vibe-web.py:548-568`; der Tab lädt Doctor- und Fritzbox-Karte; `tests/browser/test_fritz_ui.py` öffnet ihn (Chromium, headless, isoliertes Dashboard) |
+| UI | `Tab Kosten` | vorhanden und automatisiert geprüft | `bin/vibe-web.py` `costs`/`costDetail`; `tests/browser/test_costs_ui.py` prüft Projektübersicht, Paket-/Modellzeilen, Preiseingabe mit sofortiger Neuberechnung, Persistenz nach Neuladen und die Ablehnung unvollständiger Eingaben (Chromium, headless); Screenshot `docs/features/F12-kosten.png` |
 | UI | `Tab Umgebung: Fritzbox-Reconnect` | vorhanden und automatisiert geprüft | `bin/vibe-web.py:550-568`; `tests/browser/test_fritz_ui.py` zeigt „Automatik: aus“, schaltet die Automatik ein und aus, startet den manuellen Reconnect gegen eine Attrappe und prüft das Ergebnis; Screenshot `docs/features/F5-fritz.png` |
 | UI | `Kopfzeile opencode Start/Stop` | vorhanden, noch nicht geprüft | `bin/vibe-web.py:242-245`; ruft `POST /api/server`; kein Browsertest |
 | UI | `Kopfzeile Dashboard beenden` | vorhanden, noch nicht geprüft | `bin/vibe-web.py:244`; ruft `POST /api/shutdown`; kein Browsertest |

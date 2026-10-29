@@ -22,6 +22,7 @@ Aufruf:  vibe                 interaktives Menü
          vibe models          Modellübersicht mit Einschätzung und Preis
          vibe model <agent> <modell> [global|<projekt>]
          vibe profile [list|use <name>]   Modellprofile (z. B. kostenlos / bezahlt) für Rollen
+         vibe costs [<projekt>]  Kosten je Arbeitspaket und Projekt (Tokens, Euro)
          vibe mcp list|show|test|on|off|rm|backups|restore [name] [global|<projekt>] [sicherung]   MCP-Tools verwalten
          vibe emu start|stop  Emulator (Android)
          vibe ui [stop]       Dashboard im Browser (nur localhost)
@@ -29,7 +30,8 @@ Aufruf:  vibe                 interaktives Menü
          vibe types           verfügbare Projekttypen
          vibe doctor          Umgebung prüfen
 """
-import os, sys, re, json, subprocess, shutil, time, tempfile, shlex
+import os, sys, re, json, math, sqlite3, subprocess, shutil, time, tempfile, shlex
+import urllib.parse
 
 if __name__ == "__main__": sys.modules["vibe"] = sys.modules[__name__]
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
@@ -1257,6 +1259,620 @@ def cmd_profile(action="list", name=None):
     print("Rollen:", ", ".join(f"{a}={r}" for a, r in d["rollen"].items()))
     print("Anwenden: vibe profile use <name>")
 
+# ---------- Kostenermittlung je Arbeitspaket und Projekt (F12) ----------
+# Preise werden in Euro je 1 Mio. Tokens geführt. Unbekannte Preise werden mit
+# 0 angesetzt; die Eingabe des Nutzers je Projekt überschreibt systemische
+# Werte. Die opencode-Datenbank wird ausschließlich lesend geöffnet.
+COSTS_FILE = os.path.join(TOOLS, "costs.json")
+PRICES_FILE = os.path.join(TOOLS, "prices.json")
+COSTS_CURRENCY = "EUR"
+COSTS_UNIT_TOKENS = 1_000_000
+COSTS_MAX_PRICE = 1_000_000.0
+PRICE_FIELDS = ("input", "cached_input", "output")
+
+
+def _zero_tokens():
+    return {"input": 0, "cached": 0, "output": 0}
+
+
+def _add_tokens(target, source):
+    for field in ("input", "cached", "output"):
+        target[field] += source[field]
+
+
+def _int_tokens(value):
+    """Nichtnegative Ganzzahl; kaputte Werte zählen als 0."""
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        return 0
+    return number if number > 0 else 0
+
+
+def opencode_db_path():
+    """Pfad der opencode-Sitzungsdatenbank (nur lesend verwendet)."""
+    explicit = (os.environ.get("VIBE_OPENCODE_DB") or "").strip()
+    if explicit:
+        return os.path.abspath(os.path.expanduser(explicit))
+    base = os.environ.get("XDG_DATA_HOME") or os.path.join(
+        os.path.expanduser("~"), ".local", "share")
+    return os.path.join(base, "opencode", "opencode.db")
+
+
+def package_catalog(name):
+    """Bekannte Paket-IDs mit Kurztitel aus FEEDBACK.md und TICKETS.md.
+
+    Grundlage sind dieselben Blöcke wie für offene Arbeitspakete. Kommentare
+    und Vorlagen zählen nicht. Die erste Fundstelle gewinnt.
+    """
+    root = project_map().get(name)
+    if not root:
+        return {}
+    found = {}
+    for fname in ("FEEDBACK.md", "TICKETS.md"):
+        fp = os.path.join(root, fname)
+        if not os.path.exists(fp):
+            continue
+        try:
+            with open(fp, encoding="utf-8", errors="replace") as handle:
+                text = handle.read()
+        except OSError:
+            continue
+        for block in _blocks(text):
+            first = block.splitlines()[0]
+            match = re.match(r"- (?:\[[ x]\]\s*)?(\S+)\s*(.*)", first)
+            if not match:
+                continue
+            found.setdefault(match.group(1), match.group(2).strip()[:80])
+    return found
+
+
+def package_ids(name):
+    return set(package_catalog(name))
+
+
+def package_for_title(title, ids):
+    """Ordnet einen Sitzungstitel dem genannten Paket zu.
+
+    Es zählt die früheste Fundstelle einer bekannten Paket-ID als eigenes
+    Wort; bei gleicher Stelle gewinnt die längere ID (F12 vor F1).
+    """
+    text = title or ""
+    best = None
+    for pid in ids:
+        if not pid:
+            continue
+        match = re.search(r"(?<![A-Za-z0-9_-])" + re.escape(pid) + r"(?![A-Za-z0-9_-])", text)
+        if not match:
+            continue
+        key = (match.start(), -len(pid))
+        if best is None or key < best[0]:
+            best = (key, pid)
+    return best[1] if best else ""
+
+
+def _model_id(provider, ident):
+    provider = str(provider or "").strip()
+    ident = str(ident or "").strip()
+    if not ident:
+        return "unbekannt"
+    return ident if ("/" in ident or not provider) else provider + "/" + ident
+
+
+def _model_from_session(value):
+    """Modell einer Sitzungszeile; opencode speichert es als JSON-Text."""
+    if isinstance(value, dict):
+        return _model_id(value.get("providerID"), value.get("id"))
+    if not isinstance(value, str) or not value.strip():
+        return "unbekannt"
+    text = value.strip()
+    if text.startswith("{"):
+        try:
+            return _model_from_session(json.loads(text))
+        except ValueError:
+            return "unbekannt"
+    return text
+
+
+def _normalize_price(price):
+    """Prüft einen Preis (Euro je 1 Mio. Tokens) und liefert ihn als Zahlen."""
+    if not isinstance(price, dict):
+        raise ValueError("Preis muss ein Objekt mit input, cached_input und output sein")
+    extra = set(price) - set(PRICE_FIELDS)
+    if extra:
+        raise ValueError("Unbekannte Preisfelder: " + ", ".join(sorted(map(str, extra))))
+    out = {}
+    for field in PRICE_FIELDS:
+        if field not in price:
+            raise ValueError("Preis unvollständig: " + field + " fehlt")
+        value = price[field]
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise ValueError("Preis für " + field + " muss eine Zahl sein")
+        number = float(value)
+        if not math.isfinite(number) or number < 0:
+            raise ValueError("Preis für " + field + " muss eine nichtnegative Zahl sein")
+        if number > COSTS_MAX_PRICE:
+            raise ValueError("Preis für " + field + " ist unrealistisch hoch")
+        out[field] = number
+    return out
+
+
+def _costs_data():
+    """Nutzerpreise lesen; liefert (Daten, Snapshot) ohne still zu reparieren."""
+    snapshot = vibe_storage.read_snapshot(COSTS_FILE)
+    if not snapshot.exists:
+        return {"version": 1, "projects": {}}, snapshot
+    try:
+        data = json.loads(snapshot.text)
+    except ValueError:
+        raise ValueError("Preisdatei ist nicht lesbar (kein gültiges JSON): " + COSTS_FILE)
+    if not isinstance(data, dict) or not isinstance(data.get("projects", {}), dict):
+        raise ValueError("Preisdatei hat ein unbekanntes Format: " + COSTS_FILE)
+    data.setdefault("version", 1)
+    data.setdefault("projects", {})
+    return data, snapshot
+
+
+def _project_prices_from(data, name):
+    entry = data["projects"].get(name)
+    if not isinstance(entry, dict):
+        return {}
+    models = entry.get("models")
+    if not isinstance(models, dict):
+        return {}
+    out = {}
+    for model, price in models.items():
+        try:
+            out[str(model)] = _normalize_price(price)
+        except ValueError:
+            continue
+    return out
+
+
+def project_prices(name):
+    data, _ = _costs_data()
+    return _project_prices_from(data, name)
+
+
+def _known_project(name):
+    path = project_map().get(name)
+    if not path:
+        raise ValueError("Unbekanntes Projekt: " + str(name))
+    return path
+
+
+def costs_set_prices(name, prices, expected=None):
+    """Speichert Nutzerpreise für genau ein Projekt.
+
+    ``prices`` bildet Modell-ID auf ``{input, cached_input, output}`` ab. Ein
+    Wert ``None`` entfernt die Nutzereingabe, sodass wieder der systemische
+    Preis gilt. Ungültige Eingaben ändern die Datei nicht.
+    """
+    _known_project(name)
+    if not isinstance(prices, dict):
+        raise ValueError("prices muss ein Objekt sein")
+    normalized = {}
+    for model, price in prices.items():
+        model = str(model).strip()
+        if not model:
+            raise ValueError("Modellname fehlt")
+        if len(model) > 200 or any(char in model for char in "\r\n\t"):
+            raise ValueError("Modellname ist ungültig: " + model[:60])
+        normalized[model] = None if price is None else _normalize_price(price)
+    data, snapshot = _costs_data()
+    entry = data["projects"].get(name)
+    if not isinstance(entry, dict):
+        entry = {"models": {}}
+    models = entry.get("models")
+    if not isinstance(models, dict):
+        models = {}
+    for model, price in normalized.items():
+        if price is None:
+            models.pop(model, None)
+        else:
+            models[model] = price
+    entry["models"] = models
+    if models:
+        data["projects"][name] = entry
+    else:
+        data["projects"].pop(name, None)
+    if expected is None:
+        expected = snapshot.digest if snapshot.exists else vibe_storage.MISSING
+    os.makedirs(TOOLS, exist_ok=True)
+    vibe_storage.write_text(
+        COSTS_FILE, json.dumps(data, indent=1, ensure_ascii=False) + "\n",
+        expected=expected)
+    return project_prices(name)
+
+
+def _system_prices():
+    """Optionale systemische Preise in Euro aus ``_toolchain/prices.json``.
+
+    Eine andere Währung wird nicht als Euro ausgegeben; solche Einträge gelten
+    als unbekannt. Ungültige Einzelpreise werden übersprungen.
+    """
+    try:
+        with open(PRICES_FILE, encoding="utf-8") as handle:
+            data = json.load(handle)
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    currency = str(data.get("waehrung") or "").strip().upper()
+    if currency and currency != COSTS_CURRENCY:
+        return {}
+    models = data.get("modelle")
+    if not isinstance(models, dict):
+        return {}
+    out = {}
+    for model, price in models.items():
+        try:
+            out[str(model)] = _normalize_price(price)
+        except ValueError:
+            continue
+    return out
+
+
+def _price_for(model, user_prices, system_prices, catalog):
+    """Preis und Herkunft: Nutzer vor systemisch vor kostenlos vor unbekannt."""
+    if model in user_prices:
+        return dict(user_prices[model]), "user"
+    if model in system_prices:
+        return dict(system_prices[model]), "system"
+    info = catalog.get(model)
+    if isinstance(info, dict) and str(info.get("preis") or "").strip().lower() == "kostenlos":
+        return {"input": 0.0, "cached_input": 0.0, "output": 0.0}, "kostenlos"
+    return {"input": 0.0, "cached_input": 0.0, "output": 0.0}, "unbekannt"
+
+
+def _cost_of(tokens, price):
+    """Euro-Kosten; gecachte Eingabe wird zum Cachepreis gerechnet."""
+    uncached = max(tokens["input"] - tokens["cached"], 0)
+    return (uncached / COSTS_UNIT_TOKENS * price["input"]
+            + tokens["cached"] / COSTS_UNIT_TOKENS * price["cached_input"]
+            + tokens["output"] / COSTS_UNIT_TOKENS * price["output"])
+
+
+def _json1_available(conn):
+    try:
+        conn.execute("select json_extract('{\"a\": 1}', '$.a')").fetchone()
+        return True
+    except sqlite3.Error:
+        return False
+
+
+def _open_sessions_db(path):
+    """Öffnet die Datenbank ausschließlich lesend (kein Anlegen, kein Schreiben)."""
+    uri = "file:" + urllib.parse.quote(os.path.abspath(path), safe="/") + "?mode=ro"
+    conn = sqlite3.connect(uri, uri=True, timeout=10)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def _db_schema(conn):
+    names = {row[0] for row in conn.execute(
+        "select name from sqlite_master where type='table'")}
+    if {"session_v2", "session_message"} <= names:
+        return "v2"
+    if {"session", "message"} <= names:
+        return "v1"
+    return None
+
+
+def _read_sessions(conn, schema):
+    table = "session_v2" if schema == "v2" else "session"
+    sql = ("select id, parent_id, directory, title, agent, model,"
+           " tokens_input, tokens_output, tokens_reasoning, tokens_cache_read,"
+           f" time_created from {table}")
+    return [dict(row) for row in conn.execute(sql)]
+
+
+def _usage_add(usage, agent, model, input_tokens, output_tokens, reasoning, cached):
+    key = (agent or "unbekannt", model or "unbekannt")
+    entry = usage.setdefault(key, _zero_tokens())
+    entry["input"] += input_tokens + cached
+    entry["cached"] += cached
+    entry["output"] += output_tokens + reasoning
+
+
+def _message_usage(conn, schema, session_id, json1=True):
+    """Tokenverbrauch je Agent und Modell aus den Assistenten-Nachrichten.
+
+    Liefert ``None``, wenn keine verwertbaren Nachrichten vorliegen; dann
+    gelten die in der Sitzung gespeicherten Summen.
+    """
+    if schema == "v2":
+        sql = ("select json_extract(data,'$.agent'), json_extract(data,'$.mode'),"
+               " json_extract(data,'$.model.providerID'), json_extract(data,'$.model.id'),"
+               " coalesce(json_extract(data,'$.tokens.input'),0),"
+               " coalesce(json_extract(data,'$.tokens.output'),0),"
+               " coalesce(json_extract(data,'$.tokens.reasoning'),0),"
+               " coalesce(json_extract(data,'$.tokens.cache.read'),0)"
+               " from session_message where session_id=? and type='assistant'"
+               " and json_valid(data)")
+        params = (session_id,)
+    else:
+        sql = ("select json_extract(data,'$.agent'), json_extract(data,'$.mode'),"
+               " json_extract(data,'$.providerID'), json_extract(data,'$.modelID'),"
+               " coalesce(json_extract(data,'$.tokens.input'),0),"
+               " coalesce(json_extract(data,'$.tokens.output'),0),"
+               " coalesce(json_extract(data,'$.tokens.reasoning'),0),"
+               " coalesce(json_extract(data,'$.tokens.cache.read'),0)"
+               " from message where session_id=? and json_valid(data)"
+               " and json_extract(data,'$.role')='assistant'")
+        params = (session_id,)
+    usage = {}
+    for row in conn.execute(sql, params):
+        agent = row[0] or row[1]
+        model = _model_id(row[2], row[3])
+        _usage_add(usage, agent, model, _int_tokens(row[4]), _int_tokens(row[5]),
+                   _int_tokens(row[6]), _int_tokens(row[7]))
+    if not usage:
+        return None
+    if not any(value["input"] or value["output"] for value in usage.values()):
+        return None
+    return usage
+
+
+def _message_usage_python(conn, schema, session_id):
+    """Ersatzweg ohne JSON1: Nachrichten in Python auswerten."""
+    if schema == "v2":
+        rows = conn.execute(
+            "select data from session_message where session_id=? and type='assistant'",
+            (session_id,))
+        assistant_only = True
+    else:
+        rows = conn.execute("select data from message where session_id=?", (session_id,))
+        assistant_only = False
+    usage = {}
+    for row in rows:
+        try:
+            data = json.loads(row[0])
+        except (TypeError, ValueError):
+            continue
+        if not isinstance(data, dict):
+            continue
+        if not assistant_only and data.get("role") != "assistant":
+            continue
+        tokens = data.get("tokens")
+        if not isinstance(tokens, dict):
+            continue
+        model = data.get("model")
+        if isinstance(model, dict):
+            name = _model_id(model.get("providerID"), model.get("id"))
+        else:
+            name = _model_id(data.get("providerID"), data.get("modelID"))
+        cache = tokens.get("cache") if isinstance(tokens.get("cache"), dict) else {}
+        _usage_add(usage, data.get("agent") or data.get("mode"), name,
+                   _int_tokens(tokens.get("input")), _int_tokens(tokens.get("output")),
+                   _int_tokens(tokens.get("reasoning")), _int_tokens(cache.get("read")))
+    if not usage:
+        return None
+    if not any(value["input"] or value["output"] for value in usage.values()):
+        return None
+    return usage
+
+
+def _session_usage(row):
+    """Rückfall auf die in der Sitzung gespeicherten Summen."""
+    cached = _int_tokens(row.get("tokens_cache_read"))
+    usage = {}
+    _usage_add(usage, row.get("agent"), _model_from_session(row.get("model")),
+               _int_tokens(row.get("tokens_input")), _int_tokens(row.get("tokens_output")),
+               _int_tokens(row.get("tokens_reasoning")), cached)
+    return usage
+
+
+def _project_for_directory(directory, ordered):
+    """Längster passender Projektpfad; Sitzungen außerhalb bleiben unberücksichtigt."""
+    if not directory:
+        return None
+    try:
+        target = os.path.realpath(str(directory))
+    except OSError:
+        target = str(directory)
+    for name, root in ordered:
+        if target == root or target.startswith(root + os.sep):
+            return name
+    return None
+
+
+def _collect(projects):
+    """Liest alle Sitzungen einmal und ordnet sie den Projekten zu.
+
+    ``projects`` ist eine Zuordnung Name -> realer Projektpfad. Liefert
+    ``available``, ``message``, ``db``, ``by_id`` und ``sessions``
+    (Name -> Liste aus ``(Sitzungszeile, Verbrauch)``).
+    """
+    path = opencode_db_path()
+    result = {"available": False, "message": "", "db": path, "by_id": {},
+              "sessions": {name: [] for name in projects}}
+    if not os.path.exists(path):
+        result["message"] = ("opencode-Datenbank nicht gefunden: " + path
+                             + " (noch kein Agentenlauf?)")
+        return result
+    ordered = sorted(projects.items(), key=lambda item: len(item[1]), reverse=True)
+    conn = None
+    try:
+        conn = _open_sessions_db(path)
+        schema = _db_schema(conn)
+        if schema is None:
+            result["message"] = "Unbekanntes Schema in der opencode-Datenbank: " + path
+            return result
+        rows = _read_sessions(conn, schema)
+        json1 = _json1_available(conn)
+        by_id = {row["id"]: row for row in rows}
+        for row in rows:
+            name = _project_for_directory(row.get("directory"), ordered)
+            if name is None:
+                continue
+            if json1:
+                usage = _message_usage(conn, schema, row["id"])
+            else:
+                usage = _message_usage_python(conn, schema, row["id"])
+            result["sessions"][name].append((row, usage or _session_usage(row)))
+        result["by_id"] = by_id
+        result["available"] = True
+    except (sqlite3.Error, OSError) as error:
+        result["message"] = f"opencode-Datenbank nicht lesbar ({path}): {error}"
+        result["sessions"] = {name: [] for name in projects}
+        result["by_id"] = {}
+    finally:
+        if conn is not None:
+            conn.close()
+    return result
+
+
+def _package_of(row, by_id, ids):
+    """Paket-ID der äußersten Sitzung; Unteragenten erben sie."""
+    current = row
+    seen = set()
+    while current.get("parent_id") and current["parent_id"] in by_id \
+            and current["parent_id"] not in seen:
+        seen.add(current["parent_id"])
+        current = by_id[current["parent_id"]]
+    return package_for_title(current.get("title"), ids)
+
+
+def _project_stats(name, sessions, by_id, user_prices, system_prices, catalog):
+    """Paket- und Modellstatistik eines Projekts samt Euro-Kosten."""
+    titles = package_catalog(name)
+    packages = {}
+    for row, usage in sessions:
+        pid = _package_of(row, by_id, titles)
+        package = packages.setdefault(pid, {
+            "id": pid,
+            "title": titles.get(pid, "") or ("Ohne Arbeitspaket" if not pid else ""),
+            "sessions": 0, "models": {}, "tokens": _zero_tokens(), "cost": 0.0})
+        package["sessions"] += 1
+        for (agent, model), tokens in usage.items():
+            entry = package["models"].setdefault((agent, model), {
+                "agent": agent, "model": model,
+                "tokens": _zero_tokens(), "cost": 0.0})
+            _add_tokens(entry["tokens"], tokens)
+    total = {"tokens": _zero_tokens(), "cost": 0.0,
+             "sessions": sum(p["sessions"] for p in packages.values())}
+    models = {}
+    for package in packages.values():
+        for key in sorted(package["models"]):
+            entry = package["models"][key]
+            price, source = _price_for(entry["model"], user_prices, system_prices, catalog)
+            entry["price"] = price
+            entry["price_source"] = source
+            entry["cost"] = _cost_of(entry["tokens"], price)
+            _add_tokens(package["tokens"], entry["tokens"])
+            package["cost"] += entry["cost"]
+            aggregated = models.setdefault(entry["model"], {
+                "model": entry["model"], "agents": [], "tokens": _zero_tokens(),
+                "cost": 0.0, "price": price, "price_source": source})
+            if entry["agent"] not in aggregated["agents"]:
+                aggregated["agents"].append(entry["agent"])
+            _add_tokens(aggregated["tokens"], entry["tokens"])
+            aggregated["cost"] += entry["cost"]
+        _add_tokens(total["tokens"], package["tokens"])
+        total["cost"] += package["cost"]
+        package["models"] = [package["models"][key] for key in sorted(package["models"])]
+    ordered = [packages[pid] for pid in
+               sorted(packages, key=lambda pid: (pid == "", _natural_key(pid)))]
+    return {"packages": ordered, "total": total,
+            "models": [models[key] for key in sorted(models)]}
+
+
+def _natural_key(value):
+    return [int(part) if part.isdigit() else part.lower()
+            for part in re.split(r"(\d+)", value or "")]
+
+
+def costs_project(name):
+    """Kostenübersicht eines Projekts je Arbeitspaket, Agent und Modell."""
+    path = _known_project(name)
+    collected = _collect({name: os.path.realpath(path)})
+    stats = _project_stats(name, collected["sessions"].get(name, []),
+                           collected["by_id"], project_prices(name),
+                           _system_prices(), models_info_map())
+    return {
+        "available": collected["available"], "message": collected["message"],
+        "db": collected["db"], "currency": COSTS_CURRENCY, "unit": "1M",
+        "project": name, "sessions": stats["total"]["sessions"],
+        "packages": stats["packages"], "total": stats["total"],
+        "models": stats["models"], "user_prices": project_prices(name),
+    }
+
+
+def costs_overview():
+    """Kostenübersicht aller Projekte; die Summe bildet das Gesamtprojekt."""
+    projects = {name: os.path.realpath(path) for name, path in project_map().items()}
+    collected = _collect(projects)
+    data, _ = _costs_data()
+    system_prices = _system_prices()
+    catalog = models_info_map()
+    rows = []
+    total = {"tokens": _zero_tokens(), "cost": 0.0, "sessions": 0}
+    for name in sorted(projects):
+        stats = _project_stats(name, collected["sessions"].get(name, []),
+                               collected["by_id"], _project_prices_from(data, name),
+                               system_prices, catalog)
+        row = {"name": name, "packages": len(stats["packages"]),
+               "sessions": stats["total"]["sessions"],
+               "tokens": stats["total"]["tokens"], "cost": stats["total"]["cost"]}
+        rows.append(row)
+        _add_tokens(total["tokens"], row["tokens"])
+        total["cost"] += row["cost"]
+        total["sessions"] += row["sessions"]
+    return {"available": collected["available"], "message": collected["message"],
+            "db": collected["db"], "currency": COSTS_CURRENCY, "unit": "1M",
+            "projects": rows, "total": total}
+
+
+def _num(value):
+    return f"{int(value):,}".replace(",", ".")
+
+
+def _euro(value):
+    return f"{value:,.4f}".replace(",", "X").replace(".", ",").replace("X", ".") + " €"
+
+
+def cmd_costs(name=None):
+    """Kosten je Projekt oder je Arbeitspaket eines Projekts anzeigen."""
+    if name:
+        data = costs_project(name)
+        print(col("b", f"Kosten je Arbeitspaket — {name} "
+                       f"({data['currency']}, Preise je 1 Mio. Tokens)"))
+        if not data["available"]:
+            print(col("y", data["message"]))
+        print(f"{'Paket':14}{'Sitzungen':>10}{'Eingabe':>12}{'davon cached':>14}"
+              f"{'Ausgabe':>12}{'Kosten':>14}")
+        for package in data["packages"]:
+            tokens = package["tokens"]
+            print(f"{(package['id'] or '—'):14}{package['sessions']:>10}"
+                  f"{_num(tokens['input']):>12}{_num(tokens['cached']):>14}"
+                  f"{_num(tokens['output']):>12}{_euro(package['cost']):>14}")
+        tokens = data["total"]["tokens"]
+        print(f"{'Summe':14}{data['total']['sessions']:>10}"
+              f"{_num(tokens['input']):>12}{_num(tokens['cached']):>14}"
+              f"{_num(tokens['output']):>12}{_euro(data['total']['cost']):>14}")
+        unknown = [m["model"] for m in data["models"] if m["price_source"] == "unbekannt"]
+        if unknown:
+            print(col("y", "Preis unbekannt (0 € angesetzt): " + ", ".join(unknown)
+                        + " — im Dashboard unter „Kosten“ eintragen."))
+        return
+    data = costs_overview()
+    print(col("b", f"Kosten je Projekt ({data['currency']}, Preise je 1 Mio. Tokens)"))
+    if not data["available"]:
+        print(col("y", data["message"]))
+    print(f"{'Projekt':22}{'Pakete':>8}{'Sitzungen':>10}{'Eingabe':>12}"
+          f"{'davon cached':>14}{'Ausgabe':>12}{'Kosten':>14}")
+    for row in data["projects"]:
+        tokens = row["tokens"]
+        print(f"{row['name'][:21]:22}{row['packages']:>8}{row['sessions']:>10}"
+              f"{_num(tokens['input']):>12}{_num(tokens['cached']):>14}"
+              f"{_num(tokens['output']):>12}{_euro(row['cost']):>14}")
+    tokens = data["total"]["tokens"]
+    print(f"{'Gesamt':22}{'':>8}{data['total']['sessions']:>10}"
+          f"{_num(tokens['input']):>12}{_num(tokens['cached']):>14}"
+          f"{_num(tokens['output']):>12}{_euro(data['total']['cost']):>14}")
+
+
 # ---------- Emulator, Server, Dashboard, Doctor ----------
 def cmd_emu(action):
     if action not in ("start", "stop"):
@@ -1395,6 +2011,7 @@ def main():
                  "sandbox": lambda: cmd_sandbox(r[0], r[1] if len(r) > 1 else None, r[2] if len(r) > 2 else None),
                  "models": lambda: cmd_models(), "model": lambda: cmd_model(r[0], r[1], r[2] if len(r) > 2 else "global"),
                  "profile": lambda: cmd_profile(r[0] if r else "list", r[1] if len(r) > 1 else None),
+                 "costs": lambda: cmd_costs(r[0] if r else None),
                  "mcp": lambda: cmd_mcp(r[0] if r else "list", r[1] if len(r) > 1 else None, r[2] if len(r) > 2 else "global", r[3] if len(r) > 3 else None),
                  "emu": lambda: cmd_emu(r[0]), "ui": lambda: cmd_ui(r[0] if r else "start"), "server": lambda: cmd_server(r[0] if r else "status"),
                  "types": lambda: cmd_types(), "doctor": lambda: cmd_doctor()}
