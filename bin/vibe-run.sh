@@ -17,7 +17,11 @@ BIN="$INSTALL/bin"
 LOG="$RUNTIME/$NAME.log"; mkdir -p "$RUNTIME"
 cd "$P" || exit 1
 [ -f .vibe/project.env ] && set -a && . ./.vibe/project.env && set +a
-AGENT="${2:-${AGENT:-coding-agent_deepseek}}"
+AGENT="${2:-${AGENT:-}}"
+if [ -z "$AGENT" ]; then
+  echo "ABBRUCH: Kein Agent angegeben (2. Argument oder AGENT in .vibe/project.env)." | tee -a "$LOG"
+  exit 2
+fi
 if ! [[ "$AGENT" =~ ^[A-Za-z0-9][A-Za-z0-9_-]*$ ]]; then
   echo "ABBRUCH: Agentenname ungültig (erlaubt: Buchstaben, Ziffern, _ und -)." | tee -a "$LOG"
   exit 2

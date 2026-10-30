@@ -19,23 +19,23 @@
   },
   {
    "path": "bin/vibe",
-   "sha256": "1c6344e7bd5149dd3d5920fc2eac65840d4a9b9827419de39feaadab4d5ff24c",
-   "bytes": 105610
+   "sha256": "b19096dc4d72a58dd80417a7a9c9e441f0ea8ce72aec49aab20a936ce64fd3f0",
+   "bytes": 119225
   },
   {
    "path": "bin/vibe-run.sh",
-   "sha256": "a35a3918523a7c6ba2267f3fd722cc09dee26de0488aed554f6a73e7152eb5af",
-   "bytes": 6333
+   "sha256": "62759e4a7509aefc1ccc8529b2cd5cb6e0037a1ca5d75e78bd252b6339c80555",
+   "bytes": 6451
   },
   {
    "path": "bin/vibe-web.py",
-   "sha256": "db8d8925a4794e5357917722d095e97e02f610a358c30e599e1fe884f7bf2186",
-   "bytes": 90190
+   "sha256": "46f60f9db85c453c078bb6f5bb648f7c7d1d43b34d9dc845f3161e14a6faed54",
+   "bytes": 94731
   },
   {
    "path": "bin/vibe_guide.py",
-   "sha256": "5d526f6135d3996e6d83afe33eca29450822a55433b61545204dff3adca8b61d",
-   "bytes": 26156
+   "sha256": "d5fd488738af33fdb484a3b3e22818629ab66cb6d5edd72e1a63cf8b45c78936",
+   "bytes": 26241
   },
   {
    "path": "bin/vibe_mcp.py",
@@ -352,6 +352,17 @@
    "grund": "Ticket- und Feedbackverarbeitung stabilisiert: HTML-Kommentare (auch mehrzeilig und mitten in einer Zeile) werden ignoriert, mehrzeilige Bloecke und defekte Checkboxen behalten ID und Titel, nur die exakte Schreibweise - [x] gilt als erledigt, BLOCKIERT bleibt offen, fehlende oder unbekannte Nachweise werden als 'ohne Nachweis' sichtbar. Neue Feedbackeintraege werden validiert, mehrzeilig eingerueckt und ueber die Storage-Schicht mit erwarteter Pruefsumme geschrieben; bei parallelem Zugriff wird die naechste freie ID neu bestimmt statt doppelt vergeben.",
    "dateien": [
     "bin/vibe"
+   ]
+  },
+  {
+   "arbeitspaket": "V-010",
+   "datum": "2026-10-30",
+   "grund": "Agentenverwaltung vervollständigt: Agentendateien werden geparst, validiert und ohne Verlust unbekannter Frontmatter-Felder geschrieben; globale und projektbezogene Agenten sind getrennt bearbeitbar, Namenskonflikte und die tatsächlich wirksame Priorität (Projekt überschreibt global) werden angezeigt. Das Dashboard bietet strukturierten und Rohtexteditor, Vorlagenentwurf, Kopieren mit Ablehnung vorhandener Ziele, Sicherungen und Wiederherstellung. Agentenschreibvorgänge warnen bei einer ungeprüften opencode-Version, sperren aber nicht; fest eingebaute Kernagentennamen entfallen, Rollen stammen aus profiles.json und der Läufer bricht ohne konfigurierten Agenten ab.",
+   "dateien": [
+    "bin/vibe",
+    "bin/vibe-run.sh",
+    "bin/vibe-web.py",
+    "bin/vibe_guide.py"
    ]
   },
   {

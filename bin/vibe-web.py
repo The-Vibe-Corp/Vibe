@@ -308,7 +308,13 @@ class H(BaseHTTPRequestHandler):
                 return self._send(200, vibe.costs_project(known(n)) if n else vibe.costs_overview())
             if u.path == "/api/agent":
                 scope = known_scope(q["scope"][0]); snapshot = vibe.agent_snapshot(scope, q["name"][0])
-                return self._send(200, {"text": snapshot.text, "digest": snapshot.digest})
+                try: fields = vibe.agent_fields(scope, snapshot.text)
+                except ValueError as error:
+                    # Eine defekte Datei bleibt im Rohtexteditor bearbeitbar.
+                    fields = {"invalid": str(error)}
+                return self._send(200, {"text": snapshot.text, "digest": snapshot.digest,
+                                        "fields": fields,
+                                        "backups": list(reversed(vibe.agent_backups(scope, q["name"][0])))})
             if u.path == "/api/mcp": return self._send(200, {"servers": vibe_mcp.list_all(), "projects": vibe.projects()})
             if u.path == "/api/mcp_entry":
                 scope = known_scope(q["scope"][0]); return self._send(200, vibe_mcp.get_entry(scope, q["name"][0]))
@@ -472,9 +478,23 @@ class H(BaseHTTPRequestHandler):
             elif u.path == "/api/agent":
                 act = body.get("action"); scope = known_scope(body.get("scope", "global")); an = body.get("name", "")
                 try:
-                    if act == "save": warn = vibe.agent_write(scope, an, body.get("text", ""), create=bool(body.get("create")), expected=body.get("expected")); ok, msg = True, "Gespeichert" + (" – Hinweis: " + " ".join(warn) if warn else "")
+                    if act == "save":
+                        warn = vibe.agent_write(scope, an, body.get("text", ""), create=bool(body.get("create")), expected=body.get("expected"))
+                        snapshot = vibe.agent_snapshot(scope, an)
+                        extra["text"] = snapshot.text; extra["digest"] = snapshot.digest
+                        ok, msg = True, "Gespeichert" + (" – Hinweis: " + " ".join(warn) if warn else "")
                     elif act == "delete": vibe.agent_delete(scope, an); ok, msg = True, "Gelöscht (Sicherung in agent-backups)"
                     elif act == "copy": vibe.agent_copy(scope, an, known_scope(body.get("to", "global"))); ok, msg = True, "Kopiert"
+                    elif act == "render":
+                        # Vorschau: strukturierte Eingaben in den Rohtext übernehmen,
+                        # ohne die Datei zu verändern.
+                        extra["text"] = vibe.agent_render_fields(scope, body.get("text", ""), body.get("values"))
+                        ok, msg = True, "Eingaben in den Rohtext übernommen – noch nicht gespeichert"
+                    elif act == "restore":
+                        vibe.agent_restore(scope, an, body.get("backup") or None)
+                        snapshot = vibe.agent_snapshot(scope, an)
+                        extra["text"] = snapshot.text; extra["digest"] = snapshot.digest
+                        ok, msg = True, "Sicherung wiederhergestellt"
                     else: ok, msg = False, "Unbekannte Aktion"
                 except vibe_storage.ConcurrentChangeError as e:
                     return self._error(409, "conflict", str(e))
@@ -885,16 +905,23 @@ function modelSelect(models,info,current,blank){const s=el('select',{});if(blank
  models.forEach(m=>{(groups[m.split('/')[0]]=groups[m.split('/')[0]]||[]).push(m)});if(current&&!models.includes(current))(groups[current.split('/')[0]]=groups[current.split('/')[0]]||[]).push(current);
  Object.entries(groups).forEach(([g,ms])=>{const og=el('optgroup',{label:g});ms.forEach(m=>og.append(el('option',{value:m},modelLabel(m,info))));s.append(og)});if(current)s.value=current;return s}
 async function agents(){AG=await api('/api/agents');const d=AG;
- const sel=el('select',{},el('option',{value:'alle'},'Alle'),el('option',{value:'global'},'Nur global (alle Projekte)'),...d.projects.map(p=>el('option',{value:p},'Projekt: '+p)));sel.value=AGFILTER;
+ const sel=el('select',{'aria-label':'Bereich filtern'},el('option',{value:'alle'},'Alle'),el('option',{value:'global'},'Nur global (alle Projekte)'),...d.projects.map(p=>el('option',{value:p},'Projekt: '+p)));sel.value=AGFILTER;
  sel.addEventListener('change',()=>{AGFILTER=sel.value;agents().catch(showErr)});
  const rows=d.agents.filter(a=>AGFILTER==='alle'||a.scope===AGFILTER);
- const tb=el('table',{},el('tr',{},...['Agent','Geltung','Modus','Modell','Beschreibung',''].map(h=>el('th',{},h))));
- rows.forEach(a=>tb.append(el('tr',{},el('td',{},a.name,a.core?el('span',{class:'pill warn',title:'Kernagent der Manipulationsprüfung'},' ◆ Kern'):null,a.shadow?el('span',{class:'pill warn',title:'Gleicher Name in mehreren Bereichen'},' doppelt'):null,a.valid?null:el('span',{class:'pill bad'},' defekt')),
-  el('td',{},a.scope==='global'?el('span',{class:'pill ok'},'global'):el('span',{class:'pill'},'Projekt: '+a.scope)),el('td',{},a.mode),el('td',{class:'mut'},a.model),el('td',{class:'mut'},a.description),
-  el('td',{},el('button',{class:'b',on:{click:()=>agentForm(a.scope,a.name).catch(showErr)}},'Bearbeiten')))));
- main.replaceChildren(el('div',{class:'card'},el('div',{class:'bar'},el('b',{},'Agenten'),sel,el('button',{class:'b p',on:{click:()=>agentForm(null,null).catch(showErr)}},'Neuer Agent')),
+ const tb=el('table',{},el('tr',{},...['Agent','Geltung','Wirksam','Modus','Modell','Beschreibung',''].map(h=>el('th',{},h))));
+ rows.forEach(a=>tb.append(el('tr',{'data-agent':a.name,'data-scope':a.scope},
+  el('td',{},a.name,a.role?el('span',{class:'pill',title:'Rolle laut profiles.json'},' Rolle '+a.role):null,
+   a.conflict?el('span',{class:'pill warn',title:'Gleicher Name in global und Projekt – der Projektagent gilt nur in seinem Projekt'},' Konflikt'):null,
+   a.valid?null:el('span',{class:'pill bad',title:'Datei ist kein gültiger Agent – im Rohtexteditor bearbeitbar'},' defekt')),
+  el('td',{},a.scope==='global'?el('span',{class:'pill ok'},'global'):el('span',{class:'pill'},'Projekt: '+a.scope)),
+  el('td',{class:'prio'},a.priority),
+  el('td',{},a.mode),el('td',{class:'mut'},a.model),el('td',{class:'mut'},a.description),
+  el('td',{},el('button',{class:'b',type:'button',on:{click:()=>agentForm(a.scope,a.name).catch(showErr)}},'Bearbeiten')))));
+ main.replaceChildren(el('div',{class:'card',id:'agents'},
+   el('div',{class:'bar'},el('b',{},'Agenten'),sel,el('button',{class:'b p',type:'button',on:{click:()=>agentForm(null,null).catch(showErr)}},'Neuer Agent')),
    rows.length?tb:el('span',{class:'mut'},'Keine Agenten in diesem Bereich.'),
-   el('div',{class:'mut',style:'margin-top:8px'},'Global = ~/.config/opencode/agents (für alle Projekte). Projekt = <Projekt>/.opencode/agents (nur dort, Teil des Repos). ◆ = von der Abnahme vorausgesetzt.')),profilesCard(d),modelsCard(d))}
+   el('div',{class:'mut',style:'margin-top:8px'},'Global = ~/.config/opencode/agents (für alle Projekte). Projekt = <Projekt>/.opencode/agents (nur dort, Teil des Repos). Ein Projektagent mit demselben Namen überschreibt den globalen Agenten ausschließlich in seinem Projekt; „Wirksam“ nennt die tatsächliche Geltung.')),
+  profilesCard(d),modelsCard(d))}
 function profilesCard(d){const P=JSON.parse(JSON.stringify(d.profiles));const names=Object.keys(P.profile);const cur=el('select',{},...names.map(n=>el('option',{value:n},n+(n===P.aktiv?' (aktiv)':''))));cur.value=P.aktiv;
  const roles=['coder','reviewer'];const body=el('div',{});
  const draw=()=>{const prof=P.profile[cur.value];body.replaceChildren(
@@ -922,44 +949,65 @@ function modelsCard(d){const used={};d.agents.forEach(a=>{(used[a.model]=used[a.
    el('td',{},badge(m.coder)),el('td',{},badge(m.reviewer)),el('td',{class:'mut'},(used[id]||[]).join(', ')||'—')));tb.append(det)});
  return el('div',{class:'card'},el('details',{},el('summary',{},'Modelle – Einschätzung und Preis (aufklappen, Zeile anklicken für Details)'),
    el('div',{class:'mut',style:'margin:8px 0'},'Stand '+d.stand+'. '+d.hinweis),tb,Object.keys(other).length?el('div',{class:'mut',style:'margin-top:8px'},'Weitere verbundene Anbieter (ohne Einschätzung): '+Object.entries(other).map(([k,v])=>k+' ('+v+' Modelle)').join(', ')):null))}
-async function agentForm(scope,name){const d=AG||await api('/api/agents');const isNew=!name;let text='',digest=null;
- if(!isNew){const loaded=await api('/api/agent?scope='+encodeURIComponent(scope)+'&name='+encodeURIComponent(name));text=loaded.text;digest=loaded.digest}
- const nm=el('input',{placeholder:'name (a-z, 0-9, -, _)'});if(!isNew){nm.value=name;nm.setAttribute('disabled','disabled')}
- const sc=el('select',{},el('option',{value:'global'},'global (alle Projekte)'),...d.projects.map(p=>el('option',{value:p},'Projekt: '+p)));sc.value=scope||'global';if(!isNew)sc.setAttribute('disabled','disabled');
- const ds=el('input',{placeholder:'Wofür ist der Agent da? (Pflicht)'});
- const md=el('select',{},el('option',{value:'subagent'},'subagent (wird von anderen aufgerufen)'),el('option',{value:'primary'},'primary (direkt startbar)'),el('option',{value:'all'},'all'));
- const cur=!isNew&&(/^model:\s*(\S+)/m.exec(text)||[])[1];
- const mo=modelSelect(d.models,d.info,cur||'','— Standardmodell —');
- const tp=el('input',{placeholder:'z. B. 0.1',value:'0.1'}),st=el('input',{placeholder:'z. B. 60'});
- const pm=el('select',{});const perms=()=>sc.value==='global'?d.perms:d.perms_project;
- const setPerms=()=>{const cur=pm.value;pm.replaceChildren(...Object.entries(perms()).map(([k,v])=>el('option',{value:k},v)));pm.value=perms()[cur]?cur:'lesen'};
- setPerms();pm.value='lesen';
+async function agentForm(scope,name){const d=AG||await api('/api/agents');const isNew=!name;
+ let text='',digest=null,fields={},backups=[];
+ if(!isNew){const loaded=await api('/api/agent?scope='+encodeURIComponent(scope)+'&name='+encodeURIComponent(name));text=loaded.text;digest=loaded.digest;fields=loaded.fields||{};backups=loaded.backups||[]}
+ const structured=!fields.invalid;
+ const nm=el('input',{'aria-label':'Name',placeholder:'name (a-z, 0-9, -, _)'});if(!isNew){nm.value=name;nm.setAttribute('disabled','disabled')}
+ const sc=el('select',{'aria-label':'Geltung'},el('option',{value:'global'},'global (alle Projekte)'),...d.projects.map(p=>el('option',{value:p},'Projekt: '+p)));sc.value=scope||'global';if(!isNew)sc.setAttribute('disabled','disabled');
+ const ds=el('input',{'aria-label':'Beschreibung',placeholder:'Wofür ist der Agent da? (Pflicht)',value:fields.description||''});
+ const md=el('select',{'aria-label':'Modus'},el('option',{value:''},'— nicht gesetzt —'),el('option',{value:'subagent'},'subagent (wird von anderen aufgerufen)'),el('option',{value:'primary'},'primary (direkt startbar)'),el('option',{value:'all'},'all'));
+ md.value=fields.mode||(isNew?'subagent':'');
+ const mo=modelSelect(d.models,d.info,fields.model||'','— Standardmodell —');mo.setAttribute('aria-label','Modell');
+ const permsFor=()=>sc.value==='global'?d.perms:d.perms_project;
+ const pm=el('select',{'aria-label':'Rechte'});
+ const setPerms=()=>{const keep=pm.value;const list=Object.entries(permsFor()).map(([k,v])=>el('option',{value:k},v));
+  if(!isNew)list.unshift(el('option',{value:''},fields.permission_custom?'individuell – unverändert lassen':'— nicht gesetzt —'));
+  pm.replaceChildren(...list);
+  pm.value=keep&&permsFor()[keep]?keep:(isNew?'lesen':(fields.permission&&permsFor()[fields.permission]?fields.permission:''))};
+ setPerms();
+ const tp=el('input',{'aria-label':'Temperatur',placeholder:'z. B. 0.1',value:isNew?'0.1':(fields.temperature||'')});
+ const st=el('input',{'aria-label':'Max. Schritte',placeholder:'z. B. 60',value:isNew?'':(fields.steps||'')});
+ const pr=el('textarea',{'aria-label':'Prompt',rows:5,placeholder:'System-Prompt: Rolle, Regeln, Ausgabeformat',value:isNew?'':(fields.prompt||'')});
+ const raw=el('textarea',{class:'raw','aria-label':'Datei (Frontmatter + Prompt)'});raw.value=text;
  const hint=el('div',{class:'mut'});
  const updHint=()=>{const dirs=sc.value==='global'?null:(d.write_dirs[sc.value]||[]);const err=sc.value==='global'?null:(d.write_dirs_errors||{})[sc.value];
- hint.textContent=err?'Schreibrechte nicht lesbar: '+err:(sc.value==='global'?'Global: volle Schreibrechte ohne Verzeichnisgrenze.':'Schreibrechte (edit, voll) nur in: '+(dirs&&dirs.length?dirs.join(', '):'keine Verzeichnisse – Schreiben gesperrt')+'. Shell (bash) bleibt erlaubt.')};
+  hint.textContent=err?'Schreibrechte nicht lesbar: '+err:(sc.value==='global'?'Global: volle Schreibrechte ohne Verzeichnisgrenze.':'Schreibrechte (edit, voll) nur in: '+(dirs&&dirs.length?dirs.join(', '):'keine Verzeichnisse – Schreiben gesperrt')+'. Shell (bash) bleibt erlaubt.')};
  updHint();
- const pr=el('textarea',{rows:5,placeholder:'System-Prompt: Rolle, Regeln, Ausgabeformat'});
- const raw=el('textarea',{class:'raw'});raw.value=text;
- const gen=async()=>{const r=await api('/api/agent_template',{description:ds.value,mode:md.value,model:mo.value,temperature:tp.value,steps:st.value,perm:pm.value,prompt:pr.value,scope:sc.value});raw.value=r.message};
+ const unknown=el('div',{class:'mut',id:'agent-unknown'},
+  fields.invalid?'Strukturierte Bearbeitung nicht möglich: '+fields.invalid:
+  (fields.unknown&&fields.unknown.length?'Unbekannte Felder bleiben beim Speichern erhalten: '+fields.unknown.join(', '):'Keine unbekannten Frontmatter-Felder.'));
+ const gen=async()=>{const r=await api('/api/agent_template',{description:ds.value,mode:md.value,model:mo.value,temperature:tp.value,steps:st.value,perm:pm.value||'lesen',prompt:pr.value,scope:sc.value});if(r.ok)raw.value=r.message;else toast(r.message)};
+ const apply=async()=>{if(!structured){toast('Strukturierte Bearbeitung nicht möglich: '+fields.invalid);return}
+  const r=await api('/api/agent',{action:'render',scope:sc.value,name:name,text:raw.value,values:{description:ds.value,mode:md.value,model:mo.value,temperature:tp.value,steps:st.value,permission:pm.value,prompt:pr.value}});
+  toast(r.message);if(r.ok)raw.value=r.text};
  sc.addEventListener('change',()=>{setPerms();updHint();if(isNew)gen().catch(showErr)});
- mo.addEventListener('change',()=>{if(!isNew){const v=mo.value;if(!v)return;raw.value=/^model:/m.test(raw.value)?raw.value.replace(/^model:.*$/m,'model: '+v):raw.value.replace(/\n---/,'\nmodel: '+v+'\n---')}else gen()});
- const core=!isNew&&d.agents.some(a=>a.name===name&&a.scope===scope&&a.core);
- const cp=el('select',{},el('option',{value:''},'Kopieren nach …'),...['global',...d.projects].filter(x=>x!==scope).map(x=>el('option',{value:x},x==='global'?'global':'Projekt: '+x)));
- const kopf=isNew?el('div',{},el('div',{class:'grid'},el('div',{},el('label',{},'Name'),nm),el('div',{},el('label',{},'Geltung'),sc)),el('label',{},'Beschreibung'),ds,
-   el('div',{class:'grid3'},el('div',{},el('label',{},'Modus'),md),el('div',{},el('label',{},'Modell'),mo),el('div',{},el('label',{},'Rechte'),pm)),
-   hint,
-   el('div',{class:'grid'},el('div',{},el('label',{},'Temperatur'),tp),el('div',{},el('label',{},'Max. Schritte'),st)),el('label',{},'Prompt'),pr,
-   el('div',{class:'bar'},el('button',{class:'b',on:{click:gen}},'Datei aus Eingaben erzeugen'),el('span',{class:'mut'},'Das Ergebnis unten kann vor dem Speichern frei bearbeitet werden.'))):
-  el('div',{},el('div',{class:'bar'},el('b',{},name),el('span',{class:'pill'},scope==='global'?'global':'Projekt: '+scope),core?el('span',{class:'pill warn'},'◆ Kernagent: Änderungen können die Manipulationsprüfung schwächen'):null),
-   el('label',{},'Modell schnell wechseln (schreibt die model:-Zeile in den Text unten)'),mo,hint);
- if(isNew)setTimeout(gen,0);
- const delAgent=isNew?null:el('button',{class:'b d',on:{click:()=>askInline(delAgent,'Agent „'+name+'“ löschen? Eine Sicherung bleibt in agent-backups.','Ja, löschen',async()=>{const r=await api('/api/agent',{action:'delete',scope,name});toast(r.message);if(r.ok)agents().catch(showErr)})}},'Löschen');
- main.replaceChildren(el('div',{class:'bar'},el('button',{class:'b',on:{click:()=>agents().catch(showErr)}},'← zurück'),el('h2',{style:'margin:0'},isNew?'Neuer Agent':'Agent bearbeiten')),
-  el('div',{class:'card'},kopf,el('label',{},'Datei (Frontmatter + Prompt)'),raw,
-   el('div',{class:'bar'},el('button',{class:'b p',on:{click:async()=>{const n=isNew?nm.value:name,s=isNew?sc.value:scope;const r=await api('/api/agent',{action:'save',scope:s,name:n,text:raw.value,create:isNew,expected:digest});toast(r.message);if(r.ok)agents().catch(showErr)}}},'Speichern'),
-    isNew?null:cp,isNew?null:el('button',{class:'b',on:{click:async()=>{if(!cp.value)return toast('Ziel wählen');const r=await api('/api/agent',{action:'copy',scope,name,to:cp.value});toast(r.message)}}},'Kopieren'),
-    delAgent)))}
-
+ if(isNew)setTimeout(()=>gen().catch(showErr),0);
+ const kopf=isNew?el('div',{},el('div',{class:'grid'},el('div',{},el('label',{},'Name'),nm),el('div',{},el('label',{},'Geltung'),sc))):
+  el('div',{},el('div',{class:'bar'},el('b',{},name),el('span',{class:'pill'},scope==='global'?'global':'Projekt: '+scope),
+   el('span',{class:'mut'},(d.agents.find(a=>a.name===name&&a.scope===scope)||{}).priority||'')));
+ const felder=el('div',{id:'agent-fields'},
+  el('label',{},'Beschreibung'),ds,
+  el('div',{class:'grid3'},el('div',{},el('label',{},'Modus'),md),el('div',{},el('label',{},'Modell'),mo),el('div',{},el('label',{},'Rechte'),pm)),
+  hint,
+  el('div',{class:'grid'},el('div',{},el('label',{},'Temperatur'),tp),el('div',{},el('label',{},'Max. Schritte'),st)),
+  el('label',{},'Prompt'),pr,unknown,
+  el('div',{class:'bar'},isNew?el('button',{class:'b',type:'button',on:{click:()=>gen()}},'Datei aus Eingaben erzeugen'):
+   el('button',{class:'b',type:'button',on:{click:()=>apply()}},'In Rohtext übernehmen'),
+   el('span',{class:'mut'},'Das Ergebnis unten kann vor dem Speichern frei bearbeitet werden.')));
+ const save=async()=>{const n=isNew?nm.value:name,s=isNew?sc.value:scope;const r=await api('/api/agent',{action:'save',scope:s,name:n,text:raw.value,create:isNew,expected:digest});toast(r.message);if(r.ok){if(isNew)agents().catch(showErr);else{digest=r.digest;raw.value=r.text}}};
+ const cp=el('select',{'aria-label':'Kopieren nach …'},el('option',{value:''},'Kopieren nach …'),...['global',...d.projects].filter(x=>x!==scope).map(x=>el('option',{value:x},x==='global'?'global':'Projekt: '+x)));
+ const delAgent=isNew?null:el('button',{class:'b d',type:'button',on:{click:()=>askInline(delAgent,'Agent „'+name+'“ löschen? Eine Sicherung bleibt in agent-backups.','Ja, löschen',async()=>{const r=await api('/api/agent',{action:'delete',scope,name});toast(r.message);if(r.ok)agents().catch(showErr)})}},'Löschen');
+ const backupBox=el('div',{id:'agent-backups'},el('span',{class:'mut'},'Noch keine Sicherung.'));
+ const drawBackups=()=>{backupBox.replaceChildren(...(backups.length?backups.map(b=>{const btn=el('button',{class:'b',type:'button',on:{click:()=>askInline(btn,'Sicherung „'+b+'“ wiederherstellen? Der aktuelle Stand wird vorher gesichert.','Ja, wiederherstellen',async()=>{const r=await api('/api/agent',{action:'restore',scope,name,backup:b});toast(r.message);if(r.ok)agentForm(scope,name).catch(showErr)})}},'Wiederherstellen');
+  return el('div',{class:'bar'},el('span',{class:'mut'},b),btn)}):[el('span',{class:'mut'},'Noch keine Sicherung vorhanden.')]))};
+ const backupBtn=isNew?null:el('button',{class:'b',type:'button',on:{click:async()=>{const loaded=await api('/api/agent?scope='+encodeURIComponent(scope)+'&name='+encodeURIComponent(name));backups=loaded.backups||[];drawBackups();backupBox.hidden=false;toast(backups.length?backups.length+' Sicherung(en).':'Noch keine Sicherung vorhanden.')}}},'Sicherungen anzeigen');
+ main.replaceChildren(el('div',{class:'bar'},el('button',{class:'b',type:'button',on:{click:()=>agents().catch(showErr)}},'← zurück'),el('h2',{style:'margin:0'},isNew?'Neuer Agent':'Agent bearbeiten')),
+  el('div',{class:'card'},kopf,felder,el('label',{},'Datei (Frontmatter + Prompt)'),raw,
+   el('div',{class:'bar'},el('button',{class:'b p',type:'button',on:{click:save}},'Speichern'),
+    isNew?null:cp,isNew?null:el('button',{class:'b',type:'button',on:{click:async()=>{if(!cp.value)return toast('Ziel wählen');const r=await api('/api/agent',{action:'copy',scope,name,to:cp.value});toast(r.message);if(r.ok)setTab('agents')}}},'Kopieren'),
+    isNew?null:backupBtn,delAgent)),
+  isNew?null:el('div',{class:'card'},el('b',{},'Sicherungen'),el('div',{class:'mut'},'Vor jedem Speichern wird der bisherige Stand gesichert. Die Wiederherstellung sichert zuerst den aktuellen Stand.'),backupBox))}
 /* ---------- MCP-Tools ---------- */
 async function mcp(){const d=await api('/api/mcp');
  const tb=el('table',{},el('tr',{},...['Name','Geltung','Typ','Ziel','aktiv',''].map(h=>el('th',{},h))));

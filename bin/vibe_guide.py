@@ -31,7 +31,7 @@ GUIDE_MARK = "<!-- vibe-guide:generated -->"
 PLACEHOLDER = "Noch offen – im Projektassistenten ergänzen."
 DRAFT_DIR = ".vibe/guide"
 DRAFT_REL = DRAFT_DIR + "/{step}.md"
-DEFAULT_AGENT = "coding-agent_deepseek"
+DEFAULT_AGENT = ""
 # Das Zeichen "~" kann in einer Paketlauf-Sitzung ("vibe-" + safe(name), nur
 # A-Za-z0-9_-) nie vorkommen. Damit kollidiert ein Projekt "proj" nicht mit
 # dem Paketlauf eines Projekts "guide-proj".
@@ -460,6 +460,8 @@ def _project_agent(project):
     text = _read(os.path.join(project, ".vibe", "project.env"))
     match = re.search(r"(?m)^\s*AGENT\s*=\s*(.*)$", text)
     agent = (match.group(1).strip().strip("\"'") if match else "") or DEFAULT_AGENT
+    if not agent:
+        raise ValueError("Kein Agent konfiguriert: AGENT in .vibe/project.env setzen.")
     if not NAME_RE.match(agent):
         raise ValueError("Agentenname: nur Buchstaben, Ziffern, _ und - "
                          "(keine Leerzeichen oder Shellzeichen).")

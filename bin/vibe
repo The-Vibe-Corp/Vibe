@@ -62,8 +62,11 @@ CONTAINER = PATHS.container
 OC_URL = PATHS.opencode_url
 UI_PORT = PATHS.ui_port
 UI_BIND = PATHS.ui_bind
-CORE_AGENTS = {"coding-agent_deepseek", "code-reviewer_glm"}
 NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
+FRONTMATTER_RE = re.compile(r"---[ \t]*\r?\n(.*?)\r?\n---[ \t]*(?:\r?\n|$)", re.S)
+FRONT_KEY_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_-]*):[ \t]*(.*)$")
+AGENT_FIELDS = ("description", "mode", "model", "temperature", "steps")
+_AGENT_VERSION = None
 C = {"g": "\033[32m", "r": "\033[31m", "y": "\033[33m", "b": "\033[1m", "d": "\033[2m", "0": "\033[0m"}
 def col(c, s): return f"{C[c]}{s}{C['0']}" if sys.stdout.isatty() else s
 
@@ -876,6 +879,12 @@ def cmd_status(name):
     lg = logpath(name)
     if os.path.exists(lg): print("Log:", lg, time.strftime("(%d.%m. %H:%M)", time.localtime(os.path.getmtime(lg))))
 
+def default_agent():
+    """Erster global konfigurierter Agent mit der Rolle coder, sonst leer."""
+    for agent, role in profiles_load().get("rollen", {}).items():
+        if role == "coder": return agent
+    return ""
+
 def cmd_run(name, agent=None):
     p = ppath(name)
     if agent is not None: require_agent(agent)
@@ -887,7 +896,11 @@ def cmd_run(name, agent=None):
         if not checked["ok"]: sys.exit(checked["message"])
     if pause_after_active(name): print(col("y", "Pause angefordert: der Lauf startet kein Arbeitspaket. Aufheben: vibe pause " + name + " off"))
     os.makedirs(LOGS, exist_ok=True)
-    env = penv(name); agent = require_agent(agent or env.get("AGENT", "coding-agent_deepseek"))
+    env = penv(name)
+    agent = agent or env.get("AGENT") or default_agent()
+    if not agent:
+        sys.exit("Kein Agent angegeben und kein AGENT in .vibe/project.env oder profiles.json (Rolle coder) konfiguriert.")
+    agent = require_agent(agent)
     # Pfad und Agent bleiben Argumente; das Skript selbst ist konstant.
     # Kein abschließendes "read": Der Agentenlauf endet mit dem Läufer, damit
     # vibe ihn nicht weiter als aktiv meldet. Die Ausgabe bleibt im Log.
@@ -1087,17 +1100,257 @@ def permission_block(perm="lesen", write_dirs=None):
 def agent_dir(scope):
     return AGENTS_DIR if scope == "global" else vibe_opencode.agent_directory(ppath(scope))
 
-def parse_front(text):
-    m = re.match(r"---[ \t]*\n(.*?)\n---[ \t]*(\n|$)", text, flags=re.S)
-    d = {}
-    if m:
-        for line in m.group(1).splitlines():
-            k = re.match(r"^([A-Za-z_]+):[ \t]*(.*)$", line)
-            if k: d[k.group(1)] = k.group(2).strip()
-    return d, bool(m)
+def _frontmatter_parts(text):
+    """Zerlegt einen Agenten in Frontmatter, Prompt und Zeilen.
+
+    Der Parser ist bewusst zeilenorientiert: Er ändert nur die ausdrücklich
+    bearbeiteten Felder und erhält alle anderen Zeilen (auch unbekannte Felder,
+    Kommentare und Reihenfolge) unverändert. Doppelte Top-Level-Felder werden
+    abgelehnt, weil sonst nicht eindeutig wäre, welcher Wert gilt.
+    """
+    m = FRONTMATTER_RE.match(text)
+    if not m:
+        raise ValueError("Die Datei muss mit einem Frontmatter-Block beginnen (--- ... ---).")
+    fm, body = m.group(1), text[m.end():]
+    lines = fm.splitlines()
+    seen = set()
+    for section in _front_sections(lines):
+        if section["key"] in seen:
+            raise ValueError("Feld '" + section["key"] + "' ist doppelt im Frontmatter.")
+        seen.add(section["key"])
+    return m, fm, body, lines
+
+def _front_sections(lines):
+    """Top-Level-Felder mit ihren eingerückten Folgezeilen."""
+    out, i = [], 0
+    while i < len(lines):
+        match = FRONT_KEY_RE.match(lines[i])
+        if not match:
+            i += 1
+            continue
+        start, key, inline = i, match.group(1), match.group(2).strip()
+        i += 1
+        while i < len(lines):
+            if lines[i][:1] in (" ", "\t"):
+                i += 1
+            elif not lines[i].strip() and i + 1 < len(lines) and lines[i + 1][:1] in (" ", "\t"):
+                i += 1
+            else:
+                break
+        out.append({"key": key, "inline": inline, "start": start, "end": i})
+    return out
+
+def _unquote(value):
+    value = (value or "").strip()
+    if len(value) >= 2 and value[0] == value[-1] == '"':
+        try:
+            return json.loads(value)
+        except ValueError:
+            return value[1:-1]
+    if len(value) >= 2 and value[0] == value[-1] == "'":
+        # YAML maskiert ein einfaches Anführungszeichen durch Verdopplung.
+        return value[1:-1].replace("''", "'")
+    return value
+
+def _parse_agent_text(text):
+    """Liest die bearbeitbaren Felder und die unbekannten Schlüssel."""
+    _m, _fm, body, lines = _frontmatter_parts(text)
+    sections = _front_sections(lines)
+    by_key = {section["key"]: section for section in sections}
+    def inline(key):
+        section = by_key.get(key)
+        return _unquote(section["inline"]) if section else ""
+    fields = {key: inline(key) for key in AGENT_FIELDS}
+    permission = by_key.get("permission")
+    fields["permission"] = "\n".join(lines[permission["start"]:permission["end"]]) if permission else ""
+    fields["permission_inline"] = bool(permission and permission["inline"])
+    fields["prompt"] = body.strip("\n")
+    known = set(AGENT_FIELDS) | {"permission"}
+    fields["unknown"] = sorted({section["key"] for section in sections if section["key"] not in known})
+    return fields
+
+def _same_block(left, right):
+    def normalized(value):
+        return [line.rstrip() for line in value.splitlines() if line.strip()]
+    return normalized(left) == normalized(right)
+
+def agent_fields(scope, text):
+    """Strukturierte Sicht auf einen Agenten für den Editor.
+
+    ``permission`` ist die passende Vorlage oder ein leerer Wert, wenn der
+    Rechteblock individuell ist. ``unknown`` nennt alle Felder, die der
+    strukturierte Editor nicht kennt und deshalb unverändert stehen lässt.
+    """
+    parsed = _parse_agent_text(text)
+    raw_permission = parsed["permission"]
+    preset = ""
+    if raw_permission and not parsed["permission_inline"]:
+        try:
+            dirs = None if scope == "global" else write_dirs(scope)
+        except ValueError:
+            dirs = None
+        for key in PERMS:
+            candidate = "permission:\n" + permission_block(key, dirs)
+            if _same_block(parsed["permission"], candidate):
+                preset = key
+                break
+    parsed["permission"] = preset
+    parsed["permission_custom"] = bool(raw_permission) and not preset
+    return parsed
+
+def _validate_agent_field(key, value):
+    """Prüft ein einzelnes bearbeitbares Feld; gibt den bereinigten Wert zurück."""
+    value = str(value if value is not None else "").strip()
+    if key == "description":
+        if not value:
+            raise ValueError("Die Beschreibung (description) darf nicht leer sein.")
+        if value in ("Kurzbeschreibung eintragen", "Beschreibung fehlt"):
+            raise ValueError("Bitte die Beschreibung (description) anpassen, sie ist noch der Platzhalter.")
+    elif key == "mode":
+        if value and value not in vibe_opencode.TESTED_PROFILE["agent_modes"]:
+            raise ValueError("mode muss " + ", ".join(vibe_opencode.TESTED_PROFILE["agent_modes"]) + " sein.")
+    elif key == "model":
+        if value and not re.match(r"^[A-Za-z0-9][A-Za-z0-9._:/@+-]*$", value):
+            raise ValueError("Das Modell muss die Form 'anbieter/modell' ohne Leerzeichen haben.")
+    elif key == "temperature":
+        if value:
+            try:
+                number = float(value)
+            except ValueError:
+                raise ValueError("Temperatur muss eine Zahl zwischen 0 und 2 sein.")
+            if not 0 <= number <= 2:
+                raise ValueError("Temperatur muss zwischen 0 und 2 liegen.")
+    elif key == "steps":
+        if value:
+            if not re.match(r"^\d+$", value) or int(value) < 1:
+                raise ValueError("Max. Schritte muss eine ganze Zahl ab 1 sein.")
+    return value
+
+def _front_value(value):
+    value = str(value).strip()
+    if "\n" in value or "\r" in value or "\x00" in value:
+        raise ValueError("Ein Feldwert darf keinen Zeilenumbruch enthalten.")
+    # YAML-Indikatoren am Zeilenanfang würden den Wert als Sequenz, Mapping,
+    # Alias, Anker, Tag, Block oder Direktive deuten. "..." beendet zudem ein
+    # Dokument. Solche Werte werden als JSON-String zitiert.
+    if value.startswith(tuple("-?:,[]{}#&*!|>'\"%@`")) or value == "..." \
+            or ":" in value or "#" in value:
+        return json.dumps(value, ensure_ascii=False)
+    return value
+
+def _apply_agent_fields(text, values, permission_lines=None):
+    """Schreibt bekannte Felder in den Rohtext, ohne unbekannte zu verlieren."""
+    m, fm, body, lines = _frontmatter_parts(text)
+    sep = "\r\n" if "\r\n" in fm else "\n"
+    def sections():
+        return {section["key"]: section for section in _front_sections(lines)}
+    def replace_inline(key, value):
+        value = str(value).strip()
+        section = sections().get(key)
+        if not value:
+            if section:
+                del lines[section["start"]:section["end"]]
+            return
+        line = f"{key}: {_front_value(value)}"
+        section = sections().get(key)
+        if section:
+            lines[section["start"]:section["end"]] = [line]
+        else:
+            lines.append(line)
+    for key in AGENT_FIELDS:
+        if key in values:
+            replace_inline(key, values[key])
+    if permission_lines is not None:
+        section = sections().get("permission")
+        if section and section["inline"]:
+            raise ValueError("permission: wird nur in Blockform unterstützt; Inline-Rechte werden nicht verändert.")
+        block = ["permission:"] + list(permission_lines)
+        if section:
+            lines[section["start"]:section["end"]] = block
+        else:
+            lines.extend(block)
+    new_body = body
+    if "prompt" in values:
+        prompt = str(values["prompt"]).strip("\n")
+        if not prompt.strip():
+            raise ValueError("Der Prompt darf nicht leer sein.")
+        # Immer mit einem Zeilenumbruch an den Frontmatter-Block anschließen:
+        # Dateien ohne Prompt enden direkt mit "---" und würden sonst zu
+        # ungültigem Frontmatter ("---Neuer Prompt").
+        new_body = sep + prompt + sep
+    return text[:m.start(1)] + sep.join(lines) + text[m.end(1):m.end()] + new_body
+
+def agent_render_fields(scope, text, values):
+    """Wendet strukturierte Eingaben auf Rohtext an, ohne zu speichern."""
+    if not isinstance(values, dict):
+        raise ValueError("Felder müssen als Objekt übergeben werden.")
+    clean = {}
+    for key in AGENT_FIELDS:
+        if key in values and values[key] is not None:
+            clean[key] = _validate_agent_field(key, values[key])
+    if "prompt" in values and values["prompt"] is not None:
+        prompt = str(values["prompt"])
+        if not prompt.strip():
+            raise ValueError("Der Prompt darf nicht leer sein.")
+        clean["prompt"] = prompt
+    permission_lines = None
+    permission = values.get("permission")
+    if permission:
+        if permission not in PERMS:
+            raise ValueError("Unbekannte Rechte-Vorlage: " + str(permission))
+        dirs = None if scope == "global" else write_dirs(scope)
+        permission_lines = permission_block(permission, dirs).splitlines()
+    new_text = _apply_agent_fields(text, clean, permission_lines)
+    agent_validate(new_text)
+    return new_text
+
+def agent_version(refresh=False):
+    """Erkennt die opencode-Version einmal je Prozess."""
+    global _AGENT_VERSION
+    if refresh or _AGENT_VERSION is None:
+        _AGENT_VERSION = vibe_opencode.probe()
+    return _AGENT_VERSION
+
+def agent_version_warning():
+    """Hinweis, wenn die installierte opencode-Version nicht geprüft ist.
+
+    Die Agentenregeln und das Verzeichnis ``.opencode/agents`` gelten
+    unabhängig von der erkannten Version (V-007). Ein harter Riegel würde die
+    Agentenverwaltung nach jedem opencode-Update ohne fachlichen Grund sperren;
+    deshalb wird der Unterschied nur gemeldet.
+    """
+    info = agent_version()
+    if info.supported: return ""
+    return (info.message + " Die Agentenregeln gelten unverändert; "
+            "der Schreibvorgang wird nicht gesperrt.")
+
+def _agent_overlay(rows):
+    """Konflikte und wirksame Priorität je Agentenname.
+
+    Geprüfte opencode-Priorität (2.1.4): Ein Projektagent überschreibt einen
+    gleichnamigen globalen Agenten. Der globale Agent bleibt in allen anderen
+    Projekten wirksam. Gleichnamige Projektagenten verschiedener Projekte
+    überschneiden sich nicht und sind deshalb kein Konflikt.
+    """
+    scopes = {}
+    for row in rows:
+        scopes.setdefault(row["name"], []).append(row["scope"])
+    result = {}
+    for name, entries in scopes.items():
+        project_scopes = sorted(scope for scope in entries if scope != "global")
+        has_global = "global" in entries
+        result[name] = {
+            "global": has_global,
+            "projects": project_scopes,
+            "conflict": has_global and bool(project_scopes),
+            "overrides": "global" if has_global and project_scopes else "",
+            "overridden_in": project_scopes if has_global else [],
+        }
+    return result
 
 def agents_all():
     out, scopes = [], ["global"] + projects()
+    roles = profiles_load().get("rollen", {})
     for scope in scopes:
         try: d = agent_dir(scope)
         except SystemExit: continue
@@ -1105,13 +1358,40 @@ def agents_all():
         for f in sorted(os.listdir(d)):
             if not f.endswith(".md"): continue
             n = f[:-3]
-            fm, ok = parse_front(open(os.path.join(d, f), encoding="utf-8", errors="replace").read())
-            out.append({"name": n, "scope": scope, "model": fm.get("model", "-"), "mode": fm.get("mode", "all"), "description": fm.get("description", "")[:110],
-                        "valid": ok and "description" in fm, "core": n in CORE_AGENTS and scope == "global"})
-    cnt = {}
-    for a in out: cnt[a["name"]] = cnt.get(a["name"], 0) + 1
-    for a in out: a["shadow"] = cnt[a["name"]] > 1
+            with open(os.path.join(d, f), encoding="utf-8", errors="replace") as fh:
+                text = fh.read()
+            try:
+                parsed = _parse_agent_text(text)
+                agent_validate(text)
+                valid = True
+            except ValueError:
+                try: parsed = _parse_agent_text(text)
+                except ValueError: parsed = {}
+                valid = False
+            out.append({"name": n, "scope": scope, "model": parsed.get("model") or "-", "mode": parsed.get("mode") or "all",
+                        "description": (parsed.get("description") or "")[:110], "valid": valid,
+                        "role": roles.get(n, "") if scope == "global" else ""})
+    overlay = _agent_overlay(out)
+    for row in out:
+        info = overlay[row["name"]]
+        row["conflict"] = info["conflict"]
+        row["shadow"] = info["conflict"]
+        row["overrides"] = info["overrides"]
+        row["overridden_in"] = list(info["overridden_in"])
+        if row["scope"] == "global":
+            row["priority"] = ("wird überschrieben in: " + ", ".join(info["overridden_in"])) if info["overridden_in"] else "gilt global"
+        else:
+            row["priority"] = "überschreibt global" if info["global"] else "gilt nur in " + row["scope"]
     return out
+
+def effective_agent(name, scope="global"):
+    """Bereich, dessen Datei für einen Agentennamen tatsächlich gilt."""
+    if not NAME_RE.match(name or ""): raise ValueError("Name: nur a-z, 0-9, _ und -")
+    if scope != "global" and os.path.exists(agent_path(scope, name)):
+        return scope
+    if os.path.exists(agent_path("global", name)):
+        return "global"
+    raise ValueError("Agent nicht gefunden: " + name)
 
 def agent_path(scope, name):
     if not NAME_RE.match(name or ""): raise ValueError("Name: nur a-z, 0-9, _ und -")
@@ -1120,14 +1400,19 @@ def agent_path(scope, name):
 def agent_read(scope, name):
     p = agent_path(scope, name)
     if not os.path.exists(p): raise ValueError("Agent nicht gefunden: " + name)
-    return open(p, encoding="utf-8").read()
+    with open(p, encoding="utf-8") as fh:
+        return fh.read()
 
 def agent_validate(text):
-    fm, ok = parse_front(text)
-    if not ok: raise ValueError("Die Datei muss mit einem Frontmatter-Block beginnen (--- ... ---).")
-    if not fm.get("description"): raise ValueError("Im Frontmatter fehlt 'description' (Pflichtfeld in opencode).")
-    if fm["description"] in ("Kurzbeschreibung eintragen", "Beschreibung fehlt"): raise ValueError("Bitte die Beschreibung (description) anpassen, sie ist noch der Platzhalter.")
-    vibe_opencode.validate_agent(fm, text.split("\n---", 1)[-1])
+    parsed = _parse_agent_text(text)
+    for key in AGENT_FIELDS:
+        value = parsed.get(key, "")
+        if value:
+            _validate_agent_field(key, value)
+    if not parsed.get("description"):
+        raise ValueError("Im Frontmatter fehlt 'description' (Pflichtfeld in opencode).")
+    fm = {key: parsed[key] for key in AGENT_FIELDS if parsed.get(key)}
+    vibe_opencode.validate_agent(fm, parsed["prompt"])
     return fm
 
 def agent_backup_dir(scope):
@@ -1136,7 +1421,13 @@ def agent_backup_dir(scope):
 def agent_backups(scope, name):
     """Vorhandene Sicherungen eines Agenten, älteste zuerst."""
     if not NAME_RE.match(name or ""): raise ValueError("Name: nur a-z, 0-9, _ und -")
-    return vibe_storage.list_backups(agent_backup_dir(scope), label=name)
+    # list_backups() arbeitet mit Präfixen. "tester-2-..." beginnt ebenfalls
+    # mit "tester-" und wäre sonst eine Sicherung des Agenten "tester".
+    # Deshalb wird der vollständige Sicherungsname geprüft.
+    pattern = re.compile(r"^" + re.escape(name)
+                         + r"-\d{8}-\d{6}-\d{6}-[0-9a-f]{4}(?:-\d+)?\.md$")
+    return [item for item in vibe_storage.list_backups(agent_backup_dir(scope), label=name)
+            if pattern.match(item)]
 
 def agent_restore(scope, name, backup=None):
     """Stellt eine Sicherung wieder her; ohne Angabe die neueste."""
@@ -1170,6 +1461,8 @@ def agent_write(scope, name, text, create=False, expected=None):
         p, content, agent_backup_dir(scope), label=name,
         expected=snapshot.digest if snapshot.exists else vibe_storage.MISSING)
     warn = []
+    version_warning = agent_version_warning()
+    if version_warning: warn.append(version_warning)
     ml = models_list()
     if fm.get("model") and ml and fm["model"] not in ml: warn.append(f"Modell '{fm['model']}' steht nicht in 'opencode models' (Anbieter verbunden?).")
     notes = vibe_storage.filesystem_notes(p)
@@ -1195,10 +1488,19 @@ def agent_copy(scope, name, to_scope):
 
 def agent_template(description, mode="subagent", model="", temperature="", steps="", perm="lesen", prompt="", write_dirs=None):
     if perm not in PERMS: perm = "lesen"
-    lines = ["---", f"description: {description.strip() or 'Beschreibung fehlt'}", f"mode: {mode if mode in ('primary','subagent','all') else 'subagent'}"]
+    # Ein Entwurf darf den Platzhalter "Beschreibung fehlt" enthalten; erst
+    # agent_write/agent_validate verlangt eine echte Beschreibung. Geprüft wird
+    # hier nur, was das Frontmatter zerstören würde (Zeilenumbrüche, YAML-Sonderzeichen).
+    description = str(description or "").strip()
+    description = description or "Beschreibung fehlt"
+    mode = _validate_agent_field("mode", mode or "subagent")
+    model = _validate_agent_field("model", model) if str(model or "").strip() else ""
+    temperature = _validate_agent_field("temperature", temperature) if str(temperature or "").strip() else ""
+    steps = _validate_agent_field("steps", steps) if str(steps or "").strip() else ""
+    lines = ["---", f"description: {_front_value(description)}", f"mode: {mode}"]
     if model: lines.append(f"model: {model}")
-    if str(temperature).strip(): lines.append(f"temperature: {temperature}")
-    if str(steps).strip(): lines.append(f"steps: {steps}")
+    if temperature: lines.append(f"temperature: {temperature}")
+    if steps: lines.append(f"steps: {steps}")
     lines += ["permission:", permission_block(perm, write_dirs), "---", "", prompt.strip() or "You are a helpful agent. Describe the task, rules and output format here."]
     return "\n".join(lines) + "\n"
 
@@ -1302,9 +1604,14 @@ def cmd_agents():
     if not rows: sys.exit("Keine Agenten gefunden. Globaler Ordner: " + AGENTS_DIR)
     print(col("b", f"{'Agent':28}{'Geltung':16}{'Modus':10}{'Modell':40}Beschreibung"))
     for a in rows:
-        tag = " ◆" if a["core"] else (" (doppelt)" if a["shadow"] else "") + ("" if a["valid"] else " (defekt)")
+        tags = []
+        if a["role"]: tags.append("Rolle " + a["role"])
+        if a["conflict"]: tags.append("Konflikt")
+        if not a["valid"]: tags.append("defekt")
+        tag = " (" + ", ".join(tags) + ")" if tags else ""
         print(f"{(a['name'] + tag)[:27]:28}{('global' if a['scope'] == 'global' else 'Projekt ' + a['scope'])[:15]:16}{a['mode']:10}{a['model'][:39]:40}{a['description'][:50]}")
-    print(col("d", "◆ = Kernagent der Manipulationsprüfung. Projektagenten liegen in <projekt>/.opencode/agents/."))
+        print(col("d", "  " + a["priority"]))
+    print(col("d", "Projektagenten überschreiben gleichnamige globale Agenten (opencode 2.1.4). Rollen sind in profiles.json konfiguriert."))
 
 def _editor(path):
     ed = os.environ.get("EDITOR") or shutil.which("nano") or shutil.which("vi") or "vi"
@@ -1372,7 +1679,9 @@ def cmd_model(agent, model, scope="global"):
 # ---------- Profile: Modelle pro Rolle umschalten (kostenlos / bezahlt) ----------
 DEFAULT_PROFILES = {
  "aktiv": "kostenlos",
- "rollen": {"coding-agent_deepseek": "coder", "code-reviewer_glm": "reviewer"},
+ # Rollen sind bewusst leer: vibe kennt keine fest eingebauten Agentennamen.
+ # Die Zuordnung erfolgt in der Oberfläche oder in profiles.json.
+ "rollen": {},
  "profile": {
   "kostenlos": {"coder": "opencode/deepseek-v4.1-flash-free", "reviewer": "opencode/glm-5.3-flash-free"},
   "guenstig": {"coder": "opencode/deepseek-v4.1-flash", "reviewer": "opencode/glm-5.3-flash"},
@@ -2139,7 +2448,8 @@ def doctor_checks():
     chk("/dev/kvm", os.path.exists("/dev/kvm"), "KVM fehlt")
     chk("ANDROID_HOME gesetzt", bool(os.environ.get("ANDROID_HOME")), "source ~/.bashrc im Container")
     chk("Abnahme-Dateien + Prüfsummen", os.path.exists(os.path.join(VERIFY, "verify.sh")) and run(["sha256sum", "-c", os.path.expanduser("~/.config/schreibfuchs-verify.sha"), "--quiet"], cwd=VERIFY)[0] == 0, "install.sh / install2.sh ausführen")
-    for a in sorted(CORE_AGENTS): chk("Agent " + a, os.path.exists(os.path.join(AGENTS_DIR, a + ".md")))
+    for a, role in sorted(profiles_load().get("rollen", {}).items()):
+        chk(f"Agent {a} ({role})", os.path.exists(os.path.join(AGENTS_DIR, a + ".md")))
     chk("models.json (Modell-Einschätzung)", os.path.exists(MODELS_FILE), "install-vibe.sh ausführen")
     if os.path.isdir(VIBE):
         st = shutil.disk_usage(VIBE); chk(f"freier Platz auf Datenpartition: {st.free // 2**30} GB", st.free > 10 * 2**30, "unter 10 GB")

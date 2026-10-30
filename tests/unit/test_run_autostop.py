@@ -55,8 +55,11 @@ class RunnerSessionEndTest(unittest.TestCase):
         self.name = "f10proj%d" % os.getpid()
         self.project = self.root / self.name
         (self.project / ".vibe").mkdir(parents=True)
+        # V-010: Der Läufer fällt nicht mehr auf einen fest eingebauten
+        # Kernagentennamen zurück. Ein Projektlauf braucht deshalb einen
+        # konfigurierten Agenten; die Rolle des Agenten ist hier unerheblich.
         (self.project / ".vibe" / "project.env").write_text(
-            'TYPE=generic\nVERIFY_FULL="true"\n', encoding="utf-8"
+            'TYPE=generic\nAGENT=tester\nVERIFY_FULL="true"\n', encoding="utf-8"
         )
         (self.project / "FEEDBACK.md").write_text(
             "# FEEDBACK\n\n- [ ] F1 Testpaket\n  Beschreibung: Test\n",

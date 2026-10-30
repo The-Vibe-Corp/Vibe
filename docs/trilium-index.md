@@ -15,6 +15,7 @@ Zuordnung der Projekt-Dokumentation zu den Notizen in Trilium (Stand 2026-10-30)
 | vibe | Features | V-007 opencode-Kompatibilitätsadapter | `B8WSE271Yfe5` |
 | vibe | Features | V-008 Projektverwaltung und Vorlagen regressionssicher | `SC3Jtp3csTnz` |
 | vibe | Features | V-009 Ticket- und Feedbackverarbeitung stabilisieren | `jFyT2V8u3yij` |
+| vibe | Features | V-010 Agentenverwaltung vervollständigen | `KkhQ6sa4w0qz` |
 | vibe | Features | V-013 MCP-Konfiguration verlustarm bearbeiten | `mtlfH63g6rLt` |
 | vibe | Features | F1 Feedback-Erfassung: nur Titel und Beschreibung | `4gZSOc9wxivN` |
 | vibe | Features | F2 Projektdetail: Feedback bearbeiten, Ausgabe steuern | `4etfKlTUj9ah` |
