@@ -274,35 +274,99 @@ def cmd_roots(action=None, path=None):
     if uninit: print(col("y", "Nicht für vibe vorbereitet: " + ", ".join(uninit) + "  -> vibe init <projekt>"))
 
 # ---------- Arbeitspakete ----------
-def _blocks(text):
-    text = re.sub(r"<!--.*?-->", "", text, flags=re.S)
-    cur, out = None, []
-    for line in text.splitlines():
+# Ein Block beginnt mit "- " und umfasst alle folgenden eingerückten oder
+# leeren Zeilen. HTML-Kommentare (auch mehrzeilige und mitten in einer Zeile)
+# werden vorher entfernt; die Zeilenanzahl bleibt erhalten, damit sich
+# Start-/Endindizes weiter auf den Originaltext beziehen.
+_ITEM_LINE = re.compile(r"^- (?:(?P<box>\[[^\]]*\])[ \t]*)?(?P<rest>.*)$")
+_ID_TOKEN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]*$")
+
+def _strip_comments_lines(lines):
+    """Entfernt HTML-Kommentare zeilenweise, ohne Zeilen zu verschieben."""
+    cleaned, in_comment = [], False
+    for line in lines:
+        out, index = [], 0
+        while index < len(line):
+            if in_comment:
+                end = line.find("-->", index)
+                if end < 0: break
+                in_comment = False
+                index = end + 3
+            else:
+                start = line.find("<!--", index)
+                if start < 0:
+                    out.append(line[index:]); break
+                out.append(line[index:start])
+                in_comment = True
+                index = start + 4
+        cleaned.append("".join(out))
+    return cleaned
+
+def _scan_blocks(text):
+    """Blöcke als (start, end, Zeilen) mit entfernten Kommentaren."""
+    entries, cur = [], None
+    for idx, line in enumerate(_strip_comments_lines(text.splitlines())):
         if line.startswith("- "):
-            if cur: out.append(cur)
-            cur = line
+            if cur: entries.append(cur)
+            cur = {"start": idx, "end": idx + 1, "lines": [line]}
         elif cur is not None and (line.startswith((" ", "\t")) or not line.strip()):
-            cur += "\n" + line
+            cur["lines"].append(line)
+            if line.strip(): cur["end"] = idx + 1
         else:
-            if cur: out.append(cur); cur = None
-    if cur: out.append(cur)
-    return out
+            if cur: entries.append(cur)
+            cur = None
+    if cur: entries.append(cur)
+    return entries
+
+def _blocks(text):
+    return ["\n".join(entry["lines"]) for entry in _scan_blocks(text)]
+
+def _parse_item_line(line):
+    """Liest "- [x] ID Titel"; defekte Checkboxen behalten ID und Titel.
+
+    Als erledigt gilt nur die exakte Schreibweise ``- [x]`` wie beim
+    Paketläufer. ``[X]``, ``[]`` oder ``[ x ]`` bleiben offen, verlieren aber
+    weder ID noch Titel. ``prefix`` ist die unveränderte Kopfzeile bis
+    einschließlich ID, damit eine Bearbeitung keine defekte Checkbox verliert.
+    """
+    m = _ITEM_LINE.match(line)
+    if not m: return None
+    rest = (m.group("rest") or "").strip()
+    if not rest: return None
+    parts = rest.split(None, 1)
+    ident = parts[0]
+    if not _ID_TOKEN.match(ident):
+        # Nicht geschlossene Klammer, z. B. "- [x F1 Titel": nächsten Teil
+        # als ID versuchen, statt den Eintrag zu verlieren.
+        if ident.startswith("[") and len(parts) > 1:
+            parts = parts[1].split(None, 1)
+            ident = parts[0]
+        if not _ID_TOKEN.match(ident): return None
+    ident_at = line.find(ident, m.start("rest"))
+    if ident_at < 0: return None
+    prefix = line[:ident_at + len(ident)]
+    if not prefix.endswith((" ", "\t")): prefix += " "
+    return {"id": ident, "title": (parts[1] if len(parts) > 1 else "").strip(),
+            "checked": line.startswith("- [x]"), "prefix": prefix}
 
 def _proof_ok(root, b):
-    c = re.search(r"Commit:\s*([0-9a-f]{7,40})", b)
+    c = re.search(r"(?m)^[ \t]*Commit:\s*([0-9a-f]{7,40})\b", b)
     if not c or git_run(root, "cat-file", "-e", f"{c.group(1)}^{{commit}}")[0] != 0: return False
-    return bool(re.search(r"Test:\s*\S+|Datei:\s*\S+", b))
+    # Der Nachweis darf in derselben Zeile nach dem Commit stehen
+    # (``Commit: <hash>; Test: ...``) oder in einer eigenen eingerückten Zeile.
+    return bool(re.search(r"(?m)(?:^|;)[ \t]*(?:Test|Datei):[ \t]*\S+", b))
 
 def open_items(name):
     root = ppath(name); res = []
     for fname, need_proof in (("FEEDBACK.md", True), ("TICKETS.md", False)):
         fp = os.path.join(root, fname)
         if not os.path.exists(fp): continue
-        for b in _blocks(open(fp, encoding="utf-8", errors="replace").read()):
-            m = re.match(r"- (?:\[[ x]\]\s*)?(\S+)\s*(.*)", b.splitlines()[0])
-            pid, title = (m.group(1), m.group(2)[:60]) if m else ("?", b[:60])
+        for b in _blocks(_read_text(fp)):
+            first = b.splitlines()[0]
+            item = _parse_item_line(first)
+            pid, title = (item["id"], item["title"][:60]) if item else ("?", first[:60])
             if "BLOCKIERT:" in b: res.append((pid, title, "BLOCKIERT"))
-            elif not b.startswith("- [x]"): res.append((pid, title, "offen"))
+            elif not item or not item["checked"]: res.append((pid, title, "offen"))
             elif need_proof and not _proof_ok(root, b): res.append((pid, title, "ohne Nachweis"))
     return res
 
@@ -314,35 +378,13 @@ def _feedback_scan(text):
 
     start/end sind Zeilenindizes in ``text.splitlines()``; end zeigt hinter die
     letzte nichtleere Zeile des Blocks. Die Kommentarvorlage in FEEDBACK.md
-    wird ignoriert.
+    wird ignoriert; Blöcke und Kommentare werden wie in TICKETS.md behandelt.
     """
-    entries, cur, in_comment = [], None, False
-    for idx, line in enumerate(text.splitlines()):
-        stripped = line.strip()
-        if in_comment:
-            if "-->" in line: in_comment = False
-            if cur: entries.append(cur); cur = None
-            continue
-        if stripped.startswith("<!--"):
-            if cur: entries.append(cur); cur = None
-            if "-->" not in stripped: in_comment = True
-            continue
-        if line.startswith("- "):
-            if cur: entries.append(cur)
-            cur = {"start": idx, "end": idx + 1, "lines": [line]}
-        elif cur is not None and (line.startswith((" ", "\t")) or not stripped):
-            cur["lines"].append(line)
-            if stripped: cur["end"] = idx + 1
-        else:
-            if cur: entries.append(cur)
-            cur = None
-    if cur: entries.append(cur)
-    return entries
+    return _scan_blocks(text)
 
 def _feedback_parse(entry, root):
-    first = entry["lines"][0]
-    m = re.match(r"- (?:\[([ x])\]\s*)?(\S+)\s*(.*)$", first)
-    if not m: return None
+    item = _parse_item_line(entry["lines"][0])
+    if not item: return None
     desc, desc_start, desc_end, i = [], None, None, 1
     while i < len(entry["lines"]):
         lm = _FEEDBACK_LABEL.match(entry["lines"][i])
@@ -358,12 +400,12 @@ def _feedback_parse(entry, root):
             break
         i += 1
     block = "\n".join(entry["lines"])
-    checked = m.group(1) == "x"
+    checked = item["checked"]
     if "BLOCKIERT:" in block: state = "BLOCKIERT"
     elif not checked: state = "offen"
     elif root and not _proof_ok(root, block): state = "ohne Nachweis"
     else: state = "erledigt"
-    return {"id": m.group(2), "title": m.group(3), "description": "\n".join(desc),
+    return {"id": item["id"], "title": item["title"], "description": "\n".join(desc),
             "state": state, "checked": checked, "desc_start": desc_start, "desc_end": desc_end}
 
 def feedback_path(name):
@@ -418,11 +460,10 @@ def feedback_update(name, fid, title, description=""):
         raise ValueError("Abgeschlossene Feedback-Punkte sind nicht bearbeitbar: " + fid)
     raw = text.splitlines(keepends=True)
     sep = "\r\n" if raw[entry["start"]].endswith("\r\n") else "\n"
-    first = raw[entry["start"]].rstrip("\r\n")
-    m = re.match(r"- (?:\[[ x]\]\s*)?(\S+)\s*(.*)$", first)
-    if not m: raise ValueError("Feedback-Punkt nicht lesbar: " + fid)
-    prefix = first[:m.start(2)]
-    raw[entry["start"]] = prefix + title + sep
+    item_line = _parse_item_line(entry["lines"][0])
+    if not item_line: raise ValueError("Feedback-Punkt nicht lesbar: " + fid)
+    # prefix enthält die unveränderte Checkbox (auch defekte wie "[]") und die ID.
+    raw[entry["start"]] = item_line["prefix"] + title + sep
     desc = (description or "").strip()
     parts = desc.splitlines() if desc else [""]
     new_lines = ["  Beschreibung:" + (" " + parts[0] if parts[0] else "") + sep]
@@ -889,16 +930,51 @@ def cmd_verify(name, mode="quick"):
     if not argv: sys.exit(f"Keine Prüfbefehle in {ppath(name)}/.vibe/project.env (VERIFY_QUICK / VERIFY_FULL).")
     subprocess.run(argv, cwd=ppath(name))
 
-def next_feedback_number(path):
-    nums = [int(m.group(1)) for m in re.finditer(r"^- (?:\[[ x]\]\s*)?F(\d+)\b", open(path, encoding="utf-8").read(), flags=re.M)] if os.path.exists(path) else []
+def _feedback_number(text):
+    """Nächste freie F-Nummer; Kommentare und defekte Checkboxen zählen mit."""
+    nums = []
+    for entry in _scan_blocks(text):
+        item = _parse_item_line(entry["lines"][0])
+        if not item: continue
+        m = re.fullmatch(r"F(\d+)", item["id"])
+        if m: nums.append(int(m.group(1)))
     return (max(nums) + 1) if nums else 1
 
+def next_feedback_number(path):
+    return _feedback_number(_read_text(path)) if os.path.exists(path) else 1
+
+def _feedback_block(number, title, description):
+    """Markdown-Block eines neuen Punkts; Folgezeilen der Beschreibung bleiben eingerückt."""
+    lines = [f"- [ ] F{number} {title}"]
+    parts = description.splitlines() if description else [""]
+    lines.append("  Beschreibung:" + (" " + parts[0] if parts[0] else ""))
+    for extra in parts[1:]: lines.append("  " + extra)
+    return "\n".join(lines) + "\n"
+
 def add_feedback(name, title, description=""):
+    """Legt einen Feedback-Punkt an, ohne bei parallelen Schreibem eine ID doppelt zu vergeben."""
     fp = os.path.join(ppath(name), "FEEDBACK.md")
-    n = next_feedback_number(fp)
-    block = f"\n- [ ] F{n} {title}\n  Beschreibung: {description}\n"
-    with open(fp, "a", encoding="utf-8") as f: f.write(block)
-    return n
+    title = (title or "").strip()
+    if not title: raise ValueError("Titel fehlt")
+    if "\n" in title or "\r" in title: raise ValueError("Titel darf keinen Zeilenumbruch enthalten")
+    description = (description or "").strip()
+    last = None
+    # Lesen, Nummer bestimmen und Schreiben sind durch die erwartete Prüfsumme
+    # verbunden. Ein fremder Schreiber dazwischen führt zu einem neuen Versuch
+    # mit der dann aktuellen Nummer statt zu einer doppelten ID.
+    for _ in range(20):
+        snapshot = vibe_storage.read_snapshot(fp)
+        text = snapshot.text or ""
+        number = _feedback_number(text)
+        expected = snapshot.digest if snapshot.exists else vibe_storage.MISSING
+        prefix = "" if not text or text.endswith("\n") else "\n"
+        try:
+            _write_text_atomic(fp, text + prefix + "\n" + _feedback_block(number, title, description),
+                               expected=expected)
+            return number
+        except vibe_storage.ConcurrentChangeError as error:
+            last = error
+    raise ValueError("FEEDBACK.md wurde gleichzeitig geändert; bitte erneut versuchen: " + str(last))
 
 def cmd_feedback(name):
     print("Neuer Punkt für", name, "(leere Titelzeile = Abbruch)")

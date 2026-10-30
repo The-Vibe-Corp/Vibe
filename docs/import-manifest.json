@@ -19,8 +19,8 @@
   },
   {
    "path": "bin/vibe",
-   "sha256": "8c45c28b38dc446c252115b0b9eec9a22335ceb9211c5756eb13508c4055db48",
-   "bytes": 101846
+   "sha256": "1c6344e7bd5149dd3d5920fc2eac65840d4a9b9827419de39feaadab4d5ff24c",
+   "bytes": 105610
   },
   {
    "path": "bin/vibe-run.sh",
@@ -342,6 +342,14 @@
    "arbeitspaket": "V-008",
    "datum": "2026-10-30",
    "grund": "Projektverwaltung und Vorlagen regressionssicher: gleiche Projektnamen aus mehreren Entwicklungsordnern bleiben durch stabile, eindeutige Schlüssel unterscheidbar; Symlink-Aliase und doppelt eingelesene Wurzeln erzeugen keine Dubletten; nicht lesbare Ordner werden übersprungen. vibe init erhält vorhandene Dateien und folgt kaputten Symlinks nicht nach außerhalb des Projekts. Neue Vorlagentypen werden ohne Codeänderung erkannt.",
+   "dateien": [
+    "bin/vibe"
+   ]
+  },
+  {
+   "arbeitspaket": "V-009",
+   "datum": "2026-10-30",
+   "grund": "Ticket- und Feedbackverarbeitung stabilisiert: HTML-Kommentare (auch mehrzeilig und mitten in einer Zeile) werden ignoriert, mehrzeilige Bloecke und defekte Checkboxen behalten ID und Titel, nur die exakte Schreibweise - [x] gilt als erledigt, BLOCKIERT bleibt offen, fehlende oder unbekannte Nachweise werden als 'ohne Nachweis' sichtbar. Neue Feedbackeintraege werden validiert, mehrzeilig eingerueckt und ueber die Storage-Schicht mit erwarteter Pruefsumme geschrieben; bei parallelem Zugriff wird die naechste freie ID neu bestimmt statt doppelt vergeben.",
    "dateien": [
     "bin/vibe"
    ]
