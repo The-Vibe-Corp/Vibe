@@ -96,7 +96,7 @@ Ein fehlender externer Dienst bedeutet BLOCKIERT, nicht erledigt.
   Review: docs/reviews/V-006-review-1.md (CHANGES REQUIRED), docs/reviews/V-006-review-2.md (PASS, 0 Critical/High/Medium, 2 Minor)
   Dokumentation: docs/features/V-006.md; Trilium `f0Mq8GVg7hhf`
 
-- [ ] V-007 opencode-Kompatibilitätsadapter erstellen
+- [x] V-007 opencode-Kompatibilitätsadapter erstellen
   Priorität: P0
   Abhängigkeiten: V-001, V-002
   Umfang: tatsächlich installierte Version und unterstützte CLI/API erfassen.
@@ -105,6 +105,14 @@ Ein fehlender externer Dienst bedeutet BLOCKIERT, nicht erledigt.
   keine ungeprüfte mcp.servers-Annahme; unbekannte Version verständlich behandelt.
   Tests: Fixtures unterstützter Versionen, unerwartete Ausgabe, fehlendes Binary,
   Fehlercode und Timeout.
+  Commit: 87d1d12; Test: tests/unit/test_opencode_adapter.py (39 Tests, u. a.
+  test_tested_version_fixture_is_supported,
+  test_mixed_classic_config_is_refused_and_kept_unchanged)
+  Prüfungen: `bash scripts/verify.sh quick` Exit 0; `bash scripts/verify.sh full` Exit 0
+  (464 Unit- + 34 Browser-Tests, 498 erkannt) im isolierten Prüfstand mit schreibbarem /tmp
+  Review: docs/reviews/V-007-review-1.md (CHANGES REQUIRED, 1 Medium),
+  docs/reviews/V-007-review-2.md (PASS, 0 Critical/High/Medium, 1 Minor)
+  Dokumentation: docs/compatibility.md, docs/features/V-007.md; Trilium `B8WSE271Yfe5`
 
 - [ ] V-008 Projektverwaltung und Vorlagen regressionssicher machen
   Priorität: P1
