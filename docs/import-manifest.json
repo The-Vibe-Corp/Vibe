@@ -19,8 +19,8 @@
   },
   {
    "path": "bin/vibe",
-   "sha256": "26967886e15225024cb553559bf2d91b2d9fe85541eb1d0cdec55509f302e6c3",
-   "bytes": 99623
+   "sha256": "cccf7d3dff18431041c5ee7408c5b6c2dc46a5fa8217a2ea52f1de5db5a506e3",
+   "bytes": 99666
   },
   {
    "path": "bin/vibe-run.sh",
@@ -39,8 +39,13 @@
   },
   {
    "path": "bin/vibe_mcp.py",
-   "sha256": "73bb88f654c8fcbafccb469f115b1729063cfa989579dd01b04be5877b469fb0",
-   "bytes": 22255
+   "sha256": "bb20af8b446a0ce16160c1efea4620c14753cbe389cb1d3669464fd419ac58f0",
+   "bytes": 22766
+  },
+  {
+   "path": "bin/vibe_opencode.py",
+   "sha256": "15c4cee64955d49a498787a8573b36e6b1962007907c31866c84dd54a2b1f986",
+   "bytes": 12100
   },
   {
    "path": "bin/vibe_paths.py",
@@ -69,8 +74,8 @@
   },
   {
    "path": "scripts/setup-vibe.py",
-   "sha256": "edda295c03dd25191aba498d97a9eed2f7a209657a3b8dccdf331fb1e245332a",
-   "bytes": 30850
+   "sha256": "6b9ce08c48e4aeac0706d323b95f028d886f2715bff979e118c1d9374d2aab15",
+   "bytes": 30870
   },
   {
    "path": "setup-vibe.cmd",
@@ -320,6 +325,17 @@
     "bin/vibe-web.py",
     "bin/vibe_mcp.py",
     "bin/vibe_paths.py"
+   ]
+  },
+  {
+   "arbeitspaket": "V-007",
+   "datum": "2026-10-30",
+   "grund": "opencode-Kompatibilitätsadapter: Version, Modelllisting, Agentenregeln, MCP-Schema und Serverstart sind in bin/vibe_opencode.py gekapselt. Geprüft ist opencode 2.1.4; unbekannte Versionen werden gemeldet und versionabhängige Schreibvorgänge abgelehnt. Das MCP-Schema wird aus der vorhandenen Konfiguration erkannt; nur für die geprüfte Version darf eine leere Konfiguration das geprüfte Schema verwenden.",
+   "dateien": [
+    "bin/vibe",
+    "bin/vibe_mcp.py",
+    "bin/vibe_opencode.py",
+    "scripts/setup-vibe.py"
    ]
   }
  ]

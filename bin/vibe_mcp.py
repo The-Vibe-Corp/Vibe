@@ -3,6 +3,7 @@ import os, re, json, sys, time, queue, threading, subprocess, shutil
 import urllib.request, urllib.error
 import vibe
 import vibe_storage
+import vibe_opencode
 
 SECRET_MASK = "***"
 NAME_OK = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
@@ -100,11 +101,6 @@ def jsonc_set_top(text, key, value):
     return pre + ("\n  " + json.dumps(key) + ": " + new + "\n") + text[close:]
 
 # ---------- Konfigurationsdateien ----------
-def oc_major():
-    rc, out = vibe.run(["opencode", "--version"], timeout=15)
-    m = re.search(r"(\d+)\.\d+", out or "")
-    return int(m.group(1)) if m else 0
-
 def cfg_path(scope):
     base = os.path.expanduser("~/.config/opencode") if scope == "global" else vibe.ppath(scope)
     for n in ("opencode.jsonc", "opencode.json"):
@@ -117,12 +113,21 @@ def load(scope):
     snapshot = vibe_storage.read_snapshot(p)
     text = snapshot.text if snapshot.exists else ""
     data = jsonc_loads(text)
-    mcp = data.get("mcp")
-    if isinstance(mcp, dict) and isinstance(mcp.get("servers"), dict): layout, servers = "v2", mcp["servers"]
-    elif isinstance(mcp, dict) and mcp: layout, servers = "klassisch", {k: v for k, v in mcp.items() if isinstance(v, dict)}
-    else: layout, servers = ("v2" if oc_major() >= 2 else "klassisch"), {}
+    # Das Schema wird aus der vorhandenen Konfiguration erkannt. Nur für eine
+    # geprüfte opencode-Version darf eine leere Datei das geprüfte Schema
+    # verwenden; sonst bleibt das Schema unbekannt und Schreibvorgänge werden
+    # abgelehnt (V-007).
+    layout_info = vibe_opencode.detect_mcp_layout(data)
+    layout, servers = layout_info["layout"], layout_info["servers"]
     digest = snapshot.digest if snapshot.exists else vibe_storage.MISSING
     return p, text, data, layout, servers, digest
+
+def _require_known_layout(layout):
+    if layout == vibe_opencode.LAYOUT_UNKNOWN:
+        raise ValueError(
+            "MCP-Schema nicht feststellbar; die installierte opencode-Version ist nicht geprüft. "
+            f"Geprüft ist opencode {vibe_opencode.TESTED_VERSION}. Die Konfiguration wird nicht verändert."
+        )
 
 def backup_dir():
     return os.path.join(vibe.PATHS.state, "config-backups")
@@ -150,11 +155,14 @@ def restore(scope, backup=None):
                                       label=backup_label(scope, p))
 
 def _store(scope, p, text, data, layout, servers, expected=None):
+    _require_known_layout(layout)
     mcp = data.get("mcp") if isinstance(data.get("mcp"), dict) else {}
-    if layout == "v2":
+    if layout == vibe_opencode.LAYOUT_SERVERS:
         mcp = dict(mcp); mcp["servers"] = servers
-    else:
+    elif layout == vibe_opencode.LAYOUT_CLASSIC:
         mcp = {k: v for k, v in mcp.items() if not isinstance(v, dict)}; mcp.update(servers)
+    else:
+        raise ValueError("Unbekanntes MCP-Schema: " + str(layout))
     os.makedirs(os.path.dirname(p), exist_ok=True)
     vibe_storage.write_text_with_backup(
         p, jsonc_set_top(text, "mcp", mcp), backup_dir(),
@@ -225,6 +233,7 @@ def validate(entry):
 def save(scope, name, entry, old_name=None, create=False, expected=None):
     if not NAME_OK.match(name or ""): raise ValueError("Name: Buchstaben, Ziffern, _ und - (Werkzeuge werden mit dem Namen als Präfix angeboten).")
     p, text, data, layout, servers, digest = load(scope)
+    _require_known_layout(layout)
     old = servers.get(old_name or name)
     entry = validate(merge_masked(entry, old))
     if old_name and old_name != name:
@@ -238,6 +247,7 @@ def save(scope, name, entry, old_name=None, create=False, expected=None):
 
 def delete(scope, name, expected=None):
     p, text, data, layout, servers, digest = load(scope)
+    _require_known_layout(layout)
     if name not in servers: raise ValueError("MCP-Server nicht gefunden: " + name)
     servers.pop(name)
     _store(scope, p, text, data, layout, servers,
@@ -245,6 +255,7 @@ def delete(scope, name, expected=None):
 
 def toggle(scope, name, enabled=None, expected=None):
     p, text, data, layout, servers, digest = load(scope)
+    _require_known_layout(layout)
     if name not in servers: raise ValueError("MCP-Server nicht gefunden: " + name)
     e = servers[name]; e["enabled"] = (not (e.get("enabled", True) is not False)) if enabled is None else bool(enabled)
     _store(scope, p, text, data, layout, servers,

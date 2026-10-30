@@ -36,7 +36,7 @@ import urllib.parse
 
 if __name__ == "__main__": sys.modules["vibe"] = sys.modules[__name__]
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
-import vibe_storage, vibe_paths
+import vibe_storage, vibe_paths, vibe_opencode
 
 try:
     PATHS = vibe_paths.resolve()
@@ -948,7 +948,7 @@ def permission_block(perm="lesen", write_dirs=None):
     return block
 
 def agent_dir(scope):
-    return AGENTS_DIR if scope == "global" else os.path.join(ppath(scope), ".opencode", "agents")
+    return AGENTS_DIR if scope == "global" else vibe_opencode.agent_directory(ppath(scope))
 
 def parse_front(text):
     m = re.match(r"---[ \t]*\n(.*?)\n---[ \t]*(\n|$)", text, flags=re.S)
@@ -990,8 +990,7 @@ def agent_validate(text):
     if not ok: raise ValueError("Die Datei muss mit einem Frontmatter-Block beginnen (--- ... ---).")
     if not fm.get("description"): raise ValueError("Im Frontmatter fehlt 'description' (Pflichtfeld in opencode).")
     if fm["description"] in ("Kurzbeschreibung eintragen", "Beschreibung fehlt"): raise ValueError("Bitte die Beschreibung (description) anpassen, sie ist noch der Platzhalter.")
-    if fm.get("mode") and fm["mode"] not in ("primary", "subagent", "all"): raise ValueError("mode muss primary, subagent oder all sein.")
-    if not text.split("\n---", 1)[-1].strip(): raise ValueError("Der Prompt (Text nach dem Frontmatter) ist leer.")
+    vibe_opencode.validate_agent(fm, text.split("\n---", 1)[-1])
     return fm
 
 def agent_backup_dir(scope):
@@ -1152,9 +1151,8 @@ def apply_write_dirs_to_project(name):
     return changed
 
 def models_list():
-    """Alle Modelle verbundener Anbieter (opencode models), z. B. opencode/..., anthropic/..."""
-    rc, out = run(["opencode", "models"], timeout=30)
-    return [l.strip() for l in out.splitlines() if "/" in l and " " not in l.strip()] if rc == 0 else []
+    """Alle Modelle verbundener Anbieter über den opencode-Kompatibilitätsadapter."""
+    return vibe_opencode.list_models()["models"]
 
 def models_info():
     try: return json.load(open(MODELS_FILE, encoding="utf-8"))
@@ -1923,9 +1921,14 @@ def server_session():
 def cmd_server(action="status"):
     if action == "start":
         if server_health(): print("opencode-Server läuft:", OC_URL); return
-        # Port ist validiert (1..65535) und damit kein Shell-Freitext.
+        try:
+            command = vibe_opencode.server_command(PATHS.opencode_port)
+        except vibe_opencode.CompatibilityError as error:
+            sys.exit(str(error))
+        # Port ist validiert (1..65535) und damit kein Shell-Freitext; der
+        # Adapter liefert eine Argumentliste, die shlex.join sicher quotet.
         run(["tmux", "new-session", "-d", "-s", server_session(), "bash", "-lc",
-             f"source ~/.bashrc; exec opencode web --port {PATHS.opencode_port} --hostname 127.0.0.1"])
+             "source ~/.bashrc; exec " + shlex.join(command)])
         time.sleep(4); print("Gestartet:" if server_health() else "Start angestoßen, Server antwortet noch nicht (tmux attach -t " + server_session() + "):", OC_URL)
     elif action == "stop":
         run(["tmux", "kill-session", "-t", server_session()]); print("opencode-Server beendet.")
@@ -1994,6 +1997,8 @@ def doctor_checks():
     chk(f"VIBE-Ordner beschreibbar ({VIBE})", os.access(VIBE, os.W_OK))
     for tool, hint in (("git", ""), ("tmux", "sudo dnf install -y tmux"), ("opencode", "Host-Installation prüfen"), ("java", "sudo dnf install -y java-25-openjdk-devel"), ("android", "Android CLI installieren"), ("adb", "android sdk install platform-tools"), ("python3", ""), ("curl", ""), ("flock", "util-linux")):
         chk(tool, shutil.which(tool) is not None, hint)
+    version = vibe_opencode.probe()
+    chk("opencode-Version " + (version.version or "?"), version.supported, version.message)
     chk("/dev/kvm", os.path.exists("/dev/kvm"), "KVM fehlt")
     chk("ANDROID_HOME gesetzt", bool(os.environ.get("ANDROID_HOME")), "source ~/.bashrc im Container")
     chk("Abnahme-Dateien + Prüfsummen", os.path.exists(os.path.join(VERIFY, "verify.sh")) and run(["sha256sum", "-c", os.path.expanduser("~/.config/schreibfuchs-verify.sha"), "--quiet"], cwd=VERIFY)[0] == 0, "install.sh / install2.sh ausführen")
