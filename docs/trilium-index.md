@@ -13,6 +13,7 @@ Zuordnung der Projekt-Dokumentation zu den Notizen in Trilium (Stand 2026-10-30)
 | vibe | Features | V-005 Atomare Dateizugriffe und sichere Sicherungen | `XQO2Qcrg1tvI` |
 | vibe | Features | V-006 Quellen-, Installations- und Laufzeitpfade trennen | `f0Mq8GVg7hhf` |
 | vibe | Features | V-007 opencode-Kompatibilitätsadapter | `B8WSE271Yfe5` |
+| vibe | Features | V-008 Projektverwaltung und Vorlagen regressionssicher | `SC3Jtp3csTnz` |
 | vibe | Features | F1 Feedback-Erfassung: nur Titel und Beschreibung | `4gZSOc9wxivN` |
 | vibe | Features | F2 Projektdetail: Feedback bearbeiten, Ausgabe steuern | `4etfKlTUj9ah` |
 | vibe | Features | F3 Dynamische Schreibrechte je Projekt | `22bjPTSyr3CS` |

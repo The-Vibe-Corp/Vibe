@@ -122,14 +122,25 @@ def profile_session(base):
 BAD_ROOTS = {"/", "/usr", "/etc", "/bin", "/sbin", "/lib", "/lib64", "/proc", "/sys", "/dev", "/boot", "/root", "/run", "/var", "/tmp", "/home", "/opt", "/mnt", "/media"}
 
 def conf_extra():
-    try: return [str(x) for x in json.load(open(CONF)).get("roots", [])]
-    except Exception: return []
+    try:
+        with open(CONF, encoding="utf-8") as f:
+            return [str(x) for x in json.load(f).get("roots", [])]
+    except Exception:
+        return []
+
+def _real(path):
+    """Vergleichspfad für Verzeichnisse; Symlink-Aliase gelten als gleich."""
+    return os.path.realpath(os.path.abspath(os.path.expanduser(path)))
 
 def roots():
     out = [VIBE]
+    seen = {_real(VIBE)}
     for r in conf_extra():
         p = os.path.abspath(os.path.expanduser(r))
-        if os.path.isdir(p) and p not in out: out.append(p)
+        real = _real(p)
+        if real in seen or not os.path.isdir(p): continue
+        seen.add(real)
+        out.append(p)
     return out
 
 def roots_save(extra, expected=None):
@@ -137,38 +148,83 @@ def roots_save(extra, expected=None):
     vibe_storage.write_text(CONF, json.dumps({"roots": extra}, indent=1), expected=expected)
 
 def root_add(path):
-    p = os.path.abspath(os.path.expanduser(path.strip()))
-    if p in BAD_ROOTS or p == os.path.expanduser("~"): raise ValueError("Pfad zu allgemein, bitte einen Entwicklungsordner wählen: " + p)
+    text = (path or "").strip() if isinstance(path, str) else ""
+    if not text: raise ValueError("Pfad fehlt")
+    p = os.path.abspath(os.path.expanduser(text))
+    real = _real(p)
+    if real in {_real(x) for x in BAD_ROOTS} or real == _real(os.path.expanduser("~")):
+        raise ValueError("Pfad zu allgemein, bitte einen Entwicklungsordner wählen: " + p)
     if not os.path.isdir(p): raise ValueError("Ordner existiert nicht: " + p)
-    before = vibe_storage.read_snapshot(CONF)
+    if real == _real(VIBE):
+        _pm.clear()
+        return VIBE
     extra = conf_extra()
-    if p != VIBE and p not in extra:
-        extra.append(p)
-        roots_save(extra, expected=before.digest if before.exists else vibe_storage.MISSING)
+    for existing in extra:
+        existing_path = os.path.abspath(os.path.expanduser(existing))
+        if _real(existing_path) == real:
+            _pm.clear()
+            return existing_path
+    before = vibe_storage.read_snapshot(CONF)
+    extra.append(p)
+    roots_save(extra, expected=before.digest if before.exists else vibe_storage.MISSING)
     _pm.clear()
     return p
 
 def root_remove(path):
-    p = os.path.abspath(os.path.expanduser(path.strip()))
-    if p == VIBE: raise ValueError("Der Standardordner kann nicht entfernt werden.")
+    text = (path or "").strip() if isinstance(path, str) else ""
+    if not text: raise ValueError("Pfad fehlt")
+    p = os.path.abspath(os.path.expanduser(text))
+    real = _real(p)
+    if real == _real(VIBE): raise ValueError("Der Standardordner kann nicht entfernt werden.")
     before = vibe_storage.read_snapshot(CONF)
-    roots_save([x for x in conf_extra() if os.path.abspath(os.path.expanduser(x)) != p],
-               expected=before.digest if before.exists else vibe_storage.MISSING)
+    extra = conf_extra()
+    remaining = [x for x in extra if _real(x) != real]
+    if remaining != extra:
+        roots_save(remaining, expected=before.digest if before.exists else vibe_storage.MISSING)
     _pm.clear()
 
 _pm = {}
+def _project_rank(path, name):
+    """Bevorzugt den echten Projektpfad gegenüber einem Symlink-Alias."""
+    return (os.path.islink(path), os.path.basename(os.path.realpath(path)) != name)
+
+def _project_candidates(root):
+    try: names = sorted(os.listdir(root))
+    except OSError: return
+    for n in names:
+        if n.startswith(("_", ".")): continue
+        p = os.path.join(root, n)
+        try:
+            if not os.path.isdir(p): continue
+            if not (os.path.exists(os.path.join(p, ".git")) or os.path.isdir(os.path.join(p, ".vibe"))): continue
+            real = os.path.realpath(p)
+        except OSError:
+            continue
+        yield n, p, real
+
+def _project_key(name, root, taken):
+    """Macht gleiche Projektnamen aus mehreren Wurzeln eindeutig und stabil."""
+    if name not in taken: return name
+    base = os.path.basename(os.path.normpath(root)) or "root"
+    key = f"{name}@{base}"
+    counter = 2
+    while key in taken:
+        key = f"{name}@{base}-{counter}"
+        counter += 1
+    return key
+
 def project_map():
     if _pm.get("t", 0) > time.time() - 2: return _pm["m"]
-    m = {}
+    found = {}
     for root in roots():
-        try: names = sorted(os.listdir(root))
-        except OSError: continue
-        for n in names:
-            p = os.path.join(root, n)
-            if n.startswith(("_", ".")) or not os.path.isdir(p): continue
-            if os.path.exists(os.path.join(p, ".git")) or os.path.isdir(os.path.join(p, ".vibe")):
-                key = n if n not in m else f"{n}@{os.path.basename(root) or 'root'}"
-                m[key] = p
+        for name, path, real in _project_candidates(root):
+            current = found.get(real)
+            if current is None or _project_rank(path, name) < _project_rank(current[0], current[1]):
+                found[real] = (path, name, root)
+    m = {}
+    for real in sorted(found, key=lambda item: (found[item][1], found[item][2], item)):
+        path, name, root = found[real]
+        m[_project_key(name, root, m)] = path
     _pm["t"], _pm["m"] = time.time(), m
     return m
 
@@ -869,9 +925,14 @@ def copy_tree(src, dst, name):
     for root, _, files in os.walk(src):
         for f in files:
             s = os.path.join(root, f); rel = os.path.relpath(s, src); d = os.path.join(dst, rel)
-            if os.path.exists(d): continue
+            # lexists erhält auch kaputte Symlinks; ein normales exists würde
+            # beim Schreiben dem Link nach außerhalb des Projekts folgen.
+            if os.path.lexists(d): continue
             os.makedirs(os.path.dirname(d), exist_ok=True)
-            open(d, "w", encoding="utf-8").write(open(s, encoding="utf-8").read().replace("{{NAME}}", name))
+            with open(s, encoding="utf-8") as source:
+                content = source.read().replace("{{NAME}}", name)
+            with open(d, "w", encoding="utf-8") as target:
+                target.write(content)
             if f.endswith(".sh"): os.chmod(d, 0o755)
             created.append(rel)
     return created

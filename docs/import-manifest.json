@@ -19,8 +19,8 @@
   },
   {
    "path": "bin/vibe",
-   "sha256": "cccf7d3dff18431041c5ee7408c5b6c2dc46a5fa8217a2ea52f1de5db5a506e3",
-   "bytes": 99666
+   "sha256": "8c45c28b38dc446c252115b0b9eec9a22335ceb9211c5756eb13508c4055db48",
+   "bytes": 101846
   },
   {
    "path": "bin/vibe-run.sh",
@@ -336,6 +336,14 @@
     "bin/vibe_mcp.py",
     "bin/vibe_opencode.py",
     "scripts/setup-vibe.py"
+   ]
+  },
+  {
+   "arbeitspaket": "V-008",
+   "datum": "2026-10-30",
+   "grund": "Projektverwaltung und Vorlagen regressionssicher: gleiche Projektnamen aus mehreren Entwicklungsordnern bleiben durch stabile, eindeutige Schlüssel unterscheidbar; Symlink-Aliase und doppelt eingelesene Wurzeln erzeugen keine Dubletten; nicht lesbare Ordner werden übersprungen. vibe init erhält vorhandene Dateien und folgt kaputten Symlinks nicht nach außerhalb des Projekts. Neue Vorlagentypen werden ohne Codeänderung erkannt.",
+   "dateien": [
+    "bin/vibe"
    ]
   }
  ]
