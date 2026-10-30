@@ -183,7 +183,7 @@ Ein fehlender externer Dienst bedeutet BLOCKIERT, nicht erledigt.
   Review: docs/reviews/V-010-review-1.md (PASS, 0 Critical/High/Medium, 2 Minor)
   Dokumentation: docs/features/V-010.md; Trilium `KkhQ6sa4w0qz`
 
-- [ ] V-011 Modellkatalog bereinigen und belegbar machen
+- [x] V-011 Modellkatalog bereinigen und belegbar machen
   Priorität: P1
   Abhängigkeiten: V-007
   Umfang: lokalen Altkatalog prüfen und versionierten öffentlichen Katalog erzeugen.
@@ -193,6 +193,25 @@ Ein fehlender externer Dienst bedeutet BLOCKIERT, nicht erledigt.
   ausklappbare Tabelle und Detailzeilen erhalten.
   Tests: fehlende Quellen, veraltete Preise, unbekannte Modelle,
   entfernte Modelle, Währung und Tarifeinheiten, Browserdarstellung.
+  Commit: 13f2876; Test: tests/unit/test_model_catalog.py (33 Tests, u. a.
+  test_missing_source_is_reported, test_outdated_price_is_reported,
+  test_legacy_paid_price_is_not_adopted,
+  test_removed_model_is_reported_against_current_list);
+  tests/browser/test_models_ui.py (6 Tests, u. a.
+  test_table_is_collapsed_and_expands,
+  test_detail_separates_facts_and_assessments_with_sources,
+  test_unknown_model_has_no_assessment)
+  Prüfungen: Rot gegen 2d78d04: `FileNotFoundError` für `bin/vibe_models.py`,
+  `Ran 0 tests`, `FAILED (errors=3)`; Browser-Timeout für
+  `#models > details > summary`, `FAILED (errors=1)`. Grün:
+  `python3 -m unittest tests.unit.test_model_catalog -v` 33 Tests OK;
+  `python3 -m unittest tests.browser.test_models_ui -v` 6 Tests OK;
+  `bash scripts/verify.sh quick` Exit 0; `bash scripts/verify.sh full`
+  Exit 0 (586 Unit- + 47 Browser-Tests, 633 erkannt) im Mount-Namespace mit
+  tmpfs auf `/tmp` und ohne SANDBOX/SANDBOX_TOOLS.
+  Review: docs/reviews/V-011-review-1.md, -2.md, -3.md
+  (PASS, 0 Critical/High/Medium, 2 Minor)
+  Dokumentation: docs/features/V-011.md; Trilium `rKViBnJz9ZNZ`
 
 - [ ] V-012 Modellprofile transaktional anwenden
   Priorität: P1
