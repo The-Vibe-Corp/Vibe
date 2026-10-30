@@ -29,8 +29,8 @@
   },
   {
    "path": "bin/vibe-web.py",
-   "sha256": "d1b6032d5bc08f91c350aa6fc869500004c1113dc40a1fb5e69a6b0eec910d81",
-   "bytes": 99188
+   "sha256": "486513ab03c9c486e38ee222e2c2e8067ab5d72b5cfd9560f42152d9ec4e7ebd",
+   "bytes": 100143
   },
   {
    "path": "bin/vibe_guide.py",
@@ -39,8 +39,8 @@
   },
   {
    "path": "bin/vibe_mcp.py",
-   "sha256": "5548a1560b82b66a3890c6d9962f0a5b8895c624b2095f261a945403ee95bdc2",
-   "bytes": 34278
+   "sha256": "4b0e1b0843ce79971e24144b3e69c9d38eaf0c099130fec3e8f7de60f9b6b6d2",
+   "bytes": 50973
   },
   {
    "path": "bin/vibe_opencode.py",
@@ -389,6 +389,15 @@
     "bin/vibe_models.py",
     "data/models.json",
     "scripts/setup-vibe.py"
+   ]
+  },
+  {
+   "arbeitspaket": "V-014",
+   "datum": "2026-10-30",
+   "grund": "MCP-Verbindungstests robust und begrenzt: nur initialize und tools/list ohne tools/call; unterstuetzte Transporte local/stdio und remote/Streamable HTTP werden ausgewiesen, unbekannte Transporte und Konfigurationsfehler getrennt gemeldet. Startwarnung, OAuth-Grenzen und Fehlerarten sind sichtbar; Zeit-, Ausgabe- und Werkzeuglimits sowie vollstaendiges Prozesscleanup inklusive Kindprozessen sind umgesetzt, Diagnosetexte werden von Geheimnissen befreit.",
+   "dateien": [
+    "bin/vibe_mcp.py",
+    "bin/vibe-web.py"
    ]
   }
  ]

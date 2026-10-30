@@ -142,6 +142,58 @@ Verzeichnis): bei vorhandener `opencode.json` und `opencode.jsonc` schrieb
 `opencode.jsonc`; ohne beide nach `.opencode/opencode.json`. Die Datei
 `opencode.jsonc` blieb dabei jeweils unverändert.
 
+### MCP-Verbindungstests
+
+Der Verbindungstest prüft ausschließlich `initialize`, sendet
+`notifications/initialized` und fragt `tools/list` ab. Ein `tools/call` wird
+nie automatisch ausgelöst; die Oberfläche und die CLI weisen vor dem Test auf
+gestartete Programme beziehungsweise Netzverbindungen hin.
+
+Unterstützt werden genau zwei Transporte:
+
+| Typ | Transport | Ablauf |
+| --- | --- | --- |
+| `local` | Standard-Ein-/Ausgabe (stdio) | Programm aus `command` starten, JSON-RPC je Zeile |
+| `remote` | Streamable HTTP | POST mit JSON; Antwort als JSON oder Server-Sent Events |
+
+Andere Transporte (z. B. WebSocket oder ein klassischer SSE-Endpunkt per
+`GET /sse`) werden nicht getestet. Sie werden als „nicht unterstützt“
+gemeldet und nicht als defekter Server dargestellt.
+
+Die Fehlerarten sind getrennt: `program` (Programm fehlt oder startet nicht),
+`timeout`, `dns`, `tls`, `network`, `http`, `auth`, `protocol`, `config` und
+`unsupported_transport`. Jedes Ergebnis nennt den Transport und die
+Fehlerart. Eine JSON-RPC-Antwort ohne objektförmiges `result` wird als
+`protocol` gemeldet und nicht als Ausnahme weitergereicht.
+
+OAuth: vibe führt keine Anmeldung durch, startet keinen Browser und liest
+keine Tokens. Bei einem Server mit OAuth muss die Anmeldung vorher mit
+`opencode mcp auth <name>` erfolgen. Der Test kann ohne gültige Anmeldung mit
+HTTP 401 enden; das ist kein Hinweis auf einen defekten Server.
+
+Limits: Der Test wartet höchstens 90 s (`local`) beziehungsweise 60 s
+(`remote`), mindestens jedoch 5 s; das Feld `timeout` wird darauf begrenzt.
+Bei `remote` gilt die Frist je Anfrage einschließlich des Wartens auf Status
+und Header; die `initialized`-Benachrichtigung hat zusätzlich höchstens 5 s.
+Werkzeuglisten werden auf 200 Einträge und Beschreibungen auf 160 Zeichen
+gekürzt, HTTP-Antworten auf 1 MiB und die Stdio-Ausgabe auf 4 MiB. Die
+Diagnoseausgabe ist zusätzlich auf 4000 Zeichen stderr, 1000 Zeichen Fehler
+und 2000 Zeichen Hinweis begrenzt.
+
+Prozesscleanup: `local`-Tests starten in einer eigenen Prozessgruppe. Nach
+dem Test wird die ganze Gruppe beendet; damit enden auch von einem
+Mockserver gestartete Kindprozesse. Ein Dauerstream im
+`remote`-Test wird nach der gesuchten Antwort beendet, statt unbegrenzt
+weiterzulesen.
+
+Geheimnisse: Werte aus `environment`, geheimen `headers`, geheimen
+URL-Parametern, `oauth.clientSecret` und geheimen Argumenten werden aus
+Schritten, Fehlern, Hinweisen und Serverangaben entfernt. Zusätzlich werden
+`Bearer`-/`Basic`-Werte und Zuweisungen wie `token=…` maskiert. Ein
+unbenanntes positionales Argument in `command` ist nicht als Geheimnis
+erkennbar; solche Werte gehören in `environment`, Header oder benannte
+Optionen.
+
 ### Verlustarme Bearbeitung
 
 `vibe_mcp` ersetzt beim Speichern nicht den gesamten `mcp`-Block. Es ändert nur

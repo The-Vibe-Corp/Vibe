@@ -1,5 +1,5 @@
 """vibe_mcp — MCP-Server aus opencode-Konfigurationen anzeigen, anlegen, bearbeiten, testen (nur Standardbibliothek)."""
-import os, re, json, sys, time, queue, threading, subprocess, shutil
+import os, re, json, sys, time, queue, threading, subprocess, shutil, signal, socket, ssl
 import urllib.request, urllib.error
 import vibe
 import vibe_storage
@@ -506,6 +506,26 @@ def toggle(scope, name, enabled=None, expected=None):
 
 # ---------- Testen: MCP-Handshake (initialize, tools/list) ----------
 PROTO = "2025-03-26"
+MIN_TIMEOUT = 5
+MAX_TIMEOUT_LOCAL = 90
+MAX_TIMEOUT_REMOTE = 60
+MAX_TOOLS = 200
+MAX_TOOL_NAME = 120
+MAX_TOOL_DESCRIPTION = 160
+MAX_STDIO_BYTES = 4 * 1024 * 1024
+MAX_STDERR_CHARS = 4000
+MAX_HTTP_BYTES = 1024 * 1024
+
+SUPPORTED_TRANSPORTS = {
+    "local": "local – Standard-Ein-/Ausgabe (stdio), JSON-RPC je Zeile",
+    "remote": "remote – Streamable HTTP (JSON oder Server-Sent Events)",
+}
+TEST_WARNING = (
+    "Der Verbindungstest startet bei 'local' ein Programm und stellt bei "
+    "'remote' eine Netzverbindung her; das ist nicht garantiert "
+    "nebenwirkungsfrei. Geprüft werden nur initialize und tools/list."
+)
+
 def _resolve(v):
     def env(m): return os.environ.get(m.group(1), "")
     def fil(m):
@@ -514,118 +534,487 @@ def _resolve(v):
     return re.sub(r"\{file:([^}]+)\}", fil, re.sub(r"\{env:([^}]+)\}", env, v))
 
 INIT = {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": PROTO, "capabilities": {}, "clientInfo": {"name": "vibe", "version": "1.0"}}}
+INITIALIZED = {"jsonrpc": "2.0", "method": "notifications/initialized"}
+TOOLS_LIST = {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}
+
+def _result(transport):
+    """Gemeinsames Ergebnis mit Transportauskunft, Warnung und Limits."""
+    return {
+        "ok": False, "steps": [], "tools": [], "server": {}, "error": "", "hint": "",
+        "transport": transport or "?", "warning": TEST_WARNING, "category": "",
+        "notes": ["Es werden nur initialize und tools/list aufgerufen; "
+                  "keine fachlichen Werkzeuge (tools/call)."],
+        "limits": {"tools": MAX_TOOLS, "http_bytes": MAX_HTTP_BYTES,
+                   "stdio_bytes": MAX_STDIO_BYTES},
+        "supported_transports": dict(SUPPORTED_TRANSPORTS),
+    }
+
+def _fail(res, category, error, hint=""):
+    res["category"] = category
+    res["error"] = error
+    if hint:
+        res["hint"] = hint
+    return res
+
+def _timeout_for(entry, maximum):
+    return max(MIN_TIMEOUT, min((entry.get("timeout") or 30000) / 1000.0, maximum))
+
+def _payload(message):
+    """result-Objekt einer JSON-RPC-Antwort; None bei fehlender oder falscher Form."""
+    if not isinstance(message, dict):
+        return None
+    result = message.get("result")
+    return result if isinstance(result, dict) else None
+
+def _server_info(payload):
+    info = payload.get("serverInfo")
+    return info if isinstance(info, dict) else {}
 
 def _tools_from(msgs):
-    return [{"name": t.get("name", "?"), "description": (t.get("description") or "")[:160]} for t in (msgs.get("result", {}).get("tools") or [])]
+    payload = _payload(msgs) or {}
+    tools = []
+    raw = payload.get("tools")
+    for item in (raw if isinstance(raw, list) else [])[:MAX_TOOLS]:
+        if not isinstance(item, dict):
+            continue
+        tools.append({
+            "name": str(item.get("name", "?"))[:MAX_TOOL_NAME],
+            "description": str(item.get("description") or "")[:MAX_TOOL_DESCRIPTION],
+        })
+    return tools
+
+def _secret_values(entry):
+    """Konkrete Geheimwerte, die in Diagnosetexten nicht erscheinen dürfen."""
+    values = set()
+    def add(value, minimum=4):
+        if not isinstance(value, str):
+            return
+        value = _resolve(value).strip()
+        if len(value) >= minimum:
+            values.add(value)
+    for value in (entry.get("environment") or {}).values():
+        add(value)
+    for key, value in (entry.get("headers") or {}).items():
+        if _is_secret(key, value) or re.search(r"(?i)auth", key):
+            add(value)
+            match = re.match(r"(?i)^\s*(?:bearer|basic|token)\s+(\S+)", _resolve(value))
+            if match:
+                add(match.group(1), 6)
+    url = entry.get("url")
+    if isinstance(url, str):
+        for match in URL_SECRET.finditer(_resolve(url)):
+            add(match.group(0)[len(match.group(1)):], 3)
+    oauth = entry.get("oauth")
+    if isinstance(oauth, dict):
+        add(oauth.get("clientSecret"), 3)
+    arguments = [str(argument) for argument in entry.get("command") or []]
+    for index, argument in enumerate(arguments):
+        match = re.match(r"(?i)^[^=]*(?:token|key|secret|password|auth)=(.+)$", argument)
+        if match:
+            add(match.group(1), 3)
+        if (re.match(r"(?i)^--?(?:token|api[_-]?key|secret|password|auth)$", argument)
+                and index + 1 < len(arguments)):
+            add(arguments[index + 1], 3)
+    return sorted(values, key=len, reverse=True)
+
+_ASSIGN_SECRET = re.compile(r"(?i)\b(token|api[_-]?key|secret|password|authorization|auth)=([^&\s\"']+)")
+_CREDENTIAL = re.compile(r"(?i)\b(bearer|basic)\s+[A-Za-z0-9._~+/=-]{6,}")
+
+def _redact_text(text, secrets):
+    if not isinstance(text, str):
+        return text
+    for value in secrets:
+        text = text.replace(value, SECRET_MASK)
+    text = _ASSIGN_SECRET.sub(lambda m: m.group(1) + "=" + SECRET_MASK, text)
+    return _CREDENTIAL.sub(lambda m: m.group(1) + " " + SECRET_MASK, text)
+
+def _redact_value(value, secrets):
+    if isinstance(value, str):
+        return _redact_text(value, secrets)
+    if isinstance(value, list):
+        return [_redact_value(item, secrets) for item in value]
+    if isinstance(value, dict):
+        return {key: _redact_value(item, secrets) for key, item in value.items()}
+    return value
+
+def _finish(res, secrets):
+    """Entfernt Geheimnisse und begrenzt die Diagnoseausgabe."""
+    res = _redact_value(res, secrets)
+    res["error"] = res["error"][:1000]
+    res["hint"] = res["hint"][:2000]
+    res["steps"] = res["steps"][:40]
+    return res
+
+def _stderr_tail(error_lines):
+    text = "".join(error_lines).strip()
+    return text[-MAX_STDERR_CHARS:] if text else ""
+
+def _close_process(proc, pgid):
+    """Beendet den Testprozess samt Kindprozessen und schließt die Rohre."""
+    if pgid is not None:
+        try:
+            os.killpg(pgid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError, OSError):
+            pass
+    elif proc.poll() is None:
+        try:
+            proc.kill()
+        except Exception:
+            pass
+    try:
+        proc.wait(timeout=5)
+    except Exception:
+        try:
+            proc.kill()
+        except Exception:
+            pass
+        try:
+            proc.wait(timeout=5)
+        except Exception:
+            pass
+    for stream in (proc.stdin, proc.stdout, proc.stderr):
+        try:
+            stream.close()
+        except Exception:
+            pass
 
 def test_local(entry, cwd):
-    res = {"ok": False, "steps": [], "tools": [], "server": {}, "error": "", "hint": ""}
+    res = _result(SUPPORTED_TRANSPORTS["local"])
+    secrets = _secret_values(entry)
+    timeout = _timeout_for(entry, MAX_TIMEOUT_LOCAL)
+    res["limits"]["timeout_s"] = timeout
     cmd = [_resolve(x) for x in entry["command"]]
     env = dict(os.environ); env.update({k: _resolve(v) for k, v in (entry.get("environment") or {}).items()})
-    timeout = max(5, min((entry.get("timeout") or 30000) / 1000.0, 90))
     wd = entry.get("cwd") or cwd
     if wd and not os.path.isabs(wd): wd = os.path.join(cwd, wd)
     if wd and not os.path.isdir(wd):
-        res["error"] = f"Arbeitsordner nicht gefunden: {wd}"
-        res["hint"] = "Der Arbeitsordner muss existieren; 'cwd' prüfen oder leer lassen."
-        return res
-    try: proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=wd or None, env=env, text=True, bufsize=1)
+        _fail(res, "config", f"Arbeitsordner nicht gefunden: {wd}",
+              "Der Arbeitsordner muss existieren; 'cwd' prüfen oder leer lassen.")
+        return _finish(res, secrets)
+    kwargs = {"start_new_session": True} if os.name == "posix" else {}
+    try:
+        proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE, cwd=wd or None, env=env,
+                                text=True, bufsize=1, **kwargs)
     except FileNotFoundError:
-        res["error"] = f"Programm nicht gefunden: {cmd[0]}"; res["hint"] = "Ist es im Container installiert (z. B. npx über nodejs/npm)? Pfad oder Installation prüfen."; return res
+        _fail(res, "program", f"Programm nicht gefunden: {cmd[0]}",
+              "Ist es im Container installiert (z. B. npx über nodejs/npm)? Pfad oder Installation prüfen.")
+        return _finish(res, secrets)
     except Exception as ex:
-        res["error"] = f"Start fehlgeschlagen: {ex}"; return res
-    q, errbuf = queue.Queue(), []
-    threading.Thread(target=lambda: [q.put(l) for l in proc.stdout], daemon=True).start()
-    threading.Thread(target=lambda: [errbuf.append(l) for l in proc.stderr], daemon=True).start()
+        _fail(res, "program", f"Start fehlgeschlagen: {ex}")
+        return _finish(res, secrets)
+    try:
+        pgid = os.getpgid(proc.pid) if os.name == "posix" else None
+    except OSError:
+        pgid = None
+    q, errbuf = queue.Queue(maxsize=1000), []
+    state = {"stdout": 0, "stderr": 0, "truncated": False}
+    def read_stdout():
+        for line in proc.stdout:
+            state["stdout"] += len(line)
+            if state["stdout"] > MAX_STDIO_BYTES or len(line) > MAX_STDIO_BYTES:
+                state["truncated"] = True
+                continue
+            if not line.lstrip().startswith("{"):
+                continue
+            try:
+                q.put_nowait(line)
+            except queue.Full:
+                state["truncated"] = True
+    def read_stderr():
+        for line in proc.stderr:
+            room = MAX_STDERR_CHARS - state["stderr"]
+            if room > 0:
+                piece = line[:room]
+                errbuf.append(piece)
+                state["stderr"] += len(piece)
+            if len(line) > max(room, 0):
+                state["truncated"] = True
+    threading.Thread(target=read_stdout, daemon=True).start()
+    threading.Thread(target=read_stderr, daemon=True).start()
     def send(o):
         proc.stdin.write(json.dumps(o) + "\n"); proc.stdin.flush()
     def wait(id_):
         end = time.time() + timeout
-        while time.time() < end:
-            if proc.poll() is not None and q.empty(): return None
-            try: line = q.get(timeout=0.5)
-            except queue.Empty: continue
-            try: m = json.loads(line)
-            except Exception: continue
-            if m.get("id") == id_: return m
-        return None
-    try:
-        res["steps"].append("Prozess gestartet: " + " ".join(cmd)[:120])
-        send(INIT); r = wait(1)
-        if not r:
-            res["error"] = "Keine Antwort auf 'initialize'" + (f" (Prozess beendet, Code {proc.poll()})" if proc.poll() is not None else f" innerhalb von {int(timeout)} s")
-            res["hint"] = "Beim ersten Start lädt npx Pakete nach, das kann länger dauern: einmal manuell starten oder 'timeout' erhöhen. " + ("Letzte Fehlerausgabe: " + "".join(errbuf)[-300:] if errbuf else ""); return res
-        if "error" in r: res["error"] = "initialize abgelehnt: " + json.dumps(r["error"])[:200]; return res
-        res["server"] = r.get("result", {}).get("serverInfo", {}); res["steps"].append("initialize ok")
-        send({"jsonrpc": "2.0", "method": "notifications/initialized"})
-        send({"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}); r2 = wait(2)
-        if not r2: res["error"] = "Keine Antwort auf 'tools/list'"; return res
-        if "error" in r2: res["error"] = "tools/list abgelehnt: " + json.dumps(r2["error"])[:200]; return res
-        res["tools"] = _tools_from(r2); res["steps"].append(f"tools/list ok: {len(res['tools'])} Werkzeuge"); res["ok"] = True
-    except BrokenPipeError:
-        res["error"] = "Prozess hat die Verbindung geschlossen"; res["hint"] = "".join(errbuf)[-300:]
-    finally:
-        try: proc.kill()
-        except Exception: pass
-        try: proc.wait(timeout=5)
-        except Exception: pass
-        for stream in (proc.stdin, proc.stdout, proc.stderr):
-            try: stream.close()
-            except Exception: pass
-    return res
-
-def _parse_http(resp_text, ctype, id_):
-    if "text/event-stream" in (ctype or ""):
-        for line in resp_text.splitlines():
-            if line.startswith("data:"):
+        while True:
+            remaining = end - time.time()
+            if remaining <= 0:
+                return None
+            if proc.poll() is not None:
+                # Dem Lesethread kurz Zeit geben, die letzte Zeile einzuordnen.
                 try:
-                    m = json.loads(line[5:].strip())
-                    if m.get("id") == id_: return m
-                except Exception: pass
-        return None
+                    line = q.get(timeout=min(0.2, remaining))
+                except queue.Empty:
+                    return None
+            else:
+                try:
+                    line = q.get(timeout=min(0.5, remaining))
+                except queue.Empty:
+                    continue
+            try:
+                message = json.loads(line)
+            except Exception:
+                continue
+            if message.get("id") == id_:
+                return message
     try:
-        m = json.loads(resp_text)
-        if isinstance(m, list): m = next((x for x in m if x.get("id") == id_), None)
-        return m
-    except Exception: return None
+        res["steps"].append("Transport: " + SUPPORTED_TRANSPORTS["local"])
+        res["steps"].append("Prozess gestartet: " + " ".join(cmd)[:120])
+        send(INIT); message = wait(1)
+        if not message:
+            tail = _stderr_tail(errbuf)
+            if proc.poll() is not None:
+                _fail(res, "protocol",
+                      f"Keine Antwort auf 'initialize' (Prozess beendet, Code {proc.poll()})",
+                      "Der Server hat den Handshake nicht beantwortet." + (" Letzte Fehlerausgabe: " + tail if tail else ""))
+            else:
+                hint = ("Beim ersten Start lädt npx Pakete nach, das kann länger dauern: einmal manuell starten oder 'timeout' erhöhen."
+                        + (" Letzte Fehlerausgabe: " + tail if tail else ""))
+                if state["truncated"]:
+                    hint += (f" Die Ausgabe überschritt das Ausgabelimit von {MAX_STDIO_BYTES} Byte;"
+                             " weitere Zeilen wurden verworfen.")
+                _fail(res, "timeout",
+                      f"Keine Antwort auf 'initialize' innerhalb von {int(timeout)} s (Zeitlimit)",
+                      hint)
+            return _finish(res, secrets)
+        if "error" in message:
+            _fail(res, "protocol", "initialize abgelehnt: " + json.dumps(message["error"])[:200],
+                  "Der Server lehnt den MCP-Handshake ab; Konfiguration und Serverversion prüfen.")
+            return _finish(res, secrets)
+        payload = _payload(message)
+        if payload is None:
+            _fail(res, "protocol",
+                  "initialize liefert kein gültiges Ergebnis (result fehlt oder ist kein Objekt)",
+                  "Der Server antwortet nicht nach MCP; Serverversion und Protokoll prüfen.")
+            return _finish(res, secrets)
+        res["server"] = _server_info(payload)
+        res["steps"].append("initialize ok")
+        send(INITIALIZED)
+        send(TOOLS_LIST); message = wait(2)
+        if not message:
+            tail = _stderr_tail(errbuf)
+            if proc.poll() is not None:
+                _fail(res, "protocol",
+                      f"Keine Antwort auf 'tools/list' (Prozess beendet, Code {proc.poll()})",
+                      "Der Server beendet sich nach dem Handshake ohne Werkzeugliste."
+                      + (" Letzte Fehlerausgabe: " + tail if tail else ""))
+            else:
+                hint = (f"Der Server beantwortet den Handshake, aber nicht die Werkzeugliste "
+                        f"innerhalb von {int(timeout)} s."
+                        + (" Letzte Fehlerausgabe: " + tail if tail else ""))
+                if state["truncated"]:
+                    hint += (f" Die Ausgabe überschritt das Ausgabelimit von {MAX_STDIO_BYTES} Byte;"
+                             " weitere Zeilen wurden verworfen.")
+                _fail(res, "timeout",
+                      f"Keine Antwort auf 'tools/list' innerhalb von {int(timeout)} s (Zeitlimit)",
+                      hint)
+            return _finish(res, secrets)
+        if "error" in message:
+            _fail(res, "protocol", "tools/list abgelehnt: " + json.dumps(message["error"])[:200],
+                  "Der Server verweigert die Werkzeugliste; Rechte oder Serverversion prüfen.")
+            return _finish(res, secrets)
+        payload = _payload(message)
+        if payload is None:
+            _fail(res, "protocol",
+                  "tools/list liefert kein gültiges Ergebnis (result fehlt oder ist kein Objekt)",
+                  "Der Server beantwortet den Handshake, liefert aber keine Werkzeugliste.")
+            return _finish(res, secrets)
+        all_tools = payload.get("tools") or []
+        res["tools"] = _tools_from(message)
+        res["steps"].append(f"tools/list ok: {len(res['tools'])} Werkzeuge")
+        if len(all_tools) > MAX_TOOLS:
+            res["steps"].append(
+                f"Werkzeugliste auf {MAX_TOOLS} von {len(all_tools)} Einträgen begrenzt.")
+        if state["truncated"]:
+            res["steps"].append(
+                f"Ausgabe wurde auf {MAX_STDIO_BYTES} Byte stdout "
+                f"und {MAX_STDERR_CHARS} Zeichen stderr begrenzt.")
+        res["ok"] = True
+    except BrokenPipeError:
+        _fail(res, "protocol", "Prozess hat die Verbindung geschlossen",
+              "".join(errbuf)[-300:])
+    finally:
+        _close_process(proc, pgid)
+    return _finish(res, secrets)
+
+def _parse_json_message(text, wanted_id):
+    try:
+        data = json.loads(text)
+    except Exception:
+        return None
+    if isinstance(data, list):
+        data = next((item for item in data
+                     if isinstance(item, dict) and item.get("id") == wanted_id), None)
+    return data if isinstance(data, dict) else None
+
+def _read_http(resp, wanted_id, deadline):
+    """Liest eine HTTP-Antwort begrenzt; bricht bei SSE nach der Antwort ab."""
+    ctype = (resp.headers.get("Content-Type") or "").lower()
+    if "text/event-stream" in ctype:
+        lines, total = [], 0
+        while True:
+            if time.time() > deadline:
+                raise TimeoutError("Zeitlimit")
+            line = resp.readline()
+            if not line:
+                return None, "".join(lines), False
+            total += len(line)
+            if total > MAX_HTTP_BYTES:
+                return None, "".join(lines), True
+            text = line.decode("utf-8", "replace")
+            lines.append(text)
+            if text.startswith("data:"):
+                message = _parse_json_message(text[5:].strip(), wanted_id)
+                if message is not None:
+                    return message, "".join(lines), False
+    chunks, total = [], 0
+    while True:
+        if time.time() > deadline:
+            raise TimeoutError("Zeitlimit")
+        chunk = resp.read(65536)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > MAX_HTTP_BYTES:
+            return None, b"".join(chunks).decode("utf-8", "replace"), True
+        chunks.append(chunk)
+    text = b"".join(chunks).decode("utf-8", "replace")
+    return _parse_json_message(text, wanted_id), text, False
 
 def test_remote(entry, name):
-    res = {"ok": False, "steps": [], "tools": [], "server": {}, "error": "", "hint": ""}
+    res = _result(SUPPORTED_TRANSPORTS["remote"])
+    secrets = _secret_values(entry)
+    timeout = _timeout_for(entry, MAX_TIMEOUT_REMOTE)
+    res["limits"]["timeout_s"] = timeout
     url = _resolve(entry["url"]); headers = {"Content-Type": "application/json", "Accept": "application/json, text/event-stream"}
     headers.update({k: _resolve(v) for k, v in (entry.get("headers") or {}).items()})
-    timeout = max(5, min((entry.get("timeout") or 30000) / 1000.0, 60)); sid = None
-    def post(body, h2=None):
+    if entry.get("oauth") is not False:
+        res["notes"].append(
+            "OAuth: vibe führt keine Anmeldung durch und liest keine Tokens. "
+            f"Für OAuth-Server zuerst 'opencode mcp auth {name or '<name>'}' ausführen.")
+    def post(body, h2=None, wanted_id=None, max_wait=None):
         h = dict(headers); h.update(h2 or {})
         rq = urllib.request.Request(url, data=json.dumps(body).encode(), headers=h, method="POST")
-        with urllib.request.urlopen(rq, timeout=timeout) as r: return r.status, r.headers, r.read().decode("utf-8", "replace")
+        wait = min(timeout, max_wait) if max_wait else timeout
+        deadline = time.time() + wait
+        with urllib.request.urlopen(rq, timeout=wait) as response:
+            message, text, truncated = _read_http(response, wanted_id, deadline)
+            return response.status, response.headers, message, text, truncated
     try:
-        st, hd, body = post(INIT); sid = hd.get("Mcp-Session-Id") or hd.get("mcp-session-id")
-        m = _parse_http(body, hd.get("Content-Type"), 1)
-        if not m or "result" not in m: res["error"] = "Unerwartete Antwort auf 'initialize' (kein MCP-Streamable-HTTP-Server?)"; res["hint"] = body[:200]; return res
-        res["server"] = m["result"].get("serverInfo", {}); res["steps"].append(f"initialize ok (HTTP {st})")
-        h2 = {"Mcp-Session-Id": sid} if sid else {}; h2["MCP-Protocol-Version"] = m["result"].get("protocolVersion", PROTO)
-        try: post({"jsonrpc": "2.0", "method": "notifications/initialized"}, h2)
-        except urllib.error.HTTPError: pass
-        st, hd, body = post({"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}, h2)
-        m2 = _parse_http(body, hd.get("Content-Type"), 2)
-        if not m2 or "result" not in m2: res["error"] = "Keine Werkzeugliste erhalten"; res["hint"] = body[:200]; return res
-        res["tools"] = _tools_from(m2); res["steps"].append(f"tools/list ok: {len(res['tools'])} Werkzeuge"); res["ok"] = True
+        res["steps"].append("Transport: " + SUPPORTED_TRANSPORTS["remote"])
+        status, response_headers, message, body, truncated = post(INIT, wanted_id=1)
+        payload = _payload(message)
+        if payload is None:
+            _fail(res, "protocol",
+                  "initialize liefert kein gültiges Ergebnis (result fehlt oder ist kein Objekt; kein MCP-Streamable-HTTP-Server?)",
+                  "Geprüft wird Streamable HTTP (POST mit JSON oder Server-Sent Events). "
+                  "Klassische SSE-Transporte (GET /sse) und andere Transporte werden nicht getestet und sind kein Hinweis auf einen defekten Server. "
+                  + ("Antwort: " + body[:300] if body else ""))
+            return _finish(res, secrets)
+        res["server"] = _server_info(payload)
+        res["steps"].append(f"initialize ok (HTTP {status})")
+        session_id = response_headers.get("Mcp-Session-Id") or response_headers.get("mcp-session-id")
+        follow = {"MCP-Protocol-Version": payload.get("protocolVersion", PROTO)}
+        if session_id:
+            follow["Mcp-Session-Id"] = session_id
+            res["steps"].append("Sitzungskennung erhalten")
+        try:
+            post(INITIALIZED, follow, max_wait=5)
+        except (urllib.error.HTTPError, OSError, TimeoutError):
+            res["notes"].append("Die initialized-Benachrichtigung wurde nicht bestätigt; tools/list wird dennoch versucht.")
+        status, response_headers, message, body, truncated = post(TOOLS_LIST, follow, wanted_id=2)
+        payload = _payload(message)
+        if payload is None:
+            _fail(res, "protocol", "tools/list liefert kein gültiges Ergebnis (result fehlt oder ist kein Objekt)",
+                  "Geprüft wird Streamable HTTP (POST mit JSON oder Server-Sent Events). "
+                  "Klassische SSE-Transporte (GET /sse) und andere Transporte werden nicht getestet und sind kein Hinweis auf einen defekten Server. "
+                  + ("Antwort: " + body[:300] if body else ""))
+            return _finish(res, secrets)
+        all_tools = payload.get("tools") or []
+        res["tools"] = _tools_from(message)
+        res["steps"].append(f"tools/list ok: {len(res['tools'])} Werkzeuge")
+        if len(all_tools) > MAX_TOOLS:
+            res["steps"].append(
+                f"Werkzeugliste auf {MAX_TOOLS} von {len(all_tools)} Einträgen begrenzt.")
+        if truncated:
+            res["steps"].append(
+                f"HTTP-Antwort wurde nach {MAX_HTTP_BYTES} Byte begrenzt.")
+        res["ok"] = True
     except urllib.error.HTTPError as ex:
-        res["error"] = f"HTTP {ex.code} {ex.reason}"
-        if ex.code in (401, 403): res["hint"] = f"Anmeldung nötig. Mit OAuth: 'opencode mcp auth {name or '<name>'}'. Mit Schlüssel: 'headers' (z. B. Authorization) setzen und 'oauth': false."
-        elif ex.code == 404: res["hint"] = "URL prüfen (Pfad, z. B. /mcp)."
+        detail = ""
+        try:
+            detail = ex.read(2048).decode("utf-8", "replace")
+        except Exception:
+            pass
+        finally:
+            try:
+                ex.close()
+            except Exception:
+                pass
+        _fail(res, "auth" if ex.code in (401, 403) else "http",
+              f"HTTP {ex.code} {ex.reason}",
+              ("Anmeldung nötig. vibe führt keine Anmeldung durch und liest keine Tokens. "
+               f"Mit OAuth zuerst 'opencode mcp auth {name or '<name>'}' ausführen. "
+               "Mit Schlüssel: 'headers' (z. B. Authorization) setzen und 'oauth': false.")
+              if ex.code in (401, 403)
+              else ("URL prüfen (Pfad, z. B. /mcp)." if ex.code == 404
+                    else "Der Server antwortet mit einem HTTP-Fehler; URL, Proxy und Serverprotokoll prüfen."))
+        if detail:
+            res["error"] += " – " + detail[:300]
+    except TimeoutError:
+        _fail(res, "timeout", f"Zeitlimit von {int(timeout)} s überschritten",
+              "Erreichbarkeit, Proxy und URL prüfen oder 'timeout' erhöhen.")
+    except urllib.error.URLError as ex:
+        reason = getattr(ex, "reason", ex)
+        if isinstance(reason, TimeoutError):
+            _fail(res, "timeout", f"Zeitlimit von {int(timeout)} s überschritten",
+                  "Erreichbarkeit, Proxy und URL prüfen oder 'timeout' erhöhen.")
+        elif isinstance(reason, socket.gaierror):
+            _fail(res, "dns", f"Name nicht auflösbar: {reason}",
+                  "DNS, Netzwerk und Schreibweise der URL prüfen.")
+        elif isinstance(reason, ssl.SSLError):
+            _fail(res, "tls", f"TLS-Fehler: {reason}",
+                  "Zertifikat, Proxy und URL prüfen; vibe prüft Zertifikate.")
+        else:
+            _fail(res, "network", f"{type(reason).__name__}: {reason}",
+                  "Erreichbarkeit, Proxy und URL prüfen.")
     except Exception as ex:
-        res["error"] = f"{type(ex).__name__}: {ex}"; res["hint"] = "Erreichbarkeit, Proxy und URL prüfen."
-    return res
+        _fail(res, "protocol", f"{type(ex).__name__}: {ex}",
+              "Antwort des Servers prüfen; erwartet wird MCP über Streamable HTTP.")
+    return _finish(res, secrets)
 
 def test(scope, name=None, entry=None):
     old = load(scope)[4].get(name) if name else None
     if entry is None: entry = old
     else: entry = merge_masked(entry, old)
     if not entry: raise ValueError("MCP-Server nicht gefunden")
-    validate(entry, extra_keys=_unknown_old_fields(old))
+    transport = entry.get("type")
+    if transport not in SUPPORTED_TRANSPORTS:
+        res = _result(str(transport) if transport else "?")
+        _fail(res, "unsupported_transport",
+              f"Transport '{transport}' wird nicht unterstützt.",
+              "Unterstützt werden: local (Standard-Ein-/Ausgabe/stdio) und remote (Streamable HTTP). "
+              "Das ist kein Hinweis auf einen defekten Server; andere Transporte werden von vibe nicht getestet.")
+        return _finish(res, _secret_values(entry))
+    if transport == "remote" and isinstance(entry.get("url"), str):
+        scheme_match = re.match(r"^([A-Za-z][A-Za-z0-9+.-]*)://", entry["url"])
+        scheme = scheme_match.group(1).lower() if scheme_match else ""
+        if scheme and scheme not in ("http", "https"):
+            res = _result(SUPPORTED_TRANSPORTS["remote"])
+            _fail(res, "unsupported_transport",
+                  f"Transport über '{scheme}://' wird nicht unterstützt.",
+                  "Unterstützt wird Streamable HTTP über http:// oder https://. "
+                  "WebSocket (ws://, wss://) und andere Transporte werden nicht getestet und sind kein Hinweis auf einen defekten Server.")
+            return _finish(res, _secret_values(entry))
+    try:
+        validate(entry, extra_keys=_unknown_old_fields(old))
+    except ValueError as ex:
+        res = _result(SUPPORTED_TRANSPORTS.get(transport, transport))
+        _fail(res, "config", "Ungültige Konfiguration: " + str(ex),
+              "Den Eintrag korrigieren; es wurde nichts verändert oder gestartet.")
+        return _finish(res, _secret_values(entry))
     cwd = vibe.ppath(scope) if scope != "global" else os.path.expanduser("~")
-    return test_local(entry, cwd) if entry["type"] == "local" else test_remote(entry, name)
+    return test_local(entry, cwd) if transport == "local" else test_remote(entry, name)
 
 # ---------- Terminal ----------
 def cli(action="list", name=None, scope="global", backup=None):
@@ -657,8 +1046,13 @@ def cli(action="list", name=None, scope="global", backup=None):
             print(vibe.col("g", "Wiederhergestellt: " + cfg_path(target_scope) + " aus " + result["backup"]))
             if result["safety"]: print("Vorheriger Stand gesichert:", result["safety"])
         elif action == "test":
-            r = test(scope, name); print((vibe.col("g", "OK") if r["ok"] else vibe.col("r", "FEHLER")), name, r.get("server") or "")
+            print(vibe.col("y", "Hinweis: " + TEST_WARNING))
+            r = test(scope, name)
+            print((vibe.col("g", "OK") if r["ok"] else vibe.col("r", "FEHLER")), name, r.get("server") or "")
+            print("  Transport:", r.get("transport", "?"))
+            if r.get("category"): print("  Kategorie:", r["category"])
             for s in r["steps"]: print("  ", s)
+            for n in r.get("notes", []): print("  ", n)
             for t in r["tools"]: print(f"   - {t['name']}: {t['description']}")
             if r["error"]: print(vibe.col("r", "  " + r["error"]))
             if r["hint"]: print(vibe.col("y", "  Hinweis: " + r["hint"]))
