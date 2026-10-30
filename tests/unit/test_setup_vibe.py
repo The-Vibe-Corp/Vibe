@@ -22,7 +22,7 @@ REPO = Path(__file__).resolve().parents[2]
 SETUP = REPO / "scripts" / "setup-vibe.py"
 WRAPPER = REPO / "install-vibe.sh"
 CMD_WRAPPER = REPO / "setup-vibe.cmd"
-PROGRAM_FILES = ("vibe", "vibe-run.sh", "vibe-web.py", "vibe_mcp.py", "vibe_opencode.py", "vibe_sandbox.py", "fritz-reconnect.py")
+PROGRAM_FILES = ("vibe", "vibe-run.sh", "vibe-web.py", "vibe_models.py", "vibe_mcp.py", "vibe_opencode.py", "vibe_sandbox.py", "fritz-reconnect.py")
 
 setup = None
 

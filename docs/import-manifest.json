@@ -19,8 +19,8 @@
   },
   {
    "path": "bin/vibe",
-   "sha256": "b19096dc4d72a58dd80417a7a9c9e441f0ea8ce72aec49aab20a936ce64fd3f0",
-   "bytes": 119225
+   "sha256": "c3292ffafd9c1c3c3480ee11885532e878b17e15f7b9c230ce71dd4d743ec287",
+   "bytes": 123674
   },
   {
    "path": "bin/vibe-run.sh",
@@ -29,8 +29,8 @@
   },
   {
    "path": "bin/vibe-web.py",
-   "sha256": "46f60f9db85c453c078bb6f5bb648f7c7d1d43b34d9dc845f3161e14a6faed54",
-   "bytes": 94731
+   "sha256": "d1b6032d5bc08f91c350aa6fc869500004c1113dc40a1fb5e69a6b0eec910d81",
+   "bytes": 99188
   },
   {
    "path": "bin/vibe_guide.py",
@@ -46,6 +46,11 @@
    "path": "bin/vibe_opencode.py",
    "sha256": "5e2c58b801d759874ff4a8bb0dd2122c0fa638e4ca42e129f4b48b2dedebec83",
    "bytes": 13639
+  },
+  {
+   "path": "bin/vibe_models.py",
+   "sha256": "9e013459696c2a1a9fab378a771961afc3630768bde066a674962792ca0762ab",
+   "bytes": 20977
   },
   {
    "path": "bin/vibe_paths.py",
@@ -64,8 +69,8 @@
   },
   {
    "path": "data/models.json",
-   "sha256": "3f4842520afd54ffe2e32a792f5a6633bba1fb12878c5666a108caec374bf3d6",
-   "bytes": 12600
+   "sha256": "abdbe9d9b2c0896d6a632a5a8140c38bf7b61e9bf9b64a7cca03bd33a5ea6751",
+   "bytes": 34162
   },
   {
    "path": "install-vibe.sh",
@@ -74,8 +79,8 @@
   },
   {
    "path": "scripts/setup-vibe.py",
-   "sha256": "6b9ce08c48e4aeac0706d323b95f028d886f2715bff979e118c1d9374d2aab15",
-   "bytes": 30870
+   "sha256": "724c5c7b0d200414e790e2d030db363fc9cd8629bf3145aeeeec2a886021670e",
+   "bytes": 30888
   },
   {
    "path": "setup-vibe.cmd",
@@ -372,6 +377,18 @@
    "dateien": [
     "bin/vibe_mcp.py",
     "bin/vibe_opencode.py"
+   ]
+  },
+  {
+   "arbeitspaket": "V-011",
+   "datum": "2026-10-30",
+   "grund": "Modellkatalog auf Schema 2 mit belegten Fakten, getrennten Einschätzungen, Preisangaben mit Währung/Einheit/Stand sowie Liste nicht übernommener Altbestände; neues Modul vibe_models.py wird bei der Installation mitkopiert.",
+   "dateien": [
+    "bin/vibe",
+    "bin/vibe-web.py",
+    "bin/vibe_models.py",
+    "data/models.json",
+    "scripts/setup-vibe.py"
    ]
   }
  ]

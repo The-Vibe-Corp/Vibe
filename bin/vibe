@@ -36,7 +36,7 @@ import urllib.parse
 
 if __name__ == "__main__": sys.modules["vibe"] = sys.modules[__name__]
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
-import vibe_storage, vibe_paths, vibe_opencode
+import vibe_storage, vibe_paths, vibe_opencode, vibe_models
 
 try:
     PATHS = vibe_paths.resolve()
@@ -1594,8 +1594,8 @@ def models_list():
     return vibe_opencode.list_models()["models"]
 
 def models_info():
-    try: return json.load(open(MODELS_FILE, encoding="utf-8"))
-    except Exception: return {"stand": "", "hinweis": "Keine models.json gefunden.", "models": []}
+    """Modellkatalog als normalisierte Sicht inklusive Prüfbefunden."""
+    return vibe_models.load(MODELS_FILE)
 
 def models_info_map(): return {m["id"]: m for m in models_info().get("models", [])}
 
@@ -1655,14 +1655,96 @@ def cmd_agent(action, name, scope="global", backup=None):
     except ValueError as e:
         sys.exit(str(e))
 
-def cmd_models():
+def _model_value(model, section, key):
+    node = (model.get(section) or {}).get(key)
+    return vibe_models.assertion_text(node)
+
+def _model_sources(info):
+    """Eindeutige Quellen mit Datum aus Katalogkopf und Angaben."""
+    rows, seen = [], set()
+    for item in info.get("quellen") or []:
+        if not isinstance(item, dict): continue
+        name, datum = str(item.get("name") or "").strip(), str(item.get("datum") or "").strip()
+        if name and (name, datum) not in seen:
+            seen.add((name, datum)); rows.append((name, datum))
+    if rows: return rows
+    for model in info.get("models") or []:
+        for section in ("fakten", "einschaetzungen"):
+            for node in (model.get(section) or {}).values():
+                if not isinstance(node, dict): continue
+                name, datum = str(node.get("quelle") or "").strip(), str(node.get("datum") or "").strip()
+                if name and (name, datum) not in seen:
+                    seen.add((name, datum)); rows.append((name, datum))
+    return rows
+
+def _model_detail(model):
+    print(col("b", model.get("name") or model.get("id")) + "  " + col("d", model.get("id", "")))
+    print("Anbieter:", model.get("anbieter") or "unbekannt", "| ID-Status:", model.get("id_status") or "unbekannt")
+    beleg = model.get("id_beleg") or {}
+    if beleg: print(col("d", f"  ID-Beleg: {beleg.get('quelle', '?')} ({beleg.get('datum', '?')})"))
+    price = model.get("preis") or {}
+    line = "Preis: " + vibe_models.price_text(price)
+    if price.get("status") != "unbekannt":
+        line += f" | Quelle: {price.get('quelle', '?')} | Stand: {price.get('stand', '?')}"
+    elif price.get("grund"):
+        line += " | Grund: " + str(price.get("grund"))
+    print(line)
+    print("Fakten:")
+    for key, node in (model.get("fakten") or {}).items():
+        text = vibe_models.assertion_text(node)
+        if vibe_models.is_unknown(node.get("wert") if isinstance(node, dict) else None):
+            print(f"  {key}: {text}")
+        else:
+            print(f"  {key}: {text} [{node.get('art', '?')}] Quelle: {node.get('quelle', '?')}, Datum: {node.get('datum', '?')}")
+    print("Einschätzungen:")
+    for key, node in (model.get("einschaetzungen") or {}).items():
+        text = vibe_models.assertion_text(node)
+        if vibe_models.is_unknown(node.get("wert") if isinstance(node, dict) else None):
+            print(f"  {key}: {text}")
+        else:
+            print(f"  {key}: {text} [{node.get('art', '?')}] Quelle: {node.get('quelle', '?')}, Datum: {node.get('datum', '?')}")
+    for key, label in (("staerken", "Stärken"), ("schwaechen", "Schwächen")):
+        rows = model.get(key) or []
+        print(label + ":")
+        if not rows: print("  keine Angaben")
+        for node in rows:
+            print(f"  - {vibe_models.assertion_text(node)} [{node.get('art', '?')}] Quelle: {node.get('quelle', '?')}, Datum: {node.get('datum', '?')}")
+
+def cmd_models(model_id=None):
     info = models_info(); mp = {m["id"]: m for m in info.get("models", [])}
-    ids = models_list(); ids = [i for i in ids if i in mp or i.startswith("opencode/")] or list(mp)
-    print(col("b", f"{'Modell':36}{'Preis /1M ein/aus':20}{'Tempo':13}{'Daten':14}{'Coder':18}Reviewer"))
+    if model_id:
+        if model_id in mp: _model_detail(mp[model_id]); return
+        print("Unbekanntes Modell:", model_id, "(kein Katalogeintrag, keine Einschätzung)")
+        return
+    if not info.get("models"):
+        print("Kein Modellkatalog gefunden: " + MODELS_FILE + " (install-vibe.sh ausführen).")
+        current = models_list()
+        if current: print("Verfügbar laut opencode (ohne Katalog): " + ", ".join(current))
+        return
+    current = models_list()
+    findings = list(info.get("findings") or [])
+    if current: findings += vibe_models.compare(info, current)
+    ids = [i for i in current if i in mp or i.startswith("opencode/")] or list(mp)
+    for mid in mp:
+        if mid not in ids: ids.append(mid)
+    print(col("b", f"{'Modell':34}{'Preis':46}{'Tempo':13}{'Daten':12}{'Coder':14}Reviewer"))
     for mid in ids:
-        m = mp.get(mid, {})
-        print(f"{mid[:35]:36}{m.get('preis','?')[:19]:20}{m.get('tempo','?'):13}{m.get('daten','?'):14}{m.get('coder','?'):18}{m.get('reviewer','?')}")
-    print(col("d", "\nStand " + info.get("stand", "?") + ". " + info.get("hinweis", "")))
+        m = mp.get(mid)
+        if not m:
+            print(f"{mid[:33]:34}{'unbekannt (kein Katalogeintrag)':46}{'unbekannt':13}{'unbekannt':12}{'unbekannt':14}unbekannt")
+            continue
+        mark = " (nicht mehr gelistet)" if current and mid not in current and m.get("id_status") != "entfernt" else ""
+        price = vibe_models.price_text(m.get("preis") or {})[:40]
+        print(f"{(mid + mark)[:33]:34}{price:46}{_model_value(m, 'einschaetzungen', 'tempo')[:12]:13}"
+              f"{_model_value(m, 'fakten', 'daten')[:11]:12}{_model_value(m, 'einschaetzungen', 'coder')[:13]:14}"
+              f"{_model_value(m, 'einschaetzungen', 'reviewer')}")
+    print(col("d", f"\nStand {info.get('stand') or '?'}. Katalog {info.get('version') or '?'}. {info.get('hinweis', '')}"))
+    sources = _model_sources(info)
+    if sources:
+        print(col("d", "Quellen: " + "; ".join(f"{name} ({datum or 'ohne Datum'})" for name, datum in sources)))
+    for finding in findings:
+        print(col("y", "Hinweis: " + finding["text"]))
+    print(col("d", "Details: vibe models <modell-id>"))
 
 def cmd_model(agent, model, scope="global"):
     try:
@@ -1994,7 +2076,7 @@ def _price_for(model, user_prices, system_prices, catalog):
     if model in system_prices:
         return dict(system_prices[model]), "system"
     info = catalog.get(model)
-    if isinstance(info, dict) and str(info.get("preis") or "").strip().lower() == "kostenlos":
+    if vibe_models.is_free(info):
         return {"input": 0.0, "cached_input": 0.0, "output": 0.0}, "kostenlos"
     return {"input": 0.0, "cached_input": 0.0, "output": 0.0}, "unbekannt"
 
@@ -2450,7 +2532,10 @@ def doctor_checks():
     chk("Abnahme-Dateien + Prüfsummen", os.path.exists(os.path.join(VERIFY, "verify.sh")) and run(["sha256sum", "-c", os.path.expanduser("~/.config/schreibfuchs-verify.sha"), "--quiet"], cwd=VERIFY)[0] == 0, "install.sh / install2.sh ausführen")
     for a, role in sorted(profiles_load().get("rollen", {}).items()):
         chk(f"Agent {a} ({role})", os.path.exists(os.path.join(AGENTS_DIR, a + ".md")))
-    chk("models.json (Modell-Einschätzung)", os.path.exists(MODELS_FILE), "install-vibe.sh ausführen")
+    catalog = models_info()
+    chk("models.json (Modellkatalog)", bool(catalog.get("models")), "install-vibe.sh ausführen")
+    chk("Modellkatalog belegt", not catalog.get("findings"),
+        "vibe models zeigt Quellen, Datum und Befunde")
     if os.path.isdir(VIBE):
         st = shutil.disk_usage(VIBE); chk(f"freier Platz auf Datenpartition: {st.free // 2**30} GB", st.free > 10 * 2**30, "unter 10 GB")
     h = shutil.disk_usage(os.path.expanduser("~")); chk(f"freier Platz im Home: {h.free // 2**30} GB", h.free > 5 * 2**30, "unter 5 GB")
@@ -2537,7 +2622,7 @@ def main():
                  "agents": lambda: cmd_agents(), "agent": lambda: cmd_agent(r[0], r[1], r[2] if len(r) > 2 else "global", r[3] if len(r) > 3 else None),
                  "rights": lambda: cmd_rights(r[0], r[1] if len(r) > 1 else None, r[2] if len(r) > 2 else None),
                  "sandbox": lambda: cmd_sandbox(r[0], r[1] if len(r) > 1 else None, r[2] if len(r) > 2 else None),
-                 "models": lambda: cmd_models(), "model": lambda: cmd_model(r[0], r[1], r[2] if len(r) > 2 else "global"),
+                 "models": lambda: cmd_models(r[0] if r else None), "model": lambda: cmd_model(r[0], r[1], r[2] if len(r) > 2 else "global"),
                  "profile": lambda: cmd_profile(r[0] if r else "list", r[1] if len(r) > 1 else None),
                  "costs": lambda: cmd_costs(r[0] if r else None),
                  "mcp": lambda: cmd_mcp(r[0] if r else "list", r[1] if len(r) > 1 else None, r[2] if len(r) > 2 else "global", r[3] if len(r) > 3 else None),

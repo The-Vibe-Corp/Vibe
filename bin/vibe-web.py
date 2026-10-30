@@ -180,6 +180,9 @@ def agents_info():
             write_dirs_errors[p] = str(e)
     return {"agents": vibe.agents_all(), "projects": ps, "models": vibe.models_list(),
             "info": {m["id"]: m for m in info.get("models", [])}, "stand": info.get("stand", ""), "hinweis": info.get("hinweis", ""),
+            "katalog": {"schema": info.get("schema"), "version": info.get("version", ""),
+                        "legacy": info.get("legacy", False), "findings": info.get("findings", []),
+                        "quellen": info.get("quellen", []), "nicht_uebernommen": info.get("nicht_uebernommen", [])},
             "perms": vibe.PERM_LABELS, "perms_project": vibe.PERM_LABELS_PROJECT,
             "write_dirs": write_dirs, "write_dirs_errors": write_dirs_errors, "profiles": vibe.profiles_load()}
 
@@ -900,7 +903,18 @@ async function costDetail(name){
 
 /* ---------- Agenten, Modelle, Profile ---------- */
 let AG=null,AGFILTER='alle';
-function modelLabel(id,info){const m=info[id];return m?`${id} — ${m.preis||'?'} · ${m.tempo}, ${m.aufwand} Aufwand, Daten ${m.daten}`:id}
+function mval(node){return node&&typeof node==='object'?String(node.wert??node.text??'unbekannt'):'unbekannt'}
+function msrc(node){if(!node||!node.quelle)return 'Quelle unbekannt';return node.quelle+(node.datum?' ('+node.datum+')':'')}
+function mart(node){return node&&node.art?' ['+node.art+']':''}
+function mAssert(label,node){return el('div',{class:'mut','data-assertion':label},el('b',{},label+': '),mval(node),mart(node),el('span',{class:'mut'},' — '+msrc(node)))}
+function mList(label,rows){return el('div',{},el('b',{},label),rows&&rows.length?el('ul',{class:'l'},rows.map(node=>el('li',{},mval(node)+mart(node)+' — '+msrc(node)))):el('div',{class:'mut'},'keine Angaben'))}
+function mPrice(m){const p=(m&&m.preis)||{};const rows=[el('div',{},el('b',{},'Preis: '),p.text||'unbekannt')];
+ if(p.status&&p.status!=='unbekannt'){rows.push(el('div',{class:'mut'},'Währung: '+(p.waehrung||'?')+' · Einheit: '+(p.einheit||'?')+' · Stand: '+(p.stand||'?')+' · Quelle: '+(p.quelle||'?')));
+  const t=p.tarife||{};rows.push(el('div',{class:'mut'},'Tarife je Einheit: Eingabe '+(t.eingabe??'?')+', Ausgabe '+(t.ausgabe??'?')+(t.cache_lesen!=null?', Cache lesen '+t.cache_lesen:'')+(t.cache_schreiben!=null?', Cache schreiben '+t.cache_schreiben:'')));
+  (t.staffeln||[]).forEach(s=>rows.push(el('div',{class:'mut'},'Staffel ab '+(s.ab_kontext??'?')+' Kontext: '+(s.eingabe??'?')+' / '+(s.ausgabe??'?'))))}
+ else if(p.grund){rows.push(el('div',{class:'mut'},'Grund: '+p.grund))}
+ return el('div',{class:'mprice'},...rows)}
+function modelLabel(id,info){const m=info[id];if(!m)return id;return `${id} — ${(m.preis||{}).text||'unbekannt'} · ${mval((m.einschaetzungen||{}).tempo)}, ${mval((m.einschaetzungen||{}).aufwand)} Aufwand, Daten ${mval((m.fakten||{}).daten)}`}
 function modelSelect(models,info,current,blank){const s=el('select',{});if(blank)s.append(el('option',{value:''},blank));const groups={};
  models.forEach(m=>{(groups[m.split('/')[0]]=groups[m.split('/')[0]]||[]).push(m)});if(current&&!models.includes(current))(groups[current.split('/')[0]]=groups[current.split('/')[0]]||[]).push(current);
  Object.entries(groups).forEach(([g,ms])=>{const og=el('optgroup',{label:g});ms.forEach(m=>og.append(el('option',{value:m},modelLabel(m,info))));s.append(og)});if(current)s.value=current;return s}
@@ -936,19 +950,51 @@ function profilesCard(d){const P=JSON.parse(JSON.stringify(d.profiles));const na
   el('div',{class:'bar'},cur,el('button',{class:'b',on:{click:async()=>{const r=await api('/api/profiles',{action:'save',data:P});toast(r.message)}}},'Profile speichern'),
    el('button',{class:'b p',on:{click:async()=>{const sv=await api('/api/profiles',{action:'save',data:P});const r=await api('/api/profiles',{action:'use',profile:cur.value});toast(r.message);if(r.ok)agents().catch(showErr)}}},'Speichern und anwenden')),body,rol))}
 function modelsCard(d){const used={};d.agents.forEach(a=>{(used[a.model]=used[a.model]||[]).push(a.name+(a.scope==='global'?'':'@'+a.scope))});
+ const K=d.katalog||{};const known=d.models.length>0;
  const ids=d.models.filter(m=>m.startsWith('opencode/')||d.info[m]);Object.keys(d.info).forEach(i=>{if(!ids.includes(i))ids.push(i)});
  const other={};d.models.filter(m=>!m.startsWith('opencode/')&&!d.info[m]).forEach(m=>{other[m.split('/')[0]]=(other[m.split('/')[0]]||0)+1});
- const tb=el('table',{},el('tr',{},...['Modell','Anbieter','Preis je 1M (ein/aus)','Tempo','Aufwand','Daten','Bilder','Coder','Reviewer','in Verwendung'].map(h=>el('th',{},h))));
- ids.forEach(id=>{const m=d.info[id]||{};const gone=!d.models.includes(id);
-  const det=el('tr',{class:'detail'},el('td',{colspan:'10'},el('div',{class:'grid3'},
-    el('div',{},el('b',{},'Stärken'),el('ul',{class:'l'},(m.staerken||['keine Angaben']).map(x=>el('li',{},x)))),
-    el('div',{},el('b',{},'Schwächen'),el('ul',{class:'l'},(m.schwaechen||['keine Angaben']).map(x=>el('li',{},x)))),
-    el('div',{},el('b',{},'Details'),el('div',{class:'mut'},'Kontext: '+(m.ctx||'?')),el('div',{class:'mut'},'Daten: '+(m.daten_text||'?')),el('div',{class:'mut'},'Quellen: '+(m.quellen||'—')),gone?el('div',{class:'bad'},'Nicht in „opencode models“ (Anbieter nicht verbunden oder Modell entfernt).'):null))));
-  det.style.display='none';
-  tb.append(el('tr',{class:'row',on:{click:()=>{det.style.display=det.style.display==='none'?'table-row':'none'}}},el('td',{},'▸ '+(m.name||id),el('div',{class:'mut'},id)),el('td',{class:'mut'},m.lab||'?'),el('td',{},m.preis||'?'),el('td',{},badge(m.tempo)),el('td',{},badge(m.aufwand)),el('td',{},badge(m.daten)),el('td',{},badge(m.vision)),
-   el('td',{},badge(m.coder)),el('td',{},badge(m.reviewer)),el('td',{class:'mut'},(used[id]||[]).join(', ')||'—')));tb.append(det)});
- return el('div',{class:'card'},el('details',{},el('summary',{},'Modelle – Einschätzung und Preis (aufklappen, Zeile anklicken für Details)'),
-   el('div',{class:'mut',style:'margin:8px 0'},'Stand '+d.stand+'. '+d.hinweis),tb,Object.keys(other).length?el('div',{class:'mut',style:'margin-top:8px'},'Weitere verbundene Anbieter (ohne Einschätzung): '+Object.entries(other).map(([k,v])=>k+' ('+v+' Modelle)').join(', ')):null))}
+ const tb=el('table',{},el('tr',{},...['Modell','Anbieter','Preis','Tempo','Aufwand','Daten','Bilder','Coder','Reviewer','in Verwendung'].map(h=>el('th',{},h))));
+ ids.forEach(id=>{const m=d.info[id]||null;const gone=!!m&&known&&!d.models.includes(id);
+  let det;
+  if(!m){det=el('tr',{class:'detail','data-model-detail':id},el('td',{colspan:'10'},el('div',{'data-model-unknown':'1'},
+    el('b',{},'Kein Katalogeintrag'),el('div',{class:'mut'},'Für dieses verbundene Modell liegen keine belegten Fakten, Einschätzungen oder Preise vor.'))));det.style.display='none'}
+  else{const facts=Object.entries(m.fakten||{}).map(([k,n])=>mAssert(k,n));
+   const assessments=Object.entries(m.einschaetzungen||{}).map(([k,n])=>mAssert(k,n));
+   const beleg=m.id_beleg||{};
+   det=el('tr',{class:'detail','data-model-detail':id},el('td',{colspan:'10'},el('div',{class:'grid3'},
+    el('div',{class:'mfacts'},el('b',{},'Fakten (Quelle/Datum)'),...(facts.length?facts:[el('div',{class:'mut'},'keine Angaben')])),
+    el('div',{class:'mopinion'},el('b',{},'Einschätzungen (Quelle/Datum)'),...(assessments.length?assessments:[el('div',{class:'mut'},'keine Angaben')]),mList('Stärken',m.staerken),mList('Schwächen',m.schwaechen)),
+    el('div',{class:'mproof'},el('b',{},'Preis und Beleg'),mPrice(m),
+     el('div',{class:'mut'},'ID-Beleg: '+(beleg.quelle||'—')+(beleg.datum?' ('+beleg.datum+')':'')),
+     el('div',{class:'mut'},'ID-Status: '+(m.id_status||'unbekannt')),
+     gone?el('div',{class:'bad'},'Nicht in „opencode models“ (Anbieter nicht verbunden oder Modell entfernt).'):null,
+     m.id_status==='entfernt'?el('div',{class:'bad'},'Als entfernt geführt'+(m.entfernt_am?' seit '+m.entfernt_am:'')+(m.entfernt_quelle?' ('+m.entfernt_quelle+')':'')):null))));
+   det.style.display='none'}
+  const price=(m&&m.preis)||{};
+  const removed=!!m&&(gone||m.id_status==='entfernt');
+  tb.append(el('tr',{class:'row','data-model-row':id,on:{click:()=>{det.style.display=det.style.display==='none'?'table-row':'none'}}},
+   el('td',{},'▸ '+((m&&m.name)||id),removed?el('span',{class:'pill bad'},' nicht mehr gelistet'):null,el('div',{class:'mut'},id)),
+   el('td',{class:'mut'},(m&&m.anbieter)||'?'),
+   el('td',{class:'mprice-cell','data-price-status':price.status||'unbekannt'},price.text||'unbekannt'),
+   el('td',{},badge(mval(m&&(m.einschaetzungen||{}).tempo))),el('td',{},badge(mval(m&&(m.einschaetzungen||{}).aufwand))),
+   el('td',{},badge(mval(m&&(m.fakten||{}).daten))),el('td',{},badge(mval(m&&(m.fakten||{}).bild))),
+   el('td',{},badge(mval(m&&(m.einschaetzungen||{}).coder))),el('td',{},badge(mval(m&&(m.einschaetzungen||{}).reviewer))),
+   el('td',{class:'mut'},(used[id]||[]).join(', ')||'—')));tb.append(det)});
+ const findings=K.findings||[];
+ const findingBox=findings.length?el('div',{class:'card err','data-catalog-findings':findings.length},el('b',{},'Katalogbefunde ('+findings.length+')'),el('ul',{class:'l'},findings.map(f=>el('li',{},f.text)))):null;
+ const legacy=K.legacy?el('div',{class:'bad'},'Altkatalog (Schema 1): Die Angaben sind nicht erneut geprüft und nur als Altbestand lesbar.'):null;
+ const nei=K.nicht_uebernommen||[];
+ const altbestand=nei.length?el('details',{'data-not-adopted':'1'},el('summary',{},'Nicht übernommene Altbestände ('+nei.length+')'),
+   el('div',{class:'mut'},'Diese Modelle standen im Altkatalog, sind aber am Prüftag nicht bestätigt und werden deshalb nicht als Fakten geführt.'),
+   el('ul',{class:'l'},nei.map(x=>el('li',{},el('b',{},x.id),' – '+(x.grund||'kein Grund'))))):null;
+ const sources=(K.quellen||[]).map(q=>q.name+(q.datum?' ('+q.datum+')':''));
+ return el('div',{class:'card',id:'models'},el('details',{},el('summary',{},'Modelle – Fakten, Einschätzungen und Preise (aufklappen, Zeile anklicken für Details)'),
+   el('div',{class:'mut',style:'margin:8px 0'},'Stand '+(d.stand||'?')+' · Katalog '+(K.version||'?')+'. '+d.hinweis),
+   legacy,findingBox,
+   el('div',{class:'mut','data-catalog-sources':'1'},'Quellen: '+(sources.length?sources.join('; '):'keine Quellen im Katalog')),
+   tb,
+   altbestand,
+   Object.keys(other).length?el('div',{class:'mut',style:'margin-top:8px'},'Weitere verbundene Anbieter (ohne Katalogeintrag): '+Object.entries(other).map(([k,v])=>k+' ('+v+' Modelle)').join(', ')):null))}
 async function agentForm(scope,name){const d=AG||await api('/api/agents');const isNew=!name;
  let text='',digest=null,fields={},backups=[];
  if(!isNew){const loaded=await api('/api/agent?scope='+encodeURIComponent(scope)+'&name='+encodeURIComponent(name));text=loaded.text;digest=loaded.digest;fields=loaded.fields||{};backups=loaded.backups||[]}
