@@ -185,7 +185,7 @@ Ein fehlender externer Dienst bedeutet BLOCKIERT, nicht erledigt.
   Tests: ungültiger zweiter Agent, Fehler beim zweiten Write,
   nicht verfügbares Modell, leeres Profil, manuelle Modelländerung.
 
-- [ ] V-013 MCP-Konfiguration verlustarm bearbeiten
+- [x] V-013 MCP-Konfiguration verlustarm bearbeiten
   Priorität: P1
   Abhängigkeiten: V-005, V-007
   Umfang: globale/projektbezogene CRUD-Funktionen und Status.
@@ -194,6 +194,21 @@ Ein fehlender externer Dienst bedeutet BLOCKIERT, nicht erledigt.
   Warnung mit Vorschau; maskierte Geheimnisse unverändert erhalten.
   Tests: JSONC-Kommentare, Trailing Commas, unbekannte Schlüssel,
   mehrere Konfigurationsdateien, Rename-Konflikte, geheime URL-Parameter.
+  Commit: b18184f; Test: tests/unit/test_mcp_config.py (25 Tests, u. a.
+  test_comments_trailing_commas_and_unknown_settings_survive_saving,
+  test_file_priority_matches_opencode_mcp_add,
+  test_unknown_field_of_an_existing_entry_is_preserved_but_new_ones_are_rejected,
+  test_masked_secrets_are_restored_when_other_parts_change,
+  test_duplicate_secret_url_parameters_are_not_silently_rewritten)
+  Prüfungen: `python3 -m unittest tests.unit.test_mcp_config -v` 25 Tests OK;
+  `bash scripts/verify.sh quick` Exit 0; `bash scripts/verify.sh full` Exit 5
+  (529 Tests, 10 Failures + 5 Errors) — dieselben 15 vorbestehenden
+  Umgebungsfehler wie auf dem sauberen Ausgangscommit `7ba22ab` (504 Tests):
+  SANDBOX=on ohne `vibe_sandbox.py` im temporären Projekt bzw. bwrap mit
+  offenem HOME.
+  Review: docs/reviews/V-013-review-1.md (CHANGES REQUIRED, 2 Medium/2 Minor),
+  docs/reviews/V-013-review-2.md (PASS, 0 Critical/High/Medium, 1 Minor)
+  Dokumentation: docs/features/V-013.md; Trilium `mtlfH63g6rLt`
 
 - [ ] V-014 MCP-Verbindungstests robust und begrenzt ausführen
   Priorität: P1
