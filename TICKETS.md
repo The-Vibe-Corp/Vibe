@@ -78,7 +78,7 @@ Ein fehlender externer Dienst bedeutet BLOCKIERT, nicht erledigt.
   -3.md (CHANGES REQUIRED), -4.md (PASS, keine Critical/High/Medium/Minor)
   Dokumentation: docs/features/V-005.md; Trilium `XQO2Qcrg1tvI`
 
-- [ ] V-006 Quellen-, Installations- und Laufzeitpfade trennen
+- [x] V-006 Quellen-, Installations- und Laufzeitpfade trennen
   Priorität: P0
   Abhängigkeiten: V-001, V-005
   Umfang: Pfadmodell und Konfigurationspriorität definieren.
@@ -87,6 +87,14 @@ Ein fehlender externer Dienst bedeutet BLOCKIERT, nicht erledigt.
   persönliche Einstellungen überschreiben Defaults.
   Tests: alternativer Arbeitsbereich, fehlende Verzeichnisse, Leerzeichen,
   abweichender Port, Import ohne Prozessstart.
+  Commit: fb85817; Test: tests/unit/test_vibe_paths.py (32 Tests, u. a.
+  test_dev_profile_controls_only_its_own_agent_session,
+  test_dev_profile_uses_its_own_paths_and_ports,
+  test_importing_the_web_module_writes_no_token_or_instance_file)
+  Prüfungen: `bash scripts/verify.sh quick` Exit 0; `bash scripts/verify.sh full` Exit 0
+  (425 Unit- + 34 Browser-Tests, 459 erkannt) im isolierten Prüfstand mit schreibbarem /tmp
+  Review: docs/reviews/V-006-review-1.md (CHANGES REQUIRED), docs/reviews/V-006-review-2.md (PASS, 0 Critical/High/Medium, 2 Minor)
+  Dokumentation: docs/features/V-006.md; Trilium `f0Mq8GVg7hhf`
 
 - [ ] V-007 opencode-Kompatibilitätsadapter erstellen
   Priorität: P0
