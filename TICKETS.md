@@ -132,7 +132,7 @@ Ein fehlender externer Dienst bedeutet BLOCKIERT, nicht erledigt.
   docs/reviews/V-008-review-2.md (PASS, 0 Critical/High/Medium, 0 Minor)
   Dokumentation: docs/features/V-008.md; Trilium `SC3Jtp3csTnz`
 
-- [ ] V-009 Ticket- und Feedbackverarbeitung stabilisieren
+- [x] V-009 Ticket- und Feedbackverarbeitung stabilisieren
   Priorität: P1
   Abhängigkeiten: V-005
   Umfang: Parser, IDs, Status und neue Feedbackeinträge.
@@ -140,6 +140,19 @@ Ein fehlender externer Dienst bedeutet BLOCKIERT, nicht erledigt.
   fehlende Nachweise werden sichtbar; keine Doppel-IDs bei Parallelzugriff.
   Tests: mehrzeilige Blöcke, Kommentare, defekte Checkboxen, fehlender Commit,
   gleichzeitige Einträge und nicht vorhandene Dateien.
+  Commit: 46138e3; Test: tests/unit/test_ticket_feedback_processing.py (28 Tests, u. a.
+  test_template_and_multiline_comments_are_not_entries,
+  test_broken_checkboxes_keep_their_id_and_stay_open,
+  test_parallel_processes_get_unique_ids,
+  test_parallel_api_requests_get_unique_ids)
+  Prüfungen: `python3 -m unittest tests.unit.test_ticket_feedback_processing -v`
+  28 Tests OK; `python3 -m unittest tests.unit.test_feedback_capture
+  tests.unit.test_feedback_edit_delete tests.unit.test_feedback_completed
+  tests.unit.test_feedback_entries -v` 40 Tests OK;
+  `bash scripts/verify.sh quick` Exit 0; `bash scripts/verify.sh full` Exit 0
+  (504 Unit- + 34 Browser-Tests, 538 erkannt) im Mount-Namespace mit tmpfs auf /tmp
+  Review: docs/reviews/V-009-review-1.md (PASS, 0 Critical/High/Medium, 1 Minor)
+  Dokumentation: docs/features/V-009.md; Trilium `jFyT2V8u3yij`
 
 - [ ] V-010 Agentenverwaltung vervollständigen
   Priorität: P1
