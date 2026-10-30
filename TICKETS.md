@@ -290,7 +290,7 @@ Ein fehlender externer Dienst bedeutet BLOCKIERT, nicht erledigt.
   Review: docs/reviews/V-015-review-1.md (PASS, 0 Critical/High/Medium, 4 Minor)
   Dokumentation: docs/features/V-015.md; Trilium `DqTH63j8L7qv`
 
-- [ ] V-016 Dashboard- und opencode-Lebenszyklus getrennt prüfen
+- [x] V-016 Dashboard- und opencode-Lebenszyklus getrennt prüfen
   Priorität: P1
   Abhängigkeiten: V-004, V-015
   Umfang: Starten und Beenden beider Anwendungen.
@@ -299,6 +299,17 @@ Ein fehlender externer Dienst bedeutet BLOCKIERT, nicht erledigt.
   aktive Streams und Hintergrundthreads sauber behandelt.
   Tests: alle Kombinationen laufender Prozesse; Neustart; belegter Port;
   Browser-Tab schließen; Beenden während eines aktiven Agentenlaufs.
+  Commit: 70b029d; Test: tests/unit/test_lifecycle.py (17 Tests, u. a.
+  test_every_combination_of_running_processes,
+  test_foreign_sessions_with_the_same_name_are_not_stopped,
+  test_shutdown_ends_streams_and_keeps_run_and_opencode,
+  test_sigterm_ends_streams_cleanly)
+  Prüfungen: `python3 -m unittest tests.unit.test_lifecycle -v` 17 Tests OK;
+  `bash scripts/verify.sh quick` Exit 0; `bash scripts/verify.sh full` Exit 0
+  (644 Unit- + 47 Browser-Tests, 691 erkannt) im Mount-Namespace mit tmpfs auf
+  /tmp (schreibgeschütztes /tmp im Prüfcontainer, Staging-Pfad von next_item.py).
+  Review: docs/reviews/V-016-review-1.md (PASS, 0 Critical/High/Medium, 2 Minor)
+  Dokumentation: docs/features/V-016.md; Trilium `hv8eqCTudXhH`
 
 - [ ] V-017 Bazzite-Starter produktionsreif integrieren
   Priorität: P1
