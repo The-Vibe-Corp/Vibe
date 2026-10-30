@@ -31,7 +31,7 @@ Aufruf:  vibe                 interaktives Menü
          vibe types           verfügbare Projekttypen
          vibe doctor          Umgebung prüfen
 """
-import os, sys, re, json, math, sqlite3, subprocess, shutil, time, tempfile, shlex
+import os, sys, re, json, math, sqlite3, subprocess, shutil, time, tempfile, shlex, socket
 import urllib.parse
 
 if __name__ == "__main__": sys.modules["vibe"] = sys.modules[__name__]
@@ -57,6 +57,8 @@ MODELS_FILE = os.path.join(TOOLS, "models.json")
 PROFILES_FILE = os.path.join(PATHS.state, "profiles.json")
 BACKUPS = os.path.join(PATHS.state, "agent-backups")
 LOGS = PATHS.runtime
+INSTFILE = os.path.join(LOGS, "web.instance")
+MANAGED_VAR = "VIBE_MANAGED"
 AGENTS_DIR = PATHS.agents_dir
 CONTAINER = PATHS.container
 OC_URL = PATHS.opencode_url
@@ -117,6 +119,10 @@ def run_key(name):
     base = safe(name)
     mapping = project_map()
     others = [other for other in mapping if other != name and safe(other) == base]
+    # "ui" und "server" sind bereits die Sitzungen des Dashboards und des
+    # opencode-Servers. Ein gleichnamiges Projekt darf sie nicht übernehmen.
+    if base in ("ui", "server"):
+        return f"{base}-{vibe_runs.digest(mapping.get(name) or name)}"
     if base == name and not others:
         return base
     return f"{base}-{vibe_runs.digest(mapping.get(name) or name)}"
@@ -137,6 +143,65 @@ def child_exports():
 def profile_session(base):
     """Eigene tmux-Sitzung je Profil, damit Dev und Prod parallel laufen."""
     return base if PATHS.profile == "prod" else base + "-" + PATHS.profile
+
+def tmux_session_exists(session):
+    """Prüft eine bereits aufgelöste Sitzung (nicht den Projektnamen)."""
+    return run(["tmux", "has-session", "-t", session])[0] == 0
+
+def session_marker(session):
+    """Markierung einer tmux-Sitzung: run, ui, server oder fremd.
+
+    ``VIBE_MANAGED`` wird beim Anlegen der Sitzung gesetzt. Fehlt die
+    Variable, ist die Sitzung fremd; ein leerer Erfolg (z. B. eine Attrappe
+    ohne Umgebungsauskunft) bleibt ``unbekannt`` und wird nie als Nachweis
+    für eine fremde Sitzung verwendet.
+    """
+    rc, out = run(["tmux", "show-environment", "-t", session, MANAGED_VAR])
+    if rc == 0:
+        line = out.strip().splitlines()[-1] if out.strip() else ""
+        prefix = MANAGED_VAR + "="
+        if line.startswith(prefix):
+            return line[len(prefix):].strip() or "unbekannt"
+        return "unbekannt"
+    if "unknown variable" in out.lower():
+        return "unmanaged"
+    return "unbekannt"
+
+def session_owned(session, kind):
+    return session_marker(session) == kind
+
+def port_in_use(host, port):
+    """Erkennt einen bereits lauschenden Dienst auf einem Loopback-Port."""
+    try:
+        with socket.create_connection((str(host), int(port)), timeout=0.5):
+            return True
+    except OSError:
+        return False
+
+def dashboard_health():
+    """Health-Antwort des eigenen Dashboards; fremde Dienste zählen nicht.
+
+    Der Health-Endpunkt ist absichtlich ohne Token lesbar. Zusätzlich zur
+    App-Kennung muss die Instanzkennung der laufenden Laufzeit entsprechen;
+    ein fremder Dienst auf dem Port wird dadurch nicht für vibe gehalten.
+    """
+    rc, out = run(["curl", "-sf", "--max-time", "2",
+                   f"http://{UI_BIND}:{UI_PORT}/api/health"])
+    if rc != 0:
+        return None
+    try:
+        data = json.loads(out)
+    except ValueError:
+        return None
+    if not isinstance(data, dict) or data.get("app") != "vibe":
+        return None
+    try:
+        expected = open(INSTFILE, encoding="utf-8").read().strip()
+    except OSError:
+        expected = ""
+    if expected and data.get("instance") != expected:
+        return None
+    return data
 
 # ---------- Entwicklungsordner (Roots) und Projekte ----------
 BAD_ROOTS = {"/", "/usr", "/etc", "/bin", "/sbin", "/lib", "/lib64", "/proc", "/sys", "/dev", "/boot", "/root", "/run", "/var", "/tmp", "/home", "/opt", "/mnt", "/media"}
@@ -984,7 +1049,8 @@ def cmd_run(name, agent=None):
     # Laufschlüssel, ID, Sitzung, Skript, Pfad und Agent folgen als Argumente.
     inner = ("source ~/.bashrc; " + child_exports()
              + ' export VIBE_LOGNAME="$1" VIBE_RUN_ID="$2" VIBE_SESSION="$3"; bash "$4" "$5" "$6"')
-    rc, out = run(["tmux", "new-session", "-d", "-s", session, "-c", p,
+    rc, out = run(["tmux", "new-session", "-d", "-s", session,
+                   "-e", MANAGED_VAR + "=run", "-c", p,
                    "bash", "-lc", inner, name, key, run_id, session,
                    os.path.join(BIN, "vibe-run.sh"), p, agent])
     if rc != 0:
@@ -1032,6 +1098,15 @@ def cmd_stop(name, run_id=None):
     if record is None and not tmux_has_session(name):
         print("Kein laufender Lauf für", name)
         return
+    # Nur eine von vibe markierte Sitzung ist ein verwalteter Lauf. Ein
+    # Registereintrag allein genügt nicht, weil eine fremde Sitzung denselben
+    # Namen tragen kann; "unbekannt" toleriert nur Attrappen ohne Auskunft.
+    marker = session_marker(session)
+    if record is not None:
+        if marker not in ("run", "unbekannt"):
+            sys.exit(f"tmux-Sitzung {session} gehört nicht zu vibe; nichts beendet.")
+    elif marker != "run":
+        sys.exit(f"tmux-Sitzung {session} gehört nicht zu vibe; nichts beendet.")
     rc, out = run(["tmux", "kill-session", "-t", session])
     if rc != 0:
         if record is not None and not tmux_has_session(name):
@@ -2593,26 +2668,60 @@ def cmd_emu(action):
     if out: print(out)
 
 def server_health():
+    """Nur ein gesunder opencode-Server zählt; ein fremder 200er nicht.
+
+    opencode antwortet auf ``/global/health`` mit einem JSON-Objekt, das
+    ``healthy: true`` und eine Version enthält. Ein beliebiger Webserver auf
+    demselben Port darf nicht als laufender opencode-Server gelten.
+    """
     rc, out = run(["curl", "-sf", "--max-time", "2", OC_URL + "/global/health"])
-    return out if rc == 0 else None
+    if rc != 0:
+        return None
+    try:
+        data = json.loads(out)
+    except ValueError:
+        return None
+    if not isinstance(data, dict) or data.get("healthy") is not True:
+        return None
+    version = data.get("version")
+    if not isinstance(version, str) or not version.strip():
+        return None
+    return out
 
 def server_session():
     return profile_session("vibe-server")
 
 def cmd_server(action="status"):
+    session = server_session()
     if action == "start":
         if server_health(): print("opencode-Server läuft:", OC_URL); return
+        if port_in_use("127.0.0.1", PATHS.opencode_port):
+            sys.exit(f"Port {PATHS.opencode_port} ist belegt, aber kein gesunder "
+                     "opencode-Server erkannt; nichts gestartet.")
+        if tmux_session_exists(session):
+            if not session_owned(session, "server"):
+                sys.exit(f"tmux-Sitzung {session} gehört nicht zu vibe; nichts gestartet.")
+            print("opencode-Server startet bereits (tmux attach -t " + session + ").")
+            return
         try:
             command = vibe_opencode.server_command(PATHS.opencode_port)
         except vibe_opencode.CompatibilityError as error:
             sys.exit(str(error))
         # Port ist validiert (1..65535) und damit kein Shell-Freitext; der
         # Adapter liefert eine Argumentliste, die shlex.join sicher quotet.
-        run(["tmux", "new-session", "-d", "-s", server_session(), "bash", "-lc",
-             "source ~/.bashrc; exec " + shlex.join(command)])
-        time.sleep(4); print("Gestartet:" if server_health() else "Start angestoßen, Server antwortet noch nicht (tmux attach -t " + server_session() + "):", OC_URL)
+        rc, out = run(["tmux", "new-session", "-d", "-s", session,
+                       "-e", MANAGED_VAR + "=server", "bash", "-lc",
+                       "source ~/.bashrc; exec " + shlex.join(command)])
+        if rc != 0:
+            sys.exit("opencode-Server nicht gestartet: " + out)
+        time.sleep(4); print("Gestartet:" if server_health() else "Start angestoßen, Server antwortet noch nicht (tmux attach -t " + session + "):", OC_URL)
     elif action == "stop":
-        run(["tmux", "kill-session", "-t", server_session()]); print("opencode-Server beendet.")
+        if not tmux_session_exists(session):
+            print("opencode-Server läuft nicht (keine vibe-Sitzung).")
+            return
+        if not session_owned(session, "server"):
+            sys.exit(f"tmux-Sitzung {session} gehört nicht zu vibe; nichts beendet.")
+        run(["tmux", "kill-session", "-t", session]); print("opencode-Server beendet.")
     else:
         h = server_health(); print("opencode-Server:", col("g", "läuft " + OC_URL + " " + h) if h else "aus")
 
@@ -2620,20 +2729,38 @@ def ui_session():
     return profile_session("vibe-ui")
 
 def cmd_ui(action="start"):
+    session = ui_session()
     if action == "stop":
-        run(["tmux", "kill-session", "-t", ui_session()]); print("Dashboard beendet."); return
+        if not tmux_session_exists(session):
+            print("Dashboard läuft nicht.")
+            return
+        if not session_owned(session, "ui"):
+            sys.exit(f"tmux-Sitzung {session} gehört nicht zu vibe; nichts beendet.")
+        run(["tmux", "kill-session", "-t", session]); print("Dashboard beendet."); return
     try:
         vibe_paths.ensure(PATHS, "runtime")
     except vibe_paths.ConfigError as error:
         sys.exit("Pfadkonfiguration: " + str(error))
-    if run(["tmux", "has-session", "-t", ui_session()])[0] != 0:
-        # Aufgelöste Pfade und Ports ausdrücklich übergeben, damit der
-        # Kindprozess dieselbe Konfiguration verwendet; shlex.quote schützt
-        # Pfade mit Leerzeichen und Sonderzeichen.
-        inner = "source ~/.bashrc; " + child_exports() + ' exec python3 "$1"'
-        run(["tmux", "new-session", "-d", "-s", ui_session(), "bash", "-lc",
-             inner, "vibe-ui", os.path.join(BIN, "vibe-web.py")])
-        time.sleep(2)
+    if dashboard_health():
+        print("Dashboard läuft bereits:", f"http://{UI_BIND}:{UI_PORT}/")
+        return
+    if port_in_use(UI_BIND, UI_PORT):
+        sys.exit(f"Port {UI_PORT} ist belegt, aber kein eigenes Dashboard erkannt; nichts gestartet.")
+    if tmux_session_exists(session):
+        if not session_owned(session, "ui"):
+            sys.exit(f"tmux-Sitzung {session} gehört nicht zu vibe; nichts gestartet.")
+        print("Dashboard-Sitzung läuft bereits, antwortet aber noch nicht:", f"http://{UI_BIND}:{UI_PORT}/")
+        return
+    # Aufgelöste Pfade und Ports ausdrücklich übergeben, damit der
+    # Kindprozess dieselbe Konfiguration verwendet; shlex.quote schützt
+    # Pfade mit Leerzeichen und Sonderzeichen.
+    inner = "source ~/.bashrc; " + child_exports() + ' exec python3 "$1"'
+    rc, out = run(["tmux", "new-session", "-d", "-s", session,
+                   "-e", MANAGED_VAR + "=ui", "bash", "-lc",
+                   inner, "vibe-ui", os.path.join(BIN, "vibe-web.py")])
+    if rc != 0:
+        sys.exit("Dashboard nicht gestartet: " + out)
+    time.sleep(2)
     tokf = os.path.join(LOGS, "web.token")
     tok = open(tokf).read().strip() if os.path.exists(tokf) else "?"
     print(col("g", f"Dashboard ({PATHS.profile}): http://{UI_BIND}:{UI_PORT}/#t={tok}"))

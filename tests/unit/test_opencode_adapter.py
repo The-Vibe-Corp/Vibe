@@ -483,16 +483,20 @@ class VibeIntegrationTest(unittest.TestCase):
 
         def fake_run(argv, cwd=None, timeout=60, env=None):
             calls.append(list(argv))
+            if "has-session" in argv:
+                return 1, ""
             return 0, ""
 
         with mock.patch.object(self.cli, "run", side_effect=fake_run), \
                 mock.patch.object(self.cli, "server_health", side_effect=[None, "ok"]), \
+                mock.patch.object(self.cli, "port_in_use", return_value=False), \
                 mock.patch.object(self.cli.time, "sleep", return_value=None):
             self.cli.cmd_server("start")
 
         tmux = [call for call in calls if call and call[0] == "tmux"]
-        self.assertEqual(len(tmux), 1, calls)
-        inner = tmux[0][-1]
+        new_sessions = [call for call in tmux if "new-session" in call]
+        self.assertEqual(len(new_sessions), 1, calls)
+        inner = new_sessions[0][-1]
         self.assertIn("opencode serve", inner)
         self.assertIn("--hostname 127.0.0.1", inner)
         self.assertIn("--port " + str(self.cli.PATHS.opencode_port), inner)
@@ -503,15 +507,21 @@ class VibeIntegrationTest(unittest.TestCase):
 
         def fake_run(argv, cwd=None, timeout=60, env=None):
             calls.append(list(argv))
+            if "has-session" in argv:
+                return 1, ""
             return 0, ""
 
         with mock.patch.object(self.cli, "run", side_effect=fake_run), \
-                mock.patch.object(self.cli, "server_health", return_value=None):
+                mock.patch.object(self.cli, "server_health", return_value=None), \
+                mock.patch.object(self.cli, "port_in_use", return_value=False):
             with self.assertRaises(SystemExit) as raised:
                 self.cli.cmd_server("start")
 
         self.assertIn("2.1.4", str(raised.exception))
-        self.assertEqual([call for call in calls if call and call[0] == "tmux"], [])
+        self.assertFalse(
+            [call for call in calls if call and "new-session" in call],
+            calls,
+        )
 
     def test_doctor_reports_the_compatibility_status(self):
         write_fake_opencode(self.fakebin)

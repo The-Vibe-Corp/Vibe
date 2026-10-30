@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """vibe-web — lokales Dashboard (nur Standardbibliothek). Start über: vibe ui"""
-import os, sys, json, re, time, secrets, threading, subprocess, io, contextlib
+import os, sys, json, re, time, secrets, threading, subprocess, io, contextlib, signal
 import importlib.util, importlib.machinery
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
@@ -33,6 +33,9 @@ INSTANCE = None
 STARTED = time.time()
 ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
 SRV = None
+# Wird beim Beenden gesetzt. Aktive SSE-Streams prüfen das Ereignis und senden
+# eine letzte Zeile, statt bis zum Verbindungsabbruch weiterzulaufen.
+STOP = threading.Event()
 
 def write_private(path, text):
     """Schreibt Laufzeitkennungen atomar und setzt, soweit möglich, Rechte 0600.
@@ -198,6 +201,26 @@ def verify_bg(n, mode):
     lg.write(f"$ {vibe.verify_command(n, mode)}\n"); lg.flush()
     subprocess.Popen(argv, cwd=vibe.ppath(n), stdout=lg, stderr=subprocess.STDOUT)
     return True, "Prüfung gestartet"
+
+def shutdown_server(delay=0.2):
+    """Beendet den Annahme-Loop aus einem eigenen Thread.
+
+    ``shutdown()`` darf nicht aus dem Thread aufgerufen werden, der
+    ``serve_forever()`` ausführt. Der Hauptthread schließt danach den Server
+    und wartet auf die Handler; aktive Streams sehen ``STOP``.
+    """
+    if delay:
+        time.sleep(delay)
+    if SRV is not None:
+        with contextlib.suppress(Exception):
+            SRV.shutdown()
+
+def request_stop(signum=None, frame=None):
+    """Signalhandler: keine Prozessabbrüche mitten in einer Antwort."""
+    STOP.set()
+    threading.Thread(
+        target=shutdown_server, kwargs={"delay": 0}, daemon=True
+    ).start()
 
 class H(BaseHTTPRequestHandler):
     def log_message(self, *a): pass
@@ -536,8 +559,11 @@ class H(BaseHTTPRequestHandler):
             elif u.path == "/api/model": ok, msg = call(vibe.cmd_model, body.get("agent", ""), body.get("model", ""), body.get("scope", "global"))
             elif u.path == "/api/server": ok, msg = call(vibe.cmd_server, "start" if body.get("action") == "start" else "stop")
             elif u.path == "/api/shutdown":
+                # Zuerst Streams und Handler informieren, dann die Antwort
+                # senden und den Annahme-Loop aus einem eigenen Thread stoppen.
+                STOP.set()
                 self._send(200, {"ok": True, "message": "Dashboard wird beendet"})
-                threading.Thread(target=lambda: (time.sleep(0.5), SRV.shutdown()), daemon=True).start(); return
+                threading.Thread(target=shutdown_server, daemon=True).start(); return
             else: return self._error(404, "not_found", "nicht gefunden")
             message = redact(msg)
             out = {"ok": ok, "message": message}
@@ -558,8 +584,9 @@ class H(BaseHTTPRequestHandler):
         try:
             pos = os.path.getsize(path) if os.path.exists(path) else 0
             send(tail(path, 80) or ["(noch keine Ausgabe)"])
-            while True:
-                time.sleep(1)
+            while not STOP.is_set():
+                if STOP.wait(1):
+                    break
                 if os.path.exists(path):
                     size = os.path.getsize(path)
                     if size < pos: pos = 0
@@ -568,8 +595,12 @@ class H(BaseHTTPRequestHandler):
                             f.seek(pos); chunk = f.read(); pos = size
                         send(ANSI.sub("", chunk.decode("utf-8", "replace")).splitlines()); continue
                 self.wfile.write(b": ping\n\n"); self.wfile.flush()
+            if STOP.is_set():
+                send(["Dashboard wird beendet."])
         except (BrokenPipeError, ConnectionResetError, OSError):
             pass
+        finally:
+            self.close_connection = True
 
 PAGE = r"""<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>vibe</title><style>
@@ -1152,7 +1183,17 @@ if __name__ == "__main__":
     os.environ["VIBE_NO_CONTAINER"] = "1"
     prepare_runtime()
     SRV = ThreadingHTTPServer((BIND, PORT), H)
-    SRV.daemon_threads = True
+    # Keine daemon-Handler: server_close() wartet auf die Streams, die STOP
+    # innerhalb einer Sekunde sehen. So endet der Prozess sauber statt mitten
+    # in einer offenen Antwort abgeschnitten zu werden.
+    SRV.daemon_threads = False
+    for sig in (signal.SIGTERM, signal.SIGHUP, signal.SIGINT):
+        signal.signal(sig, request_stop)
     print(f"vibe-web läuft auf http://{BIND}:{PORT}/  (Token in {TOKFILE})", flush=True)
-    SRV.serve_forever()
+    try:
+        SRV.serve_forever()
+    finally:
+        STOP.set()
+        with contextlib.suppress(Exception):
+            SRV.server_close()
     print("vibe-web beendet.", flush=True)

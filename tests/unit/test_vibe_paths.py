@@ -795,7 +795,10 @@ class UiSessionTest(unittest.TestCase):
             calls.append(list(argv))
             return 0, ""
 
-        with mock.patch.object(module, "run", side_effect=record):
+        # V-016: cmd_stop beendet nur markierte Sitzungen. Die Attrappe liefert
+        # keine Umgebungsauskunft; die Markierung wird deshalb hier gesetzt.
+        with mock.patch.object(module, "run", side_effect=record), \
+                mock.patch.object(module, "session_marker", return_value="run"):
             module.cmd_stop("proj")
 
         self.assertTrue(calls, "cmd_stop hat kein tmux-Kommando ausgeführt")

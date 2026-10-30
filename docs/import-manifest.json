@@ -1,6 +1,6 @@
 {
  "version": 1,
- "stand": "2026-10-27",
+ "stand": "2026-10-31",
  "quelle": "Übernommener Programmstand aus der lokalen Installation unter $VIBE/_toolchain; die aktive Installation enthält zusätzlich lokale Geheimnis-Hooks (siehe docs/baseline.md, Abschnitt 3).",
  "hinweis": "SHA-256 der übernommenen Programmdateien. Beabsichtigte Änderungen an diesen Dateien sind nur zulässig, wenn dieser Eintrag im selben Arbeitspaket aktualisiert und begründet wird. Laufzeitdaten, Sicherungen und Geheimnisse sind nicht Bestandteil des Imports.",
  "scopes": [
@@ -19,8 +19,8 @@
   },
   {
    "path": "bin/vibe",
-   "sha256": "d205c1bc33f8caee0d9621d289fc668b3abcd7cbc6c6352d0efcb2718f269e75",
-   "bytes": 130434
+   "sha256": "34317019d474bc75e2e399fa941e18753d89913bf77c53d9732ea315a45bed99",
+   "bytes": 135893
   },
   {
    "path": "bin/vibe-run.sh",
@@ -29,8 +29,8 @@
   },
   {
    "path": "bin/vibe-web.py",
-   "sha256": "38c3d333b0f315ef76fd69036f26109049912e9d4414789a710761045207615e",
-   "bytes": 100345
+   "sha256": "08e51a1efee05e7aed7e42244ca7b3aac6831bc0193d7932e139e7177ef48fbb",
+   "bytes": 101979
   },
   {
    "path": "bin/vibe_guide.py",
@@ -415,6 +415,15 @@
     "bin/vibe-web.py",
     "bin/vibe_runs.py",
     "scripts/setup-vibe.py"
+   ]
+  },
+  {
+   "arbeitspaket": "V-016",
+   "datum": "2026-10-31",
+   "grund": "Dashboard und opencode haben getrennte Lebenszyklen: Dashboard beenden stoppt weder Agentenläufe noch den opencode-Server, opencode stoppen beendet nicht das Dashboard. tmux-Sitzungen tragen die Markierung VIBE_MANAGED; nur markierte Sitzungen werden beendet, fremde Sitzungen und belegte Ports werden erkannt. Aktive SSE-Streams enden beim Beenden mit einer letzten Zeile, ein geschlossener Browser-Tab lässt die Hintergrundprozesse weiterlaufen.",
+   "dateien": [
+    "bin/vibe",
+    "bin/vibe-web.py"
    ]
   }
  ]
