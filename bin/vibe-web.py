@@ -126,8 +126,9 @@ def tail(path, n=120):
 
 def project_row(n):
     br, dirty, last = vibe.git_info(n); items = vibe.open_items(n)
+    state = vibe.run_state(n)
     return {"name": n, "type": vibe.ptype(n), "branch": br, "dirty": dirty, "last": last, "open": len(items), "path": vibe.ppath(n),
-            "running": vibe.tmux_has(n), "init": vibe.is_init(n), "log": os.path.exists(vibe.logpath(n)),
+            "running": state["running"], "run": state, "init": vibe.is_init(n), "log": os.path.exists(vibe.logpath(n)),
             "pause_after": vibe.pause_after_active(n)}
 
 def project_detail(n):
@@ -135,7 +136,8 @@ def project_detail(n):
     d["items"] = [{"id": i, "title": t, "state": s} for i, t, s in vibe.open_items(n)]
     d["feedback"] = vibe.feedback_items(n)
     d["tail"] = tail(vibe.logpath(n), 80)
-    d["verify_cmd"] = bool(vibe.verify_command(n, "quick"))
+    try: d["verify_cmd"] = bool(vibe.verify_command(n, "quick"))
+    except ValueError: d["verify_cmd"] = False
     d["env"] = vibe.penv(n)
     try:
         d["write_dirs"] = vibe.write_dirs(n)
@@ -187,7 +189,10 @@ def agents_info():
             "write_dirs": write_dirs, "write_dirs_errors": write_dirs_errors, "profiles": vibe.profiles_load()}
 
 def verify_bg(n, mode):
-    argv = vibe.verify_argv(n, mode)
+    try:
+        argv = vibe.verify_argv(n, mode)
+    except ValueError as error:
+        return False, str(error)
     if not argv: return False, "Keine Prüfbefehle in .vibe/project.env"
     lg = open(vibe.logpath(n, "verify"), "w")
     lg.write(f"$ {vibe.verify_command(n, mode)}\n"); lg.flush()
@@ -347,7 +352,7 @@ class H(BaseHTTPRequestHandler):
             if u.path in ("/api/run", "/api/stop", "/api/verify", "/api/feedback", "/api/init", "/api/rights", "/api/pause", "/api/sandbox", "/api/guide", "/api/costs"): known(name)
             extra = {}
             if u.path == "/api/run": ok, msg = call(vibe.cmd_run, name, body.get("agent") or None)
-            elif u.path == "/api/stop": ok, msg = call(vibe.cmd_stop, name)
+            elif u.path == "/api/stop": ok, msg = call(vibe.cmd_stop, name, body.get("run_id") or None)
             elif u.path == "/api/verify": ok, msg = verify_bg(name, "full" if body.get("mode") == "full" else "quick")
             elif u.path == "/api/init": ok, msg = call(vibe.cmd_init, name, body.get("type") or None)
             elif u.path == "/api/feedback":

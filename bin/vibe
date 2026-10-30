@@ -7,7 +7,7 @@ Aufruf:  vibe                 interaktives Menü
          vibe run <p> [agent] Agentenlauf in tmux starten
          vibe attach <p>      an laufende Sitzung anhängen
          vibe logs <p>        Log verfolgen
-         vibe stop <p>        Lauf beenden
+         vibe stop <p> [lauf-id]  Lauf beenden (ohne ID: der letzte laufende Lauf)
          vibe pause <p> [on|off]  nach dem aktuellen Arbeitspaket anhalten
          vibe fritz [status|on|off|reconnect]  FRITZ!Box-Reconnect (Automatik/manuel)
          vibe verify <p> [quick|full]
@@ -36,7 +36,7 @@ import urllib.parse
 
 if __name__ == "__main__": sys.modules["vibe"] = sys.modules[__name__]
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
-import vibe_storage, vibe_paths, vibe_opencode, vibe_models
+import vibe_storage, vibe_paths, vibe_opencode, vibe_models, vibe_runs
 
 try:
     PATHS = vibe_paths.resolve()
@@ -104,7 +104,24 @@ def require_agent(agent):
 
 def in_container(): return os.path.exists("/run/.containerenv") or bool(os.environ.get("CONTAINER_ID"))
 def safe(name): return re.sub(r"[^A-Za-z0-9_-]", "_", name)
-def logpath(name, kind="run"): return os.path.join(LOGS, safe(name) + (".verify.log" if kind == "verify" else ".log"))
+
+def run_key(name):
+    """Eindeutiger Laufschlüssel je Projekt (Logs, tmux-Sitzung, Pause, Register).
+
+    Zwei Projekte dürfen nach dem Normalisieren nicht denselben Schlüssel
+    erhalten: Sobald ein Name Zeichen enthält, die ``safe`` ersetzt, oder ein
+    anderer Projektname auf denselben normalisierten Namen zeigt, kommt ein
+    Fingerabdruck des Projektpfads hinzu. Eindeutige, unveränderte Namen
+    behalten ihren Namen, damit bestehende Logs und Sitzungen weiter passen.
+    """
+    base = safe(name)
+    mapping = project_map()
+    others = [other for other in mapping if other != name and safe(other) == base]
+    if base == name and not others:
+        return base
+    return f"{base}-{vibe_runs.digest(mapping.get(name) or name)}"
+
+def logpath(name, kind="run"): return os.path.join(LOGS, run_key(name) + (".verify.log" if kind == "verify" else ".log"))
 
 def child_exports():
     """Exportiert die aufgelösten Pfade für tmux-Kindprozesse.
@@ -644,13 +661,54 @@ def cmd_sandbox(name, action=None, value=None):
     if st["error"]: print(col("r", "Fehler: " + st["error"]))
     print(col("d", "Anpassen: vibe sandbox " + name + " on|off|tools \"git node npm\". Die Sandbox begrenzt Schreiben auf diese Verzeichnisse und Tool-Caches; /tmp ist privat und schreibgeschützt, Temporärdateien liegen im Zustandsordner. MCP und Netzwerk bleiben erlaubt, Lesezugriffe werden nicht eingeschränkt."))
 
-def sess(name): return profile_session("vibe-" + safe(name))
-def tmux_has(name): return run(["tmux", "has-session", "-t", sess(name)])[0] == 0
+def sess(name): return profile_session("vibe-" + run_key(name))
+def tmux_has_session(name): return run(["tmux", "has-session", "-t", sess(name)])[0] == 0
+tmux_has = tmux_has_session
+
+# ---------- Laufregister und Laufzustand ----------
+def run_registry():
+    """Register aller Läufe im Laufzeitordner (siehe bin/vibe_runs.py)."""
+    return vibe_runs.RunRegistry(LOGS)
+
+def run_state(name):
+    """Zustand des jüngsten Laufs eines Projekts.
+
+    ``running`` bedeutet: Das Register kennt einen laufenden Lauf **und** seine
+    tmux-Sitzung existiert. Ein beendeter Prozess erscheint als ``ended`` und
+    wird nicht mehr als laufend gemeldet.
+
+    Zugeordnet wird ausschließlich über den Projektpfad, nicht über den
+    Laufschlüssel: Ein Eintrag eines anderen Projekts darf nie als Lauf dieses
+    Projekts erscheinen, auch wenn der Schlüssel gleich lautet.
+    """
+    project = _real(ppath(name))
+    registry = run_registry()
+    record = registry.latest(project=project)
+    live = tmux_has_session(name)
+    if record:
+        state = record.get("state") or "running"
+        if state in vibe_runs.LIVE_STATES and not live:
+            state = "ended"
+        elif state in vibe_runs.LIVE_STATES:
+            state = "running"
+    else:
+        state = "running" if live else "idle"
+    return {
+        "run_id": (record or {}).get("id"),
+        "state": state,
+        "running": state == "running",
+        "started": bool(record),
+        "agent": (record or {}).get("agent", ""),
+        "session": (record or {}).get("session") or sess(name),
+        "log": (record or {}).get("log") or logpath(name),
+        "verify_log": (record or {}).get("verify_log") or logpath(name, "verify"),
+        "exit_code": (record or {}).get("exit_code"),
+    }
 
 # ---------- Pause nach dem aktuellen Arbeitspaket ----------
 def pause_after_path(name):
     """Markierung im Laufzeitordner; sie gilt für genau einen Lauf."""
-    return os.path.join(LOGS, safe(name) + ".pause-after")
+    return os.path.join(LOGS, run_key(name) + ".pause-after")
 
 def pause_after_active(name):
     return os.path.exists(pause_after_path(name))
@@ -864,7 +922,13 @@ def cmd_status(name):
     br, dirty, last = git_info(name)
     print(col("b", f"{name}  ({ptype(name)})"), f" Branch {br}, {dirty} geänderte Dateien")
     print("Pfad:", ppath(name)); print("Letzter Commit:", last)
-    print("Lauf:", col("g", "aktiv (vibe attach " + name + ")") if tmux_has(name) else "keiner")
+    state = run_state(name)
+    if state["running"]:
+        print("Lauf:", col("g", f"aktiv {state['run_id']} (vibe attach {name})"))
+    elif state["run_id"]:
+        print("Lauf:", f"beendet {state['run_id']} ({state['state']}, Exit {state['exit_code']})")
+    else:
+        print("Lauf: keiner")
     try:
         sb = sandbox_status(name)
         print("Sandbox:", (col("g", "an") if sb["enabled"] else "aus") + ("" if not sb["enabled"] else (", bereit" if not sb["error"] and sb["bwrap"] else ", nicht startbar")))
@@ -901,14 +965,33 @@ def cmd_run(name, agent=None):
     if not agent:
         sys.exit("Kein Agent angegeben und kein AGENT in .vibe/project.env oder profiles.json (Rolle coder) konfiguriert.")
     agent = require_agent(agent)
+    key = run_key(name)
+    run_id = vibe_runs.new_run_id(key)
+    session = sess(name)
+    registry = run_registry()
+    registry.start(project=_real(p), name=name, key=key, agent=agent, session=session,
+                   log=logpath(name), verify_log=logpath(name, "verify"),
+                   run_id=run_id, state="starting")
+    # Alte, zu große Protokolle werden vor dem Start rotiert; der neue Lauf
+    # beginnt immer in einer frischen Datei.
+    for path in (logpath(name), logpath(name, "verify")):
+        try: vibe_runs.rotate_log(path)
+        except OSError: pass
     # Pfad und Agent bleiben Argumente; das Skript selbst ist konstant.
     # Kein abschließendes "read": Der Agentenlauf endet mit dem Läufer, damit
     # vibe ihn nicht weiter als aktiv meldet. Die Ausgabe bleibt im Log.
+    # Der Anzeigename bleibt ein eigenes Argument ($0, wird nie ausgewertet);
+    # Laufschlüssel, ID, Sitzung, Skript, Pfad und Agent folgen als Argumente.
     inner = ("source ~/.bashrc; " + child_exports()
-             + ' export VIBE_LOGNAME="$1"; bash "$2" "$3" "$4"')
-    rc, out = run(["tmux", "new-session", "-d", "-s", sess(name), "-c", p,
-                   "bash", "-lc", inner, name, safe(name), os.path.join(BIN, "vibe-run.sh"), p, agent])
-    print(col("g", f"Gestartet: tmux-Sitzung {sess(name)}, Agent {agent}") if rc == 0 else col("r", out))
+             + ' export VIBE_LOGNAME="$1" VIBE_RUN_ID="$2" VIBE_SESSION="$3"; bash "$4" "$5" "$6"')
+    rc, out = run(["tmux", "new-session", "-d", "-s", session, "-c", p,
+                   "bash", "-lc", inner, name, key, run_id, session,
+                   os.path.join(BIN, "vibe-run.sh"), p, agent])
+    if rc != 0:
+        registry.finish(run_id, exit_code=None, state="failed")
+        print(col("r", out))
+        return
+    print(col("g", f"Gestartet: Lauf {run_id}, tmux-Sitzung {session}, Agent {agent}"))
     print("Zuschauen: vibe attach", name, "| Log: vibe logs", name)
 
 def cmd_attach(name):
@@ -921,16 +1004,76 @@ def cmd_logs(name):
     try: subprocess.run(["tail", "-n", "60", "-f", lg])
     except KeyboardInterrupt: pass
 
-def cmd_stop(name):
-    run(["tmux", "kill-session", "-t", sess(name)]); print("Beendet:", name)
+def cmd_stop(name, run_id=None):
+    """Beendet genau einen Lauf des Projekts; fremde Läufe bleiben unberührt."""
+    # Ein Stopp darf auch dann die Sitzung beenden, wenn das Projektverzeichnis
+    # nicht (mehr) auffindbar ist; dann gibt es nur keinen Registereintrag.
+    path = project_map().get(name)
+    project = _real(path) if path else None
+    registry = run_registry()
+    record = None
+    if run_id:
+        record = registry.get(run_id)
+        if not record:
+            sys.exit(f"Lauf {run_id} ist nicht bekannt.")
+        if project is None or _real(record.get("project") or "") != project:
+            sys.exit(f"Lauf {run_id} gehört nicht zu Projekt {name}; nichts beendet.")
+        # Ein bereits beendeter Lauf darf nicht die Sitzung eines neueren Laufs
+        # desselben Projekts beenden.
+        if record.get("state") not in vibe_runs.LIVE_STATES:
+            print("Lauf", run_id, "ist bereits beendet ("
+                  + str(record.get("state")) + ", Exit " + str(record.get("exit_code")) + ").")
+            return
+    else:
+        record = registry.latest(project=project) if project else None
+        if record and record.get("state") not in vibe_runs.LIVE_STATES:
+            record = None
+    session = (record or {}).get("session") or sess(name)
+    if record is None and not tmux_has_session(name):
+        print("Kein laufender Lauf für", name)
+        return
+    rc, out = run(["tmux", "kill-session", "-t", session])
+    if rc != 0:
+        if record is not None and not tmux_has_session(name):
+            registry.finish(record["id"], exit_code=None, state="ended")
+            print("Lauf", record["id"], "war bereits beendet.")
+            return
+        sys.exit("Lauf nicht beendbar: " + out)
+    if record is not None:
+        registry.finish(record["id"], exit_code=None, state="stopped")
+        print("Beendet:", name, "Lauf", record["id"])
+    else:
+        print("Beendet:", name)
+
+class VerifyConfigError(ValueError):
+    """Prüfkonfiguration ist unvollständig oder nur ein Platzhalter."""
+
+VERIFY_MODES = ("quick", "full")
 
 def verify_command(name, mode="quick"):
+    """Prüfbefehl des Projekts; ``None``, wenn keiner konfiguriert ist.
+
+    Einzige Quelle ist ``.vibe/project.env`` des Projekts. Die Umgebung wird
+    bewusst nicht gelesen: Ein exportierter ``VERIFY_FULL``-Wert eines anderen
+    Projekts oder einer Prüfumgebung würde sonst still fremde Prüfungen
+    ausführen. Nur für ``TYPE=android`` dient die Android-Abnahme aus
+    ``_toolchain/verify`` als Rückfall; ein Nicht-Android-Projekt wird nie
+    still mit Android-Abnahmedateien geprüft.
+    """
+    if mode not in VERIFY_MODES:
+        raise VerifyConfigError(f"Unbekannter Prüfmodus: {mode} (erlaubt: quick, full)")
     p = ppath(name); env = penv(name)
-    if ptype(name) == "android" and os.path.exists(os.path.join(VERIFY, "verify.sh")):
-        return shlex.join(["bash", os.path.join(VERIFY, "verify.sh"), p, mode])
-    cmd = env.get("VERIFY_FULL" if mode == "full" else "VERIFY_QUICK", "")
-    if not cmd or "TODO" in cmd: return None
-    return cmd
+    key = "VERIFY_FULL" if mode == "full" else "VERIFY_QUICK"
+    cmd = (env.get(key) or "").strip()
+    if "TODO" in cmd:
+        raise VerifyConfigError(
+            f"Platzhalter in {key} ({ppath(name)}/.vibe/project.env): "
+            "ein TODO-Befehl ist keine Prüfung.")
+    if cmd: return cmd
+    script = os.path.join(VERIFY, "verify.sh")
+    if ptype(name) == "android" and os.path.exists(script):
+        return shlex.join(["bash", script, p, mode])
+    return None
 
 def verify_argv(name, mode="quick"):
     """Einzige Shellgrenze für projektkonfigurierte Prüfbefehle."""
@@ -939,9 +1082,19 @@ def verify_argv(name, mode="quick"):
     return ["bash", "-lc", "source ~/.bashrc; " + cmd]
 
 def cmd_verify(name, mode="quick"):
-    argv = verify_argv(name, mode)
-    if not argv: sys.exit(f"Keine Prüfbefehle in {ppath(name)}/.vibe/project.env (VERIFY_QUICK / VERIFY_FULL).")
-    subprocess.run(argv, cwd=ppath(name))
+    if mode not in VERIFY_MODES:
+        print(f"Unbekannter Prüfmodus: {mode} (erlaubt: quick, full)", file=sys.stderr)
+        sys.exit(2)
+    try:
+        argv = verify_argv(name, mode)
+    except VerifyConfigError as error:
+        print(str(error), file=sys.stderr)
+        sys.exit(3)
+    if not argv:
+        print(f"Keine Prüfbefehle in {ppath(name)}/.vibe/project.env (VERIFY_QUICK / VERIFY_FULL).", file=sys.stderr)
+        sys.exit(3)
+    # Der Exitcode der Prüfung ist das Ergebnis; er wird nicht geglättet.
+    sys.exit(subprocess.run(argv, cwd=ppath(name)).returncode)
 
 def _feedback_number(text):
     """Nächste freie F-Nummer; Kommentare und defekte Checkboxen zählen mit."""
@@ -2612,7 +2765,7 @@ def main():
     c, r = a[0], a[1:]
     try:
         table = {"list": lambda: cmd_list(), "status": lambda: cmd_status(r[0]), "run": lambda: cmd_run(r[0], r[1] if len(r) > 1 else None),
-                 "attach": lambda: cmd_attach(r[0]), "logs": lambda: cmd_logs(r[0]), "stop": lambda: cmd_stop(r[0]),
+                 "attach": lambda: cmd_attach(r[0]), "logs": lambda: cmd_logs(r[0]), "stop": lambda: cmd_stop(r[0], r[1] if len(r) > 1 else None),
                  "pause": lambda: cmd_pause(r[0], r[1] if len(r) > 1 else None),
                  "fritz": lambda: cmd_fritz(r[0] if r else None),
                  "verify": lambda: cmd_verify(r[0], r[1] if len(r) > 1 else "quick"), "feedback": lambda: cmd_feedback(r[0]),

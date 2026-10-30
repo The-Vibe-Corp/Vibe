@@ -19,18 +19,18 @@
   },
   {
    "path": "bin/vibe",
-   "sha256": "c3292ffafd9c1c3c3480ee11885532e878b17e15f7b9c230ce71dd4d743ec287",
-   "bytes": 123674
+   "sha256": "d205c1bc33f8caee0d9621d289fc668b3abcd7cbc6c6352d0efcb2718f269e75",
+   "bytes": 130434
   },
   {
    "path": "bin/vibe-run.sh",
-   "sha256": "62759e4a7509aefc1ccc8529b2cd5cb6e0037a1ca5d75e78bd252b6339c80555",
-   "bytes": 6451
+   "sha256": "adadabbc64b3abf053dd098997521b6b420ac03bfecf8de370e3ae5a74086280",
+   "bytes": 9748
   },
   {
    "path": "bin/vibe-web.py",
-   "sha256": "486513ab03c9c486e38ee222e2c2e8067ab5d72b5cfd9560f42152d9ec4e7ebd",
-   "bytes": 100143
+   "sha256": "38c3d333b0f315ef76fd69036f26109049912e9d4414789a710761045207615e",
+   "bytes": 100345
   },
   {
    "path": "bin/vibe_guide.py",
@@ -58,6 +58,11 @@
    "bytes": 15900
   },
   {
+   "path": "bin/vibe_runs.py",
+   "sha256": "238c287fd7a4f11274a502fc47cc59482f222ac16cea450dcd844bc290b7df85",
+   "bytes": 12084
+  },
+  {
    "path": "bin/vibe_sandbox.py",
    "sha256": "fd2aa19219e603301e4f993b5a6121125359f902cc9fbcdaf03a96b3386d7cfd",
    "bytes": 20133
@@ -79,8 +84,8 @@
   },
   {
    "path": "scripts/setup-vibe.py",
-   "sha256": "724c5c7b0d200414e790e2d030db363fc9cd8629bf3145aeeeec2a886021670e",
-   "bytes": 30888
+   "sha256": "79b023c135dbdfcfed58145d6289930c434b95b7c817125e76651b59e109aa61",
+   "bytes": 30904
   },
   {
    "path": "setup-vibe.cmd",
@@ -398,6 +403,18 @@
    "dateien": [
     "bin/vibe_mcp.py",
     "bin/vibe-web.py"
+   ]
+  },
+  {
+   "arbeitspaket": "V-015",
+   "datum": "2026-10-30",
+   "grund": "Agentenläufe und Projektprüfungen entkoppelt: neues Laufregister bin/vibe_runs.py mit eindeutigen Lauf-IDs, eigenem Zustand, atomarer Datei und Logrotation; Laufschlüssel verhindern Kollisionen gleich normalisierter Projektnamen bei Logs, tmux-Sitzungen und Pause-Markierungen. Der Paket-Läufer prüft Android-Abnahmedateien nur noch für TYPE=android, schreibt ein eigenes Prüfprotokoll, gibt den echten Exitcode der Prüfung zurück und begrenzt Wiederholungen über MAX_RETRIES. 'vibe stop' beendet genau einen Lauf; die Fritzbox-Automatik bleibt standardmäßig aus.",
+   "dateien": [
+    "bin/vibe",
+    "bin/vibe-run.sh",
+    "bin/vibe-web.py",
+    "bin/vibe_runs.py",
+    "scripts/setup-vibe.py"
    ]
   }
  ]

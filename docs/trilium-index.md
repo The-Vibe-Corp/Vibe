@@ -19,6 +19,7 @@ Zuordnung der Projekt-Dokumentation zu den Notizen in Trilium (Stand 2026-10-30)
 | vibe | Features | V-011 Modellkatalog bereinigen und belegbar machen | `rKViBnJz9ZNZ` |
 | vibe | Features | V-013 MCP-Konfiguration verlustarm bearbeiten | `mtlfH63g6rLt` |
 | vibe | Features | V-014 MCP-Verbindungstests robust und begrenzt ausführen | `yNkNwN9tHGbU` |
+| vibe | Features | V-015 Agentenläufe und Projektprüfungen entkoppeln | `DqTH63j8L7qv` |
 | vibe | Features | F1 Feedback-Erfassung: nur Titel und Beschreibung | `4gZSOc9wxivN` |
 | vibe | Features | F2 Projektdetail: Feedback bearbeiten, Ausgabe steuern | `4etfKlTUj9ah` |
 | vibe | Features | F3 Dynamische Schreibrechte je Projekt | `22bjPTSyr3CS` |
