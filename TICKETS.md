@@ -114,7 +114,7 @@ Ein fehlender externer Dienst bedeutet BLOCKIERT, nicht erledigt.
   docs/reviews/V-007-review-2.md (PASS, 0 Critical/High/Medium, 1 Minor)
   Dokumentation: docs/compatibility.md, docs/features/V-007.md; Trilium `B8WSE271Yfe5`
 
-- [ ] V-008 Projektverwaltung und Vorlagen regressionssicher machen
+- [x] V-008 Projektverwaltung und Vorlagen regressionssicher machen
   Priorität: P1
   Abhängigkeiten: V-003, V-006
   Umfang: Roots, Discovery, Init und Neuanlage.
@@ -122,6 +122,15 @@ Ein fehlender externer Dienst bedeutet BLOCKIERT, nicht erledigt.
   Entfernen eines Roots löscht nichts; Typen sind erweiterbar.
   Tests: Git-Verzeichnis und Git-Datei, doppelte Namen, Symlinks,
   nicht lesbare Ordner, bereits vorbereitetes Projekt.
+  Commit: 3763532; Test: tests/unit/test_project_management.py (12 Tests, u. a.
+  test_duplicate_names_from_roots_with_equal_basenames_stay_unique,
+  test_init_does_not_write_through_a_broken_symlink)
+  Prüfungen: `python3 -m unittest tests.unit.test_project_management -v` 12 Tests OK;
+  `bash scripts/verify.sh quick` Exit 0; `bash scripts/verify.sh full` Exit 0
+  (476 Unit- + 34 Browser-Tests, 510 erkannt) im isolierten Prüfstand mit schreibbarem /tmp
+  Review: docs/reviews/V-008-review-1.md (PASS, 0 Critical/High/Medium, 3 Minor),
+  docs/reviews/V-008-review-2.md (PASS, 0 Critical/High/Medium, 0 Minor)
+  Dokumentation: docs/features/V-008.md; Trilium `SC3Jtp3csTnz`
 
 - [ ] V-009 Ticket- und Feedbackverarbeitung stabilisieren
   Priorität: P1
