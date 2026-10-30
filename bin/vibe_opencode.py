@@ -29,6 +29,21 @@ PROFILES = {
         # In einer leeren Konfiguration schreibt 2.1.4 nach `mcp.servers`
         # (geprüft mit `opencode mcp add` in einem temporären Projekt).
         "mcp_layout": "servers",
+        # Felder der tatsächlichen Konfigurationsschemas von 2.1.4
+        # (McpLocalConfig/McpRemoteConfig). Die Liste steuert, welche Felder
+        # vibe anbietet und schreibt; unbekannte Felder werden nicht blind
+        # übernommen.
+        "mcp_fields": {
+            "local": ("type", "command", "cwd", "environment", "enabled", "timeout"),
+            "remote": ("type", "url", "enabled", "headers", "oauth", "timeout"),
+        },
+        "mcp_oauth_fields": (
+            "clientId",
+            "clientSecret",
+            "scope",
+            "callbackPort",
+            "redirectUri",
+        ),
         "agent_modes": ("primary", "subagent", "all"),
         "agent_required": ("description",),
         "agent_subdir": (".opencode", "agents"),
@@ -36,6 +51,19 @@ PROFILES = {
 }
 
 TESTED_PROFILE = PROFILES[TESTED_VERSION]
+
+
+def mcp_entry_fields(type_name, profile=None):
+    """Liefert die vom geprüften Schema unterstützten Felder eines Servertyps."""
+    profile = profile or TESTED_PROFILE
+    return tuple((profile.get("mcp_fields") or {}).get(type_name, ()))
+
+
+def mcp_oauth_fields(profile=None):
+    """Liefert die vom geprüften Schema unterstützten OAuth-Felder."""
+    profile = profile or TESTED_PROFILE
+    return tuple(profile.get("mcp_oauth_fields") or ())
+
 
 LAYOUT_SERVERS = "servers"
 LAYOUT_CLASSIC = "classic"
@@ -215,7 +243,8 @@ def server_command(port, host="127.0.0.1", binary="opencode", info=None, runner=
     ]
 
 
-def _looks_like_server(value):
+def is_mcp_server(value):
+    """Erkennt einen Servereintrag anhand der tatsächlichen Schemamerkmale."""
     if not isinstance(value, dict):
         return False
     if value.get("type") in ("local", "remote"):
@@ -223,6 +252,10 @@ def _looks_like_server(value):
     if isinstance(value.get("command"), list):
         return True
     return isinstance(value.get("url"), str)
+
+
+# Rückwärtskompatibler interner Name für vorhandene Aufrufer.
+_looks_like_server = is_mcp_server
 
 
 def detect_mcp_layout(config, info=None, binary="opencode", runner=None):
@@ -235,6 +268,13 @@ def detect_mcp_layout(config, info=None, binary="opencode", runner=None):
     """
     data = config if isinstance(config, dict) else {}
     mcp = data.get("mcp")
+    if "mcp" in data and mcp is not None and not isinstance(mcp, dict):
+        return {
+            "layout": LAYOUT_UNKNOWN,
+            "servers": {},
+            "source": "config",
+            "message": "Der 'mcp'-Block ist kein Objekt. Die Konfiguration wird nicht verändert.",
+        }
     if isinstance(mcp, dict):
         servers = mcp.get("servers")
         if isinstance(servers, dict):

@@ -39,13 +39,13 @@
   },
   {
    "path": "bin/vibe_mcp.py",
-   "sha256": "bb20af8b446a0ce16160c1efea4620c14753cbe389cb1d3669464fd419ac58f0",
-   "bytes": 22766
+   "sha256": "5548a1560b82b66a3890c6d9962f0a5b8895c624b2095f261a945403ee95bdc2",
+   "bytes": 34278
   },
   {
    "path": "bin/vibe_opencode.py",
-   "sha256": "15c4cee64955d49a498787a8573b36e6b1962007907c31866c84dd54a2b1f986",
-   "bytes": 12100
+   "sha256": "5e2c58b801d759874ff4a8bb0dd2122c0fa638e4ca42e129f4b48b2dedebec83",
+   "bytes": 13639
   },
   {
    "path": "bin/vibe_paths.py",
@@ -352,6 +352,15 @@
    "grund": "Ticket- und Feedbackverarbeitung stabilisiert: HTML-Kommentare (auch mehrzeilig und mitten in einer Zeile) werden ignoriert, mehrzeilige Bloecke und defekte Checkboxen behalten ID und Titel, nur die exakte Schreibweise - [x] gilt als erledigt, BLOCKIERT bleibt offen, fehlende oder unbekannte Nachweise werden als 'ohne Nachweis' sichtbar. Neue Feedbackeintraege werden validiert, mehrzeilig eingerueckt und ueber die Storage-Schicht mit erwarteter Pruefsumme geschrieben; bei parallelem Zugriff wird die naechste freie ID neu bestimmt statt doppelt vergeben.",
    "dateien": [
     "bin/vibe"
+   ]
+  },
+  {
+   "arbeitspaket": "V-013",
+   "datum": "2026-10-30",
+   "grund": "MCP-Konfiguration verlustarm bearbeitet: JSONC-Kommentare, Trailing Commas und unbekannte Einstellungen bleiben beim Speichern erhalten, weil nur der betroffene Servereintrag und dessen geaenderte Felder ersetzt werden. Dateiprioritaet folgt opencode 2.1.4 (opencode.json vor opencode.jsonc vor .opencode/). Feldlisten stammen aus dem geprueften Schema; nicht unterstuetzte Felder werden abgelehnt, unbekannte Felder bestehender Eintraege bleiben erhalten. Maskierte Geheimnisse in Headern, Umgebungsvariablen, OAuth und URL-Parametern werden wiederhergestellt, sonst bricht der Schreibvorgang ab. Umbenennen auf vorhandene oder fehlende Namen wird abgelehnt.",
+   "dateien": [
+    "bin/vibe_mcp.py",
+    "bin/vibe_opencode.py"
    ]
   }
  ]

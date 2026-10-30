@@ -67,46 +67,124 @@ def jsonc_loads(text):
     s = "".join(out)
     return json.loads(s) if s.strip() else {}
 
-def _root_members(t):
-    i = _skip_ws(t, 0)
-    if i >= len(t) or t[i] != "{": raise ValueError("Die Konfiguration muss ein JSON-Objekt sein.")
+def _object_members(t, start):
+    """Liest die Mitglieder eines Objekts ab ``start`` (Index der öffnenden Klammer).
+
+    Liefert ``(members, close, last_end)``. ``members`` ordnet jedem Schlüssel
+    ``(key_start, value_start, value_end)`` zu. Kommentare und Formatierung
+    werden dabei nur übersprungen, nicht verändert.
+    """
+    i = _skip_ws(t, start)
+    if i >= len(t) or t[i] != "{": raise ValueError("Objekt erwartet.")
     i += 1; members, last_end = {}, None
     while True:
         i = _skip_ws(t, i)
         if i >= len(t): raise ValueError("Objekt nicht geschlossen")
         if t[i] == "}": return members, i, last_end
         if t[i] == ",": i += 1; continue
+        key_start = i
         ke = _string_end(t, i); key = json.loads(t[i:ke]); i = _skip_ws(t, ke)
-        if t[i] != ":": raise ValueError("':' erwartet")
+        if i >= len(t) or t[i] != ":": raise ValueError("':' erwartet")
         vs = _skip_ws(t, i + 1); ve = _skip_value(t, vs)
-        members[key] = (vs, ve); last_end = ve; i = ve
+        members[key] = (key_start, vs, ve); last_end = ve; i = ve
+
+def _root_members(t):
+    return _object_members(t, 0)
+
+def _line_indent(t, position):
+    """Führender Leerraum der Zeile, in der ``position`` liegt."""
+    line_start = t.rfind("\n", 0, position) + 1
+    prefix = t[line_start:position]
+    return prefix[:len(prefix) - len(prefix.lstrip(" \t"))]
 
 def _dump(obj, base_indent="  "):
     s = json.dumps(obj, indent=2, ensure_ascii=False)
     return s.replace("\n", "\n" + base_indent)
 
+def jsonc_set_member(text, obj_start, key, value):
+    """Setzt/ersetzt ein Mitglied eines JSONC-Objekts; der Rest bleibt unverändert."""
+    members, close, last_end = _object_members(text, obj_start)
+    if key in members:
+        key_start, vs, ve = members[key]
+        return text[:vs] + _dump(value, _line_indent(text, key_start)) + text[ve:]
+    close_indent = _line_indent(text, close)
+    member_indent = close_indent + "  "
+    member = json.dumps(key) + ": " + _dump(value, member_indent)
+    pre = text[:close].rstrip(" \t\r\n")
+    if last_end is None:
+        return pre + "\n" + member_indent + member + "\n" + close_indent + text[close:]
+    after = _skip_ws(text, last_end)
+    if after < len(text) and text[after] == ",":
+        return pre + "\n" + member_indent + member + "\n" + close_indent + text[close:]
+    return (text[:last_end] + "," + text[last_end:close].rstrip(" \t\r\n") + "\n"
+            + member_indent + member + "\n" + close_indent + text[close:])
+
+def jsonc_delete_member(text, obj_start, key):
+    """Entfernt ein Mitglied eines JSONC-Objekts samt einem Trennkomma."""
+    members, close, last_end = _object_members(text, obj_start)
+    if key not in members: return text
+    key_start, vs, ve = members[key]
+    after = _skip_ws(text, ve)
+    if after < len(text) and text[after] == ",":
+        return text[:key_start] + text[after + 1:]
+    ordered = list(members.items())
+    index = [name for name, _span in ordered].index(key)
+    if index > 0:
+        previous = ordered[index - 1][1]
+        comma = _skip_ws(text, previous[2])
+        if comma < len(text) and text[comma] == ",":
+            return text[:comma] + text[comma + 1:key_start] + text[ve:]
+    return text[:key_start] + text[ve:]
+
+def jsonc_sync_member(text, obj_start, key, old_value, new_value):
+    """Aktualisiert ein Mitglied und steigt bei Objekten rekursiv hinein."""
+    members, _close, _last_end = _object_members(text, obj_start)
+    if key in members:
+        _key_start, value_start, _value_end = members[key]
+        start = _skip_ws(text, value_start)
+        if (isinstance(old_value, dict) and isinstance(new_value, dict)
+                and start < len(text) and text[start] == "{"):
+            return jsonc_sync_object(text, start, old_value, new_value)
+    return jsonc_set_member(text, obj_start, key, new_value)
+
+def jsonc_sync_object(text, obj_start, old, new):
+    """Gleicht ein JSONC-Objekt an ``new`` an, ohne unveränderte Einträge neu zu schreiben."""
+    for key, value in new.items():
+        if key in old and old[key] != value:
+            text = jsonc_sync_member(text, obj_start, key, old[key], value)
+    for key in old:
+        if key not in new:
+            text = jsonc_delete_member(text, obj_start, key)
+    for key, value in new.items():
+        if key not in old:
+            text = jsonc_set_member(text, obj_start, key, value)
+    return text
+
 def jsonc_set_top(text, key, value):
     """Setzt/ersetzt den Wert eines Schlüssels der obersten Ebene; alles andere (auch Kommentare) bleibt unverändert."""
     if not text.strip(): return "{\n  " + json.dumps(key) + ": " + _dump(value) + "\n}\n"
-    members, close, last_end = _root_members(text)
-    new = _dump(value)
-    if key in members:
-        vs, ve = members[key]; return text[:vs] + new + text[ve:]
-    pre = text[:close].rstrip()
-    sep = ""
-    if last_end is not None:
-        nxt = _skip_ws(text, last_end)
-        if not (nxt < len(text) and text[nxt] == ","): sep = ","
-        pre = text[:last_end] + sep + text[last_end:close].rstrip()
-    return pre + ("\n  " + json.dumps(key) + ": " + new + "\n") + text[close:]
+    return jsonc_set_member(text, 0, key, value)
 
 # ---------- Konfigurationsdateien ----------
-def cfg_path(scope):
+CONFIG_NAMES = ("opencode.json", "opencode.jsonc")
+
+def cfg_candidates(scope):
+    """Konfigurationsdateien in der Reihenfolge, die opencode 2.1.4 verwendet.
+
+    ``opencode mcp add`` sucht zuerst ``opencode.json``, dann
+    ``opencode.jsonc``, danach dieselben Namen unter ``.opencode/`` und legt
+    ohne Treffer ``opencode.json`` an. vibe bearbeitet genau die Datei, die
+    opencode tatsächlich zuerst liest.
+    """
     base = os.path.expanduser("~/.config/opencode") if scope == "global" else vibe.ppath(scope)
-    for n in ("opencode.jsonc", "opencode.json"):
-        p = os.path.join(base, n)
-        if os.path.exists(p): return p
-    return os.path.join(base, "opencode.json")
+    return ([os.path.join(base, name) for name in CONFIG_NAMES]
+            + [os.path.join(base, ".opencode", name) for name in CONFIG_NAMES])
+
+def cfg_path(scope):
+    candidates = cfg_candidates(scope)
+    for path in candidates:
+        if os.path.exists(path): return path
+    return candidates[0]
 
 def load(scope):
     p = cfg_path(scope)
@@ -133,7 +211,10 @@ def backup_dir():
     return os.path.join(vibe.PATHS.state, "config-backups")
 
 def backup_label(scope, p):
-    return f"{vibe.safe(scope)}-{os.path.basename(p)}"
+    base = os.path.expanduser("~/.config/opencode") if scope == "global" else vibe.ppath(scope)
+    relative = os.path.relpath(p, base)
+    name = os.path.basename(p) if os.path.dirname(relative) in ("", ".") else relative.replace(os.sep, "_")
+    return f"{vibe.safe(scope)}-{name}"
 
 def backups(scope):
     """Vorhandene Sicherungen der Konfiguration, älteste zuerst."""
@@ -154,45 +235,149 @@ def restore(scope, backup=None):
     return vibe_storage.restore_backup(backup_dir(), chosen, p, expected=expected,
                                       label=backup_label(scope, p))
 
-def _store(scope, p, text, data, layout, servers, expected=None):
+def _mcp_object_start(text):
+    """Index des ``mcp``-Objekts oder ``None``, wenn kein ``mcp``-Block existiert."""
+    if not text.strip(): return None
+    members, _close, _last_end = _root_members(text)
+    if "mcp" not in members: return None
+    start = _skip_ws(text, members["mcp"][1])
+    if text.startswith("null", start): return None
+    if start >= len(text) or text[start] != "{":
+        raise ValueError("Der 'mcp'-Block ist kein Objekt; die Konfiguration wird nicht verändert.")
+    return start
+
+def _store(scope, p, text, data, layout, servers, expected=None, old_servers=None):
     _require_known_layout(layout)
-    mcp = data.get("mcp") if isinstance(data.get("mcp"), dict) else {}
+    if old_servers is None:
+        mcp = data.get("mcp") if isinstance(data.get("mcp"), dict) else {}
+        if layout == vibe_opencode.LAYOUT_SERVERS:
+            old_servers = mcp.get("servers") if isinstance(mcp.get("servers"), dict) else {}
+        else:
+            old_servers = {k: v for k, v in mcp.items() if vibe_opencode.is_mcp_server(v)}
     if layout == vibe_opencode.LAYOUT_SERVERS:
-        mcp = dict(mcp); mcp["servers"] = servers
+        mcp_start = _mcp_object_start(text)
+        if mcp_start is None:
+            new_text = jsonc_set_top(text, "mcp", {"servers": servers})
+        else:
+            mcp_members, _close, _last_end = _object_members(text, mcp_start)
+            if "servers" not in mcp_members:
+                new_text = jsonc_set_member(text, mcp_start, "servers", servers)
+            else:
+                servers_start = _skip_ws(text, mcp_members["servers"][1])
+                if servers_start >= len(text) or text[servers_start] != "{":
+                    raise ValueError("'mcp.servers' ist kein Objekt; die Konfiguration wird nicht verändert.")
+                new_text = jsonc_sync_object(text, servers_start, old_servers, servers)
     elif layout == vibe_opencode.LAYOUT_CLASSIC:
-        mcp = {k: v for k, v in mcp.items() if not isinstance(v, dict)}; mcp.update(servers)
+        mcp_start = _mcp_object_start(text)
+        if mcp_start is None:
+            raise ValueError("Der 'mcp'-Block fehlt; die Konfiguration wird nicht verändert.")
+        new_text = jsonc_sync_object(text, mcp_start, old_servers, servers)
     else:
         raise ValueError("Unbekanntes MCP-Schema: " + str(layout))
     os.makedirs(os.path.dirname(p), exist_ok=True)
     vibe_storage.write_text_with_backup(
-        p, jsonc_set_top(text, "mcp", mcp), backup_dir(),
+        p, new_text, backup_dir(),
         label=backup_label(scope, p), expected=expected)
 
 # ---------- Schutz von Geheimnissen ----------
-URL_SECRET = re.compile(r"((?:token|key|secret|password|auth|apikey|api_key)=)[^&#\s]+", re.I)
+URL_SECRET = re.compile(r"((?:^|[?&])(?:token|key|secret|password|auth|apikey|api_key)=)[^&#\s]+", re.I)
 SECRET_KEY = re.compile(r"token|key|secret|pass|auth|bearer|credential|cookie", re.I)
 def _is_secret(k, v):
     v = str(v)
     return v != "" and "{env:" not in v and "{file:" not in v and bool(SECRET_KEY.search(k))
 
+def _mask_url(url):
+    def repl(match):
+        value = match.group(0)[len(match.group(1)):]
+        if value.startswith(("{env:", "{file:")):
+            return match.group(0)
+        return match.group(1) + SECRET_MASK
+    return URL_SECRET.sub(repl, url)
+
 def mask_entry(e):
     e = json.loads(json.dumps(e))
     for k in ("environment", "headers"):
         if isinstance(e.get(k), dict): e[k] = {a: (SECRET_MASK if _is_secret(a, b) else b) for a, b in e[k].items()}
-    if isinstance(e.get("url"), str): e["url"] = URL_SECRET.sub(r"\1" + SECRET_MASK, e["url"])
+    if isinstance(e.get("url"), str): e["url"] = _mask_url(e["url"])
     if isinstance(e.get("oauth"), dict): e["oauth"] = {a: (SECRET_MASK if a.lower() in ("clientsecret",) else b) for a, b in e["oauth"].items()}
     return e
+
+def _restore_url(new, old):
+    def masked_names(text):
+        return [
+            match.group(1)[:-1].lstrip("?&")
+            for match in URL_SECRET.finditer(text)
+            if match.group(0)[len(match.group(1)):] == SECRET_MASK
+        ]
+
+    names = masked_names(new)
+    if not names: return new
+    if not isinstance(old, str):
+        raise ValueError("Maskiertes Geheimnis in der URL kann nicht wiederhergestellt werden: der bisherige Eintrag fehlt.")
+    # Ein maskierter Parameter lässt sich nur eindeutig zuordnen, wenn er in
+    # der neuen und in der bisherigen URL genau einmal vorkommt. Sonst würde
+    # ein Geheimnis still durch ein anderes ersetzt.
+    lowered = [name.lower() for name in names]
+    for name in sorted(set(lowered)):
+        if lowered.count(name) > 1:
+            raise ValueError(
+                f"Geheimnis im URL-Parameter '{name}' kann nicht wiederhergestellt werden: "
+                "der Parameter kommt in der neuen URL mehrfach vor."
+            )
+        previous = re.findall(r"(?i)(?:[?&]|^)" + re.escape(name) + r"=", old)
+        if not previous:
+            raise ValueError(
+                f"Geheimnis im URL-Parameter '{name}' kann nicht wiederhergestellt werden: "
+                "der bisherige Eintrag enthält diesen Parameter nicht."
+            )
+        if len(previous) > 1:
+            raise ValueError(
+                f"Geheimnis im URL-Parameter '{name}' kann nicht wiederhergestellt werden: "
+                "der bisherige Eintrag enthält diesen Parameter mehrfach."
+            )
+    def repl(match):
+        prefix = match.group(1)
+        value = match.group(0)[len(prefix):]
+        if value != SECRET_MASK: return match.group(0)
+        name = prefix[:-1].lstrip("?&")
+        found = re.search(r"(?i)(?:[?&]|^)" + re.escape(name) + r"=([^&#\s]*)", old)
+        if not found:
+            raise ValueError(
+                f"Geheimnis im URL-Parameter '{name}' kann nicht wiederhergestellt werden: "
+                "der bisherige Eintrag enthält diesen Parameter nicht."
+            )
+        return prefix + found.group(1)
+    restored = URL_SECRET.sub(repl, new)
+    if masked_names(restored):
+        raise ValueError(
+            "Maskiertes Geheimnis in der URL kann nicht zugeordnet werden. "
+            "Bitte den vollständigen neuen Wert eintragen."
+        )
+    return restored
 
 def merge_masked(new, old):
     new = json.loads(json.dumps(new)); old = old or {}
     for k in ("environment", "headers"):
         if isinstance(new.get(k), dict):
+            previous = old.get(k) if isinstance(old.get(k), dict) else {}
             for a, b in list(new[k].items()):
-                if b == SECRET_MASK: new[k][a] = (old.get(k) or {}).get(a, "")
-    if isinstance(new.get("url"), str) and SECRET_MASK in new["url"] and isinstance(old.get("url"), str):
-        new["url"] = old["url"] if URL_SECRET.sub(r"\1" + SECRET_MASK, old["url"]) == new["url"] else new["url"]
+                if b == SECRET_MASK:
+                    if a not in previous:
+                        raise ValueError(
+                            f"Geheimnis '{a}' in '{k}' kann nicht wiederhergestellt werden: "
+                            "der bisherige Eintrag enthält diesen Schlüssel nicht."
+                        )
+                    new[k][a] = previous[a]
+    if isinstance(new.get("url"), str):
+        new["url"] = _restore_url(new["url"], old.get("url"))
     if isinstance(new.get("oauth"), dict) and new["oauth"].get("clientSecret") == SECRET_MASK:
-        new["oauth"]["clientSecret"] = (old.get("oauth") or {}).get("clientSecret", "")
+        previous = old.get("oauth") if isinstance(old.get("oauth"), dict) else {}
+        if "clientSecret" not in previous:
+            raise ValueError(
+                "Das maskierte OAuth-Clientsecret kann nicht wiederhergestellt werden: "
+                "der bisherige Eintrag enthält es nicht."
+            )
+        new["oauth"]["clientSecret"] = previous["clientSecret"]
     return new
 
 # ---------- Anzeigen, anlegen, bearbeiten ----------
@@ -214,52 +399,109 @@ def get_entry(scope, name):
     return {"entry": mask_entry(servers[name]), "layout": layout, "path": cfg_path(scope),
             "digest": None if digest is vibe_storage.MISSING else digest}
 
-def validate(entry):
+def _check_oauth(oauth):
+    if oauth is False: return
+    if not isinstance(oauth, dict):
+        raise ValueError("'oauth' muss false oder ein Objekt sein.")
+    allowed = set(vibe_opencode.mcp_oauth_fields())
+    unknown = sorted(set(oauth) - allowed)
+    if unknown:
+        raise ValueError(
+            "OAuth-Feld wird von opencode " + vibe_opencode.TESTED_VERSION
+            + " nicht unterstützt: " + ", ".join(unknown) + "."
+        )
+    for key in ("clientId", "clientSecret", "scope", "redirectUri"):
+        if key in oauth and not isinstance(oauth[key], str):
+            raise ValueError(f"'oauth.{key}' muss Text sein.")
+    if "callbackPort" in oauth:
+        port = oauth["callbackPort"]
+        if isinstance(port, bool) or not isinstance(port, int) or not 1 <= port <= 65535:
+            raise ValueError("'oauth.callbackPort' muss eine Portnummer zwischen 1 und 65535 sein.")
+
+def validate(entry, extra_keys=()):
     if not isinstance(entry, dict): raise ValueError("Eintrag ungültig")
     t = entry.get("type")
+    if t not in ("local", "remote"): raise ValueError("type muss 'local' oder 'remote' sein.")
+    allowed = set(vibe_opencode.mcp_entry_fields(t))
+    unknown = sorted(set(entry) - allowed - set(extra_keys))
+    if unknown:
+        raise ValueError(
+            "Feld wird von opencode " + vibe_opencode.TESTED_VERSION
+            + " für " + t + " nicht unterstützt: " + ", ".join(unknown)
+            + ". Die Konfiguration wird nicht verändert."
+        )
     if t == "local":
         c = entry.get("command")
         if not (isinstance(c, list) and c and all(isinstance(x, str) and x for x in c)): raise ValueError("Lokal: 'command' braucht mindestens ein Element (Programm, dann Argumente).")
-    elif t == "remote":
+        if "cwd" in entry and not isinstance(entry["cwd"], str): raise ValueError("'cwd' muss Text sein.")
+    else:
         u = entry.get("url")
         if not (isinstance(u, str) and re.match(r"^https?://\S+$", u)): raise ValueError("Remote: 'url' muss mit http:// oder https:// beginnen.")
-    else: raise ValueError("type muss 'local' oder 'remote' sein.")
+        if "oauth" in entry: _check_oauth(entry["oauth"])
     for k in ("environment", "headers"):
         if k in entry and not (isinstance(entry[k], dict) and all(isinstance(a, str) and isinstance(b, str) for a, b in entry[k].items())): raise ValueError(f"'{k}' muss ein Objekt aus Text-Paaren sein.")
     if "enabled" in entry and not isinstance(entry["enabled"], bool): raise ValueError("'enabled' muss true oder false sein.")
-    if "timeout" in entry and not isinstance(entry["timeout"], int): raise ValueError("'timeout' muss eine Zahl (Millisekunden) sein.")
+    if "timeout" in entry and (isinstance(entry["timeout"], bool) or not isinstance(entry["timeout"], int) or entry["timeout"] < 1): raise ValueError("'timeout' muss eine positive Zahl (Millisekunden) sein.")
     return entry
+
+def _unknown_old_fields(old):
+    if not isinstance(old, dict): return set()
+    return set(old) - set(vibe_opencode.mcp_entry_fields(old.get("type")))
 
 def save(scope, name, entry, old_name=None, create=False, expected=None):
     if not NAME_OK.match(name or ""): raise ValueError("Name: Buchstaben, Ziffern, _ und - (Werkzeuge werden mit dem Namen als Präfix angeboten).")
+    if not isinstance(entry, dict): raise ValueError("Eintrag ungültig")
     p, text, data, layout, servers, digest = load(scope)
     _require_known_layout(layout)
+    old_servers = json.loads(json.dumps(servers))
     old = servers.get(old_name or name)
-    entry = validate(merge_masked(entry, old))
     if old_name and old_name != name:
+        if old_name not in servers: raise ValueError("MCP-Server nicht gefunden: " + old_name)
         if name in servers: raise ValueError(f"'{name}' existiert schon.")
-        servers.pop(old_name, None)
     elif create and name in servers: raise ValueError(f"'{name}' existiert schon. Zum Ändern bearbeiten statt neu anlegen.")
+    entry = merge_masked(entry, old)
+    # Unbekannte Felder eines bestehenden Eintrags sind Teil der Datei und
+    # werden beim Bearbeiten erhalten. Neue, vom Schema nicht unterstützte
+    # Felder werden dagegen abgelehnt.
+    preserved = set()
+    if old and old.get("type") == entry.get("type"):
+        for key in _unknown_old_fields(old):
+            preserved.add(key)
+            if key not in entry:
+                entry[key] = old[key]
+            elif entry[key] != old[key]:
+                raise ValueError(
+                    f"Unbekanntes Feld '{key}' kann nicht geändert werden; "
+                    "die Konfiguration wird nicht verändert."
+                )
+    entry = validate(entry, extra_keys=preserved)
+    if old_name and old_name != name:
+        servers.pop(old_name)
     servers[name] = entry
     _store(scope, p, text, data, layout, servers,
-           expected=expected if expected is not None else digest)
+           expected=expected if expected is not None else digest,
+           old_servers=old_servers)
     return p
 
 def delete(scope, name, expected=None):
     p, text, data, layout, servers, digest = load(scope)
     _require_known_layout(layout)
     if name not in servers: raise ValueError("MCP-Server nicht gefunden: " + name)
+    old_servers = json.loads(json.dumps(servers))
     servers.pop(name)
     _store(scope, p, text, data, layout, servers,
-           expected=expected if expected is not None else digest)
+           expected=expected if expected is not None else digest,
+           old_servers=old_servers)
 
 def toggle(scope, name, enabled=None, expected=None):
     p, text, data, layout, servers, digest = load(scope)
     _require_known_layout(layout)
     if name not in servers: raise ValueError("MCP-Server nicht gefunden: " + name)
+    old_servers = json.loads(json.dumps(servers))
     e = servers[name]; e["enabled"] = (not (e.get("enabled", True) is not False)) if enabled is None else bool(enabled)
     _store(scope, p, text, data, layout, servers,
-           expected=expected if expected is not None else digest)
+           expected=expected if expected is not None else digest,
+           old_servers=old_servers)
     return e["enabled"]
 
 # ---------- Testen: MCP-Handshake (initialize, tools/list) ----------
@@ -377,10 +619,11 @@ def test_remote(entry, name):
     return res
 
 def test(scope, name=None, entry=None):
-    if entry is None: entry = load(scope)[4].get(name)
-    else: entry = merge_masked(entry, load(scope)[4].get(name) if name else None)
+    old = load(scope)[4].get(name) if name else None
+    if entry is None: entry = old
+    else: entry = merge_masked(entry, old)
     if not entry: raise ValueError("MCP-Server nicht gefunden")
-    validate(entry)
+    validate(entry, extra_keys=_unknown_old_fields(old))
     cwd = vibe.ppath(scope) if scope != "global" else os.path.expanduser("~")
     return test_local(entry, cwd) if entry["type"] == "local" else test_remote(entry, name)
 

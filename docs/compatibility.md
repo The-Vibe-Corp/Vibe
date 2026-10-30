@@ -96,6 +96,63 @@ Die geschriebene Datei enthielt:
 
 Damit ist `mcp.servers` für 2.1.4 belegt und keine ungeprüfte Annahme.
 
+Die tatsächlich unterstützten Felder der beiden Servertypen sind im Profil
+hinterlegt (`mcp_fields`/`mcp_oauth_fields`) und werden von der
+MCP-Verwaltung geprüft:
+
+| Typ | Felder |
+| --- | --- |
+| `local` | `type`, `command`, `cwd`, `environment`, `enabled`, `timeout` |
+| `remote` | `type`, `url`, `enabled`, `headers`, `oauth`, `timeout` |
+| `oauth` | `clientId`, `clientSecret`, `scope`, `callbackPort`, `redirectUri` |
+
+Nicht unterstützte Felder werden nicht geschrieben; bei bestehenden Einträgen
+bleiben unbekannte Felder unverändert erhalten, neue unbekannte Felder und
+Änderungen an vorhandenen unbekannten Feldern werden abgelehnt.
+
+Die Listen wurden am 2026-10-30 gegen das im installierten opencode 2.1.4
+(`opencode --version` → `2.1.4`) eingebettete Zod-Schema geprüft. Das Binary
+enthält die Schema-Bezeichner `McpLocalConfig`, `McpRemoteConfig` und
+`McpOAuthConfig`; die Definitionen nennen genau die oben gelisteten Felder.
+`McpOAuthConfig.callbackPort` ist auf 1–65535 begrenzt, `McpRemoteConfig.oauth`
+erlaubt ein Objekt oder `false`, und `McpLocalConfig.cwd` löst relative Pfade
+vom Workspace-Verzeichnis auf. Für `timeout` nennt das Schema einen Standard
+von 5000 ms; vibe schreibt das Feld nur, wenn ein Wert eingetragen ist.
+
+### MCP-Konfigurationsdateien
+
+`opencode mcp add` sucht die Konfiguration in dieser Reihenfolge und verwendet
+die erste vorhandene Datei:
+
+1. `<basis>/opencode.json`
+2. `<basis>/opencode.jsonc`
+3. `<basis>/.opencode/opencode.json`
+4. `<basis>/.opencode/opencode.jsonc`
+
+Ohne Treffer wird `<basis>/opencode.json` angelegt. Für globale Server ist
+`<basis>` das opencode-Konfigurationsverzeichnis (`~/.config/opencode`), für
+projektbezogene Server das Projektverzeichnis. `vibe_mcp.cfg_path()` bildet
+genau diese Reihenfolge ab, damit vibe nicht eine andere Datei bearbeitet als
+opencode zuerst liest.
+
+Die Reihenfolge wurde mit dem installierten opencode 2.1.4 in einem isolierten
+Projekt erneut geprüft (`HOME` und `XDG_CONFIG_HOME` in einem temporären
+Verzeichnis): bei vorhandener `opencode.json` und `opencode.jsonc` schrieb
+`opencode mcp add` nach `opencode.json`; ohne diese Datei nach
+`opencode.jsonc`; ohne beide nach `.opencode/opencode.json`. Die Datei
+`opencode.jsonc` blieb dabei jeweils unverändert.
+
+### Verlustarme Bearbeitung
+
+`vibe_mcp` ersetzt beim Speichern nicht den gesamten `mcp`-Block. Es ändert nur
+den betroffenen Servereintrag und dessen geänderte Felder. Dadurch bleiben
+JSONC-Kommentare, Trailing Commas, Formatierung und unbekannte Einstellungen
+außerhalb des geänderten Feldes erhalten. Unveränderte Servereinträge werden
+nicht neu geschrieben; maskierte Geheimnisse werden vor dem Schreiben aus dem
+bisherigen Eintrag wiederhergestellt. Lässt sich ein maskiertes Geheimnis
+nicht zuordnen (fehlender bisheriger Schlüssel oder URL-Parameter), bricht der
+Schreibvorgang ab, statt `***` oder einen leeren Wert zu speichern.
+
 ### Agenten
 
 Der Adapter liefert das Projektverzeichnis `.opencode/agents` und prüft
