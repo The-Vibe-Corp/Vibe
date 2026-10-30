@@ -19,18 +19,18 @@
   },
   {
    "path": "bin/vibe",
-   "sha256": "0cbd6ba7343cef843be14b699d600ab3c6270105a019434cf037728c19f139e6",
-   "bytes": 96256
+   "sha256": "26967886e15225024cb553559bf2d91b2d9fe85541eb1d0cdec55509f302e6c3",
+   "bytes": 99623
   },
   {
    "path": "bin/vibe-run.sh",
-   "sha256": "b3148abef2e1fe090755ca29e6858d969d0e4c64caf7eaa0b1ffd3735a0ae440",
-   "bytes": 5820
+   "sha256": "a35a3918523a7c6ba2267f3fd722cc09dee26de0488aed554f6a73e7152eb5af",
+   "bytes": 6333
   },
   {
    "path": "bin/vibe-web.py",
-   "sha256": "b1f684032c7d2e3483a0818bc816364dfef35e8dafdaed1a5912c4a9a77ae5a0",
-   "bytes": 89760
+   "sha256": "db8d8925a4794e5357917722d095e97e02f610a358c30e599e1fe884f7bf2186",
+   "bytes": 90190
   },
   {
    "path": "bin/vibe_guide.py",
@@ -39,8 +39,13 @@
   },
   {
    "path": "bin/vibe_mcp.py",
-   "sha256": "e1bf07184522edb2fc0a993c5ee42a6d9cf41126ae627e867b0bd61b2541ef17",
-   "bytes": 22249
+   "sha256": "73bb88f654c8fcbafccb469f115b1729063cfa989579dd01b04be5877b469fb0",
+   "bytes": 22255
+  },
+  {
+   "path": "bin/vibe_paths.py",
+   "sha256": "dff5928d04983e1dbc5596bf2ef174456d6dd441b253b12eba81f26630eb4b4d",
+   "bytes": 15900
   },
   {
    "path": "bin/vibe_sandbox.py",
@@ -303,6 +308,18 @@
    "grund": "Projektdetail neu strukturiert: feste Kopfleiste mit Projektname, Laufzustand und den Hauptaktionen, Kennzahlenkacheln und vier Register (Arbeit, Ausgabe, Assistent, Einstellungen) mit Tastaturbedienung und ARIA-Verknüpfung. Weniger wichtige Bereiche sind nicht mehr gleichzeitig sichtbar; die Prüfungsausgabe wird im Register Ausgabe gestreamt.",
    "dateien": [
     "bin/vibe-web.py"
+   ]
+  },
+  {
+   "arbeitspaket": "V-006",
+   "datum": "2026-10-30",
+   "grund": "Quellen, Installation, Laufzeit und Zustand sind getrennte Rollen mit eigener Konfiguration. Das Dev-Profil nutzt eigenen Arbeitsbereich, eigene Ports (Dashboard 8788, opencode 4097) und eigene tmux-Sitzungen und verweigert Pfade der produktiven Instanz. Persönliche Einstellungen (auch je Profil) überschreiben Defaults; Umgebung und ausdrückliche Übergaben überschreiben die Datei. Import von vibe und vibe-web legt keine Verzeichnisse oder Tokendateien an; Dashboard-Link und Paketläufer folgen den aufgelösten Ports und Pfaden.",
+   "dateien": [
+    "bin/vibe",
+    "bin/vibe-run.sh",
+    "bin/vibe-web.py",
+    "bin/vibe_mcp.py",
+    "bin/vibe_paths.py"
    ]
   }
  ]

@@ -1,45 +1,35 @@
 #!/usr/bin/env python3
 """vibe-web — lokales Dashboard (nur Standardbibliothek). Start über: vibe ui"""
-import os, sys, json, re, time, secrets, threading, subprocess, io, contextlib, ipaddress
+import os, sys, json, re, time, secrets, threading, subprocess, io, contextlib
 import importlib.util, importlib.machinery
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 
 HERE = os.path.dirname(os.path.realpath(__file__))
 sys.path.insert(0, HERE)
-os.environ.setdefault("VIBE_NO_CONTAINER", "1")
-import vibe_storage
+import vibe_storage, vibe_paths
 _loader = importlib.machinery.SourceFileLoader("vibe", os.path.join(HERE, "vibe"))
 _spec = importlib.util.spec_from_loader("vibe", _loader)
 vibe = importlib.util.module_from_spec(_spec); sys.modules["vibe"] = vibe; _loader.exec_module(vibe)
 import vibe_mcp
 import vibe_guide
 
-PORT = int(os.environ.get("VIBE_UI_PORT", vibe.UI_PORT))
+try:
+    PATHS = vibe_paths.resolve()
+except vibe_paths.ConfigError as error:
+    raise SystemExit("Pfadkonfiguration: " + str(error))
+
+PORT = PATHS.ui_port
+BIND = PATHS.ui_bind
 MAX_BODY = 1024 * 1024
 LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
 
-def loopback_bind(value):
-    """Akzeptiert nur IPv4-Loopback; alles andere verhindert den Start."""
-    text = (value or "").strip()
-    if text == "localhost":
-        return "127.0.0.1"
-    try:
-        address = ipaddress.ip_address(text)
-    except ValueError:
-        raise SystemExit("vibe-web bindet nur an Loopback (z. B. 127.0.0.1); "
-                         "VIBE_UI_BIND=" + repr(text) + " ist keine IP-Adresse.")
-    if address.version != 4 or not address.is_loopback:
-        raise SystemExit("vibe-web bindet nur an Loopback; "
-                         "VIBE_UI_BIND=" + repr(text) + " ist nicht erlaubt.")
-    return str(address)
-
-BIND = loopback_bind(os.environ.get("VIBE_UI_BIND", "127.0.0.1"))
-os.makedirs(vibe.LOGS, exist_ok=True)
-TOKFILE = os.path.join(vibe.LOGS, "web.token")
-INSTFILE = os.path.join(vibe.LOGS, "web.instance")
-TOKEN = secrets.token_urlsafe(24)
-INSTANCE = secrets.token_hex(8)
+TOKFILE = os.path.join(PATHS.runtime, "web.token")
+INSTFILE = os.path.join(PATHS.runtime, "web.instance")
+# Erst prepare_runtime() beim echten Start setzt Token und Instanzkennung.
+# Der Import dieses Moduls bleibt damit frei von Dateisystem-Nebenwirkungen.
+TOKEN = None
+INSTANCE = None
 STARTED = time.time()
 ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
 SRV = None
@@ -52,12 +42,26 @@ def write_private(path, text):
     """
     vibe_storage.write_text(path, text, mode=0o600)
 
-write_private(INSTFILE, INSTANCE)
-write_private(TOKFILE, TOKEN)
+def prepare_runtime():
+    """Legt Laufzeitordner und Kennungen erst beim Start an.
+
+    Der Import dieses Moduls bleibt damit ohne Nebenwirkungen: keine
+    Verzeichnisse, keine Tokendateien, kein Serverprozess.
+    """
+    global TOKEN, INSTANCE
+    try:
+        vibe_paths.ensure(PATHS, "runtime")
+    except vibe_paths.ConfigError as error:
+        raise SystemExit("Pfadkonfiguration: " + str(error))
+    TOKEN = secrets.token_urlsafe(24)
+    INSTANCE = secrets.token_hex(8)
+    write_private(INSTFILE, INSTANCE)
+    write_private(TOKFILE, TOKEN)
 
 def redact(text):
     """Entfernt das Token aus jeder nach außen gegebenen Meldung."""
-    return str(text).replace(TOKEN, "[entfernt]")
+    text = str(text)
+    return text.replace(TOKEN, "[entfernt]") if TOKEN else text
 
 def split_host(value):
     text = (value or "").strip().lower()
@@ -287,7 +291,7 @@ class H(BaseHTTPRequestHandler):
     def do_GET(self):
         u = urlparse(self.path); q = parse_qs(u.query)
         if not self._guard(False): return
-        if u.path == "/": return self._send(200, PAGE, "text/html")
+        if u.path == "/": return self._send(200, page(), "text/html")
         if u.path == "/api/health": return self._health()
         if not self._authorized(allow_query=(u.path == "/api/stream")):
             return self._error(403, "unauthorized", "Token fehlt oder falsch")
@@ -678,7 +682,7 @@ async function detail(name){
   el('div',{class:'mut'},'quick prüft Struktur und Sicherheit, full zusätzlich Unit- und Browsertests. Die Ausgabe erscheint im Bereich „Ausgabe“.'),
   el('div',{class:'bar'},el('button',{class:'b',type:'button',on:{click:startVerify('quick')}},'Prüfung quick'),
    el('button',{class:'b',type:'button',on:{click:startVerify('full')}},'Prüfung full'),
-   el('a',{href:'http://127.0.0.1:4096',target:'_blank'},'opencode-Weboberfläche')));
+   el('a',{href:'__OPENCODE_URL__',target:'_blank'},'opencode-Weboberfläche')));
  const tsel=el('select',{});api('/api/types').then(t=>t.forEach(x=>{const o=el('option',{},x);if(x===d.type)o.selected=true;tsel.append(o)}));
  const initCard=d.init?null:el('div',{class:'card warnbox'},el('b',{class:'warn'},'Noch nicht für vibe vorbereitet'),el('div',{class:'mut'},'Ergänzt fehlende Dateien (FEEDBACK.md, TICKETS.md, AGENTS.md, .vibe/project.env). Vorhandenes wird nie überschrieben, es wird nichts committet.'),
   el('div',{class:'bar'},tsel,el('button',{class:'b p',type:'button',on:{click:act('/api/init',{name,type:tsel.value})}},'Für vibe vorbereiten')));
@@ -1030,7 +1034,19 @@ window.addEventListener('unhandledrejection',e=>showErr(e.reason));
 setTab('projects');
 </script></body></html>"""
 
+def page():
+    """Liefert die Oberfläche mit dem aufgelösten opencode-Port.
+
+    Der Port ist konfigurierbar; ein fest eingetragener Link würde bei
+    abweichender Konfiguration ins Leere zeigen.
+    """
+    return PAGE.replace("__OPENCODE_URL__", vibe.OC_URL)
+
 if __name__ == "__main__":
+    # Kein erneuter Container-Eintritt: vibe ui startet dieses Skript bereits
+    # mit den aufgelösten Pfaden im richtigen Kontext.
+    os.environ["VIBE_NO_CONTAINER"] = "1"
+    prepare_runtime()
     SRV = ThreadingHTTPServer((BIND, PORT), H)
     SRV.daemon_threads = True
     print(f"vibe-web läuft auf http://{BIND}:{PORT}/  (Token in {TOKFILE})", flush=True)

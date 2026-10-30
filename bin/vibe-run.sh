@@ -2,9 +2,19 @@
 # Allgemeiner Paket-Läufer. Aufruf: vibe-run.sh <projektordner> [agent]
 # Kostenbremse: MAX_PACKAGES in .vibe/project.env (oder Umgebungsvariable VIBE_MAX_PACKAGES) begrenzt die Zahl der Durchgänge.
 P="$(cd "${1:?Projektordner}" && pwd)"; NAME="${VIBE_LOGNAME:-$(basename "$P" | tr -c 'A-Za-z0-9_\n-' '_')}"
-V="${VIBE:?VIBE nicht gesetzt}/_toolchain/verify"
-BIN="$VIBE/_toolchain/bin"
-LOG="$VIBE/_logs/$NAME.log"; mkdir -p "$VIBE/_logs"
+# Installations-, Laufzeit- und Serverpfade vor dem Einlesen der Projektdatei
+# festhalten: .vibe/project.env beschreibt das Projekt, nicht die vibe-Pfade.
+VIBE_ROOT="${VIBE:?VIBE nicht gesetzt}"
+INSTALL="${VIBE_INSTALL:-$VIBE_ROOT/_toolchain}"
+RUNTIME="${VIBE_RUNTIME:-$VIBE_ROOT/_logs}"
+OPENCODE_PORT="${VIBE_OPENCODE_PORT:-4096}"
+if ! [[ "$OPENCODE_PORT" =~ ^[0-9]+$ ]] || [ "$OPENCODE_PORT" -lt 1 ] || [ "$OPENCODE_PORT" -gt 65535 ]; then
+  echo "ABBRUCH: VIBE_OPENCODE_PORT muss eine Zahl zwischen 1 und 65535 sein." >&2
+  exit 2
+fi
+V="$INSTALL/verify"
+BIN="$INSTALL/bin"
+LOG="$RUNTIME/$NAME.log"; mkdir -p "$RUNTIME"
 cd "$P" || exit 1
 [ -f .vibe/project.env ] && set -a && . ./.vibe/project.env && set +a
 AGENT="${2:-${AGENT:-coding-agent_deepseek}}"
@@ -63,9 +73,9 @@ if [ "$SANDBOX_STATE" = "on" ]; then
     exit 2
   fi
   SANDBOX_WRAP=(python3 "$BIN/vibe_sandbox.py" "$P" --)
-elif curl -sf --max-time 2 http://127.0.0.1:4096/global/health > /dev/null 2>&1; then SERVER_ARGS="--server http://127.0.0.1:4096"; fi
+elif curl -sf --max-time 2 "http://127.0.0.1:$OPENCODE_PORT/global/health" > /dev/null 2>&1; then SERVER_ARGS="--server http://127.0.0.1:$OPENCODE_PORT"; fi
 echo "Modus: $SERVER_ARGS, Agent: $AGENT, Sandbox: $SANDBOX_STATE, höchstens $MAXP Durchgänge" | tee -a "$LOG"
-PAUSE_FLAG="$VIBE/_logs/$NAME.pause-after"
+PAUSE_FLAG="$RUNTIME/$NAME.pause-after"
 PAUSED=0; LAST_ID=""
 declare -A TRY; SKIP=""
 for n in $(seq 1 "$MAXP"); do

@@ -11,6 +11,7 @@ Zuordnung der Projekt-Dokumentation zu den Notizen in Trilium (Stand 2026-10-30)
 | vibe | Features | V-003 Prozessaufrufe und Eingaben absichern | `yaaK4lPOlg99` |
 | vibe | Features | V-004 Web-API absichern und Health-Endpunkt ergänzen | `VrwC3K1wD5hI` |
 | vibe | Features | V-005 Atomare Dateizugriffe und sichere Sicherungen | `XQO2Qcrg1tvI` |
+| vibe | Features | V-006 Quellen-, Installations- und Laufzeitpfade trennen | `f0Mq8GVg7hhf` |
 | vibe | Features | F1 Feedback-Erfassung: nur Titel und Beschreibung | `4gZSOc9wxivN` |
 | vibe | Features | F2 Projektdetail: Feedback bearbeiten, Ausgabe steuern | `4etfKlTUj9ah` |
 | vibe | Features | F3 Dynamische Schreibrechte je Projekt | `22bjPTSyr3CS` |

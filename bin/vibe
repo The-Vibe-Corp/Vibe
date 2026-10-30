@@ -25,6 +25,7 @@ Aufruf:  vibe                 interaktives Menü
          vibe costs [<projekt>]  Kosten je Arbeitspaket und Projekt (Tokens, Euro)
          vibe mcp list|show|test|on|off|rm|backups|restore [name] [global|<projekt>] [sicherung]   MCP-Tools verwalten
          vibe emu start|stop  Emulator (Android)
+         vibe paths [prod|dev] [--json]   Profil, Pfade und Ports anzeigen
          vibe ui [stop]       Dashboard im Browser (nur localhost)
          vibe server [start|stop|status]  gemeinsamer opencode-Server mit Weboberfläche
          vibe types           verfügbare Projekttypen
@@ -35,20 +36,32 @@ import urllib.parse
 
 if __name__ == "__main__": sys.modules["vibe"] = sys.modules[__name__]
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
-import vibe_storage
+import vibe_storage, vibe_paths
 
-VIBE = os.environ.get("VIBE", "/var/mnt/data/Dokumente/Informatik/VibeCode")
-TOOLS = os.path.join(VIBE, "_toolchain")
-BIN, TPL, VERIFY = (os.path.join(TOOLS, x) for x in ("bin", "templates", "verify"))
-CONF = os.path.join(TOOLS, "vibe.json")
+try:
+    PATHS = vibe_paths.resolve()
+except vibe_paths.ConfigError as error:
+    sys.exit("Pfadkonfiguration: " + str(error))
+
+# Quellen (BIN), Installation (TOOLS), Laufzeit (LOGS) und Zustand (CONF,
+# PROFILES_FILE, BACKUPS) sind getrennte Rollen; siehe bin/vibe_paths.py.
+# state bleibt standardmäßig der Installationsordner, damit bestehende
+# Installationen ihre Einstellungen und Sicherungen wiederfinden.
+VIBE = PATHS.workspace
+TOOLS = PATHS.install
+BIN = PATHS.code_bin
+TPL = os.path.join(TOOLS, "templates")
+VERIFY = os.path.join(TOOLS, "verify")
+CONF = os.path.join(PATHS.state, "vibe.json")
 MODELS_FILE = os.path.join(TOOLS, "models.json")
-PROFILES_FILE = os.path.join(TOOLS, "profiles.json")
-BACKUPS = os.path.join(TOOLS, "agent-backups")
-LOGS = os.path.join(VIBE, "_logs")
-AGENTS_DIR = os.path.expanduser("~/.config/opencode/agents")
-CONTAINER = os.environ.get("VIBE_CONTAINER", "android-dev")
-OC_URL = "http://127.0.0.1:4096"
-UI_PORT = 8787
+PROFILES_FILE = os.path.join(PATHS.state, "profiles.json")
+BACKUPS = os.path.join(PATHS.state, "agent-backups")
+LOGS = PATHS.runtime
+AGENTS_DIR = PATHS.agents_dir
+CONTAINER = PATHS.container
+OC_URL = PATHS.opencode_url
+UI_PORT = PATHS.ui_port
+UI_BIND = PATHS.ui_bind
 CORE_AGENTS = {"coding-agent_deepseek", "code-reviewer_glm"}
 NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 C = {"g": "\033[32m", "r": "\033[31m", "y": "\033[33m", "b": "\033[1m", "d": "\033[2m", "0": "\033[0m"}
@@ -90,6 +103,21 @@ def in_container(): return os.path.exists("/run/.containerenv") or bool(os.envir
 def safe(name): return re.sub(r"[^A-Za-z0-9_-]", "_", name)
 def logpath(name, kind="run"): return os.path.join(LOGS, safe(name) + (".verify.log" if kind == "verify" else ".log"))
 
+def child_exports():
+    """Exportiert die aufgelösten Pfade für tmux-Kindprozesse.
+
+    Schlüssel sind feste Konstanten, Werte werden mit ``shlex.quote`` als ein
+    Argument geschützt. Pfade mit Leerzeichen bleiben dadurch unverändert.
+    """
+    return " ".join(
+        f"export {key}={shlex.quote(value)};"
+        for key, value in PATHS.child_env().items()
+    )
+
+def profile_session(base):
+    """Eigene tmux-Sitzung je Profil, damit Dev und Prod parallel laufen."""
+    return base if PATHS.profile == "prod" else base + "-" + PATHS.profile
+
 # ---------- Entwicklungsordner (Roots) und Projekte ----------
 BAD_ROOTS = {"/", "/usr", "/etc", "/bin", "/sbin", "/lib", "/lib64", "/proc", "/sys", "/dev", "/boot", "/root", "/run", "/var", "/tmp", "/home", "/opt", "/mnt", "/media"}
 
@@ -105,7 +133,7 @@ def roots():
     return out
 
 def roots_save(extra, expected=None):
-    os.makedirs(TOOLS, exist_ok=True)
+    os.makedirs(PATHS.state, exist_ok=True)
     vibe_storage.write_text(CONF, json.dumps({"roots": extra}, indent=1), expected=expected)
 
 def root_add(path):
@@ -516,7 +544,7 @@ def cmd_sandbox(name, action=None, value=None):
     if st["error"]: print(col("r", "Fehler: " + st["error"]))
     print(col("d", "Anpassen: vibe sandbox " + name + " on|off|tools \"git node npm\". Die Sandbox begrenzt Schreiben auf diese Verzeichnisse und Tool-Caches; /tmp ist privat und schreibgeschützt, Temporärdateien liegen im Zustandsordner. MCP und Netzwerk bleiben erlaubt, Lesezugriffe werden nicht eingeschränkt."))
 
-def sess(name): return "vibe-" + safe(name)
+def sess(name): return profile_session("vibe-" + safe(name))
 def tmux_has(name): return run(["tmux", "has-session", "-t", sess(name)])[0] == 0
 
 # ---------- Pause nach dem aktuellen Arbeitspaket ----------
@@ -566,9 +594,10 @@ def cmd_pause(name, action=None):
 
 # ---------- FRITZ!Box-Reconnect (optionale Altintegration) ----------
 # Die Automatik ist laut SPEC.md standardmäßig aus. Sie löst nur nach einem
-# fehlgeschlagenen Agentenlauf aus. Der Zustand liegt als Laufzeitdatei in
-# $VIBE/_toolchain/fritz.json und gehört nicht ins Repository.
-FRITZ_SETTINGS = os.path.join(TOOLS, "fritz.json")
+# fehlgeschlagenen Agentenlauf aus. Der Zustand liegt als schreibbare Datei im
+# Zustandsordner (standardmäßig _toolchain, per VIBE_STATE getrennt) und gehört
+# nicht ins Repository.
+FRITZ_SETTINGS = os.path.join(PATHS.state, "fritz.json")
 FRITZ_TIMEOUT = 200
 FRITZ_REQUIRED = ("FRITZ_ADDR", "FRITZ_USER", "FRITZ_PASS")
 
@@ -604,7 +633,7 @@ def fritz_automation():
 def fritz_automation_set(enabled):
     if not isinstance(enabled, bool):
         raise ValueError("enabled muss true oder false sein")
-    os.makedirs(TOOLS, exist_ok=True)
+    os.makedirs(PATHS.state, exist_ok=True)
     try:
         _write_text_atomic(FRITZ_SETTINGS,
                            json.dumps({"automation": enabled}, indent=1) + "\n")
@@ -765,7 +794,8 @@ def cmd_run(name, agent=None):
     # Pfad und Agent bleiben Argumente; das Skript selbst ist konstant.
     # Kein abschließendes "read": Der Agentenlauf endet mit dem Läufer, damit
     # vibe ihn nicht weiter als aktiv meldet. Die Ausgabe bleibt im Log.
-    inner = ('source ~/.bashrc; export VIBE_LOGNAME="$1"; bash "$2" "$3" "$4"')
+    inner = ("source ~/.bashrc; " + child_exports()
+             + ' export VIBE_LOGNAME="$1"; bash "$2" "$3" "$4"')
     rc, out = run(["tmux", "new-session", "-d", "-s", sess(name), "-c", p,
                    "bash", "-lc", inner, name, safe(name), os.path.join(BIN, "vibe-run.sh"), p, agent])
     print(col("g", f"Gestartet: tmux-Sitzung {sess(name)}, Agent {agent}") if rc == 0 else col("r", out))
@@ -1221,7 +1251,7 @@ def profiles_load(return_snapshot=False):
     return (d, snapshot) if return_snapshot else d
 
 def profiles_save(d, expected=None):
-    os.makedirs(TOOLS, exist_ok=True)
+    os.makedirs(PATHS.state, exist_ok=True)
     vibe_storage.write_text(PROFILES_FILE, json.dumps(d, indent=1, ensure_ascii=False), expected=expected)
 
 def profile_apply(name):
@@ -1887,29 +1917,75 @@ def server_health():
     rc, out = run(["curl", "-sf", "--max-time", "2", OC_URL + "/global/health"])
     return out if rc == 0 else None
 
+def server_session():
+    return profile_session("vibe-server")
+
 def cmd_server(action="status"):
     if action == "start":
         if server_health(): print("opencode-Server läuft:", OC_URL); return
-        run(["tmux", "new-session", "-d", "-s", "vibe-server", "bash", "-lc",
-             "source ~/.bashrc; exec opencode web --port 4096 --hostname 127.0.0.1"])
-        time.sleep(4); print("Gestartet:" if server_health() else "Start angestoßen, Server antwortet noch nicht (tmux attach -t vibe-server):", OC_URL)
+        # Port ist validiert (1..65535) und damit kein Shell-Freitext.
+        run(["tmux", "new-session", "-d", "-s", server_session(), "bash", "-lc",
+             f"source ~/.bashrc; exec opencode web --port {PATHS.opencode_port} --hostname 127.0.0.1"])
+        time.sleep(4); print("Gestartet:" if server_health() else "Start angestoßen, Server antwortet noch nicht (tmux attach -t " + server_session() + "):", OC_URL)
     elif action == "stop":
-        run(["tmux", "kill-session", "-t", "vibe-server"]); print("opencode-Server beendet.")
+        run(["tmux", "kill-session", "-t", server_session()]); print("opencode-Server beendet.")
     else:
         h = server_health(); print("opencode-Server:", col("g", "läuft " + OC_URL + " " + h) if h else "aus")
 
+def ui_session():
+    return profile_session("vibe-ui")
+
 def cmd_ui(action="start"):
     if action == "stop":
-        run(["tmux", "kill-session", "-t", "vibe-ui"]); print("Dashboard beendet."); return
-    os.makedirs(LOGS, exist_ok=True)
-    if run(["tmux", "has-session", "-t", "vibe-ui"])[0] != 0:
-        run(["tmux", "new-session", "-d", "-s", "vibe-ui", "bash", "-lc",
-             'source ~/.bashrc; exec python3 "$1"', "vibe-ui", os.path.join(BIN, "vibe-web.py")])
+        run(["tmux", "kill-session", "-t", ui_session()]); print("Dashboard beendet."); return
+    try:
+        vibe_paths.ensure(PATHS, "runtime")
+    except vibe_paths.ConfigError as error:
+        sys.exit("Pfadkonfiguration: " + str(error))
+    if run(["tmux", "has-session", "-t", ui_session()])[0] != 0:
+        # Aufgelöste Pfade und Ports ausdrücklich übergeben, damit der
+        # Kindprozess dieselbe Konfiguration verwendet; shlex.quote schützt
+        # Pfade mit Leerzeichen und Sonderzeichen.
+        inner = "source ~/.bashrc; " + child_exports() + ' exec python3 "$1"'
+        run(["tmux", "new-session", "-d", "-s", ui_session(), "bash", "-lc",
+             inner, "vibe-ui", os.path.join(BIN, "vibe-web.py")])
         time.sleep(2)
     tokf = os.path.join(LOGS, "web.token")
     tok = open(tokf).read().strip() if os.path.exists(tokf) else "?"
-    print(col("g", f"Dashboard: http://127.0.0.1:{UI_PORT}/#t={tok}"))
+    print(col("g", f"Dashboard ({PATHS.profile}): http://{UI_BIND}:{UI_PORT}/#t={tok}"))
     print("(nur lokal erreichbar; Beenden: Knopf im Dashboard oder vibe ui stop)")
+
+def cmd_paths(*arguments):
+    """Zeigt Profil, Pfade und Ports; ändert nichts und startet nichts."""
+    options = [str(value) for value in arguments if value]
+    as_json = "--json" in options
+    requested = [value for value in options if value != "--json"]
+    if len(requested) > 1 or any(value not in vibe_paths.PROFILES for value in requested):
+        sys.exit("Aufruf: vibe paths [prod|dev] [--json]")
+    try:
+        paths = PATHS if not requested else vibe_paths.resolve(profile=requested[0])
+    except vibe_paths.ConfigError as error:
+        sys.exit("Pfadkonfiguration: " + str(error))
+    if as_json:
+        print(json.dumps(paths.as_dict(), indent=2, ensure_ascii=False)); return
+    def presence(target): return "vorhanden" if os.path.isdir(target) else "fehlt"
+    print(col("b", "Profil, Pfade und Ports"))
+    for label, value in (
+        ("Profil", paths.profile),
+        ("Quellen", paths.source),
+        ("Arbeitsbereich", paths.workspace),
+        ("Installation", paths.install),
+        ("Laufzeit", paths.runtime),
+        ("Zustand", paths.state),
+        ("Konfiguration", paths.config_file),
+        ("Agenten", paths.agents_dir),
+        ("Container", paths.container),
+    ):
+        suffix = "" if label in ("Profil", "Container") else "  (" + presence(value) + ")"
+        print(f"  {label + ':':<16}{value}{suffix}")
+    print(f"  {'Dashboard:':<16}http://{paths.ui_bind}:{paths.ui_port}/")
+    print(f"  {'opencode:':<16}{paths.opencode_url}/")
+    print("(Priorität: Defaults < persönliche Datei < Umgebung < Übergabe; nur diese Anzeige, keine Änderung)")
 
 def doctor_checks():
     r = []
@@ -2013,7 +2089,8 @@ def main():
                  "profile": lambda: cmd_profile(r[0] if r else "list", r[1] if len(r) > 1 else None),
                  "costs": lambda: cmd_costs(r[0] if r else None),
                  "mcp": lambda: cmd_mcp(r[0] if r else "list", r[1] if len(r) > 1 else None, r[2] if len(r) > 2 else "global", r[3] if len(r) > 3 else None),
-                 "emu": lambda: cmd_emu(r[0]), "ui": lambda: cmd_ui(r[0] if r else "start"), "server": lambda: cmd_server(r[0] if r else "status"),
+                 "emu": lambda: cmd_emu(r[0]), "paths": lambda: cmd_paths(*r),
+                 "ui": lambda: cmd_ui(r[0] if r else "start"), "server": lambda: cmd_server(r[0] if r else "status"),
                  "types": lambda: cmd_types(), "doctor": lambda: cmd_doctor()}
         table[c]()
     except (KeyError, IndexError):

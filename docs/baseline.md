@@ -177,6 +177,7 @@ Codestelle und die in dieser Sitzung tatsächlich beobachtete Prüfung.
 | CLI | `vibe server` | vorhanden, noch nicht geprüft | `bin/vibe:540-548`; opencode-Prozessverwaltung, nicht ausgeführt |
 | CLI | `vibe types` | vorhanden und manuell geprüft | `bin/vibe:277-285`; ausgeführt, Exit 0, fünf Typen plus `common` |
 | CLI | `vibe doctor` | vorhanden und manuell geprüft | `bin/vibe:562-582`; ausgeführt, Exit 0, Umgebungsprüfungen plausibel |
+| CLI | `vibe paths` | vorhanden und automatisiert geprüft | `bin/vibe` (`cmd_paths`), `bin/vibe_paths.py`; `tests/unit/test_vibe_paths.py` prüft JSON-Ausgabe, Dev-Profil mit eigenen Ports, persönliche Einstellungen, Pfade mit Leerzeichen, ungültige Ports und unbekannte Argumente; die Abfrage legt keine Verzeichnisse an |
 | CLI | `vibe` (ohne Argument) | vorhanden, noch nicht geprüft | `bin/vibe:609-639`; interaktives Menü, nicht ausgeführt |
 | CLI | `vibe <unbekannt>` | vorhanden und manuell geprüft | `bin/vibe:661-662`; ausgeführt, Exit 0, gibt die Aufrufhilfe aus |
 

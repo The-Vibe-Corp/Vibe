@@ -125,7 +125,7 @@ def load(scope):
     return p, text, data, layout, servers, digest
 
 def backup_dir():
-    return os.path.join(vibe.TOOLS, "config-backups")
+    return os.path.join(vibe.PATHS.state, "config-backups")
 
 def backup_label(scope, p):
     return f"{vibe.safe(scope)}-{os.path.basename(p)}"
