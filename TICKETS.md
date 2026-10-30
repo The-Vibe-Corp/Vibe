@@ -269,7 +269,7 @@ Ein fehlender externer Dienst bedeutet BLOCKIERT, nicht erledigt.
   Dokumentation: docs/features/V-014.md; docs/compatibility.md;
   Trilium `yNkNwN9tHGbU`
 
-- [ ] V-015 Agentenläufe und Projektprüfungen entkoppeln
+- [x] V-015 Agentenläufe und Projektprüfungen entkoppeln
   Priorität: P1
   Abhängigkeiten: V-003, V-007, V-009
   Umfang: Laufstatus, eindeutige IDs, Logs und typabhängige Prüfadapter.
@@ -279,6 +279,16 @@ Ein fehlender externer Dienst bedeutet BLOCKIERT, nicht erledigt.
   Router-Neuverbindung oder Limitumgehung.
   Tests: parallele Projekte, gleiche normalisierte Namen, fehlender Prüfbefehl,
   Fehlerexit, beendeter Prozess, Wiederholungslimit, Logrotation.
+  Commit: cf73906; Test: tests/unit/test_run_control.py (23 Tests, u. a.
+  test_same_normalized_names_get_distinct_runs_logs_and_pause_flags,
+  test_retry_limit_stops_repeating_the_same_package,
+  test_stop_only_kills_the_selected_run)
+  Prüfungen: `python3 -m unittest tests.unit.test_run_control -v` 23 Tests OK;
+  `bash scripts/verify.sh quick` Exit 0; `bash scripts/verify.sh full` Exit 0
+  (627 Unit- + 47 Browser-Tests, 674 erkannt) im Mount-Namespace mit tmpfs auf
+  /tmp (schreibgeschütztes /tmp im Prüfcontainer, Staging-Pfad von next_item.py).
+  Review: docs/reviews/V-015-review-1.md (PASS, 0 Critical/High/Medium, 4 Minor)
+  Dokumentation: docs/features/V-015.md; Trilium `DqTH63j8L7qv`
 
 - [ ] V-016 Dashboard- und opencode-Lebenszyklus getrennt prüfen
   Priorität: P1
