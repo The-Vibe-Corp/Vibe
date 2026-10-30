@@ -248,7 +248,7 @@ Ein fehlender externer Dienst bedeutet BLOCKIERT, nicht erledigt.
   docs/reviews/V-013-review-2.md (PASS, 0 Critical/High/Medium, 1 Minor)
   Dokumentation: docs/features/V-013.md; Trilium `mtlfH63g6rLt`
 
-- [ ] V-014 MCP-Verbindungstests robust und begrenzt ausführen
+- [x] V-014 MCP-Verbindungstests robust und begrenzt ausführen
   Priorität: P1
   Abhängigkeiten: V-003, V-013
   Umfang: Handshake, Werkzeugliste und Diagnose.
@@ -257,6 +257,17 @@ Ein fehlender externer Dienst bedeutet BLOCKIERT, nicht erledigt.
   keine Geheimnisse in Ausgabe.
   Tests: lokaler Mockserver, HTTP-Mockserver, Authfehler, Protokollfehler,
   Dauerstream, große Ausgabe, Kindprozess, Timeout, unbekannter Transport.
+  Commit: 2838c33; Test: tests/unit/test_mcp_test.py (18 Tests, u. a.
+  test_handshake_reports_tools_and_never_calls_a_tool,
+  test_child_processes_are_terminated_with_the_test,
+  test_endless_event_stream_returns_after_the_wanted_answer,
+  test_unknown_transport_is_reported_without_calling_it_broken)
+  Prüfungen: bash scripts/verify.sh quick (Exit 0); bash scripts/verify.sh full
+  (Exit 0, 604 Unit- und 47 Browsertests, 651 erkannt)
+  Review: docs/reviews/V-014-review-1.md (CHANGES REQUIRED, 1 Medium/3 Minor),
+  docs/reviews/V-014-review-2.md (PASS, 0 Critical/High/Medium/Minor)
+  Dokumentation: docs/features/V-014.md; docs/compatibility.md;
+  Trilium `yNkNwN9tHGbU`
 
 - [ ] V-015 Agentenläufe und Projektprüfungen entkoppeln
   Priorität: P1
