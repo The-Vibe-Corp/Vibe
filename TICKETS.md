@@ -154,7 +154,7 @@ Ein fehlender externer Dienst bedeutet BLOCKIERT, nicht erledigt.
   Review: docs/reviews/V-009-review-1.md (PASS, 0 Critical/High/Medium, 1 Minor)
   Dokumentation: docs/features/V-009.md; Trilium `jFyT2V8u3yij`
 
-- [ ] V-010 Agentenverwaltung vervollständigen
+- [x] V-010 Agentenverwaltung vervollständigen
   Priorität: P1
   Abhängigkeiten: V-005, V-007
   Umfang: globale und projektbezogene CRUD-Funktionen.
@@ -163,6 +163,25 @@ Ein fehlender externer Dienst bedeutet BLOCKIERT, nicht erledigt.
   unbekannte Felder erhalten; Restore möglich.
   Tests: ungültiges Frontmatter, Duplikate, Projektüberschattung,
   Traversal, Kopieren auf vorhandenes Ziel, Browserworkflow.
+  Commit: 4a9f2d8; Test: tests/unit/test_agent_management.py (24 Tests, u. a.
+  test_invalid_frontmatter_is_rejected_without_touching_the_file,
+  test_project_agent_overrides_global_agent_and_shadowing_is_visible,
+  test_copy_to_an_existing_target_is_refused_and_changes_nothing,
+  test_path_traversal_and_invalid_names_are_rejected,
+  test_structured_fields_preserve_unknown_frontmatter_fields,
+  test_restore_brings_back_the_previous_version);
+  tests/browser/test_agents_ui.py (7 Tests, u. a.
+  test_list_shows_conflict_and_actual_priority,
+  test_invalid_raw_frontmatter_is_rejected_without_writing,
+  test_copy_to_an_existing_target_is_refused)
+  Prüfungen: Rot gegen a013a53: `Ran 24 tests`, `FAILED (failures=8, errors=30)`;
+  `python3 -m unittest discover -s tests/unit -p test_agent_management.py -v`
+  24 Tests OK; `python3 -m unittest discover -s tests/browser -p test_agents_ui.py -v`
+  7 Tests OK; `bash scripts/verify.sh quick` Exit 0; `bash scripts/verify.sh full`
+  Exit 0 (553 Unit- + 41 Browser-Tests, 594 erkannt) im Mount-Namespace mit
+  tmpfs auf /tmp und ohne SANDBOX/SANDBOX_TOOLS.
+  Review: docs/reviews/V-010-review-1.md (PASS, 0 Critical/High/Medium, 2 Minor)
+  Dokumentation: docs/features/V-010.md; Trilium `KkhQ6sa4w0qz`
 
 - [ ] V-011 Modellkatalog bereinigen und belegbar machen
   Priorität: P1
