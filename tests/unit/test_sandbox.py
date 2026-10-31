@@ -36,6 +36,11 @@ TOOL_DEFAULTS = {
     "android": ["git", "java", "android", "adb"],
     "docker": ["git", "docker"],
     "openwrt": ["git", "make", "gcc"],
+    "rebuild": [
+        "git", "python3", "wine", "java", "ghidra", "analyzeHeadless",
+        "gdb", "strace", "ltrace", "strings", "objdump", "readelf",
+        "appimagetool", "linuxdeploy", "patchelf", "podman",
+    ],
 }
 
 

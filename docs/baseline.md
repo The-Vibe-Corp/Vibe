@@ -269,7 +269,7 @@ headless) geprüft.
 | Bereich | Status | Bewertung |
 | --- | --- | --- |
 | Projekte und Entwicklungsordner | teilweise vorhanden | Einlesen, Liste, Detail, Roots vorhanden; gleichnamige Projekte werden nur als `name@root` unterschieden, URLs/IDs sind nicht kollisionsfrei (V-008) |
-| Projektvorlagen | teilweise vorhanden | Fünf Typen plus `common` vorhanden; unbekannter Typ fällt still auf `generic` zurück; Android-Prüfung ist nicht global (V-008) |
+| Projektvorlagen | teilweise vorhanden | Sechs Typen plus `common` vorhanden (neu: `rebuild`); unbekannter Typ fällt still auf `generic` zurück; Android-Prüfung ist nicht global (V-008, F14) |
 | Arbeitspakete und Feedback | teilweise vorhanden | Kommentare werden ignoriert, `BLOCKIERT` bleibt offen; Nachweisprüfung vorhanden; ID-Vergabe ohne Sperre (V-009) |
 | Agenten | teilweise vorhanden | Liste, Anlegen, Bearbeiten, Kopieren, Löschen, kollisionsfreie Sicherung und Wiederherstellung vorhanden; atomare Writes und Konflikterkennung über `vibe_storage` (V-005); verlustfreie Feldpflege und Browserworkflow fehlen (V-010) |
 | Modelle und Anbieter | teilweise vorhanden | Modelllisting über opencode, Katalogdatei; Altdaten ohne Quellen-/Datumsnachweis, keine Anbieter-Trennung (V-011) |

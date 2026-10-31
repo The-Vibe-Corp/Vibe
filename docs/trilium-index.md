@@ -34,3 +34,4 @@ Zuordnung der Projekt-Dokumentation zu den Notizen in Trilium (Stand 2026-10-31)
 | vibe | Features | F11 Weniger modale Browserdialoge | `0A6oTTAbOeGH` |
 | vibe | Features | F12 Kostenermittlung je AP/Projekt | `IwU7vi5DgDdd` |
 | vibe | Features | F13 Projektdetail neu strukturiert | `ppnQBKTcRlLQ` |
+| vibe | Features | F14 Project Type: Rebuild | `ajp3HtOEv9k1` |

@@ -43,14 +43,14 @@
    "bytes": 50973
   },
   {
-   "path": "bin/vibe_opencode.py",
-   "sha256": "5e2c58b801d759874ff4a8bb0dd2122c0fa638e4ca42e129f4b48b2dedebec83",
-   "bytes": 13639
-  },
-  {
    "path": "bin/vibe_models.py",
    "sha256": "9e013459696c2a1a9fab378a771961afc3630768bde066a674962792ca0762ab",
    "bytes": 20977
+  },
+  {
+   "path": "bin/vibe_opencode.py",
+   "sha256": "5e2c58b801d759874ff4a8bb0dd2122c0fa638e4ca42e129f4b48b2dedebec83",
+   "bytes": 13639
   },
   {
    "path": "bin/vibe_paths.py",
@@ -64,8 +64,8 @@
   },
   {
    "path": "bin/vibe_sandbox.py",
-   "sha256": "fd2aa19219e603301e4f993b5a6121125359f902cc9fbcdaf03a96b3386d7cfd",
-   "bytes": 20133
+   "sha256": "1c8cdb415dbd25eace3751660e00868465d2db9d8b5a97428baa39c5cbbb12ab",
+   "bytes": 20552
   },
   {
    "path": "bin/vibe_storage.py",
@@ -161,6 +161,76 @@
    "path": "templates/openwrt/AGENTS.md",
    "sha256": "9be35bb7eabbbf1118861e5d25d0056976bc916a59b92757ffe469c5c8591062",
    "bytes": 1095
+  },
+  {
+   "path": "templates/rebuild/.opencode/agents/rebuild-architecture.md",
+   "sha256": "8ce7fa84467c6ed0d62db5a736902604958d382e9275a69fe15dd76113a866e2",
+   "bytes": 670
+  },
+  {
+   "path": "templates/rebuild/.opencode/agents/rebuild-ci.md",
+   "sha256": "d7e19b8f5a447f93c303f5a4327ea0330e9f581e101b2a6d2814627c5cfafedd",
+   "bytes": 524
+  },
+  {
+   "path": "templates/rebuild/.opencode/agents/rebuild-discovery.md",
+   "sha256": "99767a5b5ca1d9c3385309f83c853819d3969967c7d1254e7429512f9538d722",
+   "bytes": 765
+  },
+  {
+   "path": "templates/rebuild/.opencode/agents/rebuild-implementation.md",
+   "sha256": "1d9b054e84fcd61464b373fbf82d1643895007f45f6643a5ea9f56abc43deef2",
+   "bytes": 659
+  },
+  {
+   "path": "templates/rebuild/.opencode/agents/rebuild-orchestrator.md",
+   "sha256": "2528c921eb3aaba2d56726c7223dd1d69ec67d6a6fa63587a24217021202543e",
+   "bytes": 818
+  },
+  {
+   "path": "templates/rebuild/.opencode/agents/rebuild-packaging.md",
+   "sha256": "e70b5b2a783e02d7aa3950d9976d4ea8ed134aa1bff853794f26426a32838a75",
+   "bytes": 657
+  },
+  {
+   "path": "templates/rebuild/.opencode/agents/rebuild-parity.md",
+   "sha256": "7f84afa58539462e45f38ee938a70c6072fb2f2d4518eb981e224dea3f62c8ea",
+   "bytes": 733
+  },
+  {
+   "path": "templates/rebuild/.opencode/agents/rebuild-reverse.md",
+   "sha256": "c4efc262aaf776517c1b862a4b57759e1459997f6a7a2b160ab2599817f54077",
+   "bytes": 767
+  },
+  {
+   "path": "templates/rebuild/.opencode/agents/rebuild-spec.md",
+   "sha256": "0cce4ad3d5c047efc2cc070fa1808d8c940ba8b229a1de25623d14d83a59211c",
+   "bytes": 767
+  },
+  {
+   "path": "templates/rebuild/.vibe/project.env",
+   "sha256": "a6f6b3e149cdf5cb3a3465cf9b568bbfb497d69eb54c0d2409de473b4ccd33d1",
+   "bytes": 819
+  },
+  {
+   "path": "templates/rebuild/AGENTS.md",
+   "sha256": "e7dd4396662615c79ba544b19974cf31ba650188a8ce69464a617e7d1a4a5e66",
+   "bytes": 3663
+  },
+  {
+   "path": "templates/rebuild/docs/parity.md",
+   "sha256": "fe705d851e19067b479c6763e06a37cd3173c79e191565a2b0fd021e7f7ff25e",
+   "bytes": 1675
+  },
+  {
+   "path": "templates/rebuild/docs/reverse-engineering.md",
+   "sha256": "f49ee59a97d45b58a989b32bc039fc9258edc36998ca71a0c68c2a014955cf5f",
+   "bytes": 1301
+  },
+  {
+   "path": "templates/rebuild/scripts/rebuild-env.py",
+   "sha256": "d3ee44c1f74e2885b2e2700c57fc246269505ee272abe3fe3bcfec07db399b03",
+   "bytes": 13279
   },
   {
    "path": "templates/web/.vibe/project.env",
@@ -424,6 +494,28 @@
    "dateien": [
     "bin/vibe",
     "bin/vibe-web.py"
+   ]
+  },
+  {
+   "arbeitspaket": "F14",
+   "datum": "2026-10-31",
+   "grund": "Neuer Projekttyp rebuild: Vorlage mit neun Projektagenten, Paritäts- und Speicherstandsregeln (fachlich 1:1, Originalformate lesen und schreiben), Werkzeugprüfer mit Pflicht- und optionalen Gruppen, Installationsplan und nur bestätigter Paketinstallation sowie Sandbox-Voreinstellungen für Wine, Java, Ghidra, Debugging und Packaging.",
+   "dateien": [
+    "bin/vibe_sandbox.py",
+    "templates/rebuild/.opencode/agents/rebuild-architecture.md",
+    "templates/rebuild/.opencode/agents/rebuild-ci.md",
+    "templates/rebuild/.opencode/agents/rebuild-discovery.md",
+    "templates/rebuild/.opencode/agents/rebuild-implementation.md",
+    "templates/rebuild/.opencode/agents/rebuild-orchestrator.md",
+    "templates/rebuild/.opencode/agents/rebuild-packaging.md",
+    "templates/rebuild/.opencode/agents/rebuild-parity.md",
+    "templates/rebuild/.opencode/agents/rebuild-reverse.md",
+    "templates/rebuild/.opencode/agents/rebuild-spec.md",
+    "templates/rebuild/.vibe/project.env",
+    "templates/rebuild/AGENTS.md",
+    "templates/rebuild/docs/parity.md",
+    "templates/rebuild/docs/reverse-engineering.md",
+    "templates/rebuild/scripts/rebuild-env.py"
    ]
   }
  ]

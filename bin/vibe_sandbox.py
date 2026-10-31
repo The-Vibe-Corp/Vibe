@@ -72,6 +72,11 @@ TOOL_CACHES = {
     "rustc": ["~/.cargo"],
     "go": ["~/go/pkg/mod", "~/.cache/go-build"],
     "cmake": ["~/.cache/cmake"],
+    "wine": ["~/.wine"],
+    "wine64": ["~/.wine"],
+    "java": ["~/.java"],
+    "ghidra": ["~/.config/ghidra", "~/.ghidra"],
+    "analyzeHeadless": ["~/.config/ghidra", "~/.ghidra", "~/.java"],
     "docker": ["~/.docker"],
     "podman": ["~/.local/share/containers"],
     "playwright": ["~/.cache/ms-playwright"],
@@ -108,6 +113,11 @@ TOOL_DEFAULTS = {
     "android": ["git", "java", "android", "adb"],
     "docker": ["git", "docker"],
     "openwrt": ["git", "make", "gcc"],
+    "rebuild": [
+        "git", "python3", "wine", "java", "ghidra", "analyzeHeadless",
+        "gdb", "strace", "ltrace", "strings", "objdump", "readelf",
+        "appimagetool", "linuxdeploy", "patchelf", "podman",
+    ],
 }
 
 
