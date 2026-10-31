@@ -108,3 +108,52 @@ Regeln (werden maschinell geprüft):
   Commit: 37a2156; Test: ProjectDetailUiTest.test_detail_groups_content_into_tabs_and_shows_only_the_active_area, ProjectDetailUiTest.test_tabs_can_be_switched_by_mouse_and_keyboard, ProjectDetailUiTest.test_chosen_tab_survives_an_action_and_resets_when_leaving_the_detail, ProjectDetailUiTest.test_verify_action_opens_the_output_area_and_streams_the_check_log, ProjectDetailUiTest.test_narrow_viewport_keeps_the_detail_usable_without_page_scroll, ProjectDetailUiTest.test_each_tab_is_linked_to_its_panel_for_assistive_technology, ProjectDetailUiTest.test_new_project_opens_the_assistant_area, ProjectDetailUiTest.test_primary_actions_and_run_state_stay_visible_in_every_area (tests/browser/test_project_detail_ui.py, 8 Tests)
   Review: docs/reviews/F13-review-1.md, docs/reviews/F13-review-2.md (PASS, 0 Critical/High/Medium)
   Doku: docs/features/F13.md; Trilium `ppnQBKTcRlLQ`
+
+- [x] F14 Project Type: Rebuild
+  Beschreibung: Vibe soll einen neuen Projekttyp erhalten, welcher darauf spezialisiert ist eine bestehende anwendung zu analysieren und neu zu erstellen, so dass die neue version der anwendung unter allen betriebssystem lauffähig ist. Ziel ist es betriebssystemgrenzen aufzulösen und allen die funktionalität der anwendung zur verfügung zu stellen.
+
+  Die fachliche Funktionsweise der Anwendung soll dabei 1:! übernommen werden. Technisch darf es angepasst werden, sofern die kompatibilität mit originalen Speicherständen behalten bleibt.
+
+  Das profil soll alle notwendigen werkzeuge und entwicklungsumgebung für diesen prüfen bzw. aufsetzen wenn nicht vorhanden.
+
+  hier ein unverbindlicher vorschlag:
+  Agenten
+
+      Orchestrator (Planung, Kontext, Kosten)
+
+      Discovery/Analyse
+
+      Reverse-Engineering
+
+      Spezifikation
+
+      Architektur
+
+      Implementierung
+
+      Verifikation/Parität
+
+      Packaging
+
+      CI/Test
+
+  Tools
+
+      Ghidra (headless) + MCP-Bridge (GhidraMCP, ReVa, REA)
+
+      Wine für Verhaltensbeobachtung
+
+      Debugger, Tracing, Datei-/Registry-Monitoring
+
+      Coding-Agent mit Git/GitHub
+
+      Sandbox (Container/VM) mit Shell und Compiler
+
+      Test-Framework, Screenshot-Vergleich
+
+      linuxdeploy, appimagetool
+
+      CI-Pipeline mit Tests auf mehreren Distributionen
+  Commit: 0cb9ce2; Test: ProfileTest.test_rebuild_type_creates_agents_parity_rules_and_toolcheck, ToolCheckTest.test_missing_required_tool_is_reported_and_blocks, ToolCheckTest.test_missing_optional_tool_is_reported_but_does_not_block, ToolCheckTest.test_install_plan_maps_missing_tools_to_packages_and_manual_steps, ToolCheckTest.test_install_plan_prefers_available_package_manager, ToolCheckTest.test_setup_runs_only_package_commands_and_never_claims_manual_success, ToolCheckTest.test_unknown_required_group_is_rejected_instead_of_silently_ignored, ToolCheckTest.test_project_env_selects_the_required_groups, ToolCheckCliTest.test_cli_check_is_green_with_all_required_tools, ToolCheckCliTest.test_cli_check_returns_error_and_names_missing_tool, ToolCheckCliTest.test_cli_setup_without_confirmation_changes_nothing (tests/unit/test_rebuild_profile.py, 11 Tests), RebuildProjectBrowserTest.test_rebuild_type_is_selectable_and_creates_the_profile (tests/browser/test_rebuild_project_ui.py, 1 Test)
+  Review: docs/reviews/F14-review-1.md (PASS, 0 Critical/High/Medium)
+  Doku: docs/features/F14.md; Trilium `ajp3HtOEv9k1`
