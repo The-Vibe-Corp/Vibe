@@ -455,8 +455,14 @@ def open_items(name):
             elif need_proof and not _proof_ok(root, b): res.append((pid, title, "ohne Nachweis"))
     return res
 
-# ---------- Feedback-Punkte lesen, ändern und löschen ----------
-_FEEDBACK_LABEL = re.compile(r"^[ \t]+(Beschreibung|Erwartet|Schritte|Ist|Commit|BLOCKIERT):[ \t]?(.*)$")
+# ---------- Arbeitspakete und Feedback lesen, ändern und löschen ----------
+# FEEDBACK.md und TICKETS.md teilen sich denselben Blockaufbau. Der Unterschied
+# liegt nur im Abschlussnachweis: Feedback gilt erst mit Nachweis als erledigt,
+# Arbeitspakete wie in open_items schon mit gesetzter Checkbox.
+_FEEDBACK_LABEL = re.compile(
+    r"^[ \t]+(Beschreibung|Erwartet|Schritte|Ist|Commit|BLOCKIERT|Art|Priorität|"
+    r"Abhängigkeiten|Umfang|Akzeptanz|Tests|Prüfungen|Review|Dokumentation|Doku):[ \t]?(.*)$")
+_ART_LINE = re.compile(r"^[ \t]+Art:[ \t]?(.*)$")
 
 def _feedback_scan(text):
     """Liefert Feedback-Blöcke als (start, end, Zeilen) ohne HTML-Kommentare.
@@ -467,12 +473,21 @@ def _feedback_scan(text):
     """
     return _scan_blocks(text)
 
-def _feedback_parse(entry, root):
+def _parse_entry(entry, root, need_proof=True):
+    """Liest ID, Titel, Beschreibung, Art und Status eines Blocks.
+
+    ``need_proof`` verlangt zusätzlich einen gültigen Nachweis für
+    ``erledigt``. ``art`` unterscheidet Bugmeldungen (``Art: Bug``) von
+    gewöhnlichem Feedback.
+    """
     item = _parse_item_line(entry["lines"][0])
     if not item: return None
-    desc, desc_start, desc_end, i = [], None, None, 1
+    desc, desc_start, desc_end, art, i = [], None, None, "", 1
     while i < len(entry["lines"]):
-        lm = _FEEDBACK_LABEL.match(entry["lines"][i])
+        line = entry["lines"][i]
+        am = _ART_LINE.match(line)
+        if am and not art: art = am.group(1).strip().lower()
+        lm = _FEEDBACK_LABEL.match(line)
         if lm and lm.group(1) in ("Beschreibung", "Erwartet"):
             desc_start = i
             if lm.group(2).strip(): desc.append(lm.group(2).strip())
@@ -488,65 +503,80 @@ def _feedback_parse(entry, root):
     checked = item["checked"]
     if "BLOCKIERT:" in block: state = "BLOCKIERT"
     elif not checked: state = "offen"
-    elif root and not _proof_ok(root, block): state = "ohne Nachweis"
+    elif need_proof and root and not _proof_ok(root, block): state = "ohne Nachweis"
     else: state = "erledigt"
     return {"id": item["id"], "title": item["title"], "description": "\n".join(desc),
-            "state": state, "checked": checked, "desc_start": desc_start, "desc_end": desc_end}
+            "state": state, "checked": checked, "desc_start": desc_start,
+            "desc_end": desc_end, "art": art}
 
 def feedback_path(name):
     return os.path.join(ppath(name), "FEEDBACK.md")
 
+def ticket_path(name):
+    return os.path.join(ppath(name), "TICKETS.md")
+
 def _read_text(path):
     with open(path, encoding="utf-8", errors="replace") as f: return f.read()
 
-def feedback_items(name):
-    """Alle Feedback-Punkte mit Titel, Beschreibung, Status und Abschlussflag.
-
-    ``completed`` ist nur bei ``state == "erledigt"`` wahr, also bei gesetzter
-    Checkbox *und* vorhandenem Nachweis. Ein gesetztes Häkchen ohne Nachweis
-    bleibt bearbeitbar.
-    """
-    fp = feedback_path(name)
+def _entry_rows(name, fp, need_proof, with_kind=False):
     if not os.path.exists(fp): return []
-    text = _read_text(fp)
     root = ppath(name); out = []
-    for entry in _feedback_scan(text):
-        item = _feedback_parse(entry, root)
+    for entry in _feedback_scan(_read_text(fp)):
+        item = _parse_entry(entry, root, need_proof=need_proof)
         if item:
             row = {k: item[k] for k in ("id", "title", "description", "state")}
             row["completed"] = item["state"] == "erledigt"
+            if with_kind:
+                row["kind"] = "bug" if item["art"] == "bug" else "feedback"
             out.append(row)
     return out
 
-def _feedback_target(name, fid):
-    fp = feedback_path(name)
-    if not os.path.exists(fp): raise ValueError("Keine FEEDBACK.md vorhanden")
+def feedback_items(name):
+    """Alle Feedback-Punkte mit Titel, Beschreibung, Art, Status und Abschlussflag.
+
+    ``completed`` ist nur bei ``state == "erledigt"`` wahr, also bei gesetzter
+    Checkbox *und* vorhandenem Nachweis. Ein gesetztes Häkchen ohne Nachweis
+    bleibt bearbeitbar. ``kind`` ist ``bug`` bei ``Art: Bug``, sonst
+    ``feedback``.
+    """
+    return _entry_rows(name, feedback_path(name), True, with_kind=True)
+
+def ticket_items(name):
+    """Alle Arbeitspakete aus TICKETS.md mit Titel, Beschreibung und Status."""
+    return _entry_rows(name, ticket_path(name), False)
+
+def _entry_target(name, fname, fid, label, need_proof):
+    fp = os.path.join(ppath(name), fname)
+    if not os.path.exists(fp): raise ValueError("Keine " + fname + " vorhanden")
     # Prüfsumme vor dem Text lesen: Ändert jemand die Datei dazwischen, schlägt
     # das Schreiben als Konflikt fehl, statt den fremden Stand zu überschreiben.
     expected = vibe_storage.file_digest(fp)
     text = _read_text(fp)
     for entry in _feedback_scan(text):
-        item = _feedback_parse(entry, ppath(name))
+        item = _parse_entry(entry, ppath(name), need_proof=need_proof)
         if item and item["id"] == fid:
             return fp, text, expected, entry, item
-    raise ValueError("Feedback-Punkt nicht gefunden: " + fid)
+    raise ValueError(label + " nicht gefunden: " + fid)
 
 def _write_text_atomic(path, text, expected=None):
     """Schreibt über die gemeinsame Storage-Schicht (V-005), nie halb geschrieben."""
     return vibe_storage.write_text(path, text, expected=expected)
 
-def feedback_update(name, fid, title, description=""):
-    """Ändert Titel und Beschreibung eines vorhandenen Feedback-Punkts."""
+def _validate_title(title):
     title = (title or "").strip()
     if not title: raise ValueError("Titel fehlt")
     if "\n" in title or "\r" in title: raise ValueError("Titel darf keinen Zeilenumbruch enthalten")
-    fp, text, expected, entry, item = _feedback_target(name, fid)
+    return title
+
+def _rewrite_entry(fp, text, expected, entry, item, title, description, label):
+    """Ersetzt Titel und Beschreibung, ohne andere Felder des Blocks zu verlieren."""
+    title = _validate_title(title)
     if item["state"] == "erledigt":
-        raise ValueError("Abgeschlossene Feedback-Punkte sind nicht bearbeitbar: " + fid)
+        raise ValueError("Abgeschlossene " + label + " sind nicht bearbeitbar: " + item["id"])
     raw = text.splitlines(keepends=True)
     sep = "\r\n" if raw[entry["start"]].endswith("\r\n") else "\n"
     item_line = _parse_item_line(entry["lines"][0])
-    if not item_line: raise ValueError("Feedback-Punkt nicht lesbar: " + fid)
+    if not item_line: raise ValueError(label + " nicht lesbar: " + item["id"])
     # prefix enthält die unveränderte Checkbox (auch defekte wie "[]") und die ID.
     raw[entry["start"]] = item_line["prefix"] + title + sep
     desc = (description or "").strip()
@@ -561,12 +591,110 @@ def feedback_update(name, fid, title, description=""):
         raw[entry["start"] + 1:entry["start"] + 1] = new_lines
     _write_text_atomic(fp, "".join(raw), expected=expected)
 
-def feedback_delete(name, fid):
-    """Entfernt genau einen Feedback-Punkt; andere Einträge bleiben erhalten."""
-    fp, text, expected, entry, _ = _feedback_target(name, fid)
+def _delete_entry(fp, text, expected, entry):
     raw = text.splitlines(keepends=True)
     del raw[entry["start"]:entry["end"]]
     _write_text_atomic(fp, "".join(raw), expected=expected)
+
+def feedback_update(name, fid, title, description=""):
+    """Ändert Titel und Beschreibung eines vorhandenen Feedback-Punkts."""
+    _validate_title(title)
+    fp, text, expected, entry, item = _entry_target(
+        name, "FEEDBACK.md", fid, "Feedback-Punkt", True)
+    _rewrite_entry(fp, text, expected, entry, item, title, description, "Feedback-Punkte")
+
+def feedback_delete(name, fid):
+    """Entfernt genau einen Feedback-Punkt; andere Einträge bleiben erhalten."""
+    fp, text, expected, entry, _ = _entry_target(
+        name, "FEEDBACK.md", fid, "Feedback-Punkt", True)
+    _delete_entry(fp, text, expected, entry)
+
+def ticket_update(name, fid, title, description=""):
+    """Ändert Titel und Beschreibung eines vorhandenen Arbeitspakets."""
+    _validate_title(title)
+    fp, text, expected, entry, item = _entry_target(
+        name, "TICKETS.md", fid, "Arbeitspaket", False)
+    _rewrite_entry(fp, text, expected, entry, item, title, description, "Arbeitspakete")
+
+def ticket_delete(name, fid):
+    """Entfernt genau ein Arbeitspaket; andere Einträge bleiben erhalten."""
+    fp, text, expected, entry, _ = _entry_target(
+        name, "TICKETS.md", fid, "Arbeitspaket", False)
+    _delete_entry(fp, text, expected, entry)
+
+def _entry_lines(ident, title, description, art=None):
+    """Markdown-Block eines neuen Punkts; Folgezeilen bleiben eingerückt."""
+    lines = [f"- [ ] {ident} {title}"]
+    if art: lines.append("  Art: " + art)
+    parts = description.splitlines() if description else [""]
+    lines.append("  Beschreibung:" + (" " + parts[0] if parts[0] else ""))
+    for extra in parts[1:]: lines.append("  " + extra)
+    return "\n".join(lines) + "\n"
+
+def _entry_number(text, prefix):
+    """Nächste freie Nummer für ``prefix``; Kommentare und defekte Checkboxen zählen mit."""
+    nums = []
+    for entry in _scan_blocks(text):
+        item = _parse_item_line(entry["lines"][0])
+        if not item: continue
+        m = re.fullmatch(re.escape(prefix) + r"(\d+)", item["id"])
+        if m: nums.append(int(m.group(1)))
+    return (max(nums) + 1) if nums else 1
+
+def _add_entry(name, fname, prefix, title, description, art=None):
+    """Legt einen nummerierten Punkt an, ohne bei parallelen Schreibern eine ID doppelt zu vergeben."""
+    title = _validate_title(title)
+    fp = os.path.join(ppath(name), fname)
+    description = (description or "").strip()
+    last = None
+    # Lesen, Nummer bestimmen und Schreiben sind durch die erwartete Prüfsumme
+    # verbunden. Ein fremder Schreiber dazwischen führt zu einem neuen Versuch
+    # mit der dann aktuellen Nummer statt zu einer doppelten ID.
+    for _ in range(20):
+        snapshot = vibe_storage.read_snapshot(fp)
+        text = snapshot.text or ""
+        number = _entry_number(text, prefix)
+        expected = snapshot.digest if snapshot.exists else vibe_storage.MISSING
+        before = "" if not text or text.endswith("\n") else "\n"
+        try:
+            _write_text_atomic(fp, text + before + "\n" + _entry_lines(
+                prefix + str(number), title, description, art), expected=expected)
+            return number
+        except vibe_storage.ConcurrentChangeError as error:
+            last = error
+    raise ValueError(fname + " wurde gleichzeitig geändert; bitte erneut versuchen: " + str(last))
+
+def _ticket_ids(text):
+    ids = set()
+    for entry in _scan_blocks(text):
+        item = _parse_item_line(entry["lines"][0])
+        if item: ids.add(item["id"])
+    return ids
+
+def add_ticket(name, tid, title, description=""):
+    """Legt ein Arbeitspaket in TICKETS.md an; die ID gibt der Nutzer vor."""
+    tid = (tid or "").strip()
+    if not tid: raise ValueError("ID fehlt")
+    if not _ID_TOKEN.match(tid): raise ValueError("Ungültige ID: " + tid)
+    title = _validate_title(title)
+    fp = ticket_path(name)
+    if not os.path.exists(fp): raise ValueError("Keine TICKETS.md vorhanden")
+    description = (description or "").strip()
+    last = None
+    for _ in range(20):
+        snapshot = vibe_storage.read_snapshot(fp)
+        text = snapshot.text or ""
+        if tid in _ticket_ids(text):
+            raise ValueError("Arbeitspaket existiert bereits: " + tid)
+        expected = snapshot.digest if snapshot.exists else vibe_storage.MISSING
+        before = "" if not text or text.endswith("\n") else "\n"
+        try:
+            _write_text_atomic(fp, text + before + "\n" + _entry_lines(tid, title, description),
+                               expected=expected)
+            return tid
+        except vibe_storage.ConcurrentChangeError as error:
+            last = error
+    raise ValueError("TICKETS.md wurde gleichzeitig geändert; bitte erneut versuchen: " + str(last))
 
 # ---------- Schreibrechte je Projekt ----------
 WRITE_DIRS_DEFAULT = "/tmp/opencode"
@@ -1173,49 +1301,22 @@ def cmd_verify(name, mode="quick"):
 
 def _feedback_number(text):
     """Nächste freie F-Nummer; Kommentare und defekte Checkboxen zählen mit."""
-    nums = []
-    for entry in _scan_blocks(text):
-        item = _parse_item_line(entry["lines"][0])
-        if not item: continue
-        m = re.fullmatch(r"F(\d+)", item["id"])
-        if m: nums.append(int(m.group(1)))
-    return (max(nums) + 1) if nums else 1
+    return _entry_number(text, "F")
 
 def next_feedback_number(path):
     return _feedback_number(_read_text(path)) if os.path.exists(path) else 1
 
 def _feedback_block(number, title, description):
     """Markdown-Block eines neuen Punkts; Folgezeilen der Beschreibung bleiben eingerückt."""
-    lines = [f"- [ ] F{number} {title}"]
-    parts = description.splitlines() if description else [""]
-    lines.append("  Beschreibung:" + (" " + parts[0] if parts[0] else ""))
-    for extra in parts[1:]: lines.append("  " + extra)
-    return "\n".join(lines) + "\n"
+    return _entry_lines("F" + str(number), title, description)
 
 def add_feedback(name, title, description=""):
     """Legt einen Feedback-Punkt an, ohne bei parallelen Schreibem eine ID doppelt zu vergeben."""
-    fp = os.path.join(ppath(name), "FEEDBACK.md")
-    title = (title or "").strip()
-    if not title: raise ValueError("Titel fehlt")
-    if "\n" in title or "\r" in title: raise ValueError("Titel darf keinen Zeilenumbruch enthalten")
-    description = (description or "").strip()
-    last = None
-    # Lesen, Nummer bestimmen und Schreiben sind durch die erwartete Prüfsumme
-    # verbunden. Ein fremder Schreiber dazwischen führt zu einem neuen Versuch
-    # mit der dann aktuellen Nummer statt zu einer doppelten ID.
-    for _ in range(20):
-        snapshot = vibe_storage.read_snapshot(fp)
-        text = snapshot.text or ""
-        number = _feedback_number(text)
-        expected = snapshot.digest if snapshot.exists else vibe_storage.MISSING
-        prefix = "" if not text or text.endswith("\n") else "\n"
-        try:
-            _write_text_atomic(fp, text + prefix + "\n" + _feedback_block(number, title, description),
-                               expected=expected)
-            return number
-        except vibe_storage.ConcurrentChangeError as error:
-            last = error
-    raise ValueError("FEEDBACK.md wurde gleichzeitig geändert; bitte erneut versuchen: " + str(last))
+    return _add_entry(name, "FEEDBACK.md", "F", title, description)
+
+def add_bug(name, title, description=""):
+    """Legt eine Bugmeldung als Feedback mit ``Art: Bug`` an."""
+    return _add_entry(name, "FEEDBACK.md", "B", title, description, art="Bug")
 
 def cmd_feedback(name):
     print("Neuer Punkt für", name, "(leere Titelzeile = Abbruch)")

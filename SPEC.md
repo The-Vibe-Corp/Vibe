@@ -94,6 +94,10 @@ vorliegt.
 - TICKETS.md und FEEDBACK.md sind versionierbare Arbeitsgrundlagen.
 - Offene, blockierte und erledigte Einträge werden unterschieden.
 - Feedback kann über die Oberfläche ergänzt werden.
+- Arbeitspakete können über die Oberfläche definiert, bearbeitet und gelöscht
+  werden; die ID vergibt der Nutzer.
+- Bugs können über die Oberfläche als Feedback mit ``Art: Bug`` gemeldet
+  werden.
 - IDs sind eindeutig; parallele Schreibvorgänge erzeugen keine Doppelungen.
 - Erledigt bedeutet: Akzeptanzkriterien erfüllt und Nachweise vorhanden.
 - Ein Commit allein beweist keine fachliche Erfüllung.

@@ -1,6 +1,6 @@
 {
  "version": 1,
- "stand": "2026-10-31",
+ "stand": "2026-11-01",
  "quelle": "Übernommener Programmstand aus der lokalen Installation unter $VIBE/_toolchain; die aktive Installation enthält zusätzlich lokale Geheimnis-Hooks (siehe docs/baseline.md, Abschnitt 3).",
  "hinweis": "SHA-256 der übernommenen Programmdateien. Beabsichtigte Änderungen an diesen Dateien sind nur zulässig, wenn dieser Eintrag im selben Arbeitspaket aktualisiert und begründet wird. Laufzeitdaten, Sicherungen und Geheimnisse sind nicht Bestandteil des Imports.",
  "scopes": [
@@ -19,8 +19,8 @@
   },
   {
    "path": "bin/vibe",
-   "sha256": "34317019d474bc75e2e399fa941e18753d89913bf77c53d9732ea315a45bed99",
-   "bytes": 135893
+   "sha256": "9ed9cdd666014e6c80a34f7912b0d841cc608e52c3efa176850ccee1a7af5c27",
+   "bytes": 140522
   },
   {
    "path": "bin/vibe-run.sh",
@@ -29,8 +29,8 @@
   },
   {
    "path": "bin/vibe-web.py",
-   "sha256": "08e51a1efee05e7aed7e42244ca7b3aac6831bc0193d7932e139e7177ef48fbb",
-   "bytes": 101979
+   "sha256": "811bce4a87cde2395045a3d3de9a0375a62545944cbabbd7a9a80fc7eda165d9",
+   "bytes": 106824
   },
   {
    "path": "bin/vibe_guide.py",
@@ -516,6 +516,15 @@
     "templates/rebuild/docs/parity.md",
     "templates/rebuild/docs/reverse-engineering.md",
     "templates/rebuild/scripts/rebuild-env.py"
+   ]
+  },
+  {
+   "arbeitspaket": "F15",
+   "datum": "2026-11-01",
+   "grund": "Arbeitspakete und Bugs aus der Oberfläche: Das Projektdetail listet TICKETS.md bearbeitbar (Anlegen mit eigener ID, Titel und Beschreibung ändern, Löschen), erhält eine eigene Bugmeldung als Feedback mit Art: Bug und zeigt Bugs in der Feedback-Liste. Markdown-Modell, HTTP-API und Browser-Oberfläche teilen dieselben Validierungs- und Konfliktschutzregeln wie das bestehende Feedback; erledigte Arbeitspakete bleiben schreibgeschützt.",
+   "dateien": [
+    "bin/vibe",
+    "bin/vibe-web.py"
    ]
   }
  ]

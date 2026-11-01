@@ -138,6 +138,7 @@ def project_detail(n):
     d = project_row(n)
     d["items"] = [{"id": i, "title": t, "state": s} for i, t, s in vibe.open_items(n)]
     d["feedback"] = vibe.feedback_items(n)
+    d["tickets"] = vibe.ticket_items(n)
     d["tail"] = tail(vibe.logpath(n), 80)
     try: d["verify_cmd"] = bool(vibe.verify_command(n, "quick"))
     except ValueError: d["verify_cmd"] = False
@@ -372,7 +373,7 @@ class H(BaseHTTPRequestHandler):
             return self._error(e.status, e.code, e.message)
         try:
             name = body.get("name", "")
-            if u.path in ("/api/run", "/api/stop", "/api/verify", "/api/feedback", "/api/init", "/api/rights", "/api/pause", "/api/sandbox", "/api/guide", "/api/costs"): known(name)
+            if u.path in ("/api/run", "/api/stop", "/api/verify", "/api/feedback", "/api/ticket", "/api/init", "/api/rights", "/api/pause", "/api/sandbox", "/api/guide", "/api/costs"): known(name)
             extra = {}
             if u.path == "/api/run": ok, msg = call(vibe.cmd_run, name, body.get("agent") or None)
             elif u.path == "/api/stop": ok, msg = call(vibe.cmd_stop, name, body.get("run_id") or None)
@@ -383,13 +384,32 @@ class H(BaseHTTPRequestHandler):
                 try:
                     if act == "add":
                         t = (body.get("title") or "").strip(); assert t, "Titel fehlt"
-                        num = vibe.add_feedback(name, t, body.get("description", "")); ok, msg = True, f"F{num} eingetragen"
+                        kind = body.get("kind") or "feedback"
+                        if kind == "bug":
+                            num = vibe.add_bug(name, t, body.get("description", "")); ok, msg = True, f"B{num} eingetragen"
+                        else:
+                            num = vibe.add_feedback(name, t, body.get("description", "")); ok, msg = True, f"F{num} eingetragen"
                     elif act == "update":
                         fid = (body.get("id") or "").strip(); assert fid, "Feedback-ID fehlt"
                         vibe.feedback_update(name, fid, body.get("title"), body.get("description", "")); ok, msg = True, f"{fid} gespeichert"
                     elif act == "delete":
                         fid = (body.get("id") or "").strip(); assert fid, "Feedback-ID fehlt"
                         vibe.feedback_delete(name, fid); ok, msg = True, f"{fid} gelöscht"
+                    else: ok, msg = False, "Unbekannte Aktion"
+                except ValueError as e:
+                    ok, msg = False, str(e)
+            elif u.path == "/api/ticket":
+                act = body.get("action") or "add"
+                try:
+                    if act == "add":
+                        tid = (body.get("id") or "").strip(); assert tid, "ID fehlt"
+                        vibe.add_ticket(name, tid, body.get("title"), body.get("description", "")); ok, msg = True, f"{tid} angelegt"
+                    elif act == "update":
+                        tid = (body.get("id") or "").strip(); assert tid, "ID fehlt"
+                        vibe.ticket_update(name, tid, body.get("title"), body.get("description", "")); ok, msg = True, f"{tid} gespeichert"
+                    elif act == "delete":
+                        tid = (body.get("id") or "").strip(); assert tid, "ID fehlt"
+                        vibe.ticket_delete(name, tid); ok, msg = True, f"{tid} gelöscht"
                     else: ok, msg = False, "Unbekannte Aktion"
                 except ValueError as e:
                     ok, msg = False, str(e)
@@ -752,7 +772,7 @@ async function detail(name){
  const tiles=el('div',{class:'tiles'},tile('Offene Arbeitspakete',d.items.length,d.items.length?'warn':'ok'),tile('Änderungen',d.dirty,d.dirty?'warn':'ok'),tile('Branch',d.branch,'small'),tile('Letzter Commit',d.last||'—','small'));
  const L=logView(d,()=>stream('run'));
  const panels={arbeit:tabPanel('arbeit',tiles,el('div',{class:'grid'},
-   el('div',{},itemsCard,feedbackCard(d,name),feedbackFormCard(d,name)),
+   el('div',{},itemsCard,ticketCard(d,name),ticketFormCard(d,name),feedbackCard(d,name),bugFormCard(d,name),feedbackFormCard(d,name)),
    el('div',{},pauseCard(d,name),checksCard,factsCard))),
   ausgabe:tabPanel('ausgabe',L.card),
   assistent:tabPanel('assistent',guideCard(name)),
@@ -807,7 +827,7 @@ function feedbackCard(d,name){const list=el('div',{});const cls=s=>s==='erledigt
  const toggle=el('button',{class:'b'});
  const delBtn=i=>{const b=el('button',{class:'b d',on:{click:()=>askInline(b,'Feedback '+i.id+' wirklich löschen?','Ja, löschen',async()=>{const r=await api('/api/feedback',{name,action:'delete',id:i.id});toast(r.message);if(r.ok)detail(name).catch(showErr)})}},'Löschen');return b};
  const rowFor=i=>{const row=el('div',{class:'fbentry','data-id':i.id});
-  row.append(el('div',{},el('span',{class:'pill '+cls(i.state)},i.state),el('b',{},' '+i.id+' '+i.title)),
+  row.append(el('div',{},el('span',{class:'pill '+cls(i.state)},i.state),i.kind==='bug'?el('span',{class:'pill bad'},' Bug'):null,el('b',{},' '+i.id+' '+i.title)),
    ...(i.description?[el('div',{class:'mut fbdesc'},i.description)]:[]),
    el('div',{class:'bar'},
     ...(i.completed?[el('span',{class:'mut'},'abgeschlossen – nicht bearbeitbar')]:[el('button',{class:'b',on:{click:()=>edit(i,row)}},'Bearbeiten')]),
@@ -826,6 +846,38 @@ function feedbackCard(d,name){const list=el('div',{});const cls=s=>s==='erledigt
  toggle.addEventListener('click',()=>{showDone=!showDone;draw()});
  draw();
  return el('div',{class:'card',id:'feedback'},el('div',{class:'bar'},el('b',{},'Feedback ('+d.feedback.length+')'),toggle),list)}
+function ticketCard(d,name){const list=el('div',{});const cls=s=>s==='erledigt'?'ok':s==='BLOCKIERT'?'bad':'warn';
+ const done=d.tickets.filter(i=>i.completed),pending=d.tickets.filter(i=>!i.completed);let showDone=false;
+ const toggle=el('button',{class:'b'});
+ const delBtn=i=>{const b=el('button',{class:'b d',on:{click:()=>askInline(b,'Arbeitspaket '+i.id+' wirklich löschen?','Ja, löschen',async()=>{const r=await api('/api/ticket',{name,action:'delete',id:i.id});toast(r.message);if(r.ok)detail(name).catch(showErr)})}},'Löschen');return b};
+ const rowFor=i=>{const row=el('div',{class:'fbentry','data-id':i.id});
+  row.append(el('div',{},el('span',{class:'pill '+cls(i.state)},i.state),el('b',{},' '+i.id+' '+i.title)),
+   ...(i.description?[el('div',{class:'mut fbdesc'},i.description)]:[]),
+   el('div',{class:'bar'},
+    ...(i.completed?[el('span',{class:'mut'},'abgeschlossen – nicht bearbeitbar')]:[el('button',{class:'b',on:{click:()=>edit(i,row)}},'Bearbeiten')]),
+    delBtn(i)));
+  return row};
+ const draw=()=>{const shown=showDone?d.tickets:pending;
+  list.replaceChildren(...(shown.length?shown.map(rowFor):[el('span',{class:'mut'},showDone?'Noch keine Arbeitspakete vorhanden.':'Keine offenen Arbeitspakete.')]));
+  toggle.textContent=showDone?'Abgeschlossene ausblenden':'Abgeschlossene anzeigen ('+done.length+')';
+  toggle.classList.toggle('p',showDone);toggle.setAttribute('aria-expanded',showDone?'true':'false');
+  toggle.style.display=done.length?'':'none'};
+ const edit=(i,row)=>{const t=el('input',{value:i.title}),b=el('textarea',{rows:4,value:i.description||''});
+  const ed=el('div',{class:'fbentry','data-id':i.id},el('label',{},'Titel'),t,el('label',{},'Beschreibung'),b,
+   el('div',{class:'bar'},el('button',{class:'b p',on:{click:async()=>{const r=await api('/api/ticket',{name,action:'update',id:i.id,title:t.value,description:b.value});toast(r.message);if(r.ok)detail(name).catch(showErr)}}},'Speichern'),
+    el('button',{class:'b',on:{click:()=>ed.replaceWith(row)}},'Abbrechen')));
+  row.replaceWith(ed)};
+ toggle.addEventListener('click',()=>{showDone=!showDone;draw()});
+ draw();
+ return el('div',{class:'card',id:'tickets'},el('div',{class:'bar'},el('b',{},'Arbeitspakete ('+d.tickets.length+')'),toggle),list)}
+function ticketFormCard(d,name){
+ const f={id:el('input',{placeholder:'z. B. F18','aria-label':'ID des Arbeitspakets'}),t:el('input',{}),b:el('textarea',{rows:3,placeholder:'Was soll umgesetzt werden?'})};
+ return el('div',{class:'card',id:'ticket-new'},el('b',{},'Neues Arbeitspaket'),el('label',{},'ID'),f.id,el('label',{},'Titel'),f.t,el('label',{},'Beschreibung'),f.b,
+  el('div',{class:'bar'},el('button',{class:'b p',type:'button',on:{click:async()=>{const r=await api('/api/ticket',{name,action:'add',id:f.id.value,title:f.t.value,description:f.b.value});toast(r.message);if(r.ok)detail(name).catch(showErr)}}},'Arbeitspaket anlegen')))}
+function bugFormCard(d,name){
+ const f={t:el('input',{}),b:el('textarea',{rows:3,placeholder:'Was funktioniert nicht?'})};
+ return el('div',{class:'card',id:'bug-new'},el('b',{},'Bug melden'),el('label',{},'Titel'),f.t,el('label',{},'Beschreibung'),f.b,
+  el('div',{class:'bar'},el('button',{class:'b p',type:'button',on:{click:async()=>{const r=await api('/api/feedback',{name,kind:'bug',title:f.t.value,description:f.b.value});toast(r.message);if(r.ok)detail(name).catch(showErr)}}},'Bug melden')))}
 function feedbackFormCard(d,name){
  const f={t:el('input',{}),b:el('textarea',{rows:3,placeholder:'Was soll geändert oder ergänzt werden?'})};
  return el('div',{class:'card',id:'feedback-new'},el('b',{},'Feedback eintragen'),el('label',{},'Titel'),f.t,el('label',{},'Beschreibung'),f.b,

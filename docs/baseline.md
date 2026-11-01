@@ -221,7 +221,8 @@ eigenen Test.
 | API | `POST /api/pause` | vorhanden und automatisiert geprüft | `do_POST`; `tests/unit/test_pause_after_package.py` prüft Anfordern, Aufheben, unbekannte Aktion und wahrheitsgemäße Meldung; `tests/unit/test_web_api_security.py` nutzt die Route für Token-, Host-, Origin-, JSON- und Größenprüfungen |
 | API | `POST /api/verify` | vorhanden, noch nicht geprüft | `do_POST`; Transportprüfung zentral in V-004, Fachfunktion nicht ausgeführt |
 | API | `POST /api/init` | vorhanden, noch nicht geprüft | `do_POST`; Transportprüfung zentral in V-004, Fachfunktion nicht ausgeführt |
-| API | `POST /api/feedback` | vorhanden, noch nicht geprüft | `do_POST`; Transportprüfung zentral in V-004, ID-Vergabe nicht gegen Parallelzugriff gesichert (V-009) |
+| API | `POST /api/feedback` | vorhanden und automatisiert geprüft | `do_POST`; `tests/unit/test_feedback_capture.py` prüft Anlegen mit Titel und Beschreibung, Ablehnung fehlender Titel und Tokenpflicht; `tests/unit/test_work_packages.py` prüft die Bugmeldung mit `kind: "bug"` und die Kennzeichnung in der Projektdetail-Antwort; ID-Vergabe mit Prüfsummenwiederholung (V-009) |
+| API | `POST /api/ticket` | vorhanden und automatisiert geprüft | `do_POST`; `tests/unit/test_work_packages.py` prüft Anlegen, Bearbeiten und Löschen von Arbeitspaketen, doppelte oder ungültige IDs, unbekannte IDs und Aktionen ohne Dateiänderung |
 | API | `GET /api/guide` | vorhanden und automatisiert geprüft | `do_GET`; `tests/unit/test_project_guide.py` prüft Schritte, Dateien, Entwürfe, Agentenzustand und die Tokenpflicht |
 | API | `POST /api/guide` | vorhanden und automatisiert geprüft | `do_POST`; `tests/unit/test_project_guide.py` prüft Speichern mit Dateianlage, Ablehnung unbekannter Schritte ohne Schreiben sowie Übernehmen und Verwerfen von Entwürfen |
 | API | `POST /api/rights` | vorhanden und automatisiert geprüft | `do_POST`; `tests/unit/test_project_write_dirs.py` prüft Hinzufügen, Entfernen, Zurücksetzen, Anwenden und die Tokenpflicht |
@@ -263,6 +264,7 @@ headless) geprüft.
 | UI | `Projektdetail: Arbeitspaket-Pause` | vorhanden und automatisiert geprüft | `bin/vibe-web.py:356,371-375`; `tests/browser/test_pause_after_package_ui.py` fordert die Pause an, prüft den Zustand und hebt sie wieder auf (Chromium, headless); Screenshot `docs/features/F4-pause.png` |
 | UI | `Projektliste: Pause-Markierung` | vorhanden und automatisiert geprüft | `bin/vibe-web.py:330`; `tests/browser/test_pause_after_package_ui.py` prüft die Markierung „Pause“ in der Projektzeile (Chromium, headless) |
 | UI | `Projektdetail: Projektassistent` | vorhanden und automatisiert geprüft | `bin/vibe-web.py` `guideCard`/`drawGuide`; `tests/browser/test_project_guide_ui.py` listet die fachlichen Schritte, speichert Antworten, legt SPEC.md und fehlende Grundlagen an, lässt gefüllte Abschnitte unverändert und übernimmt einen Agenten-Entwurf erst auf Knopfdruck (Chromium, headless) |
+| UI | `Projektdetail: Arbeitspakete und Bugs` | vorhanden und automatisiert geprüft | `bin/vibe-web.py` `ticketCard`/`ticketFormCard`/`bugFormCard`; `tests/browser/test_tickets_ui.py` legt ein Arbeitspaket an, bearbeitet und löscht es und meldet einen Bug mit Kennzeichnung in der Feedback-Liste (Chromium, headless); Screenshot `docs/features/F15-arbeitspakete.png` |
 
 ## 8. Funktionsbereiche aus SPEC.md
 
@@ -270,7 +272,7 @@ headless) geprüft.
 | --- | --- | --- |
 | Projekte und Entwicklungsordner | teilweise vorhanden | Einlesen, Liste, Detail, Roots vorhanden; gleichnamige Projekte werden nur als `name@root` unterschieden, URLs/IDs sind nicht kollisionsfrei (V-008) |
 | Projektvorlagen | teilweise vorhanden | Sechs Typen plus `common` vorhanden (neu: `rebuild`); unbekannter Typ fällt still auf `generic` zurück; Android-Prüfung ist nicht global (V-008, F14) |
-| Arbeitspakete und Feedback | teilweise vorhanden | Kommentare werden ignoriert, `BLOCKIERT` bleibt offen; Nachweisprüfung vorhanden; ID-Vergabe ohne Sperre (V-009) |
+| Arbeitspakete und Feedback | teilweise vorhanden | Kommentare werden ignoriert, `BLOCKIERT` bleibt offen; Nachweisprüfung vorhanden; Feedback und Arbeitspakete sind über die Oberfläche anlegbar, bearbeitbar und löschbar, Bugs werden als Feedback mit `Art: Bug` gemeldet (F15); ID-Vergabe mit Prüfsummenwiederholung (V-009) |
 | Agenten | teilweise vorhanden | Liste, Anlegen, Bearbeiten, Kopieren, Löschen, kollisionsfreie Sicherung und Wiederherstellung vorhanden; atomare Writes und Konflikterkennung über `vibe_storage` (V-005); verlustfreie Feldpflege und Browserworkflow fehlen (V-010) |
 | Modelle und Anbieter | teilweise vorhanden | Modelllisting über opencode, Katalogdatei; Altdaten ohne Quellen-/Datumsnachweis, keine Anbieter-Trennung (V-011) |
 | Modelltabelle | teilweise vorhanden | Tabelle und Detailfelder in `data/models.json`/UI vorhanden; unbekannte Werte, Quellen, Preiseinheiten nicht durchgängig belegt (V-011) |

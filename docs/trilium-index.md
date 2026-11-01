@@ -35,3 +35,4 @@ Zuordnung der Projekt-Dokumentation zu den Notizen in Trilium (Stand 2026-10-31)
 | vibe | Features | F12 Kostenermittlung je AP/Projekt | `IwU7vi5DgDdd` |
 | vibe | Features | F13 Projektdetail neu strukturiert | `ppnQBKTcRlLQ` |
 | vibe | Features | F14 Project Type: Rebuild | `ajp3HtOEv9k1` |
+| vibe | Features | F15 Arbeitspakete und Bugs aus der Oberfläche | `xuUMi61n9BPD` |
