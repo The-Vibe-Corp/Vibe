@@ -77,6 +77,15 @@ OC_URL = PATHS.opencode_url
 UI_PORT = PATHS.ui_port
 UI_BIND = PATHS.ui_bind
 NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
+GENERAL_RULES_MARK = "<!-- vibe:general-rules -->"
+GENERAL_RULES = """<!-- vibe:general-rules -->
+## Projektordner sauber halten
+
+- Im Projektordner nur Quellcode, Konfiguration, Tests und die vereinbarten Nachweise ablegen.
+- Temporäre Dateien, Protokolle, Sicherungen und Arbeitskopien nach Abschluss des Arbeitspakets entfernen und nicht committen.
+- Vor dem Commit `git status` prüfen und nur Dateien des eigenen Arbeitspakets stagen.
+- Fremde oder vorbestehende Änderungen nicht löschen, überschreiben oder mitcommitten.
+<!-- /vibe:general-rules -->"""
 FRONTMATTER_RE = re.compile(r"---[ \t]*\r?\n(.*?)\r?\n---[ \t]*(?:\r?\n|$)", re.S)
 FRONT_KEY_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_-]*):[ \t]*(.*)$")
 AGENT_FIELDS = ("description", "mode", "model", "temperature", "steps")
@@ -1714,11 +1723,32 @@ def copy_tree(src, dst, name):
             created.append(rel)
     return created
 
+def ensure_general_rules(project):
+    """Ergänzt die allgemeinen Aufräumregeln in einer vorhandenen AGENTS.md.
+
+    Vorhandene Inhalte bleiben erhalten; ein fehlender Marker wird genau einmal
+    ergänzt. Symlinks werden nicht verfolgt, damit nichts außerhalb des Projekts
+    geschrieben wird. Liefert True, wenn die Datei ergänzt wurde.
+    """
+    path = os.path.join(project, "AGENTS.md")
+    if os.path.islink(path) or not os.path.isfile(path):
+        return False
+    expected = vibe_storage.file_digest(path)
+    text = _read_text(path)
+    if GENERAL_RULES_MARK in text:
+        return False
+    base = text.rstrip("\n")
+    updated = (base + "\n\n" if base else "") + GENERAL_RULES + "\n"
+    _write_text_atomic(path, updated, expected=expected)
+    return True
+
 def cmd_init(name, typ=None):
     p = ppath(name); typ = typ or ptype(name)
     if typ not in types(): typ = "generic"
     created = copy_tree(os.path.join(TPL, "common"), p, name) + copy_tree(os.path.join(TPL, typ), p, name)
+    rules = ensure_general_rules(p)
     print(col("g", f"{name}: als '{typ}' vorbereitet.") + (" Neu angelegt: " + ", ".join(created) if created else " Nichts zu ergänzen."))
+    if rules: print("Allgemeine Regeln in AGENTS.md ergänzt; vorhandene Inhalte blieben unverändert.")
     print("Vorhandene Dateien wurden nicht verändert. Nicht committet: bitte prüfen und selbst committen.")
     if typ not in ("android",): print("Prüfbefehle in .vibe/project.env eintragen (VERIFY_QUICK / VERIFY_FULL), sonst bricht die Abschlussprüfung ab.")
 
@@ -1753,6 +1783,7 @@ def cmd_new(name, typ, tpl=None):
     else:
         os.makedirs(p)
     copy_tree(os.path.join(TPL, "common"), p, name); copy_tree(os.path.join(TPL, typ), p, name)
+    ensure_general_rules(p)
     rc, out = _init_git(p)
     if rc != 0: print(col("y", "Git-Hinweis: " + out))
     _pm.clear()

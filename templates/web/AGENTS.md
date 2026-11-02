@@ -6,3 +6,12 @@
 - Node/npm laufen im Steuer-Container. Abhängigkeiten nur mit `npm ci`/`npm install` im Projektordner; node_modules nicht committen.
 - Tests: `npm test`. Ein Entwicklungsserver gehört in den Hintergrund (Log in /tmp), nie im Vordergrund.
 - UI-Änderungen mit einem Test oder einem echten Screenshot belegen (Playwright o. ä., falls im Projekt vorhanden).
+
+<!-- vibe:general-rules -->
+## Projektordner sauber halten
+
+- Im Projektordner nur Quellcode, Konfiguration, Tests und die vereinbarten Nachweise ablegen.
+- Temporäre Dateien, Protokolle, Sicherungen und Arbeitskopien nach Abschluss des Arbeitspakets entfernen und nicht committen.
+- Vor dem Commit `git status` prüfen und nur Dateien des eigenen Arbeitspakets stagen.
+- Fremde oder vorbestehende Änderungen nicht löschen, überschreiben oder mitcommitten.
+<!-- /vibe:general-rules -->

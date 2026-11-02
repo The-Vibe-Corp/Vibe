@@ -358,3 +358,18 @@ Ein fehlender externer Dienst bedeutet BLOCKIERT, nicht erledigt.
   Feature-Dokumentation lokal und in Trilium;
   Reviewnachweise vollständig; Release ohne persönliche Daten reproduzierbar.
   Tests: vollständige Suite und Checkliste mit Versionen und Ergebnissen.
+
+- [ ] V-021 Installationsvollständigkeit und Aufräumregeln
+  Priorität: P1
+  Abhängigkeiten: V-006, V-018
+  Umfang: Setup installiert jedes vom Startbefehl importierte Modul;
+  allgemeine Aufräumregeln gelten für bestehende und neue Projekte.
+  Akzeptanz: eine frische Installation startet ohne fehlendes Modul
+  (insbesondere `vibe_autonomous.py`); der Regressionstest leitet die
+  benötigten Module aus `bin/vibe` ab und startet die installierte CLI;
+  alle mitgelieferten Projektvorlagen enthalten die Aufräumregeln;
+  `vibe init` ergänzt sie in einer vorhandenen `AGENTS.md` genau einmal und
+  lässt vorhandene Inhalte sowie Symlinks unverändert.
+  Tests: `tests/unit/test_setup_vibe.py`,
+  `tests/unit/test_project_management.py`; `bash scripts/verify.sh quick/full`.
+  Dokumentation: `docs/features/V-021.md` und Trilium.

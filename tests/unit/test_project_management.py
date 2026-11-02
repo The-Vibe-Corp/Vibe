@@ -77,7 +77,10 @@ class ProjectFixture(unittest.TestCase):
         write_template(
             self.templates,
             "generic",
-            {"AGENTS.md": "# AGENTS fuer {{NAME}}\n", ".vibe/project.env": "TYPE=generic\n"},
+            {
+                "AGENTS.md": "# AGENTS fuer {{NAME}}\n\n" + self.cli.GENERAL_RULES + "\n",
+                ".vibe/project.env": "TYPE=generic\n",
+            },
         )
         self.cli.TPL = str(self.templates)
 
@@ -248,7 +251,8 @@ class InitTest(ProjectFixture):
         self.assertEqual(feedback.read_text(encoding="utf-8"), "# eigener Inhalt\n")
         self.assertEqual(own.read_text(encoding="utf-8"), "bleibt\n")
         self.assertEqual(
-            (self.project / "AGENTS.md").read_text(encoding="utf-8"), "# AGENTS fuer proj\n"
+            (self.project / "AGENTS.md").read_text(encoding="utf-8"),
+            "# AGENTS fuer proj\n\n" + self.cli.GENERAL_RULES + "\n",
         )
         self.assertIn("AGENTS.md", output)
 
@@ -271,6 +275,28 @@ class InitTest(ProjectFixture):
         self.assertIn("Nichts zu ergänzen", output)
         self.assertFalse((self.project / ".git").exists())
 
+    def test_init_appends_general_rules_to_an_existing_agents_file(self):
+        agents = self.project / "AGENTS.md"
+        agents.write_text("# eigene Regel\n", encoding="utf-8")
+
+        output = self.init_project()
+
+        text = agents.read_text(encoding="utf-8")
+        self.assertTrue(text.startswith("# eigene Regel\n"))
+        self.assertEqual(text.count(self.cli.GENERAL_RULES_MARK), 1)
+        self.assertIn("Projektordner sauber halten", text)
+        self.assertIn("Allgemeine Regeln in AGENTS.md ergänzt", output)
+
+    def test_init_does_not_duplicate_general_rules(self):
+        self.init_project()
+        agents = self.project / "AGENTS.md"
+        first = agents.read_text(encoding="utf-8")
+
+        self.init_project()
+
+        self.assertEqual(agents.read_text(encoding="utf-8"), first)
+        self.assertEqual(first.count(self.cli.GENERAL_RULES_MARK), 1)
+
     def test_init_does_not_write_through_a_broken_symlink(self):
         outside = self.base / "ausserhalb.md"
         link = self.project / "FEEDBACK.md"
@@ -281,6 +307,15 @@ class InitTest(ProjectFixture):
         self.assertTrue(link.is_symlink())
         self.assertEqual(os.readlink(link), str(outside))
         self.assertFalse(outside.exists())
+
+    def test_init_does_not_follow_an_agents_symlink(self):
+        outside = self.base / "ausserhalb-agents.md"
+        outside.write_text("# fremd\n", encoding="utf-8")
+        (self.project / "AGENTS.md").symlink_to(outside)
+
+        self.init_project()
+
+        self.assertEqual(outside.read_text(encoding="utf-8"), "# fremd\n")
 
     def test_init_applies_a_new_template_type_without_code_changes(self):
         write_template(
@@ -295,13 +330,24 @@ class InitTest(ProjectFixture):
             self.cli.cmd_init("proj", "custom")
 
         self.assertEqual(
-            (self.project / "AGENTS.md").read_text(encoding="utf-8"), "# CUSTOM proj\n"
+            (self.project / "AGENTS.md").read_text(encoding="utf-8"),
+            "# CUSTOM proj\n\n" + self.cli.GENERAL_RULES + "\n",
         )
         self.assertEqual(
             (self.project / ".vibe" / "project.env").read_text(encoding="utf-8"),
             "TYPE=generic\n",
         )
         self.assertIn("als 'custom' vorbereitet", out.getvalue())
+
+
+class TemplateRulesTest(ProjectFixture):
+    def test_all_shipped_project_templates_contain_the_cleanup_rules(self):
+        templates = sorted((REPO / "templates").glob("*/AGENTS.md"))
+        self.assertTrue(templates)
+        for path in templates:
+            text = path.read_text(encoding="utf-8")
+            self.assertIn(self.cli.GENERAL_RULES_MARK, text, path)
+            self.assertIn("Projektordner sauber halten", text, path)
 
 
 if __name__ == "__main__":

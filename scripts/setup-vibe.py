@@ -27,7 +27,22 @@ from pathlib import Path
 
 KIT = Path(__file__).resolve().parent.parent
 MIN_PYTHON = (3, 8)
-PROGRAM_FILES = ("vibe", "vibe-run.sh", "vibe_runs.py", "vibe-web.py", "vibe_mcp.py", "vibe_opencode.py", "vibe_models.py", "vibe_sandbox.py", "fritz-reconnect.py")
+PROGRAM_FILES = (
+    "vibe",
+    "vibe-run.sh",
+    "vibe_runs.py",
+    "vibe-web.py",
+    "vibe_mcp.py",
+    "vibe_opencode.py",
+    "vibe_models.py",
+    "vibe_sandbox.py",
+    "vibe_paths.py",
+    "vibe_storage.py",
+    "vibe_guide.py",
+    "vibe_questions.py",
+    "vibe_autonomous.py",
+    "fritz-reconnect.py",
+)
 RUNTIME_FILES = ("vibe.json", "models.json", "profiles.json", "fritz.json")
 OFFICIAL_OPENCODE = "https://opencode.ai/docs/"
 OPENCODE_NPM_PACKAGE = "opencode-ai"

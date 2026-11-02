@@ -9,3 +9,12 @@
 - Schnelle Prüfung für Zwischenstände: `bash scripts/verify.sh quick` (unter 2 Minuten).
 - Dateisystem ist FUSE/NTFS: keine Unix-Rechte, Skripte mit `bash datei.sh` aufrufen; core.fileMode ist false.
 - Nach jedem Arbeitspaket: Tests grün, git commit.
+
+<!-- vibe:general-rules -->
+## Projektordner sauber halten
+
+- Im Projektordner nur Quellcode, Konfiguration, Tests und die vereinbarten Nachweise ablegen.
+- Temporäre Dateien, Protokolle, Sicherungen und Arbeitskopien nach Abschluss des Arbeitspakets entfernen und nicht committen.
+- Vor dem Commit `git status` prüfen und nur Dateien des eigenen Arbeitspakets stagen.
+- Fremde oder vorbestehende Änderungen nicht löschen, überschreiben oder mitcommitten.
+<!-- /vibe:general-rules -->

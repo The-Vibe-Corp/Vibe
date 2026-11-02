@@ -64,8 +64,8 @@
   },
   {
    "path": "scripts/setup-vibe.py",
-   "sha256": "79b023c135dbdfcfed58145d6289930c434b95b7c817125e76651b59e109aa61",
-   "bytes": 30904
+   "sha256": "bfbbcb3e696a33fbd9c04e0f9663ba33d81a802f60269c48a1b61dc6a5ce590c",
+   "bytes": 31059
   },
   {
    "path": "setup-vibe.cmd",
@@ -79,8 +79,8 @@
   },
   {
    "path": "templates/android/AGENTS.md",
-   "sha256": "7292095b841f0aada95307f3bf6b043b04f3f1e66e21bd1ae9e99bc9f24af2df",
-   "bytes": 1079
+   "sha256": "1776ce9eae2cff4407265484d5bced578e72431ad6e7814547741751862bcedd",
+   "bytes": 1570
   },
   {
    "path": "templates/android/scripts/emulator-start.sh",
@@ -119,8 +119,8 @@
   },
   {
    "path": "templates/docker/AGENTS.md",
-   "sha256": "22bc66e73dfd6cb1be67ec1d72d198982e4a7324bef6af7eb00fe808c4d65249",
-   "bytes": 974
+   "sha256": "67aaade7a46f21016499ffee6cb798303de4a9556e4dd1173b25a1cb2a6df75b",
+   "bytes": 1465
   },
   {
    "path": "templates/generic/.vibe/project.env",
@@ -129,8 +129,8 @@
   },
   {
    "path": "templates/generic/AGENTS.md",
-   "sha256": "29696775aa3ef8b9eeb34b8dce8da9101679756f3e7a0f7e0b3deeda0ffc6ea1",
-   "bytes": 462
+   "sha256": "98f190973ad95e3b90da8c22e04a5b4b76ecd45c17cdc21aabda3ce19a30156c",
+   "bytes": 953
   },
   {
    "path": "templates/openwrt/.vibe/project.env",
@@ -139,8 +139,8 @@
   },
   {
    "path": "templates/openwrt/AGENTS.md",
-   "sha256": "9be35bb7eabbbf1118861e5d25d0056976bc916a59b92757ffe469c5c8591062",
-   "bytes": 1095
+   "sha256": "a4ec91bdea894a921abfdff2ae5a522c89c13f1f594d997b0b115d77c6f939fd",
+   "bytes": 1586
   },
   {
    "path": "templates/rebuild/.opencode/agents/rebuild-architecture.md",
@@ -194,8 +194,8 @@
   },
   {
    "path": "templates/rebuild/AGENTS.md",
-   "sha256": "e7dd4396662615c79ba544b19974cf31ba650188a8ce69464a617e7d1a4a5e66",
-   "bytes": 3663
+   "sha256": "682e98e26562fbc002857fbc95f0055ebf3b9704b2459fb79a636f187a6677b6",
+   "bytes": 4154
   },
   {
    "path": "templates/rebuild/docs/parity.md",
@@ -219,8 +219,8 @@
   },
   {
    "path": "templates/web/AGENTS.md",
-   "sha256": "c5a8cfeb192dedc6110bd8e750576e7905dcbb2adf54c6238e92d9e1e217b044",
-   "bytes": 826
+   "sha256": "2d09cf3e2557627d8b3bf4cf4b2e5b8ace30cd2bc83eeb9f7fe942ec868f72a6",
+   "bytes": 1317
   },
   {
    "path": "bin/vibe_autonomous.py",
@@ -229,8 +229,8 @@
   },
   {
    "path": "bin/vibe",
-   "sha256": "ee9fedc461898d67a2eb84a58e9904f7d5376d6a29e77c885e7ac66a5fa28a2e",
-   "bytes": 172346
+   "sha256": "eda4835af944ec83b0a3e19f454f5b3e5a437e2907c43dd7eb589ab6ee717e52",
+   "bytes": 173857
   },
   {
    "path": "bin/vibe-run.sh",
@@ -567,6 +567,21 @@
    "dateien": [
     "bin/vibe",
     "bin/vibe-run.sh"
+   ]
+  },
+  {
+   "arbeitspaket": "V-021",
+   "datum": "2026-11-02",
+   "grund": "Setup installiert jedes vom Startbefehl importierte Modul, insbesondere vibe_autonomous.py; ein Regressionstest startet die frisch installierte CLI. Alle Projektvorlagen und vibe init tragen die allgemeinen Aufräumregeln für Projektordner nach, ohne vorhandene AGENTS.md-Inhalte zu überschreiben.",
+   "dateien": [
+    "scripts/setup-vibe.py",
+    "templates/android/AGENTS.md",
+    "templates/docker/AGENTS.md",
+    "templates/generic/AGENTS.md",
+    "templates/openwrt/AGENTS.md",
+    "templates/rebuild/AGENTS.md",
+    "templates/web/AGENTS.md",
+    "bin/vibe"
    ]
   }
  ]

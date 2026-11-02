@@ -6,6 +6,7 @@ und eine bestehende Installation wiederverwenden können, ohne Laufzeitdaten zu
 überschreiben. Alle schreibenden Tests arbeiten in temporären Verzeichnissen;
 es werden keine Paketmanager, Router oder echten Installationen angefasst.
 """
+import ast
 import contextlib
 import importlib.machinery
 import importlib.util
@@ -22,7 +23,39 @@ REPO = Path(__file__).resolve().parents[2]
 SETUP = REPO / "scripts" / "setup-vibe.py"
 WRAPPER = REPO / "install-vibe.sh"
 CMD_WRAPPER = REPO / "setup-vibe.cmd"
-PROGRAM_FILES = ("vibe", "vibe-run.sh", "vibe_runs.py", "vibe-web.py", "vibe_models.py", "vibe_mcp.py", "vibe_opencode.py", "vibe_sandbox.py", "fritz-reconnect.py")
+PROGRAM_FILES = (
+    "vibe",
+    "vibe-run.sh",
+    "vibe_runs.py",
+    "vibe-web.py",
+    "vibe_mcp.py",
+    "vibe_opencode.py",
+    "vibe_models.py",
+    "vibe_sandbox.py",
+    "vibe_paths.py",
+    "vibe_storage.py",
+    "vibe_guide.py",
+    "vibe_questions.py",
+    "vibe_autonomous.py",
+    "fritz-reconnect.py",
+)
+
+
+def launcher_sibling_modules():
+    """Module, die ``bin/vibe`` beim Start aus demselben Ordner importiert."""
+    tree = ast.parse((REPO / "bin" / "vibe").read_text(encoding="utf-8"))
+    modules = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            names = [alias.name for alias in node.names]
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            names = [node.module]
+        else:
+            continue
+        for name in names:
+            if (REPO / "bin" / (name + ".py")).is_file():
+                modules.add(name)
+    return sorted(modules)
 
 setup = None
 
@@ -249,6 +282,37 @@ class InstallFilesTest(unittest.TestCase):
         self.assertTrue((toolchain / "models.json").is_file())
         self.assertIn("bin/vibe", result["copied"])
         self.assertEqual(result["skipped"], [])
+
+    def test_every_module_imported_by_the_launcher_is_installed(self):
+        """Der Startbefehl darf nach einer Installation kein Modul vermissen."""
+        launcher = launcher_sibling_modules()
+        self.assertIn("vibe_autonomous", launcher)
+        expected = {name + ".py" for name in launcher}
+        missing = sorted(expected - set(setup.PROGRAM_FILES))
+        self.assertEqual(missing, [], "Setup installiert nicht: " + ", ".join(missing))
+
+    def test_installed_launcher_starts_with_all_options(self):
+        """Reproduziert den Startfehler nach einem Update mit dem echten Quellstand."""
+        setup.install_program_files(REPO, self.vibe, mode="update", timestamp="20261026-120000")
+        installed = self.vibe / "_toolchain" / "bin"
+        home = self.root / "home"
+        home.mkdir()
+        env = {
+            "PATH": os.environ.get("PATH", ""),
+            "HOME": str(home),
+            "VIBE": str(self.vibe),
+            "VIBE_NO_CONTAINER": "1",
+            "PYTHONDONTWRITEBYTECODE": "1",
+        }
+        result = subprocess.run(
+            [sys.executable, str(installed / "vibe"), "types"],
+            cwd=str(installed),
+            env=env,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("generic", result.stdout)
 
     def test_missing_catalog_is_a_warning_not_an_abort(self):
         kit = make_kit(self.root / "kit_ohne_katalog", models=False)

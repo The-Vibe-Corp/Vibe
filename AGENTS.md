@@ -66,6 +66,19 @@ Keine vollständige Neuimplementierung und kein ungefragter Frameworkwechsel.
 - Commit enthält ausschließlich dieses Arbeitspaket und dessen Nachweise.
 - Ticket nennt Commit, Testbefehle, Review und Dokumentation.
 
+## Projektordner sauber halten
+
+- Im Projektordner nur Quellcode, Konfiguration, Tests und die vereinbarten
+  Nachweise ablegen.
+- Temporäre Dateien, Protokolle, Sicherungen, Screenshots ohne Nachweiswert
+  und Arbeitskopien nach Abschluss des Arbeitspakets entfernen; nicht committen.
+- Vor jedem Commit `git status` prüfen und ausschließlich Dateien des eigenen
+  Arbeitspakets stagen.
+- Fremde oder vorbestehende Änderungen nicht löschen, überschreiben, stashen
+  oder mitcommitten.
+- Laufzeitdaten, persönliche Konfiguration und Geheimnisse gehören nicht ins
+  Repository.
+
 ## Prüfungen
 
 Zuerst V-002 implementieren.
