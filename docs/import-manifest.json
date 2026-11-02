@@ -229,8 +229,8 @@
   },
   {
    "path": "bin/vibe",
-   "sha256": "609c076c29667bc6d2d9adea7979c571b358315c4cb2d8c8ba0aec27d5dfb327",
-   "bytes": 175215
+   "sha256": "ade9ff6e0851f9e892753bd86a5e3aa1a6ad202ab1e8559d13aad73ea702e607",
+   "bytes": 175414
   },
   {
    "path": "bin/vibe-run.sh",

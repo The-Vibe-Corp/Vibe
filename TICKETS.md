@@ -396,9 +396,11 @@ Ein fehlender externer Dienst bedeutet BLOCKIERT, nicht erledigt.
   unangetastet.
   Tests: `tests/unit/test_project_management.py`;
   `bash scripts/verify.sh quick/full`.
-  Commit: `folgt im Abschlussnachweis`.
+  Commit: `6532aa5`.
   Prüfungen: `bash scripts/verify.sh quick` Exit 0;
-  `bash scripts/verify.sh full` Exit 0 (795 Unit- + 56 Browser-Tests,
-  851 erkannt) in `/tmp/vibe-v022-full`.
-  Review: `docs/reviews/V-022-review-1.md`.
-  Dokumentation: `docs/features/V-022.md`.
+  `bash scripts/verify.sh full` Exit 0 (796 Unit- + 56 Browser-Tests,
+  852 erkannt) in `/tmp/vibe-v022-full`.
+  Review: `docs/reviews/V-022-review-1.md` (CHANGES REQUIRED, 2 Medium/2 Minor;
+  behoben), `docs/reviews/V-022-review-2.md` (PASS, 0 Critical/High/Medium;
+  2 Minor).
+  Dokumentation: `docs/features/V-022.md`; Trilium `0nTTx7KSysUQ`.

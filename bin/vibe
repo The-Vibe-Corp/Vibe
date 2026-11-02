@@ -1747,7 +1747,12 @@ def ensure_general_rules(project):
     if os.path.islink(path) or not os.path.isfile(path):
         return False
     expected = vibe_storage.file_digest(path)
-    text = _read_text(path)
+    try:
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read()
+    except UnicodeDecodeError:
+        # Kein UTF-8: lieber unverändert lassen als ungültige Bytes ersetzen.
+        return False
     start = text.find(GENERAL_RULES_MARK)
     if start >= 0:
         end = text.find(GENERAL_RULES_END, start + len(GENERAL_RULES_MARK))

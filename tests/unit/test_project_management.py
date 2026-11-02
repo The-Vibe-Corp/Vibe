@@ -326,6 +326,15 @@ class InitTest(ProjectFixture):
 
         self.assertEqual(agents.read_text(encoding="utf-8"), original)
 
+    def test_init_leaves_non_utf8_agents_file_unchanged(self):
+        agents = self.project / "AGENTS.md"
+        original = b"# eigene Regel\n\xff\n"
+        agents.write_bytes(original)
+
+        self.init_project()
+
+        self.assertEqual(agents.read_bytes(), original)
+
     def test_init_does_not_write_through_a_broken_symlink(self):
         outside = self.base / "ausserhalb.md"
         link = self.project / "FEEDBACK.md"
@@ -376,9 +385,17 @@ class TemplateRulesTest(ProjectFixture):
         for path in templates:
             text = path.read_text(encoding="utf-8")
             self.assertIn(self.cli.GENERAL_RULES_MARK, text, path)
-            self.assertIn("Projektordner sauber halten", text, path)
-            self.assertIn("Ordnung im Git halten", text, path)
-            self.assertIn("git status", text, path)
+            self.assertIn(self.cli.GENERAL_RULES, text, path)
+            for rule in (
+                "Projektordner sauber halten",
+                "Ordnung im Git halten",
+                "Feature-Branch",
+                "git status",
+                "relevanten Diff",
+                "stashen",
+                "Force-Push",
+            ):
+                self.assertIn(rule, text, path)
 
     def test_general_rules_cover_cleanup_and_git_order(self):
         rules = self.cli.GENERAL_RULES
