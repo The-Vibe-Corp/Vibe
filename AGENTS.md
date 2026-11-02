@@ -79,6 +79,21 @@ Keine vollständige Neuimplementierung und kein ungefragter Frameworkwechsel.
 - Laufzeitdaten, persönliche Konfiguration und Geheimnisse gehören nicht ins
   Repository.
 
+## Ordnung im Git halten
+
+- Änderungen auf einem Feature-Branch umsetzen, nicht direkt auf main, master
+  oder einem geschützten Branch.
+- Jedes abgeschlossene Arbeitspaket als zusammenhängenden Commit sichern; keine
+  Zwischenstände oder fremden Änderungen mitcommitten.
+- Vor jedem Commit `git status` und den relevanten Diff prüfen und
+  ausschließlich Dateien des eigenen Arbeitspakets stagen.
+- Keine temporären Dateien, Protokolle, Build-Artefakte, Arbeitskopien oder
+  Screenshots ohne Nachweiswert committen.
+- Fremde oder vorbestehende Änderungen nicht löschen, überschreiben, stashen
+  oder mitcommitten.
+- Keine Historie umschreiben, keine Force-Pushes und kein Push ohne
+  ausdrückliche Freigabe.
+
 ## Prüfungen
 
 Zuerst V-002 implementieren.

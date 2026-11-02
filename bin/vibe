@@ -78,13 +78,22 @@ UI_PORT = PATHS.ui_port
 UI_BIND = PATHS.ui_bind
 NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 GENERAL_RULES_MARK = "<!-- vibe:general-rules -->"
+GENERAL_RULES_END = "<!-- /vibe:general-rules -->"
 GENERAL_RULES = """<!-- vibe:general-rules -->
 ## Projektordner sauber halten
 
 - Im Projektordner nur Quellcode, Konfiguration, Tests und die vereinbarten Nachweise ablegen.
 - Temporäre Dateien, Protokolle, Sicherungen und Arbeitskopien nach Abschluss des Arbeitspakets entfernen und nicht committen.
-- Vor dem Commit `git status` prüfen und nur Dateien des eigenen Arbeitspakets stagen.
-- Fremde oder vorbestehende Änderungen nicht löschen, überschreiben oder mitcommitten.
+- Laufzeitdaten, persönliche Konfiguration und Geheimnisse gehören nicht ins Repository.
+
+## Ordnung im Git halten
+
+- Änderungen auf einem Feature-Branch umsetzen, nicht direkt auf main, master oder einem geschützten Branch.
+- Jedes abgeschlossene Arbeitspaket als zusammenhängenden Commit sichern; keine Zwischenstände oder fremden Änderungen mitcommitten.
+- Vor jedem Commit `git status` und den relevanten Diff prüfen und ausschließlich Dateien des eigenen Arbeitspakets stagen.
+- Keine temporären Dateien, Protokolle, Build-Artefakte, Arbeitskopien oder Screenshots ohne Nachweiswert committen.
+- Fremde oder vorbestehende Änderungen nicht löschen, überschreiben, stashen oder mitcommitten.
+- Keine Historie umschreiben, keine Force-Pushes und kein Push ohne ausdrückliche Freigabe.
 <!-- /vibe:general-rules -->"""
 FRONTMATTER_RE = re.compile(r"---[ \t]*\r?\n(.*?)\r?\n---[ \t]*(?:\r?\n|$)", re.S)
 FRONT_KEY_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_-]*):[ \t]*(.*)$")
@@ -1724,23 +1733,36 @@ def copy_tree(src, dst, name):
     return created
 
 def ensure_general_rules(project):
-    """Ergänzt die allgemeinen Aufräumregeln in einer vorhandenen AGENTS.md.
+    """Ergänzt oder aktualisiert die allgemeinen Aufräum- und Git-Regeln.
 
-    Vorhandene Inhalte bleiben erhalten; ein fehlender Marker wird genau einmal
-    ergänzt. Symlinks werden nicht verfolgt, damit nichts außerhalb des Projekts
-    geschrieben wird. Liefert True, wenn die Datei ergänzt wurde.
+    Vorhandene Inhalte außerhalb des verwalteten Blocks bleiben erhalten. Ein
+    fehlender Marker wird genau einmal am Dateiende ergänzt; ein vorhandener,
+    vollständig abgeschlossener Block wird auf den aktuellen Stand gebracht.
+    Ein unpaariger Marker bleibt unangetastet, damit keine fremden Inhalte
+    überschrieben werden. Symlinks werden nicht verfolgt, damit nichts
+    außerhalb des Projekts geschrieben wird. Liefert "added", "updated" oder
+    False.
     """
     path = os.path.join(project, "AGENTS.md")
     if os.path.islink(path) or not os.path.isfile(path):
         return False
     expected = vibe_storage.file_digest(path)
     text = _read_text(path)
-    if GENERAL_RULES_MARK in text:
-        return False
+    start = text.find(GENERAL_RULES_MARK)
+    if start >= 0:
+        end = text.find(GENERAL_RULES_END, start + len(GENERAL_RULES_MARK))
+        if end < 0:
+            return False
+        end += len(GENERAL_RULES_END)
+        updated = text[:start] + GENERAL_RULES + text[end:]
+        if updated == text:
+            return False
+        _write_text_atomic(path, updated, expected=expected)
+        return "updated"
     base = text.rstrip("\n")
     updated = (base + "\n\n" if base else "") + GENERAL_RULES + "\n"
     _write_text_atomic(path, updated, expected=expected)
-    return True
+    return "added"
 
 def cmd_init(name, typ=None):
     p = ppath(name); typ = typ or ptype(name)
@@ -1748,7 +1770,9 @@ def cmd_init(name, typ=None):
     created = copy_tree(os.path.join(TPL, "common"), p, name) + copy_tree(os.path.join(TPL, typ), p, name)
     rules = ensure_general_rules(p)
     print(col("g", f"{name}: als '{typ}' vorbereitet.") + (" Neu angelegt: " + ", ".join(created) if created else " Nichts zu ergänzen."))
-    if rules: print("Allgemeine Regeln in AGENTS.md ergänzt; vorhandene Inhalte blieben unverändert.")
+    if rules:
+        action = "aktualisiert" if rules == "updated" else "ergänzt"
+        print(f"Allgemeine Regeln in AGENTS.md {action}; vorhandene Inhalte blieben unverändert.")
     print("Vorhandene Dateien wurden nicht verändert. Nicht committet: bitte prüfen und selbst committen.")
     if typ not in ("android",): print("Prüfbefehle in .vibe/project.env eintragen (VERIFY_QUICK / VERIFY_FULL), sonst bricht die Abschlussprüfung ab.")
 

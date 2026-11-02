@@ -297,6 +297,35 @@ class InitTest(ProjectFixture):
         self.assertEqual(agents.read_text(encoding="utf-8"), first)
         self.assertEqual(first.count(self.cli.GENERAL_RULES_MARK), 1)
 
+    def test_init_updates_an_outdated_managed_rules_block_in_place(self):
+        agents = self.project / "AGENTS.md"
+        agents.write_text(
+            "# eigene Regel\n\n"
+            + self.cli.GENERAL_RULES_MARK
+            + "\n## Alt\n- veraltet\n<!-- /vibe:general-rules -->\n\n## Eigener Rest\n",
+            encoding="utf-8",
+        )
+
+        output = self.init_project()
+
+        text = agents.read_text(encoding="utf-8")
+        self.assertTrue(text.startswith("# eigene Regel\n"))
+        self.assertIn("Projektordner sauber halten", text)
+        self.assertIn("Ordnung im Git halten", text)
+        self.assertNotIn("veraltet", text)
+        self.assertIn("## Eigener Rest\n", text)
+        self.assertEqual(text.count(self.cli.GENERAL_RULES_MARK), 1)
+        self.assertIn("aktualisiert", output)
+
+    def test_init_leaves_an_unpaired_rules_marker_unchanged(self):
+        agents = self.project / "AGENTS.md"
+        original = "# eigene Regel\n\n" + self.cli.GENERAL_RULES_MARK + "\n- ohne Ende\n"
+        agents.write_text(original, encoding="utf-8")
+
+        self.init_project()
+
+        self.assertEqual(agents.read_text(encoding="utf-8"), original)
+
     def test_init_does_not_write_through_a_broken_symlink(self):
         outside = self.base / "ausserhalb.md"
         link = self.project / "FEEDBACK.md"
@@ -348,6 +377,16 @@ class TemplateRulesTest(ProjectFixture):
             text = path.read_text(encoding="utf-8")
             self.assertIn(self.cli.GENERAL_RULES_MARK, text, path)
             self.assertIn("Projektordner sauber halten", text, path)
+            self.assertIn("Ordnung im Git halten", text, path)
+            self.assertIn("git status", text, path)
+
+    def test_general_rules_cover_cleanup_and_git_order(self):
+        rules = self.cli.GENERAL_RULES
+        self.assertIn("Projektordner sauber halten", rules)
+        self.assertIn("Ordnung im Git halten", rules)
+        self.assertIn("Feature-Branch", rules)
+        self.assertIn("git status", rules)
+        self.assertIn("Force-Push", rules)
 
 
 if __name__ == "__main__":

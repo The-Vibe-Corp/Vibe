@@ -12,6 +12,14 @@
 
 - Im Projektordner nur Quellcode, Konfiguration, Tests und die vereinbarten Nachweise ablegen.
 - Temporäre Dateien, Protokolle, Sicherungen und Arbeitskopien nach Abschluss des Arbeitspakets entfernen und nicht committen.
-- Vor dem Commit `git status` prüfen und nur Dateien des eigenen Arbeitspakets stagen.
-- Fremde oder vorbestehende Änderungen nicht löschen, überschreiben oder mitcommitten.
+- Laufzeitdaten, persönliche Konfiguration und Geheimnisse gehören nicht ins Repository.
+
+## Ordnung im Git halten
+
+- Änderungen auf einem Feature-Branch umsetzen, nicht direkt auf main, master oder einem geschützten Branch.
+- Jedes abgeschlossene Arbeitspaket als zusammenhängenden Commit sichern; keine Zwischenstände oder fremden Änderungen mitcommitten.
+- Vor jedem Commit `git status` und den relevanten Diff prüfen und ausschließlich Dateien des eigenen Arbeitspakets stagen.
+- Keine temporären Dateien, Protokolle, Build-Artefakte, Arbeitskopien oder Screenshots ohne Nachweiswert committen.
+- Fremde oder vorbestehende Änderungen nicht löschen, überschreiben, stashen oder mitcommitten.
+- Keine Historie umschreiben, keine Force-Pushes und kein Push ohne ausdrückliche Freigabe.
 <!-- /vibe:general-rules -->

@@ -382,3 +382,23 @@ Ein fehlender externer Dienst bedeutet BLOCKIERT, nicht erledigt.
   in `/tmp/vibe-v021-full`.
   Review: `docs/reviews/V-021-review-1.md`, `docs/reviews/V-021-review-2.md` (PASS).
   Dokumentation: `docs/features/V-021.md`; Trilium `TNxOZ5jYhTfI`.
+
+- [x] V-022 Ordnung im Git als allgemeine Projektregel
+  Priorität: P1
+  Abhängigkeiten: V-021
+  Umfang: Die allgemeinen vibe-Regeln beschreiben neben dem Aufräumen des
+  Projektordners auch die Ordnung im Git; bestehende Projekte übernehmen die
+  Regeln beim nächsten `vibe init`.
+  Akzeptanz: alle mitgelieferten Vorlagen und die Repository-`AGENTS.md`
+  enthalten Feature-Branch-, Commit-, Diff-, Fremdänderungs- und
+  History-Regeln; `vibe init` aktualisiert einen vorhandenen verwalteten Block
+  ohne umgebende Inhalte zu verändern; unpaarige Marker und Symlinks bleiben
+  unangetastet.
+  Tests: `tests/unit/test_project_management.py`;
+  `bash scripts/verify.sh quick/full`.
+  Commit: `folgt im Abschlussnachweis`.
+  Prüfungen: `bash scripts/verify.sh quick` Exit 0;
+  `bash scripts/verify.sh full` Exit 0 (795 Unit- + 56 Browser-Tests,
+  851 erkannt) in `/tmp/vibe-v022-full`.
+  Review: `docs/reviews/V-022-review-1.md`.
+  Dokumentation: `docs/features/V-022.md`.

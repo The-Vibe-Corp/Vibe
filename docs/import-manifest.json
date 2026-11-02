@@ -79,8 +79,8 @@
   },
   {
    "path": "templates/android/AGENTS.md",
-   "sha256": "1776ce9eae2cff4407265484d5bced578e72431ad6e7814547741751862bcedd",
-   "bytes": 1570
+   "sha256": "d0feefdd31224dd0060f58b233c2983095c9a16596861e9fe3325dfcb3617780",
+   "bytes": 2193
   },
   {
    "path": "templates/android/scripts/emulator-start.sh",
@@ -119,8 +119,8 @@
   },
   {
    "path": "templates/docker/AGENTS.md",
-   "sha256": "67aaade7a46f21016499ffee6cb798303de4a9556e4dd1173b25a1cb2a6df75b",
-   "bytes": 1465
+   "sha256": "3e98aa3a9f77e14ce838af94576ed584c744ce4ff3919d42e0c9dcf3d421b177",
+   "bytes": 2088
   },
   {
    "path": "templates/generic/.vibe/project.env",
@@ -129,8 +129,8 @@
   },
   {
    "path": "templates/generic/AGENTS.md",
-   "sha256": "98f190973ad95e3b90da8c22e04a5b4b76ecd45c17cdc21aabda3ce19a30156c",
-   "bytes": 953
+   "sha256": "29e33f78f9793f2f41ada36373d97969a4562c1772ab1edb26fd37730179a108",
+   "bytes": 1576
   },
   {
    "path": "templates/openwrt/.vibe/project.env",
@@ -139,8 +139,8 @@
   },
   {
    "path": "templates/openwrt/AGENTS.md",
-   "sha256": "a4ec91bdea894a921abfdff2ae5a522c89c13f1f594d997b0b115d77c6f939fd",
-   "bytes": 1586
+   "sha256": "0486df3f5babf53cbd54f31e523f5130a75c33c9ed736b46269cd06c9f386413",
+   "bytes": 2209
   },
   {
    "path": "templates/rebuild/.opencode/agents/rebuild-architecture.md",
@@ -194,8 +194,8 @@
   },
   {
    "path": "templates/rebuild/AGENTS.md",
-   "sha256": "682e98e26562fbc002857fbc95f0055ebf3b9704b2459fb79a636f187a6677b6",
-   "bytes": 4154
+   "sha256": "0a247dcc7a96c6df7dbe0c4af0fe5ffcc4dee86fe118f5445186f0c542caedc2",
+   "bytes": 4777
   },
   {
    "path": "templates/rebuild/docs/parity.md",
@@ -219,8 +219,8 @@
   },
   {
    "path": "templates/web/AGENTS.md",
-   "sha256": "2d09cf3e2557627d8b3bf4cf4b2e5b8ace30cd2bc83eeb9f7fe942ec868f72a6",
-   "bytes": 1317
+   "sha256": "820ac2c639397e0efdc78d91a55b829ff9833fb733400eb3b4eb3d819fbebbe5",
+   "bytes": 1940
   },
   {
    "path": "bin/vibe_autonomous.py",
@@ -229,8 +229,8 @@
   },
   {
    "path": "bin/vibe",
-   "sha256": "eda4835af944ec83b0a3e19f454f5b3e5a437e2907c43dd7eb589ab6ee717e52",
-   "bytes": 173857
+   "sha256": "609c076c29667bc6d2d9adea7979c571b358315c4cb2d8c8ba0aec27d5dfb327",
+   "bytes": 175215
   },
   {
    "path": "bin/vibe-run.sh",
@@ -582,6 +582,20 @@
     "templates/rebuild/AGENTS.md",
     "templates/web/AGENTS.md",
     "bin/vibe"
+   ]
+  },
+  {
+   "arbeitspaket": "V-022",
+   "datum": "2026-11-02",
+   "grund": "Allgemeine Git-Regeln für alle vibe-Projekte: Feature-Branch, zusammenhängende Commits, Prüfung von git status und Diff, keine fremden oder temporären Änderungen, keine History-Umschreibung. vibe init aktualisiert einen vorhandenen verwalteten Regelblock, ohne umgebende Inhalte zu verändern.",
+   "dateien": [
+    "bin/vibe",
+    "templates/android/AGENTS.md",
+    "templates/docker/AGENTS.md",
+    "templates/generic/AGENTS.md",
+    "templates/openwrt/AGENTS.md",
+    "templates/rebuild/AGENTS.md",
+    "templates/web/AGENTS.md"
    ]
   }
  ]
