@@ -1,6 +1,6 @@
 {
  "version": 1,
- "stand": "2026-11-01",
+ "stand": "2026-11-02",
  "quelle": "Übernommener Programmstand aus der lokalen Installation unter $VIBE/_toolchain; die aktive Installation enthält zusätzlich lokale Geheimnis-Hooks (siehe docs/baseline.md, Abschnitt 3).",
  "hinweis": "SHA-256 der übernommenen Programmdateien. Beabsichtigte Änderungen an diesen Dateien sind nur zulässig, wenn dieser Eintrag im selben Arbeitspaket aktualisiert und begründet wird. Laufzeitdaten, Sicherungen und Geheimnisse sind nicht Bestandteil des Imports.",
  "scopes": [
@@ -229,18 +229,18 @@
   },
   {
    "path": "bin/vibe",
-   "sha256": "55c53d25742ce008f52083147b3597645ce3c719d03f938759fb54bc8da93513",
-   "bytes": 148791
+   "sha256": "c3b1599a68325723ab8c231a08e21d9075dc0fc4b60b6bf4f60d57a6fc6e9822",
+   "bytes": 157693
   },
   {
    "path": "bin/vibe-run.sh",
-   "sha256": "77e7da579eba10f8f3483d5b60b7d0e2489cd351fe8b6050444fbc33b7f577a8",
-   "bytes": 10571
+   "sha256": "0dcb85d7cf8551b270d26309c0e4f643beff46ea1fa195949c869849a337f918",
+   "bytes": 11037
   },
   {
    "path": "bin/vibe-web.py",
-   "sha256": "0774904f9804513a47cd2083c8ac046ea15a0880991cdfd37be9d9d09b9c1179",
-   "bytes": 113560
+   "sha256": "63ea38fb261d014656475abb88dec9b5eef8aa423b1ee38f2a3ad26ab605261c",
+   "bytes": 117811
   },
   {
    "path": "bin/vibe_sandbox.py",
@@ -548,6 +548,16 @@
     "bin/vibe_sandbox.py",
     "bin/vibe_questions.py",
     "bin/vibe_autonomous.py"
+   ]
+  },
+  {
+   "arbeitspaket": "F17",
+   "datum": "2026-11-02",
+   "grund": "Agentenverwaltung: geänderte strukturierte Felder werden beim Speichern übernommen; Agentenauswahl und Modellüberschreibung je Projekt in CLI, Läufer, HTTP-API und Dashboard.",
+   "dateien": [
+    "bin/vibe",
+    "bin/vibe-run.sh",
+    "bin/vibe-web.py"
    ]
   }
  ]

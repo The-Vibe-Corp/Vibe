@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Allgemeiner Paket-Läufer. Aufruf: vibe-run.sh <projektordner> [agent]
+# Allgemeiner Paket-Läufer. Aufruf: vibe-run.sh <projektordner> [agent] [modell]
 # Kostenbremse: MAX_PACKAGES in .vibe/project.env (oder Umgebungsvariable
 # VIBE_MAX_PACKAGES) begrenzt die Zahl der Durchgänge; MAX_RETRIES begrenzt die
 # Wiederholungen je Arbeitspaket.
@@ -48,6 +48,17 @@ fi
 if ! [[ "$AGENT" =~ ^[A-Za-z0-9][A-Za-z0-9_-]*$ ]]; then
   echo "ABBRUCH: Agentenname ungültig (erlaubt: Buchstaben, Ziffern, _ und -)." | tee -a "$LOG"
   exit 2
+fi
+# F17: Eine Modellüberschreibung aus der Projektansicht wird unverändert an
+# opencode run übergeben. Sie wird nie über eine Shell ausgewertet.
+MODEL="${3:-${VIBE_MODEL:-}}"
+MODEL_ARGS=()
+if [ -n "$MODEL" ]; then
+  if ! [[ "$MODEL" =~ ^[A-Za-z0-9][A-Za-z0-9._:/@+-]*$ ]]; then
+    echo "ABBRUCH: Modellangabe ungültig (erlaubt: Buchstaben, Ziffern, . _ : / @ + -)." | tee -a "$LOG"
+    exit 2
+  fi
+  MODEL_ARGS=(--model "$MODEL")
 fi
 MAXP="${VIBE_MAX_PACKAGES:-${MAX_PACKAGES:-80}}"
 if ! [[ "$MAXP" =~ ^[0-9]+$ ]]; then
@@ -172,7 +183,7 @@ for n in $(seq 1 "$MAXP"); do
 $BLOCK
 Bearbeite NUR dieses Arbeitspaket gemäß deinem Workflow. Commit-Präfix: '$ID:'.
 $QUESTION_HINT"
-  "${SANDBOX_WRAP[@]}" opencode run $SERVER_ARGS --auto --thinking --agent "$AGENT" --title "$NAME $ID" "$PROMPT" 2>&1 | tee -a "$LOG"
+  "${SANDBOX_WRAP[@]}" opencode run $SERVER_ARGS --auto --thinking --agent "$AGENT" "${MODEL_ARGS[@]}" --title "$NAME $ID" "$PROMPT" 2>&1 | tee -a "$LOG"
   RC=${PIPESTATUS[0]}
   echo "=== Agent beendet, Exit-Code $RC ===" | tee -a "$LOG"
   LAST_ID="$ID"

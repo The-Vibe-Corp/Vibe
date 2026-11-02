@@ -23,6 +23,7 @@ Aufruf:  vibe                 interaktives Menü
          vibe roots [add <pfad>|rm <pfad>]  Entwicklungsordner verwalten und Projekte einlesen
          vibe agents          alle Agenten (global und projektspezifisch)
          vibe agent new|edit|show|rm|backups|restore <name> [global|<projekt>] [sicherung]
+         vibe project-agents <projekt>   Agentenauswahl und Modellüberschreibungen des Projekts
          vibe rights <projekt> [list|add <pfad>|rm <pfad>|reset]  erlaubte Schreibverzeichnisse
          vibe sandbox <projekt> [status|on|off|tools "<liste>"|check]  Shell-Sandbox (bubblewrap)
          vibe models          Modellübersicht mit Einschätzung und Preis
@@ -1164,6 +1165,10 @@ def cmd_run(name, agent=None):
     if not agent:
         sys.exit("Kein Agent angegeben und kein AGENT in .vibe/project.env oder profiles.json (Rolle coder) konfiguriert.")
     agent = require_agent(agent)
+    try:
+        model = run_agent_selection(name, agent)
+    except ValueError as error:
+        sys.exit(str(error))
     key = run_key(name)
     run_id = vibe_runs.new_run_id(key)
     session = sess(name)
@@ -1181,12 +1186,15 @@ def cmd_run(name, agent=None):
     # vibe ihn nicht weiter als aktiv meldet. Die Ausgabe bleibt im Log.
     # Der Anzeigename bleibt ein eigenes Argument ($0, wird nie ausgewertet);
     # Laufschlüssel, ID, Sitzung, Skript, Pfad und Agent folgen als Argumente.
+    # Die Modellüberschreibung des Projekts reist als weitere Position mit und
+    # wird erst im Läufer an opencode übergeben; Agentendateien bleiben
+    # unverändert, andere Projekte sehen die Überschreibung nicht.
     inner = ("source ~/.bashrc; " + child_exports()
-             + ' export VIBE_LOGNAME="$1" VIBE_RUN_ID="$2" VIBE_SESSION="$3"; bash "$4" "$5" "$6"')
+             + ' export VIBE_LOGNAME="$1" VIBE_RUN_ID="$2" VIBE_SESSION="$3" VIBE_MODEL="$7"; bash "$4" "$5" "$6" "$7"')
     rc, out = run(["tmux", "new-session", "-d", "-s", session,
                    "-e", MANAGED_VAR + "=run", "-c", p,
                    "bash", "-lc", inner, name, key, run_id, session,
-                   os.path.join(BIN, "vibe-run.sh"), p, agent])
+                   os.path.join(BIN, "vibe-run.sh"), p, agent, model])
     if rc != 0:
         registry.finish(run_id, exit_code=None, state="failed")
         print(col("r", out))
@@ -1719,6 +1727,168 @@ def agents_all():
             row["priority"] = "überschreibt global" if info["global"] else "gilt nur in " + row["scope"]
     return out
 
+# ---------- Agentenauswahl je Projekt (F17) ----------
+# Gespeichert werden nur Abweichungen vom Standard: ``deaktiviert`` nennt die
+# für dieses Projekt abgewählten Agenten, ``modelle`` überschreibt das Modell
+# einzelner Agenten. Fehlt die Datei, sind alle verfügbaren Agenten ausgewählt
+# und jedes Modell kommt aus der jeweiligen Agentendatei. Neue Agenten sind
+# dadurch ohne weitere Pflege automatisch aktiv.
+PROJECT_AGENTS_VERSION = 1
+PROJECT_AGENTS_KEYS = ("version", "deaktiviert", "modelle")
+PROJECT_AGENT_MODEL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/@+-]*$")
+
+def project_agents_path(name):
+    """Ablage der projektspezifischen Agentenauswahl."""
+    return os.path.join(ppath(name), ".vibe", "agents.json")
+
+def _project_agents_check(data):
+    """Prüft und normalisiert die Projektkonfiguration ohne sie zu schreiben."""
+    if not isinstance(data, dict):
+        raise ValueError("Die Agentenauswahl muss ein JSON-Objekt sein.")
+    unknown = sorted(set(data) - set(PROJECT_AGENTS_KEYS))
+    if unknown:
+        raise ValueError("Unbekannte Felder in der Agentenauswahl: " + ", ".join(unknown))
+    version = data.get("version", PROJECT_AGENTS_VERSION)
+    if version != PROJECT_AGENTS_VERSION:
+        raise ValueError(f"Unbekannte Version der Agentenauswahl: {version!r}")
+    disabled = data.get("deaktiviert", [])
+    if not isinstance(disabled, list) or any(not isinstance(item, str) for item in disabled):
+        raise ValueError("'deaktiviert' muss eine Liste von Agentennamen sein.")
+    for item in disabled:
+        if not NAME_RE.match(item):
+            raise ValueError("Ungültiger Agentenname in 'deaktiviert': " + repr(item))
+    models = data.get("modelle", {})
+    if not isinstance(models, dict):
+        raise ValueError("'modelle' muss ein Objekt mit Agentenname und Modell sein.")
+    clean_models = {}
+    for agent, model in models.items():
+        if not isinstance(agent, str) or not NAME_RE.match(agent):
+            raise ValueError("Ungültiger Agentenname in 'modelle': " + repr(agent))
+        if not isinstance(model, str):
+            raise ValueError("Das Modell muss eine Zeichenkette sein.")
+        value = model.strip()
+        if value:
+            if not PROJECT_AGENT_MODEL_RE.match(value):
+                raise ValueError("Das Modell muss die Form 'anbieter/modell' ohne Leerzeichen haben.")
+            clean_models[agent] = value
+    return {"version": PROJECT_AGENTS_VERSION,
+            "deaktiviert": sorted(set(disabled)),
+            "modelle": dict(sorted(clean_models.items()))}
+
+def _project_agents_read(snapshot):
+    """Liest die Agentenauswahl aus einem Snapshot; fehlend heißt Standardzustand."""
+    if not snapshot.exists:
+        return {"version": PROJECT_AGENTS_VERSION, "deaktiviert": [], "modelle": {}}
+    try:
+        data = json.loads(snapshot.text)
+    except (TypeError, ValueError):
+        raise ValueError("Die Agentenauswahl ist kein gültiges JSON: " + snapshot.path)
+    return _project_agents_check(data)
+
+def project_agents_load(name, snapshot=None):
+    """Liefert (Konfiguration, Snapshot); eine fehlende Datei bleibt unverändert."""
+    snapshot = snapshot or vibe_storage.read_snapshot(project_agents_path(name))
+    return _project_agents_read(snapshot), snapshot
+
+def project_agents_save(name, data, expected=None):
+    """Schreibt die Agentenauswahl atomar und prüft eine erwartete Prüfsumme."""
+    config = _project_agents_check(data)
+    text = json.dumps(config, indent=1, ensure_ascii=False, sort_keys=True) + "\n"
+    vibe_storage.write_text(project_agents_path(name), text, expected=expected)
+    return config
+
+def project_agent_inventory(name):
+    """Verfügbare Agenten eines Projekts; Projektdateien überschreiben globale.
+
+    Gleiche Namen werden nur einmal geführt, weil opencode in einem Projekt
+    genau eine Datei je Agentennamen verwendet.
+    """
+    out = {}
+    for scope in ("global", name):
+        try:
+            folder = agent_dir(scope)
+        except (SystemExit, ValueError):
+            continue
+        if not os.path.isdir(folder):
+            continue
+        for filename in sorted(os.listdir(folder)):
+            if not filename.endswith(".md"):
+                continue
+            agent = filename[:-3]
+            if not NAME_RE.match(agent):
+                continue
+            try:
+                with open(os.path.join(folder, filename), encoding="utf-8", errors="replace") as handle:
+                    parsed = _parse_agent_text(handle.read())
+            except (OSError, ValueError):
+                parsed = {}
+            out[agent] = {"name": agent, "scope": scope,
+                          "model": (parsed.get("model") or "").strip(),
+                          "mode": parsed.get("mode") or "",
+                          "description": (parsed.get("description") or "")[:110]}
+    return out
+
+def project_agent_rows(name):
+    """Agenten eines Projekts mit Auswahl, Überschreibung und wirksamem Modell."""
+    inventory = project_agent_inventory(name)
+    config, _snapshot = project_agents_load(name)
+    disabled = set(config["deaktiviert"])
+    overrides = config["modelle"]
+    rows = []
+    for agent in sorted(inventory):
+        row = dict(inventory[agent])
+        base = row["model"] or "-"
+        override = overrides.get(agent, "")
+        row.update(model=base, override=override,
+                   effective_model=override or base,
+                   selected=agent not in disabled)
+        rows.append(row)
+    return rows
+
+def project_agent_set(name, agent, selected=None, model=None):
+    """Ändert Auswahl oder Modellüberschreibung genau eines Agenten.
+
+    Es wird ausschließlich die Projektdatei geschrieben; Agentendateien und
+    andere Projekte bleiben unverändert. Eine ungültige Eingabe oder eine
+    unlesbare Datei führt zu einem Fehler, bevor etwas geschrieben wird.
+    """
+    if not NAME_RE.match(agent or ""):
+        raise ValueError("Agentenname: nur a-z, 0-9, _ und -")
+    if selected is not None and not isinstance(selected, bool):
+        raise ValueError("'selected' muss wahr oder falsch sein.")
+    inventory = project_agent_inventory(name)
+    if agent not in inventory:
+        raise ValueError(f"Agent '{agent}' ist für dieses Projekt nicht verfügbar.")
+    config, snapshot = project_agents_load(name)
+    disabled = set(config["deaktiviert"])
+    models = dict(config["modelle"])
+    if selected is not None:
+        if selected:
+            disabled.discard(agent)
+        else:
+            disabled.add(agent)
+    if model is not None:
+        if not isinstance(model, str):
+            raise ValueError("Das Modell muss eine Zeichenkette sein.")
+        value = model.strip()
+        if value:
+            if not PROJECT_AGENT_MODEL_RE.match(value):
+                raise ValueError("Das Modell muss die Form 'anbieter/modell' ohne Leerzeichen haben.")
+            models[agent] = value
+        else:
+            models.pop(agent, None)
+    if disabled == set(config["deaktiviert"]) and models == config["modelle"]:
+        return config
+    return project_agents_save(name, {"deaktiviert": sorted(disabled), "modelle": models},
+                               expected=snapshot.digest if snapshot.exists else vibe_storage.MISSING)
+
+def run_agent_selection(name, agent):
+    """Prüft die Projektauswahl und liefert die Modellüberschreibung (oder '')."""
+    config, _snapshot = project_agents_load(name)
+    if agent in set(config["deaktiviert"]):
+        raise ValueError(f"Agent '{agent}' ist für dieses Projekt nicht ausgewählt.")
+    return config["modelle"].get(agent, "")
+
 def effective_agent(name, scope="global"):
     """Bereich, dessen Datei für einen Agentennamen tatsächlich gilt."""
     if not NAME_RE.match(name or ""): raise ValueError("Name: nur a-z, 0-9, _ und -")
@@ -1947,6 +2117,18 @@ def cmd_agents():
         print(f"{(a['name'] + tag)[:27]:28}{('global' if a['scope'] == 'global' else 'Projekt ' + a['scope'])[:15]:16}{a['mode']:10}{a['model'][:39]:40}{a['description'][:50]}")
         print(col("d", "  " + a["priority"]))
     print(col("d", "Projektagenten überschreiben gleichnamige globale Agenten (opencode 2.1.4). Rollen sind in profiles.json konfiguriert."))
+
+def cmd_project_agents(name):
+    """Zeigt Auswahl und Modellüberschreibungen eines Projekts."""
+    rows = project_agent_rows(name)
+    if not rows: sys.exit("Keine Agenten gefunden. Globaler Ordner: " + AGENTS_DIR)
+    print(col("b", f"{'Agent':28}{'Geltung':16}{'Auswahl':8}{'Modell':40}Überschreibung"))
+    for row in rows:
+        scope = "global" if row["scope"] == "global" else "Projekt " + row["scope"]
+        print(f"{row['name'][:27]:28}{scope[:15]:16}{('ja' if row['selected'] else 'nein'):8}"
+              f"{row['effective_model'][:39]:40}{row['override']}")
+    print(col("d", "Auswahl und Modellüberschreibung gelten nur für dieses Projekt; "
+                   "ohne Überschreibung gilt das Modell aus der Agentendatei."))
 
 def _editor(path):
     ed = os.environ.get("EDITOR") or shutil.which("nano") or shutil.which("vi") or "vi"
@@ -3185,6 +3367,7 @@ def main():
                  "init": lambda: cmd_init(r[0], r[1] if len(r) > 1 else None),
                  "roots": lambda: cmd_roots(r[0] if r else None, r[1] if len(r) > 1 else None), "scan": lambda: cmd_roots(),
                  "agents": lambda: cmd_agents(), "agent": lambda: cmd_agent(r[0], r[1], r[2] if len(r) > 2 else "global", r[3] if len(r) > 3 else None),
+                 "project-agents": lambda: cmd_project_agents(r[0]),
                  "rights": lambda: cmd_rights(r[0], r[1] if len(r) > 1 else None, r[2] if len(r) > 2 else None),
                  "sandbox": lambda: cmd_sandbox(r[0], r[1] if len(r) > 1 else None, r[2] if len(r) > 2 else None),
                  "models": lambda: cmd_models(r[0] if r else None), "model": lambda: cmd_model(r[0], r[1], r[2] if len(r) > 2 else "global"),

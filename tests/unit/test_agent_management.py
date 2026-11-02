@@ -739,6 +739,47 @@ class AgentApiTest(unittest.TestCase):
             "Die Vorschau darf die Datei nicht verändern",
         )
 
+    def test_api_save_applies_changed_structured_values(self):
+        status, body = self.request("/api/agent?scope=global&name=tester")
+        digest = json.loads(body)["digest"]
+
+        status, body = self.request(
+            "/api/agent",
+            {
+                "action": "save",
+                "scope": "global",
+                "name": "tester",
+                "text": AGENT_V1,
+                "values": {"model": "opencode/neu"},
+                "expected": digest,
+            },
+        )
+
+        self.assertEqual(status, 200, body)
+        saved = self.path.read_text(encoding="utf-8")
+        self.assertIn("model: opencode/neu", saved)
+        # Nicht geänderte Felder und unbekannte Angaben bleiben erhalten.
+        self.assertIn("description: Erste Beschreibung", saved)
+        self.assertIn("temperature: 0.1", saved)
+        self.assertIn("color: blau", saved)
+        self.assertIn("Erster Prompt.", saved)
+
+    def test_api_save_rejects_an_invalid_structured_value_without_writing(self):
+        status, body = self.request(
+            "/api/agent",
+            {
+                "action": "save",
+                "scope": "global",
+                "name": "tester",
+                "text": AGENT_V1,
+                "values": {"temperature": "heiß"},
+            },
+        )
+
+        self.assertEqual(status, 400, body)
+        self.assertIn("Temperatur", json.loads(body)["message"])
+        self.assertEqual(self.path.read_text(encoding="utf-8"), AGENT_V1)
+
     def test_api_rejects_invalid_raw_text_and_keeps_the_file(self):
         status, body = self.request(
             "/api/agent",

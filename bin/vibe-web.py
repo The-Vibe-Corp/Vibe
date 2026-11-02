@@ -180,6 +180,22 @@ def roots_info():
         out.append({"path": r, "fixed": r == vibe.VIBE, "projects": [k for k, v in pm.items() if os.path.dirname(v) == r]})
     return out
 
+def project_agents_info(n):
+    """Agentenauswahl eines Projekts samt Modellen für die Oberfläche."""
+    info = vibe.models_info()
+    data = {"project": n, "agents": [], "error": None,
+            "models": [], "info": {m["id"]: m for m in info.get("models", [])},
+            "stand": info.get("stand", ""), "hinweis": info.get("hinweis", "")}
+    try:
+        data["agents"] = vibe.project_agent_rows(n)
+    except ValueError as error:
+        data["error"] = str(error)
+    try:
+        data["models"] = vibe.models_list()
+    except Exception:
+        data["models"] = []
+    return data
+
 def agents_info():
     info = vibe.models_info()
     ps = vibe.projects()
@@ -341,6 +357,7 @@ class H(BaseHTTPRequestHandler):
             if u.path == "/api/project": return self._send(200, project_detail(known(q["name"][0])))
             if u.path == "/api/roots": return self._send(200, roots_info())
             if u.path == "/api/agents": return self._send(200, agents_info())
+            if u.path == "/api/project-agents": return self._send(200, project_agents_info(known(q["name"][0])))
             if u.path == "/api/costs":
                 n = q.get("name", [""])[0]
                 return self._send(200, vibe.costs_project(known(n)) if n else vibe.costs_overview())
@@ -568,6 +585,18 @@ class H(BaseHTTPRequestHandler):
                     else: ok, msg = False, "Unbekannte Aktion"
                 except ValueError as e:
                     ok, msg = False, str(e)
+            elif u.path == "/api/project-agents":
+                project = known(body.get("name", ""))
+                try:
+                    vibe.project_agent_set(project, body.get("agent", ""),
+                                           selected=body.get("selected"),
+                                           model=body.get("model"))
+                    ok, msg = True, "Agentenauswahl gespeichert"
+                except vibe_storage.ConcurrentChangeError as e:
+                    return self._error(409, "conflict", str(e))
+                except ValueError as e:
+                    ok, msg = False, str(e)
+                extra["project_agents"] = project_agents_info(project)
             elif u.path == "/api/agent_template":
                 scope = known_scope(body.get("scope", "global"))
                 dirs = vibe.write_dirs(scope) if scope != "global" else None
@@ -576,7 +605,14 @@ class H(BaseHTTPRequestHandler):
                 act = body.get("action"); scope = known_scope(body.get("scope", "global")); an = body.get("name", "")
                 try:
                     if act == "save":
-                        warn = vibe.agent_write(scope, an, body.get("text", ""), create=bool(body.get("create")), expected=body.get("expected"))
+                        # Die strukturierten Eingaben sind auch ohne Klick auf
+                        # „In Rohtext übernehmen“ wirksam. Die Oberfläche sendet
+                        # nur geänderte Felder, damit freie Rohtextänderungen an
+                        # anderen Stellen erhalten bleiben.
+                        text = body.get("text", "")
+                        if body.get("values") is not None:
+                            text = vibe.agent_render_fields(scope, text, body.get("values"))
+                        warn = vibe.agent_write(scope, an, text, create=bool(body.get("create")), expected=body.get("expected"))
                         snapshot = vibe.agent_snapshot(scope, an)
                         extra["text"] = snapshot.text; extra["digest"] = snapshot.digest
                         ok, msg = True, "Gespeichert" + (" – Hinweis: " + " ".join(warn) if warn else "")
@@ -865,7 +901,7 @@ async function detail(name){
    el('div',{},pauseCard(d,name),autonomousCard(d,name),checksCard,factsCard))),
   ausgabe:tabPanel('ausgabe',L.card),
   assistent:tabPanel('assistent',guideCard(name)),
-  einstellungen:tabPanel('einstellungen',el('div',{class:'grid'},rightsCard(d,name),sandboxCard(d,name)))};
+  einstellungen:tabPanel('einstellungen',el('div',{class:'grid'},projectAgentsCard(name),rightsCard(d,name),sandboxCard(d,name)))};
  const tabs=detailTabs(panels);
  openTab=k=>showDetailTab(k,panels,tabs.btns);
  main.replaceChildren(...[head,initCard,tabs.list,panels.arbeit,panels.ausgabe,panels.assistent,panels.einstellungen].filter(Boolean));
@@ -884,6 +920,24 @@ function autonomousCard(d,name){
  const btn=el('button',{class:'b'+(active?'':' p'),type:'button',on:{click:async()=>{const r=await api('/api/autonomous',{name,action:active?'off':'on'});toast(r.message);if(r.ok)detail(name).catch(showErr)}}},active?'Autonomen Modus ausschalten':'Autonomen Modus einschalten');
  return el('div',{class:'card',id:'autonomous'},el('div',{class:'bar'},el('b',{},'Autonomer Modus'),el('span',{class:'pill '+(active?'warn':'mut')},active?'aktiv':'aus'),btn),
   el('div',{class:'mut'},'Ist der Modus aktiv, entscheidet der Agent ohne Antwort des Nutzers selbst und dokumentiert die Entscheidung als Antwort auf seine Rückfrage. Die Einstellung lässt sich auch während eines Laufs ändern und gilt nur für dieses Projekt.'))}
+function projectAgentsCard(name){
+ const body=el('div',{},el('span',{class:'mut'},'Lade Agenten …'));
+ const rowsCard=(data)=>{
+  const rows=data.agents.map(a=>{
+   const cb=el('input',{type:'checkbox','aria-label':'Agent '+a.name+' auswählen'});cb.checked=!!a.selected;
+   const mo=modelSelect(data.models,data.info,a.override,'— Standard aus Agentendatei —');mo.setAttribute('aria-label','Modell für '+a.name);
+   const change=async()=>{const r=await api('/api/project-agents',{name,agent:a.name,selected:cb.checked,model:mo.value});toast(r.message);if(r.ok)load().catch(showErr)};
+   cb.addEventListener('change',change);mo.addEventListener('change',change);
+   return el('tr',{'data-project-agent':a.name,'data-selected':a.selected?'ja':'nein'},
+    el('td',{},cb),el('td',{},a.name),el('td',{class:'mut'},a.scope==='global'?'global':'Projekt'),
+    el('td',{class:'mut'},a.effective_model||'—'),el('td',{},mo))});
+  const parts=[el('div',{class:'mut'},'Der Agent läuft mit dem Modell aus seiner Datei. Eine Auswahl hier gilt nur für dieses Projekt; abgewählte Agenten startet vibe nicht.'),
+   el('table',{},el('tr',{},...['Aktiv','Agent','Geltung','Wirksames Modell','Modell für dieses Projekt'].map(h=>el('th',{},h))),...rows)];
+  if(data.error)parts.push(el('div',{class:'bad'},data.error));
+  body.replaceChildren(...parts)};
+ const load=async()=>{const data=await api('/api/project-agents?name='+encodeURIComponent(name));rowsCard(data)};
+ load().catch(e=>body.replaceChildren(el('div',{class:'bad'},'Agentenauswahl nicht verfügbar: '+String(e&&e.message||e))));
+ return el('div',{class:'card',id:'project-agents'},el('b',{},'Agenten in diesem Projekt'),body)}
 function guideCard(name){
  const body=el('div',{},el('span',{class:'mut'},'Lade Projektassistent …'));
  const load=async()=>{const g=await api('/api/guide?name='+encodeURIComponent(name));body.replaceChildren(...drawGuide(g,name))};
@@ -1198,6 +1252,11 @@ async function agentForm(scope,name){const d=AG||await api('/api/agents');const 
  const st=el('input',{'aria-label':'Max. Schritte',placeholder:'z. B. 60',value:isNew?'':(fields.steps||'')});
  const pr=el('textarea',{'aria-label':'Prompt',rows:5,placeholder:'System-Prompt: Rolle, Regeln, Ausgabeformat',value:isNew?'':(fields.prompt||'')});
  const raw=el('textarea',{class:'raw','aria-label':'Datei (Frontmatter + Prompt)'});raw.value=text;
+ // F17: Ausgangsstand der strukturierten Felder. Beim Speichern werden nur
+ // geänderte Felder übernommen; freie Rohtextänderungen an anderer Stelle
+ // bleiben erhalten und eine geänderte Modellauswahl geht nicht verloren.
+ const formValues=()=>({description:ds.value,mode:md.value,model:mo.value,temperature:tp.value,steps:st.value,permission:pm.value,prompt:pr.value});
+ let baseline=formValues();
  const hint=el('div',{class:'mut'});
  const updHint=()=>{const dirs=sc.value==='global'?null:(d.write_dirs[sc.value]||[]);const err=sc.value==='global'?null:(d.write_dirs_errors||{})[sc.value];
   hint.textContent=err?'Schreibrechte nicht lesbar: '+err:(sc.value==='global'?'Global: volle Schreibrechte ohne Verzeichnisgrenze.':'Schreibrechte (edit, voll) nur in: '+(dirs&&dirs.length?dirs.join(', '):'keine Verzeichnisse – Schreiben gesperrt')+'. Shell (bash) bleibt erlaubt.')};
@@ -1223,7 +1282,11 @@ async function agentForm(scope,name){const d=AG||await api('/api/agents');const 
   el('div',{class:'bar'},isNew?el('button',{class:'b',type:'button',on:{click:()=>gen()}},'Datei aus Eingaben erzeugen'):
    el('button',{class:'b',type:'button',on:{click:()=>apply()}},'In Rohtext übernehmen'),
    el('span',{class:'mut'},'Das Ergebnis unten kann vor dem Speichern frei bearbeitet werden.')));
- const save=async()=>{const n=isNew?nm.value:name,s=isNew?sc.value:scope;const r=await api('/api/agent',{action:'save',scope:s,name:n,text:raw.value,create:isNew,expected:digest});toast(r.message);if(r.ok){if(isNew)agents().catch(showErr);else{digest=r.digest;raw.value=r.text}}};
+ const save=async()=>{const n=isNew?nm.value:name,s=isNew?sc.value:scope;
+  const payload={action:'save',scope:s,name:n,text:raw.value,create:isNew,expected:digest};
+  if(structured){const current=formValues(),changed={};for(const k in current)if(current[k]!==baseline[k])changed[k]=current[k];
+   if(Object.keys(changed).length)payload.values=changed}
+  const r=await api('/api/agent',payload);toast(r.message);if(r.ok){baseline=formValues();if(isNew)agents().catch(showErr);else{digest=r.digest;raw.value=r.text}}};
  const cp=el('select',{'aria-label':'Kopieren nach …'},el('option',{value:''},'Kopieren nach …'),...['global',...d.projects].filter(x=>x!==scope).map(x=>el('option',{value:x},x==='global'?'global':'Projekt: '+x)));
  const delAgent=isNew?null:el('button',{class:'b d',type:'button',on:{click:()=>askInline(delAgent,'Agent „'+name+'“ löschen? Eine Sicherung bleibt in agent-backups.','Ja, löschen',async()=>{const r=await api('/api/agent',{action:'delete',scope,name});toast(r.message);if(r.ok)agents().catch(showErr)})}},'Löschen');
  const backupBox=el('div',{id:'agent-backups'},el('span',{class:'mut'},'Noch keine Sicherung.'));
