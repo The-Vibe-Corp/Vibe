@@ -311,7 +311,7 @@ Ein fehlender externer Dienst bedeutet BLOCKIERT, nicht erledigt.
   Review: docs/reviews/V-016-review-1.md (PASS, 0 Critical/High/Medium, 2 Minor)
   Dokumentation: docs/features/V-016.md; Trilium `hv8eqCTudXhH`
 
-- [ ] V-017 Bazzite-Starter produktionsreif integrieren
+- [x] V-017 Bazzite-Starter produktionsreif integrieren
   Priorität: P1
   Abhängigkeiten: V-004, V-006, V-016
   Umfang: Host-Installer, Desktopdatei, Icon, Starter und Uninstaller.
@@ -322,6 +322,12 @@ Ein fehlender externer Dienst bedeutet BLOCKIERT, nicht erledigt.
   Tests: Mocktests und echte manuelle Bazzite-Abnahme;
   Container aus/an, Dashboard aus/an, Startfehler, Doppelklick,
   Tokenwechsel, Sonderzeichen im Pfad.
+  Commit: f9c0af2; Test: test_double_click_creates_exactly_one_dashboard
+  (tests/unit/test_bazzite_starter.py, 37 Tests);
+  Prüfung: bash scripts/verify.sh quick/full;
+  Review: docs/reviews/V-017-review-1.md;
+  Doku: docs/features/V-017.md, docs/features/V-017-bazzite.txt,
+  Trilium qB4ymeCudpPf.
 
 - [ ] V-018 Installation, Aktualisierung und Rollback implementieren
   Priorität: P1
