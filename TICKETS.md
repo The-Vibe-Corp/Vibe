@@ -359,7 +359,7 @@ Ein fehlender externer Dienst bedeutet BLOCKIERT, nicht erledigt.
   Reviewnachweise vollständig; Release ohne persönliche Daten reproduzierbar.
   Tests: vollständige Suite und Checkliste mit Versionen und Ergebnissen.
 
-- [ ] V-021 Installationsvollständigkeit und Aufräumregeln
+- [x] V-021 Installationsvollständigkeit und Aufräumregeln
   Priorität: P1
   Abhängigkeiten: V-006, V-018
   Umfang: Setup installiert jedes vom Startbefehl importierte Modul;
@@ -372,4 +372,13 @@ Ein fehlender externer Dienst bedeutet BLOCKIERT, nicht erledigt.
   lässt vorhandene Inhalte sowie Symlinks unverändert.
   Tests: `tests/unit/test_setup_vibe.py`,
   `tests/unit/test_project_management.py`; `bash scripts/verify.sh quick/full`.
-  Dokumentation: `docs/features/V-021.md` und Trilium.
+  Commit: `9d7f17d`; Test: test_every_module_imported_by_the_launcher_is_installed,
+  test_installed_launcher_starts_with_all_options (47 Setup-Tests),
+  test_init_appends_general_rules_to_an_existing_agents_file,
+  test_init_does_not_duplicate_general_rules, test_init_does_not_follow_an_agents_symlink
+  (16 Projektverwaltungstests).
+  Prüfungen: `bash scripts/verify.sh quick` Exit 0;
+  `bash scripts/verify.sh full` Exit 0 (792 Unit- + 56 Browser-Tests, 848 erkannt)
+  in `/tmp/vibe-v021-full`.
+  Review: `docs/reviews/V-021-review-1.md`, `docs/reviews/V-021-review-2.md` (PASS).
+  Dokumentation: `docs/features/V-021.md`; Trilium `TNxOZ5jYhTfI`.
