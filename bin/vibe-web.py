@@ -13,6 +13,8 @@ _spec = importlib.util.spec_from_loader("vibe", _loader)
 vibe = importlib.util.module_from_spec(_spec); sys.modules["vibe"] = vibe; _loader.exec_module(vibe)
 import vibe_mcp
 import vibe_guide
+import vibe_questions
+import vibe_autonomous
 
 try:
     PATHS = vibe_paths.resolve()
@@ -156,6 +158,10 @@ def project_detail(n):
     except Exception as e:
         d["sandbox"] = {"enabled": False, "tools": [], "write_dirs": [], "tool_caches": [],
                         "missing_tools": [], "bwrap": "", "state_dir": "", "error": str(e)}
+    try:
+        d["autonomous"] = vibe_autonomous.is_enabled(PATHS.runtime, n)
+    except ValueError:
+        d["autonomous"] = False
     return d
 
 def guide_info(n):
@@ -354,6 +360,11 @@ class H(BaseHTTPRequestHandler):
             if u.path == "/api/guide": return self._send(200, guide_info(known(q["name"][0])))
             if u.path == "/api/doctor": return self._send(200, [{"label": a, "ok": b, "hint": c} for a, b, c in vibe.doctor_checks()])
             if u.path == "/api/fritz": return self._send(200, vibe.fritz_status())
+            if u.path == "/api/questions": return self._send(200, {"questions": vibe_questions.open_questions(PATHS.runtime)})
+            if u.path == "/api/autonomous":
+                n = q.get("name", [""])[0]
+                if n: known(n)
+                return self._send(200, vibe_autonomous.status(PATHS.runtime, n))
             if u.path == "/api/server": h = vibe.server_health(); return self._send(200, {"up": bool(h), "url": vibe.OC_URL, "info": h})
             if u.path == "/api/stream": return self.stream(known(q["name"][0]), q.get("kind", ["run"])[0])
         except (AssertionError, ValueError) as e:
@@ -373,7 +384,7 @@ class H(BaseHTTPRequestHandler):
             return self._error(e.status, e.code, e.message)
         try:
             name = body.get("name", "")
-            if u.path in ("/api/run", "/api/stop", "/api/verify", "/api/feedback", "/api/ticket", "/api/init", "/api/rights", "/api/pause", "/api/sandbox", "/api/guide", "/api/costs"): known(name)
+            if u.path in ("/api/run", "/api/stop", "/api/verify", "/api/feedback", "/api/ticket", "/api/init", "/api/rights", "/api/pause", "/api/sandbox", "/api/guide", "/api/costs", "/api/autonomous"): known(name)
             extra = {}
             if u.path == "/api/run": ok, msg = call(vibe.cmd_run, name, body.get("agent") or None)
             elif u.path == "/api/stop": ok, msg = call(vibe.cmd_stop, name, body.get("run_id") or None)
@@ -503,6 +514,41 @@ class H(BaseHTTPRequestHandler):
                 except ValueError as e:
                     ok, msg = False, str(e)
                 extra["fritz"] = vibe.fritz_status()
+            elif u.path == "/api/questions":
+                act = body.get("action") or "answer"
+                try:
+                    if act == "answer":
+                        qid = body.get("id")
+                        option = body.get("option")
+                        if option is not None and (isinstance(option, bool) or not isinstance(option, int)):
+                            raise ValueError("Auswahl muss eine Zahl sein")
+                        answer = vibe_questions.answer(
+                            PATHS.runtime, qid, option=option,
+                            text=body.get("text") or "", by="web",
+                        )
+                        ok, msg = True, "Antwort gespeichert: " + (answer["option_text"] or answer["text"])
+                    else:
+                        ok, msg = False, "Unbekannte Aktion"
+                except ValueError as e:
+                    ok, msg = False, str(e)
+                extra["questions"] = vibe_questions.open_questions(PATHS.runtime)
+            elif u.path == "/api/autonomous":
+                act = body.get("action") or "status"
+                state = None
+                try:
+                    if act == "on":
+                        state = vibe_autonomous.set_enabled(PATHS.runtime, name, True)
+                        ok, msg = True, "Autonomer Modus für " + name + " aktiviert"
+                    elif act == "off":
+                        state = vibe_autonomous.set_enabled(PATHS.runtime, name, False)
+                        ok, msg = True, "Autonomer Modus für " + name + " ausgeschaltet"
+                    else:
+                        ok, msg = False, "Unbekannte Aktion"
+                except ValueError as e:
+                    ok, msg = False, str(e)
+                state = state or vibe_autonomous.status(PATHS.runtime, name)
+                extra["autonomous"] = state
+                extra.update(state)
             elif u.path == "/api/guide":
                 act = body.get("action") or "save"
                 path = vibe.ppath(name)
@@ -648,6 +694,15 @@ input[type=checkbox]{width:auto}textarea.raw{font:12px/1.4 ui-monospace,monospac
 .toasts{position:fixed;right:16px;bottom:16px;z-index:200;display:flex;flex-direction:column;gap:8px;width:min(460px,calc(100vw - 32px))}
 .toast{display:flex;gap:10px;align-items:flex-start;background:#232830;border:1px solid var(--line);border-left:3px solid var(--ac);border-radius:8px;padding:10px 12px;box-shadow:0 8px 24px #0008}
 .toast .toasttext{white-space:pre-wrap;overflow-wrap:anywhere}.toast .x{padding:2px 8px;margin-left:auto;cursor:pointer;flex:0 0 auto}
+/* Rückfragen des Agenten (F16) */
+.qwrap{max-width:1300px;margin:0 auto;padding:14px 18px 0}
+.qwrap[hidden]{display:none}
+.qcard{background:var(--card);border:1px solid var(--warn);border-left:4px solid var(--warn);border-radius:8px;padding:12px 14px;margin-bottom:10px}
+.qhead{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:4px}
+.qtext{font-size:15px;font-weight:600;margin:0 0 4px;white-space:pre-wrap;overflow-wrap:anywhere}
+.qopts{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0 0}
+.qfree{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;align-items:center}
+.qfree input{flex:1 1 240px;width:auto;min-width:0}
 .confirm{display:inline-flex;gap:8px;align-items:center;flex-wrap:wrap;background:#2a2416;border:1px solid var(--warn);border-radius:6px;padding:4px 8px}
 /* Projektdetail: feste Kopfleiste, Register und Kennzahlen (F13) */
 .tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin:0 0 16px;overflow-x:auto;scrollbar-width:thin}
@@ -672,7 +727,7 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,
 [role=tabpanel][hidden]{display:none}
 @media(max-width:640px){.detailbar{position:static}.dactions{margin-left:0;flex-wrap:wrap}.dmeta{display:none}}
 </style></head><body>
-<header><h1>vibe</h1><nav id="nav"></nav><span id="srv" style="margin-left:auto;display:flex;gap:8px;align-items:center"></span></header><main id="main"></main>
+<header><h1>vibe</h1><nav id="nav"></nav><span id="srv" style="margin-left:auto;display:flex;gap:8px;align-items:center"></span></header><div id="questions" class="qwrap" role="region" aria-label="Rückfragen" aria-live="polite" hidden></div><main id="main"></main>
 <script>
 const T=(()=>{const m=location.hash.match(/t=([^&]+)/);if(m){sessionStorage.t=m[1];history.replaceState(null,'',location.pathname)}return sessionStorage.t||''})();
 function errText(j,status){const e=j&&j.error;return (e&&(e.message||e))||(j&&j.message)||('HTTP '+status)}
@@ -688,6 +743,40 @@ const toastBox=el('div',{id:'toasts',class:'toasts',role:'status','aria-live':'p
 document.body.append(toastBox);
 function toast(m){const t=el('div',{class:'toast'},el('span',{class:'toasttext'},String(m)),el('button',{class:'b x',type:'button','aria-label':'Meldung schließen',title:'Meldung schließen',on:{click:()=>t.remove()}},'×'));
  toastBox.prepend(t);while(toastBox.children.length>4)toastBox.lastElementChild.remove();setTimeout(()=>t.remove(),8000)}
+/* Rückfragen (F16): Der Agent stellt eine Frage, das Dashboard zeigt sie mit
+   den angebotenen Möglichkeiten und schreibt die Antwort zurück. */
+const qbox=document.getElementById('questions'),qBaseTitle=document.title;
+let qSeen=new Set(),qSig=null;
+function questionCard(q){
+ const send=body=>answerQuestion(q.id,body);
+ const opts=(q.options||[]).map((text,i)=>el('button',{class:'b'+(i===0?' p':''),type:'button','data-option':String(i),on:{click:()=>send({option:i})}},text));
+ let free=null;
+ if(q.free_text!==false){
+  const inp=el('input',{type:'text','aria-label':'Eigene Antwort zu '+q.id,placeholder:'Eigene Antwort …',maxlength:'4000'});
+  const go=()=>{const text=inp.value.trim();if(!text){inp.focus();return}send({text})};
+  inp.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();go()}});
+  free=el('div',{class:'qfree'},inp,el('button',{class:'b p',type:'button',on:{click:go}},'Antwort senden'));
+ }
+ const auto=q.project?el('button',{class:'b',type:'button',title:'Der Agent entscheidet ohne Antwort selbst und dokumentiert die Entscheidung',on:{click:()=>setAutonomous(q.project)}},'Autonom entscheiden'):null;
+ return el('section',{class:'qcard','data-question':q.id,'data-id':q.id},el('div',{class:'qhead'},el('span',{class:'pill warn'},'Rückfrage'),q.project?el('span',{class:'mut'},q.project):null,q.agent?el('span',{class:'mut'},'Agent: '+q.agent):null),el('p',{class:'qtext'},q.text),opts.length?el('div',{class:'qopts'},...opts):null,free,auto?el('div',{class:'qopts'},auto):null);
+}
+function showQuestions(list){
+ const fresh=list.filter(q=>!qSeen.has(q.id));qSeen=new Set(list.map(q=>q.id));
+ const sig=JSON.stringify(list.map(q=>[q.id,q.project,q.agent,q.text,q.options,q.free_text]));
+ if(sig!==qSig){qSig=sig;qbox.replaceChildren(...list.map(questionCard));qbox.hidden=!list.length}
+ document.title=list.length?'('+list.length+') '+qBaseTitle:qBaseTitle;
+ if(fresh.length)toast('Neue Rückfrage'+(fresh[0].project?' ('+fresh[0].project+')':'')+': '+fresh[0].text);
+}
+async function answerQuestion(id,body){
+ try{const r=await api('/api/questions',Object.assign({action:'answer',id},body));
+  if(r.ok){toast(r.message);showQuestions(r.questions||[])}else toast(r.message||'Antwort abgelehnt')}catch(e){toast('Antwort nicht gesendet: '+String(e&&e.message||e))}
+}
+async function setAutonomous(name){
+ try{const r=await api('/api/autonomous',{name,action:'on'});toast(r.message);
+  if(r.ok)showQuestions((await api('/api/questions')).questions||[])}catch(e){toast('Autonomer Modus nicht geändert: '+String(e&&e.message||e))}
+}
+async function pollQuestions(){try{showQuestions((await api('/api/questions')).questions||[])}catch(e){}}
+pollQuestions();setInterval(pollQuestions,3000);
 function askInline(btn,q,okLabel,run){if(!btn.isConnected)return;
  const bar=btn.parentNode;if(bar&&bar.querySelector('.confirm'))return;
  const back=()=>{group.remove();btn.hidden=false;if(btn.isConnected)btn.focus()};
@@ -773,7 +862,7 @@ async function detail(name){
  const L=logView(d,()=>stream('run'));
  const panels={arbeit:tabPanel('arbeit',tiles,el('div',{class:'grid'},
    el('div',{},itemsCard,ticketCard(d,name),ticketFormCard(d,name),feedbackCard(d,name),bugFormCard(d,name),feedbackFormCard(d,name)),
-   el('div',{},pauseCard(d,name),checksCard,factsCard))),
+   el('div',{},pauseCard(d,name),autonomousCard(d,name),checksCard,factsCard))),
   ausgabe:tabPanel('ausgabe',L.card),
   assistent:tabPanel('assistent',guideCard(name)),
   einstellungen:tabPanel('einstellungen',el('div',{class:'grid'},rightsCard(d,name),sandboxCard(d,name)))};
@@ -790,6 +879,11 @@ function pauseCard(d,name){
  const btn=el('button',{class:'b'+(active?' p':''),on:{click:async()=>{const r=await api('/api/pause',{name,action:active?'off':'on'});toast(r.message);if(r.ok)detail(name).catch(showErr)}}},active?'Pause aufheben':'Nach aktuellem Paket anhalten');
  return el('div',{class:'card'},el('div',{class:'bar'},el('b',{},'Arbeitspaket-Pause'),el('span',{class:'pill '+(active?'warn':'mut')},active?'Pause angefordert':'keine Pause'),btn),
   el('div',{class:'mut'},'Der laufende Agent wird nicht unterbrochen. Nach dem aktuellen Arbeitspaket startet der Läufer kein neues Paket; die Anforderung gilt einmalig und wird beim Anhalten verbraucht.'))}
+function autonomousCard(d,name){
+ const active=!!d.autonomous;
+ const btn=el('button',{class:'b'+(active?'':' p'),type:'button',on:{click:async()=>{const r=await api('/api/autonomous',{name,action:active?'off':'on'});toast(r.message);if(r.ok)detail(name).catch(showErr)}}},active?'Autonomen Modus ausschalten':'Autonomen Modus einschalten');
+ return el('div',{class:'card',id:'autonomous'},el('div',{class:'bar'},el('b',{},'Autonomer Modus'),el('span',{class:'pill '+(active?'warn':'mut')},active?'aktiv':'aus'),btn),
+  el('div',{class:'mut'},'Ist der Modus aktiv, entscheidet der Agent ohne Antwort des Nutzers selbst und dokumentiert die Entscheidung als Antwort auf seine Rückfrage. Die Einstellung lässt sich auch während eines Laufs ändern und gilt nur für dieses Projekt.'))}
 function guideCard(name){
  const body=el('div',{},el('span',{class:'mut'},'Lade Projektassistent …'));
  const load=async()=>{const g=await api('/api/guide?name='+encodeURIComponent(name));body.replaceChildren(...drawGuide(g,name))};

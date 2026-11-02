@@ -18,21 +18,6 @@
    "bytes": 3293
   },
   {
-   "path": "bin/vibe",
-   "sha256": "9ed9cdd666014e6c80a34f7912b0d841cc608e52c3efa176850ccee1a7af5c27",
-   "bytes": 140522
-  },
-  {
-   "path": "bin/vibe-run.sh",
-   "sha256": "adadabbc64b3abf053dd098997521b6b420ac03bfecf8de370e3ae5a74086280",
-   "bytes": 9748
-  },
-  {
-   "path": "bin/vibe-web.py",
-   "sha256": "811bce4a87cde2395045a3d3de9a0375a62545944cbabbd7a9a80fc7eda165d9",
-   "bytes": 106824
-  },
-  {
    "path": "bin/vibe_guide.py",
    "sha256": "d5fd488738af33fdb484a3b3e22818629ab66cb6d5edd72e1a63cf8b45c78936",
    "bytes": 26241
@@ -61,11 +46,6 @@
    "path": "bin/vibe_runs.py",
    "sha256": "238c287fd7a4f11274a502fc47cc59482f222ac16cea450dcd844bc290b7df85",
    "bytes": 12084
-  },
-  {
-   "path": "bin/vibe_sandbox.py",
-   "sha256": "1c8cdb415dbd25eace3751660e00868465d2db9d8b5a97428baa39c5cbbb12ab",
-   "bytes": 20552
   },
   {
    "path": "bin/vibe_storage.py",
@@ -241,6 +221,36 @@
    "path": "templates/web/AGENTS.md",
    "sha256": "c5a8cfeb192dedc6110bd8e750576e7905dcbb2adf54c6238e92d9e1e217b044",
    "bytes": 826
+  },
+  {
+   "path": "bin/vibe_autonomous.py",
+   "sha256": "3719eaa5a360e3a47afc3e0ead250d7e4b62e4fb4ca721d70a894c0c81ef7418",
+   "bytes": 5149
+  },
+  {
+   "path": "bin/vibe",
+   "sha256": "55c53d25742ce008f52083147b3597645ce3c719d03f938759fb54bc8da93513",
+   "bytes": 148791
+  },
+  {
+   "path": "bin/vibe-run.sh",
+   "sha256": "77e7da579eba10f8f3483d5b60b7d0e2489cd351fe8b6050444fbc33b7f577a8",
+   "bytes": 10571
+  },
+  {
+   "path": "bin/vibe-web.py",
+   "sha256": "0774904f9804513a47cd2083c8ac046ea15a0880991cdfd37be9d9d09b9c1179",
+   "bytes": 113560
+  },
+  {
+   "path": "bin/vibe_sandbox.py",
+   "sha256": "255fa5071b27c5bce57be81eb2c09dac88356d61fe242fdeed4da81868034fc5",
+   "bytes": 22772
+  },
+  {
+   "path": "bin/vibe_questions.py",
+   "sha256": "d5630e455a667973fdafbe91ad44944da0bf0a4865a4d714d00eee3065aeb10f",
+   "bytes": 11589
   }
  ],
  "aenderungen": [
@@ -525,6 +535,19 @@
    "dateien": [
     "bin/vibe",
     "bin/vibe-web.py"
+   ]
+  },
+  {
+   "arbeitspaket": "F16",
+   "datum": "2026-11-01",
+   "grund": "Rückfragen von Agenten an den Nutzer: neue Module vibe_questions.py und vibe_autonomous.py speichert Fragen und Antworten als getrennte JSON-Dateien im Laufzeitordner (zweite Antwort unmöglich, enge ID-Prüfung, Längengrenzen). CLI um ask/questions/answer erweitert, Dashboard zeigt offene Rückfragen mit Auswahl und freier Antwort, API GET/POST /api/questions, Sandbox bindet nur den Unterordner questions beschreibbar ein, Laufhinweis nennt vibe ask.",
+   "dateien": [
+    "bin/vibe",
+    "bin/vibe-run.sh",
+    "bin/vibe-web.py",
+    "bin/vibe_sandbox.py",
+    "bin/vibe_questions.py",
+    "bin/vibe_autonomous.py"
    ]
   }
  ]

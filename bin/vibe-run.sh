@@ -60,6 +60,11 @@ if ! [[ "$MAXR" =~ ^[0-9]+$ ]]; then
   exit 2
 fi
 TRIES_PER_ITEM=$((MAXR + 1))
+# Hinweis an den Agenten (F16): Rückfragen erscheinen im Dashboard; ohne
+# Antwort im Zeitlimit bleibt die Frage offen und wird später fortgesetzt.
+# Ist der autonome Modus aktiv, entscheidet der Agent selbst (auch wenn der
+# Nutzer ihn während des Wartens einschaltet) und dokumentiert die Entscheidung.
+QUESTION_HINT='Wenn eine fachliche Entscheidung offen ist, stelle eine Rückfrage mit vibe ask "Frage" --option "A" --option "B"; sie erscheint im Dashboard. Ohne Antwort im Zeitlimit endet der Befehl mit Exit-Code 3, die Frage bleibt offen; setze danach mit vibe ask --wait <id> fort. Im autonomen Modus (vibe autonomous on <projekt>) oder wenn der Nutzer ihn während des Wartens einschaltet, entscheidest du selbst und dokumentierst die Entscheidung mit vibe answer <id> --text "..." --by agent.'
 # Ein zu großes Protokoll wird vor dem Start rotiert (max. 5 MiB, 3 Archive).
 if [ -f "$RUNS_PY" ]; then
   python3 "$RUNS_PY" rotate "$LOG" >/dev/null 2>&1 || true
@@ -165,7 +170,8 @@ for n in $(seq 1 "$MAXP"); do
   echo "=== [$NAME] Arbeitspaket $ID, Versuch ${TRY[$ID]}/$TRIES_PER_ITEM, Durchgang $n/$MAXP  $(date +%T) ===" | tee -a "$LOG"
   PROMPT="Arbeitspaket $ID. Der Punkt steht in FEEDBACK.md bzw. TICKETS.md des Projektordners. Wortlaut:
 $BLOCK
-Bearbeite NUR dieses Arbeitspaket gemäß deinem Workflow. Commit-Präfix: '$ID:'."
+Bearbeite NUR dieses Arbeitspaket gemäß deinem Workflow. Commit-Präfix: '$ID:'.
+$QUESTION_HINT"
   "${SANDBOX_WRAP[@]}" opencode run $SERVER_ARGS --auto --thinking --agent "$AGENT" --title "$NAME $ID" "$PROMPT" 2>&1 | tee -a "$LOG"
   RC=${PIPESTATUS[0]}
   echo "=== Agent beendet, Exit-Code $RC ===" | tee -a "$LOG"

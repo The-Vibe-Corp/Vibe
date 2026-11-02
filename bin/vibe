@@ -9,6 +9,12 @@ Aufruf:  vibe                 interaktives Menü
          vibe logs <p>        Log verfolgen
          vibe stop <p> [lauf-id]  Lauf beenden (ohne ID: der letzte laufende Lauf)
          vibe pause <p> [on|off]  nach dem aktuellen Arbeitspaket anhalten
+         vibe ask "Frage" [--option "A" ...] [--project <p>] [--timeout <s>] [--no-wait]
+                              Rückfrage an den Nutzer (erscheint im Dashboard)
+         vibe ask --wait <id> [--timeout <s>]  auf die Antwort einer Rückfrage warten
+         vibe questions       offene Rückfragen anzeigen
+         vibe answer <id> [--option <nummer>|--text "..."] [--by <quelle>]  Rückfrage beantworten
+         vibe autonomous [on|off|status] [--project <p>]  autonomer Modus (Agent entscheidet selbst)
          vibe fritz [status|on|off|reconnect]  FRITZ!Box-Reconnect (Automatik/manuel)
          vibe verify <p> [quick|full]
          vibe feedback <p>    neuen Punkt in FEEDBACK.md eintragen
@@ -36,7 +42,7 @@ import urllib.parse
 
 if __name__ == "__main__": sys.modules["vibe"] = sys.modules[__name__]
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
-import vibe_storage, vibe_paths, vibe_opencode, vibe_models, vibe_runs
+import vibe_storage, vibe_paths, vibe_opencode, vibe_models, vibe_runs, vibe_questions, vibe_autonomous
 
 try:
     PATHS = vibe_paths.resolve()
@@ -2931,6 +2937,181 @@ def cmd_mcp(action="list", name=None, scope="global", backup=None):
     import vibe_mcp
     vibe_mcp.cli(action, name, scope, backup)
 
+# ---------- Rückfragen (F16) ----------
+ASK_DEFAULT_TIMEOUT = 90.0
+
+def _ask_number(text, name):
+    try:
+        value = float(text)
+    except (TypeError, ValueError):
+        sys.exit(name + " ist keine Zahl: " + str(text))
+    if value < 0:
+        sys.exit(name + " darf nicht negativ sein.")
+    return value
+
+def _ask_value(args, index, option):
+    if index >= len(args):
+        sys.exit("Option " + option + " braucht einen Wert.")
+    return args[index]
+
+def _ask_answer_text(answer):
+    return answer.get("option_text") or answer.get("text") or ""
+
+def _ask_timeout(qid, timeout, seconds):
+    print("Rückfrage " + qid + " noch offen (keine Antwort innerhalb von " + f"{timeout:g}" + " s).")
+    print("Fortsetzen mit: vibe ask --wait " + qid + " --timeout " + f"{seconds:g}"
+          + "   (oder im Dashboard beantworten)")
+
+def _ask_autonomous(qid, record=None):
+    """Hinweis an den Agenten, wenn der autonome Modus die Antwort ersetzt."""
+    print("Autonomer Modus aktiv: Der Nutzer ist nicht erreichbar.")
+    choice = '--option <nummer> --text "..."' if record and record.get("options") else '--text "..."'
+    print("Entscheide selbst und dokumentiere die Entscheidung mit: vibe answer "
+          + qid + " " + choice + " --by agent")
+
+def _ask_wait(qid, project, timeout):
+    """Wartet auf eine Antwort; der autonome Modus beendet das Warten sofort."""
+    if vibe_autonomous.is_enabled(LOGS, project):
+        return "stop", None
+    return vibe_questions.wait_for(
+        LOGS, qid, timeout=timeout,
+        stop=lambda: vibe_autonomous.is_enabled(LOGS, project),
+    )
+
+def cmd_ask(args):
+    """Stellt eine Rückfrage oder wartet auf die Antwort einer bestehenden."""
+    text_parts, options = [], []
+    project, wait_id = None, None
+    timeout, free_text = ASK_DEFAULT_TIMEOUT, True
+    i = 0
+    while i < len(args):
+        arg = args[i]
+        if arg == "--option":
+            i += 1; options.append(_ask_value(args, i, "--option"))
+        elif arg == "--project":
+            i += 1; project = _ask_value(args, i, "--project")
+        elif arg == "--timeout":
+            i += 1; timeout = _ask_number(_ask_value(args, i, "--timeout"), "Zeitlimit")
+        elif arg == "--wait":
+            i += 1; wait_id = _ask_value(args, i, "--wait")
+        elif arg == "--no-wait": timeout = 0.0
+        elif arg == "--no-free": free_text = False
+        elif arg.startswith("-"): sys.exit("Unbekannte Option: " + arg)
+        else: text_parts.append(arg)
+        i += 1
+    text = " ".join(text_parts).strip()
+    try:
+        if wait_id:
+            record = vibe_questions.load(LOGS, wait_id)
+            if record["answer"] is not None:
+                print("Antwort: " + _ask_answer_text(record["answer"]))
+                return
+            mode, answer = _ask_wait(wait_id, record.get("project") or "", timeout)
+            if mode == "answer":
+                print("Antwort: " + _ask_answer_text(answer))
+                return
+            if mode == "stop" or vibe_autonomous.is_enabled(LOGS, record.get("project") or ""):
+                _ask_autonomous(wait_id, record); return
+            _ask_timeout(wait_id, timeout, ASK_DEFAULT_TIMEOUT); sys.exit(3)
+        if not text:
+            sys.exit('Frage fehlt: vibe ask "Frage" [--option "A"] ...')
+        if project is None:
+            project = vibe_questions.project_for_path(os.getcwd(), project_map()) or ""
+        elif project:
+            ppath(project)
+        qid = vibe_questions.create(LOGS, project=project, text=text, options=options, free_text=free_text)
+        print("Rückfrage " + qid + " gestellt: " + text)
+        print("Der Nutzer sieht sie im Dashboard; Antwort im Terminal: vibe answer " + qid + " ...")
+        if timeout <= 0:
+            return
+        mode, answer = _ask_wait(qid, project, timeout)
+        if mode == "answer":
+            print("Antwort: " + _ask_answer_text(answer)); return
+        if mode == "stop" or vibe_autonomous.is_enabled(LOGS, project):
+            _ask_autonomous(qid, vibe_questions.load(LOGS, qid)); return
+        _ask_timeout(qid, timeout, ASK_DEFAULT_TIMEOUT); sys.exit(3)
+    except ValueError as error:
+        sys.exit(str(error))
+
+def cmd_answer(args):
+    """Beantwortet eine Rückfrage aus dem Terminal."""
+    qid, option, text, by = None, None, None, "cli"
+    i = 0
+    while i < len(args):
+        arg = args[i]
+        if arg == "--option":
+            i += 1; raw = _ask_value(args, i, "--option")
+            if not raw.isdigit():
+                sys.exit("--option braucht eine Nummer ab 1.")
+            option = int(raw) - 1
+        elif arg == "--text":
+            i += 1; text = _ask_value(args, i, "--text")
+        elif arg == "--by":
+            i += 1; by = _ask_value(args, i, "--by")
+        elif arg.startswith("-"): sys.exit("Unbekannte Option: " + arg)
+        elif qid is None: qid = arg
+        else: sys.exit("Nur eine Rückfrage-ID erlaubt.")
+        i += 1
+    if not qid:
+        sys.exit('Rückfrage-ID fehlt: vibe answer <id> [--option <nummer>|--text "..."]')
+    if option is None and text is None:
+        sys.exit('Antwort fehlt: --option <nummer> oder --text "..."')
+    try:
+        answer = vibe_questions.answer(LOGS, qid, option=option, text=text or "", by=by)
+    except ValueError as error:
+        sys.exit(str(error))
+    print("Antwort gespeichert: " + _ask_answer_text(answer))
+
+def cmd_autonomous(args):
+    """Schaltet den autonomen Modus um oder zeigt seinen Zustand."""
+    action, project, given = "status", None, False
+    i = 0
+    while i < len(args):
+        arg = args[i]
+        if arg == "--project":
+            i += 1; project = _ask_value(args, i, "--project")
+        elif arg.startswith("-"): sys.exit("Unbekannte Option: " + arg)
+        else:
+            if given: sys.exit("Nur eine Aktion erlaubt (on, off, status).")
+            action, given = arg, True
+        i += 1
+    if action not in ("on", "off", "status"):
+        sys.exit("Unbekannte Aktion: " + action + " (erlaubt: on|off|status)")
+    if project is None:
+        project = vibe_questions.project_for_path(os.getcwd(), project_map()) or ""
+    elif project:
+        ppath(project)
+    try:
+        if action == "status":
+            state = vibe_autonomous.status(LOGS, project)
+            where = " für " + project if project else ""
+            print("Autonomer Modus" + where + ": " + ("aktiv" if state["enabled"] else "aus"))
+            if state["changed"]:
+                print("Geändert: " + state["changed"])
+            return
+        state = vibe_autonomous.set_enabled(LOGS, project, action == "on")
+        where = " für " + project if project else ""
+        print("Autonomer Modus" + where + (" aktiviert." if state["enabled"] else " ausgeschaltet."))
+        if state["enabled"]:
+            print("Ohne Antwort entscheidet der Agent selbst und dokumentiert die Entscheidung mit vibe answer.")
+    except ValueError as error:
+        sys.exit(str(error))
+
+
+def cmd_questions():
+    """Zeigt alle offenen Rückfragen mit ihren Auswahlmöglichkeiten."""
+    items = vibe_questions.open_questions(LOGS)
+    if not items:
+        print("Keine offenen Rückfragen.")
+        return
+    for item in items:
+        where = " [" + item["project"] + "]" if item["project"] else ""
+        print(item["id"] + where + " " + item["text"])
+        for number, label in enumerate(item["options"], 1):
+            print("  " + str(number) + ") " + label)
+        if not item["options"]:
+            print("  (freie Antwort)")
+
 # ---------- Menü ----------
 def pick(title, options):
     print("\n" + col("b", title))
@@ -2995,6 +3176,9 @@ def main():
         table = {"list": lambda: cmd_list(), "status": lambda: cmd_status(r[0]), "run": lambda: cmd_run(r[0], r[1] if len(r) > 1 else None),
                  "attach": lambda: cmd_attach(r[0]), "logs": lambda: cmd_logs(r[0]), "stop": lambda: cmd_stop(r[0], r[1] if len(r) > 1 else None),
                  "pause": lambda: cmd_pause(r[0], r[1] if len(r) > 1 else None),
+                 "ask": lambda: cmd_ask(r), "questions": lambda: cmd_questions(),
+                 "answer": lambda: cmd_answer(r),
+                 "autonomous": lambda: cmd_autonomous(r),
                  "fritz": lambda: cmd_fritz(r[0] if r else None),
                  "verify": lambda: cmd_verify(r[0], r[1] if len(r) > 1 else "quick"), "feedback": lambda: cmd_feedback(r[0]),
                  "new": lambda: cmd_new(r[0], r[1] if len(r) > 1 else "generic", r[2] if len(r) > 2 else None),

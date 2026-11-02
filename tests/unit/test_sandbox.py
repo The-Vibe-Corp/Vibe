@@ -275,6 +275,85 @@ class SandboxCommandTest(SandboxFixture):
         self.assertIn(("--ro-bind", vibe_dir), list(zip(argv, argv[1:])))
         self.assertEqual(argv[-2:], ["--", "/bin/true"])
 
+    def test_runtime_question_folder_is_writable_but_not_the_whole_runtime(self):
+        """F16: Der Agent schreibt Rückfragen nur in den eigenen Unterordner."""
+        self.write_env('SANDBOX=on\nSANDBOX_TOOLS="git"\n')
+        runtime = self.root / "_logs"
+
+        argv = self.sandbox.bwrap_argv(
+            self.project, ["/bin/true"], bwrap="/usr/bin/bwrap", runtime=str(runtime)
+        )
+
+        questions = str(runtime / "questions")
+        pairs = list(zip(argv, argv[1:]))
+        self.assertIn(("--bind", questions), pairs)
+        self.assertNotIn(("--bind", str(runtime)), pairs)
+        self.assertTrue(Path(questions).is_dir(), "Rückfrageordner wurde nicht angelegt")
+
+    def test_question_binding_precedes_the_tmp_write_protection(self):
+        """F16: Auch ein Laufzeitordner unter /tmp bleibt erreichbar."""
+        self.write_env('SANDBOX=on\nSANDBOX_TOOLS="git"\n')
+        runtime = self.root / "_logs"
+
+        argv = self.sandbox.bwrap_argv(
+            self.project, ["/bin/true"], bwrap="/usr/bin/bwrap", runtime=str(runtime)
+        )
+
+        pairs = list(zip(argv, argv[1:]))
+        binding = ("--bind", str(runtime / "questions"))
+        self.assertIn(binding, pairs)
+        self.assertLess(pairs.index(binding), pairs.index(("--remount-ro", "/tmp")))
+
+    def test_without_a_runtime_no_question_folder_is_bound(self):
+        self.write_env('SANDBOX=on\nSANDBOX_TOOLS="git"\n')
+
+        argv = self.sandbox.bwrap_argv(
+            self.project, ["/bin/true"], bwrap="/usr/bin/bwrap", runtime=""
+        )
+
+        pairs = list(zip(argv, argv[1:]))
+        self.assertFalse(
+            [pair for pair in pairs if pair[1].endswith(os.sep + "questions")]
+        )
+        self.assertFalse((self.root / "_logs" / "questions").exists())
+
+    def test_real_sandbox_allows_questions_but_not_the_web_token(self):
+        self.assertIsNotNone(shutil.which("bwrap"), "bubblewrap (bwrap) fehlt")
+        self.write_env('SANDBOX=on\nSANDBOX_TOOLS="git"\n')
+        # Der Laufzeitordner liegt außerhalb der erlaubten Schreibverzeichnisse
+        # (nicht unter /tmp/opencode), damit der Test wirklich die zusätzliche
+        # Bindung des Rückfrageordners prüft. Das Prüfverzeichnis liegt bewusst
+        # im Repository und wird danach wieder entfernt.
+        runtime = Path(tempfile.mkdtemp(prefix=".f16-sandbox-", dir=str(REPO)))
+        self.addCleanup(lambda: shutil.rmtree(runtime, ignore_errors=True))
+        token = runtime / "web.token"
+        token.write_text("GEHEIM", encoding="utf-8")
+        probe = runtime / "questions" / "probe"
+        script = (
+            f"echo ok > {shlex.quote(str(probe))} && echo FRAGE_OK; "
+            f"if echo x > {shlex.quote(str(token))} 2>/dev/null; "
+            "then echo TOKEN_OPEN; else echo TOKEN_DENIED; fi"
+        )
+
+        result = subprocess.run(
+            [sys.executable, str(SANDBOX), str(self.project), "--", "/bin/sh", "-c", script],
+            capture_output=True,
+            text=True,
+            env=dict(
+                os.environ,
+                HOME=str(self.home),
+                VIBE=str(self.root),
+                VIBE_RUNTIME=str(runtime),
+            ),
+            timeout=60,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("FRAGE_OK", result.stdout)
+        self.assertIn("TOKEN_DENIED", result.stdout)
+        self.assertTrue(probe.is_file())
+        self.assertEqual(token.read_text(encoding="utf-8"), "GEHEIM")
+
     def test_explicit_tmp_write_dir_is_not_remounted_read_only(self):
         self.write_env('SANDBOX=on\nSANDBOX_TOOLS="git"\n')
         (self.project / ".vibe" / "permissions.json").write_text(

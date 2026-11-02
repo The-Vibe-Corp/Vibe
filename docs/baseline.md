@@ -156,6 +156,10 @@ Codestelle und die in dieser Sitzung tatsächlich beobachtete Prüfung.
 | CLI | `vibe logs` | vorhanden, noch nicht geprüft | `bin/vibe:235-239`; blockierendes `tail -f`, nicht ausgeführt |
 | CLI | `vibe stop` | vorhanden, noch nicht geprüft | `bin/vibe:241-242`; beendet tmux-Sitzung, nicht ausgeführt |
 | CLI | `vibe pause` | vorhanden und automatisiert geprüft | `bin/vibe:404-448`; `tests/unit/test_pause_after_package.py` prüft Anfordern, Status, Aufheben und die Ablehnung unbekannter Projekte ohne Markierung; `bin/vibe-run.sh:31-65` verbraucht die Markierung und startet kein neues Paket |
+| CLI | `vibe ask` | vorhanden und automatisiert geprüft | `bin/vibe` (`cmd_ask`); `tests/unit/test_questions.py` prüft Stellen mit Auswahl, Projektableitung, Ablehnung unbekannter Projekte, Zeitlimit mit Exit-Code 3 und Fortsetzen mit `--wait`; `tests/browser/test_questions_ui.py` zeigt die Frage samt Vorschlägen im Dashboard |
+| CLI | `vibe questions` | vorhanden und automatisiert geprüft | `bin/vibe` (`cmd_questions`); `tests/unit/test_questions.py` prüft die Liste offener Fragen mit nummerierten Vorschlägen |
+| CLI | `vibe answer` | vorhanden und automatisiert geprüft | `bin/vibe` (`cmd_answer`); `tests/unit/test_questions.py` prüft Auswahl- und freie Antwort sowie die Quelle `--by agent`; `tests/unit/test_questions.py` und `tests/browser/test_questions_ui.py` prüfen die Ablehnung einer zweiten Antwort |
+| CLI | `vibe autonomous` | vorhanden und automatisiert geprüft | `bin/vibe` (`cmd_autonomous`); `tests/unit/test_questions.py` prüft Ein/Aus/Status je Projekt, die sofortige Entscheidung im aktiven Modus und den Abbruch eines laufenden Wartens beim Einschalten |
 | CLI | `vibe fritz` | vorhanden und automatisiert geprüft | `bin/vibe:455-595`; `tests/unit/test_fritz_reconnect.py` prüft Automatik aus/an, Status ohne Zugangsdaten, manuellen Reconnect gegen eine Attrappe, Fehler, Timeout und die Automatiksperre des Läufers; `bin/vibe-run.sh:53-56` ruft den Wächter nach einem Agentenfehler auf |
 | CLI | `vibe verify` | teilweise vorhanden | `bin/vibe:244-255`; Fehlerfall ohne Prüfbefehl ausgeführt (Exit 1); Rückgabecode des Prüfbefehls wird nicht weitergereicht |
 | CLI | `vibe feedback` | vorhanden, noch nicht geprüft | `bin/vibe:257-274`; interaktiver Schreibvorgang, nicht ausgeführt |
@@ -213,6 +217,10 @@ eigenen Test.
 | API | `GET /api/types` | vorhanden, noch nicht geprüft | `do_GET`; Transportprüfung zentral in V-004, Fachfunktion nicht ausgeführt |
 | API | `GET /api/doctor` | vorhanden, noch nicht geprüft | `do_GET`; Transportprüfung zentral in V-004, Fachfunktion nicht ausgeführt |
 | API | `GET /api/fritz` | vorhanden und automatisiert geprüft | `do_GET`; `tests/unit/test_fritz_reconnect.py` prüft Status, Tokenpflicht und dass das Passwort nicht in der Antwort steht |
+| API | `GET /api/questions` | vorhanden und automatisiert geprüft | `do_GET`; `tests/unit/test_questions.py` prüft offene Fragen mit Vorschlägen, leere Liste nach der Antwort und die Tokenpflicht (403) |
+| API | `POST /api/questions` | vorhanden und automatisiert geprüft | `do_POST`; `tests/unit/test_questions.py` prüft Auswahl- und freie Antwort, Rückgabe der neuen offenen Liste, Ablehnung ungültiger IDs/Auswahlen, unbekannter Aktionen und einer zweiten Antwort ohne Überschreiben |
+| API | `GET /api/autonomous` | vorhanden und automatisiert geprüft | `do_GET`; `tests/unit/test_questions.py` prüft den Zustand je Projekt, unbekannte Projekte (404) und die Tokenpflicht (403) |
+| API | `POST /api/autonomous` | vorhanden und automatisiert geprüft | `do_POST`; `tests/unit/test_questions.py` prüft Ein- und Ausschalten, die gespeicherte Datei, unbekannte Aktionen (400) und die Tokenpflicht (403) |
 | API | `POST /api/fritz` | vorhanden und automatisiert geprüft | `do_POST`; `tests/unit/test_fritz_reconnect.py` prüft Automatik an/aus, manuellen Reconnect, Fehlerfall, fehlende Konfiguration, unbekannte Aktion und Tokenpflicht |
 | API | `GET /api/server` | vorhanden, noch nicht geprüft | `do_GET`; Transportprüfung zentral in V-004, Fachfunktion nicht ausgeführt |
 | API | `GET /api/stream` | teilweise vorhanden | `stream()`; Token nur im Query-String (EventSource), Host geprüft; Origin nicht anwendbar; nicht ausgeführt |

@@ -11,6 +11,8 @@ Aufruf:
 Die Sandbox begrenzt Schreibzugriffe auf:
 - die in ``.vibe/permissions.json`` erlaubten Verzeichnisse (F3),
 - die im Projekt konfigurierten Build-Tool-Caches (``SANDBOX_TOOLS``),
+- den Rückfrageordner ``questions`` des Laufzeitordners (F16, nur dieser
+  Unterordner; Token, Protokolle und Laufregister bleiben unerreichbar) und
 - die technisch notwendigen Caches für MCP-Laufzeiten und
 - ``/tmp/opencode`` für den opencode-Zustand.
 
@@ -376,8 +378,25 @@ def check(project):
     }
 
 
-def bwrap_argv(project, command, bwrap=None):
-    """Baut die bubblewrap-Argumentliste; verändert keine Projektdateien."""
+def runtime_dir():
+    """Laufzeitordner wie ``vibe-run.sh``: ``VIBE_RUNTIME`` oder ``$VIBE/_logs``."""
+    value = os.environ.get("VIBE_RUNTIME")
+    if value:
+        return os.path.abspath(os.path.expanduser(value))
+    base = os.environ.get("VIBE")
+    if base:
+        return os.path.join(os.path.abspath(os.path.expanduser(base)), "_logs")
+    return ""
+
+
+def bwrap_argv(project, command, bwrap=None, runtime=None):
+    """Baut die bubblewrap-Argumentliste; verändert keine Projektdateien.
+
+    ``runtime`` bindet ausschließlich den Rückfrageordner ``questions``
+    beschreibbar ein (F16). Der restliche Laufzeitordner mit Protokollen,
+    Token und Laufregister bleibt unerreichbar; ohne ``runtime`` entsteht
+    keine Bindung.
+    """
     if not command:
         raise ValueError("Kein Befehl angegeben")
     state = status(project)
@@ -391,6 +410,14 @@ def bwrap_argv(project, command, bwrap=None):
             "bubblewrap (bwrap) fehlt oder ist nicht ausführbar; "
             "die Sandbox bricht ab, statt ohne Schutz zu starten."
         )
+    questions = ""
+    if runtime:
+        questions = os.path.join(
+            os.path.abspath(os.path.expanduser(str(runtime))), "questions"
+        )
+        problem = _ensure_dir(questions)
+        if problem:
+            raise ValueError(problem)
     directories = []
     for value in state["write_dirs"]:
         directory = os.path.realpath(os.path.abspath(os.path.expanduser(value)))
@@ -431,6 +458,14 @@ def bwrap_argv(project, command, bwrap=None):
     ]
     for directory in directories:
         argv += ["--bind", directory, directory]
+    # Rückfragen des Agenten (F16): nur der eigene Unterordner ist
+    # beschreibbar, nicht der Laufzeitordner mit Token, Protokollen und
+    # Laufregister. Die Bindung steht vor dem Schreibschutz von /tmp, weil
+    # bubblewrap den Einhängepunkt im privaten tmpfs anlegen muss; ein
+    # Laufzeitordner unter /tmp bleibt dadurch erreichbar, während der übrige
+    # Inhalt von /tmp schreibgeschützt wird.
+    if questions and questions not in directories:
+        argv += ["--bind", questions, questions]
     # /tmp ist ein privater tmpfs, aber kein erlaubtes Schreibziel. Nach dem
     # Binden der erlaubten Verzeichnisse wird er wieder schreibgeschützt;
     # Werkzeuge legen Temporärdateien über TMPDIR im Zustandsordner ab.
@@ -491,8 +526,16 @@ def run(project, command):
     if not checked["ok"]:
         print(checked["message"], file=sys.stderr)
         return 2
+    runtime = runtime_dir()
+    if runtime:
+        problem = _ensure_dir(os.path.join(runtime, "questions"))
+        if problem:
+            # Ohne Rückfrageordner bleibt der Lauf möglich, aber der Agent
+            # kann keine Rückfrage stellen; das wird ausdrücklich gemeldet.
+            print("Rückfragen nicht verfügbar: " + problem, file=sys.stderr)
+            runtime = ""
     try:
-        argv = bwrap_argv(project, command)
+        argv = bwrap_argv(project, command, runtime=runtime)
     except ValueError as error:
         print(str(error), file=sys.stderr)
         return 2
@@ -576,9 +619,15 @@ def main(argv=None):
             print("Kein Befehl angegeben.", file=sys.stderr)
             return 2
         state = status(project)
+        runtime = runtime_dir()
+        if runtime:
+            problem = _ensure_dir(os.path.join(runtime, "questions"))
+            if problem:
+                print("Rückfragen nicht verfügbar: " + problem, file=sys.stderr)
+                runtime = ""
         try:
             if state["enabled"]:
-                print(shlex.join(bwrap_argv(project, command)))
+                print(shlex.join(bwrap_argv(project, command, runtime=runtime)))
             else:
                 print(shlex.join(command))
         except ValueError as error:
