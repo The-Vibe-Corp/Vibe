@@ -289,7 +289,7 @@ headless) geprüft.
 | MCP-Tests | teilweise vorhanden | initialize/tools/list, lokale und Remote-Transporte, Limits im Code; keine explizite Transportauskunft, kein vollständiges Prozess-Cleanup belegt (V-014) |
 | Agentenläufe und Prüfungen | teilweise vorhanden | Start/Stop/Logs über tmux; keine eindeutigen Lauf-IDs, Exitcode wird nicht weitergereicht, Prüfadapter projekttypspezifisch (V-015) |
 | App und opencode beenden | teilweise vorhanden | Getrennte Aktionen vorhanden; tmux-Sitzungsnamen statt verwalteter Prozessliste, kein Nachweis gegen fremde Prozesse (V-016) |
-| Bazzite-Startmenü | fehlt | Kein Desktopstarter, kein Icon, kein Installer im Repository (V-017) |
+| Bazzite-Startmenü | vorhanden und manuell geprüft | Starter, Desktopdatei, Icon, Installer und Uninstaller unter `scripts/`; echter Host-Test mit Container aus/an, Doppelklick, Tokenwechsel und Sonderzeichen (V-017) |
 | Diagnose | teilweise vorhanden | `vibe doctor` prüft Werkzeuge, Pfade, Prüfsummen; opencode-Version und unterstützte Funktionen werden nicht ermittelt (V-007) |
 | Installation/Aktualisierung/Rollback | fehlt | Nur `install-vibe.sh` (kopiert Dateien); keine Versionierung, Sicherung oder Rollback (V-018) |
 | Webserver-Sicherheit | vorhanden und automatisiert geprüft | Loopback-Bindung, Token, Host-/Origin-Prüfung, Requestlimit, strukturierte Fehler und Health in V-004; `tests/unit/test_web_api_security.py` prüft fehlendes/falsches Token, fremden Host/Origin, ungültiges JSON, fehlende Content-Length, übergroße Requests, parallele Anfragen und tokenfreie Logs |
@@ -355,9 +355,9 @@ reproduzierbar. Dokumentiert fehlen oder sind eingeschränkt:
 | `install.sh` / `install2.sh` | `bin/vibe:571` fordert „install.sh / install2.sh ausführen“; `~/.config/schreibfuchs-verify.sha` verweist auf `verify.sh` | Die Prüfsummen-Abnahme der Verify-Dateien ist nicht aus dem Repository reproduzierbar |
 | `install-vibe.sh` (im Repository) | `install-vibe.sh:6` lehnt ein Kit unterhalb von `$VIBE/<projekt>` ab | Das Repository liegt unter `$VIBE/vibe`; ein Aufruf aus diesem Pfad wird abgelehnt. Eine Installation direkt aus dem Repository ist derzeit nicht möglich (V-018) |
 | Uninstaller | `SPEC.md` (Installation/Rollback), V-018 | Deinstallation nicht möglich |
-| Desktopdatei und Startmenü-Installer | `SPEC.md` (Bazzite-Startmenü), V-017 | Kein Start über das Anwendungsmenü |
-| Icon `vibe.svg` | nur in der aktiven Installation | Startmenüeintrag ohne Icon |
-| `vibe-launcher.sh` | nur in der aktiven Installation | Kein „läuft schon?“-Starter mit Browseröffnung |
+| Desktopdatei und Startmenü-Installer | `scripts/vibe-desktop.py`, `scripts/install-vibe-desktop.sh`, V-017 | Vorhanden; Installation nach `$XDG_DATA_HOME`, Sicherung fremder Einträge, Uninstall nur unveränderter Dateien |
+| Icon `vibe.svg` | `scripts/vibe.svg`, V-017 | Im Repository und wird mitinstalliert |
+| `vibe-launcher.sh` | `scripts/vibe_starter.py`, V-017 | Ersetzt den alten Launcher; prüft Health, startet Container/Dashboard bei Bedarf und öffnet den Browser |
 | `vibe-secrets.sh`, `_secrets.env` | nur in der aktiven Installation | Geheimnisbereitstellung nicht reproduzierbar; absichtlich nicht importiert |
 | `fritz-reconnect.py` | in V-001 nur in der aktiven Installation | Seit F5 im Repository (`bin/fritz-reconnect.py`) und Teil des Manifests; `install-vibe.sh` kopiert den Helfer. Die Automatik bleibt standardmäßig aus und ist im Dashboard schaltbar. |
 | `vibe-server-debug.sh` | nur in der aktiven Installation | Diagnosehilfe nicht versioniert |
@@ -409,7 +409,7 @@ ab.
   Web-Funktionen.
 - Teilweise vorhanden: siehe Abschnitte 5–8; die Lücken sind den Folgepaketen
   zugeordnet.
-- Fehlt: Startmenüintegration, reproduzierbare Installation/Rollback,
+- Fehlt: reproduzierbare Installation/Rollback,
   Projektprüfung und automatisierte App-Tests.
 
 Damit ist V-001 eine ehrliche Ausgangsbasis: Der Bestand ist versioniert und

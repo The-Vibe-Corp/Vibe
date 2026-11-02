@@ -21,6 +21,7 @@ Zuordnung der Projekt-Dokumentation zu den Notizen in Trilium (Stand 2026-10-31)
 | vibe | Features | V-014 MCP-Verbindungstests robust und begrenzt ausführen | `yNkNwN9tHGbU` |
 | vibe | Features | V-015 Agentenläufe und Projektprüfungen entkoppeln | `DqTH63j8L7qv` |
 | vibe | Features | V-016 Dashboard- und opencode-Lebenszyklus getrennt prüfen | `hv8eqCTudXhH` |
+| vibe | Features | V-017 Bazzite-Starter produktionsreif integrieren | `qB4ymeCudpPf` |
 | vibe | Features | F1 Feedback-Erfassung: nur Titel und Beschreibung | `4gZSOc9wxivN` |
 | vibe | Features | F2 Projektdetail: Feedback bearbeiten, Ausgabe steuern | `4etfKlTUj9ah` |
 | vibe | Features | F3 Dynamische Schreibrechte je Projekt | `22bjPTSyr3CS` |
