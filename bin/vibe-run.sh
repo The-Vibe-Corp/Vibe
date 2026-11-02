@@ -192,11 +192,16 @@ $QUESTION_HINT"
     # Die Automatik ist standardmäßig aus; 'fritz auto' fordert nur bei
     # ausdrücklich gespeicherter Automatik eine neue IP an. Ein Lauf wartet
     # nicht auf eine Eingabe, wenn niemand an einem Terminal sitzt.
-    FRITZ_OUT="$(python3 "$BIN/vibe" fritz auto 2>&1)"; FRITZ_RC=$?
+    # F18: Der Projektname geht an die zentrale Steuerung; läuft bereits ein
+    # Reconnect eines anderen Projekts, wird dessen Ergebnis übernommen und
+    # dieser Lauf danach fortgesetzt.
+    FRITZ_OUT="$(VIBE_PROJECT="$P" python3 "$BIN/vibe" fritz auto 2>&1)"; FRITZ_RC=$?
     if [ -n "$FRITZ_OUT" ]; then printf '%s\n' "$FRITZ_OUT" | tee -a "$LOG"; fi
-    if [ "$FRITZ_RC" = 0 ]; then sleep 20
+    if [ "$FRITZ_RC" = 0 ]; then
+      echo "Zentraler Reconnect abgeschlossen; der Lauf wird nach kurzer Wartezeit fortgesetzt." | tee -a "$LOG"
+      sleep 20
     elif [ -t 0 ]; then read -r -p "Neue IP manuell anfordern, dann Enter (Strg+C = Abbruch): " _
-    else echo "Keine Router-Automatik aktiv; der Lauf wird ohne neue IP fortgesetzt." | tee -a "$LOG"; fi
+    else echo "Keine neue IP angefordert; der Lauf wird fortgesetzt." | tee -a "$LOG"; fi
   fi
 done
 if [ "$PAUSED" != 1 ] && [ -f "$PAUSE_FLAG" ]; then

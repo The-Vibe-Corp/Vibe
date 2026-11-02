@@ -38,3 +38,4 @@ Zuordnung der Projekt-Dokumentation zu den Notizen in Trilium (Stand 2026-10-31)
 | vibe | Features | F15 Arbeitspakete und Bugs aus der Oberfläche | `xuUMi61n9BPD` |
 | vibe | Features | F16 Rückfragen beantworten | `8jT8gBFUV1Or` |
 | vibe | Features | F17 Agentenverwaltung je Projekt | `ullL9BIh9cui` |
+| vibe | Features | F18 Verbesserung Internet-Reconnect | `deX8hDMqAQ1k` |

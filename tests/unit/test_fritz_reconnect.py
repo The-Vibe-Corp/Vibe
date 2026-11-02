@@ -54,10 +54,18 @@ sys.exit(rc)
 
 def load_cli(vibe_root):
     """Lädt bin/vibe als Modul mit isoliertem VIBE und HOME."""
-    old = {key: os.environ.get(key) for key in ("VIBE", "VIBE_NO_CONTAINER", "HOME")}
+    keys = ("VIBE", "VIBE_NO_CONTAINER", "HOME", "VIBE_INSTALL", "VIBE_STATE",
+            "VIBE_RUNTIME", "VIBE_CONFIG_FILE", "VIBE_AGENTS_DIR", "VIBE_PROFILE")
+    old = {key: os.environ.get(key) for key in keys}
     os.environ["VIBE"] = str(vibe_root)
     os.environ["VIBE_NO_CONTAINER"] = "1"
     os.environ["HOME"] = str(Path(vibe_root) / "home")
+    os.environ["VIBE_INSTALL"] = str(Path(vibe_root) / "_toolchain")
+    os.environ["VIBE_STATE"] = str(Path(vibe_root) / "_toolchain")
+    os.environ["VIBE_RUNTIME"] = str(Path(vibe_root) / "_logs")
+    os.environ["VIBE_CONFIG_FILE"] = str(Path(vibe_root) / "home" / "config.json")
+    os.environ["VIBE_AGENTS_DIR"] = str(Path(vibe_root) / "home" / "agents")
+    os.environ.pop("VIBE_PROFILE", None)
     try:
         loader = importlib.machinery.SourceFileLoader(
             "vibe_fritz_under_test", str(CLI)
@@ -328,6 +336,11 @@ class FritzApiFixture(unittest.TestCase):
             {
                 "VIBE": str(cls.root),
                 "VIBE_NO_CONTAINER": "1",
+                "VIBE_STATE": str(cls.root / "_toolchain"),
+                "VIBE_INSTALL": str(cls.root / "_toolchain"),
+                "VIBE_RUNTIME": str(cls.root / "_logs"),
+                "VIBE_CONFIG_FILE": str(cls.root / "home" / "config.json"),
+                "VIBE_AGENTS_DIR": str(cls.root / "home" / "agents"),
                 "VIBE_UI_PORT": str(cls.port),
                 "HOME": str(cls.root / "home"),
                 "VIBE_FRITZ_PYTHON": sys.executable,
@@ -535,6 +548,10 @@ FAKE_VIBE = '''#!/usr/bin/env python3
 import os, sys
 with open(os.environ["FAKE_VIBE_LOG"], "a", encoding="utf-8") as handle:
     handle.write(" ".join(sys.argv[1:]) + "\\n")
+project_log = os.environ.get("FAKE_VIBE_PROJECT_LOG")
+if project_log:
+    with open(project_log, "a", encoding="utf-8") as handle:
+        handle.write(os.environ.get("VIBE_PROJECT", "") + "\\n")
 rc = int(os.environ.get("FAKE_VIBE_RC", "3"))
 print("fritz auto rc=%d" % rc)
 sys.exit(rc)
@@ -586,6 +603,7 @@ class RunnerFritzTest(unittest.TestCase):
             path.write_text(text, encoding="utf-8")
             path.chmod(0o755)
         self.vibe_log = self.root / "vibe.invocations"
+        self.vibe_project_log = self.root / "vibe.projects"
         self.sleep_log = self.root / "sleep.invocations"
 
     def tearDown(self):
@@ -593,15 +611,24 @@ class RunnerFritzTest(unittest.TestCase):
 
     def run_runner(self, vibe_rc):
         env = os.environ.copy()
+        for key in ("SANDBOX", "SANDBOX_TOOLS", "MAX_PACKAGES", "MAX_RETRIES",
+                    "TYPE", "VERIFY_FULL"):
+            env.pop(key, None)
         env.update(
             {
                 "VIBE": str(self.root),
                 "HOME": str(self.root / "home"),
+                "VIBE_STATE": str(self.root / "_toolchain"),
+                "VIBE_INSTALL": str(self.root / "_toolchain"),
+                "VIBE_RUNTIME": str(self.root / "_logs"),
+                "VIBE_CONFIG_FILE": str(self.root / "home" / "config.json"),
+                "VIBE_AGENTS_DIR": str(self.root / "home" / "agents"),
                 "PATH": str(self.root / "fakebin") + os.pathsep + env.get("PATH", ""),
                 "VIBE_LOGNAME": "proj",
                 "VIBE_MAX_PACKAGES": "1",
                 "AGENT": "coding-agent_deepseek",
                 "FAKE_VIBE_LOG": str(self.vibe_log),
+                "FAKE_VIBE_PROJECT_LOG": str(self.vibe_project_log),
                 "FAKE_VIBE_RC": str(vibe_rc),
                 "FAKE_SLEEP_LOG": str(self.sleep_log),
             }
@@ -637,6 +664,16 @@ class RunnerFritzTest(unittest.TestCase):
             self.sleep_log.read_text(encoding="utf-8").splitlines(), ["20"]
         )
         self.assertIn("fritz auto rc=0", result.stdout)
+
+    def test_runner_tells_the_central_reconnect_which_project_continues(self):
+        result = self.run_runner(vibe_rc=0)
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(
+            self.vibe_project_log.read_text(encoding="utf-8").splitlines(),
+            [str(self.project)],
+        )
+        self.assertIn("fortgesetzt", result.stdout)
 
 
 if __name__ == "__main__":

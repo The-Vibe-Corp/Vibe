@@ -229,13 +229,13 @@
   },
   {
    "path": "bin/vibe",
-   "sha256": "c3b1599a68325723ab8c231a08e21d9075dc0fc4b60b6bf4f60d57a6fc6e9822",
-   "bytes": 157693
+   "sha256": "ee9fedc461898d67a2eb84a58e9904f7d5376d6a29e77c885e7ac66a5fa28a2e",
+   "bytes": 172346
   },
   {
    "path": "bin/vibe-run.sh",
-   "sha256": "0dcb85d7cf8551b270d26309c0e4f643beff46ea1fa195949c869849a337f918",
-   "bytes": 11037
+   "sha256": "ed61e18825b64622538d7ed97d6c7805c595757f56837821de8c68232e6ebe13",
+   "bytes": 11351
   },
   {
    "path": "bin/vibe-web.py",
@@ -558,6 +558,15 @@
     "bin/vibe",
     "bin/vibe-run.sh",
     "bin/vibe-web.py"
+   ]
+  },
+  {
+   "arbeitspaket": "F18",
+   "datum": "2026-11-02",
+   "grund": "Zentraler Internet-Reconnect: Läufe mehrerer Projekte teilen sich eine Sperre und ein Ergebnis im Zustandsordner; höchstens ein Reconnect läuft gleichzeitig, wartende Projekte werden informiert und setzen ihren Lauf fort. Der Paket-Läufer übergibt seinen Projektnamen an die zentrale Steuerung.",
+   "dateien": [
+    "bin/vibe",
+    "bin/vibe-run.sh"
    ]
   }
  ]

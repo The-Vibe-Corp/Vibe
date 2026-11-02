@@ -38,8 +38,13 @@ Aufruf:  vibe                 interaktives Menü
          vibe types           verfügbare Projekttypen
          vibe doctor          Umgebung prüfen
 """
-import os, sys, re, json, math, sqlite3, subprocess, shutil, time, tempfile, shlex, socket
+import os, sys, re, json, math, sqlite3, subprocess, shutil, time, tempfile, shlex, socket, errno
 import urllib.parse
+
+try:  # Nur unter POSIX verfügbar; ohne flock bleibt die Sperre wirkungslos (siehe F18).
+    import fcntl
+except ImportError:  # pragma: no cover - Windows ohne Paket-Läufer
+    fcntl = None
 
 if __name__ == "__main__": sys.modules["vibe"] = sys.modules[__name__]
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
@@ -958,6 +963,16 @@ def cmd_pause(name, action=None):
 FRITZ_SETTINGS = os.path.join(PATHS.state, "fritz.json")
 FRITZ_TIMEOUT = 200
 FRITZ_REQUIRED = ("FRITZ_ADDR", "FRITZ_USER", "FRITZ_PASS")
+# F18: Ein Reconnect trennt die Internetverbindung des ganzen Routers. Laufen
+# mehrere Projekte gleichzeitig, darf trotzdem nur ein Reconnect ausgeführt
+# werden. Die Steuerung liegt deshalb zentral im Zustandsordner, den alle
+# Projekte derselben Installation teilen: eine Sperrdatei, der Zustand des
+# laufenden beziehungsweise letzten Reconnects und die wartenden Projekte.
+FRITZ_LOCK = os.path.join(PATHS.state, "fritz-reconnect.lock")
+FRITZ_STATE = os.path.join(PATHS.state, "fritz-reconnect.json")
+FRITZ_WAITERS = os.path.join(PATHS.state, "fritz-reconnect-waiters.jsonl")
+FRITZ_REUSE_SECONDS = 120.0  # Schonzeit: so lange gilt ein Ergebnis für alle Projekte
+FRITZ_WAIT_GRACE = 30.0      # Zuschlag auf das Helfer-Zeitlimit beim Warten
 
 def _fritz_env_path():
     return os.path.abspath(os.path.expanduser(
@@ -999,6 +1014,245 @@ def fritz_automation_set(enabled):
         raise ValueError("Fritzbox-Automatik nicht speicherbar: " + str(error))
     return enabled
 
+def _fritz_seconds(name, default):
+    """Nichtnegative Sekunden aus der Umgebung; ungültige Werte fallen auf default zurück."""
+    raw = os.environ.get(name)
+    if raw is None or str(raw).strip() == "":
+        return float(default)
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return float(default)
+    return value if value >= 0 else float(default)
+
+def _fritz_reuse_seconds():
+    return _fritz_seconds("VIBE_FRITZ_REUSE_SECONDS", FRITZ_REUSE_SECONDS)
+
+def _fritz_wait_seconds(timeout):
+    """Wie lange ein Projekt auf einen bereits laufenden Reconnect warten darf."""
+    return _fritz_seconds("VIBE_FRITZ_WAIT_SECONDS", float(timeout) + FRITZ_WAIT_GRACE)
+
+def _fritz_project_name():
+    """Projektname für die zentrale Anzeige; Steuerzeichen werden entfernt."""
+    raw = os.environ.get("VIBE_PROJECT") or os.getcwd()
+    name = os.path.basename(os.path.normpath(str(raw)))
+    name = re.sub(r"[\x00-\x1f\x7f]", "", name).strip()[:120]
+    return name or "unbekannt"
+
+def _fritz_label(value, default="ein anderes Projekt"):
+    if not isinstance(value, str):
+        return default
+    text = re.sub(r"[\x00-\x1f\x7f]", "", value).strip()[:120]
+    return text or default
+
+def _fritz_read_state():
+    try:
+        with open(FRITZ_STATE, encoding="utf-8") as handle:
+            data = json.load(handle)
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+def _fritz_write_state(data):
+    try:
+        os.makedirs(PATHS.state, exist_ok=True)
+        _write_text_atomic(FRITZ_STATE, json.dumps(data, indent=1, sort_keys=True) + "\n")
+    except (OSError, ValueError) as error:
+        raise ValueError("Zentraler Reconnect-Zustand nicht speicherbar: " + str(error))
+
+def _fritz_shared_result(state):
+    """Ergebnis aus dem zentralen Zustand; ohne gültiges Ergebnis None."""
+    result = state.get("result") if isinstance(state, dict) else None
+    if not isinstance(result, dict):
+        return None
+    return {"ok": result.get("ok") is True,
+            "returncode": result.get("returncode"),
+            "output": str(result.get("output") or ""),
+            "message": str(result.get("message") or "")}
+
+def _fritz_done_result(state, since=None):
+    """Ergebnis eines abgeschlossenen Reconnects, optional erst ab ``since``."""
+    if not isinstance(state, dict) or state.get("state") != "done":
+        return None
+    if since is not None:
+        finished = state.get("finished")
+        if isinstance(finished, bool) or not isinstance(finished, (int, float)):
+            return None
+        if finished < since:
+            return None
+    return _fritz_shared_result(state)
+
+def _fritz_last_result():
+    """Noch gültiges Ergebnis eines zentralen Reconnects (Schonzeit) oder None."""
+    state = _fritz_read_state()
+    result = _fritz_done_result(state)
+    if result is None:
+        return None
+    finished = state.get("finished")
+    if isinstance(finished, bool) or not isinstance(finished, (int, float)):
+        return None
+    age = time.time() - finished
+    if age < 0 or age > _fritz_reuse_seconds():
+        return None
+    return {"state": state, "result": result, "age": age}
+
+def _fritz_note_waiter(project):
+    """Meldet ein wartendes Projekt an; eine Zeile je Projekt, ohne Geheimnisse."""
+    try:
+        os.makedirs(PATHS.state, exist_ok=True)
+        with open(FRITZ_WAITERS, "a", encoding="utf-8") as handle:
+            handle.write(json.dumps({"project": project, "at": round(time.time(), 3)}) + "\n")
+    except OSError:
+        pass
+
+def _fritz_waiters():
+    """Einmalige Liste der angemeldeten Projekte; kaputte Zeilen werden übersprungen."""
+    try:
+        with open(FRITZ_WAITERS, encoding="utf-8") as handle:
+            lines = handle.read().splitlines()
+    except OSError:
+        return []
+    projects = []
+    for line in lines:
+        try:
+            entry = json.loads(line)
+        except ValueError:
+            continue
+        name = entry.get("project") if isinstance(entry, dict) else None
+        name = _fritz_label(name, "")
+        if name and name not in projects:
+            projects.append(name)
+    return projects
+
+def _fritz_lock_acquire(wait, on_busy=None):
+    """Sperrt die Ausführung eines Reconnects; None, wenn sie zu lange belegt ist.
+
+    ``on_busy`` wird einmal aufgerufen, sobald die Sperre belegt ist. Damit
+    meldet sich ein wartendes Projekt sofort an, auch wenn es später das
+    Ergebnis übernimmt.
+    """
+    try:
+        os.makedirs(PATHS.state, exist_ok=True)
+        handle = os.open(FRITZ_LOCK, os.O_CREAT | os.O_RDWR, 0o600)
+    except OSError as error:
+        raise ValueError("Zentrale Reconnect-Sperre nicht verfügbar: " + str(error))
+    if fcntl is None:  # ohne flock bleibt nur ein Prozess übrig; siehe Grenzen in F18
+        return handle
+    deadline = time.monotonic() + max(0.0, float(wait))
+    while True:
+        try:
+            fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return handle
+        except OSError as error:
+            code = getattr(error, "errno", None)
+            if code == errno.EINTR:
+                continue  # Signal hat den Sperrversuch unterbrochen
+            if code not in (errno.EACCES, errno.EAGAIN):
+                return handle  # Dateisystem ohne flock: best effort, nie eine Shell
+            if on_busy is not None:
+                on_busy()
+                on_busy = None
+        if time.monotonic() >= deadline:
+            os.close(handle)
+            return None
+        time.sleep(0.1)
+
+def _fritz_lock_release(handle):
+    if handle is None:
+        return
+    if fcntl is not None:
+        try:
+            fcntl.flock(handle, fcntl.LOCK_UN)
+        except OSError:
+            pass
+    try:
+        os.close(handle)
+    except OSError:
+        pass
+
+def _fritz_publish_running(project):
+    """Veröffentlicht den laufenden Reconnect und leert alte Wartende."""
+    started = time.time()
+    try:
+        os.remove(FRITZ_WAITERS)
+    except OSError:
+        pass
+    _fritz_write_state({"state": "running", "owner": project, "started": started,
+                        "pid": os.getpid(), "affected": []})
+    return started
+
+def _fritz_publish_done(project, started, result):
+    """Veröffentlicht Ergebnis und die Projekte, die darauf gewartet haben."""
+    affected = _fritz_waiters()
+    _fritz_write_state({"state": "done", "owner": project, "started": started,
+                        "finished": time.time(), "pid": os.getpid(),
+                        "ok": result.get("ok") is True, "result": result,
+                        "affected": affected})
+    try:
+        os.remove(FRITZ_WAITERS)
+    except OSError:
+        pass
+    return affected
+
+def _fritz_adopt(project, state, result, waited):
+    """Übernimmt das Ergebnis eines anderen Projekts, ohne erneut zu verbinden."""
+    owner = _fritz_label(state.get("owner"))
+    affected = []
+    for raw in state.get("affected") or []:
+        name = _fritz_label(raw, "")
+        if name and name not in affected:
+            affected.append(name)
+    if project not in affected:
+        affected.append(project)
+    if result["ok"]:
+        message = ("Ergebnis des laufenden Reconnects von " + owner + " übernommen"
+                   if waited else
+                   "Neue Internet-IP bereits durch " + owner + " angefordert")
+    else:
+        message = ("Reconnect von " + owner + " ist fehlgeschlagen – Ergebnis übernommen"
+                   if waited else
+                   "Reconnect von " + owner + " ist gerade fehlgeschlagen")
+    message += " – kein zweiter Reconnect gestartet"
+    if waited:
+        message += "; der Lauf wird fortgesetzt"
+    return {"ran": True, "started": False, "shared": True, "waited": bool(waited),
+            "result": result, "affected": affected, "owner": owner,
+            "message": message + "."}
+
+def _fritz_coordination_text(coord):
+    state = coord.get("state")
+    if state == "running":
+        return "Reconnect läuft gerade (Projekt " + _fritz_label(coord.get("owner")) + ")"
+    if state == "done":
+        finished = coord.get("finished")
+        stamp = (time.strftime("%H:%M:%S", time.localtime(finished))
+                 if isinstance(finished, (int, float)) and not isinstance(finished, bool) else "-")
+        text = ("zuletzt " + ("erfolgreich" if coord.get("ok") else "fehlgeschlagen")
+                + " um " + stamp + " (Projekt " + _fritz_label(coord.get("owner")) + ")")
+        affected = [name for name in coord.get("affected") or [] if isinstance(name, str) and name]
+        if affected:
+            text += "; betroffen: " + ", ".join(affected)
+        return text
+    return "noch kein Reconnect"
+
+def fritz_coordination():
+    """Zustand der zentralen Reconnect-Steuerung; liest nur lokale Dateien."""
+    state = _fritz_read_state()
+    info = {"state": "", "owner": "", "affected": [], "finished": None, "ok": None}
+    if state.get("state") not in ("running", "done"):
+        return info
+    info["state"] = state["state"]
+    info["owner"] = _fritz_label(state.get("owner"), "")
+    info["affected"] = [name for name in (_fritz_label(raw, "")
+                                          for raw in state.get("affected") or [])
+                        if name][:50]
+    finished = state.get("finished")
+    if isinstance(finished, (int, float)) and not isinstance(finished, bool):
+        info["finished"] = float(finished)
+    if isinstance(state.get("ok"), bool):
+        info["ok"] = state["ok"]
+    return info
+
 def fritz_status():
     """Zustand ohne Zugangsdaten und ohne Netzwerkzugriff."""
     env_path = _fritz_env_path()
@@ -1015,11 +1269,10 @@ def fritz_status():
             "env": env_path, "env_exists": os.path.isfile(env_path),
             "script": script, "script_ok": script_ok,
             "python": python or "", "python_ok": python_ok,
-            "ready": configured and script_ok and python_ok}
+            "ready": configured and script_ok and python_ok,
+            "coordination": fritz_coordination()}
 
-def fritz_reconnect(timeout=FRITZ_TIMEOUT):
-    """Startet den Helfer ohne Shell; liefert Ergebnis statt Prozessabbruch."""
-    status = fritz_status()
+def _fritz_require_ready(status):
     if not status["configured"]:
         raise ValueError("Fritzbox ist nicht konfiguriert: " + status["env"]
                          + " fehlt oder enthält nicht FRITZ_ADDR, FRITZ_USER und FRITZ_PASS.")
@@ -1027,6 +1280,9 @@ def fritz_reconnect(timeout=FRITZ_TIMEOUT):
         raise ValueError("Fritzbox-Helfer fehlt: " + status["script"])
     if not status["python_ok"]:
         raise ValueError("Python mit fritzconnection fehlt: " + (status["python"] or "nicht gefunden"))
+
+def _fritz_reconnect_helper(timeout, status):
+    """Startet genau einen Helfer ohne Shell; liefert Ergebnis statt Prozessabbruch."""
     env = dict(os.environ); env["FRITZ_ENV"] = status["env"]
     try:
         finished = subprocess.run([status["python"], status["script"]], env=env,
@@ -1049,16 +1305,104 @@ def fritz_reconnect(timeout=FRITZ_TIMEOUT):
             "message": "Neue Internet-IP angefordert" if ok else
                        f"Reconnect fehlgeschlagen (Exit-Code {finished.returncode})"}
 
-def fritz_auto(timeout=FRITZ_TIMEOUT):
-    """Automatik für den Paket-Läufer: nur bei eingeschalteter Automatik handeln."""
-    if not fritz_automation():
-        return {"ran": False, "result": None,
-                "message": "Fritzbox-Automatik ist aus; keine Router-Neuverbindung angefordert."}
+def fritz_reconnect(timeout=FRITZ_TIMEOUT):
+    """Manueller Reconnect: wartet auf einen laufenden und führt dann genau einen aus."""
+    status = fritz_status()
+    _fritz_require_ready(status)
+    project = _fritz_project_name()
+    handle = _fritz_lock_acquire(_fritz_wait_seconds(timeout))
+    if handle is None:
+        raise ValueError("Ein Reconnect läuft bereits; bitte nach dessen Abschluss erneut versuchen.")
     try:
-        result = fritz_reconnect(timeout)
+        try:
+            started = _fritz_publish_running(project)
+        except ValueError:
+            started = None  # Der manuelle Reconnect darf nicht an der Anzeige scheitern.
+        result = _fritz_reconnect_helper(timeout, status)
+        if started is not None:
+            try:
+                _fritz_publish_done(project, started, result)
+            except ValueError:
+                pass  # Der Reconnect selbst ist ausgeführt; der Zustand dient nur der Anzeige.
+        return result
+    finally:
+        _fritz_lock_release(handle)
+
+def _fritz_wait_for_result(project, timeout, since):
+    """Wartet auf ein laufendes Projekt, ohne selbst zu verbinden.
+
+    ``since`` ist der Beginn der eigenen Anfrage. Ein Ergebnis, das erst danach
+    veröffentlicht wurde, gehört zu dem Reconnect, auf den gewartet wurde –
+    auch wenn die Sperre kurz vor dem Wartezeitlimit frei wurde.
+    """
+    _fritz_note_waiter(project)
+    deadline = time.monotonic() + _fritz_wait_seconds(timeout)
+    while True:
+        state = _fritz_read_state()
+        result = _fritz_done_result(state, since=since)
+        if result is not None:
+            return _fritz_adopt(project, state, result, waited=True)
+        if time.monotonic() >= deadline:
+            state = _fritz_read_state()
+            result = _fritz_done_result(state, since=since)
+            if result is not None:  # gerade noch abgeschlossen
+                return _fritz_adopt(project, state, result, waited=True)
+            return {"ran": False, "started": False, "shared": False, "waited": True,
+                    "result": None,
+                    "message": "Reconnect läuft weiterhin (Projekt "
+                               + _fritz_label(state.get("owner"))
+                               + "); kein zweiter Reconnect gestartet."}
+        time.sleep(0.1)
+
+def _fritz_auto_coordinated(project, timeout, status):
+    recent = _fritz_last_result()
+    if recent is not None:
+        return _fritz_adopt(project, recent["state"], recent["result"], waited=False)
+    request_started = time.time()
+    handle = _fritz_lock_acquire(
+        _fritz_wait_seconds(timeout),
+        on_busy=lambda: _fritz_note_waiter(project),
+    )
+    if handle is None:
+        return _fritz_wait_for_result(project, timeout, request_started)
+    try:
+        recent = _fritz_last_result()
+        if recent is not None:
+            return _fritz_adopt(project, recent["state"], recent["result"], waited=True)
+        state = _fritz_read_state()
+        result = _fritz_done_result(state, since=request_started)
+        if result is not None:  # Ergebnis ist während des Wartens entstanden
+            return _fritz_adopt(project, state, result, waited=True)
+        started = _fritz_publish_running(project)
+        result = _fritz_reconnect_helper(timeout, status)
+        warning = ""
+        try:
+            affected = _fritz_publish_done(project, started, result)
+        except ValueError as error:
+            affected = []
+            warning = " Hinweis: " + str(error)
+        message = result["message"] + warning
+        if affected:
+            message += "; betroffene Projekte werden fortgesetzt: " + ", ".join(affected)
+        return {"ran": True, "started": True, "shared": False, "waited": False,
+                "result": result, "affected": affected, "owner": project,
+                "message": message}
+    finally:
+        _fritz_lock_release(handle)
+
+def fritz_auto(timeout=FRITZ_TIMEOUT):
+    """Automatik für den Paket-Läufer: ein zentraler Reconnect für alle Projekte."""
+    if not fritz_automation():
+        return {"ran": False, "started": False, "shared": False, "result": None,
+                "message": "Fritzbox-Automatik ist aus; keine Router-Neuverbindung angefordert."}
+    project = _fritz_project_name()
+    try:
+        status = fritz_status()
+        _fritz_require_ready(status)
+        return _fritz_auto_coordinated(project, timeout, status)
     except ValueError as error:
-        return {"ran": False, "result": None, "message": str(error)}
-    return {"ran": True, "result": result, "message": result["message"]}
+        return {"ran": False, "started": False, "shared": False, "result": None,
+                "message": str(error)}
 
 def cmd_fritz(action=None):
     if action in (None, "status", "list"):
@@ -1070,6 +1414,7 @@ def cmd_fritz(action=None):
         print("Python:", status["python"] or "(nicht gefunden)",
               "(ausführbar)" if status["python_ok"] else "(nicht ausführbar)")
         print("Bereit:", "ja" if status["ready"] else "nein")
+        print("Zentral:", _fritz_coordination_text(status["coordination"]))
         print(col("d", "Schalten: vibe fritz on|off | manuell: vibe fritz reconnect"))
         return
     if action in ("on", "an"):
