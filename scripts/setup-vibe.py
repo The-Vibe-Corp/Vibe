@@ -14,10 +14,18 @@ wiederverwenden, ohne Laufzeitdaten oder persönliche Einstellungen zu
 
 Nur Python-Standardbibliothek. Es werden keine Projektbefehle, Modellaufrufe
 oder Router-Aktionen ausgeführt.
+
+Seit V-018 kennt der Setup zusätzlich Vorschau, Versionskennung, Sicherung,
+Rollback und Uninstall. Eine Aktualisierung wird nur ausgeführt, wenn kein
+Agentenlauf aktiv ist; mit ``--force`` lässt sich diese Sperre ausdrücklich
+aufheben. Laufzeitdaten, persönliche Konfiguration, Sicherungen und Projekte
+werden weder beim Update noch beim Uninstall entfernt.
 """
 import argparse
+import json
 import os
 import platform as _platform
+import re
 import shutil
 import subprocess
 import sys
@@ -43,7 +51,13 @@ PROGRAM_FILES = (
     "vibe_autonomous.py",
     "fritz-reconnect.py",
 )
-RUNTIME_FILES = ("vibe.json", "models.json", "profiles.json", "fritz.json")
+RUNTIME_FILES = ("vibe.json", "models.json", "profiles.json", "fritz.json", "costs.json")
+VERSION_FILE = "VERSION"
+VERSION_META = "version.json"
+BACKUP_META = "backup.json"
+UNINSTALL_BACKUP_PREFIX = "backup-uninstall-"
+UNKNOWN_VERSION = "unbekannt"
+LIVE_RUN_STATES = ("starting", "running")
 OFFICIAL_OPENCODE = "https://opencode.ai/docs/"
 OPENCODE_NPM_PACKAGE = "opencode-ai"
 BAD_TARGETS = {
@@ -344,6 +358,153 @@ def detect_existing(vibe_root):
     }
 
 
+def read_kit_version(kit=None, runner=None):
+    """Liest Version und Commit des Quellstands; rät nichts, wenn Angaben fehlen."""
+    kit = Path(kit) if kit else KIT
+    version = UNKNOWN_VERSION
+    version_file = kit / VERSION_FILE
+    if version_file.is_file():
+        try:
+            text = version_file.read_text(encoding="utf-8").strip()
+        except OSError:
+            text = ""
+        if text:
+            version = text
+    commit = None
+    if (kit / ".git").exists():
+        runner = runner or subprocess.run
+        try:
+            completed = runner(
+                ["git", "-C", str(kit), "rev-parse", "--short", "HEAD"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+        except (OSError, subprocess.SubprocessError):
+            completed = None
+        if completed is not None and getattr(completed, "returncode", 1) == 0:
+            text = (getattr(completed, "stdout", "") or "").strip()
+            if re.fullmatch(r"[0-9a-f]{7,40}", text):
+                commit = text
+    return {"version": version, "commit": commit}
+
+
+def read_installed_version(vibe_root):
+    """Liest die Versionskennung einer Installation; None heißt nicht installiert."""
+    path = Path(vibe_root) / "_toolchain" / VERSION_META
+    if not path.is_file():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {"version": UNKNOWN_VERSION, "error": f"{path} ist nicht lesbar"}
+    if not isinstance(data, dict):
+        return {"version": UNKNOWN_VERSION, "error": f"{path} enthält kein Objekt"}
+    data.setdefault("version", UNKNOWN_VERSION)
+    return data
+
+
+def _version_payload(kit, mode, timestamp, runner=None):
+    kit_info = read_kit_version(kit, runner=runner)
+    return {
+        "version": kit_info["version"],
+        "commit": kit_info["commit"],
+        "installed_at": timestamp,
+        "mode": mode,
+        "source": str(Path(kit).resolve()),
+    }
+
+
+def _install_sources(kit):
+    """Liefert (relativer Pfad, Quelldatei, ausführbar) für alle Programmdateien."""
+    for name in PROGRAM_FILES:
+        yield f"bin/{name}", Path(kit) / "bin" / name, True
+    templates = Path(kit) / "templates"
+    if templates.is_dir():
+        for source in sorted(templates.rglob("*")):
+            if source.is_file():
+                yield source.relative_to(kit).as_posix(), source, False
+    yield "models.json", Path(kit) / "data" / "models.json", False
+
+
+def build_install_plan(kit, vibe_root, mode="update", timestamp=None, runner=None):
+    """Berechnet die Installation, ohne eine Datei zu schreiben.
+
+    Die Vorschau und die tatsächliche Installation verwenden dieselbe Planung;
+    dadurch kann die Vorschau nicht von der Ausführung abweichen.
+    """
+    if mode not in ("reuse", "update"):
+        raise SetupError(f"Unbekannter Modus: {mode}")
+    kit = Path(kit)
+    vibe_root = Path(vibe_root)
+    source_program = kit / "bin" / "vibe"
+    if not source_program.is_file():
+        raise SetupError(f"Unvollständiges Quellverzeichnis: {source_program} fehlt")
+    toolchain = vibe_root / "_toolchain"
+    plan = {
+        "target": str(toolchain),
+        "mode": mode,
+        "files": [],
+        "warnings": [],
+        "version": {
+            "from": read_installed_version(vibe_root),
+            "to": _version_payload(kit, mode, timestamp or time.strftime("%Y%m%d-%H%M%S"), runner),
+        },
+    }
+    for relative, source, executable in _install_sources(kit):
+        if not source.is_file():
+            if relative == "models.json":
+                plan["warnings"].append(
+                    "data/models.json fehlt im Quellverzeichnis; der Modellkatalog wird nicht installiert."
+                )
+                continue
+            raise SetupError(f"Unvollständiges Quellverzeichnis: {source} fehlt")
+        destination = toolchain / relative
+        if relative == "models.json" and destination.exists():
+            action = "skip"
+            reason = "Laufzeitdatei bleibt erhalten"
+        elif destination.exists():
+            if mode == "reuse":
+                action = "skip"
+                reason = "vorhanden (wird wiederverwendet)"
+            elif destination.is_file() and destination.read_bytes() == source.read_bytes():
+                action = "skip"
+                reason = "unverändert"
+            else:
+                action = "backup"
+                reason = "wird gesichert und ersetzt"
+        else:
+            action = "copy"
+            reason = "neu"
+        plan["files"].append(
+            {
+                "path": relative,
+                "action": action,
+                "reason": reason,
+                "source": str(source),
+                "executable": executable,
+            }
+        )
+    return plan
+
+
+def describe_plan(plan):
+    """Formatiert eine Vorschau als Zeilen; schreibt nichts."""
+    before = plan["version"]["from"]
+    before_text = (before or {}).get("version", UNKNOWN_VERSION) if before else "nicht installiert"
+    after = plan["version"]["to"]["version"]
+    lines = [
+        f"Vorschau: Ziel {plan['target']} (Modus {plan['mode']})",
+        f"Version: {before_text} -> {after}",
+    ]
+    symbols = {"copy": "+", "backup": "~", "skip": "="}
+    for entry in plan["files"]:
+        lines.append(f"  {symbols[entry['action']]} {entry['path']} ({entry['reason']})")
+    for warning in plan["warnings"]:
+        lines.append("Hinweis: " + warning)
+    return lines
+
+
 def _copy_file(source, destination):
     """Atomarer Dateikopiervorgang innerhalb des Zielordners."""
     destination = Path(destination)
@@ -410,75 +571,402 @@ def _next_backup_root(toolchain, timestamp):
     return Path(toolchain) / f"backup-{timestamp}-{counter}"
 
 
-def install_program_files(kit, vibe_root, mode="update", timestamp=None):
-    """Kopiert Programmdateien und Vorlagen; Laufzeitdaten bleiben unangetastet."""
-    if mode not in ("reuse", "update"):
-        raise SetupError(f"Unbekannter Modus: {mode}")
+def _remove_empty_parents(path, stop):
+    """Entfernt leere Elternordner bis ``stop``; andere Dateien bleiben."""
+    path = Path(path).parent
+    stop = Path(stop)
+    while path != stop and stop in path.parents:
+        try:
+            path.rmdir()
+        except OSError:
+            return
+        path = path.parent
+
+
+def _restore_file(source, destination):
+    """Setzt eine gesicherte Datei atomar zurück, unabhängig vom Kopierpfad des Updates."""
+    destination = Path(destination)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    handle, temporary = tempfile.mkstemp(prefix=".vibe-restore-", dir=str(destination.parent))
+    os.close(handle)
+    try:
+        shutil.copy2(str(source), temporary)
+        os.replace(temporary, str(destination))
+    finally:
+        if os.path.exists(temporary):
+            try:
+                os.unlink(temporary)
+            except OSError:
+                pass
+
+
+def _safe_relative(relative):
+    """Nur einfache relative Pfade innerhalb der Installation zulassen."""
+    if not isinstance(relative, str) or not relative:
+        return None
+    path = Path(relative)
+    if path.is_absolute() or any(part == ".." for part in path.parts):
+        return None
+    return path.as_posix()
+
+
+def _checked_paths(values):
+    """Validiert Pfadlisten aus einer Sicherung, bevor etwas geschrieben wird."""
+    checked = []
+    for relative in values:
+        safe = _safe_relative(relative)
+        if safe is None:
+            raise SetupError(f"Sicherung enthält einen ungültigen Pfad: {relative!r}")
+        checked.append(safe)
+    return checked
+
+
+def _restore_backup(toolchain, backup_root):
+    """Stellt eine Sicherung wieder her und entfernt nur deren neu angelegte Dateien."""
+    toolchain = Path(toolchain)
+    backup_root = Path(backup_root)
+    meta_path = backup_root / BACKUP_META
+    meta = {}
+    if meta_path.is_file():
+        try:
+            loaded = json.loads(meta_path.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                meta = loaded
+        except (OSError, ValueError):
+            meta = {}
+    backed_up = meta.get("backed_up")
+    if not isinstance(backed_up, list):
+        backed_up = [
+            path.relative_to(backup_root).as_posix()
+            for path in sorted(backup_root.rglob("*"))
+            if path.is_file() and path.name != BACKUP_META
+        ]
+    backed_up = _checked_paths(backed_up)
+    created = meta.get("created") if isinstance(meta.get("created"), list) else []
+    created = _checked_paths(created)
+    restored = []
+    removed = []
+    for relative in backed_up:
+        source = backup_root / relative
+        if not source.is_file():
+            continue
+        destination = toolchain / relative
+        _restore_file(source, destination)
+        if relative.startswith("bin/"):
+            _make_executable(destination)
+        restored.append(relative)
+    for relative in created:
+        destination = toolchain / relative
+        if destination.is_file() or destination.is_symlink():
+            destination.unlink()
+            removed.append(relative)
+            _remove_empty_parents(destination, toolchain)
+    version_path = toolchain / VERSION_META
+    if "version_before_existed" in meta:
+        before = meta.get("version_before")
+        if meta.get("version_before_existed") and isinstance(before, dict):
+            _write_text_atomic(
+                version_path,
+                json.dumps(before, indent=1, ensure_ascii=False) + "\n",
+            )
+        elif not meta.get("version_before_existed") and version_path.exists():
+            version_path.unlink()
+    return {"restored": restored, "removed": removed}
+
+
+def _undo_install(vibe_root, result, launcher=None):
+    """Nimmt eine geschriebene, aber nicht fertiggestellte Installation zurück.
+
+    Gibt ``restored`` zurück, wenn eine Sicherung eingespielt wurde, sonst
+    ``removed``, wenn die neu angelegten Dateien entfernt wurden.
+    """
+    toolchain = Path(vibe_root) / "_toolchain"
+    if launcher:
+        path = Path(launcher["path"])
+        if launcher.get("backed_up"):
+            _restore_file(Path(launcher["backed_up"]), path)
+        elif launcher.get("created"):
+            try:
+                if path.is_symlink() or path.is_file():
+                    path.unlink()
+            except OSError:
+                pass
+    backup = result.get("backup")
+    if backup:
+        _restore_backup(toolchain, Path(backup))
+        return "restored"
+    for relative in result.get("copied", []):
+        destination = toolchain / relative
+        if destination.is_file() or destination.is_symlink():
+            destination.unlink()
+            _remove_empty_parents(destination, toolchain)
+    version = toolchain / VERSION_META
+    if result.get("wrote_version") and version.is_file():
+        version.unlink()
+    if not result.get("existing_before"):
+        try:
+            toolchain.rmdir()
+        except OSError:
+            pass
+    return "removed"
+
+
+def install_program_files(kit, vibe_root, mode="update", timestamp=None, runner=None):
+    """Kopiert Programmdateien und Vorlagen; Laufzeitdaten bleiben unangetastet.
+
+    Bei einem Update werden ersetzte Dateien vorher gesichert. Schlägt der
+    Vorgang ab, wird der vorherige Stand aus dieser Sicherung wiederhergestellt.
+    Die Sicherung selbst bleibt für einen späteren Rollback erhalten.
+    """
+    timestamp = timestamp or time.strftime("%Y%m%d-%H%M%S")
+    plan = build_install_plan(kit, vibe_root, mode=mode, timestamp=timestamp, runner=runner)
     kit = Path(kit)
     vibe_root = Path(vibe_root)
-    source_program = kit / "bin" / "vibe"
-    if not source_program.is_file():
-        raise SetupError(f"Unvollständiges Quellverzeichnis: {source_program} fehlt")
-    timestamp = timestamp or time.strftime("%Y%m%d-%H%M%S")
     toolchain = vibe_root / "_toolchain"
-    result = {"copied": [], "skipped": [], "backed_up": [], "warnings": [], "backup": None}
+    changed = [entry for entry in plan["files"] if entry["action"] in ("copy", "backup")]
+    existing_before = toolchain.is_dir()
+    result = {
+        "copied": [],
+        "skipped": [],
+        "backed_up": [],
+        "created": [],
+        "warnings": list(plan["warnings"]),
+        "backup": None,
+        "version": plan["version"],
+        "plan": plan,
+        "existing_before": existing_before,
+        "wrote_version": False,
+    }
     backup_root = None
-
-    def backup(relative, destination):
-        nonlocal backup_root
-        if backup_root is None:
-            backup_root = _next_backup_root(toolchain, timestamp)
-        result["backed_up"].append(_backup_file(destination, backup_root, relative))
+    if mode == "update" and existing_before:
+        backup_root = _next_backup_root(toolchain, timestamp)
+        try:
+            backup_root.mkdir(parents=True, exist_ok=True)
+            meta = {
+                "timestamp": timestamp,
+                "mode": mode,
+                "version_before": plan["version"]["from"],
+                "version_before_existed": (toolchain / VERSION_META).is_file(),
+                "version_after": plan["version"]["to"],
+                "backed_up": [],
+                "created": [],
+            }
+            for entry in changed:
+                destination = toolchain / entry["path"]
+                if entry["action"] == "backup":
+                    relative = _backup_file(destination, backup_root, entry["path"])
+                    meta["backed_up"].append(relative)
+                    result["backed_up"].append(relative)
+                elif entry["action"] == "copy":
+                    meta["created"].append(entry["path"])
+                    result["created"].append(entry["path"])
+            _write_text_atomic(
+                backup_root / BACKUP_META,
+                json.dumps(meta, indent=1, ensure_ascii=False) + "\n",
+            )
+        except OSError as error:
+            if backup_root.is_dir():
+                shutil.rmtree(str(backup_root), ignore_errors=True)
+            raise SetupError(
+                f"Sicherung konnte nicht angelegt werden; nichts geändert: {error}"
+            ) from error
         result["backup"] = str(backup_root)
 
-    for name in PROGRAM_FILES:
-        source = kit / "bin" / name
-        if not source.is_file():
-            raise SetupError(f"Unvollständiges Quellverzeichnis: {source} fehlt")
-        relative = f"bin/{name}"
-        destination = toolchain / "bin" / name
-        if destination.exists():
-            if mode == "reuse":
-                result["skipped"].append(relative)
-                continue
-            if destination.is_file() and destination.read_bytes() == source.read_bytes():
-                result["skipped"].append(relative)
-                continue
-            backup(relative, destination)
-        _copy_file(source, destination)
-        _make_executable(destination)
-        result["copied"].append(relative)
-
-    templates = kit / "templates"
-    if templates.is_dir():
-        for source in sorted(templates.rglob("*")):
-            if not source.is_file():
-                continue
-            relative = source.relative_to(kit).as_posix()
+    wrote_version = False
+    try:
+        for entry in changed:
+            destination = toolchain / entry["path"]
+            _copy_file(Path(entry["source"]), destination)
+            if entry["executable"]:
+                _make_executable(destination)
+            result["copied"].append(entry["path"])
+        result["skipped"] = [
+            entry["path"] for entry in plan["files"] if entry["action"] == "skip"
+        ]
+        if mode == "update" or not existing_before:
+            _write_text_atomic(
+                toolchain / VERSION_META,
+                json.dumps(plan["version"]["to"], indent=1, ensure_ascii=False) + "\n",
+            )
+            wrote_version = True
+            result["wrote_version"] = True
+    except Exception as error:
+        if backup_root is not None:
+            try:
+                _restore_backup(toolchain, backup_root)
+            except OSError as restore_error:
+                raise SetupError(
+                    f"Update abgebrochen; Wiederherstellung fehlgeschlagen: {restore_error}"
+                ) from error
+            raise SetupError(
+                f"Update abgebrochen, vorheriger Stand wiederhergestellt: {error}"
+            ) from error
+        for relative in result["copied"]:
             destination = toolchain / relative
-            if destination.exists():
-                if mode == "reuse":
-                    result["skipped"].append(relative)
-                    continue
-                if destination.is_file() and destination.read_bytes() == source.read_bytes():
-                    result["skipped"].append(relative)
-                    continue
-                backup(relative, destination)
-            _copy_file(source, destination)
-            result["copied"].append(relative)
-
-    catalog = kit / "data" / "models.json"
-    destination_catalog = toolchain / "models.json"
-    if not catalog.is_file():
-        result["warnings"].append(
-            "data/models.json fehlt im Quellverzeichnis; der Modellkatalog wird nicht installiert."
-        )
-    elif destination_catalog.exists():
-        result["skipped"].append("models.json")
-    else:
-        _copy_file(catalog, destination_catalog)
-        result["copied"].append("models.json")
+            if destination.is_file():
+                try:
+                    destination.unlink()
+                except OSError:
+                    pass
+                _remove_empty_parents(destination, toolchain)
+        if wrote_version and (toolchain / VERSION_META).exists():
+            try:
+                (toolchain / VERSION_META).unlink()
+            except OSError:
+                pass
+        raise SetupError(f"Installation abgebrochen: {error}") from error
     return result
+
+
+def _backup_sort_key(path):
+    """Sortiert Sicherungen nach Zeitstempel und numerischem Zähler."""
+    match = re.match(r"^(\d{8}-\d{6})(?:-(\d+))?$", path.name[len("backup-"):])
+    if match:
+        return (1, match.group(1), int(match.group(2) or 1))
+    return (0, path.name, 0)
+
+
+def select_backup(vibe_root, backup=None):
+    """Wählt die jüngste oder eine ausdrücklich benannte Sicherung."""
+    toolchain = Path(vibe_root) / "_toolchain"
+    if not toolchain.is_dir():
+        raise SetupError(f"Keine Installation unter {toolchain} gefunden.")
+    candidates = sorted(
+        (
+            path
+            for path in toolchain.iterdir()
+            if path.is_dir()
+            and path.name.startswith("backup-")
+            and not path.name.startswith(UNINSTALL_BACKUP_PREFIX)
+        ),
+        key=_backup_sort_key,
+    )
+    if not candidates:
+        raise SetupError(f"Keine Sicherung unter {toolchain} gefunden; nichts zurückgerollt.")
+    if backup:
+        chosen = Path(backup)
+        if not chosen.is_absolute():
+            chosen = toolchain / chosen
+        try:
+            chosen.resolve().relative_to(toolchain.resolve())
+        except ValueError:
+            raise SetupError(f"Sicherung liegt außerhalb der Installation: {backup}")
+        if (
+            not chosen.is_dir()
+            or not chosen.name.startswith("backup-")
+            or chosen.name.startswith(UNINSTALL_BACKUP_PREFIX)
+        ):
+            raise SetupError(f"Unbekannte Sicherung: {backup}")
+        return chosen
+    return candidates[-1]
+
+
+def rollback(vibe_root, backup=None):
+    """Stellt die jüngste oder eine benannte Sicherung wieder her."""
+    toolchain = Path(vibe_root) / "_toolchain"
+    chosen = select_backup(vibe_root, backup)
+    report = _restore_backup(toolchain, chosen)
+    report["backup"] = chosen.name
+    return report
+
+
+def uninstall(vibe_root, home=None, remove_launcher=False, timestamp=None):
+    """Entfernt Programmdateien und Vorlagen; Laufzeitdaten und Projekte bleiben.
+
+    Vorlagen werden vor dem Entfernen unter
+    ``_toolchain/backup-uninstall-<Zeitstempel>/`` gesichert, damit auch
+    persönlich angepasste Vorlagen erhalten bleiben.
+    """
+    vibe_root = Path(vibe_root)
+    toolchain = vibe_root / "_toolchain"
+    report = {"removed": [], "kept": [], "missing": False, "launchers": [], "backup": None}
+    if not toolchain.is_dir():
+        report["missing"] = True
+        return report
+    templates = toolchain / "templates"
+    if templates.is_dir():
+        stamp = timestamp or time.strftime("%Y%m%d-%H%M%S")
+        backup_root = _next_backup_root(toolchain, f"uninstall-{stamp}")
+        try:
+            shutil.copytree(str(templates), str(backup_root / "templates"))
+        except OSError as error:
+            raise SetupError(
+                f"Vorlagen konnten nicht gesichert werden; nichts entfernt: {error}"
+            ) from error
+        report["backup"] = str(backup_root)
+    for name in PROGRAM_FILES:
+        path = toolchain / "bin" / name
+        if path.is_file() or path.is_symlink():
+            path.unlink()
+            report["removed"].append(f"bin/{name}")
+    if templates.is_dir():
+        shutil.rmtree(str(templates))
+        report["removed"].append("templates")
+    version = toolchain / VERSION_META
+    if version.is_file():
+        version.unlink()
+        report["removed"].append(VERSION_META)
+    if remove_launcher and home:
+        launcher = Path(home) / ".local" / "bin" / "vibe"
+        if launcher.is_symlink():
+            try:
+                target = launcher.resolve()
+            except OSError:
+                target = None
+            if target == (toolchain / "bin" / "vibe").resolve():
+                launcher.unlink()
+                report["launchers"].append(str(launcher))
+        command = vibe_root / "vibe.cmd"
+        if command.is_file():
+            command.unlink()
+            report["launchers"].append(str(command))
+    bin_dir = toolchain / "bin"
+    if bin_dir.is_dir():
+        try:
+            bin_dir.rmdir()
+            report["removed"].append("bin")
+        except OSError:
+            pass
+    for child in sorted(toolchain.iterdir(), key=lambda item: item.name.lower()):
+        report["kept"].append(child.name)
+    return report
+
+
+def running_installation(vibe_root, runner=None, which=None):
+    """Nennt laufende Agentenläufe und Dashboard-/Server-Sitzungen dieser Installation."""
+    reasons = []
+    runs_path = Path(vibe_root) / "_logs" / "runs.json"
+    if runs_path.exists():
+        try:
+            data = json.loads(runs_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            reasons.append(f"Laufzustand {runs_path} ist nicht lesbar")
+            data = None
+    else:
+        data = None
+    if isinstance(data, dict):
+        for record in data.get("runs", []):
+            if not isinstance(record, dict):
+                continue
+            if record.get("state") in LIVE_RUN_STATES:
+                reasons.append(f"Agentenlauf {record.get('id', '?')} ist {record.get('state')}")
+    which = which or shutil.which
+    tmux = which("tmux")
+    if tmux:
+        runner = runner or subprocess.run
+        for session in ("vibe-ui", "vibe-ui-dev", "vibe-server", "vibe-server-dev"):
+            try:
+                completed = runner(
+                    [tmux, "has-session", "-t", session],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+            except (OSError, subprocess.SubprocessError):
+                continue
+            if getattr(completed, "returncode", 1) == 0:
+                reasons.append(f"tmux-Sitzung {session} läuft")
+    return reasons
 
 
 def install_launcher(vibe_root, home, info, timestamp=None):
@@ -494,6 +982,7 @@ def install_launcher(vibe_root, home, info, timestamp=None):
             "py -3 \"%~dp0_toolchain\\bin\\vibe\" %*\r\n"
         )
         backed_up = None
+        existed = launcher.exists()
         if launcher.exists():
             existing = launcher.read_text(encoding="utf-8", errors="replace").replace("\r\n", "\n")
             if existing != content.replace("\r\n", "\n"):
@@ -505,7 +994,7 @@ def install_launcher(vibe_root, home, info, timestamp=None):
                 os.replace(str(launcher), str(backup))
                 backed_up = str(backup)
         _write_text_atomic(launcher, content)
-        return {"path": str(launcher), "backed_up": backed_up}
+        return {"path": str(launcher), "backed_up": backed_up, "created": not existed}
 
     target = vibe_root / "_toolchain" / "bin" / "vibe"
     launcher = home / ".local" / "bin" / "vibe"
@@ -517,7 +1006,7 @@ def install_launcher(vibe_root, home, info, timestamp=None):
         except OSError:
             already_linked = False
         if already_linked:
-            return {"path": str(launcher), "backed_up": None}
+            return {"path": str(launcher), "backed_up": None, "created": False}
         backup = launcher.with_name(f"vibe.bak-{timestamp}")
         counter = 1
         while backup.exists():
@@ -526,7 +1015,7 @@ def install_launcher(vibe_root, home, info, timestamp=None):
         os.replace(str(launcher), str(backup))
         backed_up = str(backup)
     os.symlink(str(target), str(launcher))
-    return {"path": str(launcher), "backed_up": backed_up}
+    return {"path": str(launcher), "backed_up": backed_up, "created": True}
 
 
 def register_projects(vibe_root):
@@ -577,6 +1066,13 @@ def verify_installation(vibe_root):
         checks.append({"label": f"Ausführbar bin/{name}", "ok": path.is_file() and os.access(str(path), os.X_OK), "hint": "chmod +x setzen"})
     template = toolchain / "templates" / "generic" / ".vibe" / "project.env"
     checks.append({"label": "Vorlagen installiert", "ok": template.is_file(), "hint": "Setup erneut ausführen"})
+    checks.append(
+        {
+            "label": "Versionskennung version.json",
+            "ok": read_installed_version(vibe_root) is not None,
+            "hint": "Setup --update ausführen",
+        }
+    )
     checks.append({"label": f"Python {MIN_PYTHON[0]}.{MIN_PYTHON[1]}+", "ok": python_ok(), "hint": "Python aktualisieren"})
     return checks
 
@@ -586,14 +1082,34 @@ def parse_args(argv=None):
         prog="setup-vibe.py",
         description="Interaktiver Setup für vibe (Linux, Container und Windows).",
     )
+    try:
+        version_text = (KIT / VERSION_FILE).read_text(encoding="utf-8").strip() or UNKNOWN_VERSION
+    except OSError:
+        version_text = UNKNOWN_VERSION
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"vibe-Setup {version_text}",
+        help="Version des Quellstands anzeigen",
+    )
     parser.add_argument("--vibe", metavar="PFAD", help="Zielordner für die Installation")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--reuse", action="store_true", help="bestehende Installation wiederverwenden")
     mode.add_argument("--update", action="store_true", help="Programmdateien aktualisieren (mit Sicherung)")
+    mode.add_argument("--rollback", action="store_true", help="letzte Sicherung wiederherstellen")
+    mode.add_argument("--uninstall", action="store_true", help="Programmdateien entfernen; Nutzerdaten bleiben")
+    parser.add_argument("--backup", metavar="NAME", help="Sicherung für --rollback (Standard: jüngste)")
+    parser.add_argument("--force", action="store_true", help="Aktualisierung trotz laufendem Agentenlauf")
     parser.add_argument("--yes", "-y", action="store_true", help="ohne Rückfragen (Standardwerte verwenden)")
     parser.add_argument("--install-deps", action="store_true", help="fehlende Werkzeuge ohne Rückfrage installieren")
     parser.add_argument("--skip-deps", action="store_true", help="keine Werkzeuge installieren oder abfragen")
-    parser.add_argument("--dry-run", action="store_true", help="nur anzeigen, nichts schreiben oder ausführen")
+    parser.add_argument(
+        "--dry-run",
+        "--preview",
+        dest="dry_run",
+        action="store_true",
+        help="Vorschau anzeigen, nichts schreiben oder ausführen",
+    )
     parser.add_argument("--no-register", action="store_true", help="Projektordner nicht registrieren")
     parser.add_argument("--no-launcher", action="store_true", help="keinen Startbefehl anlegen")
     return parser.parse_args(argv)
@@ -615,7 +1131,7 @@ def main(argv=None, input_fn=None, output=print, which=None, runner=None,
     has_sudo = shutil.which("sudo") is not None if has_sudo is None else has_sudo
     timestamp = time.strftime("%Y%m%d-%H%M%S")
 
-    if not interactive and not options.yes:
+    if not interactive and not options.yes and not options.dry_run:
         output("FEHLER: Ohne Terminal ist kein interaktiver Setup möglich. Nutze --yes (optional mit --install-deps).")
         return 1
 
@@ -642,6 +1158,87 @@ def main(argv=None, input_fn=None, output=print, which=None, runner=None,
     except SetupError as error:
         output("FEHLER: " + str(error))
         return 1
+
+    if options.backup and not options.rollback:
+        output("FEHLER: --backup ist nur zusammen mit --rollback zulässig.")
+        return 1
+    if options.rollback:
+        try:
+            chosen = select_backup(target, options.backup)
+        except SetupError as error:
+            output("FEHLER: " + str(error))
+            return 1
+        if options.dry_run:
+            output(f"(dry-run) Rollback aus {chosen.name}; es wird nichts geändert.")
+            return 0
+        if not options.force:
+            reasons = running_installation(target, runner=runner, which=which)
+            if reasons:
+                output("FEHLER: Die Installation wird gerade verwendet; nichts zurückgerollt.")
+                for reason in reasons:
+                    output("  - " + reason)
+                output("Beende die Läufe/Sitzungen oder nutze --force für einen bewussten Rollback.")
+                return 1
+        try:
+            report = rollback(target, options.backup)
+        except (SetupError, OSError) as error:
+            output("FEHLER: Rollback fehlgeschlagen: " + str(error))
+            return 1
+        output(f"Rollback: {report['backup']}")
+        output(f"Wiederhergestellt: {len(report['restored'])} Datei(en)")
+        if report["removed"]:
+            output(f"Entfernt (neu seit dem Update): {len(report['removed'])} Datei(en)")
+        return 0
+    if options.uninstall:
+        if options.dry_run:
+            toolchain = target / "_toolchain"
+            removable = [f"bin/{name}" for name in PROGRAM_FILES if (toolchain / "bin" / name).exists()]
+            if (toolchain / "templates").is_dir():
+                removable.append("templates")
+            if (toolchain / VERSION_META).is_file():
+                removable.append(VERSION_META)
+            output(f"(dry-run) Uninstall würde {len(removable)} Datei(en)/Bereich(e) entfernen:")
+            for relative in removable:
+                output("  - " + relative)
+            if (toolchain / "templates").is_dir():
+                output("(dry-run) Angepasste Vorlagen würden vorher gesichert.")
+            output("(dry-run) Laufzeitdaten, Sicherungen und Projekte bleiben erhalten.")
+            return 0
+        if not options.yes and not interactive:
+            output("FEHLER: Uninstall löscht Programmdateien; ohne Terminal ist --yes erforderlich.")
+            return 1
+        if interactive and not options.yes:
+            answer = input_fn(
+                "Programmdateien entfernen? Laufzeitdaten und Projekte bleiben erhalten. [j/N]: "
+            ).strip().lower()
+            if not answer.startswith("j"):
+                output("Uninstall abgebrochen; nichts geändert.")
+                return 1
+        if not options.force:
+            reasons = running_installation(target, runner=runner, which=which)
+            if reasons:
+                output("FEHLER: Die Installation wird gerade verwendet; nichts entfernt.")
+                for reason in reasons:
+                    output("  - " + reason)
+                output("Beende die Läufe/Sitzungen oder nutze --force für ein bewusstes Entfernen.")
+                return 1
+        try:
+            report = uninstall(target, home=home, remove_launcher=not options.no_launcher)
+        except (SetupError, OSError) as error:
+            output("FEHLER: Uninstall fehlgeschlagen: " + str(error))
+            return 1
+        if report["missing"]:
+            output("Keine Installation gefunden; nichts entfernt.")
+            return 0
+        output(f"Uninstall: {len(report['removed'])} Datei(en)/Bereich(e) entfernt.")
+        if report["backup"]:
+            output("Vorlagen gesichert: " + report["backup"])
+        for launcher in report["launchers"]:
+            output("Startbefehl entfernt: " + launcher)
+        if report["kept"]:
+            output("Erhalten: " + ", ".join(report["kept"]))
+        output("Projekte und Laufzeitdaten wurden nicht verändert.")
+        return 0
 
     existing = detect_existing(target)
     if options.reuse:
@@ -684,11 +1281,29 @@ def main(argv=None, input_fn=None, output=print, which=None, runner=None,
     installable = [item["name"] for item in missing if item["installable"]]
 
     if options.dry_run:
+        try:
+            plan = build_install_plan(
+                kit, target, mode=mode, timestamp=timestamp, runner=runner
+            )
+        except SetupError as error:
+            output("FEHLER: " + str(error))
+            return 1
+        for line in describe_plan(plan):
+            output(line)
         prefix = privilege_prefix(info, is_root, has_sudo)
         for command in install_commands(info, installable, prefix):
             output("(dry-run) " + " ".join(command))
         output(f"(dry-run) Ziel: {target}; Modus: {mode}; es wird nichts geändert.")
         return 0
+
+    if mode == "update" and existing["toolchain"] and not options.force:
+        reasons = running_installation(target, runner=runner, which=which)
+        if reasons:
+            output("FEHLER: Die Installation wird gerade verwendet; nichts geändert.")
+            for reason in reasons:
+                output("  - " + reason)
+            output("Beende die Läufe/Sitzungen oder nutze --force für eine bewusste Aktualisierung.")
+            return 1
 
     dependency_failed = False
     if missing and installable and not options.skip_deps:
@@ -721,9 +1336,10 @@ def main(argv=None, input_fn=None, output=print, which=None, runner=None,
                     )
                     dependency_failed = True
 
+    files = None
+    launcher = None
     try:
-        files = install_program_files(kit, target, mode=mode, timestamp=timestamp)
-        launcher = None
+        files = install_program_files(kit, target, mode=mode, timestamp=timestamp, runner=runner)
         if not options.no_launcher:
             launcher = install_launcher(target, home, info, timestamp=timestamp)
         registration = None
@@ -735,12 +1351,32 @@ def main(argv=None, input_fn=None, output=print, which=None, runner=None,
             else:
                 registration = register_projects(target)
     except (SetupError, OSError) as error:
+        if files is not None:
+            try:
+                state = _undo_install(target, files, launcher=launcher)
+            except (SetupError, OSError) as undo_error:
+                output("FEHLER: Installation fehlgeschlagen: " + str(error))
+                output("FEHLER: Wiederherstellung fehlgeschlagen: " + str(undo_error))
+                return 1
+            if state == "restored":
+                output(
+                    "FEHLER: Installation abgebrochen, vorheriger Stand wiederhergestellt: "
+                    + str(error)
+                )
+            else:
+                output("FEHLER: Installation abgebrochen; nichts geändert: " + str(error))
+            return 1
         output("FEHLER: Installation fehlgeschlagen: " + str(error))
         return 1
 
     for warning in files["warnings"]:
         output("Hinweis: " + warning)
     output(f"Installation: {len(files['copied'])} Datei(en) kopiert, {len(files['skipped'])} unverändert.")
+    version = files["version"]["to"]
+    version_line = f"Version: {version['version']}"
+    if version.get("commit"):
+        version_line += f" (Commit {version['commit']})"
+    output(version_line)
     if files["backed_up"]:
         output(f"Sicherung: {files['backup']} ({len(files['backed_up'])} Datei(en))")
     if launcher:

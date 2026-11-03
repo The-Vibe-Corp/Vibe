@@ -55,10 +55,43 @@ Nicht-interaktive Varianten und Vorschau:
     python3 scripts/setup-vibe.py --dry-run --vibe /pfad/zu/VibeCode
     python3 scripts/setup-vibe.py --yes --install-deps --vibe /pfad/zu/VibeCode
 
+### Vorschau, Update, Rollback und Uninstall
+
+Die Vorschau zeigt Ziel, Version und jede Datei mit Aktion (`+` neu,
+`~` sichern und ersetzen, `=` unverändert) und schreibt nichts:
+
+    python3 scripts/setup-vibe.py --dry-run --vibe /pfad/zu/VibeCode
+
+Ein Update sichert ersetzte Programmdateien und geänderte Nutzervorlagen unter
+`_toolchain/backup-<Zeitstempel>/` und schreibt die Versionskennung nach
+`_toolchain/version.json`. Solange ein Agentenlauf oder eine Dashboard-Sitzung
+dieser Installation läuft, verweigert der Setup das Update; `--force` hebt die
+Sperre nur nach ausdrücklicher Entscheidung auf:
+
+    python3 scripts/setup-vibe.py --yes --update --vibe /pfad/zu/VibeCode
+    python3 scripts/setup-vibe.py --yes --update --force --vibe /pfad/zu/VibeCode
+
+Ein Rollback stellt die jüngste Sicherung wieder her; neu hinzugekommene
+Dateien werden dabei entfernt:
+
+    python3 scripts/setup-vibe.py --yes --rollback --vibe /pfad/zu/VibeCode
+    python3 scripts/setup-vibe.py --yes --rollback --backup backup-20261102-101500 --vibe /pfad/zu/VibeCode
+
+Uninstall entfernt Programmdateien, Vorlagen und die Versionskennung. Projekte,
+Laufzeitdaten (`vibe.json`, `models.json`, `profiles.json`, `fritz.json`,
+`costs.json`, `_logs`), Sicherungen und persönliche Konfiguration bleiben
+erhalten:
+
+    python3 scripts/setup-vibe.py --yes --uninstall --vibe /pfad/zu/VibeCode
+
+Die Quellversion steht in `VERSION`, der zuletzt installierte Stand in
+`_toolchain/version.json` (Version, Commit, Zeitpunkt, Modus, Quelle). Der
+Setup meldet beides in der Vorschau und nach der Installation; fehlt `VERSION`,
+lautet die Angabe ausdrücklich `unbekannt` statt geraten.
+
 Windows kann die vibe-Dateien und die Oberfläche installieren. Agentenläufe
 benötigen `tmux` und `flock` und damit WSL2 oder Docker; der Setup weist darauf
-hin. Reproduzierbare Installation und Rollback im Sinne von V-018 bleiben ein
-eigenes Arbeitspaket.
+hin.
 
 ## Erster Auftrag
 

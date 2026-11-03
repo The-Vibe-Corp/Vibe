@@ -9,7 +9,8 @@
   "data/models.json",
   "templates",
   "scripts/setup-vibe.py",
-  "setup-vibe.cmd"
+  "setup-vibe.cmd",
+  "VERSION"
  ],
  "files": [
   {
@@ -64,8 +65,8 @@
   },
   {
    "path": "scripts/setup-vibe.py",
-   "sha256": "bfbbcb3e696a33fbd9c04e0f9663ba33d81a802f60269c48a1b61dc6a5ce590c",
-   "bytes": 31059
+   "sha256": "aa0ee833f6129ee58244b075fd92d99ecee58bd0e56c93001144b6357028cb7c",
+   "bytes": 56294
   },
   {
    "path": "setup-vibe.cmd",
@@ -251,6 +252,11 @@
    "path": "bin/vibe_questions.py",
    "sha256": "d5630e455a667973fdafbe91ad44944da0bf0a4865a4d714d00eee3065aeb10f",
    "bytes": 11589
+  },
+  {
+   "path": "VERSION",
+   "sha256": "f5e9382967c9833066a55808829f3750fc8e1181b170cafd222c37048bb49a77",
+   "bytes": 7
   }
  ],
  "aenderungen": [
@@ -567,6 +573,15 @@
    "dateien": [
     "bin/vibe",
     "bin/vibe-run.sh"
+   ]
+  },
+  {
+   "arbeitspaket": "V-018",
+   "datum": "2026-11-03",
+   "grund": "Reproduzierbare Installation aus dem Repository: Vorschau, Versionskennung aus VERSION und Git-Commit, Sicherung ersetzter Programmdateien und geänderter Nutzervorlagen, Rollback, Uninstall ohne Projekt- und Laufzeitdatenverlust, Update-Sperre bei laufenden Agenten- oder Dashboard-Sitzungen. models.json bleibt als Laufzeitdatei unangetastet. Schlägt ein Schritt nach dem Schreiben der Programmdateien fehl (Startbefehl, Projektregistrierung), wird die Installation vollständig zurückgenommen; ein reiner --reuse-Lauf ohne Schreibzugriff lässt eine vorhandene Versionskennung unverändert.",
+   "dateien": [
+    "scripts/setup-vibe.py",
+    "VERSION"
    ]
   },
   {
