@@ -329,7 +329,7 @@ Ein fehlender externer Dienst bedeutet BLOCKIERT, nicht erledigt.
   Doku: docs/features/V-017.md, docs/features/V-017-bazzite.txt,
   Trilium qB4ymeCudpPf.
 
-- [ ] V-018 Installation, Aktualisierung und Rollback implementieren
+- [x] V-018 Installation, Aktualisierung und Rollback implementieren
   Priorität: P1
   Abhängigkeiten: V-006, V-017
   Umfang: reproduzierbare Installation aus dem Repository.
@@ -339,6 +339,15 @@ Ein fehlender externer Dienst bedeutet BLOCKIERT, nicht erledigt.
   Uninstall löscht keine Projekte.
   Tests: frische Installation, Update, abgebrochenes Update, Rollback,
   geänderte Nutzervorlagen, fehlende Rechte.
+  Commit: `2d214f0`; Test:
+  test_reuse_failure_keeps_the_version_of_an_untouched_installation,
+  test_fresh_install_copies_all_program_modules_and_writes_version
+  (tests/unit/test_install_lifecycle.py, 37 Tests);
+  Prüfung: `bash scripts/verify.sh quick` Exit 0;
+  `bash scripts/verify.sh full` Exit 0 (833 Unit- + 56 Browser-Tests,
+  889 erkannt);
+  Review: docs/reviews/V-018-review-1.md, docs/reviews/V-018-review-2.md;
+  Doku: docs/features/V-018.md, Trilium DqlM21jFH8ET.
 
 - [ ] V-019 Frontend und Backend schrittweise modularisieren
   Priorität: P2
