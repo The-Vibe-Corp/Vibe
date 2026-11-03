@@ -349,7 +349,7 @@ Ein fehlender externer Dienst bedeutet BLOCKIERT, nicht erledigt.
   Review: docs/reviews/V-018-review-1.md, docs/reviews/V-018-review-2.md;
   Doku: docs/features/V-018.md, Trilium DqlM21jFH8ET.
 
-- [ ] V-019 Frontend und Backend schrittweise modularisieren
+- [x] V-019 Frontend und Backend schrittweise modularisieren
   Priorität: P2
   Abhängigkeiten: V-008 bis V-018
   Umfang: gemeinsame Dienste, Adapter und separate statische Webdateien.
@@ -357,6 +357,16 @@ Ein fehlender externer Dienst bedeutet BLOCKIERT, nicht erledigt.
   in parallelen Requests; keine funktionale Neuentwicklung nebenbei.
   Tests: gesamte vorhandene Regressionssuite vor und nach jedem Teilschritt;
   parallele API-Requests ohne vermischte Ausgabe.
+  Commit: 2a06797; Test: test_parallel_captures_do_not_mix_their_output,
+  test_parallel_init_requests_keep_their_own_message
+  (tests/unit/test_web_modularization.py, 8 Tests).
+  Prüfungen: `bash scripts/verify.sh quick` Exit 0;
+  `bash scripts/verify.sh full` Exit 0 (842 Unit- + 56 Browser-Tests,
+  898 erkannt; Ausgangsstand `d0c33cf`: 833 + 56, 889 erkannt) im
+  bubblewrap-Namespace mit tmpfs auf /tmp und Arbeitsbaum unter /tmp/work.
+  Review: `docs/reviews/V-019-review-1.md` (PASS, 0 Critical/High/Medium,
+  1 Minor).
+  Dokumentation: `docs/features/V-019.md`; Trilium `FM5vVshvuXzR`.
 
 - [ ] V-020 Browserabnahme, Dokumentation und Releasebasis
   Priorität: P2
