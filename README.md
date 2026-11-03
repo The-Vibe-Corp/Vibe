@@ -10,6 +10,16 @@ Lokale Entwicklungszentrale für Projekte, Agenten, Modelle und MCP-Server.
 - FEEDBACK.md: neue Fehler und Nutzerbeobachtungen.
 - docs/import-manifest.json: unverändert importierte Programmdateien.
 
+## Dokumentation
+
+- `docs/handbuch.md` — Bedienung der Oberfläche und der CLI.
+- `docs/betrieb.md` — Pfade, Prozesse, Diagnose, Installation und Release.
+- `docs/grenzen.md` — bekannte Grenzen und nicht zugesagte Funktionen.
+- `docs/checkliste.md` — Abnahmecheckliste mit Versionen und Ergebnissen.
+- `docs/abnahme-bazzite.md` — dokumentierte manuelle Bazzite-Prüfung.
+- `docs/features/<ticket>.md` — fachliche und technische Dokumentation je
+  Arbeitspaket; die Zuordnung zu Trilium steht in `docs/trilium-index.md`.
+
 ## Ausgangsbasis
 
 Der Quellcode wurde aus der funktionierenden lokalen Installation übernommen.

@@ -219,6 +219,7 @@ class H(BaseHTTPRequestHandler):
         return value
 
     def _health(self):
+        release = vibe_paths.release_info(PATHS)
         self._send(200, {
             "ok": True,
             "app": "vibe",
@@ -228,6 +229,11 @@ class H(BaseHTTPRequestHandler):
             "port": PORT,
             "pid": os.getpid(),
             "started": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(STARTED)),
+            # Releasebasis ohne Geheimnisse: Version, Commit und Herkunft der
+            # Kennung. Fehlende Angaben bleiben ausdrücklich "unbekannt".
+            "version": release["version"],
+            "commit": release["commit"],
+            "release_origin": release["origin"],
         })
 
     def do_GET(self):

@@ -3522,7 +3522,14 @@ def doctor_checks():
     return r
 
 def cmd_doctor():
+    release = vibe_paths.release_info(PATHS)
+    origin = {"installation": "Installation", "quelle": "Quelle"}.get(
+        release["origin"], "unbekannt"
+    )
     print(col("b", "Umgebung"))
+    print("  Release: Version " + release["version"]
+          + (" · Commit " + release["commit"] if release["commit"] else "")
+          + " · " + origin)
     for label, ok, hint in doctor_checks():
         print(f"  {col('g','OK  ') if ok else col('r','FEHL')} {label}" + (f"  -> {hint}" if not ok and hint else ""))
 

@@ -453,3 +453,51 @@ def ensure(paths, *roles):
             raise ConfigError(f"Verzeichnis {target} konnte nicht angelegt werden: {error}")
         created.append(target)
     return created
+
+
+RELEASE_META = "version.json"
+UNKNOWN_VERSION = "unbekannt"
+
+
+def release_info(paths):
+    """Version und Commit des laufenden Stands, ohne Angaben zu erfinden.
+
+    Bevorzugt wird die Kennung einer Installation (``version.json`` im
+    Zustandsordner). Fehlt sie oder ist sie unlesbar, wird die ``VERSION``
+    des laufenden Quellstands gelesen. Ist beides nicht vorhanden, lautet die
+    Version ausdrücklich ``unbekannt``; ein Commit wird nie geraten.
+    """
+    meta_path = os.path.join(paths.state, RELEASE_META)
+    if os.path.isfile(meta_path):
+        try:
+            with open(meta_path, encoding="utf-8") as handle:
+                data = json.load(handle)
+        except (OSError, ValueError):
+            data = None
+        if isinstance(data, dict) and data.get("version") not in (None, ""):
+            return {
+                "version": str(data.get("version")),
+                "commit": str(data.get("commit") or ""),
+                "installed_at": str(data.get("installed_at") or ""),
+                "origin": "installation",
+            }
+    version_file = os.path.join(paths.source, "VERSION")
+    if os.path.isfile(version_file):
+        try:
+            with open(version_file, encoding="utf-8") as handle:
+                version = handle.read().strip()
+        except OSError:
+            version = ""
+        if version:
+            return {
+                "version": version,
+                "commit": "",
+                "installed_at": "",
+                "origin": "quelle",
+            }
+    return {
+        "version": UNKNOWN_VERSION,
+        "commit": "",
+        "installed_at": "",
+        "origin": "unbekannt",
+    }

@@ -588,8 +588,10 @@ async function mcpForm(scope,name){const d=await api('/api/mcp');let e={type:'lo
    el('div',{class:'bar'},el('button',{class:'b p',on:{click:async()=>{const r=await api('/api/mcp',{action:'save',scope:isNew?sc.value:scope,name:nm.value,old_name:isNew?'':name,create:isNew,entry:build(),expected:digest});toast(r.message);if(r.ok)mcp().catch(showErr)}}},'Speichern'),
     el('button',{class:'b',on:{click:async()=>{res.replaceChildren(el('div',{class:'mut'},'Teste … (kann bis zu einer Minute dauern, z. B. wenn npx Pakete lädt)'));const r=await api('/api/mcp',{action:'test',scope:isNew?sc.value:scope,name:isNew?'':name,entry:build()});mcpResult(r,res)}}},'Testen (mit den Werten oben)'),
     delMcp)),res)}
-async function env(){const d=await api('/api/doctor');const f=await api('/api/fritz');
- main.replaceChildren(el('div',{class:'card'},el('b',{},'Umgebungsprüfung'),...d.map(c=>el('div',{},el('span',{class:c.ok?'ok':'bad'},c.ok?'OK   ':'FEHL '),c.label,c.ok||!c.hint?null:el('span',{class:'mut'},'  → '+c.hint)))),fritzCard(f))}
+async function env(){const d=await api('/api/doctor');const f=await api('/api/fritz');const rel=await api('/api/health');
+ const origin=rel.release_origin==='installation'?'Installation':rel.release_origin==='quelle'?'Quelle':'unbekannt';
+ main.replaceChildren(el('div',{class:'card'},el('b',{},'Release'),el('div',{},'Version '+rel.version+(rel.commit?' · Commit '+rel.commit:'')+' · '+origin)),
+  el('div',{class:'card'},el('b',{},'Umgebungsprüfung'),...d.map(c=>el('div',{},el('span',{class:c.ok?'ok':'bad'},c.ok?'OK   ':'FEHL '),c.label,c.ok||!c.hint?null:el('span',{class:'mut'},'  → '+c.hint)))),fritzCard(f))}
 function fritzCard(f){
  const cb=el('input',{type:'checkbox'});cb.checked=!!f.automation;
  const state=el('span',{class:'pill '+(f.automation?'warn':'mut')},'Automatik: '+(f.automation?'an':'aus'));

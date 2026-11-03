@@ -40,8 +40,8 @@
   },
   {
    "path": "bin/vibe_paths.py",
-   "sha256": "dff5928d04983e1dbc5596bf2ef174456d6dd441b253b12eba81f26630eb4b4d",
-   "bytes": 15900
+   "sha256": "7fb7282db29a46abfa68bd6e625c120b48bfbf642abb79866c97702a5f1006c7",
+   "bytes": 17565
   },
   {
    "path": "bin/vibe_runs.py",
@@ -230,8 +230,8 @@
   },
   {
    "path": "bin/vibe",
-   "sha256": "490eff012c333021c62acbd072319e2bad37d6a8cea7af4a10be7bfe46f79441",
-   "bytes": 176022
+   "sha256": "af3be8577d818c5eb851ca099011593b735eaceda2982387c341c1fd77dbb359",
+   "bytes": 176342
   },
   {
    "path": "bin/vibe-run.sh",
@@ -240,8 +240,8 @@
   },
   {
    "path": "bin/vibe-web.py",
-   "sha256": "81450af4388c6b99c29c14be92e1a9a4d882adf9a7cad50dfc3c9177c8135c44",
-   "bytes": 35237
+   "sha256": "92f240c3e0844cbbf691e9837c6539619f62eb340fe3c2b297585fb1a139e9cf",
+   "bytes": 35572
   },
   {
    "path": "bin/vibe_sandbox.py",
@@ -275,8 +275,8 @@
   },
   {
    "path": "bin/web/app.js",
-   "sha256": "6febb585c5a59937aa844ad89d6fca9b98bbfe47487f6d044f8f35eaccea50b5",
-   "bytes": 72130
+   "sha256": "7bb264556b714e6a00c4d33de28217a8d49309e104ba9400ab75dbd53de8ace2",
+   "bytes": 72422
   }
  ],
  "aenderungen": [
@@ -645,6 +645,17 @@
     "bin/web/styles.css",
     "bin/web/app.js",
     "scripts/setup-vibe.py"
+   ]
+  },
+  {
+   "arbeitspaket": "V-020",
+   "datum": "2026-11-03",
+   "grund": "Releasebasis und Browserabnahme: gemeinsame Angabe von Version, Commit und Herkunft in bin/vibe_paths.py, Ausgabe in /api/health, in der Umgebungsansicht und in vibe doctor; reproduzierbarer Releasebau aus versionierten Dateien ohne persönliche Daten. Verhalten der Oberfläche ansonsten unverändert.",
+   "dateien": [
+    "bin/vibe",
+    "bin/vibe-web.py",
+    "bin/vibe_paths.py",
+    "bin/web/app.js"
    ]
   }
  ]

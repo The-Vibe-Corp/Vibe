@@ -61,7 +61,13 @@ class WebApiFixture(unittest.TestCase):
                 "VIBE": str(cls.root),
                 "VIBE_NO_CONTAINER": "1",
                 "VIBE_UI_PORT": str(cls.port),
+                "VIBE_INSTALL": str(cls.root / "_toolchain"),
+                "VIBE_RUNTIME": str(cls.root / "_logs"),
+                "VIBE_STATE": str(cls.root / "_toolchain"),
                 "HOME": str(cls.root / "home"),
+                "VIBE_CONFIG_FILE": str(
+                    cls.root / "home" / ".config" / "vibe" / "config.json"
+                ),
             }
         )
         cls.proc = subprocess.Popen(
@@ -189,6 +195,11 @@ class HealthTest(WebApiFixture):
         self.assertIsInstance(data["pid"], int)
         self.assertTrue(data["instance"], "Instanzkennung fehlt")
         self.assertEqual(data["instance"], self.instance)
+        self.assertEqual(
+            data["version"], (REPO / "VERSION").read_text(encoding="utf-8").strip()
+        )
+        self.assertEqual(data["commit"], "", "Ein Commit darf nicht geraten werden")
+        self.assertEqual(data["release_origin"], "quelle")
         self.assertNotIn(self.token, body)
         self.assertNotIn("token", body.lower())
 
