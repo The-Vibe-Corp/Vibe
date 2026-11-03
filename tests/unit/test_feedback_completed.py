@@ -20,6 +20,8 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+from tests.unit.web_page import served_page
+
 REPO = Path(__file__).resolve().parents[2]
 CLI = REPO / "bin" / "vibe"
 WEB = REPO / "bin" / "vibe-web.py"
@@ -320,9 +322,8 @@ class FeedbackCompletedApiTest(FeedbackCompletedApiFixture):
         self.assertIn("- [ ] F2 Offener Punkt", text)
 
     def test_detail_page_mentions_completed_toggle(self):
-        status, html = self.request("/", token=False)
+        html = served_page(self.request)
 
-        self.assertEqual(status, 200)
         self.assertIn("Abgeschlossene anzeigen", html)
         self.assertIn("nicht bearbeitbar", html)
 

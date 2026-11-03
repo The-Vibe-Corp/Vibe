@@ -100,7 +100,7 @@ FRONT_KEY_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_-]*):[ \t]*(.*)$")
 AGENT_FIELDS = ("description", "mode", "model", "temperature", "steps")
 _AGENT_VERSION = None
 C = {"g": "\033[32m", "r": "\033[31m", "y": "\033[33m", "b": "\033[1m", "d": "\033[2m", "0": "\033[0m"}
-def col(c, s): return f"{C[c]}{s}{C['0']}" if sys.stdout.isatty() else s
+def col(c, s, stream=None): return f"{C[c]}{s}{C['0']}" if (stream or sys.stdout).isatty() else s
 
 def run(argv, cwd=None, timeout=60, env=None):
     """Startet ein Programm ohne Shell und liefert (Exitcode, Ausgabe).
@@ -1512,16 +1512,17 @@ def default_agent():
         if role == "coder": return agent
     return ""
 
-def cmd_run(name, agent=None):
+def cmd_run(name, agent=None, out=None):
+    out = out or sys.stdout
     p = ppath(name)
     if agent is not None: require_agent(agent)
-    if tmux_has(name): print("Läuft bereits. vibe attach", name); return
+    if tmux_has(name): print("Läuft bereits. vibe attach", name, file=out); return
     if not is_init(name): sys.exit("Projekt ist nicht für vibe vorbereitet: vibe init " + name)
     sandbox = sandbox_status(name)
     if sandbox["enabled"]:
         checked = sandbox_check(name)
         if not checked["ok"]: sys.exit(checked["message"])
-    if pause_after_active(name): print(col("y", "Pause angefordert: der Lauf startet kein Arbeitspaket. Aufheben: vibe pause " + name + " off"))
+    if pause_after_active(name): print(col("y", "Pause angefordert: der Lauf startet kein Arbeitspaket. Aufheben: vibe pause " + name + " off", out), file=out)
     os.makedirs(LOGS, exist_ok=True)
     env = penv(name)
     agent = agent or env.get("AGENT") or default_agent()
@@ -1554,16 +1555,16 @@ def cmd_run(name, agent=None):
     # unverändert, andere Projekte sehen die Überschreibung nicht.
     inner = ("source ~/.bashrc; " + child_exports()
              + ' export VIBE_LOGNAME="$1" VIBE_RUN_ID="$2" VIBE_SESSION="$3" VIBE_MODEL="$7"; bash "$4" "$5" "$6" "$7"')
-    rc, out = run(["tmux", "new-session", "-d", "-s", session,
+    rc, output = run(["tmux", "new-session", "-d", "-s", session,
                    "-e", MANAGED_VAR + "=run", "-c", p,
                    "bash", "-lc", inner, name, key, run_id, session,
                    os.path.join(BIN, "vibe-run.sh"), p, agent, model])
     if rc != 0:
         registry.finish(run_id, exit_code=None, state="failed")
-        print(col("r", out))
+        print(col("r", output, stream=out), file=out)
         return
-    print(col("g", f"Gestartet: Lauf {run_id}, tmux-Sitzung {session}, Agent {agent}"))
-    print("Zuschauen: vibe attach", name, "| Log: vibe logs", name)
+    print(col("g", f"Gestartet: Lauf {run_id}, tmux-Sitzung {session}, Agent {agent}"), file=out)
+    print("Zuschauen: vibe attach", name, "| Log: vibe logs", name, file=out)
 
 def cmd_attach(name):
     if not tmux_has(name): sys.exit("Keine laufende Sitzung für " + name)
@@ -1575,8 +1576,9 @@ def cmd_logs(name):
     try: subprocess.run(["tail", "-n", "60", "-f", lg])
     except KeyboardInterrupt: pass
 
-def cmd_stop(name, run_id=None):
+def cmd_stop(name, run_id=None, out=None):
     """Beendet genau einen Lauf des Projekts; fremde Läufe bleiben unberührt."""
+    out = out or sys.stdout
     # Ein Stopp darf auch dann die Sitzung beenden, wenn das Projektverzeichnis
     # nicht (mehr) auffindbar ist; dann gibt es nur keinen Registereintrag.
     path = project_map().get(name)
@@ -1593,7 +1595,7 @@ def cmd_stop(name, run_id=None):
         # desselben Projekts beenden.
         if record.get("state") not in vibe_runs.LIVE_STATES:
             print("Lauf", run_id, "ist bereits beendet ("
-                  + str(record.get("state")) + ", Exit " + str(record.get("exit_code")) + ").")
+                  + str(record.get("state")) + ", Exit " + str(record.get("exit_code")) + ").", file=out)
             return
     else:
         record = registry.latest(project=project) if project else None
@@ -1601,7 +1603,7 @@ def cmd_stop(name, run_id=None):
             record = None
     session = (record or {}).get("session") or sess(name)
     if record is None and not tmux_has_session(name):
-        print("Kein laufender Lauf für", name)
+        print("Kein laufender Lauf für", name, file=out)
         return
     # Nur eine von vibe markierte Sitzung ist ein verwalteter Lauf. Ein
     # Registereintrag allein genügt nicht, weil eine fremde Sitzung denselben
@@ -1612,18 +1614,18 @@ def cmd_stop(name, run_id=None):
             sys.exit(f"tmux-Sitzung {session} gehört nicht zu vibe; nichts beendet.")
     elif marker != "run":
         sys.exit(f"tmux-Sitzung {session} gehört nicht zu vibe; nichts beendet.")
-    rc, out = run(["tmux", "kill-session", "-t", session])
+    rc, output = run(["tmux", "kill-session", "-t", session])
     if rc != 0:
         if record is not None and not tmux_has_session(name):
             registry.finish(record["id"], exit_code=None, state="ended")
-            print("Lauf", record["id"], "war bereits beendet.")
+            print("Lauf", record["id"], "war bereits beendet.", file=out)
             return
-        sys.exit("Lauf nicht beendbar: " + out)
+        sys.exit("Lauf nicht beendbar: " + output)
     if record is not None:
         registry.finish(record["id"], exit_code=None, state="stopped")
-        print("Beendet:", name, "Lauf", record["id"])
+        print("Beendet:", name, "Lauf", record["id"], file=out)
     else:
-        print("Beendet:", name)
+        print("Beendet:", name, file=out)
 
 class VerifyConfigError(ValueError):
     """Prüfkonfiguration ist unvollständig oder nur ein Platzhalter."""
@@ -1769,17 +1771,18 @@ def ensure_general_rules(project):
     _write_text_atomic(path, updated, expected=expected)
     return "added"
 
-def cmd_init(name, typ=None):
+def cmd_init(name, typ=None, out=None):
+    out = out or sys.stdout
     p = ppath(name); typ = typ or ptype(name)
     if typ not in types(): typ = "generic"
     created = copy_tree(os.path.join(TPL, "common"), p, name) + copy_tree(os.path.join(TPL, typ), p, name)
     rules = ensure_general_rules(p)
-    print(col("g", f"{name}: als '{typ}' vorbereitet.") + (" Neu angelegt: " + ", ".join(created) if created else " Nichts zu ergänzen."))
+    print(col("g", f"{name}: als '{typ}' vorbereitet.", stream=out) + (" Neu angelegt: " + ", ".join(created) if created else " Nichts zu ergänzen."), file=out)
     if rules:
         action = "aktualisiert" if rules == "updated" else "ergänzt"
-        print(f"Allgemeine Regeln in AGENTS.md {action}; vorhandene Inhalte blieben unverändert.")
-    print("Vorhandene Dateien wurden nicht verändert. Nicht committet: bitte prüfen und selbst committen.")
-    if typ not in ("android",): print("Prüfbefehle in .vibe/project.env eintragen (VERIFY_QUICK / VERIFY_FULL), sonst bricht die Abschlussprüfung ab.")
+        print(f"Allgemeine Regeln in AGENTS.md {action}; vorhandene Inhalte blieben unverändert.", file=out)
+    print("Vorhandene Dateien wurden nicht verändert. Nicht committet: bitte prüfen und selbst committen.", file=out)
+    if typ not in ("android",): print("Prüfbefehle in .vibe/project.env eintragen (VERIFY_QUICK / VERIFY_FULL), sonst bricht die Abschlussprüfung ab.", file=out)
 
 def _check_template(value):
     if any(char in value for char in ("\x00", "\n", "\r")):
@@ -1796,7 +1799,8 @@ def _init_git(p):
         if rc != 0: break
     return rc, out
 
-def cmd_new(name, typ, tpl=None):
+def cmd_new(name, typ, tpl=None, out=None):
+    out = out or sys.stdout
     if not re.fullmatch(r"[a-z0-9][a-z0-9_-]*", name): sys.exit("Name: nur a-z, 0-9, _ und -")
     if typ not in types(): sys.exit(f"Unbekannter Typ '{typ}'. Vorhanden: {', '.join(types())}")
     p = os.path.join(VIBE, name)
@@ -1805,19 +1809,19 @@ def cmd_new(name, typ, tpl=None):
         if tpl is not None: _check_template(tpl)
         if not tpl:
             if not sys.stdin.isatty(): sys.exit("Android braucht eine Vorlage (Parameter vorlage).")
-            print(run(["android", "create", "--list"], timeout=60)[1])
+            print(run(["android", "create", "--list"], timeout=60)[1], file=out)
             tpl = _check_template(input("Vorlage (aus der Liste, z. B. die Compose-Vorlage): ").strip())
-        rc, out = run(["android", "create", f"--name={name.capitalize()}", f"--output={p}", tpl], timeout=300); print(out)
+        rc, output = run(["android", "create", f"--name={name.capitalize()}", f"--output={p}", tpl], timeout=300); print(output, file=out)
         if rc != 0 or not os.path.isdir(p): sys.exit("android create fehlgeschlagen")
     else:
         os.makedirs(p)
     copy_tree(os.path.join(TPL, "common"), p, name); copy_tree(os.path.join(TPL, typ), p, name)
     ensure_general_rules(p)
-    rc, out = _init_git(p)
-    if rc != 0: print(col("y", "Git-Hinweis: " + out))
+    rc, output = _init_git(p)
+    if rc != 0: print(col("y", "Git-Hinweis: " + output, stream=out), file=out)
     _pm.clear()
-    print(col("g", f"Projekt {name} ({typ}) angelegt: {p}"))
-    print("Als Nächstes: SPEC.md und TICKETS.md füllen, dann vibe run", name)
+    print(col("g", f"Projekt {name} ({typ}) angelegt: {p}", stream=out), file=out)
+    print("Als Nächstes: SPEC.md und TICKETS.md füllen, dann vibe run", name, file=out)
 
 # ---------- Agenten (global und projektspezifisch) ----------
 PERMS = {
@@ -2668,7 +2672,8 @@ def cmd_models(model_id=None):
         print(col("y", "Hinweis: " + finding["text"]))
     print(col("d", "Details: vibe models <modell-id>"))
 
-def cmd_model(agent, model, scope="global"):
+def cmd_model(agent, model, scope="global", out=None):
+    out = out or sys.stdout
     try:
         snapshot = agent_snapshot(scope, agent)
         t = snapshot.text
@@ -2676,7 +2681,7 @@ def cmd_model(agent, model, scope="global"):
         if ml and model not in ml: sys.exit(f"Modell '{model}' nicht in 'opencode models' (Anbieter per /connect verbinden).")
         m = re.search(r"^model:[ \t]*(\S+)", t, flags=re.M)
         t2 = t.replace(m.group(1), model) if m else t.replace("\n---", f"\nmodel: {model}\n---", 1)
-        agent_write(scope, agent, t2, expected=snapshot.digest); print("Modell von", agent, "->", model)
+        agent_write(scope, agent, t2, expected=snapshot.digest); print("Modell von", agent, "->", model, file=out)
     except ValueError as e:
         sys.exit(str(e))
 
@@ -3385,17 +3390,18 @@ def server_health():
 def server_session():
     return profile_session("vibe-server")
 
-def cmd_server(action="status"):
+def cmd_server(action="status", out=None):
+    out = out or sys.stdout
     session = server_session()
     if action == "start":
-        if server_health(): print("opencode-Server läuft:", OC_URL); return
+        if server_health(): print("opencode-Server läuft:", OC_URL, file=out); return
         if port_in_use("127.0.0.1", PATHS.opencode_port):
             sys.exit(f"Port {PATHS.opencode_port} ist belegt, aber kein gesunder "
                      "opencode-Server erkannt; nichts gestartet.")
         if tmux_session_exists(session):
             if not session_owned(session, "server"):
                 sys.exit(f"tmux-Sitzung {session} gehört nicht zu vibe; nichts gestartet.")
-            print("opencode-Server startet bereits (tmux attach -t " + session + ").")
+            print("opencode-Server startet bereits (tmux attach -t " + session + ").", file=out)
             return
         try:
             command = vibe_opencode.server_command(PATHS.opencode_port)
@@ -3403,21 +3409,21 @@ def cmd_server(action="status"):
             sys.exit(str(error))
         # Port ist validiert (1..65535) und damit kein Shell-Freitext; der
         # Adapter liefert eine Argumentliste, die shlex.join sicher quotet.
-        rc, out = run(["tmux", "new-session", "-d", "-s", session,
+        rc, output = run(["tmux", "new-session", "-d", "-s", session,
                        "-e", MANAGED_VAR + "=server", "bash", "-lc",
                        "source ~/.bashrc; exec " + shlex.join(command)])
         if rc != 0:
-            sys.exit("opencode-Server nicht gestartet: " + out)
-        time.sleep(4); print("Gestartet:" if server_health() else "Start angestoßen, Server antwortet noch nicht (tmux attach -t " + session + "):", OC_URL)
+            sys.exit("opencode-Server nicht gestartet: " + output)
+        time.sleep(4); print("Gestartet:" if server_health() else "Start angestoßen, Server antwortet noch nicht (tmux attach -t " + session + "):", OC_URL, file=out)
     elif action == "stop":
         if not tmux_session_exists(session):
-            print("opencode-Server läuft nicht (keine vibe-Sitzung).")
+            print("opencode-Server läuft nicht (keine vibe-Sitzung).", file=out)
             return
         if not session_owned(session, "server"):
             sys.exit(f"tmux-Sitzung {session} gehört nicht zu vibe; nichts beendet.")
-        run(["tmux", "kill-session", "-t", session]); print("opencode-Server beendet.")
+        run(["tmux", "kill-session", "-t", session]); print("opencode-Server beendet.", file=out)
     else:
-        h = server_health(); print("opencode-Server:", col("g", "läuft " + OC_URL + " " + h) if h else "aus")
+        h = server_health(); print("opencode-Server:", col("g", "läuft " + OC_URL + " " + h, stream=out) if h else "aus", file=out)
 
 def ui_session():
     return profile_session("vibe-ui")

@@ -65,8 +65,8 @@
   },
   {
    "path": "scripts/setup-vibe.py",
-   "sha256": "aa0ee833f6129ee58244b075fd92d99ecee58bd0e56c93001144b6357028cb7c",
-   "bytes": 56294
+   "sha256": "76179abc72457ba0fa8653496a6b33f9ecce81ccd1047be6f646647b498fe0ce",
+   "bytes": 57200
   },
   {
    "path": "setup-vibe.cmd",
@@ -230,8 +230,8 @@
   },
   {
    "path": "bin/vibe",
-   "sha256": "ade9ff6e0851f9e892753bd86a5e3aa1a6ad202ab1e8559d13aad73ea702e607",
-   "bytes": 175414
+   "sha256": "490eff012c333021c62acbd072319e2bad37d6a8cea7af4a10be7bfe46f79441",
+   "bytes": 176022
   },
   {
    "path": "bin/vibe-run.sh",
@@ -240,8 +240,8 @@
   },
   {
    "path": "bin/vibe-web.py",
-   "sha256": "63ea38fb261d014656475abb88dec9b5eef8aa423b1ee38f2a3ad26ab605261c",
-   "bytes": 117811
+   "sha256": "81450af4388c6b99c29c14be92e1a9a4d882adf9a7cad50dfc3c9177c8135c44",
+   "bytes": 35237
   },
   {
    "path": "bin/vibe_sandbox.py",
@@ -257,6 +257,26 @@
    "path": "VERSION",
    "sha256": "f5e9382967c9833066a55808829f3750fc8e1181b170cafd222c37048bb49a77",
    "bytes": 7
+  },
+  {
+   "path": "bin/vibe_services.py",
+   "sha256": "c61938e43dceef704a0e2605b0dfe45b59dcd9efa3ee3fbc22afed6cd7ce787a",
+   "bytes": 7894
+  },
+  {
+   "path": "bin/web/index.html",
+   "sha256": "db45ba1dd9e5da380f5c05c24b2158eefce9b7e8f87faeb33a9e88910d0cd73d",
+   "bytes": 588
+  },
+  {
+   "path": "bin/web/styles.css",
+   "sha256": "f257de9c2dfc2a842cf3008e2fbdcdf19d492a73402ca8c5d17bb623cf7521ba",
+   "bytes": 6313
+  },
+  {
+   "path": "bin/web/app.js",
+   "sha256": "6febb585c5a59937aa844ad89d6fca9b98bbfe47487f6d044f8f35eaccea50b5",
+   "bytes": 72130
   }
  ],
  "aenderungen": [
@@ -611,6 +631,20 @@
     "templates/openwrt/AGENTS.md",
     "templates/rebuild/AGENTS.md",
     "templates/web/AGENTS.md"
+   ]
+  },
+  {
+   "arbeitspaket": "V-019",
+   "datum": "2026-11-03",
+   "grund": "Frontend und Backend schrittweise modularisiert: gemeinsame Dienste in bin/vibe_services.py, per-Aufruf-Ausgabestrom statt globaler stdout-Umleitung und getrennte statische Webdateien (HTML, CSS, JavaScript). Die Seite verhält sich unverändert; nur der Auslieferungsweg ist getrennt.",
+   "dateien": [
+    "bin/vibe",
+    "bin/vibe-web.py",
+    "bin/vibe_services.py",
+    "bin/web/index.html",
+    "bin/web/styles.css",
+    "bin/web/app.js",
+    "scripts/setup-vibe.py"
    ]
   }
  ]

@@ -20,6 +20,8 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+from tests.unit.web_page import served_page
+
 REPO = Path(__file__).resolve().parents[2]
 CLI = REPO / "bin" / "vibe"
 WEB = REPO / "bin" / "vibe-web.py"
@@ -756,9 +758,8 @@ class WriteDirsApiTest(WriteDirsApiFixture):
         self.assertEqual(second.read_text(encoding="utf-8"), AGENT_WITHOUT_EDIT)
 
     def test_detail_page_contains_write_dirs_controls(self):
-        status, html = self.request("/", token=False)
+        html = served_page(self.request)
 
-        self.assertEqual(status, 200)
         self.assertIn("Schreibrechte", html)
         self.assertIn("Standard wiederherstellen", html)
         self.assertIn("Auf Projektagenten anwenden", html)

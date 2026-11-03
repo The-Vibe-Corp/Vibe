@@ -49,8 +49,10 @@ PROGRAM_FILES = (
     "vibe_guide.py",
     "vibe_questions.py",
     "vibe_autonomous.py",
+    "vibe_services.py",
     "fritz-reconnect.py",
 )
+WEB_FILES = ("index.html", "styles.css", "app.js")
 RUNTIME_FILES = ("vibe.json", "models.json", "profiles.json", "fritz.json", "costs.json")
 VERSION_FILE = "VERSION"
 VERSION_META = "version.json"
@@ -349,12 +351,14 @@ def detect_existing(vibe_root):
     """Erfasst eine vorhandene Installation, ohne etwas zu verändern."""
     toolchain = Path(vibe_root) / "_toolchain"
     programs = [name for name in PROGRAM_FILES if (toolchain / "bin" / name).is_file()]
+    web = [name for name in WEB_FILES if (toolchain / "bin" / "web" / name).is_file()]
     runtime = [name for name in RUNTIME_FILES if (toolchain / name).is_file()]
     return {
         "toolchain": toolchain.is_dir(),
         "programs": programs,
+        "web": web,
         "runtime": runtime,
-        "complete": len(programs) == len(PROGRAM_FILES),
+        "complete": len(programs) == len(PROGRAM_FILES) and len(web) == len(WEB_FILES),
     }
 
 
@@ -419,6 +423,8 @@ def _install_sources(kit):
     """Liefert (relativer Pfad, Quelldatei, ausführbar) für alle Programmdateien."""
     for name in PROGRAM_FILES:
         yield f"bin/{name}", Path(kit) / "bin" / name, True
+    for name in WEB_FILES:
+        yield f"bin/web/{name}", Path(kit) / "bin" / "web" / name, False
     templates = Path(kit) / "templates"
     if templates.is_dir():
         for source in sorted(templates.rglob("*")):
@@ -899,6 +905,18 @@ def uninstall(vibe_root, home=None, remove_launcher=False, timestamp=None):
         if path.is_file() or path.is_symlink():
             path.unlink()
             report["removed"].append(f"bin/{name}")
+    for name in WEB_FILES:
+        path = toolchain / "bin" / "web" / name
+        if path.is_file() or path.is_symlink():
+            path.unlink()
+            report["removed"].append(f"bin/web/{name}")
+    web_dir = toolchain / "bin" / "web"
+    if web_dir.is_dir():
+        try:
+            web_dir.rmdir()
+            report["removed"].append("bin/web")
+        except OSError:
+            pass
     if templates.is_dir():
         shutil.rmtree(str(templates))
         report["removed"].append("templates")
@@ -1061,6 +1079,9 @@ def verify_installation(vibe_root):
     for name in PROGRAM_FILES:
         path = toolchain / "bin" / name
         checks.append({"label": f"Programm bin/{name}", "ok": path.is_file(), "hint": "Setup erneut ausführen"})
+    for name in WEB_FILES:
+        path = toolchain / "bin" / "web" / name
+        checks.append({"label": f"Webdatei bin/web/{name}", "ok": path.is_file(), "hint": "Setup erneut ausführen"})
     for name in ("vibe", "vibe-run.sh"):
         path = toolchain / "bin" / name
         checks.append({"label": f"Ausführbar bin/{name}", "ok": path.is_file() and os.access(str(path), os.X_OK), "hint": "chmod +x setzen"})

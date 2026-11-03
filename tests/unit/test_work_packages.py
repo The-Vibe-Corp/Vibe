@@ -19,6 +19,8 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+from tests.unit.web_page import served_page
+
 REPO = Path(__file__).resolve().parents[2]
 CLI = REPO / "bin" / "vibe"
 WEB = REPO / "bin" / "vibe-web.py"
@@ -534,9 +536,8 @@ class WorkPackageApiTest(WorkPackageApiFixture):
         self.assertEqual(entries["F1"]["kind"], "feedback")
 
     def test_detail_page_contains_work_package_and_bug_controls(self):
-        status, html = self.request("/", token=False)
+        html = served_page(self.request)
 
-        self.assertEqual(status, 200)
         self.assertIn("Arbeitspakete (", html)
         self.assertIn("Neues Arbeitspaket", html)
         self.assertIn("Arbeitspaket anlegen", html)

@@ -21,6 +21,8 @@ import urllib.request
 from pathlib import Path
 from unittest import mock
 
+from tests.unit.web_page import served_page
+
 REPO = Path(__file__).resolve().parents[2]
 CLI = REPO / "bin" / "vibe"
 WEB = REPO / "bin" / "vibe-web.py"
@@ -267,9 +269,8 @@ class FeedbackApiTest(unittest.TestCase):
         self.assertFalse((self.project / "FEEDBACK.md").exists())
 
     def test_detail_page_offers_only_title_and_description(self):
-        status, html = self.request("/", token=False)
+        html = served_page(self.request)
 
-        self.assertEqual(status, 200)
         start = html.index("Feedback eintragen")
         end = html.index("Live-Ausgabe", start)
         card = html[start:end]

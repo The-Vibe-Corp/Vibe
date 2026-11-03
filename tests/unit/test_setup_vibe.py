@@ -37,8 +37,10 @@ PROGRAM_FILES = (
     "vibe_guide.py",
     "vibe_questions.py",
     "vibe_autonomous.py",
+    "vibe_services.py",
     "fritz-reconnect.py",
 )
+WEB_FILES = ("index.html", "styles.css", "app.js")
 
 
 def launcher_sibling_modules():
@@ -76,6 +78,9 @@ def make_kit(root, models=True):
     for name in PROGRAM_FILES:
         path = root / "bin" / name
         path.write_text(f"#!/usr/bin/env python3\n# {name}\nprint({name!r})\n", encoding="utf-8")
+    (root / "bin" / "web").mkdir()
+    for name in WEB_FILES:
+        (root / "bin" / "web" / name).write_text(f"/* {name} */\n", encoding="utf-8")
     templates = root / "templates" / "generic" / ".vibe"
     templates.mkdir(parents=True)
     (templates / "project.env").write_text("TYPE=generic\n", encoding="utf-8")
@@ -276,6 +281,8 @@ class InstallFilesTest(unittest.TestCase):
         toolchain = self.vibe / "_toolchain"
         for name in PROGRAM_FILES:
             self.assertTrue((toolchain / "bin" / name).is_file(), name)
+        for name in WEB_FILES:
+            self.assertTrue((toolchain / "bin" / "web" / name).is_file(), name)
         self.assertTrue(os.access(toolchain / "bin" / "vibe", os.X_OK))
         self.assertTrue((toolchain / "templates" / "generic" / "AGENTS.md").is_file())
         self.assertTrue((toolchain / "templates" / "generic" / ".vibe" / "project.env").is_file())

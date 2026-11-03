@@ -25,6 +25,8 @@ import urllib.request
 from pathlib import Path
 from unittest import mock
 
+from tests.unit.web_page import served_page
+
 REPO = Path(__file__).resolve().parents[2]
 BIN = REPO / "bin"
 WEB = BIN / "vibe-web.py"
@@ -740,9 +742,8 @@ class ProjectGuideApiTest(GuideApiFixture):
         self.assertEqual(status, 403, body)
 
     def test_dashboard_contains_the_project_assistant(self):
-        status, html = self.request("/", token=False)
+        html = served_page(self.request)
 
-        self.assertEqual(status, 200)
         self.assertIn("Projektassistent", html)
         self.assertIn("Mit Agent entwerfen", html)
 

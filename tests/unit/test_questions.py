@@ -26,6 +26,9 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[2]
 CLI = REPO / "bin" / "vibe"
 WEB = REPO / "bin" / "vibe-web.py"
+# Seit V-019 besteht die ausgelieferte Seite aus getrennten Dateien. Der Test
+# liest HTML und Skript zusammen, damit die Zusagen unverändert geprüft werden.
+WEB_PAGE_FILES = (REPO / "bin" / "web" / "index.html", REPO / "bin" / "web" / "app.js")
 QUESTIONS = REPO / "bin" / "vibe_questions.py"
 RUNNER = REPO / "bin" / "vibe-run.sh"
 
@@ -790,7 +793,9 @@ class AutonomousCliTest(unittest.TestCase):
 
 class ServedPageTest(unittest.TestCase):
     def test_served_page_contains_the_question_region_and_polling(self):
-        text = WEB.read_text(encoding="utf-8")
+        text = "\n".join(
+            path.read_text(encoding="utf-8") for path in WEB_PAGE_FILES
+        )
 
         self.assertIn('id="questions"', text)
         self.assertIn("aria-label=\"Rückfragen\"", text)

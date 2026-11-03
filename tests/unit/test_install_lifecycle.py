@@ -29,8 +29,10 @@ PROGRAM_FILES = (
     "vibe_guide.py",
     "vibe_questions.py",
     "vibe_autonomous.py",
+    "vibe_services.py",
     "fritz-reconnect.py",
 )
+WEB_FILES = ("index.html", "styles.css", "app.js")
 
 setup = None
 
@@ -51,6 +53,9 @@ def make_kit(root, version="0.18.0"):
     for name in PROGRAM_FILES:
         path = root / "bin" / name
         path.write_text(f"#!/usr/bin/env python3\n# {name}\n", encoding="utf-8")
+    (root / "bin" / "web").mkdir()
+    for name in WEB_FILES:
+        (root / "bin" / "web" / name).write_text(f"/* {name} */\n", encoding="utf-8")
     (root / "VERSION").write_text(version + "\n", encoding="utf-8")
     templates = root / "templates" / "generic" / ".vibe"
     templates.mkdir(parents=True)
@@ -185,10 +190,26 @@ class FreshInstallTest(InstallLifecycleBase):
         result = self.install()
         for name in PROGRAM_FILES:
             self.assertTrue((self.toolchain / "bin" / name).is_file(), name)
+        for name in WEB_FILES:
+            self.assertTrue((self.toolchain / "bin" / "web" / name).is_file(), name)
         self.assertTrue((self.toolchain / "templates" / "generic" / "AGENTS.md").is_file())
         self.assertTrue((self.toolchain / "models.json").is_file())
         self.assertTrue((self.toolchain / "version.json").is_file())
-        self.assertEqual(len(result["copied"]), len(PROGRAM_FILES) + 3)
+        self.assertEqual(
+            len(result["copied"]), len(PROGRAM_FILES) + len(WEB_FILES) + 3
+        )
+
+    def test_verify_installation_reports_a_missing_web_asset(self):
+        self.install()
+        (self.toolchain / "bin" / "web" / "app.js").unlink()
+
+        failed = [
+            check["label"]
+            for check in setup.verify_installation(self.vibe)
+            if not check["ok"]
+        ]
+
+        self.assertIn("Webdatei bin/web/app.js", failed)
 
     def test_fresh_install_keeps_existing_runtime_data(self):
         self.toolchain.mkdir(parents=True)
@@ -390,6 +411,8 @@ class AbortTest(InstallLifecycleBase):
         self.assertIn("nichts geändert", output)
         self.assertFalse((self.toolchain / "version.json").exists())
         self.assertFalse((self.toolchain / "bin" / "vibe").exists())
+        self.assertFalse((self.toolchain / "bin" / "web" / "app.js").exists())
+        self.assertFalse((self.toolchain / "bin" / "web").exists())
         self.assertFalse((self.toolchain / "templates").exists())
         self.assertFalse(self.toolchain.exists(), "leerer _toolchain-Ordner bleibt zurück")
 

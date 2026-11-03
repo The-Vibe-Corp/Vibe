@@ -3,24 +3,26 @@
 Die fachliche Abnahme leisten die Browsertests in
 ``tests/browser/test_nonmodal_ui.py``. Dieser Test hält zusätzlich fest, dass
 die ausgelieferte Seite keine blockierenden Browserdialoge mehr aufruft und
-stattdessen einen Statusbereich sowie Inline-Bestätigungen enthält. Er liest
-den eingebetteten Seitenquelltext, ohne den Server zu starten.
+stattdessen einen Statusbereich sowie Inline-Bestätigungen enthält. Seit V-019
+besteht die Seite aus getrennten statischen Dateien; der Test liest HTML,
+Stylesheet und Skript, ohne den Server zu starten.
 """
 import re
 import unittest
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
-WEB = REPO / "bin" / "vibe-web.py"
+WEB_FILES = (
+    REPO / "bin" / "web" / "index.html",
+    REPO / "bin" / "web" / "styles.css",
+    REPO / "bin" / "web" / "app.js",
+)
 
 BLOCKING = ("alert", "confirm", "prompt")
 
 
 def page_source():
-    text = WEB.read_text(encoding="utf-8")
-    start = text.index('PAGE = r"""')
-    end = text.index('"""', text.index("</html>", start))
-    return text[start:end]
+    return "\n".join(path.read_text(encoding="utf-8") for path in WEB_FILES)
 
 
 class NonModalPageTest(unittest.TestCase):
