@@ -368,7 +368,7 @@ Ein fehlender externer Dienst bedeutet BLOCKIERT, nicht erledigt.
   1 Minor).
   Dokumentation: `docs/features/V-019.md`; Trilium `FM5vVshvuXzR`.
 
-- [ ] V-020 Browserabnahme, Dokumentation und Releasebasis
+- [x] V-020 Browserabnahme, Dokumentation und Releasebasis
   Priorität: P2
   Abhängigkeiten: V-008 bis V-019
   Umfang: echte Browsertests, Handbuch, Diagnose- und Betriebsanleitung.
@@ -377,6 +377,21 @@ Ein fehlender externer Dienst bedeutet BLOCKIERT, nicht erledigt.
   Feature-Dokumentation lokal und in Trilium;
   Reviewnachweise vollständig; Release ohne persönliche Daten reproduzierbar.
   Tests: vollständige Suite und Checkliste mit Versionen und Ergebnissen.
+  Commit: `140afb9`; Test: test_central_flow_lists_opens_creates_and_verifies,
+  test_environment_view_shows_release_and_diagnosis,
+  test_tracked_symlink_is_refused_instead_of_becoming_a_regular_file,
+  test_repository_content_has_no_personal_home_paths_or_secrets
+  (14 Release-Tests, 2 Browsertests).
+  Prüfungen: `bash scripts/verify.sh quick` Exit 0;
+  `bash scripts/verify.sh full` Exit 0 (856 Unit- + 58 Browsertests, 914 erkannt).
+  Release: `vibe-0.18.0-140afb9.tar.gz`, SHA-256
+  `ef8367708648cd0d1b6a7df7df0998a3a0b7994d0551f16fee25997891e8e763`;
+  `build-release.py verify` OK, zweiter Bau byte-identisch.
+  Review: `docs/reviews/V-020-review-1.md`,
+  `docs/reviews/V-020-review-2.md` (PASS).
+  Dokumentation: `docs/features/V-020.md`, `docs/handbuch.md`,
+  `docs/betrieb.md`, `docs/grenzen.md`, `docs/checkliste.md`,
+  `docs/abnahme-bazzite.md`; Trilium `3IwzW6WLnBeU`.
 
 - [x] V-021 Installationsvollständigkeit und Aufräumregeln
   Priorität: P1
