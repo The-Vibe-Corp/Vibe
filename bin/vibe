@@ -94,6 +94,13 @@ GENERAL_RULES = """<!-- vibe:general-rules -->
 - Keine temporären Dateien, Protokolle, Build-Artefakte, Arbeitskopien oder Screenshots ohne Nachweiswert committen.
 - Fremde oder vorbestehende Änderungen nicht löschen, überschreiben, stashen oder mitcommitten.
 - Keine Historie umschreiben, keine Force-Pushes und kein Push ohne ausdrückliche Freigabe.
+
+## Leitlinien für Coding-Agenten (verbindlich)
+
+- KISS ist verpflichtend: Wähle die einfachste Lösung, die das Problem vollständig löst. Keine spekulativen Abstraktionen, Funktionen oder Optimierungen auf Vorrat und keine Komplexität ohne belegten Bedarf.
+- Clean Code ist der verbindliche Code-Stil: sprechende Namen, kleine Funktionen mit einer klaren Aufgabe, explizite Schnittstellen, keine unnötige Duplizierung und nachvollziehbare Fehlerbehandlung. Verhalten wird durch Tests abgesichert, nicht durch Kommentare.
+- Caching ist eine begründete Performance-Optimierung und nur mit funktionierender Invalidierung zulässig. Jeder Cache braucht einen eindeutigen Schlüssel, eine definierte Lebensdauer und eine benannte Invalidierung (Zeit, Änderungsereignis oder Version). Ohne korrekte Invalidierung wird nicht gecacht. Sicherheits-, Berechtigungs- und Geheimnisdaten werden nicht ungeprüft zwischengespeichert.
+- Diese Leitlinien gelten für alle neuen und bestehenden Projekte unabhängig vom Projekttyp.
 <!-- /vibe:general-rules -->"""
 FRONTMATTER_RE = re.compile(r"---[ \t]*\r?\n(.*?)\r?\n---[ \t]*(?:\r?\n|$)", re.S)
 FRONT_KEY_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_-]*):[ \t]*(.*)$")
@@ -1518,6 +1525,15 @@ def cmd_run(name, agent=None, out=None):
     if agent is not None: require_agent(agent)
     if tmux_has(name): print("Läuft bereits. vibe attach", name, file=out); return
     if not is_init(name): sys.exit("Projekt ist nicht für vibe vorbereitet: vibe init " + name)
+    # Die allgemeinen Leitlinien gelten auch für bestehende Projekte. Vor dem
+    # Start wird der verwaltete Regelblock deshalb auf den aktuellen Stand
+    # gebracht; fremde Inhalte außerhalb der Marker bleiben unverändert.
+    try:
+        rules = ensure_general_rules(p)
+    except (OSError, vibe_storage.StorageError) as error:
+        sys.exit("Allgemeine Regeln in AGENTS.md konnten nicht aktualisiert werden: " + str(error))
+    if rules:
+        print(col("y", "Allgemeine Regeln in AGENTS.md aktualisiert; bitte prüfen und committen."), file=out)
     sandbox = sandbox_status(name)
     if sandbox["enabled"]:
         checked = sandbox_check(name)
@@ -1735,7 +1751,7 @@ def copy_tree(src, dst, name):
     return created
 
 def ensure_general_rules(project):
-    """Ergänzt oder aktualisiert die allgemeinen Aufräum- und Git-Regeln.
+    """Ergänzt oder aktualisiert die allgemeinen Aufräum-, Git- und Coding-Regeln.
 
     Vorhandene Inhalte außerhalb des verwalteten Blocks bleiben erhalten. Ein
     fehlender Marker wird genau einmal am Dateiende ergänzt; ein vorhandener,

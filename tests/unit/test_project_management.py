@@ -317,6 +317,25 @@ class InitTest(ProjectFixture):
         self.assertEqual(text.count(self.cli.GENERAL_RULES_MARK), 1)
         self.assertIn("aktualisiert", output)
 
+    def test_init_replaces_an_outdated_rules_block_with_the_coding_guidelines(self):
+        agents = self.project / "AGENTS.md"
+        agents.write_text(
+            "# eigene Regel\n\n"
+            + self.cli.GENERAL_RULES_MARK
+            + "\n## Alt\n- veraltet\n<!-- /vibe:general-rules -->\n\n## Eigener Rest\n",
+            encoding="utf-8",
+        )
+
+        output = self.init_project()
+
+        text = agents.read_text(encoding="utf-8")
+        self.assertTrue(text.startswith("# eigene Regel\n"))
+        self.assertIn("## Eigener Rest\n", text)
+        self.assertNotIn("- veraltet", text)
+        for rule in ("KISS", "Clean Code", "Caching", "Invalidierung"):
+            self.assertIn(rule, text)
+        self.assertIn("aktualisiert", output)
+
     def test_init_leaves_an_unpaired_rules_marker_unchanged(self):
         agents = self.project / "AGENTS.md"
         original = "# eigene Regel\n\n" + self.cli.GENERAL_RULES_MARK + "\n- ohne Ende\n"
@@ -404,6 +423,33 @@ class TemplateRulesTest(ProjectFixture):
         self.assertIn("Feature-Branch", rules)
         self.assertIn("git status", rules)
         self.assertIn("Force-Push", rules)
+
+    def test_all_shipped_project_templates_contain_the_coding_guidelines(self):
+        templates = sorted((REPO / "templates").glob("*/AGENTS.md"))
+        self.assertTrue(templates)
+        for path in templates:
+            text = path.read_text(encoding="utf-8")
+            self.assertIn("Leitlinien für Coding-Agenten", text, path)
+            for rule in ("KISS", "Clean Code", "Caching", "Invalidierung"):
+                self.assertIn(rule, text, path)
+
+    def test_general_rules_require_kiss_clean_code_and_safe_caching(self):
+        rules = self.cli.GENERAL_RULES
+        for rule in (
+            "Leitlinien für Coding-Agenten",
+            "KISS",
+            "Clean Code",
+            "Caching",
+            "Invalidierung",
+            "neuen und bestehenden Projekte",
+        ):
+            self.assertIn(rule, rules)
+
+    def test_repository_agents_file_contains_the_coding_guidelines(self):
+        text = (REPO / "AGENTS.md").read_text(encoding="utf-8")
+        self.assertIn("Leitlinien für Coding-Agenten", text)
+        for rule in ("KISS", "Clean Code", "Caching", "Invalidierung"):
+            self.assertIn(rule, text)
 
 
 if __name__ == "__main__":

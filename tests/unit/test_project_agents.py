@@ -435,6 +435,69 @@ class RunSelectionTest(ProjectAgentsFixture):
         self.assertEqual(argv[-1], "opencode/projekt-speziell")
         self.assertEqual(argv[-2], "tester")
 
+    def run_with_mocks(self):
+        registry = mock.MagicMock()
+        runner = mock.patch.object(self.cli, "run", return_value=(0, ""))
+        with mock.patch.object(self.cli, "tmux_has", return_value=False):
+            with mock.patch.object(self.cli, "is_init", return_value=True):
+                with mock.patch.object(
+                    self.cli, "sandbox_status", return_value={"enabled": False}
+                ):
+                    with mock.patch.object(
+                        self.cli, "run_registry", return_value=registry
+                    ):
+                        with mock.patch.object(self.cli.vibe_runs, "rotate_log"):
+                            with runner as fake_run:
+                                self.cli.cmd_run("proj", "tester")
+        return registry, fake_run
+
+    def test_cmd_run_updates_the_managed_rules_of_an_existing_project(self):
+        self.write_global()
+        agents = self.project / "AGENTS.md"
+        agents.write_text(
+            "# eigene Regel\n\n"
+            + self.cli.GENERAL_RULES_MARK
+            + "\n## Alt\n- veraltet\n<!-- /vibe:general-rules -->\n\n## Eigener Rest\n",
+            encoding="utf-8",
+        )
+
+        self.run_with_mocks()
+
+        text = agents.read_text(encoding="utf-8")
+        self.assertTrue(text.startswith("# eigene Regel\n"))
+        self.assertIn("## Eigener Rest\n", text)
+        self.assertNotIn("- veraltet", text)
+        for rule in ("KISS", "Clean Code", "Caching", "Invalidierung"):
+            self.assertIn(rule, text)
+
+    def test_cmd_run_adds_the_rules_block_to_an_existing_project_without_one(self):
+        self.write_global()
+        agents = self.project / "AGENTS.md"
+        agents.write_text("# eigene Regel\n", encoding="utf-8")
+
+        self.run_with_mocks()
+
+        text = agents.read_text(encoding="utf-8")
+        self.assertTrue(text.startswith("# eigene Regel\n"))
+        self.assertEqual(text.count(self.cli.GENERAL_RULES_MARK), 1)
+        for rule in ("KISS", "Clean Code", "Caching", "Invalidierung"):
+            self.assertIn(rule, text)
+
+    def test_cmd_run_aborts_when_the_general_rules_cannot_be_updated(self):
+        self.write_global()
+
+        with mock.patch.object(self.cli, "tmux_has", return_value=False):
+            with mock.patch.object(self.cli, "is_init", return_value=True):
+                with mock.patch.object(
+                    self.cli, "ensure_general_rules", side_effect=OSError("gesperrt")
+                ):
+                    with mock.patch.object(self.cli, "run") as runner:
+                        with self.assertRaises(SystemExit) as caught:
+                            self.cli.cmd_run("proj", "tester")
+
+        self.assertIn("konnten nicht aktualisiert werden", str(caught.exception.code))
+        runner.assert_not_called()
+
 
 FAKE_OPENCODE = """#!/usr/bin/env bash
 printf '%s\\n' "$@" >> "$VIBE_FAKE_OPENCODE"

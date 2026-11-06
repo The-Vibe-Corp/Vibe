@@ -7,6 +7,14 @@ Abhaken nur nach erfüllten Kriterien, erfolgreichen relevanten Tests und Review
 Nachweise unter dem Ticket: Commit, Testbefehle, Reviewdatei, Dokumentation.
 Ein fehlender externer Dienst bedeutet BLOCKIERT, nicht erledigt.
 
+- [ ] AP01 GUideline ergänzungen für coding agents
+  Beschreibung: die guidelines für coding agents sollen um folgende aspekte verpflichtend ergänzt werden:
+  
+  - KISS als verpflichtendes Prinzip
+  - Clean Code als code style/guideline
+  - Caching als performance optimierung (aber mit entsprechend notwendiger invalidierung)
+  dies soll für alle neuen, aber auch für bestehende projekte gelten und automatisch übernommen werden
+
 - [x] V-001 Unveränderten Bestand aufnehmen und absichern
   Priorität: P0
   Abhängigkeiten: keine
