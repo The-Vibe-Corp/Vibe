@@ -28,6 +28,35 @@ Ein fehlender externer Dienst bedeutet BLOCKIERT, nicht erledigt.
   Review: `docs/reviews/AP01-review-1.md` (PASS; 0 Critical/High/Medium, 3 Minor).
   Dokumentation: `docs/features/AP01.md`; Trilium `B34A8yyWkjCo`.
 
+- [x] AP02 Verpflichtender Test Agent
+  Beschreibung: Für jedes Projekt (bestehend und neu) muss es einen Agenten
+  geben, welcher eigenständig und unabhängig die Tests schreibt. Dieser darf
+  nicht von dem Coding- oder Reviewer-Agenten beeinflusst werden. Sein Ziel ist
+  es, sinnvolle Tests für die jeweilige Aufgabe zu erstellen, zu beschreiben und
+  zu coden, so dass diese vom Reviewer oder Coding-Agenten aufgerufen werden
+  können.
+
+  Nur der Test-Agent darf Tests schreiben und nur diese Tests zählen.
+  Commit: `fc102b2`; Test: test_init_adds_the_test_agent_and_tester_to_an_existing_project,
+  test_init_preserves_an_existing_test_agent_and_tester,
+  test_init_does_not_write_through_a_test_agent_symlink,
+  test_all_shipped_project_templates_contain_the_test_agent_rule,
+  test_all_shipped_project_templates_configure_the_tester,
+  test_general_rules_require_an_independent_test_agent,
+  test_repository_agents_file_contains_the_test_agent_rule,
+  test_shipped_test_agent_template_is_complete,
+  test_cmd_run_ensures_the_independent_test_agent_for_an_existing_project,
+  test_cmd_run_aborts_when_the_test_agent_cannot_be_created,
+  test_existing_and_new_projects_receive_the_test_agent,
+  test_register_projects_keeps_an_existing_test_agent
+  (tests/unit/test_project_management.py, tests/unit/test_project_agents.py,
+  tests/unit/test_setup_vibe.py; 13 Tests inkl. angepasstem Bestandstest).
+  Prüfungen: `bash scripts/verify.sh quick` Exit 0; `bash scripts/verify.sh full`
+  Exit 0 (875 Unit- + 58 Browser-Tests, 933 erkannt) in Bubblewrap-Umgebung mit
+  beschreibbarem `/tmp` und ohne geerbtes `SANDBOX`/`VIBE_*`.
+  Review: `docs/reviews/AP02-review-1.md` (PASS; 0 Critical/High/Medium, 4 Minor).
+  Dokumentation: `docs/features/AP02.md`; Trilium `3XWCoX6XbDy7`.
+
 - [x] V-001 Unveränderten Bestand aufnehmen und absichern
   Priorität: P0
   Abhängigkeiten: keine
