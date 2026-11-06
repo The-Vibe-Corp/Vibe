@@ -27,6 +27,7 @@ PROFILE = TEMPLATES / "rebuild"
 ENV_SCRIPT = PROFILE / "scripts" / "rebuild-env.py"
 
 EXPECTED_AGENTS = {
+    "test-agent",
     "rebuild-orchestrator",
     "rebuild-discovery",
     "rebuild-reverse",

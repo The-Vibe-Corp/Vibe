@@ -390,11 +390,52 @@ class InitTest(ProjectFixture):
             (self.project / "AGENTS.md").read_text(encoding="utf-8"),
             "# CUSTOM proj\n\n" + self.cli.GENERAL_RULES + "\n",
         )
+        # Der vorhandene TYPE bleibt erhalten; nur der fehlende TESTER wird
+        # ergänzt, damit der Pflicht-Test-Agent auch in bestehenden Projekten
+        # eindeutig zugeordnet ist.
         self.assertEqual(
             (self.project / ".vibe" / "project.env").read_text(encoding="utf-8"),
-            "TYPE=generic\n",
+            "TYPE=generic\nTESTER=test-agent\n",
         )
         self.assertIn("als 'custom' vorbereitet", out.getvalue())
+
+    def test_init_adds_the_test_agent_and_tester_to_an_existing_project(self):
+        output = self.init_project()
+
+        agent = self.project / ".opencode" / "agents" / "test-agent.md"
+        self.assertTrue(agent.is_file())
+        self.assertIn("mode: subagent", agent.read_text(encoding="utf-8"))
+        env = (self.project / ".vibe" / "project.env").read_text(encoding="utf-8")
+        self.assertIn("TESTER=test-agent\n", env)
+        self.assertIn("TYPE=generic\n", env)
+        self.assertIn("Test-Agent", output)
+
+    def test_init_preserves_an_existing_test_agent_and_tester(self):
+        agent = self.project / ".opencode" / "agents" / "test-agent.md"
+        agent.parent.mkdir(parents=True)
+        agent.write_text("# eigener Test-Agent\n", encoding="utf-8")
+        env_path = self.project / ".vibe" / "project.env"
+        env_path.write_text("TYPE=generic\nTESTER=eigener-tester\n", encoding="utf-8")
+
+        self.init_project()
+
+        self.assertEqual(agent.read_text(encoding="utf-8"), "# eigener Test-Agent\n")
+        self.assertEqual(
+            env_path.read_text(encoding="utf-8"),
+            "TYPE=generic\nTESTER=eigener-tester\n",
+        )
+
+    def test_init_does_not_write_through_a_test_agent_symlink(self):
+        outside = self.base / "ausserhalb-test-agent.md"
+        agent = self.project / ".opencode" / "agents" / "test-agent.md"
+        agent.parent.mkdir(parents=True)
+        agent.symlink_to(outside)
+
+        self.init_project()
+
+        self.assertTrue(agent.is_symlink())
+        self.assertEqual(os.readlink(agent), str(outside))
+        self.assertFalse(outside.exists())
 
 
 class TemplateRulesTest(ProjectFixture):
@@ -450,6 +491,51 @@ class TemplateRulesTest(ProjectFixture):
         self.assertIn("Leitlinien für Coding-Agenten", text)
         for rule in ("KISS", "Clean Code", "Caching", "Invalidierung"):
             self.assertIn(rule, text)
+
+    def test_all_shipped_project_templates_contain_the_test_agent_rule(self):
+        templates = sorted((REPO / "templates").glob("*/AGENTS.md"))
+        self.assertTrue(templates)
+        for path in templates:
+            text = path.read_text(encoding="utf-8")
+            self.assertIn("Unabhängiger Test-Agent (verbindlich)", text, path)
+            for rule in ("TESTER", "test-agent", "ausschließlich", "Reviewer"):
+                self.assertIn(rule, text, path)
+
+    def test_all_shipped_project_templates_configure_the_tester(self):
+        envs = sorted((REPO / "templates").glob("*/.vibe/project.env"))
+        self.assertTrue(envs)
+        for path in envs:
+            text = path.read_text(encoding="utf-8")
+            self.assertIn("TESTER=test-agent", text, path)
+
+    def test_general_rules_require_an_independent_test_agent(self):
+        rules = self.cli.GENERAL_RULES
+        for rule in (
+            "Unabhängiger Test-Agent (verbindlich)",
+            "TESTER",
+            "test-agent",
+            "ausschließlich",
+            "Coding- und Review-Agent",
+            "kein Nachweis",
+        ):
+            self.assertIn(rule, rules)
+
+    def test_repository_agents_file_contains_the_test_agent_rule(self):
+        text = (REPO / "AGENTS.md").read_text(encoding="utf-8")
+        self.assertIn("Unabhängiger Test-Agent (verbindlich)", text)
+        for rule in ("TESTER", "test-agent", "ausschließlich"):
+            self.assertIn(rule, text)
+
+    def test_shipped_test_agent_template_is_complete(self):
+        path = REPO / "templates" / "common" / ".opencode" / "agents" / "test-agent.md"
+        text = path.read_text(encoding="utf-8")
+        self.assertEqual(text, self.cli.TEST_AGENT_TEMPLATE)
+        self.assertIn("description:", text)
+        self.assertIn("mode: subagent", text)
+        self.assertIn("permission:", text)
+        self.assertIn("Testfälle", text)
+        self.assertIn("Produktionscode", text)
+        self.cli.agent_validate(text)
 
 
 if __name__ == "__main__":

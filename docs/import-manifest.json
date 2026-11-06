@@ -65,8 +65,8 @@
   },
   {
    "path": "scripts/setup-vibe.py",
-   "sha256": "76179abc72457ba0fa8653496a6b33f9ecce81ccd1047be6f646647b498fe0ce",
-   "bytes": 57200
+   "sha256": "5623e02fc6c53258d52d7159f7368631ee28d4ef7abf3ab2e88954a5cd4eb71a",
+   "bytes": 58427
   },
   {
    "path": "setup-vibe.cmd",
@@ -75,13 +75,13 @@
   },
   {
    "path": "templates/android/.vibe/project.env",
-   "sha256": "1425cb458cd6e747afcacaf42c4f36f6fa68873222efd2f5e95a4e32ce214ee9",
-   "bytes": 249
+   "sha256": "99df0dd168b28f43af937a21a5c3f6035d771058deeea3b2f2742163d612f777",
+   "bytes": 267
   },
   {
    "path": "templates/android/AGENTS.md",
-   "sha256": "dd105c91c52e80f3a5355bd15ab6b00052e298aa316eb586795a560b888f7d35",
-   "bytes": 3217
+   "sha256": "e6997bc45c95152268ae110253b0345de637d299aad14e1aa0d62bafe1c640a8",
+   "bytes": 4461
   },
   {
    "path": "templates/android/scripts/emulator-start.sh",
@@ -115,33 +115,33 @@
   },
   {
    "path": "templates/docker/.vibe/project.env",
-   "sha256": "f372480f29b0e7c1e5ab21b16fa8042397143cab1651b44d032bf5d6a7b2831a",
-   "bytes": 228
+   "sha256": "7b0e969ef032386b7c466bce6993db05f0d078b7e7f81b62b23030922e32612a",
+   "bytes": 246
   },
   {
    "path": "templates/docker/AGENTS.md",
-   "sha256": "e5db9a7b61df292d9a42b60e14e84eaf3e4358f48c1d73dfe0c90cff206c1975",
-   "bytes": 3112
+   "sha256": "22821939ac9c03ab237d60f054197bbaa12bee3cf2c8d073c749ebb31c29e62f",
+   "bytes": 4356
   },
   {
    "path": "templates/generic/.vibe/project.env",
-   "sha256": "806719f932f4a04ac2714dec37116a674ea46590c9e8a7f75fd2fa1b7fbc3230",
-   "bytes": 230
+   "sha256": "9a07de72fde906e6c042ffef1afd37635200a57cd8aa79eef9d9b370a81f7b8f",
+   "bytes": 248
   },
   {
    "path": "templates/generic/AGENTS.md",
-   "sha256": "4fcabc6b1d5a7c433c118017eb968c70e382010f282080ff591d63839e525520",
-   "bytes": 2600
+   "sha256": "336fe0cde42412396474853db8022f648d8f495dc1bb6f7b859207cae8045b59",
+   "bytes": 3844
   },
   {
    "path": "templates/openwrt/.vibe/project.env",
-   "sha256": "38e66fdd7e9a87ee9c78ccb7af6616766e95635641546ef9fdd753c3cbc38ddf",
-   "bytes": 231
+   "sha256": "e29a672e5c752aa9a13d551bf1e7c8389310352f6451477c087643ccf47b9b8e",
+   "bytes": 249
   },
   {
    "path": "templates/openwrt/AGENTS.md",
-   "sha256": "46cb010beba7bd8c1b74b9ec3409dd89de6023e635c85a28c8b158cbc2352d2f",
-   "bytes": 3233
+   "sha256": "e9e96b933c68fc4aa9e7e9fb22171755649c9b68f8606f729b47c3e934f0abfd",
+   "bytes": 4477
   },
   {
    "path": "templates/rebuild/.opencode/agents/rebuild-architecture.md",
@@ -190,13 +190,13 @@
   },
   {
    "path": "templates/rebuild/.vibe/project.env",
-   "sha256": "a6f6b3e149cdf5cb3a3465cf9b568bbfb497d69eb54c0d2409de473b4ccd33d1",
-   "bytes": 819
+   "sha256": "79add1fd112b1c02f636a03fce89727abaf761fb0e2b9ab7b7ef72aed3f8c36f",
+   "bytes": 837
   },
   {
    "path": "templates/rebuild/AGENTS.md",
-   "sha256": "f9ea10a5aaaa8bde5f7ca8dd6276ff2e2f94f73814fac3d69483d455bc7434b2",
-   "bytes": 5801
+   "sha256": "bf2fca9d2f18a9b8f835dd275def2a50a67cac49d6791c8d0d3b83e3fda1def5",
+   "bytes": 7045
   },
   {
    "path": "templates/rebuild/docs/parity.md",
@@ -215,13 +215,13 @@
   },
   {
    "path": "templates/web/.vibe/project.env",
-   "sha256": "b3035f726d9d1e08070ed0f2904a7d9e24212b2c96b58ac4d6af3646595bc29e",
-   "bytes": 292
+   "sha256": "0568394de331b7a2a499aa657b84e2e36fa23d57f1598477c80cad6b4432babb",
+   "bytes": 310
   },
   {
    "path": "templates/web/AGENTS.md",
-   "sha256": "3ec9edb6db7af8349e4242667f71ae467ba33e4acdc3d5cb73c838ce1a41440c",
-   "bytes": 2964
+   "sha256": "5834184b5b6ad7843de78792cacc9247a59ee77e176470bee32c52f2d6f32da2",
+   "bytes": 4208
   },
   {
    "path": "bin/vibe_autonomous.py",
@@ -230,8 +230,8 @@
   },
   {
    "path": "bin/vibe",
-   "sha256": "1376f04b58fdce699c75cbd069e5736961124b4fe038b675821da0f831bd68bf",
-   "bytes": 177936
+   "sha256": "a9eac05ce0c547957b5c26f61f2a7f1788785d68d61853be3012a7e73eceb704",
+   "bytes": 183570
   },
   {
    "path": "bin/vibe-run.sh",
@@ -277,6 +277,11 @@
    "path": "bin/web/app.js",
    "sha256": "7bb264556b714e6a00c4d33de28217a8d49309e104ba9400ab75dbd53de8ace2",
    "bytes": 72422
+  },
+  {
+   "path": "templates/common/.opencode/agents/test-agent.md",
+   "sha256": "339a884bda0ce261334a3ac2662f5b6582b88bcaa3601fc92b008fff16561912",
+   "bytes": 2032
   }
  ],
  "aenderungen": [
@@ -670,6 +675,28 @@
     "templates/openwrt/AGENTS.md",
     "templates/rebuild/AGENTS.md",
     "templates/web/AGENTS.md"
+   ]
+  },
+  {
+   "arbeitspaket": "AP02",
+   "datum": "2026-11-06",
+   "grund": "Verpflichtender, unabhängiger Test-Agent für neue und bestehende Projekte: Agentenvorlage, TESTER-Konfiguration, verbindliche Regel, automatisches Anlegen über vibe init/new/run und die Projektregistrierung. Vorhandene Agentendateien und TESTER-Werte bleiben unverändert.",
+   "dateien": [
+    "bin/vibe",
+    "scripts/setup-vibe.py",
+    "templates/common/.opencode/agents/test-agent.md",
+    "templates/android/AGENTS.md",
+    "templates/android/.vibe/project.env",
+    "templates/docker/AGENTS.md",
+    "templates/docker/.vibe/project.env",
+    "templates/generic/AGENTS.md",
+    "templates/generic/.vibe/project.env",
+    "templates/openwrt/AGENTS.md",
+    "templates/openwrt/.vibe/project.env",
+    "templates/rebuild/AGENTS.md",
+    "templates/rebuild/.vibe/project.env",
+    "templates/web/AGENTS.md",
+    "templates/web/.vibe/project.env"
    ]
   }
  ]

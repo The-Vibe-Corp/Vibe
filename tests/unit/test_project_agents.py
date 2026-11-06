@@ -498,6 +498,32 @@ class RunSelectionTest(ProjectAgentsFixture):
         self.assertIn("konnten nicht aktualisiert werden", str(caught.exception.code))
         runner.assert_not_called()
 
+    def test_cmd_run_ensures_the_independent_test_agent_for_an_existing_project(self):
+        self.write_global()
+
+        self.run_with_mocks()
+
+        agent = self.project / ".opencode" / "agents" / "test-agent.md"
+        self.assertTrue(agent.is_file())
+        self.assertIn("mode: subagent", agent.read_text(encoding="utf-8"))
+        env = (self.project / ".vibe" / "project.env").read_text(encoding="utf-8")
+        self.assertIn("TESTER=test-agent\n", env)
+
+    def test_cmd_run_aborts_when_the_test_agent_cannot_be_created(self):
+        self.write_global()
+
+        with mock.patch.object(self.cli, "tmux_has", return_value=False):
+            with mock.patch.object(self.cli, "is_init", return_value=True):
+                with mock.patch.object(
+                    self.cli, "ensure_test_agent", side_effect=OSError("gesperrt")
+                ):
+                    with mock.patch.object(self.cli, "run") as runner:
+                        with self.assertRaises(SystemExit) as caught:
+                            self.cli.cmd_run("proj", "tester")
+
+        self.assertIn("Test-Agent", str(caught.exception.code))
+        runner.assert_not_called()
+
 
 FAKE_OPENCODE = """#!/usr/bin/env bash
 printf '%s\\n' "$@" >> "$VIBE_FAKE_OPENCODE"

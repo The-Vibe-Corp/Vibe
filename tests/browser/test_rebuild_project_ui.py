@@ -126,7 +126,8 @@ class RebuildProjectBrowserTest(unittest.TestCase):
             self.assertIn("TYPE=rebuild", env)
             self.assertIn("rebuild-env.py --check", env)
             agents = sorted((project / ".opencode" / "agents").glob("*.md"))
-            self.assertEqual(len(agents), 9)
+            self.assertEqual(len(agents), 10)
+            self.assertIn("test-agent", {path.stem for path in agents})
             self.assertTrue((project / "docs" / "parity.md").is_file())
             self.assertTrue((project / "scripts" / "rebuild-env.py").is_file())
         finally:

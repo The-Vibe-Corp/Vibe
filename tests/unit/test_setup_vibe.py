@@ -457,6 +457,14 @@ class ProjectRegistrationTest(unittest.TestCase):
         (self.vibe / "_toolchain" / "templates" / "android" / ".vibe" / "project.env").write_text(
             "TYPE=android\n", encoding="utf-8"
         )
+        common_agent = (
+            self.vibe / "_toolchain" / "templates" / "common" / ".opencode" / "agents"
+        )
+        common_agent.mkdir(parents=True)
+        (common_agent / "test-agent.md").write_text(
+            "---\ndescription: Test-Agent\nmode: subagent\n---\n\nPrompt\n",
+            encoding="utf-8",
+        )
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -494,6 +502,42 @@ class ProjectRegistrationTest(unittest.TestCase):
         names = {entry["project"] for entry in result["projects"]}
         self.assertEqual(names, {"bestand", "neu", "worktree", "app"})
         self.assertEqual(result["created"], ["app", "neu", "worktree"])
+
+    def test_existing_and_new_projects_receive_the_test_agent(self):
+        existing = self.vibe / "bestand"
+        (existing / ".git").mkdir(parents=True)
+        (existing / ".vibe").mkdir()
+        (existing / ".vibe" / "project.env").write_text("TYPE=web\n", encoding="utf-8")
+        new = self.vibe / "neu"
+        (new / ".git").mkdir(parents=True)
+
+        result = setup.register_projects(self.vibe)
+
+        for project in (existing, new):
+            agent = project / ".opencode" / "agents" / "test-agent.md"
+            self.assertTrue(agent.is_file(), project)
+            self.assertIn("Test-Agent", agent.read_text(encoding="utf-8"))
+        # Die vorhandene Projektkonfiguration bleibt unverändert; TESTER ergänzt
+        # der Projektstart, nicht die Installation.
+        self.assertEqual(
+            (existing / ".vibe" / "project.env").read_text(encoding="utf-8"),
+            "TYPE=web\n",
+        )
+        self.assertEqual(result["test_agent_created"], ["bestand", "neu"])
+
+    def test_register_projects_keeps_an_existing_test_agent(self):
+        project = self.vibe / "bestand"
+        (project / ".git").mkdir(parents=True)
+        (project / ".vibe").mkdir()
+        (project / ".vibe" / "project.env").write_text("TYPE=web\n", encoding="utf-8")
+        agent = project / ".opencode" / "agents" / "test-agent.md"
+        agent.parent.mkdir(parents=True)
+        agent.write_text("# eigener Test-Agent\n", encoding="utf-8")
+
+        result = setup.register_projects(self.vibe)
+
+        self.assertEqual(agent.read_text(encoding="utf-8"), "# eigener Test-Agent\n")
+        self.assertEqual(result["test_agent_created"], [])
 
 
 class TargetValidationTest(unittest.TestCase):
