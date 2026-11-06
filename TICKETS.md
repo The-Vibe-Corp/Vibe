@@ -7,13 +7,26 @@ Abhaken nur nach erfüllten Kriterien, erfolgreichen relevanten Tests und Review
 Nachweise unter dem Ticket: Commit, Testbefehle, Reviewdatei, Dokumentation.
 Ein fehlender externer Dienst bedeutet BLOCKIERT, nicht erledigt.
 
-- [ ] AP01 GUideline ergänzungen für coding agents
+- [x] AP01 GUideline ergänzungen für coding agents
   Beschreibung: die guidelines für coding agents sollen um folgende aspekte verpflichtend ergänzt werden:
   
   - KISS als verpflichtendes Prinzip
   - Clean Code als code style/guideline
   - Caching als performance optimierung (aber mit entsprechend notwendiger invalidierung)
   dies soll für alle neuen, aber auch für bestehende projekte gelten und automatisch übernommen werden
+  Commit: `5a2e628`; Test: test_general_rules_require_kiss_clean_code_and_safe_caching,
+  test_all_shipped_project_templates_contain_the_coding_guidelines,
+  test_repository_agents_file_contains_the_coding_guidelines,
+  test_init_replaces_an_outdated_rules_block_with_the_coding_guidelines,
+  test_cmd_run_updates_the_managed_rules_of_an_existing_project,
+  test_cmd_run_adds_the_rules_block_to_an_existing_project_without_one,
+  test_cmd_run_aborts_when_the_general_rules_cannot_be_updated
+  (tests/unit/test_project_management.py, tests/unit/test_project_agents.py; 7 Tests).
+  Prüfungen: `bash scripts/verify.sh quick` Exit 0; `bash scripts/verify.sh full`
+  Exit 0 (863 Unit- + 58 Browser-Tests, 921 erkannt) in Bubblewrap-Umgebung mit
+  beschreibbarem `/tmp` und ohne geerbtes `SANDBOX`.
+  Review: `docs/reviews/AP01-review-1.md` (PASS; 0 Critical/High/Medium, 3 Minor).
+  Dokumentation: `docs/features/AP01.md`; Trilium `B34A8yyWkjCo`.
 
 - [x] V-001 Unveränderten Bestand aufnehmen und absichern
   Priorität: P0
