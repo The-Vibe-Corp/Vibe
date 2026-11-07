@@ -52,7 +52,7 @@ KEEP_RECORDS = 100
 DEFAULT_MAX_BYTES = 5 * 1024 * 1024
 DEFAULT_KEEP = 3
 LIVE_STATES = ("starting", "running")
-STATES = ("starting", "running", "finished", "stopped", "paused", "failed", "ended")
+STATES = ("starting", "running", "finished", "stopped", "paused", "failed", "ended", "blocked")
 
 
 def clean_key(text):

@@ -30,8 +30,8 @@
   },
   {
    "path": "bin/vibe-run.sh",
-   "sha256": "bca1ac011185e52cf6550e52abc7e6746b8bff154201fc327b5bd504f46283cc",
-   "bytes": 23427
+   "sha256": "613fde2d0452391bdff0b8a94545318058c69740ab7d6cec175ba8f9997c889b",
+   "bytes": 23448
   },
   {
    "path": "bin/vibe-web.py",
@@ -70,8 +70,8 @@
   },
   {
    "path": "bin/vibe_packages.py",
-   "sha256": "620d328c77aac52900ee01ccb7773bb62f5fbe4dfbffb1eddc81a642abcb8f93",
-   "bytes": 16742
+   "sha256": "a68b7a6636447791dc77968b304ed297c0ac36a4dae5e914d027cf8368d28767",
+   "bytes": 18896
   },
   {
    "path": "bin/vibe_paths.py",
@@ -85,8 +85,8 @@
   },
   {
    "path": "bin/vibe_runs.py",
-   "sha256": "a22bc21b0a6d881f4d52102982eeac71a1145b3866fd0960d669cf88dd12d7c4",
-   "bytes": 19860
+   "sha256": "67259de456a96332ce09bd16f3dc6a99be05a1d3229a096a3171bf183bdaef49",
+   "bytes": 19871
   },
   {
    "path": "bin/vibe_sandbox.py",
@@ -773,6 +773,16 @@
     "templates/rebuild/.vibe/project.env",
     "templates/web/.vibe/project.env",
     ".vibe/project.env"
+   ]
+  },
+  {
+   "arbeitspaket": "F21",
+   "datum": "2026-11-07",
+   "grund": "Preflight löst einen fehlenden REVIEWER aus der Rolle reviewer in profiles.json auf und bevorzugt dabei einen verfügbaren Agenten; der ausdrücklich gesetzte Reviewer bleibt vorrangig. Der Läufer übergibt den Zustandsordner an den Preflight. blocked ist ein gültiger Endzustand im Laufregister, damit ein vom Preflight abgebrochener Lauf nicht auf starting hängen bleibt.",
+   "dateien": [
+    "bin/vibe-run.sh",
+    "bin/vibe_packages.py",
+    "bin/vibe_runs.py"
    ]
   }
  ]

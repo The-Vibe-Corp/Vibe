@@ -306,7 +306,8 @@ elif server_is_up; then SERVER_ARGS="--server http://127.0.0.1:$OPENCODE_PORT"; 
 # und ein echter Paketprüfbefehl. Ohne diese Bedingungen startet kein Paket.
 PREFLIGHT_OUT="$(python3 "$PACKAGES_PY" preflight --project "$P" \
   --agents-dir "${VIBE_AGENTS_DIR:-$HOME/.config/opencode/agents}" \
-  --tester "${TESTER:-}" --reviewer "${REVIEWER:-}" 2>&1)"
+  --tester "${TESTER:-}" --reviewer "${REVIEWER:-}" \
+  --state "$STATE" 2>&1)"
 PREFLIGHT_RC=$?
 if [ "$PREFLIGHT_RC" != 0 ]; then
   printf '%s\n' "$PREFLIGHT_OUT" | tee -a "$LOG"

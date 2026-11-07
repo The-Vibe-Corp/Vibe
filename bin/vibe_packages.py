@@ -27,6 +27,10 @@ COMMIT_PATTERN = re.compile(r"Commit\s*:\s*`?([0-9a-fA-F]{7,40})`?")
 PROOF_PATTERN = re.compile(r"(?:Test|Datei)\s*:\s*\S+")
 DEPENDENCY_PATTERN = re.compile(r"Abhängigkeiten\s*:\s*(.+)")
 PRIORITY_PATTERN = re.compile(r"Priorität\s*:\s*(P\d)")
+# Agentennamen werden wie im Läufer und in der Agentenverwaltung geprüft.
+# profiles.json ist Nutzerzustand; ein Name mit Pfadanteilen darf nie in eine
+# Dateiprüfung außerhalb der Agentenordner führen.
+AGENT_NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
 VERDICT_PATTERN = re.compile(
     r"(?im)^\s*(?:[-*]\s*)?verdict\s*:\s*\**\s*PASS\b"
 )
@@ -258,8 +262,51 @@ def ensure_project_exclude(project):
         write_text_atomic(exclude, text + ".vibe/tmp/\n")
 
 
-def preflight_errors(project, agents_dir, tester, reviewer):
-    """Prüft die Startbedingungen und liefert alle Befunde als Liste."""
+def role_agents(state_dir, role):
+    """Namen der Agenten mit dieser Rolle aus ``<state_dir>/profiles.json``.
+
+    Die Reihenfolge der Datei bleibt erhalten. Eine fehlende oder unlesbare
+    Datei ist kein Fehler, sondern liefert keine Kandidaten; der Aufrufer
+    meldet dann wie bisher die fehlende Zuordnung.
+    """
+    if not state_dir:
+        return []
+    try:
+        with open(Path(state_dir) / "profiles.json", encoding="utf-8") as handle:
+            data = json.load(handle)
+    except (OSError, ValueError):
+        return []
+    roles = data.get("rollen") if isinstance(data, dict) else None
+    if not isinstance(roles, dict):
+        return []
+    return [
+        name for name, value in roles.items()
+        if isinstance(name, str) and value == role and AGENT_NAME_PATTERN.match(name)
+    ]
+
+
+def agent_for_role(role, state_dir, project, agents_dir):
+    """Erster verfügbarer Agent mit dieser Rolle, sonst erster Kandidat.
+
+    Ein veralteter Rolleneintrag ohne Agentendatei darf einen späteren,
+    verfügbaren Eintrag nicht blockieren. Bleibt kein Kandidat verfügbar,
+    wird der erste zurückgegeben, damit der Preflight ihn als nicht verfügbar
+    melden kann.
+    """
+    candidates = role_agents(state_dir, role)
+    for name in candidates:
+        if agent_available(name, project, agents_dir):
+            return name
+    return candidates[0] if candidates else ""
+
+
+def preflight_errors(project, agents_dir, tester, reviewer, state_dir=None):
+    """Prüft die Startbedingungen und liefert alle Befunde als Liste.
+
+    Eine fehlende REVIEWER-Zuordnung wird aus der Rolle ``reviewer`` in
+    ``<state_dir>/profiles.json`` ergänzt. Ein ausdrücklich gesetzter Reviewer
+    (Argument oder project.env) bleibt vorrangig.
+    """
     project = Path(project)
     errors = []
     top = run_git(project, "rev-parse", "--show-toplevel")
@@ -281,6 +328,8 @@ def preflight_errors(project, agents_dir, tester, reviewer):
     agents_dir = agents_dir or os.path.join(
         os.path.expanduser("~"), ".config", "opencode", "agents"
     )
+    if not reviewer:
+        reviewer = agent_for_role("reviewer", state_dir, project, agents_dir)
     if not tester:
         errors.append("TESTER fehlt: Der unabhängige Test-Agent ist nicht konfiguriert.")
     elif not agent_available(tester, project, agents_dir):
@@ -416,7 +465,7 @@ def command_select(args):
 
 def command_preflight(args):
     errors = preflight_errors(
-        args.project, args.agents_dir, args.tester, args.reviewer
+        args.project, args.agents_dir, args.tester, args.reviewer, args.state
     )
     for error in errors:
         print("BLOCKIERT: " + error)
@@ -467,6 +516,10 @@ def build_parser():
     preflight.add_argument("--agents-dir", default=None)
     preflight.add_argument("--tester", default="")
     preflight.add_argument("--reviewer", default="")
+    preflight.add_argument(
+        "--state", default=None,
+        help="Zustandsordner mit profiles.json für die Rollenauflösung",
+    )
     preflight.set_defaults(handler=command_preflight)
 
     gate = subparsers.add_parser("gate", help="Abschlussschranke prüfen")
