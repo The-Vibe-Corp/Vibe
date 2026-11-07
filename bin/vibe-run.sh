@@ -304,10 +304,20 @@ if [ "$SANDBOX_STATE" = "on" ]; then
 elif server_is_up; then SERVER_ARGS="--server http://127.0.0.1:$OPENCODE_PORT"; fi
 # Preflight: sauberer Git-Integrationsstand, verfügbare Test-/Review-Agenten
 # und ein echter Paketprüfbefehl. Ohne diese Bedingungen startet kein Paket.
-PREFLIGHT_OUT="$(python3 "$PACKAGES_PY" preflight --project "$P" \
-  --agents-dir "${VIBE_AGENTS_DIR:-$HOME/.config/opencode/agents}" \
-  --tester "${TESTER:-}" --reviewer "${REVIEWER:-}" \
-  --state "$STATE" 2>&1)"
+# F22: Der Produktpfad ``vibe run`` setzt VIBE_PREFLIGHT_ASSIST=1. Dann fragt
+# der Preflight bei einem Befund über F16 nach, statt sofort abzubrechen.
+PREFLIGHT_ARGS=(preflight --project "$P"
+  --agents-dir "${VIBE_AGENTS_DIR:-$HOME/.config/opencode/agents}"
+  --tester "${TESTER:-}" --reviewer "${REVIEWER:-}"
+  --state "$STATE")
+if [ "${VIBE_PREFLIGHT_ASSIST:-0}" = "1" ] \
+    && [ -f "$BIN/vibe_questions.py" ] \
+    && [ -f "$BIN/vibe_autonomous.py" ] \
+    && [ -f "$BIN/vibe_storage.py" ]; then
+  PREFLIGHT_ARGS+=(--assist --runtime "$RUNTIME" --project-name "$NAME"
+    --timeout "${VIBE_PREFLIGHT_QUESTION_TIMEOUT:-600}")
+fi
+PREFLIGHT_OUT="$(python3 "$PACKAGES_PY" "${PREFLIGHT_ARGS[@]}" 2>&1)"
 PREFLIGHT_RC=$?
 if [ "$PREFLIGHT_RC" != 0 ]; then
   printf '%s\n' "$PREFLIGHT_OUT" | tee -a "$LOG"

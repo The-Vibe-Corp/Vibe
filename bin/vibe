@@ -1656,8 +1656,9 @@ def cmd_run(name, agent=None, out=None):
     # Die Modellüberschreibung des Projekts reist als weitere Position mit und
     # wird erst im Läufer an opencode übergeben; Agentendateien bleiben
     # unverändert, andere Projekte sehen die Überschreibung nicht.
+    # F22: Nur der Produktpfad aktiviert die Rückfrage-Assistenz im Preflight.
     inner = ("source ~/.bashrc; " + child_exports()
-             + ' export VIBE_LOGNAME="$1" VIBE_RUN_ID="$2" VIBE_SESSION="$3" VIBE_MODEL="$7"; bash "$4" "$5" "$6" "$7"')
+             + ' export VIBE_PREFLIGHT_ASSIST=1 VIBE_LOGNAME="$1" VIBE_RUN_ID="$2" VIBE_SESSION="$3" VIBE_MODEL="$7"; bash "$4" "$5" "$6" "$7"')
     rc, output = run(["tmux", "new-session", "-d", "-s", session,
                    "-e", MANAGED_VAR + "=run", "-c", p,
                    "bash", "-lc", inner, name, key, run_id, session,

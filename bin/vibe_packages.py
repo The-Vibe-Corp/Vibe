@@ -19,6 +19,14 @@ EXIT_OK = 0
 EXIT_NONE = 1
 EXIT_USAGE = 2
 
+# F22: Ein blockierter Preflight darf den Nutzer über F16 nach einer
+# Entscheidung fragen. Die Assistenz ist nur im Produktpfad ``vibe run``
+# aktiv; ein direkter Läuferaufruf und Tests ohne die Variable bleiben beim
+# bisherigen sofortigen Abbruch.
+ASSIST_OPTIONS = ["Erneut prüfen", "Lauf abbrechen"]
+ASSIST_DEFAULT_TIMEOUT = 600.0
+ASSIST_MAX_ROUNDS = 10
+
 CHECKBOX_DONE = re.compile(r"^- \[[xX]\]")
 CHECKBOX_ANY = re.compile(r"^- \[[ xX]\]")
 BLOCK_MARKER = "BLOCKIERT:"
@@ -348,6 +356,104 @@ def preflight_errors(project, agents_dir, tester, reviewer, state_dir=None):
     return errors
 
 
+def _question_modules():
+    """Lädt die F16-Module; eine unvollständige Installation ist kein Absturz."""
+    bin_dir = os.path.dirname(os.path.abspath(__file__))
+    if bin_dir not in sys.path:
+        sys.path.insert(0, bin_dir)
+    try:
+        import vibe_questions
+        import vibe_autonomous
+    except ImportError:
+        return None, None
+    return vibe_questions, vibe_autonomous
+
+
+def _assist_text(project_name, errors):
+    """Formuliert die Rückfrage aus den aktuellen Preflight-Befunden."""
+    lines = ["Der Preflight für '" + project_name + "' ist nicht bestanden.", ""]
+    for error in errors:
+        lines.append("- " + str(error).replace("\n", "\n  "))
+    lines.append("")
+    lines.append(
+        "Bitte die genannten Voraussetzungen herstellen und danach "
+        "'Erneut prüfen' wählen."
+    )
+    text = "\n".join(lines).strip()
+    if len(text) > 3900:
+        text = text[:3899] + "…"
+    return text
+
+
+def assist_preflight(project, agents_dir, tester, reviewer, state_dir=None,
+                     runtime=None, project_name="", timeout=ASSIST_DEFAULT_TIMEOUT):
+    """Führt den Preflight mit F16-Rückfragen zu einem startbaren Stand.
+
+    Liefert die zuletzt bestehenden Befunde. Eine leere Liste bedeutet, dass
+    der Preflight bestanden ist. Ohne nutzbare F16-Module, bei aktivem
+    autonomem Modus oder nach einem Abbruch/Zeitlimit bleiben die Befunde
+    bestehen; der Aufrufer bricht dann wie bisher ab.
+    """
+    questions, autonomous = _question_modules()
+    errors = preflight_errors(
+        project, agents_dir, tester, reviewer, state_dir
+    )
+    if not errors or questions is None or autonomous is None or not runtime:
+        return errors
+
+    name = project_name or os.path.basename(os.path.normpath(str(project)))
+    if autonomous.is_enabled(runtime, name):
+        return errors
+
+    for _round in range(ASSIST_MAX_ROUNDS):
+        try:
+            qid = questions.create(
+                runtime,
+                project=name,
+                agent="vibe",
+                text=_assist_text(name, errors),
+                options=ASSIST_OPTIONS,
+                free_text=False,
+            )
+        except (OSError, ValueError) as error:
+            print("PREFLIGHT: Rückfrage konnte nicht gestellt werden: " + str(error))
+            return errors
+        print(
+            "PREFLIGHT: Rückfrage " + qid + " gestellt; Antwort im Dashboard "
+            "oder mit: vibe answer " + qid + " --option <1|2>"
+        )
+        mode, answer = questions.wait_for(
+            runtime,
+            qid,
+            timeout=timeout,
+            stop=lambda: autonomous.is_enabled(runtime, name),
+        )
+        if mode == "stop":
+            print("PREFLIGHT: Autonomer Modus aktiv; keine Rückfrage mehr.")
+            return errors
+        if mode != "answer":
+            print(
+                "PREFLIGHT: Keine Antwort auf Rückfrage " + qid
+                + " innerhalb von " + f"{timeout:g}" + " s."
+            )
+            return errors + [
+                "Rückfrage " + qid + " blieb ohne Antwort; Lauf abgebrochen."
+            ]
+        if answer.get("option") == 1:
+            print("PREFLIGHT: Lauf auf Wunsch abgebrochen.")
+            return errors
+        errors = preflight_errors(
+            project, agents_dir, tester, reviewer, state_dir
+        )
+        if not errors:
+            return []
+        if autonomous.is_enabled(runtime, name):
+            return errors
+    return errors + [
+        "Rückfrage-Assistenz nach " + str(ASSIST_MAX_ROUNDS) + " Runden beendet."
+    ]
+
+
 def review_order(path):
     """Sortierschlüssel für ``<ID>-review-N.md``; höhere Nummer ist neuer."""
     match = re.search(r"-review-?(\d+)", path.name)
@@ -464,9 +570,21 @@ def command_select(args):
 
 
 def command_preflight(args):
-    errors = preflight_errors(
-        args.project, args.agents_dir, args.tester, args.reviewer, args.state
-    )
+    if args.assist:
+        errors = assist_preflight(
+            args.project,
+            args.agents_dir,
+            args.tester,
+            args.reviewer,
+            args.state,
+            runtime=args.runtime,
+            project_name=args.project_name,
+            timeout=args.timeout,
+        )
+    else:
+        errors = preflight_errors(
+            args.project, args.agents_dir, args.tester, args.reviewer, args.state
+        )
     for error in errors:
         print("BLOCKIERT: " + error)
     return EXIT_USAGE if errors else EXIT_OK
@@ -519,6 +637,22 @@ def build_parser():
     preflight.add_argument(
         "--state", default=None,
         help="Zustandsordner mit profiles.json für die Rollenauflösung",
+    )
+    preflight.add_argument(
+        "--assist", action="store_true",
+        help="bei Befunden über F16 nachfragen und den Preflight wiederholen",
+    )
+    preflight.add_argument(
+        "--runtime", default=None,
+        help="Laufzeitordner für Rückfragen (F22)",
+    )
+    preflight.add_argument(
+        "--project-name", default="",
+        help="Projektname für die Rückfrage (F22)",
+    )
+    preflight.add_argument(
+        "--timeout", type=float, default=ASSIST_DEFAULT_TIMEOUT,
+        help="Wartezeit je Rückfrage in Sekunden (F22)",
     )
     preflight.set_defaults(handler=command_preflight)
 

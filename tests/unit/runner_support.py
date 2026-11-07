@@ -53,7 +53,16 @@ def install_runner(install):
     """Kopiert Läufer und benötigte Module in eine Testinstallation."""
     bin_dir = install / "bin"
     bin_dir.mkdir(parents=True, exist_ok=True)
-    for name in ("vibe-run.sh", "vibe_runs.py", "vibe_packages.py"):
+    # F22 braucht zusätzlich die F16-Module für Rückfragen und den autonomen
+    # Modus sowie die gemeinsame Storage-Schicht, die beide importieren.
+    for name in (
+        "vibe-run.sh",
+        "vibe_runs.py",
+        "vibe_packages.py",
+        "vibe_questions.py",
+        "vibe_autonomous.py",
+        "vibe_storage.py",
+    ):
         shutil.copy(BIN / name, bin_dir / name)
     return bin_dir
 

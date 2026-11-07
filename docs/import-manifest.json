@@ -25,13 +25,13 @@
   },
   {
    "path": "bin/vibe",
-   "sha256": "2edc348f28917b8b5e0664c73bafb21d7421aaed3704f5d4153ad668ac30357d",
-   "bytes": 208343
+   "sha256": "1767702cbc32d77ca087f3d2d45347e07698527c1e3b9737d3ee976e70721693",
+   "bytes": 208447
   },
   {
    "path": "bin/vibe-run.sh",
-   "sha256": "613fde2d0452391bdff0b8a94545318058c69740ab7d6cec175ba8f9997c889b",
-   "bytes": 23448
+   "sha256": "e5d54f7f2dfe54790c1681bfd46a27f05000bf65ae26b88356b2e8ea420c041f",
+   "bytes": 23938
   },
   {
    "path": "bin/vibe-web.py",
@@ -70,8 +70,8 @@
   },
   {
    "path": "bin/vibe_packages.py",
-   "sha256": "a68b7a6636447791dc77968b304ed297c0ac36a4dae5e914d027cf8368d28767",
-   "bytes": 18896
+   "sha256": "66dedbc46942a0cee51aea2b6962af708d80c05c69abf9e0e56aae57df833812",
+   "bytes": 23734
   },
   {
    "path": "bin/vibe_paths.py",
@@ -783,6 +783,16 @@
     "bin/vibe-run.sh",
     "bin/vibe_packages.py",
     "bin/vibe_runs.py"
+   ]
+  },
+  {
+   "arbeitspaket": "F22",
+   "datum": "2026-11-07",
+   "grund": "Ein nicht bestandener Preflight fragt im Produktpfad vibe run über F16 nach, statt sofort abzubrechen. Die Rückfrage nennt Projekt und konkrete Befunde, bietet Erneut prüfen oder Lauf abbrechen und wiederholt den Preflight nach der Antwort; ohne Assistenzvariable, bei aktivem autonomem Modus und nach Zeitlimit bleibt der bisherige Abbruch erhalten.",
+   "dateien": [
+    "bin/vibe",
+    "bin/vibe-run.sh",
+    "bin/vibe_packages.py"
    ]
   }
  ]
