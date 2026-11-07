@@ -30,8 +30,8 @@
   },
   {
    "path": "bin/vibe-run.sh",
-   "sha256": "e5d54f7f2dfe54790c1681bfd46a27f05000bf65ae26b88356b2e8ea420c041f",
-   "bytes": 23938
+   "sha256": "fe90f2add90fd98b10863926d5f141bbb660a6bc986434496ee05344e17830bb",
+   "bytes": 26117
   },
   {
    "path": "bin/vibe-web.py",
@@ -70,8 +70,8 @@
   },
   {
    "path": "bin/vibe_packages.py",
-   "sha256": "5e8f05eededac8276bc43455ee89c42937720a7ae5a203941a1a4aca7a4a0bce",
-   "bytes": 24355
+   "sha256": "06f0d301b8f2606dd3a979c61bc6c71e8e2764fec0a13ad5142702f8ff41f55d",
+   "bytes": 26775
   },
   {
    "path": "bin/vibe_paths.py",
@@ -788,7 +788,7 @@
   {
    "arbeitspaket": "F22",
    "datum": "2026-11-07",
-   "grund": "Ein nicht bestandener Preflight fragt im Produktpfad vibe run über F16 nach, statt sofort abzubrechen. Die Rückfrage nennt Projekt und konkrete Befunde, bietet Erneut prüfen oder Lauf abbrechen und wiederholt den Preflight nach der Antwort; ohne Assistenzvariable, bei aktivem autonomem Modus und nach Zeitlimit bleibt der bisherige Abbruch erhalten.",
+   "grund": "Ein nicht bestandener Preflight fragt im Produktpfad vibe run über F16 nach, statt sofort abzubrechen. Die Rückfrage nennt Projekt und konkrete Befunde, bietet Erneut prüfen oder Lauf abbrechen und erlaubt zusätzlich eine freie Anweisung an den Agenten, der die Befunde im Projektordner zu beheben versucht; danach wird der Preflight erneut geprüft. Ohne Assistenzvariable, bei aktivem autonomem Modus und nach Zeitlimit bleibt der bisherige Abbruch erhalten.",
    "dateien": [
     "bin/vibe",
     "bin/vibe-run.sh",

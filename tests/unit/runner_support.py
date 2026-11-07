@@ -91,6 +91,7 @@ def write_project(project, env_text, feedback="", tickets=""):
 
 FAKE_OPENCODE = r'''#!/usr/bin/env python3
 """Schließt ein Arbeitspaket so ab, wie es die Abschlussschranke verlangt."""
+import json
 import os
 import pathlib
 import re
@@ -114,10 +115,51 @@ if output:
     sys.stdout.write(output)
     sys.stdout.flush()
 
+# Ein Preflight-Auftrag enthält die Befunde („Preflight ...“) und die
+# Anweisung des Nutzers. Er darf nicht als Arbeitspaket F1 gelten.
+is_preflight = (
+    "preflight" in prompt.lower()
+    or "anweisung des nutzers" in prompt.lower()
+)
 calls = os.environ.get("FAKE_CALLS")
 if calls:
     with open(calls, "a", encoding="utf-8") as handle:
-        handle.write(pid + "\t" + str(cwd) + "\n")
+        if is_preflight:
+            handle.write(
+                "preflight\t" + str(cwd) + "\t"
+                + json.dumps(prompt, ensure_ascii=False) + "\n"
+            )
+        else:
+            handle.write(pid + "\t" + str(cwd) + "\n")
+
+if is_preflight:
+    mode = os.environ.get("FAKE_PREFLIGHT_MODE", "noop")
+    if mode == "fail":
+        sys.stderr.write(
+            "Preflight-Agent fehlgeschlagen: Befunde nicht behoben\n"
+        )
+        sys.exit(1)
+    if mode == "fix":
+        target = cwd / "unfertig.txt"
+        try:
+            target.unlink()
+        except FileNotFoundError:
+            pass
+        subprocess.run(
+            ["git", "-C", str(cwd), "add", "-A"],
+            check=False, capture_output=True, text=True,
+        )
+        staged = subprocess.run(
+            ["git", "-C", str(cwd), "diff", "--cached", "--quiet"],
+            check=False,
+        )
+        if staged.returncode != 0:
+            subprocess.run(
+                ["git", "-C", str(cwd), "commit", "-q", "-m",
+                 "Preflight: Befund behoben"],
+                check=False, capture_output=True, text=True,
+            )
+    sys.exit(0)
 
 counter_path = pathlib.Path(os.environ.get("FAKE_COUNTER", os.devnull))
 try:

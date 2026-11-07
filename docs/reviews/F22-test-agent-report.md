@@ -69,3 +69,36 @@ ungültiger Option das Arbeitspaket F1 und endete mit Exit 0.
 
 Nach der Produktionsanpassung: 13 Tests OK.
 
+## Nacharbeit: Freitext als Anweisung an den Agenten
+
+Der Nutzer meldete, dass die Rückfrage zwar erscheint, aber keine Lösung
+erlaubt. Der Test-Agent ergänzte daraufhin sechs Tests und erweiterte die
+Agenten-Attrappe:
+
+- `test_free_text_answer_is_explained_as_agent_instruction` — `free_text` ist
+  `True`, die Optionen bleiben exakt `["Erneut prüfen", "Lauf abbrechen"]`, der
+  Fragetext erklärt die Agentenanweisung.
+- `test_text_answer_runs_agent_in_project_then_starts_package` — eine
+  Freitextantwort startet den Agenten im Projektordner; der Prompt enthält
+  Anweisung und Befunde; danach läuft F1 und der Lauf endet mit Exit 0.
+- `test_text_wins_over_a_selected_option` — Freitext hat Vorrang vor Option 0.
+- `test_failed_agent_run_ends_with_exit_2_and_no_package` — Agenten-Exit 1
+  beendet den Lauf mit Exit 2, ohne Arbeitspaket; Register `blocked`.
+- `test_empty_text_with_option_0_retries_without_agent` — ohne Text bleibt
+  Option 0 eine reine erneute Prüfung.
+- `test_ten_agent_rounds_then_exit_2` — nach zehn Agentenrunden endet die
+  Assistenz mit Exit 2.
+
+Die Attrappe in `tests/unit/runner_support.py` erkennt Preflight-Aufträge und
+protokolliert sie separat; `FAKE_PREFLIGHT_MODE` steuert `fix`, `fail` und
+`noop`.
+
+Beobachtete Rotphase vor der Produktionsanpassung: Exit 1, 19 Tests, 6
+fehlgeschlagen (u. a. `False is not True` bei `free_text`, `0 != 1` bei den
+Preflight-Aufrufen und „Ungültige Antwort … (Option None)“). Nach der
+Produktionsanpassung: 19 Tests OK.
+
+Die vollständige Unit-Suite zeigte in der Rotphase 1048 Tests mit 7 Fehlern:
+sechs erwartete F22-Fehler und der vorbestehende, unabhängige Fehler
+`test_dry_run_explains_pi_and_its_install_command`.
+

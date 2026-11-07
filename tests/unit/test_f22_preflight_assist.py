@@ -8,7 +8,12 @@ aus dem Implementierungsdiff. Geprüft werden:
 * ``vibe run`` startet den Läufer mit ``VIBE_PREFLIGHT_ASSIST=1``.
 * Bei aktivierter Assistenz legt der Läufer eine F16-Rückfrage mit Projekt,
   konkreten Befunden und genau den Optionen „Erneut prüfen“ und „Lauf
-  abbrechen“ an; freie Antworten sind nicht erlaubt.
+  abbrechen“ an; eine freie Antwort wird als Anweisung an den Agenten
+  verstanden, der die Befunde im Projektordner beheben soll.
+* Eine freie Antwort beauftragt den konfigurierten Agenten im Projektordner;
+  nach einem erfolgreichen Agentenlauf wird der Preflight erneut geprüft. Ein
+  fehlgeschlagener Agentenlauf beendet den Lauf mit Exit-Code 2, ohne ein
+  Arbeitspaket zu starten. Die Assistenz ist auf zehn Agentenrunden begrenzt.
 * „Erneut prüfen“ prüft erneut. Ist der Befund behoben, startet das erste
   Arbeitspaket; bleibt er bestehen, folgt eine neue Rückfrage.
 * „Lauf abbrechen“ beendet den Lauf mit Exit-Code 2, ohne Agentenaufruf, und
@@ -32,6 +37,7 @@ import importlib.machinery
 import importlib.util
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -224,6 +230,31 @@ class PreflightAssistFixture(unittest.TestCase):
             return []
         return self.calls.read_text(encoding="utf-8").splitlines()
 
+    def preflight_calls(self):
+        """Liefert Preflight-Aufträge mit Arbeitsverzeichnis und Prompt."""
+        result = []
+        for line in self.agent_calls():
+            parts = line.split("\t", 2)
+            if not parts or parts[0] != "preflight":
+                continue
+            prompt = ""
+            if len(parts) > 2:
+                try:
+                    prompt = json.loads(parts[2])
+                except json.JSONDecodeError:
+                    prompt = parts[2]
+            result.append(
+                {"cwd": parts[1] if len(parts) > 1 else "", "prompt": prompt}
+            )
+        return result
+
+    def package_calls(self):
+        """Liefert die Aufrufe für Arbeitspakete (ohne Preflight-Aufträge)."""
+        return [
+            line for line in self.agent_calls()
+            if not line.startswith("preflight\t")
+        ]
+
     # -- Rückfragen --------------------------------------------------------
     def question_folder(self):
         return self.runtime / "questions"
@@ -280,13 +311,17 @@ class PreflightAssistFixture(unittest.TestCase):
         )
 
     def answer(self, record, option):
-        """Beantwortet eine Rückfrage wie das Dashboard (atomar ersetzt)."""
+        """Beantwortet eine Rückfrage per Auswahl wie das Dashboard."""
+        self.answer_text(record, "", option)
+
+    def answer_text(self, record, text, option=None):
+        """Beantwortet eine Rückfrage mit Freitext (atomar ersetzt)."""
         folder = self.question_folder()
         folder.mkdir(parents=True, exist_ok=True)
         payload = json.dumps(
             {
                 "option": option,
-                "text": "",
+                "text": text,
                 "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                 "by": "test",
             }
@@ -496,7 +531,26 @@ class QuestionContentTest(PreflightAssistFixture):
         self.assertEqual(
             record.get("options"), ["Erneut prüfen", "Lauf abbrechen"]
         )
-        self.assertIs(record.get("free_text"), False)
+        self.assertIs(record.get("free_text"), True)
+
+        self.answer(record, 1)
+        self.assertEqual(self.wait_exit(timeout=60), 2)
+
+    def test_free_text_answer_is_explained_as_agent_instruction(self):
+        """Freitext ist erlaubt und wird als Anweisung an den Agenten erklärt."""
+        self.make_dirty()
+
+        self.start(VIBE_PREFLIGHT_ASSIST="1",
+                   VIBE_PREFLIGHT_QUESTION_TIMEOUT="30")
+        record = self.wait_for_question()
+        text = record.get("text", "")
+
+        self.assertIs(record.get("free_text"), True)
+        self.assertEqual(
+            record.get("options"), ["Erneut prüfen", "Lauf abbrechen"]
+        )
+        self.assertIn("Anweisung", text)
+        self.assertIn("Agent", text)
 
         self.answer(record, 1)
         self.assertEqual(self.wait_exit(timeout=60), 2)
@@ -737,6 +791,139 @@ class SuccessfulPreflightTest(PreflightAssistFixture):
         self.assertEqual(len(self.question_files()), questions_before)
         self.assertEqual(len(self.agent_calls()), 1)
         self.assertIn("Arbeitspaket F1", self.log())
+
+
+class TextAnswerTest(PreflightAssistFixture):
+    """Verhalten 10-14: Freitext beauftragt den Agenten im Projektordner."""
+
+    def test_text_answer_runs_agent_in_project_then_starts_package(self):
+        """Anweisung behebt den Befund: Agent im Projekt, danach F1 und Exit 0."""
+        self.make_dirty()
+        instruction = "Räume den Arbeitsbaum auf und entferne unfertig.txt"
+
+        self.start(VIBE_PREFLIGHT_ASSIST="1",
+                   VIBE_PREFLIGHT_QUESTION_TIMEOUT="30",
+                   FAKE_PREFLIGHT_MODE="fix")
+        record = self.wait_for_question()
+        self.answer_text(record, instruction)
+        rc = self.wait_exit(timeout=120)
+        output = self.combined_output()
+
+        self.assertEqual(rc, 0, output)
+        calls = self.preflight_calls()
+        self.assertEqual(len(calls), 1, calls)
+        self.assertEqual(
+            os.path.realpath(calls[0]["cwd"]),
+            os.path.realpath(str(self.project)),
+            "Der Preflight-Agent lief nicht im Projektordner.",
+        )
+        self.assertIn(instruction, calls[0]["prompt"])
+        self.assertIn("Arbeitsbaum", calls[0]["prompt"])
+        self.assertIn("unfertig.txt", calls[0]["prompt"])
+        self.assertEqual(len(self.package_calls()), 1)
+        self.assertIn("Arbeitspaket F1", self.log())
+        self.assertIn("Geschlossen: F1", output)
+        self.assertEqual(self.open_questions(), [])
+
+    def test_text_wins_over_a_selected_option(self):
+        """Option 0 plus Text beauftragt den Agenten statt nur erneut zu prüfen."""
+        self.make_dirty()
+
+        self.start(VIBE_PREFLIGHT_ASSIST="1",
+                   VIBE_PREFLIGHT_QUESTION_TIMEOUT="30",
+                   FAKE_PREFLIGHT_MODE="fix")
+        record = self.wait_for_question()
+        self.answer_text(
+            record, "Bitte den Arbeitsbaum aufräumen", option=0
+        )
+        rc = self.wait_exit(timeout=120)
+        output = self.combined_output()
+
+        self.assertEqual(rc, 0, output)
+        self.assertEqual(len(self.preflight_calls()), 1)
+        self.assertEqual(len(self.package_calls()), 1)
+        self.assertIn("Arbeitspaket F1", self.log())
+
+    def test_failed_agent_run_ends_with_exit_2_and_no_package(self):
+        """Agentenfehler: Exit 2, kein Arbeitspaket, Register blocked."""
+        run_id = self.create_run_record()
+        self.make_dirty()
+        args_path = self.root / "preflight-args"
+        instruction = "Bitte die Befunde beheben"
+
+        self.start(VIBE_PREFLIGHT_ASSIST="1",
+                   VIBE_PREFLIGHT_QUESTION_TIMEOUT="30",
+                   FAKE_PREFLIGHT_MODE="fail",
+                   FAKE_ARGS_PATH=str(args_path),
+                   VIBE_RUN_ID=run_id)
+        record = self.wait_for_question()
+        self.answer_text(record, instruction)
+        rc = self.wait_exit(timeout=60)
+        output = self.combined_output()
+
+        self.assertEqual(rc, 2, output)
+        self.assertEqual(self.package_calls(), [])
+        calls = self.preflight_calls()
+        self.assertEqual(len(calls), 1, calls)
+        self.assertEqual(
+            os.path.realpath(calls[0]["cwd"]),
+            os.path.realpath(str(self.project)),
+        )
+        self.assertIn(instruction, calls[0]["prompt"])
+        self.assertIn("Arbeitsbaum", calls[0]["prompt"])
+        self.assertRegex(output, r"(?is)agent.{0,160}fehl")
+        self.assertRegex(output, r"(?is)exit[- ]?code\s*1|exit 1")
+
+        argv = [part for part in args_path.read_text(
+            encoding="utf-8").split("\0") if part]
+        self.assertIn("tester", argv, argv)
+
+        stored = self.run_record(run_id)
+        self.assertIsNotNone(stored)
+        self.assertEqual(stored["state"], "blocked")
+        self.assertEqual(stored["exit_code"], 2)
+
+    def test_empty_text_with_option_0_retries_without_agent(self):
+        """Ohne Text bleibt Option 0 eine reine erneute Prüfung."""
+        self.make_dirty()
+
+        self.start(VIBE_PREFLIGHT_ASSIST="1",
+                   VIBE_PREFLIGHT_QUESTION_TIMEOUT="30",
+                   FAKE_PREFLIGHT_MODE="fix")
+        first = self.wait_for_question()
+        self.answer(first, 0)
+        second = self.wait_for_question(seen={first["id"]})
+
+        self.assertEqual(self.preflight_calls(), [])
+        self.assertEqual(self.package_calls(), [])
+        self.assertIn("Arbeitsbaum", second.get("text", ""))
+
+        self.answer(second, 1)
+        self.assertEqual(self.wait_exit(timeout=60), 2)
+        self.assertEqual(self.preflight_calls(), [])
+
+    def test_ten_agent_rounds_then_exit_2(self):
+        """Nach zehn Agentenrunden endet die Assistenz mit Exit 2."""
+        self.make_dirty()
+
+        self.start(VIBE_PREFLIGHT_ASSIST="1",
+                   VIBE_PREFLIGHT_QUESTION_TIMEOUT="30",
+                   FAKE_PREFLIGHT_MODE="noop")
+        seen = set()
+        for round_number in range(1, 11):
+            record = self.wait_for_question(seen=seen)
+            seen.add(record["id"])
+            self.answer_text(record, "Versuch %d" % round_number)
+        rc = self.wait_exit(timeout=120)
+        output = self.combined_output()
+
+        self.assertEqual(rc, 2, output)
+        calls = self.preflight_calls()
+        self.assertEqual(len(calls), 10, calls)
+        for round_number, call in enumerate(calls, 1):
+            self.assertIn("Versuch %d" % round_number, call["prompt"])
+        self.assertEqual(self.package_calls(), [])
+        self.assertIn("10", output)
 
 
 if __name__ == "__main__":

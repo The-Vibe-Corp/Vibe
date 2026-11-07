@@ -225,23 +225,27 @@ create_worktree() {
   fi
   return 0
 }
-run_agent() {
+run_agent_in() {
+  local dir="$1" prompt="$2" title="${3:-$NAME $ID}"
   local wrap=()
   if [ "$SANDBOX_STATE" = "on" ]; then
-    wrap=(python3 "$BIN/vibe_sandbox.py" "$WT" --)
+    wrap=(python3 "$BIN/vibe_sandbox.py" "$dir" --)
   fi
   (
-    cd "$WT" || exit 1
+    cd "$dir" || exit 1
     if [ "$HARNESS" = "pi" ]; then
-      local args=(python3 "$HARNESS_CLI" run --harness pi --project "$WT" --agent "$AGENT" --title "$NAME $ID" --prompt "$PROMPT")
+      local args=(python3 "$HARNESS_CLI" run --harness pi --project "$dir" --agent "$AGENT" --title "$title" --prompt "$prompt")
       [ -n "$MODEL" ] && args+=(--model "$MODEL")
       [ -n "${VIBE_AGENTS_DIR:-}" ] && args+=(--agents-dir "$VIBE_AGENTS_DIR")
       "${wrap[@]}" "${args[@]}" 2>&1 | tee -a "$LOG"
       exit "${PIPESTATUS[0]}"
     fi
-    "${wrap[@]}" opencode run $SERVER_ARGS --format json --auto --thinking --agent "$AGENT" "${MODEL_ARGS[@]}" --title "$NAME $ID" "$PROMPT" 2>&1 | "${STREAM_FILTER[@]}" | tee -a "$LOG"
+    "${wrap[@]}" opencode run $SERVER_ARGS --format json --auto --thinking --agent "$AGENT" "${MODEL_ARGS[@]}" --title "$title" "$prompt" 2>&1 | "${STREAM_FILTER[@]}" | tee -a "$LOG"
     exit "${PIPESTATUS[0]}"
   )
+}
+run_agent() {
+  run_agent_in "$WT" "$PROMPT" "$NAME $ID"
 }
 run_package_tests() {
   local cmd="${VERIFY_PACKAGE:-${VERIFY_FULL:-}}"
@@ -302,42 +306,98 @@ if [ "$SANDBOX_STATE" = "on" ]; then
     exit 2
   fi
 elif server_is_up; then SERVER_ARGS="--server http://127.0.0.1:$OPENCODE_PORT"; fi
+# F19: opencode liefert mit --format json Ereignisse. Der Filter macht daraus
+# menschenlesbare Zeilen (Grundlage für Syntax-Highlighting) und erfasst
+# Subagenten samt Ausgabe in <log>.state.json. Fehlt das Modul, bleibt die
+# Ausgabe unverändert (kein stiller Abbruch des Laufs). Der Filter wird auch
+# für den Preflight-Agenten (F22) gebraucht und deshalb vorher eingerichtet.
+STREAM_FILTER=(cat)
+if [ -f "$RUNS_PY" ]; then
+  STREAM_FILTER=(python3 "$RUNS_PY" stream --state "$LOG.state.json")
+fi
 # Preflight: sauberer Git-Integrationsstand, verfügbare Test-/Review-Agenten
 # und ein echter Paketprüfbefehl. Ohne diese Bedingungen startet kein Paket.
 # F22: Der Produktpfad ``vibe run`` setzt VIBE_PREFLIGHT_ASSIST=1. Dann fragt
 # der Preflight bei einem Befund über F16 nach, statt sofort abzubrechen.
+# Eine freie Antwort ist eine Anweisung an den Agenten; er versucht die
+# Befunde im Projektordner zu beheben, danach wird erneut geprüft.
 PREFLIGHT_ARGS=(preflight --project "$P"
   --agents-dir "${VIBE_AGENTS_DIR:-$HOME/.config/opencode/agents}"
   --tester "${TESTER:-}" --reviewer "${REVIEWER:-}"
   --state "$STATE")
+PREFLIGHT_ACTION_FILE="$RUNTIME/$NAME.preflight-action.json"
 if [ "${VIBE_PREFLIGHT_ASSIST:-0}" = "1" ] \
     && [ -f "$BIN/vibe_questions.py" ] \
     && [ -f "$BIN/vibe_autonomous.py" ] \
     && [ -f "$BIN/vibe_storage.py" ]; then
   PREFLIGHT_ARGS+=(--assist --runtime "$RUNTIME" --project-name "$NAME"
-    --timeout "${VIBE_PREFLIGHT_QUESTION_TIMEOUT:-600}")
+    --timeout "${VIBE_PREFLIGHT_QUESTION_TIMEOUT:-600}"
+    --action-file "$PREFLIGHT_ACTION_FILE")
 fi
-PREFLIGHT_OUT="$(python3 "$PACKAGES_PY" "${PREFLIGHT_ARGS[@]}" 2>&1)"
-PREFLIGHT_RC=$?
-if [ "$PREFLIGHT_RC" != 0 ]; then
+ASSIST_ROUNDS=0
+ASSIST_MAX_ROUNDS=10
+while :; do
+  rm -f -- "$PREFLIGHT_ACTION_FILE"
+  PREFLIGHT_OUT="$(python3 "$PACKAGES_PY" "${PREFLIGHT_ARGS[@]}" \
+    --assist-rounds "$ASSIST_ROUNDS" 2>&1)"
+  PREFLIGHT_RC=$?
+  if [ "$PREFLIGHT_RC" = 0 ]; then
+    rm -f -- "$PREFLIGHT_ACTION_FILE"
+    break
+  fi
+  PREFLIGHT_ACTION="$(python3 - "$PREFLIGHT_ACTION_FILE" <<'PY'
+import json
+import sys
+try:
+    with open(sys.argv[1], encoding="utf-8") as handle:
+        data = json.load(handle)
+except (OSError, ValueError):
+    data = {}
+print(data.get("action") or "abort")
+PY
+)"
+  PREFLIGHT_INSTRUCTION="$(python3 - "$PREFLIGHT_ACTION_FILE" <<'PY'
+import json
+import sys
+try:
+    with open(sys.argv[1], encoding="utf-8") as handle:
+        data = json.load(handle)
+except (OSError, ValueError):
+    data = {}
+value = data.get("instruction")
+print(value if isinstance(value, str) else "")
+PY
+)"
+  rm -f -- "$PREFLIGHT_ACTION_FILE"
+  if [ "$PREFLIGHT_ACTION" = "agent" ]; then
+    ASSIST_ROUNDS=$((ASSIST_ROUNDS + 1))
+    echo "PREFLIGHT: Agent wird mit der Anweisung des Nutzers beauftragt (Runde $ASSIST_ROUNDS/$ASSIST_MAX_ROUNDS)." | tee -a "$LOG"
+    ASSIST_PROMPT="Der Preflight für '$NAME' ist nicht bestanden. Befunde:
+$PREFLIGHT_OUT
+
+Anweisung des Nutzers:
+$PREFLIGHT_INSTRUCTION
+
+Behebe ausschließlich diese Befunde im Projektordner. Verwirf keine fremden Änderungen. Committe nur, wenn die Anweisung es verlangt. Ändere keine Arbeitspakete und starte keinen neuen Lauf. Beende danach deine Arbeit; der Preflight wird erneut geprüft."
+    run_agent_in "$P" "$ASSIST_PROMPT" "$NAME Preflight"
+    ASSIST_RC=$?
+    if [ "$ASSIST_RC" != 0 ]; then
+      echo "ABBRUCH: Preflight-Agent fehlgeschlagen (Exit-Code $ASSIST_RC); die Befunde sind nicht behoben." | tee -a "$LOG"
+      register_finish 2 blocked
+      exit 2
+    fi
+    continue
+  fi
   printf '%s\n' "$PREFLIGHT_OUT" | tee -a "$LOG"
   echo "ABBRUCH: Preflight nicht bestanden. Es wurde kein Arbeitspaket gestartet." | tee -a "$LOG"
   register_finish 2 blocked
   exit 2
-fi
+done
 BASE_BRANCH="$(git -C "$P" symbolic-ref --quiet --short HEAD)"
 git -C "$P" worktree prune >>"$LOG" 2>&1 || true
 register_start
 if [ "$HARNESS" = "pi" ]; then RUN_MODE="Pi --print"; else RUN_MODE="$SERVER_ARGS"; fi
 echo "Lauf: ${RUN_ID:-ohne Register}, Harness: $HARNESS, Modus: $RUN_MODE, Agent: $AGENT, Sandbox: $SANDBOX_STATE, höchstens $MAXP Pakete, höchstens $MAXR Wiederholungen je Paket" | tee -a "$LOG"
-# F19: opencode liefert mit --format json Ereignisse. Der Filter macht daraus
-# menschenlesbare Zeilen (Grundlage für Syntax-Highlighting) und erfasst
-# Subagenten samt Ausgabe in <log>.state.json. Fehlt das Modul, bleibt die
-# Ausgabe unverändert (kein stiller Abbruch des Laufs).
-STREAM_FILTER=(cat)
-if [ -f "$RUNS_PY" ]; then
-  STREAM_FILTER=(python3 "$RUNS_PY" stream --state "$LOG.state.json")
-fi
 PAUSED=0; LAST_ID=""; STOP=0; PACKAGES=0; SKIP=""
 CLOSED=(); BLOCKED_IDS=(); BLOCKED_REPORT=(); BLOCK_REASON=""
 record_block() {

@@ -379,31 +379,50 @@ def _assist_text(project_name, errors):
         "Bitte die genannten Voraussetzungen herstellen und danach "
         "'Erneut prüfen' wählen."
     )
+    lines.append(
+        "Alternativ eine Anweisung als freie Antwort senden: Der Agent "
+        "versucht dann, die Befunde zu beheben; danach wird erneut geprüft."
+    )
     text = "\n".join(lines).strip()
     if len(text) > 3900:
         text = text[:3899] + "…"
     return text
 
 
+def _assist_result(errors, action, instruction=""):
+    """Ergebnis der Assistenz für den Aufrufer und die Aktionsdatei."""
+    return {"errors": errors, "action": action, "instruction": instruction}
+
+
 def assist_preflight(project, agents_dir, tester, reviewer, state_dir=None,
-                     runtime=None, project_name="", timeout=ASSIST_DEFAULT_TIMEOUT):
+                     runtime=None, project_name="", timeout=ASSIST_DEFAULT_TIMEOUT,
+                     rounds=0):
     """Führt den Preflight mit F16-Rückfragen zu einem startbaren Stand.
 
-    Liefert die zuletzt bestehenden Befunde. Eine leere Liste bedeutet, dass
-    der Preflight bestanden ist. Ohne nutzbare F16-Module, bei aktivem
-    autonomem Modus oder nach einem Abbruch/Zeitlimit bleiben die Befunde
-    bestehen; der Aufrufer bricht dann wie bisher ab.
+    Liefert ein Ergebnis mit den zuletzt bestehenden Befunden und der nächsten
+    Aktion. Eine leere Fehlerliste bedeutet, dass der Preflight bestanden ist.
+    Eine freie Antwort ist eine Anweisung an den Agenten; der Aufrufer führt
+    sie im Projektordner aus und ruft diese Funktion danach erneut auf. Ohne
+    nutzbare F16-Module, bei aktivem autonomem Modus oder nach einem
+    Abbruch/Zeitlimit bleiben die Befunde bestehen.
     """
     questions, autonomous = _question_modules()
     errors = preflight_errors(
         project, agents_dir, tester, reviewer, state_dir
     )
-    if not errors or questions is None or autonomous is None or not runtime:
-        return errors
+    if not errors:
+        return _assist_result([], "pass")
+    if questions is None or autonomous is None or not runtime:
+        return _assist_result(errors, "unavailable")
 
     name = project_name or os.path.basename(os.path.normpath(str(project)))
     if autonomous.is_enabled(runtime, name):
-        return errors
+        return _assist_result(errors, "autonomous")
+    if rounds >= ASSIST_MAX_ROUNDS:
+        return _assist_result(errors + [
+            "Rückfrage-Assistenz nach " + str(ASSIST_MAX_ROUNDS)
+            + " Runden beendet."
+        ], "max")
 
     for _round in range(ASSIST_MAX_ROUNDS):
         try:
@@ -413,14 +432,15 @@ def assist_preflight(project, agents_dir, tester, reviewer, state_dir=None,
                 agent="vibe",
                 text=_assist_text(name, errors),
                 options=ASSIST_OPTIONS,
-                free_text=False,
+                free_text=True,
             )
         except (OSError, ValueError) as error:
             print("PREFLIGHT: Rückfrage konnte nicht gestellt werden: " + str(error))
-            return errors
+            return _assist_result(errors, "unavailable")
         print(
             "PREFLIGHT: Rückfrage " + qid + " gestellt; Antwort im Dashboard "
-            "oder mit: vibe answer " + qid + " --option <1|2>"
+            "oder mit: vibe answer " + qid
+            + " --option <1|2> oder --text \"Anweisung\""
         )
         try:
             mode, answer = questions.wait_for(
@@ -431,42 +451,53 @@ def assist_preflight(project, agents_dir, tester, reviewer, state_dir=None,
             )
         except ValueError as error:
             print("PREFLIGHT: Rückfrage " + qid + " nicht lesbar: " + str(error))
-            return errors + [
+            return _assist_result(errors + [
                 "Rückfrage " + qid + " nicht lesbar; Lauf abgebrochen."
-            ]
+            ], "invalid")
         if mode == "stop":
             print("PREFLIGHT: Autonomer Modus aktiv; keine Rückfrage mehr.")
-            return errors
+            return _assist_result(errors, "autonomous")
         if mode != "answer":
             print(
                 "PREFLIGHT: Keine Antwort auf Rückfrage " + qid
                 + " innerhalb von " + f"{timeout:g}" + " s."
             )
-            return errors + [
+            return _assist_result(errors + [
                 "Rückfrage " + qid + " blieb ohne Antwort; Lauf abgebrochen."
-            ]
+            ], "timeout")
         option = answer.get("option")
+        text = answer.get("text")
+        instruction = text.strip() if isinstance(text, str) else ""
+        if instruction:
+            # Freitext hat Vorrang: Der Nutzer gibt dem Agenten eine Anweisung,
+            # wie die Befunde zu beheben sind. Die Ausführung übernimmt der
+            # Aufrufer im Projektordner; danach wird erneut geprüft.
+            print(
+                "PREFLIGHT: Anweisung des Nutzers erhalten; Agent wird "
+                "beauftragt."
+            )
+            return _assist_result(errors, "agent", instruction)
         if option == 1:
             print("PREFLIGHT: Lauf auf Wunsch abgebrochen.")
-            return errors
+            return _assist_result(errors, "abort")
         if option != 0:
             print(
                 "PREFLIGHT: Ungültige Antwort auf Rückfrage " + qid
                 + " (Option " + repr(option) + "); Lauf abgebrochen."
             )
-            return errors + [
+            return _assist_result(errors + [
                 "Ungültige Antwort auf Rückfrage " + qid + "; Lauf abgebrochen."
-            ]
+            ], "invalid")
         errors = preflight_errors(
             project, agents_dir, tester, reviewer, state_dir
         )
         if not errors:
-            return []
+            return _assist_result([], "pass")
         if autonomous.is_enabled(runtime, name):
-            return errors
-    return errors + [
+            return _assist_result(errors, "autonomous")
+    return _assist_result(errors + [
         "Rückfrage-Assistenz nach " + str(ASSIST_MAX_ROUNDS) + " Runden beendet."
-    ]
+    ], "max")
 
 
 def review_order(path):
@@ -586,7 +617,7 @@ def command_select(args):
 
 def command_preflight(args):
     if args.assist:
-        errors = assist_preflight(
+        result = assist_preflight(
             args.project,
             args.agents_dir,
             args.tester,
@@ -595,7 +626,16 @@ def command_preflight(args):
             runtime=args.runtime,
             project_name=args.project_name,
             timeout=args.timeout,
+            rounds=args.assist_rounds,
         )
+        errors = result["errors"]
+        if args.action_file:
+            try:
+                with open(args.action_file, "w", encoding="utf-8") as handle:
+                    json.dump(result, handle, ensure_ascii=False)
+            except OSError as error:
+                print("PREFLIGHT: Aktionsdatei nicht schreibbar: " + str(error))
+                return EXIT_USAGE
     else:
         errors = preflight_errors(
             args.project, args.agents_dir, args.tester, args.reviewer, args.state
@@ -668,6 +708,14 @@ def build_parser():
     preflight.add_argument(
         "--timeout", type=float, default=ASSIST_DEFAULT_TIMEOUT,
         help="Wartezeit je Rückfrage in Sekunden (F22)",
+    )
+    preflight.add_argument(
+        "--action-file", default=None,
+        help="schreibt die nächste Aktion der Assistenz als JSON (F22)",
+    )
+    preflight.add_argument(
+        "--assist-rounds", type=int, default=0,
+        help="bereits ausgeführte Agentenrunden der Assistenz (F22)",
     )
     preflight.set_defaults(handler=command_preflight)
 
