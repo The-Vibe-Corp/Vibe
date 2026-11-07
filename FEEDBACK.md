@@ -226,6 +226,6 @@ Regeln (werden maschinell geprüft):
 
 - [x] F22 Preflight nicht bestanden
   Beschreibung: vibe soll den nutzer in diesem fall, über die funktion rückfragen stellen (F16) zu einem stand führen, das das nächste paket gestartet werden kann.
-  Commit: 6a348d4, b9f88ae; Test: python3 -m unittest discover -s tests/unit -p 'test_f22_preflight_assist.py' -v (13 Tests OK)
-  Review: docs/reviews/F22-review-1.md (CHANGES REQUIRED), docs/reviews/F22-review-2.md (PASS)
+  Commit: 6a348d4, b9f88ae, 2e75c40; Test: python3 -m unittest discover -s tests/unit -p 'test_f22_preflight_assist.py' -v (19 Tests OK)
+  Review: docs/reviews/F22-review-1.md (CHANGES REQUIRED), docs/reviews/F22-review-2.md (PASS), docs/reviews/F22-review-3.md (PASS)
   Doku: docs/features/F22.md; Trilium `h5WeRmvzjTol`
