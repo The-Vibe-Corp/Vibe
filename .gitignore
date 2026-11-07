@@ -1,0 +1,16 @@
+# Laufzeit- und Entwicklungsartefakte
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.log
+web.token
+
+# Laufzeitdaten und Sicherungen gehören nicht ins Repository
+config-backups/
+agent-backups/
+_secrets.env
+
+# Laufzeit- und Sperrartefakte des Projekts
+.vibe/agents.json
+vibe-storage-locks-*/

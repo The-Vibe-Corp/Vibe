@@ -1,0 +1,52 @@
+=== Ausgangslage ===
+8bb9739e0c03 | android-dev          | Up 5 hours         | registry.fedoraproject.org/fedora-toolbox:latest
+54d265bb1188 | vibe-v017-accept     | Exited (143) 7 minutes ago | registry.fedoraproject.org/fedora-toolbox:latest
+=== 1. Container aus, Dashboard aus ===
+vibe gestartet: http://127.0.0.1:8788/
+PASS: Starter startet bei ausgeschaltetem Container (Exit 0)
+PASS: Testcontainer laeuft jetzt
+PASS: Dashboard-Sitzung existiert genau einmal
+PASS: Health antwortet als vibe
+PASS: Token-Datei existiert
+PASS: Browser wurde mit Token geoeffnet
+PASS: Browser-URL enthaelt aktuelles Token
+=== 2. Dashboard laeuft, zweiter Klick ===
+vibe läuft: http://127.0.0.1:8788/
+PASS: Zweiter Start ist erfolgreich
+PASS: Keine zweite Sitzung
+PASS: Browser wurde ein zweites Mal geoeffnet
+PASS: Zweite URL ist identisch
+=== 3. Doppelklick (parallel) ===
+PASS: Beide parallelen Starter enden erfolgreich
+PASS: Genau eine Dashboard-Sitzung
+PASS: Beide Klicks oeffnen den Browser
+=== 4. Tokenwechsel ===
+PASS: Neustart nach Stop ist erfolgreich
+PASS: Neues Token unterscheidet sich
+PASS: Browser-URL nutzt das neue Token
+PASS: Altes Token erscheint nicht in der neuen URL
+=== 5. Fremder Dienst ===
+vibe: Auf Port 8789 antwortet ein fremder Dienst; es wurde nichts gestartet.
+PASS: Fremder Dienst fuehrt zu Exit 1
+PASS: Meldung nennt fremden Dienst
+PASS: Kein Browseraufruf beim fremden Dienst
+=== 6. Startfehler ===
+vibe: Dashboard konnte nicht gestartet werden: Startfehler im Abnahmetest
+PASS: Startfehler fuehrt zu Exit 1
+PASS: Fehler steht auf stderr
+PASS: Notifier wurde aufgerufen
+PASS: Fehler steht im bereinigten Log
+PASS: Kein Browseraufruf beim Startfehler
+=== 7. Stop beendet nur vibe ===
+vibe-Dashboard beendet.
+PASS: Stop ist erfolgreich
+PASS: Test-Dashboard-Sitzung ist beendet
+PASS: Produktive Sitzung vibe-ui bleibt
+PASS: Produktives Dashboard 8787 antwortet weiter
+PASS: Produktive Health-Antwort unveraendert
+PASS: Testcontainer laeuft weiter
+=== 8. Stop ohne Dashboard ===
+vibe läuft nicht; nichts beendet.
+PASS: Stop ohne Dashboard ist erfolgreich
+PASS: Meldung: laeuft nicht
+=== ERGEBNIS: 0 Fehler ===
