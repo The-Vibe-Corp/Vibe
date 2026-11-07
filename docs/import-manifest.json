@@ -70,8 +70,8 @@
   },
   {
    "path": "bin/vibe_packages.py",
-   "sha256": "66dedbc46942a0cee51aea2b6962af708d80c05c69abf9e0e56aae57df833812",
-   "bytes": 23734
+   "sha256": "5e8f05eededac8276bc43455ee89c42937720a7ae5a203941a1a4aca7a4a0bce",
+   "bytes": 24355
   },
   {
    "path": "bin/vibe_paths.py",

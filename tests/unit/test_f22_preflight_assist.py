@@ -20,6 +20,9 @@ aus dem Implementierungsdiff. Geprüft werden:
 * Ein erfolgreicher Preflight erzeugt keine Rückfrage.
 * Bei mehreren Befunden wird zuerst der erste gefragt, danach der nächste
   noch bestehende Befund als eigene Rückfrage.
+* Eine unlesbare oder eine nicht angebotene Antwort auf die Rückfrage beendet
+  den Lauf mit Exit-Code 2 und einer klaren Meldung statt mit Traceback oder
+  einer stillschweigenden erneuten Prüfung.
 
 Es werden keine Modelle, Router oder echten externen Dienste aufgerufen. Der
 Agent, ``curl`` und die vibe-CLI sind Attrappen; alle Pfade liegen in einem
@@ -295,6 +298,15 @@ class PreflightAssistFixture(unittest.TestCase):
 
     def answer_file(self, record):
         return self.question_folder() / (record["id"] + ".answer.json")
+
+    def write_raw_answer(self, record, payload):
+        """Schreibt eine absichtlich ungültige Antwortdatei atomar."""
+        folder = self.question_folder()
+        folder.mkdir(parents=True, exist_ok=True)
+        target = folder / (record["id"] + ".answer.json")
+        temporary = folder / (".answer-" + record["id"] + ".tmp")
+        temporary.write_text(payload, encoding="utf-8")
+        os.replace(temporary, target)
 
     # -- Autonomer Modus und Laufregister ---------------------------------
     def enable_autonomous(self, name="proj"):
@@ -583,6 +595,54 @@ class AbortTest(PreflightAssistFixture):
         self.assertIsNotNone(stored)
         self.assertEqual(stored["state"], "blocked")
         self.assertEqual(stored["exit_code"], 2)
+
+
+class InvalidAnswerTest(PreflightAssistFixture):
+    """Verhalten 9: Unlesbare oder ungültige Antworten enden klar mit Exit 2."""
+
+    def test_corrupt_answer_ends_with_clear_error(self):
+        """Eine unlesbare .answer.json beendet den Lauf ohne Traceback."""
+        self.make_dirty()
+
+        self.start(VIBE_PREFLIGHT_ASSIST="1",
+                   VIBE_PREFLIGHT_QUESTION_TIMEOUT="30")
+        record = self.wait_for_question()
+
+        self.write_raw_answer(record, "{kaputt")
+        rc = self.wait_exit(timeout=60)
+        output = self.combined_output()
+
+        self.assertEqual(rc, 2, output)
+        self.assertEqual(self.agent_calls(), [])
+        self.assertNotIn("Traceback", output)
+        self.assertIn(record["id"], output)
+        self.assertIn("nicht lesbar", output.lower())
+        self.assertEqual(len(self.question_files()), 1,
+                         "Nach der unlesbaren Antwort wurde erneut gefragt.")
+
+    def test_invalid_option_ends_with_clear_error(self):
+        """Eine nicht angebotene Option wird nicht als „Erneut prüfen“ gedeutet."""
+        dirty = self.make_dirty()
+
+        self.start(VIBE_PREFLIGHT_ASSIST="1",
+                   VIBE_PREFLIGHT_QUESTION_TIMEOUT="30")
+        record = self.wait_for_question()
+
+        # Der Befund ist behoben; eine gültige „Erneut prüfen“-Antwort würde
+        # jetzt das erste Arbeitspaket starten. Die ungültige Option darf das
+        # nicht auslösen.
+        dirty.unlink()
+        self.wait_until_clean()
+        self.answer(record, 2)
+        rc = self.wait_exit(timeout=60)
+        output = self.combined_output()
+
+        self.assertEqual(rc, 2, output)
+        self.assertEqual(self.agent_calls(), [])
+        self.assertIn(record["id"], output)
+        self.assertIn("ungültige antwort", output.lower())
+        self.assertEqual(len(self.question_files()), 1,
+                         "Die ungültige Option wurde stillschweigend erneut geprüft.")
 
 
 class TimeoutTest(PreflightAssistFixture):

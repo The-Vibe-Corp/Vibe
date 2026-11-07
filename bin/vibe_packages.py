@@ -422,12 +422,18 @@ def assist_preflight(project, agents_dir, tester, reviewer, state_dir=None,
             "PREFLIGHT: Rückfrage " + qid + " gestellt; Antwort im Dashboard "
             "oder mit: vibe answer " + qid + " --option <1|2>"
         )
-        mode, answer = questions.wait_for(
-            runtime,
-            qid,
-            timeout=timeout,
-            stop=lambda: autonomous.is_enabled(runtime, name),
-        )
+        try:
+            mode, answer = questions.wait_for(
+                runtime,
+                qid,
+                timeout=timeout,
+                stop=lambda: autonomous.is_enabled(runtime, name),
+            )
+        except ValueError as error:
+            print("PREFLIGHT: Rückfrage " + qid + " nicht lesbar: " + str(error))
+            return errors + [
+                "Rückfrage " + qid + " nicht lesbar; Lauf abgebrochen."
+            ]
         if mode == "stop":
             print("PREFLIGHT: Autonomer Modus aktiv; keine Rückfrage mehr.")
             return errors
@@ -439,9 +445,18 @@ def assist_preflight(project, agents_dir, tester, reviewer, state_dir=None,
             return errors + [
                 "Rückfrage " + qid + " blieb ohne Antwort; Lauf abgebrochen."
             ]
-        if answer.get("option") == 1:
+        option = answer.get("option")
+        if option == 1:
             print("PREFLIGHT: Lauf auf Wunsch abgebrochen.")
             return errors
+        if option != 0:
+            print(
+                "PREFLIGHT: Ungültige Antwort auf Rückfrage " + qid
+                + " (Option " + repr(option) + "); Lauf abgebrochen."
+            )
+            return errors + [
+                "Ungültige Antwort auf Rückfrage " + qid + "; Lauf abgebrochen."
+            ]
         errors = preflight_errors(
             project, agents_dir, tester, reviewer, state_dir
         )

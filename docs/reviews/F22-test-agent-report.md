@@ -48,3 +48,24 @@ Exit-Code 1, `Ran 11 tests`, `FAILED (failures=11)`.
   `vibe_questions.py`, `vibe_autonomous.py`, `vibe_storage.py` in die
   Testinstallation)
 - Keine Produktionsdateien geändert.
+
+## Nacharbeit nach Review-Runde 1
+
+Der Reviewer meldete zwei Minor-Befunde zu unlesbaren Antworten und nicht
+angebotenen Optionen. Der Test-Agent ergänzte daraufhin zwei Tests in
+`tests/unit/test_f22_preflight_assist.py`:
+
+- `test_corrupt_answer_ends_with_clear_error` — eine absichtlich unlesbare
+  `.answer.json` führt zu Exit 2, ohne Traceback, mit Rückfrage-ID und
+  „nicht lesbar“ in der Ausgabe.
+- `test_invalid_option_ends_with_clear_error` — eine gültige Antwortdatei mit
+  `option: 2` führt zu Exit 2, ohne Agentenaufruf und ohne stillschweigende
+  Wiederholung; die Ausgabe nennt die Rückfrage-ID und „ungültige Antwort“.
+
+Beobachtete Rotphase vor der Produktionsanpassung: Exit 1, 13 Tests, 11
+bestanden, 2 fehlgeschlagen. Der erste Test zeigte einen Python-Traceback
+(`ValueError: Antwort nicht lesbar: ...`), der zweite startete trotz
+ungültiger Option das Arbeitspaket F1 und endete mit Exit 0.
+
+Nach der Produktionsanpassung: 13 Tests OK.
+
