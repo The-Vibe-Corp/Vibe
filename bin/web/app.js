@@ -333,63 +333,168 @@ function sandboxCard(d,name){const s=d.sandbox||{enabled:false,tools:[],write_di
 
 /* ---------- Kosten ---------- */
 const PRICE_SOURCE={user:'eigener Preis',system:'Systempreis',kostenlos:'kostenlos',unbekannt:'Preis unbekannt'};
+const COSTS_POLL_MS=5000;
+const COSTS_HEAD=['Projekt','Pakete','Sitzungen','Eingabe','davon cached','Ausgabe','Kosten'];
+const PACKAGE_HEAD=['Paket / Modell','Sitzungen','Eingabe','davon cached','Ausgabe','Kosten'];
 function fmtN(n){return Number(n||0).toLocaleString('de-DE')}
 function fmtEUR(v){return Number(v||0).toLocaleString('de-DE',{minimumFractionDigits:4,maximumFractionDigits:4})+' €'}
 function pricePill(src){return el('span',{class:'pill '+(src==='user'?'ok':src==='unbekannt'?'warn':'mut'),title:'Preisquelle: '+(PRICE_SOURCE[src]||src)},PRICE_SOURCE[src]||src)}
 function tokenCells(t){return [el('td',{class:'num'},fmtN(t.input)),el('td',{class:'num'},fmtN(t.cached)),el('td',{class:'num'},fmtN(t.output))]}
 function costsNote(d){return el('div',{class:'mut'},'Preise in '+d.currency+' je 1 Mio. Tokens. „Eingabe“ enthält die gecachten Tokens, „Ausgabe“ die Reasoning-Tokens. Unbekannte Modelle werden mit 0 € angesetzt, bis ein Preis eingetragen ist. Eigene Preise gelten nur für dieses Projekt und schlagen Systempreise.')}
+function costsStamp(){return new Date().toLocaleTimeString('de-DE')}
+function costsRefreshError(node,error){node.textContent='Aktualisierung fehlgeschlagen: '+String(error&&error.message||error)}
+function projectRow(p){
+ return el('tr',{class:'row','data-project':p.name,on:{click:()=>costDetail(p.name).catch(showErr)}},
+  el('td',{},p.name),el('td',{class:'num'},fmtN(p.packages)),el('td',{class:'num'},fmtN(p.sessions)),...tokenCells(p.tokens),el('td',{class:'num'},fmtEUR(p.cost)))
+}
+function projectSignature(p){return JSON.stringify([p.packages,p.sessions,p.tokens,p.cost])}
+function fillProjectTotal(row,total){
+ row.replaceChildren(el('td',{},el('b',{},'Gesamt')),el('td',{}),el('td',{class:'num'},fmtN(total.sessions)),...tokenCells(total.tokens),el('td',{class:'num'},el('b',{},fmtEUR(total.cost))))
+}
+function packageNodes(p){
+ const nodes=[el('tr',{class:'row','data-package':p.id||'ohne'},el('td',{},el('b',{},p.id||'Ohne Arbeitspaket'),p.title&&p.id?el('div',{class:'mut'},p.title):null),
+  el('td',{class:'num'},fmtN(p.sessions)),...tokenCells(p.tokens),el('td',{class:'num'},fmtEUR(p.cost)))];
+ p.models.forEach(m=>nodes.push(el('tr',{class:'mut','data-model-row':m.model},
+  el('td',{style:'padding-left:22px'},m.agent+' · '+m.model+' ',pricePill(m.price_source)),
+  el('td',{}),...tokenCells(m.tokens),el('td',{class:'num'},fmtEUR(m.cost)))));
+ return nodes
+}
+function packageSignature(p){return JSON.stringify([p.sessions,p.tokens,p.cost,p.models])}
+function fillPackageTotal(row,total){
+ row.replaceChildren(el('td',{},el('b',{},'Summe Projekt')),el('td',{class:'num'},fmtN(total.sessions)),...tokenCells(total.tokens),el('td',{class:'num'},el('b',{},fmtEUR(total.cost))))
+}
 async function costs(){
- const d=await api('/api/costs');
- const head=['Projekt','Pakete','Sitzungen','Eingabe','davon cached','Ausgabe','Kosten'];
- const tb=el('table',{},el('tr',{},...head.map(h=>el('th',{},h))));
- d.projects.forEach(p=>tb.append(el('tr',{class:'row','data-project':p.name,on:{click:()=>costDetail(p.name).catch(showErr)}},
-  el('td',{},p.name),el('td',{class:'num'},fmtN(p.packages)),el('td',{class:'num'},fmtN(p.sessions)),...tokenCells(p.tokens),el('td',{class:'num'},fmtEUR(p.cost)))));
- tb.append(el('tr',{},el('td',{},el('b',{},'Gesamt')),el('td',{}),el('td',{class:'num'},fmtN(d.total.sessions)),...tokenCells(d.total.tokens),el('td',{class:'num'},el('b',{},fmtEUR(d.total.cost)))));
+ clearInterval(timer);timer=null;
+ const warning=el('div',{class:'warn',hidden:''});
+ const empty=el('span',{class:'mut',hidden:''},'Keine Projekte gefunden.');
+ const table=el('table',{id:'costs-table'},el('tr',{},...COSTS_HEAD.map(h=>el('th',{},h))));
+ const totalRow=el('tr',{id:'costs-total'});
+ table.append(totalRow);
+ const sourceNote=el('div',{class:'mut',style:'margin-top:8px'});
+ const updated=el('span',{class:'mut',id:'costs-updated','aria-live':'polite'});
+ const rows=new Map();let lastTotal=null,lastData='',lastStamp='';
+ const render=d=>{
+  warning.hidden=!!d.available;
+  if(!d.available)warning.textContent='Sitzungsdaten nicht verfügbar: '+(d.message||'unbekannt');
+  const seen=new Set();let orderChanged=false;
+  d.projects.forEach(p=>{
+   seen.add(p.name);
+   const sig=projectSignature(p);
+   const old=rows.get(p.name);
+   if(old&&old.sig===sig)return;
+   const tr=projectRow(p);
+   if(old)old.tr.replaceWith(tr);
+   else orderChanged=true;
+   rows.set(p.name,{tr,sig});
+  });
+  for(const[name,entry]of rows){
+   if(seen.has(name))continue;
+   entry.tr.remove();rows.delete(name);orderChanged=true;
+  }
+  if(orderChanged)d.projects.forEach(p=>{const entry=rows.get(p.name);if(entry)totalRow.before(entry.tr)});
+  const totalSig=JSON.stringify([d.total.sessions,d.total.tokens,d.total.cost]);
+  if(totalSig!==lastTotal){fillProjectTotal(totalRow,d.total);lastTotal=totalSig}
+  table.hidden=!d.projects.length;
+  empty.hidden=!!d.projects.length;
+  if(!sourceNote.textContent)sourceNote.textContent='Quelle: '+(d.db||'—')+' (nur lesend). Projekt anklicken für Arbeitspakete, Agenten und Modelle.';
+  const dataSig=JSON.stringify([d.available,d.projects,d.total]);
+  if(dataSig!==lastData){lastData=dataSig;const stamp=costsStamp();if(stamp!==lastStamp){lastStamp=stamp;updated.textContent='Stand: '+stamp}}
+ };
+ const clearRefreshError=()=>{if(updated.textContent.startsWith('Aktualisierung fehlgeschlagen'))updated.textContent=lastStamp?'Stand: '+lastStamp:''};
+ const refresh=async()=>{
+  try{render(await api('/api/costs'));clearRefreshError()}catch(e){costsRefreshError(updated,e)}
+ };
+ const initial=await api('/api/costs');
+ render(initial);
  main.replaceChildren(el('div',{class:'card',id:'costs'},el('div',{class:'bar'},el('b',{},'Kosten je Projekt'),el('span',{class:'mut'},'EUR je 1 Mio. Tokens')),
-  d.available?null:el('div',{class:'warn'},'Sitzungsdaten nicht verfügbar: '+(d.message||'unbekannt')),
-  d.projects.length?tb:el('span',{class:'mut'},'Keine Projekte gefunden.'),
-  el('div',{class:'mut',style:'margin-top:8px'},'Quelle: '+(d.db||'—')+' (nur lesend). Projekt anklicken für Arbeitspakete, Agenten und Modelle.'),
-  el('div',{class:'bar'},el('button',{class:'b',on:{click:()=>costs().catch(showErr)}},'Aktualisieren'))));
+  warning,empty,table,sourceNote,
+  el('div',{class:'bar'},updated,el('button',{class:'b',on:{click:()=>costs().catch(showErr)}},'Aktualisieren'))));
+ timer=setInterval(()=>{if(tab==='costs'&&!document.hidden)refresh()},COSTS_POLL_MS);
 }
 async function costDetail(name){
+ clearInterval(timer);timer=null;
  const d=await api('/api/costs?name='+encodeURIComponent(name));
- const tb=el('table',{},el('tr',{},...['Paket / Modell','Sitzungen','Eingabe','davon cached','Ausgabe','Kosten'].map(h=>el('th',{},h))));
- d.packages.forEach(p=>{
-  tb.append(el('tr',{class:'row','data-package':p.id||'ohne'},el('td',{},el('b',{},p.id||'Ohne Arbeitspaket'),p.title&&p.id?el('div',{class:'mut'},p.title):null),
-   el('td',{class:'num'},fmtN(p.sessions)),...tokenCells(p.tokens),el('td',{class:'num'},fmtEUR(p.cost))));
-  p.models.forEach(m=>tb.append(el('tr',{class:'mut','data-model-row':m.model},
-   el('td',{style:'padding-left:22px'},m.agent+' · '+m.model+' ',pricePill(m.price_source)),
-   el('td',{}),...tokenCells(m.tokens),el('td',{class:'num'},fmtEUR(m.cost)))));
- });
- tb.append(el('tr',{},el('td',{},el('b',{},'Summe Projekt')),el('td',{class:'num'},fmtN(d.total.sessions)),...tokenCells(d.total.tokens),el('td',{class:'num'},el('b',{},fmtEUR(d.total.cost)))));
- const priceInputs=[];
- const priceRows=d.models.map(m=>{
-  const cur=m.price||{input:0,cached_input:0,output:0};
-  const fields=[['input','Eingabe'],['cached_input','cached'],['output','Ausgabe']].map(([f,l])=>{
-   const inp=el('input',{type:'number',min:'0',step:'0.0001','data-model':m.model,'data-field':f,'aria-label':l+' '+m.model,value:String(cur[f]??0),style:'width:110px'});
-   priceInputs.push(inp);return el('label',{style:'display:inline-flex;gap:4px;align-items:center;margin-right:12px'},l,inp)});
-  const reset=el('button',{class:'b',on:{click:async()=>{const r=await api('/api/costs',{name,action:'prices',prices:{[m.model]:null}});toast(r.message);if(r.ok)costDetail(name).catch(showErr)}}},'Systempreis');
-  return el('div',{class:'bar','data-price-model':m.model},el('b',{},m.model),pricePill(m.price_source),...fields,reset)});
- const save=el('button',{class:'b p',on:{click:async()=>{
-   const prices={};
-   for(const inp of priceInputs){const raw=String(inp.value).trim().replace(',','.');
-    if(raw===''){toast('Bitte für '+inp.dataset.model+' alle drei Preise eintragen.');inp.focus();return}
-    const num=Number(raw);
-    if(!Number.isFinite(num)||num<0){toast('Preis für '+inp.dataset.model+' ist ungültig.');inp.focus();return}
-    (prices[inp.dataset.model]=prices[inp.dataset.model]||{})[inp.dataset.field]=num}
-   const r=await api('/api/costs',{name,action:'prices',prices});toast(r.message);
-   if(r.ok)costDetail(name).catch(showErr)}}},'Preise speichern');
+ const warning=el('div',{class:'warn',hidden:''});
+ const statePill=el('span',{class:'pill '+(d.available?'ok':'bad')},d.available?'Daten gelesen':'keine Daten');
+ const empty=el('span',{class:'mut',hidden:''},'Keine Sitzungen für dieses Projekt gefunden.');
+ const table=el('table',{id:'cost-detail-table'},el('tr',{},...PACKAGE_HEAD.map(h=>el('th',{},h))));
+ const totalRow=el('tr',{id:'cost-detail-total'});
+ table.append(totalRow);
+ const priceArea=el('div',{id:'cost-price-area'});
+ const updated=el('span',{class:'mut',id:'costs-updated','aria-live':'polite'});
+ const packages=new Map();let lastTotal=null,lastData='',lastStamp='',priceSig=null;
+ const priceCard=models=>{
+  const priceInputs=[];
+  const priceRows=models.map(m=>{
+   const cur=m.price||{input:0,cached_input:0,output:0};
+   const fields=[['input','Eingabe'],['cached_input','cached'],['output','Ausgabe']].map(([f,l])=>{
+    const inp=el('input',{type:'number',min:'0',step:'0.0001','data-model':m.model,'data-field':f,'aria-label':l+' '+m.model,value:String(cur[f]??0),style:'width:110px'});
+    priceInputs.push(inp);return el('label',{style:'display:inline-flex;gap:4px;align-items:center;margin-right:12px'},l,inp)});
+   const reset=el('button',{class:'b',on:{click:async()=>{const r=await api('/api/costs',{name,action:'prices',prices:{[m.model]:null}});toast(r.message);if(r.ok)costDetail(name).catch(showErr)}}},'Systempreis');
+   return el('div',{class:'bar','data-price-model':m.model},el('b',{},m.model),pricePill(m.price_source),...fields,reset)});
+  const save=el('button',{class:'b p',on:{click:async()=>{
+    const prices={};
+    for(const inp of priceInputs){const raw=String(inp.value).trim().replace(',','.');
+     if(raw===''){toast('Bitte für '+inp.dataset.model+' alle drei Preise eintragen.');inp.focus();return}
+     const num=Number(raw);
+     if(!Number.isFinite(num)||num<0){toast('Preis für '+inp.dataset.model+' ist ungültig.');inp.focus();return}
+     (prices[inp.dataset.model]=prices[inp.dataset.model]||{})[inp.dataset.field]=num}
+    const r=await api('/api/costs',{name,action:'prices',prices});toast(r.message);
+    if(r.ok)costDetail(name).catch(showErr)}}},'Preise speichern');
+  return el('div',{class:'card',id:'cost-prices'},el('b',{},'Preise je 1 Mio. Tokens (nur dieses Projekt)'),
+   el('div',{class:'mut'},'Eigene Preise schlagen systemische Preise. „Systempreis“ entfernt den eigenen Preis.'),
+   ...(priceRows.length?priceRows:[el('span',{class:'mut'},'Noch keine Modelle in diesem Projekt verwendet.')]),
+   priceRows.length?el('div',{class:'bar'},save):null)
+ };
+ const renderPackages=d=>{
+  const seen=new Set();let orderChanged=false;
+  d.packages.forEach(p=>{
+   const key=p.id||'';
+   seen.add(key);
+   const sig=packageSignature(p);
+   const old=packages.get(key);
+   if(old&&old.sig===sig)return;
+   const nodes=packageNodes(p);
+   if(old){const first=old.nodes[0];first.replaceWith(...nodes);old.nodes.slice(1).forEach(node=>node.remove())}
+   else orderChanged=true;
+   packages.set(key,{nodes,sig});
+  });
+  for(const[key,entry]of packages){
+   if(seen.has(key))continue;
+   entry.nodes.forEach(node=>node.remove());packages.delete(key);orderChanged=true;
+  }
+  if(orderChanged)d.packages.forEach(p=>{const entry=packages.get(p.id||'');if(entry)entry.nodes.forEach(node=>totalRow.before(node))});
+ };
+ const render=d=>{
+  warning.hidden=!!d.available;
+  if(!d.available)warning.textContent='Sitzungsdaten nicht verfügbar: '+(d.message||'unbekannt');
+  statePill.textContent=d.available?'Daten gelesen':'keine Daten';
+  statePill.className='pill '+(d.available?'ok':'bad');
+  renderPackages(d);
+  const totalSig=JSON.stringify([d.total.sessions,d.total.tokens,d.total.cost]);
+  if(totalSig!==lastTotal){fillPackageTotal(totalRow,d.total);lastTotal=totalSig}
+  table.hidden=!d.packages.length;
+  empty.hidden=!!d.packages.length;
+  const modelsSig=JSON.stringify(d.models.map(m=>[m.model,m.price_source,m.price]));
+  if(modelsSig!==priceSig){priceSig=modelsSig;priceArea.replaceChildren(priceCard(d.models))}
+  const dataSig=JSON.stringify([d.available,d.packages,d.total,d.models]);
+  if(dataSig!==lastData){lastData=dataSig;const stamp=costsStamp();if(stamp!==lastStamp){lastStamp=stamp;updated.textContent='Stand: '+stamp}}
+ };
+ const clearRefreshError=()=>{if(updated.textContent.startsWith('Aktualisierung fehlgeschlagen'))updated.textContent=lastStamp?'Stand: '+lastStamp:''};
+ const refresh=async()=>{
+  try{render(await api('/api/costs?name='+encodeURIComponent(name)));clearRefreshError()}catch(e){costsRefreshError(updated,e)}
+ };
  main.replaceChildren(
   el('div',{class:'bar'},el('button',{class:'b',on:{click:()=>costs().catch(showErr)}},'← alle Projekte'),el('h2',{style:'margin:0'},name),el('span',{class:'mut'},'Kosten in '+d.currency)),
   el('div',{class:'card',id:'cost-detail','data-project':name},
-   el('div',{class:'bar'},el('b',{},'Kosten je Arbeitspaket'),el('span',{class:'pill '+(d.available?'ok':'bad')},d.available?'Daten gelesen':'keine Daten')),
-   d.available?null:el('div',{class:'warn'},'Sitzungsdaten nicht verfügbar: '+(d.message||'unbekannt')),
+   el('div',{class:'bar'},el('b',{},'Kosten je Arbeitspaket'),statePill),
+   warning,
    costsNote(d),
-   d.packages.length?tb:el('span',{class:'mut'},'Keine Sitzungen für dieses Projekt gefunden.')),
-  el('div',{class:'card',id:'cost-prices'},el('b',{},'Preise je 1 Mio. Tokens (nur dieses Projekt)'),
-   el('div',{class:'mut'},'Eigene Preise schlagen systemische Preise. „Systempreis“ entfernt den eigenen Preis.'),
-   ...(priceRows.length?priceRows:[el('span',{class:'mut'},'Noch keine Modelle in diesem Projekt verwendet.')]),
-   priceRows.length?el('div',{class:'bar'},save):null));
+   empty,table),
+  priceArea,
+  el('div',{class:'bar'},updated));
+ render(d);
+ timer=setInterval(()=>{if(tab==='costs'&&!document.hidden)refresh()},COSTS_POLL_MS);
 }
 
 /* ---------- Agenten, Modelle, Profile ---------- */

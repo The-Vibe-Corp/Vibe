@@ -189,8 +189,13 @@ Regeln (werden maschinell geprüft):
   Weiterhin möchte ich in der Lage sein, dem agenten, während der ausührung zusätzliche anweisungen/oder informationen direkt in der aktiven arbeit zukommen zu lassen.
   Außerdem möchte ich sehen, ob und welche sub agenten zu jedem zeitpunkt im projekt laufen und mir auch von diesen die ausgaben anzeigen lassen können.
 
-- [ ] B1 Kostentabelle aktualisiert sich nur träge, oder zeigt gar keine werte an
+- [x] B1 Kostentabelle aktualisiert sich nur träge, oder zeigt gar keine werte an
   Art: Bug
   Beschreibung: Die Kostentabelle aktualisiert sich nur träge, oder zeigt gar keine werte an, bei manchen projekten.
   
   Ich möchte, dass die kostentabelle sich nach jedem ap komplett aktualisiert (aber nur dort, wo es änderungen gab)
+  Commit: b805b96
+  Test: test_overview_refreshes_automatically_and_keeps_unchanged_rows, test_project_rows_are_updated_in_place (tests/browser/test_costs_refresh_ui.py, 3 Tests), test_session_under_equivalent_mount_alias_belongs_to_the_project, test_alias_does_not_attribute_unrelated_sessions, test_duplicate_session_id_in_both_databases_is_counted_once (tests/unit/test_costs_refresh.py, 8 Tests)
+  Review: docs/reviews/B1-review-1.md (CHANGES REQUIRED), docs/reviews/B1-review-2.md (CHANGES REQUIRED; 1 Medium als dokumentierte Umgebungsgrenze akzeptiert, 2 Minor)
+  Doku: docs/features/B1.md; Trilium `V3AV2elZkQgo`
+  Hinweis: Der konfigurierte Test-Agent (`test-agent`) war in dieser Sitzung nicht aufrufbar (`permission.rejected`); die Test-Herkunft ist in `docs/features/B1.md` offen dokumentiert. Die Blockade ist damit aufgelöst und das Paket fachlich abgenommen.

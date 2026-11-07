@@ -49,3 +49,4 @@ Zuordnung der Projekt-Dokumentation zu den Notizen in Trilium (Stand 2026-11-07)
 | vibe | Features | AP02 Verpflichtender Test Agent | `3XWCoX6XbDy7` |
 | vibe | Features | AP03 Überarbeitung Agentenverwaltung | `z9AVIt88OWdN` |
 | vibe | Features | AP04 Austauschbares Coding-Harness und Pi | `pVrde5xTkFvu` |
+| vibe | Features | B1 Kostentabelle aktualisiert sich nach jedem AP | `V3AV2elZkQgo` |

@@ -230,8 +230,8 @@
   },
   {
    "path": "bin/vibe",
-   "sha256": "c4dbd2a3619304f5728f7b34f2ff884bfa0f8261c5f0507e4f3f32ee4872aad6",
-   "bytes": 202672
+   "sha256": "bd2bb83b375faf9819ae8c8fc350567c9c34cb069bf40587e2c194376633809d",
+   "bytes": 205951
   },
   {
    "path": "bin/vibe-run.sh",
@@ -275,8 +275,8 @@
   },
   {
    "path": "bin/web/app.js",
-   "sha256": "42a53a544cea65934f7ba201020d90d6497bed92a6673e707e383d697c98ba62",
-   "bytes": 78813
+   "sha256": "80dadaed04d619ec950d2a8ce410e0822c75fff0147c138c9e99b2c3fa34a2ec",
+   "bytes": 83734
   },
   {
    "path": "templates/common/.opencode/agents/test-agent.md",
@@ -727,6 +727,15 @@
     "bin/web/app.js",
     "bin/vibe_harness.py",
     "scripts/setup-vibe.py"
+   ]
+  },
+  {
+   "arbeitspaket": "B1",
+   "datum": "2026-11-07",
+   "grund": "Kostentabelle aktualisiert sich nach jedem Arbeitspaket vollständig, ohne unveränderte Bereiche neu aufzubauen: Übersicht und Projektdetail fragen die Daten regelmäßig ab und ersetzen nur geänderte Projekt-, Paket- und Modellzeilen. Sitzungen unter gleichwertigen Pfadaliasen (zum Beispiel /run/host/... gegenüber dem Hostpfad) werden über die kanonischen opencode-Projektverzeichnisse dem richtigen Projekt zugeordnet. Zusätzlich liest die Kostenermittlung die opencode-Datenbank im Sandbox-Zustand jedes Projekts, weil Läufe mit eigenem XDG_DATA_HOME sonst gar nicht in der primären Datenbank erscheinen; Sitzungen werden über ihre ID einmal gezählt.",
+   "dateien": [
+    "bin/vibe",
+    "bin/web/app.js"
    ]
   }
  ]
