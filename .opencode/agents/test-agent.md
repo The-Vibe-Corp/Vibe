@@ -6,7 +6,12 @@ permission:
   glob: allow
   grep: allow
   list: allow
-  edit: allow
+  edit:
+    "/tmp/opencode": allow
+    "/tmp/opencode/**": allow
+    "/var/mnt/data/Dokumente/Informatik/VibeCode/vibe": allow
+    "/var/mnt/data/Dokumente/Informatik/VibeCode/vibe/**": allow
+    "*": deny
   bash:
     "*": allow
   task: deny
