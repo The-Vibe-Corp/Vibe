@@ -47,3 +47,4 @@ Zuordnung der Projekt-Dokumentation zu den Notizen in Trilium (Stand 2026-11-03)
 | vibe | Features | F18 Verbesserung Internet-Reconnect | `deX8hDMqAQ1k` |
 | vibe | Features | AP01 Leitlinien für Coding-Agenten | `B34A8yyWkjCo` |
 | vibe | Features | AP02 Verpflichtender Test Agent | `3XWCoX6XbDy7` |
+| vibe | Features | B1 Kostentabelle aktualisiert sich nach jedem AP | `V3AV2elZkQgo` |

@@ -3165,10 +3165,42 @@ def _db_schema(conn):
 
 def _read_sessions(conn, schema):
     table = "session_v2" if schema == "v2" else "session"
-    sql = ("select id, parent_id, directory, title, agent, model,"
+    sql = ("select id, project_id, parent_id, directory, title, agent, model,"
            " tokens_input, tokens_output, tokens_reasoning, tokens_cache_read,"
            f" time_created from {table}")
     return [dict(row) for row in conn.execute(sql)]
+
+
+def _opencode_project_directories(conn):
+    """Kanonische Verzeichnisse je opencode-Projekt, sofern die Tabelle existiert.
+
+    opencode legt Sitzungen je nach Startumgebung unter unterschiedlichen, aber
+    gleichwertigen Pfaden ab (beobachtet: Container-Alias ``/run/host/...``
+    gegenüber dem Hostpfad). Die Tabelle ``project`` führt den kanonischen Pfad
+    in ``worktree``; ``session.project_id`` verweist darauf. Zusätzliche
+    Verzeichnisse aus ``project_directory`` und ``worktree`` werden
+    mitgenommen. Fehlt eine Tabelle, bleibt die Zuordnung unverändert.
+    """
+    aliases = {}
+    queries = (
+        "select id, worktree from project",
+        "select project_id, directory from project_directory",
+        "select project_id, directory from worktree",
+    )
+    for sql in queries:
+        try:
+            rows = conn.execute(sql).fetchall()
+        except sqlite3.Error:
+            continue
+        for project_id, directory in rows:
+            key = str(project_id or "")
+            value = str(directory or "")
+            if not key or not value:
+                continue
+            known = aliases.setdefault(key, [])
+            if value not in known:
+                known.append(value)
+    return aliases
 
 
 def _usage_add(usage, agent, model, input_tokens, output_tokens, reasoning, cached):
@@ -3281,49 +3313,98 @@ def _project_for_directory(directory, ordered):
     return None
 
 
+def _project_sandbox_db(project):
+    """opencode-Datenbank im Sandbox-Zustand eines Projekts, falls vorhanden.
+
+    Ein Lauf in der Sandbox setzt ``XDG_DATA_HOME`` auf ein eigenes
+    Zustandsverzeichnis. Diese Datenbank liegt deshalb nicht am primären Ort
+    und muss zusätzlich gelesen werden, sonst fehlen ihre Sitzungen.
+    """
+    try:
+        import vibe_sandbox
+        state = vibe_sandbox.state_dir(project)
+    except (ImportError, OSError, ValueError):
+        return ""
+    return os.path.join(state, "data", "opencode", "opencode.db")
+
+
+def _opencode_db_candidates(projects, primary):
+    """Primäre opencode-Datenbank und Sandbox-Datenbanken der Projekte.
+
+    Jede Datei wird nur einmal gelesen; die Reihenfolge beginnt mit der
+    primären Datenbank. Fehlende Sandbox-Datenbanken werden übersprungen.
+    """
+    paths, seen = [], set()
+    for path in [primary] + [_project_sandbox_db(root) for root in projects.values()]:
+        if not path:
+            continue
+        try:
+            key = os.path.realpath(path)
+        except OSError:
+            key = path
+        if key in seen:
+            continue
+        seen.add(key)
+        paths.append(path)
+    return paths
+
+
 def _collect(projects):
     """Liest alle Sitzungen einmal und ordnet sie den Projekten zu.
 
-    ``projects`` ist eine Zuordnung Name -> realer Projektpfad. Liefert
+    ``projects`` ist eine Zuordnung Name -> realer Projektpfad. Gelesen wird
+    die primäre opencode-Datenbank und jede vorhandene Sandbox-Datenbank eines
+    Projekts. Sitzungen werden über ihre ID einmal gezählt. Liefert
     ``available``, ``message``, ``db``, ``by_id`` und ``sessions``
     (Name -> Liste aus ``(Sitzungszeile, Verbrauch)``).
     """
     path = opencode_db_path()
     result = {"available": False, "message": "", "db": path, "by_id": {},
               "sessions": {name: [] for name in projects}}
-    if not os.path.exists(path):
-        result["message"] = ("opencode-Datenbank nicht gefunden: " + path
-                             + " (noch kein Agentenlauf?)")
-        return result
     ordered = sorted(projects.items(), key=lambda item: len(item[1]), reverse=True)
-    conn = None
-    try:
-        conn = _open_sessions_db(path)
-        schema = _db_schema(conn)
-        if schema is None:
-            result["message"] = "Unbekanntes Schema in der opencode-Datenbank: " + path
-            return result
-        rows = _read_sessions(conn, schema)
-        json1 = _json1_available(conn)
-        by_id = {row["id"]: row for row in rows}
-        for row in rows:
-            name = _project_for_directory(row.get("directory"), ordered)
-            if name is None:
+    messages, seen_sessions = [], set()
+    for db_path in _opencode_db_candidates(projects, path):
+        if not os.path.exists(db_path):
+            if db_path == path:
+                messages.append("opencode-Datenbank nicht gefunden: " + path
+                                + " (noch kein Agentenlauf?)")
+            continue
+        conn = None
+        try:
+            conn = _open_sessions_db(db_path)
+            schema = _db_schema(conn)
+            if schema is None:
+                messages.append("Unbekanntes Schema in der opencode-Datenbank: " + db_path)
                 continue
-            if json1:
-                usage = _message_usage(conn, schema, row["id"])
-            else:
-                usage = _message_usage_python(conn, schema, row["id"])
-            result["sessions"][name].append((row, usage or _session_usage(row)))
-        result["by_id"] = by_id
-        result["available"] = True
-    except (sqlite3.Error, OSError) as error:
-        result["message"] = f"opencode-Datenbank nicht lesbar ({path}): {error}"
-        result["sessions"] = {name: [] for name in projects}
-        result["by_id"] = {}
-    finally:
-        if conn is not None:
-            conn.close()
+            rows = _read_sessions(conn, schema)
+            json1 = _json1_available(conn)
+            project_dirs = _opencode_project_directories(conn)
+            for row in rows:
+                result["by_id"].setdefault(row["id"], row)
+            for row in rows:
+                if row["id"] in seen_sessions:
+                    continue
+                name = _project_for_directory(row.get("directory"), ordered)
+                if name is None:
+                    for directory in project_dirs.get(str(row.get("project_id") or ""), ()):
+                        name = _project_for_directory(directory, ordered)
+                        if name is not None:
+                            break
+                if name is None:
+                    continue
+                if json1:
+                    usage = _message_usage(conn, schema, row["id"])
+                else:
+                    usage = _message_usage_python(conn, schema, row["id"])
+                result["sessions"][name].append((row, usage or _session_usage(row)))
+                seen_sessions.add(row["id"])
+            result["available"] = True
+        except (sqlite3.Error, OSError) as error:
+            messages.append(f"opencode-Datenbank nicht lesbar ({db_path}): {error}")
+        finally:
+            if conn is not None:
+                conn.close()
+    result["message"] = " ".join(messages)
     return result
 
 

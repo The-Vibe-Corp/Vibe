@@ -1,6 +1,6 @@
 {
  "version": 1,
- "stand": "2026-11-02",
+ "stand": "2026-11-07",
  "quelle": "Übernommener Programmstand aus der lokalen Installation unter $VIBE/_toolchain; die aktive Installation enthält zusätzlich lokale Geheimnis-Hooks (siehe docs/baseline.md, Abschnitt 3).",
  "hinweis": "SHA-256 der übernommenen Programmdateien. Beabsichtigte Änderungen an diesen Dateien sind nur zulässig, wenn dieser Eintrag im selben Arbeitspaket aktualisiert und begründet wird. Laufzeitdaten, Sicherungen und Geheimnisse sind nicht Bestandteil des Imports.",
  "scopes": [
@@ -230,8 +230,8 @@
   },
   {
    "path": "bin/vibe",
-   "sha256": "a9eac05ce0c547957b5c26f61f2a7f1788785d68d61853be3012a7e73eceb704",
-   "bytes": 183570
+   "sha256": "c57fd457b556f8275ec649f3a9746b7ccf991842d4cb4db8261aa89d91b9d160",
+   "bytes": 186849
   },
   {
    "path": "bin/vibe-run.sh",
@@ -275,8 +275,8 @@
   },
   {
    "path": "bin/web/app.js",
-   "sha256": "7bb264556b714e6a00c4d33de28217a8d49309e104ba9400ab75dbd53de8ace2",
-   "bytes": 72422
+   "sha256": "fce07392e41bb760cf96cc6d38ff42938792e215aedf56016cdc67dfd80c6c99",
+   "bytes": 77343
   },
   {
    "path": "templates/common/.opencode/agents/test-agent.md",
@@ -697,6 +697,15 @@
     "templates/rebuild/.vibe/project.env",
     "templates/web/AGENTS.md",
     "templates/web/.vibe/project.env"
+   ]
+  },
+  {
+   "arbeitspaket": "B1",
+   "datum": "2026-11-07",
+   "grund": "Kostentabelle aktualisiert sich nach jedem Arbeitspaket vollständig, ohne unveränderte Bereiche neu aufzubauen: Übersicht und Projektdetail fragen die Daten regelmäßig ab und ersetzen nur geänderte Projekt-, Paket- und Modellzeilen. Sitzungen unter gleichwertigen Pfadaliasen (zum Beispiel /run/host/... gegenüber dem Hostpfad) werden über die kanonischen opencode-Projektverzeichnisse dem richtigen Projekt zugeordnet. Zusätzlich liest die Kostenermittlung die opencode-Datenbank im Sandbox-Zustand jedes Projekts, weil Läufe mit eigenem XDG_DATA_HOME sonst gar nicht in der primären Datenbank erscheinen; Sitzungen werden über ihre ID einmal gezählt.",
+   "dateien": [
+    "bin/vibe",
+    "bin/web/app.js"
    ]
   }
  ]
