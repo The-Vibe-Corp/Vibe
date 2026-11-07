@@ -527,3 +527,41 @@ Ein fehlender externer Dienst bedeutet BLOCKIERT, nicht erledigt.
   Review: docs/reviews/AP04-review-1.md (CHANGES REQUIRED; 1 Medium in der Doku behoben, 3 Minor)
   Doku: docs/features/AP04.md; docs/compatibility.md; Trilium `pVrde5xTkFvu`
   Hinweis: Der konfigurierte Test-Agent (`test-agent`) war in dieser Sitzung nicht aufrufbar (`permission.rejected`); die Test-Herkunft ist in `docs/features/AP04.md` offen dokumentiert.
+
+- [x] AP05 Saubere Paketabwicklung
+  Beschreibung: Der Paket-Läufer soll ein Arbeitspaket nur auf einer sauberen,
+  vollständig konfigurierten Umgebung beginnen und nur mit vollständigen
+  Nachweisen übernehmen. Acht Maßnahmen: Preflight, Worktree-Isolation je
+  Paket, Abschlussschranke, Fehlerklassen, Auswahlordnung für TICKETS und
+  FEEDBACK, Prüfung der Agenten-Verfügbarkeit, Abschlussbericht je Paket und
+  Aufräumen nur gemergter Arbeitskopien.
+  Commit: `7276b8e`; Nachbesserung: `9b8639b`; Test:
+  test_clean_repository_passes, test_dirty_working_tree_is_rejected,
+  test_missing_test_agent_is_rejected, test_missing_review_agent_is_rejected,
+  test_missing_package_check_is_rejected, test_complete_package_passes,
+  test_missing_commit_prefix_is_rejected,
+  test_missing_feature_documentation_is_rejected,
+  test_missing_review_is_rejected, test_review_without_pass_is_rejected,
+  test_newer_review_without_pass_blocks_an_older_pass,
+  test_newer_pass_after_an_older_failure_is_accepted,
+  test_ticket_without_proof_is_rejected, test_ticket_must_be_checked,
+  test_proof_from_outside_the_package_branch_is_rejected,
+  test_uncommitted_worktree_is_rejected, test_network_is_detected,
+  test_quota_wins_over_network_words, test_tickets_come_before_feedback,
+  test_priority_orders_tickets, test_dependencies_block_a_package,
+  test_agent_works_in_a_worktree_under_runtime_and_it_is_removed,
+  test_failed_worktree_creation_leaves_no_directory,
+  test_dirty_integration_tree_between_packages_blocks,
+  test_quota_stops_immediately_without_retry,
+  test_network_retry_does_not_consume_the_package_budget,
+  test_retry_limit_skips_a_package_and_continues,
+  test_final_verification_runs_on_a_clean_integration_tree,
+  test_bwrap_arguments_bind_the_shared_git_dir_of_a_worktree
+  (tests/unit/test_package_gates.py, tests/unit/test_runner_package_gates.py,
+  tests/unit/test_sandbox.py; 46 Tests).
+  Prüfungen: `bash scripts/verify.sh quick` Exit 0; `bash scripts/verify.sh full`
+  Exit 0 (1007 Unit- + 70 Browser-Tests, 1077 erkannt).
+  Review: `docs/reviews/AP05-review-1.md` (erst CHANGES REQUIRED, nach
+  Nachbesserung PASS; 0 Critical/High/Medium/Minor).
+  Doku: `docs/features/AP05.md`; Trilium siehe Abschlussbericht.
+  Hinweis: Der konfigurierte Test-Agent (`test-agent`) war in dieser Sitzung nicht aufrufbar (`permission.rejected`); die Test-Herkunft ist in `docs/features/AP05.md` offen dokumentiert.
