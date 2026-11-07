@@ -205,6 +205,9 @@ Regeln (werden maschinell geprüft):
   Doku: docs/features/B1.md; Trilium `V3AV2elZkQgo`
   Hinweis: Der konfigurierte Test-Agent (`test-agent`) war in dieser Sitzung nicht aufrufbar (`permission.rejected`); die Test-Herkunft ist in `docs/features/B1.md` offen dokumentiert. Die Blockade ist damit aufgelöst und das Paket fachlich abgenommen.
 
+- [ ] F20 PI integration
+  Beschreibung: Die integration des harniss PI ist noch nicht vollständig umgesetzt. In der UI wird noch an mehreren Stellen opencode verwendet, die gesamte ui und die gesamte anwendung muss sich auf PI umstellen, sobald dieser verwendet wird.
+
 - [x] F21 UI-konfigurierte Agenten für den Lauf freigeben
   Art: Bug
   Beschreibung: Nach der Agentenkonfiguration über die vibe-Oberfläche

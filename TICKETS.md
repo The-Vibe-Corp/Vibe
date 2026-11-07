@@ -263,15 +263,6 @@ Ein fehlender externer Dienst bedeutet BLOCKIERT, nicht erledigt.
   (PASS, 0 Critical/High/Medium, 2 Minor)
   Dokumentation: docs/features/V-011.md; Trilium `rKViBnJz9ZNZ`
 
-- [ ] V-012 Modellprofile transaktional anwenden
-  Priorität: P1
-  Abhängigkeiten: V-005, V-010, V-011
-  Umfang: Profile und frei zuordenbare Rollen, global und projektbezogen.
-  Akzeptanz: Änderungsvorschau; vollständige Vorvalidierung; Rollback;
-  leeres Profil kein Erfolg; Abweichungen sichtbar; kein automatischer
-  kostenpflichtiger Fallback; Anbieterzugang getrennt von Modellwahl.
-  Tests: ungültiger zweiter Agent, Fehler beim zweiten Write,
-  nicht verfügbares Modell, leeres Profil, manuelle Modelländerung.
 
 - [x] V-013 MCP-Konfiguration verlustarm bearbeiten
   Priorität: P1
