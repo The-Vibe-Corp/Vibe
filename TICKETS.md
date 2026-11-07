@@ -535,7 +535,8 @@ Ein fehlender externer Dienst bedeutet BLOCKIERT, nicht erledigt.
   Paket, Abschlussschranke, Fehlerklassen, Auswahlordnung für TICKETS und
   FEEDBACK, Prüfung der Agenten-Verfügbarkeit, Abschlussbericht je Paket und
   Aufräumen nur gemergter Arbeitskopien.
-  Commit: `7276b8e`; Nachbesserung: `9b8639b`; Test:
+  Commit: `7276b8e`; Nachbesserung: `9b8639b`; Abschlussdoku: `723a960`
+  (Merge in `master` per Fast-Forward); Test:
   test_clean_repository_passes, test_dirty_working_tree_is_rejected,
   test_missing_test_agent_is_rejected, test_missing_review_agent_is_rejected,
   test_missing_package_check_is_rejected, test_complete_package_passes,
@@ -563,5 +564,5 @@ Ein fehlender externer Dienst bedeutet BLOCKIERT, nicht erledigt.
   Exit 0 (1007 Unit- + 70 Browser-Tests, 1077 erkannt).
   Review: `docs/reviews/AP05-review-1.md` (erst CHANGES REQUIRED, nach
   Nachbesserung PASS; 0 Critical/High/Medium/Minor).
-  Doku: `docs/features/AP05.md`; Trilium siehe Abschlussbericht.
+  Doku: `docs/features/AP05.md`; Trilium `tBNmEWqnGmeI`.
   Hinweis: Der konfigurierte Test-Agent (`test-agent`) war in dieser Sitzung nicht aufrufbar (`permission.rejected`); die Test-Herkunft ist in `docs/features/AP05.md` offen dokumentiert.
