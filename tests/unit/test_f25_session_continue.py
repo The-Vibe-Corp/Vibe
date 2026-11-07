@@ -71,6 +71,30 @@ Läuferintegration (vibe-run.sh mit opencode-Attrappe):
   Vorbedingung: Attrappe mit ``FAKE_MODE=quota`` und ``MAX_RETRIES=3``.
   Erwartung: genau ein Agentenaufruf, kein zweiter Versuch, keine
   Wiederholungsmeldung, der Lauf endet blockiert (Exit 1).
+
+
+Review-Abnahme F25 (Nachbarkriterien des Reviewers):
+
+* ``test_plain_text_session_line_cannot_hijack_the_session`` —
+  Vorbedingung: Attrappe liefert je Versuch zuerst das JSON-Ereignis der
+  echten Hauptsession ``ses_attempt1`` und darunter eine Agenten-
+  Klartextzeile, die selbst mit ``[Session] ses.bogus/versuch-ohne-
+  ereignis`` beginnt (Punkt/Schrägstrich, keine Ereignis-Session).
+  Erwartung: nur die JSON-erfasste Kennung gewinnt — der zweite Aufruf
+  enthält genau ``--session ses_attempt1``, die Klartextzeile bleibt
+  unberücksichtigt (steht als Klartext im Protokoll, landet nicht im
+  Zustand), Lauf endet mit „FERTIG".
+* ``test_third_retry_continues_with_the_latest_captured_session`` —
+  Vorbedingung: ``MAX_RETRIES=2`` (drei Versuche), Versuchsfolge
+  ``fail,fail,complete``. Erwartung: erster Aufruf ohne ``--session``;
+  zweiter Aufruf mit ``--session ses_attempt1``; dritter Aufruf mit der
+  im Zweitversuch erfassten Kennung ``ses_attempt2``. Das Fake bildet
+  echte Sitzungsdauern nicht nach und erzeugt je Aufruf eine neue
+  Kennung, deshalb gilt hier konsequent „zuletzt gewinnt". Alle drei
+  Prompts enthalten „Arbeitspaket F25"; je Versuch steht genau eine
+  ``[Session]``-Zeile (drei verschiedene Kennungen, keine Duplikate),
+  der Lauf endet mit „FERTIG" und die Zustandsdatei hält
+  ``ses_attempt3``.
 """
 import importlib.machinery
 import importlib.util
@@ -99,6 +123,9 @@ def load_module(path, name):
 
 
 RUNS_MODULE = load_module(RUNS, "vibe_runs_f25_under_test")
+
+# Review-Abnahme: Agentenklartext, der wie eine [Session]-Zeile beginnt.
+DECOY_SESSION_LINE = "[Session] ses.bogus/versuch-ohne-ereignis"
 
 
 def text_event(session, text="Antwort"):
@@ -251,6 +278,27 @@ class StreamSessionStateTest(unittest.TestCase):
             "ses_attempt2",
             state.get("session"),
             "Zustandsdatei hält die Erst-Sperre statt der letzten Session: "
+            + repr(state),
+        )
+
+    def test_agent_plain_session_lines_pass_through_but_do_not_capture(self):
+        """Review-Abnahme: Klartext geht weiter, erfasst wird nur das Ereignis."""
+
+        lines = self.feed([
+            json.dumps(text_event("ses_attempt1", "Antwort 1")) + "\n",
+            DECOY_SESSION_LINE + "\n",
+        ])
+
+        self.assertIn(
+            DECOY_SESSION_LINE,
+            lines,
+            "Agentenklartextzeile muss unverändert ins Protokoll: " + repr(lines),
+        )
+        state = json.loads(self.state_path.read_text(encoding="utf-8"))
+        self.assertEqual(
+            "ses_attempt1",
+            state.get("session"),
+            "Klartextzeile darf die Zustandsdatei nicht bestimmen: "
             + repr(state),
         )
 
@@ -520,6 +568,150 @@ class NoRetryOnQuotaTest(RunnerSessionContinueFixture):
         log = self.log_text()
         self.assertNotIn(
             "Wiederhole", log, "Fortsetzungsmeldung bei Quota:\n" + log
+        )
+
+
+class DecoySessionLineTest(RunnerSessionContinueFixture):
+    """Agentenklartext entführt keine Session; nur Ereignisse zählen."""
+
+    def test_plain_text_session_line_cannot_hijack_the_session(self):
+        fake_output = (
+            '{"type":"text","sessionID":"ses_attempt1",'
+            '"part":{"type":"text","text":"Antwort 1"}}\n'
+            + DECOY_SESSION_LINE + "\n"
+        )
+        result = self.run_runner(
+            FAKE_MODE_SEQUENCE="fail,complete", FAKE_OUTPUT=fake_output
+        )
+
+        self.assertEqual(
+            0, result.returncode,
+            "Läufer bricht ab:\n" + result.stdout + result.stderr,
+        )
+        log = self.log_text()
+        self.assertIn("FERTIG", log, "Lauf ohne Abnahme:\n" + log)
+        records = self.arg_records()
+        self.assertEqual(2, len(records), self.call_lines())
+        self.assertNotIn(
+            "--session", records[0],
+            "Erster Versuch startet nicht fortgesetzt: " + repr(records[0]),
+        )
+        session_values = [
+            record[position + 1]
+            for record in records
+            for position in range(len(record))
+            if record[position] == "--session"
+        ]
+        self.assertEqual(
+            ["ses_attempt1"],
+            session_values,
+            "Nur die JSON-erfasste Kennung gewinnt (Klartext entführt "
+            "nichts): " + repr(records),
+        )
+        state = json.loads(
+            (self.runtime / "proj.log.state.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(
+            "ses_attempt1",
+            state.get("session"),
+            "Zustandsdatei hält die Klartext-Attrappe nicht: " + repr(state),
+        )
+        self.assertIn(
+            DECOY_SESSION_LINE,
+            log.splitlines(),
+            "Die Agentenklartextzeile muss weiterhin ins Protokoll:\n" + log,
+        )
+        self.assertIn(
+            "Arbeitspaket F25", records[1][-1],
+            "Zweitversuch-Prompt unvollständig: " + repr(records[1][-1]),
+        )
+
+
+class ThirdAttemptChainTest(RunnerSessionContinueFixture):
+    """Dreiversuchskette: „zuletzt gewinnt" über zwei Wiederholungen.
+
+    Das Fake erzeugt je Aufruf eine neue Kennung und bildet echte
+    Sitzungsdauern nicht nach; deshalb wird die Erwartung tranchiert
+    festgelegt: Der zweite Versuch nimmt ``ses_attempt1`` mit, der
+    dritte die im Zweitversuch erfasste Kennung ``ses_attempt2``.
+    """
+
+    def test_third_retry_continues_with_the_latest_captured_session(self):
+        self.write_project(
+            env_text=(
+                "TYPE=generic\n"
+                "AGENT=tester\n"
+                "TESTER=test-agent\n"
+                "REVIEWER=code-reviewer\n"
+                'VERIFY_PACKAGE="true"\n'
+                'VERIFY_FULL="true"\n'
+                "MAX_RETRIES=2\n"
+            )
+        )
+        result = self.run_runner(FAKE_MODE_SEQUENCE="fail,fail,complete")
+
+        self.assertEqual(
+            0, result.returncode,
+            "Läufer bricht ab:\n" + result.stdout + result.stderr,
+        )
+        log = self.log_text()
+        self.assertIn("FERTIG", log, "Lauf ohne Abnahme:\n" + log)
+        records = self.arg_records()
+        self.assertEqual(
+            3, len(records),
+            "Erwartet drei Versuche je MAX_RETRIES=2: " + repr(self.call_lines()),
+        )
+
+        def session_values(record):
+            return [
+                record[position + 1]
+                for position in range(len(record) - 1)
+                if record[position] == "--session"
+            ]
+
+        self.assertNotIn(
+            "--session", records[0],
+            "Erster Versuch startet nicht fortgesetzt: " + repr(records[0]),
+        )
+        self.assertEqual(
+            ["ses_attempt1"], session_values(records[1]),
+            "Zweitversuch nimmt nicht die Erst-Kennung mit: " + repr(records[1]),
+        )
+        self.assertEqual(
+            ["ses_attempt2"], session_values(records[2]),
+            "Drittversuch nimmt nicht die zuletzt erfasste Kennung mit: "
+            + repr(records[2]),
+        )
+        for record in records:
+            self.assertIn(
+                "Arbeitspaket F25", record[-1],
+                "Prompt unvollständig: " + repr(record[-1]),
+            )
+        session_lines = sorted(
+            line for line in log.splitlines() if line.startswith("[Session]")
+        )
+        self.assertEqual(
+            [
+                "[Session] ses_attempt1",
+                "[Session] ses_attempt2",
+                "[Session] ses_attempt3",
+            ],
+            session_lines,
+            "Je Versuch genau eine [Session]-Zeile ohne Duplikate:\n" + log,
+        )
+        for identifier in ("ses_attempt1", "ses_attempt2", "ses_attempt3"):
+            self.assertEqual(
+                1, log.count("[Session] " + identifier),
+                "Kennung mehrfach protokolliert: " + log,
+            )
+        state = json.loads(
+            (self.runtime / "proj.log.state.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(
+            "ses_attempt3",
+            state.get("session"),
+            "Zustandsdatei hält nicht die zuletzt erfasste Session: "
+            + repr(state),
         )
 
 

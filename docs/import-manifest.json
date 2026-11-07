@@ -30,8 +30,8 @@
   },
   {
    "path": "bin/vibe-run.sh",
-   "sha256": "08a90aca341a7be6cd59e3ffde5b2cded6f617a79754f378d407344ee9c54898",
-   "bytes": 27643
+   "sha256": "e1ff87adbcd4e25276320fe6209e074e349f089548aeffe43cb11ba5a53e940f",
+   "bytes": 28872
   },
   {
    "path": "bin/vibe-web.py",
@@ -798,7 +798,7 @@
   {
    "arbeitspaket": "F25",
    "datum": "2026-11-07",
-   "grund": "Sessions, die von einem vorübergehenden Fehler (Klassen network/other) unterbrochen wurden, werden bei der Wiederholung mit opencode --session <Session-ID> fortgesetzt statt neu zu beginnen. Der Protokollierungsfilter übernimmt eine von der bisherigen abweichende Hauptsession (zuletzt gewinnt) und protokolliert die Übernahme als [Session]-Zeile, aus der der Läufer die Session-Kennung liest. Ohne erfasste Session und für den Pi-Harness bleibt das bisherige Verhalten.",
+   "grund": "Sessions, die von einem vorübergehenden Fehler (Klassen network/other) unterbrochen wurden, werden bei der Wiederholung mit opencode --session <Session-ID> fortgesetzt statt neu zu beginnen. Der Protokollierungsfilter übernimmt eine von der bisherigen abweichende Hauptsession (zuletzt gewinnt) und protokolliert die Übernahme als [Session]-Zeile; der Läufer liest die Session-Kennung aus der Zustandsdatei <log>.state.json, gegen den Standabgleich vor dem Versuch. Ohne erfasste Session und für den Pi-Harness bleibt das bisherige Verhalten.",
    "dateien": [
     "bin/vibe-run.sh",
     "bin/vibe_runs.py"

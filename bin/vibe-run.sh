@@ -346,6 +346,23 @@ ASSIST_MAX_ROUNDS=10
 # F25: Kennung der Session, die bei der nächsten Wiederholung fortgesetzt
 # wird. Sie bleibt leer, solange kein Versuch eine Session hinterlassen hat.
 RESUME_SESSION=""
+# F25: Liest die zuletzt erfasste Hauptsession aus der Zustandsdatei, die der
+# Protokollierungsfilter pflegt. Fehlt die Datei (ohne Filter) oder ist sie
+# defekt, ist das Ergebnis leer; der Läufer startet dann wie bisher neu.
+read_state_session() {
+  python3 - "$LOG.state.json" <<'PY'
+import json
+import sys
+try:
+    with open(sys.argv[1], encoding="utf-8") as handle:
+        data = json.load(handle)
+except (OSError, ValueError):
+    raise SystemExit(0)
+session = data.get("session")
+if isinstance(session, str) and session:
+    print(session)
+PY
+}
 while :; do
   rm -f -- "$PREFLIGHT_ACTION_FILE"
   PREFLIGHT_OUT="$(python3 "$PACKAGES_PY" "${PREFLIGHT_ARGS[@]}" \
@@ -501,6 +518,14 @@ $QUESTION_HINT"
     ATTEMPT=$((ATTEMPT + 1))
     echo "--- Versuch $ATTEMPT/$TRIES_PER_ITEM für $ID in $WT ---" | tee -a "$LOG"
     LOG_START_LINE="$(wc -l < "$LOG" 2>/dev/null || echo 0)"
+    # F25: Stand der erfassten Hauptsession vor dem Versuch. Die Kennung des
+    # Versuchs selbst wird gegen diesen Stand abgeglichen, damit Kennungen aus
+    # früheren Versuchen oder Vorläufen (z. B. Preflight-Agent) nicht als
+    # Fortsetzung gelten, obwohl der Versuch selbst keine Session erfasst hat.
+    BASE_SESSION="$(read_state_session)"
+    case "$BASE_SESSION" in
+      *[!A-Za-z0-9_-]*) BASE_SESSION="" ;;
+    esac
     run_agent
     RC=$?
     echo "=== Agent beendet, Exit-Code $RC ===" | tee -a "$LOG"
@@ -563,14 +588,17 @@ $QUESTION_HINT"
         fi
         # F25: Die im gescheiterten Versuch erfasste Session wird bei der
         # Wiederholung fortgesetzt (einfaches Continue), statt das Paket von
-        # neuem zu beginnen. Die [Session]-Zeile steht im Protokollanteil
-        # dieses Versuchs; ohne sie bleibt das bisherige Verhalten.
-        ATTEMPT_SESSION="$(sed -n "$((LOG_START_LINE + 1)),\$p" "$LOG" 2>/dev/null \
-          | sed -n 's/^\[Session] //p' | tail -n 1)"
+        # neuem zu beginnen. Quelle ist die Zustandsdatei des
+        # Protokollierungsfilters (Maschinenquelle; Agenten-Klartext kann sie
+        # nicht verfälschen). Ein Versuch, der selbst keine Session erfasst
+        # hat (Stand unverändert), löst keine Fortsetzung aus; in einer
+        # laufenden Fortsetzungskette zählt der zuletzt erfasste Stand. Die
+        # [Session]-Zeile dient der Anzeige im Laufprotokoll.
+        ATTEMPT_SESSION="$(read_state_session)"
         case "$ATTEMPT_SESSION" in
           *[!A-Za-z0-9_-]*) ATTEMPT_SESSION="" ;;
         esac
-        if [ -n "$ATTEMPT_SESSION" ]; then
+        if [ -n "$ATTEMPT_SESSION" ] && [ "$ATTEMPT_SESSION" != "$BASE_SESSION" ]; then
           RESUME_SESSION="$ATTEMPT_SESSION"
         fi
         if [ -n "$RESUME_SESSION" ]; then
