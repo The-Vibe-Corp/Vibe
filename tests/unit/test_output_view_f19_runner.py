@@ -15,10 +15,8 @@ Akzeptanzkriterien:
 * Mit Subagenten-Ereignissen enthält die Zustandsdatei Hauptsession,
   Agent, Beschreibung, Prompt, Status, Start/Ende und Ausgabe.
 """
-import hashlib
 import json
 import os
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -28,46 +26,35 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[2]
 RUNNER = REPO / "bin" / "vibe-run.sh"
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import runner_support as support
+
 MAIN_SESSION = "ses_main"
 CHILD_SESSION = "ses_child"
 FAKE_COMPLETED_TEXT = "PONG"
 
-NEXT_ITEM = """import os, sys
-here = os.path.dirname(os.path.abspath(__file__))
-count_path = os.path.join(here, "next-calls")
-try:
-    calls = int(open(count_path, encoding="utf-8").read())
-except OSError:
-    calls = 0
-calls += 1
-open(count_path, "w", encoding="utf-8").write(str(calls))
-if calls > 1:
-    sys.exit(1)
-open("/tmp/next_id", "w", encoding="utf-8").write("F19")
-open("/tmp/next_block", "w", encoding="utf-8").write(
-    "- [ ] F19 Testpaket\\n  Beschreibung: Test\\n"
-)
-"""
 
-FAKE_OPENCODE = """#!/usr/bin/env bash
-printf '%s\\0' "$@" > "$FAKE_ARGS_PATH"
-printf '%s\\n' '{"type":"text","sessionID":"%(main)s","part":{"type":"text","text":"Hallo"}}'
-if [ -n "${FAKE_SUBAGENTS:-}" ]; then
-  printf '%s\\n' '{"type":"tool_use","sessionID":"%(main)s","part":{"tool":"subagent","state":{"status":"completed","input":{"agent":"general","description":"Testzusammenfassung","prompt":"Sammle Infos"},"output":"%(pong)s"},"metadata":{"metadata":{"sessionID":"%(child)s"}}}}'
-  printf '%s\\n' '{"type":"tool_use","sessionID":"%(main)s","part":{"tool":"subagent","state":{"status":"running","input":{"agent":"general","description":"Sammlung laeuft","prompt":"War auch läuft"},"output":""}}}'
-fi
-"""
-
-FAKE_CURL = """#!/usr/bin/env bash
-exit 7
-"""
-
-
-def make_fake_opencode(pairs):
-    text = FAKE_OPENCODE
-    for key, value in pairs.items():
-        text = text.replace("%(" + key + ")s", value)
-    return text
+def fake_output(subagents=False):
+    """Ereignisse im opencode-JSON-Format, wie sie der Läufer filtert."""
+    lines = [
+        '{"type":"text","sessionID":"%s","part":{"type":"text","text":"Hallo"}}'
+        % MAIN_SESSION
+    ]
+    if subagents:
+        lines.append(
+            '{"type":"tool_use","sessionID":"%s","part":{"tool":"subagent",'
+            '"state":{"status":"completed","input":{"agent":"general",'
+            '"description":"Testzusammenfassung","prompt":"Sammle Infos"},'
+            '"output":"%s"},"metadata":{"metadata":{"sessionID":"%s"}}}}'
+            % (MAIN_SESSION, FAKE_COMPLETED_TEXT, CHILD_SESSION)
+        )
+        lines.append(
+            '{"type":"tool_use","sessionID":"%s","part":{"tool":"subagent",'
+            '"state":{"status":"running","input":{"agent":"general",'
+            '"description":"Sammlung laeuft","prompt":"War auch läuft"},'
+            '"output":""}}}' % MAIN_SESSION
+        )
+    return "\n".join(lines) + "\n"
 
 
 class RunnerFixture(unittest.TestCase):
@@ -75,95 +62,75 @@ class RunnerFixture(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name)
         self.home = self.root / "home"
-        (self.home / ".config" / "opencode" / "agents").mkdir(parents=True)
+        self.agents = self.home / ".config" / "opencode" / "agents"
+        support.write_agents(self.agents, "test-agent", "code-reviewer")
         self.project = self.root / "proj"
-        (self.project / ".vibe").mkdir(parents=True)
-        (self.project / ".vibe" / "project.env").write_text(
-            'TYPE=generic\nAGENT=tester\nVERIFY_FULL="true"\n', encoding="utf-8"
+        support.write_project(
+            self.project,
+            "TYPE=generic\n"
+            "AGENT=tester\n"
+            "TESTER=test-agent\n"
+            "REVIEWER=code-reviewer\n"
+            'VERIFY_PACKAGE="true"\n'
+            'VERIFY_FULL="true"\n'
+            "MAX_RETRIES=0\n",
+            feedback="- [ ] F19 Testpaket\n  Beschreibung: Test\n",
         )
-        (self.project / "FEEDBACK.md").write_text(
-            "# FEEDBACK\n\n- [ ] F19 Testpaket\n  Beschreibung: Test\n",
-            encoding="utf-8",
-        )
-        self.tool_bin = self.root / "_toolchain" / "bin"
-        self.tool_bin.mkdir(parents=True)
-        shutil.copy(RUNNER, self.tool_bin / "vibe-run.sh")
-        shutil.copy(REPO / "bin" / "vibe_runs.py", self.tool_bin / "vibe_runs.py")
-        verify = self.root / "_toolchain" / "verify"
-        verify.mkdir(parents=True)
-        (verify / "next_item.py").write_text(NEXT_ITEM, encoding="utf-8")
-        marker = verify / "verify-marker.txt"
-        marker.write_text("ok\n", encoding="utf-8")
-        digest = hashlib.sha256(marker.read_bytes()).hexdigest()
-        (self.home / ".config" / "schreibfuchs-verify.sha").write_text(
-            f"{digest}  verify-marker.txt\n", encoding="utf-8"
-        )
-        fakebin = self.root / "fakebin"
-        fakebin.mkdir()
-        (fakebin / "opencode").write_text(
-            make_fake_opencode(
-                {
-                    "main": MAIN_SESSION,
-                    "child": CHILD_SESSION,
-                    "pong": FAKE_COMPLETED_TEXT,
-                }
-            ),
-            encoding="utf-8",
-        )
-        (fakebin / "opencode").chmod(0o755)
-        (fakebin / "curl").write_text(FAKE_CURL, encoding="utf-8")
-        (fakebin / "curl").chmod(0o755)
+        self.tool_bin = support.install_runner(self.root / "_toolchain")
+        self.fakebin = support.install_fake_tools(self.root)
+        support.init_repo(self.project)
+        support.commit_all(self.project)
+        self.calls = self.root / "opencode.calls"
+        self.counter = self.root / "counter"
         self.addCleanup(self.tmp.cleanup)
 
     def env(self, subagents=False):
         env = os.environ.copy()
         for key in list(env):
-            if key.startswith("VIBE") or key.startswith("SANDBOX") or key in (
-                "AGENT",
-                "VERIFY_QUICK",
-                "VERIFY_FULL",
-                "TMUX",
-                "TMUX_PANE",
+            if (
+                key.startswith("VIBE")
+                or key.startswith("SANDBOX")
+                or key.startswith("FAKE_")
+                or key
+                in (
+                    "AGENT",
+                    "TESTER",
+                    "REVIEWER",
+                    "MAX_RETRIES",
+                    "VERIFY_QUICK",
+                    "VERIFY_FULL",
+                    "VERIFY_PACKAGE",
+                    "TMUX",
+                    "TMUX_PANE",
+                )
             ):
                 env.pop(key, None)
         env.update(
             {
                 "VIBE": str(self.root),
+                "VIBE_INSTALL": str(self.root / "_toolchain"),
+                "VIBE_RUNTIME": str(self.root / "_logs"),
+                "VIBE_AGENTS_DIR": str(self.agents),
                 "HOME": str(self.home),
                 "VIBE_NO_CONTAINER": "1",
                 "PYTHONDONTWRITEBYTECODE": "1",
-                "PATH": str(self.root / "fakebin") + os.pathsep + env.get("PATH", ""),
+                "PATH": str(self.fakebin) + os.pathsep + env.get("PATH", ""),
                 "FAKE_ARGS_PATH": str(self.root / "_logs" / "opencode.args"),
+                "FAKE_OUTPUT": fake_output(subagents),
+                "FAKE_CALLS": str(self.calls),
+                "FAKE_COUNTER": str(self.counter),
             }
         )
-        if subagents:
-            env["FAKE_SUBAGENTS"] = "1"
         return env
 
     def command(self):
-        """Startet den Läufer in einer bwrap-Instanz mit eigenem beschreibbarem
-        /tmp: vibe-run.sh legt Laufsperrdateien und next_item-Zwischenstände in
-        festen /tmp-Pfaden ab. Das Testtmp dieses Agenten ist readonly; die
-        Sandbox (vibe_sandbox) nutzt bwrap ohnehin als Projektwerkzeug. Der
-        Wrapper ändert nichts am Verhalten des Läufers.
-        """
-        return [
-            "bwrap",
-            "--ro-bind", "/", "/",
-            "--tmpfs", "/tmp",
-            "--bind", str(self.root), str(self.root),
-            "--proc", "/proc",
-            "--dev", "/dev",
-            "--setenv", "TMPDIR", "/tmp",
-            "--setenv", "HOME", str(self.home),
-            "bash", str(self.tool_bin / "vibe-run.sh"), str(self.project),
-        ]
+        return ["bash", str(self.tool_bin / "vibe-run.sh"), str(self.project)]
 
     def run_runner(self, subagents=False):
         result = subprocess.run(
             self.command(),
             env=self.env(subagents=subagents),
-            cwd=str(self.root),
+            cwd=str(self.project),
             capture_output=True,
             text=True,
             timeout=90,

@@ -39,6 +39,9 @@ MCP = REPO / "bin" / "vibe_mcp.py"
 RUNNER = REPO / "bin" / "vibe-run.sh"
 PATHS_MODULE = REPO / "bin" / "vibe_paths.py"
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import runner_support as support
+
 ENV_KEYS = (
     "VIBE",
     "VIBE_PROFILE",
@@ -673,52 +676,66 @@ class RunnerPathsTest(unittest.TestCase):
         self.root = Path(self.tmp.name)
         self.project = self.root / "proj"
         (self.project / ".vibe").mkdir(parents=True)
+        self.agents = self.root / "home" / ".config" / "opencode" / "agents"
+        support.write_agents(self.agents, "test-agent", "code-reviewer")
         (self.project / ".vibe" / "project.env").write_text(
-            'TYPE=generic\nVERIFY_FULL="true"\n', encoding="utf-8"
+            "TYPE=generic\n"
+            "AGENT=tester\n"
+            "TESTER=test-agent\n"
+            "REVIEWER=code-reviewer\n"
+            'VERIFY_PACKAGE="true"\n'
+            'VERIFY_FULL="true"\n'
+            "MAX_RETRIES=0\n",
+            encoding="utf-8",
         )
+        (self.project / "TICKETS.md").write_text("# TICKETS\n", encoding="utf-8")
+        (self.project / "FEEDBACK.md").write_text("# FEEDBACK\n", encoding="utf-8")
         self.install = self.root / "eigene toolchain"
         self.verify = self.install / "verify"
         self.verify.mkdir(parents=True)
-        (self.verify / "next_item.py").write_text(
-            "#!/usr/bin/env python3\nimport sys\nsys.exit(1)\n", encoding="utf-8"
-        )
-        marker = self.verify / "verify-marker.txt"
-        marker.write_text("ok\n", encoding="utf-8")
-        digest = hashlib.sha256(marker.read_bytes()).hexdigest()
-        home_config = self.root / "home" / ".config"
-        home_config.mkdir(parents=True)
-        (home_config / "schreibfuchs-verify.sha").write_text(
-            f"{digest}  verify-marker.txt\n", encoding="utf-8"
-        )
+        support.install_runner(self.install)
         self.runtime = self.root / "eigene logs"
         self.curl_log = self.root / "curl.invocations"
         fakebin = self.root / "fakebin"
         fakebin.mkdir()
+        self.fakebin = fakebin
         fake_curl = fakebin / "curl"
         fake_curl.write_text(
             '#!/usr/bin/env bash\nprintf \'%s\\n\' "$*" >> "$FAKE_CURL_LOG"\nexit 7\n',
             encoding="utf-8",
         )
         fake_curl.chmod(0o755)
+        support.init_repo(self.project)
+        support.commit_all(self.project)
 
     def tearDown(self):
         self.tmp.cleanup()
 
     def test_runner_uses_the_configured_installation_and_runtime_directory(self):
         env = os.environ.copy()
-        for key in ("SANDBOX", "SANDBOX_TOOLS", "VIBE"):
-            env.pop(key, None)
+        for key in list(env):
+            if key.startswith("VIBE") or key.startswith("FAKE_") or key in (
+                "SANDBOX",
+                "SANDBOX_TOOLS",
+                "AGENT",
+                "TESTER",
+                "REVIEWER",
+                "MAX_RETRIES",
+                "VERIFY_FULL",
+                "VERIFY_PACKAGE",
+            ):
+                env.pop(key, None)
         env.update(
             {
                 "VIBE": str(self.root),
                 "VIBE_INSTALL": str(self.install),
                 "VIBE_RUNTIME": str(self.runtime),
+                "VIBE_AGENTS_DIR": str(self.agents),
                 "VIBE_OPENCODE_PORT": "4198",
                 "HOME": str(self.root / "home"),
-                "PATH": str(self.root / "fakebin") + os.pathsep + env.get("PATH", ""),
+                "PATH": str(self.fakebin) + os.pathsep + env.get("PATH", ""),
                 "VIBE_LOGNAME": "proj",
                 "VIBE_MAX_PACKAGES": "1",
-                "AGENT": "coding-agent_deepseek",
                 "FAKE_CURL_LOG": str(self.curl_log),
             }
         )

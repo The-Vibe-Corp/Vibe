@@ -33,6 +33,9 @@ CLI = REPO / "bin" / "vibe"
 MCP = REPO / "bin" / "vibe_mcp.py"
 RUNNER = REPO / "bin" / "vibe-run.sh"
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import runner_support as support
+
 
 def load_module(path, name):
     loader = importlib.machinery.SourceFileLoader(name, str(path))
@@ -450,6 +453,7 @@ class RunnerValidationTest(unittest.TestCase):
             "TYPE=generic\nVERIFY_FULL=true\nMAX_PACKAGES=1\n", encoding="utf-8"
         )
         self.vibe_root = self.root / "vibe"
+        support.install_runner(self.vibe_root / "_toolchain")
         verify = self.vibe_root / "_toolchain" / "verify"
         verify.mkdir(parents=True)
         (verify / "next_item.py").write_text("import sys\nsys.exit(1)\n", encoding="utf-8")

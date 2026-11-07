@@ -24,6 +24,9 @@ BIN = REPO / "bin"
 CLI = BIN / "vibe"
 RUNNER = BIN / "vibe-run.sh"
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import runner_support as support
+
 
 def load_module(path, name):
     loader = importlib.machinery.SourceFileLoader(name, str(path))
@@ -434,38 +437,6 @@ class RunStateAndStopTest(CliFixture):
         self.assertFalse([call for call in calls if "kill-session" in call])
 
 
-NEXT_ITEM_ONCE = '''import os, sys
-here = os.path.dirname(os.path.abspath(__file__))
-count_path = os.path.join(here, "next-calls")
-try:
-    calls = int(open(count_path, encoding="utf-8").read())
-except OSError:
-    calls = 0
-if calls:
-    sys.exit(1)
-open(count_path, "w", encoding="utf-8").write("1")
-open("/tmp/next_id", "w", encoding="utf-8").write("F1")
-open("/tmp/next_block", "w", encoding="utf-8").write(
-    "- [ ] F1 Testpaket\\n  Beschreibung: Test\\n"
-)
-'''
-
-NEXT_ITEM_ALWAYS = '''import sys
-open("/tmp/next_id", "w", encoding="utf-8").write("F1")
-open("/tmp/next_block", "w", encoding="utf-8").write(
-    "- [ ] F1 Testpaket\\n  Beschreibung: Test\\n"
-)
-'''
-
-FAKE_OPENCODE = '''#!/usr/bin/env bash
-printf 'call\\n' >> "$VIBE_FAKE_CALLS"
-exit "${VIBE_FAKE_RC:-0}"
-'''
-
-FAKE_CURL = '''#!/usr/bin/env bash
-exit 7
-'''
-
 FAKE_VIBE = '''#!/usr/bin/env python3
 import os, sys
 with open(os.environ["VIBE_FAKE_FRITZ"], "a", encoding="utf-8") as handle:
@@ -483,52 +454,63 @@ class RunnerV015Test(unittest.TestCase):
         self.root = Path(self.tmp.name)
         self.home = self.root / "home"
         self.home.mkdir()
+        self.agents = self.home / ".config" / "opencode" / "agents"
+        support.write_agents(self.agents, "test-agent", "code-reviewer")
         self.install = self.root / "_toolchain"
-        self.tool_bin = self.install / "bin"
-        self.tool_bin.mkdir(parents=True)
+        self.tool_bin = support.install_runner(self.install)
         self.verify = self.install / "verify"
         self.verify.mkdir()
         self.runtime = self.root / "_logs"
         self.project = self.root / "proj"
-        (self.project / ".vibe").mkdir(parents=True)
-        shutil.copy(RUNNER, self.tool_bin / "vibe-run.sh")
-        shutil.copy(BIN / "vibe_runs.py", self.tool_bin / "vibe_runs.py")
+        self.project.mkdir()
         (self.tool_bin / "vibe").write_text(FAKE_VIBE, encoding="utf-8")
         (self.tool_bin / "vibe").chmod(0o755)
-        fakebin = self.root / "fakebin"
-        fakebin.mkdir()
-        for name, text in (("opencode", FAKE_OPENCODE), ("curl", FAKE_CURL)):
-            path = fakebin / name
-            path.write_text(text, encoding="utf-8")
-            path.chmod(0o755)
+        self.fakebin = support.install_fake_tools(self.root)
         self.calls = self.root / "opencode.calls"
+        self.counter = self.root / "counter"
         self.fritz = self.root / "fritz.calls"
 
     def tearDown(self):
         self.tmp.cleanup()
 
-    def project_env(self, verify, retries=2):
+    def write_project(self, verify, retries, feedback):
+        (self.project / ".vibe").mkdir(parents=True, exist_ok=True)
         (self.project / ".vibe" / "project.env").write_text(
             "TYPE=generic\n"
             "AGENT=tester\n"
+            "TESTER=test-agent\n"
+            "REVIEWER=code-reviewer\n"
+            'VERIFY_PACKAGE="true"\n'
             f'VERIFY_FULL="{verify}"\n'
             f"MAX_RETRIES={retries}\n",
             encoding="utf-8",
         )
+        (self.project / "FEEDBACK.md").write_text(
+            "# FEEDBACK\n\n" + feedback, encoding="utf-8"
+        )
+        (self.project / "TICKETS.md").write_text("# TICKETS\n", encoding="utf-8")
 
-    def run_runner(self, next_item, verify="true", retries=2, opencode_rc=0, packages=1):
-        (self.verify / "next_item.py").write_text(next_item, encoding="utf-8")
-        self.project_env(verify, retries)
+    def run_runner(
+        self, verify="true", retries=2, opencode_rc=0, packages=1, feedback=None
+    ):
+        feedback = feedback or "- [ ] F1 Testpaket\n  Beschreibung: Test\n"
+        self.write_project(verify, retries, feedback)
+        if not (self.project / ".git").exists():
+            support.init_repo(self.project)
+        support.commit_all(self.project, "Teststand")
         env = clean_env(
             self.root,
             self.home,
             VIBE_INSTALL=str(self.install),
             VIBE_RUNTIME=str(self.runtime),
+            VIBE_AGENTS_DIR=str(self.agents),
             VIBE_MAX_PACKAGES=str(packages),
-            VIBE_FAKE_CALLS=str(self.calls),
+            VIBE_RETRY_DELAY="0",
+            FAKE_CALLS=str(self.calls),
+            FAKE_COUNTER=str(self.counter),
+            FAKE_MODE="fail" if opencode_rc else "complete",
             VIBE_FAKE_FRITZ=str(self.fritz),
-            VIBE_FAKE_RC=str(opencode_rc),
-            PATH=str(self.root / "fakebin") + os.pathsep + os.environ.get("PATH", ""),
+            PATH=str(self.fakebin) + os.pathsep + os.environ.get("PATH", ""),
         )
         return subprocess.run(
             ["bash", str(RUNNER), str(self.project)],
@@ -545,7 +527,7 @@ class RunnerV015Test(unittest.TestCase):
         return path.read_text(encoding="utf-8") if path.exists() else ""
 
     def test_generic_run_works_without_android_acceptance_files(self):
-        result = self.run_runner(NEXT_ITEM_ONCE, verify="printf 'verify-ok\\n'")
+        result = self.run_runner(verify="printf 'verify-ok\\n'")
 
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertFalse((self.verify / "verify.sh").exists())
@@ -553,13 +535,11 @@ class RunnerV015Test(unittest.TestCase):
         # Der Lauf hat wirklich ein Arbeitspaket ausgeführt; ein Abbruch vor der
         # Schleife würde sonst ebenfalls mit Exit 0 enden.
         self.assertIn("Arbeitspaket F1", self.log())
-        self.assertEqual(
-            self.calls.read_text(encoding="utf-8").splitlines(), ["call"]
-        )
+        self.assertEqual(len(self.calls.read_text(encoding="utf-8").splitlines()), 1)
         self.assertIn("FERTIG", self.log())
 
     def test_runner_writes_a_separate_verification_log(self):
-        result = self.run_runner(NEXT_ITEM_ONCE, verify="printf 'verify-ok\\n'")
+        result = self.run_runner(verify="printf 'verify-ok\\n'")
 
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("Arbeitspaket F1", self.log())
@@ -568,9 +548,7 @@ class RunnerV015Test(unittest.TestCase):
         self.assertIn("verify-ok", self.log("proj.verify.log"))
 
     def test_retry_limit_stops_repeating_the_same_package(self):
-        result = self.run_runner(
-            NEXT_ITEM_ALWAYS, verify="true", retries=1, opencode_rc=1, packages=4
-        )
+        result = self.run_runner(verify="true", retries=1, opencode_rc=1, packages=4)
 
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("Arbeitspaket F1", self.log())
@@ -579,7 +557,7 @@ class RunnerV015Test(unittest.TestCase):
         self.assertIn("1 Wiederholungen", self.log())
 
     def test_failed_final_check_returns_its_exit_code(self):
-        result = self.run_runner(NEXT_ITEM_ONCE, verify="exit 9")
+        result = self.run_runner(verify="exit 9")
 
         self.assertEqual(result.returncode, 9, result.stdout + result.stderr)
 

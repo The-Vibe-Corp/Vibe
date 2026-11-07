@@ -33,6 +33,9 @@ CLI = REPO / "bin" / "vibe"
 WEB = REPO / "bin" / "vibe-web.py"
 RUNNER = REPO / "bin" / "vibe-run.sh"
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import runner_support as support
+
 FAKE_HELPER = '''import json, os, sys, time
 log = os.environ.get("FAKE_FRITZ_LOG")
 if log:
@@ -518,32 +521,6 @@ class FritzApiTest(FritzApiFixture):
         self.assertEqual(self.calls(), [])
 
 
-NEXT_ITEM = '''import os, sys
-here = os.path.dirname(os.path.abspath(__file__))
-count_path = os.path.join(here, "next-calls")
-try:
-    calls = int(open(count_path, encoding="utf-8").read())
-except OSError:
-    calls = 0
-calls += 1
-open(count_path, "w", encoding="utf-8").write(str(calls))
-if calls > 1:
-    sys.exit(1)
-open("/tmp/next_id", "w", encoding="utf-8").write("F1")
-open("/tmp/next_block", "w", encoding="utf-8").write(
-    "- [ ] F1 Testpaket\\n  Beschreibung: Test\\n"
-)
-'''
-
-FAKE_OPENCODE = '''#!/usr/bin/env bash
-printf 'x\\n' >> "$VIBE/_logs/opencode.invocations"
-exit 1
-'''
-
-FAKE_CURL = '''#!/usr/bin/env bash
-exit 7
-'''
-
 FAKE_VIBE = '''#!/usr/bin/env python3
 import os, sys
 with open(os.environ["FAKE_VIBE_LOG"], "a", encoding="utf-8") as handle:
@@ -570,38 +547,43 @@ class RunnerFritzTest(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name)
         self.project = self.root / "proj"
+        self.agents = self.root / "home" / ".config" / "opencode" / "agents"
+        support.write_agents(self.agents, "test-agent", "code-reviewer")
         (self.project / ".vibe").mkdir(parents=True)
         (self.project / ".vibe" / "project.env").write_text(
-            "TYPE=generic\nVERIFY_FULL=\"touch verify.done\"\n", encoding="utf-8"
+            "TYPE=generic\n"
+            "AGENT=tester\n"
+            "TESTER=test-agent\n"
+            "REVIEWER=code-reviewer\n"
+            'VERIFY_PACKAGE="true"\n'
+            'VERIFY_FULL="touch verify.done"\n'
+            "MAX_RETRIES=0\n",
+            encoding="utf-8",
         )
         (self.project / "FEEDBACK.md").write_text(
             "# FEEDBACK\n\n- [ ] F1 Testpaket\n  Beschreibung: Test\n",
             encoding="utf-8",
         )
+        (self.project / "TICKETS.md").write_text("# TICKETS\n", encoding="utf-8")
         self.verify = self.root / "_toolchain" / "verify"
         self.verify.mkdir(parents=True)
-        (self.verify / "next_item.py").write_text(NEXT_ITEM, encoding="utf-8")
         marker = self.verify / "verify-marker.txt"
         marker.write_text("ok\n", encoding="utf-8")
         digest = hashlib.sha256(marker.read_bytes()).hexdigest()
         home_config = self.root / "home" / ".config"
-        home_config.mkdir(parents=True)
+        home_config.mkdir(parents=True, exist_ok=True)
         (home_config / "schreibfuchs-verify.sha").write_text(
             f"{digest}  verify-marker.txt\n", encoding="utf-8"
         )
-        bin_dir = self.root / "_toolchain" / "bin"
-        bin_dir.mkdir(parents=True)
-        (bin_dir / "vibe").write_text(FAKE_VIBE, encoding="utf-8")
-        fakebin = self.root / "fakebin"
-        fakebin.mkdir()
-        for name, text in (
-            ("opencode", FAKE_OPENCODE),
-            ("curl", FAKE_CURL),
-            ("sleep", FAKE_SLEEP),
-        ):
-            path = fakebin / name
-            path.write_text(text, encoding="utf-8")
-            path.chmod(0o755)
+        self.tool_bin = support.install_runner(self.root / "_toolchain")
+        (self.tool_bin / "vibe").write_text(FAKE_VIBE, encoding="utf-8")
+        (self.tool_bin / "vibe").chmod(0o755)
+        self.fakebin = support.install_fake_tools(self.root)
+        sleep = self.fakebin / "sleep"
+        sleep.write_text(FAKE_SLEEP, encoding="utf-8")
+        sleep.chmod(0o755)
+        support.init_repo(self.project)
+        support.commit_all(self.project)
         self.vibe_log = self.root / "vibe.invocations"
         self.vibe_project_log = self.root / "vibe.projects"
         self.sleep_log = self.root / "sleep.invocations"
@@ -611,9 +593,20 @@ class RunnerFritzTest(unittest.TestCase):
 
     def run_runner(self, vibe_rc):
         env = os.environ.copy()
-        for key in ("SANDBOX", "SANDBOX_TOOLS", "MAX_PACKAGES", "MAX_RETRIES",
-                    "TYPE", "VERIFY_FULL"):
-            env.pop(key, None)
+        for key in list(env):
+            if key.startswith("VIBE") or key.startswith("FAKE_") or key in (
+                "SANDBOX",
+                "SANDBOX_TOOLS",
+                "MAX_PACKAGES",
+                "MAX_RETRIES",
+                "TYPE",
+                "VERIFY_FULL",
+                "VERIFY_PACKAGE",
+                "AGENT",
+                "TESTER",
+                "REVIEWER",
+            ):
+                env.pop(key, None)
         env.update(
             {
                 "VIBE": str(self.root),
@@ -622,11 +615,14 @@ class RunnerFritzTest(unittest.TestCase):
                 "VIBE_INSTALL": str(self.root / "_toolchain"),
                 "VIBE_RUNTIME": str(self.root / "_logs"),
                 "VIBE_CONFIG_FILE": str(self.root / "home" / "config.json"),
-                "VIBE_AGENTS_DIR": str(self.root / "home" / "agents"),
-                "PATH": str(self.root / "fakebin") + os.pathsep + env.get("PATH", ""),
+                "VIBE_AGENTS_DIR": str(self.agents),
+                "PATH": str(self.fakebin) + os.pathsep + env.get("PATH", ""),
                 "VIBE_LOGNAME": "proj",
                 "VIBE_MAX_PACKAGES": "1",
-                "AGENT": "coding-agent_deepseek",
+                "VIBE_RETRY_DELAY": "0",
+                "FAKE_MODE": "fail",
+                "FAKE_CALLS": str(self.root / "opencode.calls"),
+                "FAKE_COUNTER": str(self.root / "counter"),
                 "FAKE_VIBE_LOG": str(self.vibe_log),
                 "FAKE_VIBE_PROJECT_LOG": str(self.vibe_project_log),
                 "FAKE_VIBE_RC": str(vibe_rc),

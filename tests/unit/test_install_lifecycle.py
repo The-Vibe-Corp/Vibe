@@ -19,6 +19,7 @@ PROGRAM_FILES = (
     "vibe",
     "vibe-run.sh",
     "vibe_runs.py",
+    "vibe_packages.py",
     "vibe-web.py",
     "vibe_mcp.py",
     "vibe_opencode.py",

@@ -37,6 +37,9 @@ CLI = REPO / "bin" / "vibe"
 WEB = REPO / "bin" / "vibe-web.py"
 RUNNER = REPO / "bin" / "vibe-run.sh"
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import runner_support as support
+
 AGENT_V1 = """---
 description: Erste Beschreibung
 mode: subagent
@@ -557,6 +560,7 @@ class RunnerAgentConfigTest(unittest.TestCase):
         self.calls = self.root / "opencode-calls"
         fakebin = self.root / "fakebin"
         fakebin.mkdir()
+        support.install_runner(self.root / "_toolchain")
         fake = fakebin / "opencode"
         fake.write_text(
             "#!/usr/bin/env bash\nprintf 'x\\n' >> '" + str(self.calls) + "'\n",

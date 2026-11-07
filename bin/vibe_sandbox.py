@@ -210,6 +210,36 @@ def state_dir(project):
     return os.path.join(os.path.abspath(os.path.expanduser(base)), f"{name}-{digest}")
 
 
+def git_common_dir(project):
+    """Gemeinsamer Git-Ordner des Projekts (bei Arbeitskopien außerhalb).
+
+    Der Paket-Läufer startet jeden Agenten in einer eigenen ``git worktree``-
+    Arbeitskopie. Deren ``.git`` ist nur eine Verweisdatei; Commits schreiben
+    in den gemeinsamen Git-Ordner des Integrationsprojekts. Ohne dessen
+    Schreibfreigabe könnte der Agent in der Sandbox nicht committen.
+    """
+    try:
+        result = subprocess.run(
+            [
+                "git",
+                "-C",
+                os.path.realpath(project),
+                "rev-parse",
+                "--path-format=absolute",
+                "--git-common-dir",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return ""
+    if result.returncode != 0:
+        return ""
+    path = result.stdout.strip()
+    return os.path.realpath(path) if path else ""
+
+
 def _cache_dirs(tools):
     result = []
     for tool in tools:
@@ -426,6 +456,11 @@ def bwrap_argv(project, command, bwrap=None, runtime=None):
     state_path = state["state_dir"]
     if state_path not in directories:
         directories.append(state_path)
+    # In einer Arbeitskopie liegt der beschreibbare Git-Zustand im
+    # Integrationsprojekt; ohne diese Freigabe scheitert jeder Commit.
+    common = git_common_dir(project)
+    if common and common not in directories:
+        directories.append(common)
     for directory in directories:
         problem = _ensure_dir(directory)
         if problem:

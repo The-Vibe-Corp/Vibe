@@ -31,6 +31,9 @@ CLI = REPO / "bin" / "vibe"
 WEB = REPO / "bin" / "vibe-web.py"
 RUNNER = REPO / "bin" / "vibe-run.sh"
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import runner_support as support
+
 
 def load_cli(vibe_root):
     """Lädt bin/vibe als Modul mit isoliertem VIBE und HOME."""
@@ -284,36 +287,6 @@ class PauseApiTest(PauseApiFixture):
         self.assertFalse(self.flag().exists())
 
 
-NEXT_ITEM = '''import os, sys
-here = os.path.dirname(os.path.abspath(__file__))
-count_path = os.path.join(here, "next-calls")
-try:
-    calls = int(open(count_path, encoding="utf-8").read())
-except OSError:
-    calls = 0
-calls += 1
-open(count_path, "w", encoding="utf-8").write(str(calls))
-if calls > 2:
-    sys.exit(1)
-open("/tmp/next_id", "w", encoding="utf-8").write("F%d" % calls)
-open("/tmp/next_block", "w", encoding="utf-8").write(
-    "- [ ] F%d Testpaket\\n  Beschreibung: Test\\n" % calls
-)
-'''
-
-FAKE_OPENCODE = '''#!/usr/bin/env bash
-printf 'x\\n' >> "$VIBE/_logs/opencode.invocations"
-if [ -n "$FAKE_OPENCODE_PAUSE" ]; then
-  touch "$VIBE/_logs/$VIBE_LOGNAME.pause-after"
-fi
-exit 0
-'''
-
-FAKE_CURL = '''#!/usr/bin/env bash
-exit 7
-'''
-
-
 class RunnerPauseTest(unittest.TestCase):
     """Prüft den echten Paket-Läufer mit einer nachgebildeten opencode-Ablage."""
 
@@ -321,31 +294,36 @@ class RunnerPauseTest(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name)
         self.project = self.root / "proj"
+        self.agents = self.root / "home" / ".config" / "opencode" / "agents"
+        support.write_agents(self.agents, "test-agent", "code-reviewer")
         (self.project / ".vibe").mkdir(parents=True)
         (self.project / ".vibe" / "project.env").write_text(
-            "TYPE=generic\nVERIFY_FULL=\"touch verify.done\"\n", encoding="utf-8"
-        )
-        (self.project / "FEEDBACK.md").write_text(
-            "# FEEDBACK\n\n- [ ] F1 Testpaket\n  Beschreibung: Test\n",
+            'TYPE=generic\nAGENT=tester\nTESTER=test-agent\nREVIEWER=code-reviewer\n'
+            'VERIFY_PACKAGE="true"\nVERIFY_FULL="touch verify.done"\nMAX_RETRIES=1\n',
             encoding="utf-8",
         )
+        (self.project / "FEEDBACK.md").write_text(
+            "# FEEDBACK\n\n"
+            "- [ ] F1 Testpaket\n  Beschreibung: Test\n"
+            "- [ ] F2 Zweites Paket\n  Beschreibung: Test\n",
+            encoding="utf-8",
+        )
+        (self.project / "TICKETS.md").write_text("# TICKETS\n", encoding="utf-8")
         self.verify = self.root / "_toolchain" / "verify"
         self.verify.mkdir(parents=True)
-        (self.verify / "next_item.py").write_text(NEXT_ITEM, encoding="utf-8")
         marker = self.verify / "verify-marker.txt"
         marker.write_text("ok\n", encoding="utf-8")
         digest = hashlib.sha256(marker.read_bytes()).hexdigest()
         home_config = self.root / "home" / ".config"
-        home_config.mkdir(parents=True)
         (home_config / "schreibfuchs-verify.sha").write_text(
             f"{digest}  verify-marker.txt\n", encoding="utf-8"
         )
-        fakebin = self.root / "fakebin"
-        fakebin.mkdir()
-        for name, text in (("opencode", FAKE_OPENCODE), ("curl", FAKE_CURL)):
-            path = fakebin / name
-            path.write_text(text, encoding="utf-8")
-            path.chmod(0o755)
+        support.install_runner(self.root / "_toolchain")
+        self.fakebin = support.install_fake_tools(self.root)
+        self.calls = self.root / "calls.log"
+        self.counter = self.root / "counter"
+        support.init_repo(self.project)
+        support.commit_all(self.project)
         self.flag = self.root / "_logs" / "proj.pause-after"
 
     def tearDown(self):
@@ -353,18 +331,29 @@ class RunnerPauseTest(unittest.TestCase):
 
     def run_runner(self, pause_during_first_package=False, max_packages=5):
         env = os.environ.copy()
+        for key in list(env):
+            if key.startswith("VIBE") or key.startswith("FAKE_"):
+                env.pop(key, None)
+        for key in ("AGENT", "MAX_RETRIES", "SANDBOX", "SANDBOX_TOOLS",
+                    "VERIFY_FULL", "VERIFY_PACKAGE"):
+            env.pop(key, None)
         env.update(
             {
                 "VIBE": str(self.root),
+                "VIBE_INSTALL": str(self.root / "_toolchain"),
+                "VIBE_RUNTIME": str(self.root / "_logs"),
+                "VIBE_AGENTS_DIR": str(self.agents),
                 "HOME": str(self.root / "home"),
-                "PATH": str(self.root / "fakebin") + os.pathsep + env.get("PATH", ""),
+                "PATH": str(self.fakebin) + os.pathsep + env.get("PATH", ""),
                 "VIBE_LOGNAME": "proj",
                 "VIBE_MAX_PACKAGES": str(max_packages),
-                "AGENT": "coding-agent_deepseek",
+                "VIBE_RETRY_DELAY": "0",
+                "FAKE_CALLS": str(self.calls),
+                "FAKE_COUNTER": str(self.counter),
             }
         )
         if pause_during_first_package:
-            env["FAKE_OPENCODE_PAUSE"] = "1"
+            env["FAKE_PAUSE_AFTER_FIRST"] = "1"
         return subprocess.run(
             ["bash", str(RUNNER), str(self.project)],
             cwd=str(self.project),
@@ -375,10 +364,9 @@ class RunnerPauseTest(unittest.TestCase):
         )
 
     def opencode_calls(self):
-        path = self.root / "_logs" / "opencode.invocations"
-        if not path.exists():
+        if not self.calls.exists():
             return []
-        return path.read_text(encoding="utf-8").splitlines()
+        return self.calls.read_text(encoding="utf-8").splitlines()
 
     def test_runner_processes_packages_normally_without_a_request(self):
         result = self.run_runner()

@@ -1,6 +1,6 @@
 {
  "version": 1,
- "stand": "2026-11-02",
+ "stand": "2026-11-07",
  "quelle": "Übernommener Programmstand aus der lokalen Installation unter $VIBE/_toolchain; die aktive Installation enthält zusätzlich lokale Geheimnis-Hooks (siehe docs/baseline.md, Abschnitt 3).",
  "hinweis": "SHA-256 der übernommenen Programmdateien. Beabsichtigte Änderungen an diesen Dateien sind nur zulässig, wenn dieser Eintrag im selben Arbeitspaket aktualisiert und begründet wird. Laufzeitdaten, Sicherungen und Geheimnisse sind nicht Bestandteil des Imports.",
  "scopes": [
@@ -14,14 +14,44 @@
  ],
  "files": [
   {
+   "path": "VERSION",
+   "sha256": "f5e9382967c9833066a55808829f3750fc8e1181b170cafd222c37048bb49a77",
+   "bytes": 7
+  },
+  {
    "path": "bin/fritz-reconnect.py",
    "sha256": "16a2b80ed79313ae87c88dc7fc5041115a8a256dc805eb668845501eeb983ce2",
    "bytes": 3293
   },
   {
+   "path": "bin/vibe",
+   "sha256": "2edc348f28917b8b5e0664c73bafb21d7421aaed3704f5d4153ad668ac30357d",
+   "bytes": 208343
+  },
+  {
+   "path": "bin/vibe-run.sh",
+   "sha256": "87fe2f845bbe87c68a25f80550fe50e665c0095955573a7e73057c87e3bfe280",
+   "bytes": 22830
+  },
+  {
+   "path": "bin/vibe-web.py",
+   "sha256": "295cccd352f896ccc4c03a2b973b03c6f122ed3dca33ae603344ea1790d6c3c9",
+   "bytes": 52303
+  },
+  {
+   "path": "bin/vibe_autonomous.py",
+   "sha256": "3719eaa5a360e3a47afc3e0ead250d7e4b62e4fb4ca721d70a894c0c81ef7418",
+   "bytes": 5149
+  },
+  {
    "path": "bin/vibe_guide.py",
    "sha256": "d5fd488738af33fdb484a3b3e22818629ab66cb6d5edd72e1a63cf8b45c78936",
    "bytes": 26241
+  },
+  {
+   "path": "bin/vibe_harness.py",
+   "sha256": "026466b463fbf72d2cc784c18196a7790b050d1f15a61a24123ce987836d5de1",
+   "bytes": 20662
   },
   {
    "path": "bin/vibe_mcp.py",
@@ -39,9 +69,19 @@
    "bytes": 13639
   },
   {
+   "path": "bin/vibe_packages.py",
+   "sha256": "257fcad0aeea9f4f835382b388cf2f4dcef4bebe7a96d9bfd07514771b5773de",
+   "bytes": 16347
+  },
+  {
    "path": "bin/vibe_paths.py",
    "sha256": "7fb7282db29a46abfa68bd6e625c120b48bfbf642abb79866c97702a5f1006c7",
    "bytes": 17565
+  },
+  {
+   "path": "bin/vibe_questions.py",
+   "sha256": "d5630e455a667973fdafbe91ad44944da0bf0a4865a4d714d00eee3065aeb10f",
+   "bytes": 11589
   },
   {
    "path": "bin/vibe_runs.py",
@@ -49,9 +89,34 @@
    "bytes": 19860
   },
   {
+   "path": "bin/vibe_sandbox.py",
+   "sha256": "eb8482982eaf7ab7770fd8f296693d3c1ec1356ba6ecd200dde1dc29cd0393f7",
+   "bytes": 23968
+  },
+  {
+   "path": "bin/vibe_services.py",
+   "sha256": "5b538da160b8816aef3209ce0105ffc6dd89b75a8d5dd8e2b17605f73486949d",
+   "bytes": 8271
+  },
+  {
    "path": "bin/vibe_storage.py",
    "sha256": "2fad84e426278fa693c4f1b1fa14d33b97acb0942aaad803c9bd58728427b75f",
    "bytes": 19810
+  },
+  {
+   "path": "bin/web/app.js",
+   "sha256": "fb13ecd82ff528a6189b3b69bebd6bf6069b9801fc4c75fefe8a21dcd38e92fd",
+   "bytes": 91467
+  },
+  {
+   "path": "bin/web/index.html",
+   "sha256": "db45ba1dd9e5da380f5c05c24b2158eefce9b7e8f87faeb33a9e88910d0cd73d",
+   "bytes": 588
+  },
+  {
+   "path": "bin/web/styles.css",
+   "sha256": "186fd8b3a08f8834402f44b7ad275b49e7cfbace1cfb97878e997be7c3369206",
+   "bytes": 7682
   },
   {
    "path": "data/models.json",
@@ -65,8 +130,8 @@
   },
   {
    "path": "scripts/setup-vibe.py",
-   "sha256": "9d07bb0f186e8df67ed4ae5b0a42f91c01563d012e09aaf48aca1d621bd105e0",
-   "bytes": 62689
+   "sha256": "435446bbbbb70e0e1a1fe5d660781ad3a6dfef28d45119f5a8b04961c512d014",
+   "bytes": 62713
   },
   {
    "path": "setup-vibe.cmd",
@@ -75,8 +140,8 @@
   },
   {
    "path": "templates/android/.vibe/project.env",
-   "sha256": "99df0dd168b28f43af937a21a5c3f6035d771058deeea3b2f2742163d612f777",
-   "bytes": 267
+   "sha256": "9cdb71f6c2266f9d06d4ca1b28e156e73cf3ec01daf2eead4a1b0db50ed06d9e",
+   "bytes": 313
   },
   {
    "path": "templates/android/AGENTS.md",
@@ -99,6 +164,11 @@
    "bytes": 138
   },
   {
+   "path": "templates/common/.opencode/agents/test-agent.md",
+   "sha256": "339a884bda0ce261334a3ac2662f5b6582b88bcaa3601fc92b008fff16561912",
+   "bytes": 2032
+  },
+  {
    "path": "templates/common/FEEDBACK.md",
    "sha256": "e843730d69d4f02f4bb9158a3a88826cb5074654c9c3077a5d2868cbf9343f35",
    "bytes": 424
@@ -115,8 +185,8 @@
   },
   {
    "path": "templates/docker/.vibe/project.env",
-   "sha256": "7b0e969ef032386b7c466bce6993db05f0d078b7e7f81b62b23030922e32612a",
-   "bytes": 246
+   "sha256": "c464921033f2596757f0e24466273b6fdc402fd71eca33d89175149026f60b21",
+   "bytes": 273
   },
   {
    "path": "templates/docker/AGENTS.md",
@@ -125,8 +195,8 @@
   },
   {
    "path": "templates/generic/.vibe/project.env",
-   "sha256": "9a07de72fde906e6c042ffef1afd37635200a57cd8aa79eef9d9b370a81f7b8f",
-   "bytes": 248
+   "sha256": "28650b969b80f9968a3ec46451eebf2c8b6eeca17394bf1a7c93159706c091e4",
+   "bytes": 275
   },
   {
    "path": "templates/generic/AGENTS.md",
@@ -135,8 +205,8 @@
   },
   {
    "path": "templates/openwrt/.vibe/project.env",
-   "sha256": "e29a672e5c752aa9a13d551bf1e7c8389310352f6451477c087643ccf47b9b8e",
-   "bytes": 249
+   "sha256": "4068a6783f2bd86092d31301e28f16e60b92cbeb8b1570ea77a9e8af0b310cb4",
+   "bytes": 276
   },
   {
    "path": "templates/openwrt/AGENTS.md",
@@ -190,8 +260,8 @@
   },
   {
    "path": "templates/rebuild/.vibe/project.env",
-   "sha256": "79add1fd112b1c02f636a03fce89727abaf761fb0e2b9ab7b7ef72aed3f8c36f",
-   "bytes": 837
+   "sha256": "073fbe168ff7c019e7c78fe5e122677075c50f5feffd75bdd3f9cc6ad32c28ca",
+   "bytes": 893
   },
   {
    "path": "templates/rebuild/AGENTS.md",
@@ -215,78 +285,13 @@
   },
   {
    "path": "templates/web/.vibe/project.env",
-   "sha256": "0568394de331b7a2a499aa657b84e2e36fa23d57f1598477c80cad6b4432babb",
-   "bytes": 310
+   "sha256": "ec53bba7187335bf9370d8662be3f91aa03c135a0358de7da0add9689d7938ec",
+   "bytes": 345
   },
   {
    "path": "templates/web/AGENTS.md",
    "sha256": "5834184b5b6ad7843de78792cacc9247a59ee77e176470bee32c52f2d6f32da2",
    "bytes": 4208
-  },
-  {
-   "path": "bin/vibe_autonomous.py",
-   "sha256": "3719eaa5a360e3a47afc3e0ead250d7e4b62e4fb4ca721d70a894c0c81ef7418",
-   "bytes": 5149
-  },
-  {
-   "path": "bin/vibe",
-   "sha256": "2edc348f28917b8b5e0664c73bafb21d7421aaed3704f5d4153ad668ac30357d",
-   "bytes": 208343
-  },
-  {
-   "path": "bin/vibe-run.sh",
-   "sha256": "b7885d8080cd20a98f319f612530c32ee374ed23391c0ee7d1acfe3417353514",
-   "bytes": 14153
-  },
-  {
-   "path": "bin/vibe-web.py",
-   "sha256": "295cccd352f896ccc4c03a2b973b03c6f122ed3dca33ae603344ea1790d6c3c9",
-   "bytes": 52303
-  },
-  {
-   "path": "bin/vibe_sandbox.py",
-   "sha256": "255fa5071b27c5bce57be81eb2c09dac88356d61fe242fdeed4da81868034fc5",
-   "bytes": 22772
-  },
-  {
-   "path": "bin/vibe_questions.py",
-   "sha256": "d5630e455a667973fdafbe91ad44944da0bf0a4865a4d714d00eee3065aeb10f",
-   "bytes": 11589
-  },
-  {
-   "path": "VERSION",
-   "sha256": "f5e9382967c9833066a55808829f3750fc8e1181b170cafd222c37048bb49a77",
-   "bytes": 7
-  },
-  {
-   "path": "bin/vibe_services.py",
-   "sha256": "5b538da160b8816aef3209ce0105ffc6dd89b75a8d5dd8e2b17605f73486949d",
-   "bytes": 8271
-  },
-  {
-   "path": "bin/web/index.html",
-   "sha256": "db45ba1dd9e5da380f5c05c24b2158eefce9b7e8f87faeb33a9e88910d0cd73d",
-   "bytes": 588
-  },
-  {
-   "path": "bin/web/styles.css",
-   "sha256": "186fd8b3a08f8834402f44b7ad275b49e7cfbace1cfb97878e997be7c3369206",
-   "bytes": 7682
-  },
-  {
-   "path": "bin/web/app.js",
-   "sha256": "fb13ecd82ff528a6189b3b69bebd6bf6069b9801fc4c75fefe8a21dcd38e92fd",
-   "bytes": 91467
-  },
-  {
-   "path": "templates/common/.opencode/agents/test-agent.md",
-   "sha256": "339a884bda0ce261334a3ac2662f5b6582b88bcaa3601fc92b008fff16561912",
-   "bytes": 2032
-  },
-  {
-   "path": "bin/vibe_harness.py",
-   "sha256": "026466b463fbf72d2cc784c18196a7790b050d1f15a61a24123ce987836d5de1",
-   "bytes": 20662
   }
  ],
  "aenderungen": [
@@ -749,6 +754,25 @@
     "bin/vibe_runs.py",
     "bin/web/app.js",
     "bin/web/styles.css"
+   ]
+  },
+  {
+   "arbeitspaket": "AP05",
+   "datum": "2026-11-07",
+   "grund": "Saubere Paketabwicklung: Preflight auf sauberem Git-Stand mit verfügbaren Test-/Review-Agenten und echtem Paketprüfbefehl, jedes Paket in eigener Arbeitskopie unter dem Laufzeitordner, Abschlussschranke für Commit, Ticket-Nachweis, Feature-Dokumentation und Review, Fehlerklassen (Quota/Auth sofort, Netz/sonstiges begrenzt wiederholt), Auswahl nach TICKETS/FEEDBACK mit Abhängigkeiten, Abschlussbericht je Paket, Aufräumen nur gemergter Arbeitskopien sowie Sandbox-Schreibfreigabe für den gemeinsamen Git-Ordner einer Arbeitskopie. Neue Logik in bin/vibe_packages.py, Verdrahtung in bin/vibe-run.sh; VERIFY_PACKAGE in den Projektvorlagen.",
+   "dateien": [
+    "bin/vibe-run.sh",
+    "bin/vibe_packages.py",
+    "bin/vibe_sandbox.py",
+    "bin/vibe",
+    "scripts/setup-vibe.py",
+    "templates/android/.vibe/project.env",
+    "templates/docker/.vibe/project.env",
+    "templates/generic/.vibe/project.env",
+    "templates/openwrt/.vibe/project.env",
+    "templates/rebuild/.vibe/project.env",
+    "templates/web/.vibe/project.env",
+    ".vibe/project.env"
    ]
   }
  ]

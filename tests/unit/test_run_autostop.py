@@ -6,7 +6,8 @@ weiterhin als aktiv. Geprüft wird das mit einer echten, isolierten
 tmux-Sitzung (eigener ``TMUX_TMPDIR``) und einer nachgebildeten
 opencode-/verify-Ablage; es werden keine Modellaufrufe ausgeführt.
 """
-import hashlib
+import importlib.machinery
+import importlib.util
 import os
 import shutil
 import subprocess
@@ -19,32 +20,28 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[2]
 CLI = REPO / "bin" / "vibe"
 
-NEXT_ITEM = '''import os, sys
-here = os.path.dirname(os.path.abspath(__file__))
-count_path = os.path.join(here, "next-calls")
-try:
-    calls = int(open(count_path, encoding="utf-8").read())
-except OSError:
-    calls = 0
-calls += 1
-open(count_path, "w", encoding="utf-8").write(str(calls))
-if calls > 1:
-    sys.exit(1)
-open("/tmp/next_id", "w", encoding="utf-8").write("F1")
-open("/tmp/next_block", "w", encoding="utf-8").write(
-    "- [ ] F1 Testpaket\\n  Beschreibung: Test\\n"
-)
-'''
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import runner_support as support
 
-FAKE_OPENCODE = '''#!/usr/bin/env bash
-printf 'x\\n' >> "$VIBE/_logs/opencode.invocations"
-exit 0
-'''
 
-FAKE_CURL = '''#!/usr/bin/env bash
-exit 7
-'''
-
+def load_cli(vibe_root):
+    """Lädt bin/vibe als Modul mit isoliertem VIBE und HOME."""
+    old = {key: os.environ.get(key) for key in ("VIBE", "VIBE_NO_CONTAINER", "HOME")}
+    os.environ["VIBE"] = str(vibe_root)
+    os.environ["VIBE_NO_CONTAINER"] = "1"
+    os.environ["HOME"] = str(Path(vibe_root) / "home")
+    try:
+        loader = importlib.machinery.SourceFileLoader("vibe_autostop_under_test", str(CLI))
+        spec = importlib.util.spec_from_loader(loader.name, loader)
+        module = importlib.util.module_from_spec(spec)
+        loader.exec_module(module)
+    finally:
+        for key, value in old.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+    return module
 
 class RunnerSessionEndTest(unittest.TestCase):
     """Prüft, dass die tmux-Sitzung mit dem Ende des Läufers verschwindet."""
@@ -55,37 +52,40 @@ class RunnerSessionEndTest(unittest.TestCase):
         self.name = "f10proj%d" % os.getpid()
         self.project = self.root / self.name
         (self.project / ".vibe").mkdir(parents=True)
+        cli = load_cli(self.root)
         # V-010: Der Läufer fällt nicht mehr auf einen fest eingebauten
         # Kernagentennamen zurück. Ein Projektlauf braucht deshalb einen
         # konfigurierten Agenten; die Rolle des Agenten ist hier unerheblich.
         (self.project / ".vibe" / "project.env").write_text(
-            'TYPE=generic\nAGENT=tester\nVERIFY_FULL="true"\n', encoding="utf-8"
+            "TYPE=generic\n"
+            "AGENT=tester\n"
+            "TESTER=test-agent\n"
+            "REVIEWER=code-reviewer\n"
+            'VERIFY_PACKAGE="true"\n'
+            'VERIFY_FULL="true"\n'
+            "MAX_RETRIES=0\n",
+            encoding="utf-8",
         )
         (self.project / "FEEDBACK.md").write_text(
             "# FEEDBACK\n\n- [ ] F1 Testpaket\n  Beschreibung: Test\n",
             encoding="utf-8",
         )
+        (self.project / "TICKETS.md").write_text("# TICKETS\n", encoding="utf-8")
+        # Der verwaltete Regelblock ist bereits aktuell; sonst würde
+        # ``vibe run`` die Datei ändern und der Preflight den Arbeitsbaum
+        # zu Recht als nicht leer ablehnen.
+        (self.project / "AGENTS.md").write_text(
+            cli.GENERAL_RULES + "\n", encoding="utf-8"
+        )
+        support.write_agents(
+            self.project / ".opencode" / "agents", "test-agent", "code-reviewer"
+        )
         self.verify = self.root / "_toolchain" / "verify"
         self.verify.mkdir(parents=True)
-        # bin/vibe startet den Läufer aus der Installation ($VIBE/_toolchain).
-        self.tool_bin = self.root / "_toolchain" / "bin"
-        self.tool_bin.mkdir(parents=True)
-        shutil.copy(REPO / "bin" / "vibe-run.sh", self.tool_bin / "vibe-run.sh")
-        (self.verify / "next_item.py").write_text(NEXT_ITEM, encoding="utf-8")
-        marker = self.verify / "verify-marker.txt"
-        marker.write_text("ok\n", encoding="utf-8")
-        digest = hashlib.sha256(marker.read_bytes()).hexdigest()
-        home_config = self.root / "home" / ".config"
-        home_config.mkdir(parents=True)
-        (home_config / "schreibfuchs-verify.sha").write_text(
-            f"{digest}  verify-marker.txt\n", encoding="utf-8"
-        )
-        fakebin = self.root / "fakebin"
-        fakebin.mkdir()
-        for name, text in (("opencode", FAKE_OPENCODE), ("curl", FAKE_CURL)):
-            path = fakebin / name
-            path.write_text(text, encoding="utf-8")
-            path.chmod(0o755)
+        support.install_runner(self.root / "_toolchain")
+        self.fakebin = support.install_fake_tools(self.root)
+        support.init_repo(self.project)
+        support.commit_all(self.project)
         self.tmux_dir = self.root / "tmux"
         self.tmux_dir.mkdir()
         # tmux akzeptiert TMUX_TMPDIR nur ohne fremde Schreibrechte; sonst
@@ -104,14 +104,31 @@ class RunnerSessionEndTest(unittest.TestCase):
         # Test gestartet wurde; kill-server würde fremde Läufe beenden.
         env.pop("TMUX", None)
         env.pop("TMUX_PANE", None)
+        for key in list(env):
+            if key.startswith("VIBE") or key.startswith("FAKE_") or key in (
+                "AGENT",
+                "TESTER",
+                "REVIEWER",
+                "MAX_RETRIES",
+                "SANDBOX",
+                "SANDBOX_TOOLS",
+                "VERIFY_FULL",
+                "VERIFY_PACKAGE",
+            ):
+                env.pop(key, None)
         env.update(
             {
                 "VIBE": str(self.root),
                 "VIBE_NO_CONTAINER": "1",
+                "VIBE_INSTALL": str(self.root / "_toolchain"),
+                "VIBE_RUNTIME": str(self.root / "_logs"),
+                "VIBE_AGENTS_DIR": str(self.project / ".opencode" / "agents"),
                 "HOME": str(self.root / "home"),
-                "PATH": str(self.root / "fakebin") + os.pathsep + env.get("PATH", ""),
+                "PATH": str(self.fakebin) + os.pathsep + env.get("PATH", ""),
                 "TMUX_TMPDIR": str(self.tmux_dir),
                 "TERM": env.get("TERM", "xterm"),
+                "FAKE_CALLS": str(self.root / "opencode.calls"),
+                "FAKE_COUNTER": str(self.root / "counter"),
             }
         )
         return env

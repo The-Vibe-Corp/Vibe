@@ -31,6 +31,9 @@ BIN = REPO / "bin"
 CLI = BIN / "vibe"
 RUNNER = BIN / "vibe-run.sh"
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import runner_support as support
+
 GLOBAL_AGENT = """---
 description: Globaler Agent
 mode: subagent
@@ -585,32 +588,6 @@ class RunSelectionTest(ProjectAgentsFixture):
         runner.assert_not_called()
 
 
-FAKE_OPENCODE = """#!/usr/bin/env bash
-printf '%s\\n' "$@" >> "$VIBE_FAKE_OPENCODE"
-exit 0
-"""
-
-FAKE_CURL = """#!/usr/bin/env bash
-exit 7
-"""
-
-NEXT_ITEM_ONCE = """import os, sys
-here = os.path.dirname(os.path.abspath(__file__))
-count_path = os.path.join(here, "next-calls")
-try:
-    calls = int(open(count_path, encoding="utf-8").read())
-except OSError:
-    calls = 0
-if calls:
-    sys.exit(1)
-open(count_path, "w", encoding="utf-8").write("1")
-open("/tmp/next_id", "w", encoding="utf-8").write("F1")
-open("/tmp/next_block", "w", encoding="utf-8").write(
-    "- [ ] F1 Testpaket\\n  Beschreibung: Test\\n"
-)
-"""
-
-
 class RunnerModelTest(unittest.TestCase):
     """Der Läufer gibt eine Modellüberschreibung an ``opencode run`` weiter."""
 
@@ -619,36 +596,46 @@ class RunnerModelTest(unittest.TestCase):
         self.root = Path(self.tmp.name)
         self.home = self.root / "home"
         self.home.mkdir()
+        self.agents = self.home / ".config" / "opencode" / "agents"
+        support.write_agents(self.agents, "test-agent", "code-reviewer")
         self.install = self.root / "_toolchain"
-        self.tool_bin = self.install / "bin"
-        self.tool_bin.mkdir(parents=True)
+        self.tool_bin = support.install_runner(self.install)
         self.verify = self.install / "verify"
         self.verify.mkdir()
         self.runtime = self.root / "_logs"
         self.project = self.root / "proj"
         (self.project / ".vibe").mkdir(parents=True)
-        shutil.copy(RUNNER, self.tool_bin / "vibe-run.sh")
-        shutil.copy(BIN / "vibe_runs.py", self.tool_bin / "vibe_runs.py")
         self.calls = self.root / "opencode.calls"
-        fakebin = self.root / "fakebin"
-        fakebin.mkdir()
-        for name, text in (("opencode", FAKE_OPENCODE), ("curl", FAKE_CURL)):
-            path = fakebin / name
-            path.write_text(text, encoding="utf-8")
-            path.chmod(0o755)
-        (self.verify / "next_item.py").write_text(NEXT_ITEM_ONCE, encoding="utf-8")
+        self.args = self.root / "_logs" / "opencode.args"
+        self.fakebin = support.install_fake_tools(self.root)
         (self.project / ".vibe" / "project.env").write_text(
-            'TYPE=generic\nAGENT=tester\nVERIFY_FULL="true"\nMAX_RETRIES=0\n',
+            "TYPE=generic\n"
+            "AGENT=tester\n"
+            "TESTER=test-agent\n"
+            "REVIEWER=code-reviewer\n"
+            'VERIFY_PACKAGE="true"\n'
+            'VERIFY_FULL="true"\n'
+            "MAX_RETRIES=0\n",
             encoding="utf-8",
         )
+        (self.project / "FEEDBACK.md").write_text(
+            "# FEEDBACK\n\n- [ ] F1 Testpaket\n  Beschreibung: Test\n",
+            encoding="utf-8",
+        )
+        (self.project / "TICKETS.md").write_text("# TICKETS\n", encoding="utf-8")
+        support.init_repo(self.project)
+        support.commit_all(self.project)
         self.env = isolated_env(self.root, self.home)
         self.env.update(
             {
                 "VIBE_INSTALL": str(self.install),
                 "VIBE_RUNTIME": str(self.runtime),
+                "VIBE_AGENTS_DIR": str(self.agents),
                 "VIBE_MAX_PACKAGES": "1",
-                "VIBE_FAKE_OPENCODE": str(self.calls),
-                "PATH": str(fakebin) + os.pathsep + os.environ.get("PATH", ""),
+                "FAKE_ARGS_PATH": str(self.args),
+                "FAKE_CALLS": str(self.calls),
+                "FAKE_COUNTER": str(self.root / "counter"),
+                "PATH": str(self.fakebin) + os.pathsep + os.environ.get("PATH", ""),
             }
         )
 
@@ -656,18 +643,8 @@ class RunnerModelTest(unittest.TestCase):
         self.tmp.cleanup()
 
     def run_runner(self, *arguments):
-        command = ["bash", str(RUNNER), str(self.project), *arguments]
-        # Der Läufer legt Sperr- und Arbeitsdateien unter /tmp ab. In einer
-        # Prüfumgebung mit schreibgeschütztem /tmp wird ein eigener,
-        # schreibbarer Ordner über /tmp gelegt, damit derselbe echte Läufer
-        # unverändert geprüft werden kann.
-        if not os.access("/tmp", os.W_OK):
-            if not shutil.which("bwrap"):
-                self.fail("/tmp ist schreibgeschützt und bwrap fehlt; der Läufer kann keine Übergabedateien anlegen.")
-            command = ["bwrap", "--dev-bind", "/", "/", "--tmpfs", "/tmp",
-                       "--bind", str(self.root), str(self.root), *command]
         return subprocess.run(
-            command,
+            ["bash", str(self.tool_bin / "vibe-run.sh"), str(self.project), *arguments],
             cwd=str(self.project),
             env=self.env,
             stdin=subprocess.DEVNULL,
@@ -676,11 +653,15 @@ class RunnerModelTest(unittest.TestCase):
             timeout=90,
         )
 
+    def opencode_arguments(self):
+        self.assertTrue(self.args.exists(), "opencode wurde nicht aufgerufen")
+        return [word for word in self.args.read_text(encoding="utf-8").split("\0") if word]
+
     def test_model_override_is_forwarded_to_opencode(self):
         result = self.run_runner("tester", "opencode/projekt-speziell")
 
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        arguments = self.calls.read_text(encoding="utf-8").splitlines()
+        arguments = self.opencode_arguments()
         self.assertIn("run", arguments)
         self.assertIn("--model", arguments)
         self.assertEqual(
@@ -692,7 +673,7 @@ class RunnerModelTest(unittest.TestCase):
         result = self.run_runner("tester")
 
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        arguments = self.calls.read_text(encoding="utf-8").splitlines()
+        arguments = self.opencode_arguments()
         self.assertNotIn("--model", arguments)
 
     def test_invalid_model_aborts_before_opencode(self):
@@ -700,7 +681,7 @@ class RunnerModelTest(unittest.TestCase):
 
         self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("Modellangabe ungültig", result.stdout + result.stderr)
-        self.assertFalse(self.calls.exists())
+        self.assertFalse(self.args.exists())
 
 
 if __name__ == "__main__":

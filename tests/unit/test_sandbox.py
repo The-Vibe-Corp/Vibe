@@ -30,6 +30,9 @@ WEB = REPO / "bin" / "vibe-web.py"
 RUNNER = REPO / "bin" / "vibe-run.sh"
 TEMPLATES = REPO / "templates"
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import runner_support as support
+
 TOOL_DEFAULTS = {
     "generic": ["git", "python3"],
     "web": ["git", "node", "npm"],
@@ -242,6 +245,23 @@ class SandboxConfigTest(SandboxFixture):
 
 
 class SandboxCommandTest(SandboxFixture):
+    def test_bwrap_arguments_bind_the_shared_git_dir_of_a_worktree(self):
+        self.write_env('SANDBOX=on\nSANDBOX_TOOLS="git"\n')
+        support.init_repo(self.project)
+        support.commit_all(self.project)
+        worktree = self.root / "worktree"
+        support.git(self.project, "worktree", "add", "-q", "-b", "test-wt", str(worktree))
+
+        argv = self.sandbox.bwrap_argv(
+            worktree, ["/bin/true"], bwrap="/usr/bin/bwrap"
+        )
+
+        common = support.git(
+            worktree, "rev-parse", "--path-format=absolute", "--git-common-dir"
+        ).stdout.strip()
+        self.assertTrue(common, "gemeinsamer Git-Ordner nicht ermittelbar")
+        self.assertIn(("--bind", os.path.realpath(common)), list(zip(argv, argv[1:])))
+
     def test_bwrap_arguments_bind_root_read_only_and_write_dirs(self):
         self.write_env('SANDBOX=on\nSANDBOX_TOOLS="git"\n')
         self.cli.write_dirs_save("proj", [str(self.project)])
@@ -704,57 +724,70 @@ class SandboxRunnerTest(SandboxFixture):
             "else\n"
             '  echo DENIED >> "$FAKE_ARGS"\n'
             "fi\n"
-            "exit 0\n",
+            'exec package-agent "$@"\n',
             encoding="utf-8",
         )
         fake_opencode.chmod(0o755)
+        package_agent = toolbin / "package-agent"
+        package_agent.write_text(support.FAKE_OPENCODE, encoding="utf-8")
+        package_agent.chmod(0o755)
+        curl = toolbin / "curl"
+        curl.write_text(support.FAKE_CURL, encoding="utf-8")
+        curl.chmod(0o755)
 
-        toolchain_bin = self.root / "_toolchain" / "bin"
-        toolchain_bin.mkdir(parents=True, exist_ok=True)
+        toolchain_bin = support.install_runner(self.root / "_toolchain")
         shutil.copy2(SANDBOX, toolchain_bin / "vibe_sandbox.py")
-
         verify = self.root / "_toolchain" / "verify"
         verify.mkdir(parents=True, exist_ok=True)
-        (verify / "ok.txt").write_text("ok\n", encoding="utf-8")
-        (verify / "next_item.py").write_text(
-            "import sys\n"
-            "from pathlib import Path\n"
-            "project = Path(sys.argv[1])\n"
-            "counter = project / '.fake-count-%s'\n"
-            "n = int(counter.read_text()) if counter.exists() else 0\n"
-            "if n >= 1:\n"
-            "    sys.exit(1)\n"
-            "counter.write_text('1')\n"
-            "Path('/tmp/next_id').write_text('T-1\\n')\n"
-            "Path('/tmp/next_block').write_text('- [ ] T-1 Test\\n')\n"
-            % sandbox_value,
-            encoding="utf-8",
-        )
-        digest = hashlib.sha256((verify / "ok.txt").read_bytes()).hexdigest()
-        (self.home / ".config").mkdir(parents=True, exist_ok=True)
-        (self.home / ".config" / "schreibfuchs-verify.sha").write_text(
-            f"{digest}  ok.txt\n", encoding="utf-8"
-        )
+
+        agents = self.home / ".config" / "opencode" / "agents"
+        support.write_agents(agents, "test-agent", "code-reviewer")
         self.env_file.write_text(
             "TYPE=generic\n"
             "AGENT=tester\n"
-            "VERIFY_QUICK=true\n"
-            "VERIFY_FULL=true\n"
-            "MAX_PACKAGES=1\n"
+            "TESTER=test-agent\n"
+            "REVIEWER=code-reviewer\n"
+            'VERIFY_PACKAGE="true"\n'
+            'VERIFY_FULL="true"\n'
+            "MAX_RETRIES=0\n"
             f"SANDBOX={sandbox_value}\n"
             'SANDBOX_TOOLS="git"\n',
             encoding="utf-8",
         )
+        (self.project / "FEEDBACK.md").write_text(
+            "# FEEDBACK\n\n- [ ] T-1 Test\n  Beschreibung: Test\n",
+            encoding="utf-8",
+        )
+        (self.project / "TICKETS.md").write_text("# TICKETS\n", encoding="utf-8")
+        support.init_repo(self.project)
+        support.commit_all(self.project)
 
         env = os.environ.copy()
+        for key in list(env):
+            if key.startswith("VIBE") or key.startswith("FAKE_") or key in (
+                "AGENT",
+                "TESTER",
+                "REVIEWER",
+                "MAX_RETRIES",
+                "SANDBOX",
+                "SANDBOX_TOOLS",
+                "VERIFY_FULL",
+                "VERIFY_PACKAGE",
+            ):
+                env.pop(key, None)
         env.update(
             {
                 "VIBE": str(self.root),
+                "VIBE_INSTALL": str(self.root / "_toolchain"),
+                "VIBE_RUNTIME": str(self.root / "_logs"),
+                "VIBE_AGENTS_DIR": str(agents),
                 "VIBE_LOGNAME": "proj",
                 "HOME": str(self.home),
                 "PATH": str(toolbin) + os.pathsep + env.get("PATH", ""),
                 "FAKE_ARGS": str(args_file),
                 "FAKE_ESCAPE": str(escape),
+                "FAKE_CALLS": str(self.root / "opencode.calls"),
+                "FAKE_COUNTER": str(self.root / "counter"),
                 "VIBE_NO_CONTAINER": "1",
             }
         )
@@ -762,7 +795,8 @@ class SandboxRunnerTest(SandboxFixture):
 
     def run_runner(self, env):
         return subprocess.run(
-            ["bash", str(RUNNER), str(self.project), "tester"],
+            ["bash", str(self.root / "_toolchain" / "bin" / "vibe-run.sh"),
+             str(self.project), "tester"],
             capture_output=True,
             text=True,
             env=env,
