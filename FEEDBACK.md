@@ -204,3 +204,22 @@ Regeln (werden maschinell geprüft):
   Review: docs/reviews/B1-review-1.md (CHANGES REQUIRED), docs/reviews/B1-review-2.md (CHANGES REQUIRED; 1 Medium als dokumentierte Umgebungsgrenze akzeptiert, 2 Minor)
   Doku: docs/features/B1.md; Trilium `V3AV2elZkQgo`
   Hinweis: Der konfigurierte Test-Agent (`test-agent`) war in dieser Sitzung nicht aufrufbar (`permission.rejected`); die Test-Herkunft ist in `docs/features/B1.md` offen dokumentiert. Die Blockade ist damit aufgelöst und das Paket fachlich abgenommen.
+
+- [x] F21 UI-konfigurierte Agenten für den Lauf freigeben
+  Art: Bug
+  Beschreibung: Nach der Agentenkonfiguration über die vibe-Oberfläche
+  (Rollen in `profiles.json`, Auswahl in `.vibe/agents.json`) bricht
+  `vibe run` im Preflight mit "REVIEWER fehlt" ab, obwohl ein Agent mit der
+  Rolle `reviewer` vorhanden ist. Zusätzlich lehnt
+  `vibe_runs.py finish --state blocked` den Zustand ab, sodass ein durch den
+  Preflight blockierter Lauf nicht sauber beendet wird.
+  Akzeptanz: Der Preflight liest eine fehlende REVIEWER-Zuordnung aus den
+  Rollen in `profiles.json` und bevorzugt dabei einen verfügbaren Agenten.
+  Ein ausdrücklich gesetzter REVIEWER bleibt vorrangig. Fehlt jede
+  reviewer-Rolle oder ist kein zugeordneter Agent verfügbar, bleibt der
+  Preflight blockiert. `blocked` ist ein gültiger Endzustand im Laufregister;
+  unbekannte Zustände werden weiterhin abgelehnt. Die Ablehnung eines
+  unsauberen Arbeitsbaums bleibt unverändert.
+  Commit: d28a7f5; Test: python3 -m unittest discover -s tests/unit -p 'test_f21_agents_preflight.py' -v (22 Tests OK)
+  Review: docs/reviews/F21-review-1.md (CHANGES REQUIRED), docs/reviews/F21-review-2.md (PASS)
+  Doku: docs/features/F21.md; Trilium `nmgfEHK5Yz2L`
