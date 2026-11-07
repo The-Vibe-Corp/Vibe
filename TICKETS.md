@@ -489,7 +489,7 @@ Ein fehlender externer Dienst bedeutet BLOCKIERT, nicht erledigt.
   2 Minor).
   Dokumentation: `docs/features/V-022.md`; Trilium `0nTTx7KSysUQ`.
 
-- [ ] AP03 Überarbeitung Agentenverwaltung
+- [x] AP03 Überarbeitung Agentenverwaltung
   Beschreibung: Die Agentenverwaltung ist für die Menge der Agenten unübersichtlich geworden.
   
   Ich möchte die UI - sowohl im Allgemeinen, als auch je Projekt von neu aufbauen (komplett neu erstellen).
@@ -506,6 +506,11 @@ Ein fehlender externer Dienst bedeutet BLOCKIERT, nicht erledigt.
   Es muss immer mindestens einen StandardAgenten gebenden "Vibe-Agent" - für diesen muss immer ein modell konfiguriert sein, vorher können keine projekte mit vibe ausgeführt werden. Sofern kein anderer Agent definiert ist, übernimmt der vibe agent alle aufgaben. Er benötigt dementsprechend einen allgemeinen prompt mit der einzigen spezialisierng - unterstüzung des nutzers bei der benutzung und konfiguration von vibe.
   
   Vibe soll den nutzer aktiv bei der formulierung der prompts der agenten unterstützen. Wichtigste priorität der agenten prompts ist die aufgabe und die abkapselung der aufgabe. Die ausführung und detailtiefe soll der agent selbst defninieren dürfen, aber nur in dem jeweils eigenen bereich.
+  Commit: 066e671
+  Test: test_cmd_run_aborts_without_a_model_even_when_agent_is_set, test_cmd_run_aborts_when_the_vibe_agent_has_no_model, test_vibe_role_is_unique_and_cannot_be_removed_without_replacement, test_agent_validate_hierarchy_rejects_unknown_self_and_cycles, test_missing_config_activates_only_the_vibe_agent (tests/unit/test_ap03_agent_management.py, 33 Tests), test_05_project_settings_default_vibe_toggle_and_model_override (tests/browser/test_ap03_agents_ui.py, 20 Tests)
+  Review: docs/reviews/AP03-review-1.md (CHANGES REQUIRED; 1 Medium behoben, 1 Medium als dokumentierte Umgebungsgrenze akzeptiert, 3 Minor)
+  Doku: docs/features/AP03.md; Trilium `z9AVIt88OWdN`
+  Hinweis: Der konfigurierte Test-Agent (`test-agent`) war in dieser Sitzung nicht aufrufbar (`permission.rejected`); die Test-Herkunft ist in `docs/features/AP03.md` offen dokumentiert.
 
 - [ ] AP04 Harniss alternativen
   Beschreibung: Ich möchte, dass vibe unabhängiger vom coding harniss opencode wird.
