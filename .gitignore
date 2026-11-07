@@ -14,3 +14,6 @@ _secrets.env
 # Laufzeit- und Sperrartefakte des Projekts
 .vibe/agents.json
 vibe-storage-locks-*/
+
+# Vom Preflight verwaltete Werk-Notizen, nicht versionieren
+FEEDBACK.md
