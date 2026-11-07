@@ -183,3 +183,14 @@ Regeln (werden maschinell geprüft):
   Commit: 1b5bf9d; Test: test_simultaneous_projects_share_one_reconnect, test_a_failed_reconnect_is_reported_to_all_projects_and_not_repeated, test_a_waiting_project_never_starts_a_second_reconnect, test_a_recent_reconnect_is_reused_and_expires, test_automation_off_still_means_no_reconnect, test_a_manual_reconnect_participates_in_the_central_control, test_status_reports_the_central_result, test_a_project_name_with_control_characters_is_published_cleanly (tests/unit/test_fritz_coordination.py, 8 Tests), test_runner_tells_the_central_reconnect_which_project_continues (tests/unit/test_fritz_reconnect.py, 36 Tests gesamt)
   Review: docs/reviews/F18-review-1.md, docs/reviews/F18-review-2.md (PASS, 0 Critical/High/Medium; 3 Minor)
   Doku: docs/features/F18.md; Trilium `deX8hDMqAQ1k`
+
+- [x] B1 Kostentabelle aktualisiert sich nur träge, oder zeigt gar keine werte an
+  Art: Bug
+  Beschreibung: Die Kostentabelle aktualisiert sich nur träge, oder zeigt gar keine werte an, bei manchen projekten.
+  
+  Ich möchte, dass die kostentabelle sich nach jedem ap komplett aktualisiert (aber nur dort, wo es änderungen gab)
+  Commit: b805b96
+  Test: test_overview_refreshes_automatically_and_keeps_unchanged_rows, test_project_rows_are_updated_in_place (tests/browser/test_costs_refresh_ui.py, 3 Tests), test_session_under_equivalent_mount_alias_belongs_to_the_project, test_alias_does_not_attribute_unrelated_sessions, test_duplicate_session_id_in_both_databases_is_counted_once (tests/unit/test_costs_refresh.py, 8 Tests)
+  Review: docs/reviews/B1-review-1.md (CHANGES REQUIRED), docs/reviews/B1-review-2.md (CHANGES REQUIRED; 1 Medium als dokumentierte Umgebungsgrenze akzeptiert, 2 Minor)
+  Doku: docs/features/B1.md; Trilium `V3AV2elZkQgo`
+  Hinweis: Der konfigurierte Test-Agent (`test-agent`) war in dieser Sitzung nicht aufrufbar (`permission.rejected`); die Test-Herkunft ist in `docs/features/B1.md` offen dokumentiert. Die Blockade ist damit aufgelöst und das Paket fachlich abgenommen.
