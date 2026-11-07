@@ -39,7 +39,7 @@ Aufruf:  vibe                 interaktives Menü
          vibe types           verfügbare Projekttypen
          vibe doctor          Umgebung prüfen
 """
-import os, sys, re, json, math, sqlite3, subprocess, shutil, time, tempfile, shlex, socket, errno
+import os, sys, re, json, math, sqlite3, subprocess, shutil, time, tempfile, shlex, socket, errno, secrets
 import urllib.parse
 
 try:  # Nur unter POSIX verfügbar; ohne flock bleibt die Sperre wirkungslos (siehe F18).
@@ -3967,22 +3967,70 @@ def server_health():
     ``healthy: true`` und eine Version enthält. Ein beliebiger Webserver auf
     demselben Port darf nicht als laufender opencode-Server gelten.
     """
-    rc, out = run(["curl", "-sf", "--max-time", "2", OC_URL + "/global/health"])
-    if rc != 0:
-        return None
+    argv = ["curl", "-sf", "--max-time", "2"]
     try:
-        data = json.loads(out)
-    except ValueError:
-        return None
-    if not isinstance(data, dict) or data.get("healthy") is not True:
-        return None
-    version = data.get("version")
-    if not isinstance(version, str) or not version.strip():
-        return None
-    return out
+        with open(opencode_password_path(), encoding="utf-8") as handle:
+            password = handle.read().strip()
+    except OSError:
+        password = ""
+    if password:
+        # Der lokale opencode-Server ist seit F19 mit Basic-Auth geschützt.
+        # Ohne Anmeldung würde der Gesundheitscheck fälschlich "aus" melden.
+        argv.extend(["-u", "opencode:" + password])
+    # opencode v2 antwortet auf /api/info mit Version und Prozessdaten; der
+    # frühere Endpunkt /global/health wird nur noch ohne Kennwort als
+    # Rückfall für ältere Installationen geprüft.
+    endpoints = [(OC_URL + "/api/info", True)]
+    if not password:
+        endpoints.append((OC_URL + "/global/health", False))
+    for url, modern in endpoints:
+        rc, out = run(argv + [url])
+        if rc != 0:
+            continue
+        try:
+            data = json.loads(out)
+        except ValueError:
+            continue
+        if not isinstance(data, dict):
+            continue
+        version = data.get("version")
+        if not isinstance(version, str) or not version.strip():
+            continue
+        if modern or data.get("healthy") is True:
+            return out
+    return None
 
 def server_session():
     return profile_session("vibe-server")
+
+def opencode_password_path():
+    return os.path.join(LOGS, "opencode.password")
+
+def ensure_opencode_password():
+    """Legt das Kennwort des lokalen opencode-Servers an oder liest es.
+
+    Das Kennwort bleibt in der Laufzeit; es wird nie als Argument übergeben.
+    Der Serverprozess liest es beim Start über eine Datei-Referenz. Auf
+    FUSE/NTFS sind Unix-Rechte nicht garantiert; die Datei wird trotzdem mit
+    restriktiven Rechten angelegt, soweit das Dateisystem sie trägt.
+    """
+    path = opencode_password_path()
+    try:
+        with open(path, encoding="utf-8") as handle:
+            existing = handle.read().strip()
+    except OSError:
+        existing = ""
+    if existing:
+        return path
+    value = secrets.token_urlsafe(24)
+    try:
+        os.makedirs(LOGS, exist_ok=True)
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(value + "\n")
+    except OSError as error:
+        sys.exit("opencode-Kennwort konnte nicht angelegt werden: " + str(error))
+    return path
 
 def cmd_server(action="status", out=None):
     out = out or sys.stdout
@@ -4001,11 +4049,17 @@ def cmd_server(action="status", out=None):
             command = vibe_opencode.server_command(PATHS.opencode_port)
         except vibe_opencode.CompatibilityError as error:
             sys.exit(str(error))
+        # F19: Der Server erhält ein eigenes Kennwort für angemeldete
+        # Zusatzanweisungen. Das Kennwort selbst steht nie in der Befehlszeile;
+        # der Kindprozess liest es beim Start aus der Laufzeitdatei.
+        password_file = ensure_opencode_password()
         # Port ist validiert (1..65535) und damit kein Shell-Freitext; der
         # Adapter liefert eine Argumentliste, die shlex.join sicher quotet.
         rc, output = run(["tmux", "new-session", "-d", "-s", session,
-                       "-e", MANAGED_VAR + "=server", "bash", "-lc",
-                       "source ~/.bashrc; exec " + shlex.join(command)])
+                       "-e", MANAGED_VAR + "=server",
+                       "-e", "OPENCODE_SERVER_PASSWORD_FILE=" + password_file,
+                       "bash", "-lc",
+                       'source ~/.bashrc; export OPENCODE_SERVER_PASSWORD="$(cat "$OPENCODE_SERVER_PASSWORD_FILE")"; exec ' + shlex.join(command)])
         if rc != 0:
             sys.exit("opencode-Server nicht gestartet: " + output)
         time.sleep(4); print("Gestartet:" if server_health() else "Start angestoßen, Server antwortet noch nicht (tmux attach -t " + session + "):", OC_URL, file=out)

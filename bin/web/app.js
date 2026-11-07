@@ -110,7 +110,7 @@ async function detail(name){
  const runPill=el('span',{id:'runstate',class:'pill '+(d.running?'run':''),title:d.running?'Der Paket-Läufer ist aktiv.':'Der Agentenlauf ist beendet.'},d.running?'läuft':'gestoppt');
  const refreshRun=async()=>{const s=await api('/api/run-state?name='+encodeURIComponent(name));
   runPill.textContent=s.running?'läuft':'gestoppt';runPill.className='pill '+(s.running?'run':'');
-  runPill.title=s.running?'Der Paket-Läufer ist aktiv.':'Der Agentenlauf ist beendet.'};
+  runPill.title=s.running?'Der Paket-Läufer ist aktiv.':'Der Agentenlauf ist beendet.';return s};
  const act=(p,b)=>async()=>{const r=await api(p,b);toast(r.message);detail(name).catch(showErr)};
  let openTab=()=>{};
  const items=el('div',{class:'itemlist'},d.items.length?d.items.map(i=>el('div',{class:'item'},el('span',{class:'pill '+(i.state==='BLOCKIERT'?'bad':'warn')},i.state),el('span',{},el('b',{},i.id+' '),i.title))):el('span',{class:'ok'},'Alles abgehakt'));
@@ -132,10 +132,11 @@ async function detail(name){
   el('div',{class:'bar dactions'},el('button',{class:'b p',type:'button',on:{click:act('/api/run',{name})}},'Agentenlauf starten'),el('button',{class:'b',type:'button',on:{click:act('/api/stop',{name})}},'Stoppen')));
  const tiles=el('div',{class:'tiles'},tile('Offene Arbeitspakete',d.items.length,d.items.length?'warn':'ok'),tile('Änderungen',d.dirty,d.dirty?'warn':'ok'),tile('Branch',d.branch,'small'),tile('Letzter Commit',d.last||'—','small'));
  const L=logView(d,()=>stream('run'));
+ const steer=steerCard(name),S=subagentCard(name);
  const panels={arbeit:tabPanel('arbeit',tiles,el('div',{class:'grid'},
    el('div',{},itemsCard,ticketCard(d,name),ticketFormCard(d,name),feedbackCard(d,name),bugFormCard(d,name),feedbackFormCard(d,name)),
    el('div',{},pauseCard(d,name),autonomousCard(d,name),checksCard,factsCard))),
-  ausgabe:tabPanel('ausgabe',L.card),
+  ausgabe:tabPanel('ausgabe',el('div',{class:'output-layout'},L.card,el('div',{class:'output-side',id:'f19-controls'},steer.card,S.card))),
   assistent:tabPanel('assistent',guideCard(name)),
   einstellungen:tabPanel('einstellungen',el('div',{class:'grid'},projectAgentsCard(name),rightsCard(d,name),sandboxCard(d,name)))};
  const tabs=detailTabs(panels);
@@ -144,8 +145,9 @@ async function detail(name){
  L.fit();
  function stream(kind){if(es)es.close();L.clear();es=new EventSource('/api/stream?name='+encodeURIComponent(name)+'&kind='+kind+'&t='+encodeURIComponent(T));
   es.onmessage=ev=>L.feed(JSON.parse(ev.data).join('\n')+'\n')}
- stream('run');
- timer=setInterval(()=>{refreshRun().catch(()=>{})},3000)}
+ function syncRun(){refreshRun().then(s=>steer.setState(!!(s&&s.running))).catch(()=>{})}
+ stream('run');syncRun();S.poll().catch(()=>{});
+ timer=setInterval(()=>{syncRun();S.poll().catch(()=>{})},3000)}
 function pauseCard(d,name){
  const active=!!d.pause_after;
  const btn=el('button',{class:'b'+(active?' p':''),on:{click:async()=>{const r=await api('/api/pause',{name,action:active?'off':'on'});toast(r.message);if(r.ok)detail(name).catch(showErr)}}},active?'Pause aufheben':'Nach aktuellem Paket anhalten');
@@ -285,10 +287,49 @@ function feedbackFormCard(d,name){
  const f={t:el('input',{}),b:el('textarea',{rows:3,placeholder:'Was soll geändert oder ergänzt werden?'})};
  return el('div',{class:'card',id:'feedback-new'},el('b',{},'Feedback eintragen'),el('label',{},'Titel'),f.t,el('label',{},'Beschreibung'),f.b,
   el('div',{class:'bar'},el('button',{class:'b p',type:'button',on:{click:async()=>{const r=await api('/api/feedback',{name,title:f.t.value,description:f.b.value});toast(r.message);detail(name).catch(showErr)}}},'Eintragen')))}
+/* F19: Syntaxhervorhebung der Live-Ausgabe. Es werden ausschließlich
+   DOM-Knoten erzeugt (kein innerHTML), damit Protokollinhalt nie als HTML
+   interpretiert wird. Die Hervorhebung ist eine Darstellungshilfe und ändert
+   den Text nicht. */
+const HL_INLINE=/(`[^`\n]+`|"[^"\n]+"|\b[0-9a-f]{7,40}\b|(?:[A-Za-z0-9_.\/-]+\/)*[A-Za-z0-9_.-]+\.(?:py|js|css|html|sh|md|json|ya?ml|toml|env|png|txt|log|cfg|ini)\b|\b\d+(?:[.,]\d+)?\b)/g;
+function hlLineClass(line){
+ if(/^===.*===\s*$/.test(line)||/^diff --git |^@@ /.test(line))return 'hl-head';
+ if(/^\[Fehler\]/.test(line))return 'hl-err';
+ if(/^\[Subagent\]/.test(line))return 'hl-sub';
+ if(/^\[Werkzeug\]/.test(line))return 'hl-tool';
+ if(/^\[Denken\]/.test(line))return 'hl-think';
+ if(/^\s*(?:\$|>)\s/.test(line))return 'hl-cmd';
+ if(/^\+[^ ]/.test(line))return 'hl-add';
+ if(/^-[^ ]/.test(line))return 'hl-del';
+ return ''}
+function hlLine(line){
+ const cls=hlLineClass(line),span=cls?el('span',{class:cls}):el('span');
+ let last=0,m;HL_INLINE.lastIndex=0;
+ while((m=HL_INLINE.exec(line))){
+  if(m.index>last)span.append(document.createTextNode(line.slice(last,m.index)));
+  const tok=m[0];
+  let c='hl-num';
+  if(tok[0]==='`')c='hl-code';else if(tok[0]==='"')c='hl-str';
+  else if(/^[0-9a-f]{7,40}$/.test(tok))c='hl-sha';
+  else if(/\.[A-Za-z0-9]+$/.test(tok))c='hl-path';
+  span.append(el('span',{class:c},tok));last=HL_INLINE.lastIndex}
+ if(last<line.length)span.append(document.createTextNode(line.slice(last)));
+ return span}
+function renderLogChunk(text){
+ const frag=document.createDocumentFragment();
+ String(text).split('\n').forEach((line,i)=>{
+  if(i)frag.append(document.createTextNode('\n'));
+  if(line)frag.append(hlLine(line))});
+ return frag}
 function logView(d,onRun){
- const pre=el('pre',{id:'log'},(d.tail||[]).join('\n')||'(noch keine Ausgabe)');
- let logPaused=false,logBuf='';
- function append(text){const near=pre.scrollHeight-pre.scrollTop-pre.clientHeight<60;pre.textContent+=text;if(pre.textContent.length>80000)pre.textContent=pre.textContent.slice(-60000);if(near)pre.scrollTop=pre.scrollHeight}
+ const pre=el('pre',{id:'log'});
+ let logPaused=false,logBuf='',totalChars=0;
+ function append(text){if(!text)return;const near=pre.scrollHeight-pre.scrollTop-pre.clientHeight<60;
+  pre.append(renderLogChunk(text));totalChars+=String(text).length;
+  if(totalChars>80000){while(totalChars>60000&&pre.firstChild){const n=pre.firstChild;totalChars-=(n.textContent||'').length;pre.removeChild(n)}}
+  if(near)pre.scrollTop=pre.scrollHeight}
+ function reset(text){pre.replaceChildren();totalChars=0;append(text);pre.scrollTop=pre.scrollHeight}
+ reset((d.tail||[]).join('\n')||'(noch keine Ausgabe)');
  const pauseBtn=el('button',{class:'b',type:'button'},'Pause'),fullBtn=el('button',{class:'b',type:'button'},'Vergrößern');
  const runBtn=el('button',{class:'b',type:'button',title:'Verbindet die Ausgabe wieder mit dem Agentenlauf',on:{click:onRun}},'Lauf-Log');
  const card=el('div',{class:'card logcard'});
@@ -298,7 +339,80 @@ function logView(d,onRun){
  fullBtn.addEventListener('click',()=>setLogFull(!card.classList.contains('full')));
  card.append(el('div',{class:'bar'},el('b',{},'Live-Ausgabe'),el('span',{class:'mut'},'Lauf-Ausgabe des aktuellen Projekts'),runBtn,pauseBtn,fullBtn),pre);
  LOG={card,pre,button:fullBtn,fit};
- return {card,fit,clear:()=>{pre.textContent=''},feed:text=>{if(logPaused){logBuf=(logBuf+text).slice(-80000);return}append(text)}}}
+ return {card,fit,clear:()=>{pre.replaceChildren();totalChars=0;logBuf=''},feed:text=>{if(logPaused){logBuf=(logBuf+text).slice(-80000);return}append(text)}}}
+/* F19: Zusatzanweisung an den laufenden Agenten. Der Erfolg wird ausschließlich
+   aus der Antwort der API abgeleitet; ohne aktiven Lauf ist der Knopf gesperrt. */
+function steerCard(name){
+ const ta=el('textarea',{rows:2,maxlength:'4000',id:'steer-text','aria-label':'Zusatzanweisung an den laufenden Agenten',placeholder:'Zusatzanweisung an den laufenden Agenten …'});
+ const btn=el('button',{class:'b p',type:'button',id:'steer-send'},'Anweisung senden');
+ const state=el('span',{class:'pill mut',id:'steer-state'},'Lauf unbekannt');
+ const send=async()=>{
+  const text=ta.value.trim();
+  if(!text){ta.focus();toast('Bitte eine Zusatzanweisung eingeben.');return}
+  btn.disabled=true;
+  try{const r=await api('/api/steer',{name,text});
+   toast(r.message||(r.ok?'Zusatzanweisung übermittelt.':'Zusatzanweisung abgelehnt.'));
+   if(r.ok)ta.value=''}
+  catch(e){toast('Zusatzanweisung nicht gesendet: '+String(e&&e.message||e))}
+  finally{btn.disabled=false}};
+ btn.addEventListener('click',send);
+ ta.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key==='Enter'){e.preventDefault();send()}});
+ const card=el('div',{class:'card',id:'steer-card'},
+  el('div',{class:'bar'},el('b',{},'Agent steuern'),state),
+  el('div',{class:'mut'},'Die Anweisung wird direkt an die aktive opencode-Session übermittelt und im Laufprotokoll vermerkt. Sie ist nur während eines Laufs möglich.'),
+  ta,el('div',{class:'bar'},btn,el('span',{class:'mut'},'Strg/⌘ + Enter sendet')));
+ return {card,setState:running=>{state.textContent=running?'Lauf aktiv':'Kein aktiver Lauf';state.className='pill '+(running?'run':'mut');btn.disabled=!running}}}
+/* F19: Übersicht der erfassten Subagenten mit Ausgabe. Die Liste wird aus der
+   Zustandsdatei des Laufs gespeist; ohne Erfassung werden keine Einträge
+   erfunden. */
+function subagentCard(name){
+ const count=el('span',{class:'pill mut',id:'subagent-count'},'–');
+ const list=el('div',{class:'subagents',id:'subagent-list'});
+ const card=el('div',{class:'card',id:'subagents-card'},
+  el('div',{class:'bar'},el('b',{},'Subagenten'),count),
+  el('div',{class:'mut'},'Erfasste Subagenten des aktuellen Projekts. Eine Ausgabe erscheint, sobald der Subagent sie liefert.'),
+  list);
+ const nodes=new Map();let order='',openSession='';
+ const fmt=ts=>{if(!ts)return '—';try{return new Date(ts*1000).toLocaleTimeString()}catch(e){return '—'}};
+ const keyOf=entry=>String(entry.session||('~'+(entry.agent||'')+'|'+(entry.description||'')));
+ function showCard(session,on){const n=nodes.get(session);if(!n)return;
+  n.out.hidden=!on;n.btn.textContent=on?'Ausgabe ausblenden':'Ausgabe anzeigen';n.btn.classList.toggle('p',on)}
+ async function loadOutput(session){
+  const n=nodes.get(session);if(!n)return;
+  try{const r=await api('/api/subagent-output?name='+encodeURIComponent(name)+'&session='+encodeURIComponent(session));
+   const text=r.ok?String(r.text||''):String(r.message||'Keine Ausgabe verfügbar.');
+   if(n.text!==text){n.text=text;n.out.replaceChildren(renderLogChunk(text))}
+   n.out.classList.toggle('empty',!r.ok)}
+  catch(e){const text='Ausgabe nicht abrufbar: '+String(e&&e.message||e);n.text=text;n.out.replaceChildren(renderLogChunk(text))}}
+ function build(entry){
+  const n={text:''};
+  n.title=el('b',{},'');n.status=el('span',{class:'pill mut'},entry.status||'?');n.meta=el('span',{class:'mut'});
+  n.out=el('pre',{class:'subagent-out','data-session':entry.session||''});n.out.hidden=true;
+  n.btn=el('button',{class:'b',type:'button'},'Ausgabe anzeigen');
+  if(!entry.session){n.btn.disabled=true;n.btn.title='Diese Session ist noch nicht erfasst.'}
+  n.btn.addEventListener('click',()=>{if(!n.btn.isConnected)return;
+   if(openSession===entry.session){openSession='';showCard(entry.session,false)}
+   else{if(openSession)showCard(openSession,false);openSession=entry.session;showCard(entry.session,true);loadOutput(entry.session)}});
+  n.card=el('div',{class:'subagent','data-session':entry.session||''},
+   el('div',{class:'bar'},n.title,n.status,n.meta),n.btn,n.out);
+  return n}
+ function showEmpty(message){nodes.clear();order='';openSession='';list.replaceChildren(el('span',{class:'mut'},message))}
+ async function poll(){
+  let data;try{data=await api('/api/subagents?name='+encodeURIComponent(name))}catch(e){return}
+  const subs=(data&&data.subagents)||[];
+  const running=subs.filter(s=>s.status==='running').length;
+  count.textContent=running+' aktiv / '+subs.length;count.className='pill '+(running?'run':'mut');
+  if(!subs.length){showEmpty(data&&data.running?'Der Lauf ist aktiv, aber es wurden noch keine Subagenten gestartet.':'Keine Subagenten erfasst.');return}
+  const next=subs.map(keyOf).join('|');
+  if(next!==order){order=next;nodes.clear();openSession='';const frag=document.createDocumentFragment();
+   subs.forEach(s=>{const n=build(s);nodes.set(keyOf(s),n);frag.append(n.card)});list.replaceChildren(frag)}
+  subs.forEach(s=>{const n=nodes.get(keyOf(s));if(!n)return;
+   n.title.textContent=(s.agent||'Subagent')+(s.description?' — '+s.description:'');
+   n.status.textContent=s.status||'?';
+   n.status.className='pill '+(s.status==='running'?'run':/error|fail|cancel/.test(String(s.status||''))?'bad':'mut');
+   n.meta.textContent=(s.session||'ohne Session')+' · Start '+fmt(s.started)+(s.ended?' · Ende '+fmt(s.ended):'')});
+  if(openSession&&nodes.has(openSession))loadOutput(openSession);else openSession=''}
+ return {card,poll}}
 function rightsCard(d,name){const inp=el('input',{placeholder:'/absoluter/pfad','aria-label':'Schreibverzeichnis'});
  const reset=el('button',{class:'b',on:{click:()=>askInline(reset,'Standardverzeichnisse wiederherstellen?','Ja, zurücksetzen',async()=>{const r=await api('/api/rights',{name,action:'reset'});toast(r.message);if(r.ok)detail(name).catch(showErr)})}},'Standard wiederherstellen');
  const rows=el('div',{},...(d.write_dirs.length?d.write_dirs.map(p=>el('div',{class:'bar'},el('span',{class:'mut'},p),

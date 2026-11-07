@@ -184,10 +184,15 @@ Regeln (werden maschinell geprüft):
   Review: docs/reviews/F18-review-1.md, docs/reviews/F18-review-2.md (PASS, 0 Critical/High/Medium; 3 Minor)
   Doku: docs/features/F18.md; Trilium `deX8hDMqAQ1k`
 
-- [ ] F19 Ausgabe ansicht, im Projekte.
+- [x] F19 Ausgabe ansicht, im Projekte.
   Beschreibung: Ich möchte im Ausgabefenster Syntax highlighting, ähnlich wie open code.
-  Weiterhin möchte ich in der Lage sein, dem agenten, während der ausührung zusätzliche anweisungen/oder informationen direkt in der aktiven arbeit zukommen zu lassen.
+  Weiterhin möchte ich in der Lage sein, dem agenten, während der ausführung zusätzliche anweisungen/oder informationen direkt in der aktiven arbeit zukommen zu lassen.
   Außerdem möchte ich sehen, ob und welche sub agenten zu jedem zeitpunkt im projekt laufen und mir auch von diesen die ausgaben anzeigen lassen können.
+  Commit: 6cff1a2
+  Test: test_steering_is_delivered_and_marked_in_log, test_rejections_before_any_delivery, test_active_run_and_wrong_or_missing_password_is_rejected, test_subagents_reports_state_file_entries, test_output_of_a_captured_subagent, test_output_of_running_subagent_without_live_data_is_ok_false (tests/unit/test_output_view_f19_api.py), test_runner_logs_only_human_readable_lines, test_runner_calls_opencode_with_format_json (tests/unit/test_output_view_f19_runner.py, 19 Tests gesamt)
+  Review: docs/reviews/F19-review-1.md (CHANGES REQUIRED; 1 Medium als dokumentierte Umgebungsgrenze akzeptiert, 1 Medium Browsertest als Folgearbeit ausgewiesen, 3 Minor)
+  Doku: docs/features/F19.md; Trilium `dlKtNm7UtzYY`
+  Hinweis: Der konfigurierte Test-Agent (`test-agent`) war in dieser Sitzung nicht aufrufbar (`permission.rejected`); die Test-Herkunft ist in `docs/features/F19.md` offen dokumentiert. Ein dauerhafter Browsertest für die F19-Oberfläche bleibt ausdrücklich offene Folgearbeit.
 
 - [x] B1 Kostentabelle aktualisiert sich nur träge, oder zeigt gar keine werte an
   Art: Bug

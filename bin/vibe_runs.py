@@ -92,6 +92,198 @@ def rotate_log(path, max_bytes=DEFAULT_MAX_BYTES, keep=DEFAULT_KEEP):
     return True
 
 
+SUBAGENT_FINISHED = ("completed", "error", "failed", "cancelled", "canceled")
+# opencode nennt das Werkzeug intern "task"; ältere Stände und die Anzeige
+# verwenden "subagent". Beide Formen werden erkannt.
+SUBAGENT_TOOLS = ("task", "subagent")
+
+
+def subagent_state_path(log_path):
+    """Zustandsdatei mit Hauptsession und erfassten Subagenten je Laufprotokoll."""
+    return str(log_path) + ".state.json"
+
+
+def load_subagent_state(path):
+    """Liest die Zustandsdatei; fehlende oder defekte Daten sind ein leerer Zustand."""
+    try:
+        with open(path, encoding="utf-8") as handle:
+            data = json.load(handle)
+    except (OSError, ValueError):
+        return {"session": "", "subagents": []}
+    if not isinstance(data, dict):
+        return {"session": "", "subagents": []}
+    session = data.get("session") if isinstance(data.get("session"), str) else ""
+    entries = [
+        dict(item) for item in data.get("subagents") or []
+        if isinstance(item, dict)
+    ]
+    return {"session": session, "subagents": entries}
+
+
+def save_subagent_state(path, state):
+    """Schreibt den Subagenten-Zustand atomar; nur der Läufer schreibt hier."""
+    text = json.dumps(state, ensure_ascii=False, indent=1) + "\n"
+    _atomic_write(path, text)
+
+
+def _subagent_session(part, tool_state=None):
+    """Liest die Sub-Session aus den Metadaten einer Werkzeugausführung.
+
+    opencode legt das Ergebnis einer Werkzeugausführung unter
+    ``part.state.metadata`` ab; dort steht bei ``task`` ein verschachteltes
+    ``metadata`` mit ``sessionID``. Ältere Stände und Testnachbildungen führen
+    ``metadata`` direkt am Teil. Beide Formen sind gültig.
+    """
+    candidates = []
+    if isinstance(tool_state, dict):
+        candidates.append(tool_state.get("metadata"))
+    candidates.append(part.get("metadata"))
+    for metadata in candidates:
+        if not isinstance(metadata, dict):
+            continue
+        inner = metadata.get("metadata") if isinstance(metadata.get("metadata"), dict) else metadata
+        value = inner.get("sessionID") or inner.get("session_id") or ""
+        if isinstance(value, str) and value:
+            return value
+    return ""
+
+
+def _subagent_entry(state, session, agent, description):
+    """Findet den bestehenden Eintrag; ohne Session über Agent und Beschreibung."""
+    if session:
+        for entry in state["subagents"]:
+            if entry.get("session") == session:
+                return entry
+        return None
+    for entry in state["subagents"]:
+        if (not entry.get("session") and entry.get("agent") == agent
+                and entry.get("description") == description
+                and entry.get("status") == "running"):
+            return entry
+    return None
+
+
+def translate_event(event, state):
+    """Übersetzt ein opencode-JSON-Ereignis in Protokollzeilen und Zustand.
+
+    Rückgabe: (Zeilen, Zustand geändert). Roh-JSON wird nie zurückgegeben.
+    """
+    if not isinstance(event, dict):
+        return [], False
+    changed = False
+    session = event.get("sessionID")
+    if isinstance(session, str) and session and not state.get("session"):
+        state["session"] = session
+        changed = True
+
+    kind = event.get("type")
+    part = event.get("part") if isinstance(event.get("part"), dict) else {}
+    if kind == "text":
+        text = part.get("text")
+        if isinstance(text, str) and text:
+            return text.splitlines(), changed
+        return [], changed
+    if kind == "reasoning":
+        text = part.get("text")
+        if isinstance(text, str) and text.strip():
+            return ["[Denken] " + line for line in text.splitlines()], changed
+        return [], changed
+    if kind == "error":
+        error = event.get("error")
+        if isinstance(error, dict):
+            data = error.get("data") if isinstance(error.get("data"), dict) else {}
+            message = data.get("message") or error.get("message") or error.get("name") or ""
+        else:
+            message = error
+        message = " ".join(str(message or "").split())
+        return (["[Fehler] " + message] if message else []), changed
+    if kind != "tool_use":
+        return [], changed
+
+    tool = part.get("tool") or part.get("name") or "?"
+    tool_state = part.get("state") if isinstance(part.get("state"), dict) else {}
+    status = str(tool_state.get("status") or "unbekannt")
+    inputs = tool_state.get("input") if isinstance(tool_state.get("input"), dict) else {}
+    if tool not in SUBAGENT_TOOLS:
+        detail = inputs.get("description") or inputs.get("command") or inputs.get("filePath") or ""
+        detail = " ".join(str(detail).split())
+        line = f"[Werkzeug] {tool} — {status}"
+        return ([line + (": " + detail if detail else "")]), changed
+
+    agent = str(inputs.get("agent") or inputs.get("subagent_type") or "")
+    description = str(inputs.get("description") or "")
+    prompt = inputs.get("prompt") if isinstance(inputs.get("prompt"), str) else ""
+    output = tool_state.get("output") if isinstance(tool_state.get("output"), str) else ""
+    child_session = _subagent_session(part, tool_state)
+    now = int(time.time())
+    entry = _subagent_entry(state, child_session, agent, description)
+    if entry is None:
+        entry = {
+            "session": child_session,
+            "agent": agent,
+            "description": description,
+            "prompt": prompt,
+            "status": status,
+            "started": now,
+            "ended": 0,
+            "output": "",
+        }
+        state["subagents"].append(entry)
+        changed = True
+    for key, value in (
+        ("session", child_session), ("agent", agent),
+        ("description", description), ("prompt", prompt),
+    ):
+        if value and entry.get(key) != value:
+            entry[key] = value
+            changed = True
+    if entry.get("status") != status:
+        entry["status"] = status
+        changed = True
+    if output and entry.get("output") != output:
+        entry["output"] = output
+        changed = True
+    ended = now if status in SUBAGENT_FINISHED else 0
+    if entry.get("ended") != ended:
+        entry["ended"] = ended
+        changed = True
+    if not isinstance(entry.get("started"), int):
+        entry["started"] = now
+        changed = True
+
+    lines = [f"[Subagent] {agent or '?'}: {description or '(ohne Beschreibung)'} — {status}"]
+    if output:
+        lines.extend(output.splitlines())
+    return lines, changed
+
+
+def stream_events(stdin, emit, state_path):
+    """Liest JSON-Zeilen von stdin, schreibt Klartext und pflegt den Zustand.
+
+    Nicht-JSON-Zeilen (z. B. stderr des Agenten) werden unverändert
+    durchgereicht. Jede Zustandsänderung wird atomar gespeichert, damit das
+    Dashboard nie eine halbe Datei liest.
+    """
+    state = load_subagent_state(state_path)
+    for raw in stdin:
+        line = raw.rstrip("\r\n")
+        if not line.strip():
+            continue
+        if not line.lstrip().startswith("{"):
+            emit(line)
+            continue
+        try:
+            event = json.loads(line)
+        except ValueError:
+            emit("opencode: " + line)
+            continue
+        lines, changed = translate_event(event, state)
+        for output_line in lines:
+            emit(output_line)
+        if changed:
+            save_subagent_state(state_path, state)
+
+
 def _fsync_dir(directory):
     """Sichert den Verzeichniseintrag nach ``os.replace`` (best effort)."""
     try:
@@ -291,6 +483,12 @@ def build_parser():
     rotate.add_argument("path")
     rotate.add_argument("--max-bytes", type=int, default=DEFAULT_MAX_BYTES)
     rotate.add_argument("--keep", type=int, default=DEFAULT_KEEP)
+
+    stream = sub.add_parser(
+        "stream",
+        help="opencode-JSON-Ereignisse in Klartext und Subagenten-Zustand übersetzen",
+    )
+    stream.add_argument("--state", required=True, help="Zustandsdatei <log>.state.json")
     return parser
 
 
@@ -322,6 +520,12 @@ def main(argv=None):
         return 0
     if args.command == "rotate":
         rotate_log(args.path, max_bytes=args.max_bytes, keep=args.keep)
+        return 0
+    if args.command == "stream":
+        def emit(line):
+            sys.stdout.write(str(line) + "\n")
+            sys.stdout.flush()
+        stream_events(sys.stdin, emit, args.state)
         return 0
     parser.print_help(sys.stderr)
     return 2
