@@ -45,8 +45,8 @@
   },
   {
    "path": "bin/vibe_runs.py",
-   "sha256": "238c287fd7a4f11274a502fc47cc59482f222ac16cea450dcd844bc290b7df85",
-   "bytes": 12084
+   "sha256": "a22bc21b0a6d881f4d52102982eeac71a1145b3866fd0960d669cf88dd12d7c4",
+   "bytes": 19860
   },
   {
    "path": "bin/vibe_storage.py",
@@ -230,18 +230,18 @@
   },
   {
    "path": "bin/vibe",
-   "sha256": "a9eac05ce0c547957b5c26f61f2a7f1788785d68d61853be3012a7e73eceb704",
-   "bytes": 183570
+   "sha256": "8b816239807a02d5066ee8cd1ca52e643950f3c6260500d87041ef32c2b6f2c7",
+   "bytes": 185962
   },
   {
    "path": "bin/vibe-run.sh",
-   "sha256": "ed61e18825b64622538d7ed97d6c7805c595757f56837821de8c68232e6ebe13",
-   "bytes": 11351
+   "sha256": "81b35c4d414d7d2455e8c520a332847f3a615c0cd9773ab02facd0a66e760a7d",
+   "bytes": 12728
   },
   {
    "path": "bin/vibe-web.py",
-   "sha256": "92f240c3e0844cbbf691e9837c6539619f62eb340fe3c2b297585fb1a139e9cf",
-   "bytes": 35572
+   "sha256": "bb8a882b494b67f292daeb7e14c4ca325f951d47cca0848968a726db4d1ef082",
+   "bytes": 47483
   },
   {
    "path": "bin/vibe_sandbox.py",
@@ -270,13 +270,13 @@
   },
   {
    "path": "bin/web/styles.css",
-   "sha256": "f257de9c2dfc2a842cf3008e2fbdcdf19d492a73402ca8c5d17bb623cf7521ba",
-   "bytes": 6313
+   "sha256": "975534be1e9e15fb562e3c2722b48e18a55f94e2d7ea9081de3f92d65145f88c",
+   "bytes": 7620
   },
   {
    "path": "bin/web/app.js",
-   "sha256": "7bb264556b714e6a00c4d33de28217a8d49309e104ba9400ab75dbd53de8ace2",
-   "bytes": 72422
+   "sha256": "60fe21f2b8bd922818f3d85945731ef71fe1731a2a15439d362a755be89aaf49",
+   "bytes": 80155
   },
   {
    "path": "templates/common/.opencode/agents/test-agent.md",
@@ -697,6 +697,19 @@
     "templates/rebuild/.vibe/project.env",
     "templates/web/AGENTS.md",
     "templates/web/.vibe/project.env"
+   ]
+  },
+  {
+   "arbeitspaket": "F19",
+   "datum": "2026-11-07",
+   "grund": "Ausgabeansicht: Syntaxhervorhebung der Live-Ausgabe, Zusatzanweisungen an den laufenden Agenten über die opencode-Session (Basic-Auth mit Laufzeitkennwort, Kennzeile im Protokoll) und Übersicht erfasster Subagenten samt Ausgabe. Der Läufer liest opencode-JSON-Ereignisse und führt <log>.state.json.",
+   "dateien": [
+    "bin/vibe",
+    "bin/vibe-run.sh",
+    "bin/vibe-web.py",
+    "bin/vibe_runs.py",
+    "bin/web/app.js",
+    "bin/web/styles.css"
    ]
   }
  ]

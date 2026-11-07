@@ -23,6 +23,27 @@ V="$INSTALL/verify"
 BIN="$INSTALL/bin"
 RUNS_PY="$BIN/vibe_runs.py"
 mkdir -p "$RUNTIME"
+# F19: Der gemeinsame opencode-Server ist mit Basic-Auth geschützt. Das
+# Kennwort steht in der Laufzeitdatei und wird nur als Umgebungsvariable an
+# opencode und als curl-Anmeldedaten verwendet, nie als sichtbares Argument.
+PASSWORD_FILE="$RUNTIME/opencode.password"
+CURL_AUTH=()
+if [ -r "$PASSWORD_FILE" ] && [ -s "$PASSWORD_FILE" ]; then
+  OPENCODE_SERVER_PASSWORD="$(cat "$PASSWORD_FILE")"
+  export OPENCODE_SERVER_PASSWORD
+  CURL_AUTH=(-u "opencode:$OPENCODE_SERVER_PASSWORD")
+fi
+# opencode v2 meldet sich unter /api/info; /global/health bleibt nur als
+# Rückfall für ältere Installationen ohne Kennwort. Mit Kennwort wird der alte
+# Endpunkt nicht geprüft, weil er auch ohne Anmeldung eine HTML-Seite liefert.
+server_is_up() {
+  if curl -sf --max-time 2 "${CURL_AUTH[@]}" \
+      "http://127.0.0.1:$OPENCODE_PORT/api/info" > /dev/null 2>&1; then
+    return 0
+  fi
+  [ "${#CURL_AUTH[@]}" -eq 0 ] || return 1
+  curl -sf --max-time 2 "http://127.0.0.1:$OPENCODE_PORT/global/health" > /dev/null 2>&1
+}
 # Laufschlüssel: bin/vibe übergibt ihn als VIBE_LOGNAME. Ein direkt gestarteter
 # Lauf fragt das Register nach einem kollisionsfreien Schlüssel und fällt ohne
 # Register auf den Verzeichnisnamen zurück.
@@ -159,9 +180,17 @@ if [ "$SANDBOX_STATE" = "on" ]; then
     exit 2
   fi
   SANDBOX_WRAP=(python3 "$BIN/vibe_sandbox.py" "$P" --)
-elif curl -sf --max-time 2 "http://127.0.0.1:$OPENCODE_PORT/global/health" > /dev/null 2>&1; then SERVER_ARGS="--server http://127.0.0.1:$OPENCODE_PORT"; fi
+elif server_is_up; then SERVER_ARGS="--server http://127.0.0.1:$OPENCODE_PORT"; fi
 register_start
 echo "Lauf: ${RUN_ID:-ohne Register}, Modus: $SERVER_ARGS, Agent: $AGENT, Sandbox: $SANDBOX_STATE, höchstens $MAXP Durchgänge, höchstens $MAXR Wiederholungen je Paket" | tee -a "$LOG"
+# F19: opencode liefert mit --format json Ereignisse. Der Filter macht daraus
+# menschenlesbare Zeilen (Grundlage für Syntax-Highlighting) und erfasst
+# Subagenten samt Ausgabe in <log>.state.json. Fehlt das Modul, bleibt die
+# Ausgabe unverändert (kein stiller Abbruch des Laufs).
+STREAM_FILTER=(cat)
+if [ -f "$RUNS_PY" ]; then
+  STREAM_FILTER=(python3 "$RUNS_PY" stream --state "$LOG.state.json")
+fi
 PAUSED=0; LAST_ID=""
 declare -A TRY; SKIP=""
 for n in $(seq 1 "$MAXP"); do
@@ -183,7 +212,7 @@ for n in $(seq 1 "$MAXP"); do
 $BLOCK
 Bearbeite NUR dieses Arbeitspaket gemäß deinem Workflow. Commit-Präfix: '$ID:'.
 $QUESTION_HINT"
-  "${SANDBOX_WRAP[@]}" opencode run $SERVER_ARGS --auto --thinking --agent "$AGENT" "${MODEL_ARGS[@]}" --title "$NAME $ID" "$PROMPT" 2>&1 | tee -a "$LOG"
+  "${SANDBOX_WRAP[@]}" opencode run $SERVER_ARGS --format json --auto --thinking --agent "$AGENT" "${MODEL_ARGS[@]}" --title "$NAME $ID" "$PROMPT" 2>&1 | "${STREAM_FILTER[@]}" | tee -a "$LOG"
   RC=${PIPESTATUS[0]}
   echo "=== Agent beendet, Exit-Code $RC ===" | tee -a "$LOG"
   LAST_ID="$ID"

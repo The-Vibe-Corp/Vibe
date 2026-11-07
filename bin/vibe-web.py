@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """vibe-web — lokales Dashboard (nur Standardbibliothek). Start über: vibe ui"""
-import os, sys, json, time, secrets, threading, contextlib, signal
+import os, sys, json, time, secrets, threading, contextlib, signal, base64, http.client
 import importlib.util, importlib.machinery
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import urlparse, parse_qs, quote
 
 HERE = os.path.dirname(os.path.realpath(__file__))
 sys.path.insert(0, HERE)
-import vibe_storage, vibe_paths
+import vibe_storage, vibe_paths, vibe_runs
 _loader = importlib.machinery.SourceFileLoader("vibe", os.path.join(HERE, "vibe"))
 _spec = importlib.util.spec_from_loader("vibe", _loader)
 vibe = importlib.util.module_from_spec(_spec); sys.modules["vibe"] = vibe; _loader.exec_module(vibe)
@@ -96,6 +96,246 @@ def origin_allowed(value):
         return False
     effective_port = port if port is not None else 80
     return effective_port == PORT
+
+PUBLIC_SUBAGENT_FIELDS = (
+    "session", "agent", "description", "prompt", "status",
+    "started", "ended", "output",
+)
+STEER_MAX_CHARS = 4000
+
+
+def public_subagent(entry):
+    """Nur die vereinbarten Felder verlassen die API, nie beliebte Zusatzdaten."""
+    return {key: entry.get(key) for key in PUBLIC_SUBAGENT_FIELDS if key in entry}
+
+
+def opencode_request(path, timeout=3):
+    """Liest eine GET-Antwort des opencode-Servers mit Basic-Auth.
+
+    Ohne Kennwortdatei wird nicht angefragt. Fehler und nicht-JSON-Antworten
+    liefern ``None``; die Oberfläche erfindet daraus keine Subagenten.
+    """
+    password = opencode_password()
+    if not password:
+        return None
+    target = urlparse(vibe.OC_URL)
+    host = target.hostname or "127.0.0.1"
+    port = target.port or 80
+    credential = base64.b64encode(("opencode:" + password).encode("utf-8")).decode("ascii")
+    connection = http.client.HTTPConnection(host, port, timeout=timeout)
+    try:
+        connection.request(
+            "GET", path, headers={"Authorization": "Basic " + credential}
+        )
+        response = connection.getresponse()
+        body = response.read()
+        if not 200 <= response.status < 300:
+            return None
+        data = json.loads(body.decode("utf-8"))
+        return data if isinstance(data, dict) else None
+    except (OSError, http.client.HTTPException, ValueError):
+        return None
+    finally:
+        connection.close()
+
+
+def _seconds(value):
+    """Wandelt opencode-Zeitstempel (Millisekunden) in Sekunden."""
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        return 0
+    return number // 1000 if number > 10 ** 12 else number
+
+
+def _agent_name(info):
+    agent = info.get("agent") if isinstance(info, dict) else None
+    if isinstance(agent, dict):
+        return str(agent.get("name") or agent.get("id") or "")
+    return str(agent or "")
+
+
+def live_subagents(main_session):
+    """Fragt laufende und beendete Kind-Sessions beim opencode-Server ab.
+
+    ``opencode run --format json`` meldet ein ``task``-Werkzeug erst bei
+    Abschluss. Für die Anforderung „zu jedem Zeitpunkt sichtbar“ liest das
+    Dashboard deshalb ergänzend die Session-Liste und den Aktivstatus. Ohne
+    gemeinsamen Server oder ohne Kennwort bleibt die Liste aus der
+    Zustandsdatei maßgeblich.
+    """
+    if not main_session:
+        return []
+    data = opencode_request("/api/session?limit=100")
+    items = data.get("data") if isinstance(data, dict) else None
+    if not isinstance(items, list):
+        return []
+    active_data = opencode_request("/api/session/active")
+    active_map = active_data.get("data") if isinstance(active_data, dict) else None
+    active = {
+        session_id for session_id, value in (active_map or {}).items()
+        if isinstance(value, dict) and value.get("type") == "running"
+    } if isinstance(active_map, dict) else set()
+    entries = []
+    for info in items:
+        if not isinstance(info, dict) or info.get("parentID") != main_session:
+            continue
+        session_id = info.get("id")
+        if not isinstance(session_id, str) or not session_id:
+            continue
+        running = session_id in active
+        times = info.get("time") if isinstance(info.get("time"), dict) else {}
+        entries.append({
+            "session": session_id,
+            "agent": _agent_name(info),
+            "description": str(info.get("title") or ""),
+            "prompt": "",
+            "status": "running" if running else "completed",
+            "started": _seconds(times.get("created")),
+            "ended": 0 if running else _seconds(times.get("updated")),
+            "output": "",
+        })
+    return entries
+
+
+def live_subagent_output(session):
+    """Liest die Textausgabe einer Kind-Session aus den projizierten Nachrichten."""
+    data = opencode_request("/api/session/" + quote(session, safe="") + "/message?limit=200")
+    messages = data.get("data") if isinstance(data, dict) else None
+    if not isinstance(messages, list):
+        return ""
+    texts = []
+    for message in messages:
+        if not isinstance(message, dict) or message.get("type") == "user":
+            continue
+        content = message.get("content")
+        if not isinstance(content, list):
+            continue
+        for part in content:
+            if not isinstance(part, dict) or part.get("type") != "text":
+                continue
+            text = part.get("text")
+            if isinstance(text, str) and text.strip():
+                texts.append(text)
+    return "\n".join(texts)
+
+
+def subagents_of(name):
+    """Hauptsession und erfasste Subagenten aus Zustandsdatei und Server."""
+    path = vibe_runs.subagent_state_path(vibe.logpath(name))
+    state = vibe_runs.load_subagent_state(path)
+    session = state.get("session") or ""
+    entries = [public_subagent(entry) for entry in state.get("subagents") or []]
+    if session:
+        known = {entry.get("session") for entry in entries if entry.get("session")}
+        for live in live_subagents(session):
+            existing = next(
+                (entry for entry in entries if entry.get("session") == live["session"]),
+                None,
+            )
+            if existing is None:
+                entries.append(live)
+                continue
+            if not existing.get("agent") and live.get("agent"):
+                existing["agent"] = live["agent"]
+            if not existing.get("description") and live.get("description"):
+                existing["description"] = live["description"]
+            if live.get("status") == "running":
+                existing["status"] = "running"
+                existing["ended"] = 0
+    return {"session": session, "subagents": entries}
+
+
+def run_is_active(name):
+    """Ein Lauf ist aktiv, solange Register oder tmux-Sitzung ihn führen.
+
+    Das Register ist die Autorität für den Lebenszyklus: ``cmd_run`` legt den
+    Eintrag vor der tmux-Sitzung an. Deshalb gilt ein Registereintrag im
+    Zustand ``starting``/``running`` auch dann als aktiv, wenn die Sitzung noch
+    nicht sichtbar ist. Ein beendeter Läufer setzt den Eintrag auf ``finished``;
+    ohne Registereintrag entscheidet wie bisher die tmux-Sitzung (F10).
+    """
+    if vibe.run_state(name).get("running"):
+        return True
+    record = vibe.run_registry().latest(project=vibe._real(vibe.ppath(name)))
+    return bool(record and record.get("state") in vibe_runs.LIVE_STATES)
+
+
+def opencode_password():
+    """Liest das opencode-Serverkennwort; es wird nie zurückgegeben oder geloggt."""
+    try:
+        with open(os.path.join(PATHS.runtime, "opencode.password"), encoding="utf-8") as handle:
+            return handle.read().strip()
+    except OSError:
+        return ""
+
+
+def deliver_steer(session, text, password):
+    """Übergibt eine Zusatzanweisung per HTTP an den opencode-Server.
+
+    Erfolg nur bei einer 2xx-Antwort mit gültiger Basic-Auth. Der Rückgabewert
+    enthält nie das Kennwort.
+    """
+    target = urlparse(vibe.OC_URL)
+    host = target.hostname or "127.0.0.1"
+    port = target.port or 80
+    if not session or any(char not in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-" for char in session):
+        return False, "Die Session-ID des Agenten ist ungültig."
+    credential = base64.b64encode(("opencode:" + password).encode("utf-8")).decode("ascii")
+    # opencode v2 nimmt neue Eingaben über /api/session/<id>/prompt mit dem
+    # Feld ``text`` an. /message ist die reine Leseroute.
+    payload = json.dumps({"text": text}, ensure_ascii=False).encode("utf-8")
+    connection = http.client.HTTPConnection(host, port, timeout=8)
+    try:
+        connection.request(
+            "POST",
+            "/api/session/" + quote(session, safe="") + "/prompt",
+            body=payload,
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": "Basic " + credential,
+            },
+        )
+        response = connection.getresponse()
+        response.read()
+        if 200 <= response.status < 300:
+            return True, ""
+        return False, f"Der opencode-Server hat die Zusatzanweisung abgelehnt (HTTP {response.status})."
+    except (OSError, http.client.HTTPException) as error:
+        return False, "Der opencode-Server ist nicht erreichbar: " + str(error)
+    finally:
+        connection.close()
+
+
+def steer_project(name, text):
+    """Prüft und übermittelt eine Zusatzanweisung an den laufenden Agenten."""
+    text = str(text or "").strip()
+    if not text:
+        return False, "Bitte eine Zusatzanweisung eingeben."
+    if len(text) > STEER_MAX_CHARS:
+        return False, f"Die Zusatzanweisung ist länger als {STEER_MAX_CHARS} Zeichen."
+    if not run_is_active(name):
+        return False, "Kein aktiver Lauf: Eine Zusatzanweisung ist nur während der Ausführung möglich."
+    state = subagents_of(name)
+    session = state.get("session") or ""
+    if not session:
+        return False, "Die Session des laufenden Agenten ist nicht erfasst; die Anweisung wurde nicht gesendet."
+    password = opencode_password()
+    if not password:
+        return False, "Der opencode-Server ist nicht für Zusatzanweisungen angemeldet (Kennwortdatei fehlt)."
+    delivered, detail = deliver_steer(session, text, password)
+    if not delivered:
+        return False, detail
+    marker = " ".join(text.split())
+    try:
+        with open(vibe.logpath(name), "a", encoding="utf-8") as handle:
+            handle.write("\n[Dashboard] Zusatzanweisung an den Agenten übermittelt: " + marker + "\n")
+    except OSError:
+        # Die Zustellung ist erfolgt; ein nicht schreibbares Protokoll ändert
+        # daran nichts und wird nicht als Fehlschlag vorgetäuscht.
+        pass
+    return True, "Zusatzanweisung an den Agenten übermittelt."
+
 
 class RequestError(Exception):
     def __init__(self, status, code, message):
@@ -251,7 +491,47 @@ class H(BaseHTTPRequestHandler):
             if u.path == "/api/projects": return self._send(200, [vibe_services.project_row(vibe, n) for n in vibe.projects()])
             if u.path == "/api/run-state":
                 n = known(q["name"][0])
-                return self._send(200, {"running": vibe.tmux_has(n), "pause_after": vibe.pause_after_active(n)})
+                return self._send(200, {"running": run_is_active(n), "pause_after": vibe.pause_after_active(n)})
+            if u.path == "/api/subagents":
+                n = known(q["name"][0])
+                state = subagents_of(n)
+                answer = {"ok": True, "running": run_is_active(n),
+                          "subagents": state["subagents"]}
+                if state["session"]:
+                    answer["session"] = state["session"]
+                return self._send(200, answer)
+            if u.path == "/api/subagent-output":
+                n = known(q["name"][0])
+                session = q.get("session", [""])[0]
+                state = subagents_of(n)
+                entry = next(
+                    (item for item in state["subagents"]
+                     if session and item.get("session") == session),
+                    None,
+                )
+                if entry is None:
+                    return self._send(200, {
+                        "ok": False,
+                        "message": "Kein erfasster Subagent mit dieser Session. "
+                                   "Die Ausgabe ist erst nach dem Start des Subagenten verfügbar.",
+                    })
+                output = str(entry.get("output") or "")
+                if not output.strip():
+                    output = live_subagent_output(entry.get("session") or "")
+                if not output.strip():
+                    status = entry.get("status") or "unbekannt"
+                    return self._send(200, {
+                        "ok": False,
+                        "status": status,
+                        "message": f"Für diesen Subagenten liegt noch keine Ausgabe vor (Status: {status}).",
+                    })
+                return self._send(200, {
+                    "ok": True,
+                    "text": output,
+                    "status": entry.get("status") or "",
+                    "agent": entry.get("agent") or "",
+                    "description": entry.get("description") or "",
+                })
             if u.path == "/api/project": return self._send(200, vibe_services.project_detail(vibe, PATHS, known(q["name"][0])))
             if u.path == "/api/roots": return self._send(200, vibe_services.roots_info(vibe))
             if u.path == "/api/agents": return self._send(200, vibe_services.agents_info(vibe))
@@ -299,9 +579,10 @@ class H(BaseHTTPRequestHandler):
             return self._error(e.status, e.code, e.message)
         try:
             name = body.get("name", "")
-            if u.path in ("/api/run", "/api/stop", "/api/verify", "/api/feedback", "/api/ticket", "/api/init", "/api/rights", "/api/pause", "/api/sandbox", "/api/guide", "/api/costs", "/api/autonomous"): known(name)
+            if u.path in ("/api/run", "/api/stop", "/api/verify", "/api/feedback", "/api/ticket", "/api/init", "/api/rights", "/api/pause", "/api/sandbox", "/api/guide", "/api/costs", "/api/autonomous", "/api/steer"): known(name)
             extra = {}
-            if u.path == "/api/run": ok, msg = vibe_services.capture(vibe.cmd_run, name, body.get("agent") or None)
+            if u.path == "/api/steer": ok, msg = steer_project(name, body.get("text", ""))
+            elif u.path == "/api/run": ok, msg = vibe_services.capture(vibe.cmd_run, name, body.get("agent") or None)
             elif u.path == "/api/stop": ok, msg = vibe_services.capture(vibe.cmd_stop, name, body.get("run_id") or None)
             elif u.path == "/api/verify": ok, msg = vibe_services.verify_bg(vibe, name, "full" if body.get("mode") == "full" else "quick")
             elif u.path == "/api/init": ok, msg = vibe_services.capture(vibe.cmd_init, name, body.get("type") or None)
