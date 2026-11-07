@@ -202,6 +202,9 @@ for name in ("TICKETS.md", "FEEDBACK.md"):
 )
 run("git", "add", "-A")
 run("git", "commit", "-q", "-m", pid + ": Nachweis")
+dirty = os.environ.get("FAKE_DIRTY_INTEGRATION")
+if dirty and counter == 0:
+    pathlib.Path(dirty, "dirty.txt").write_text("x\n", encoding="utf-8")
 if os.environ.get("FAKE_PAUSE_AFTER_FIRST") and counter == 0:
     runtime = pathlib.Path(os.environ["VIBE_RUNTIME"])
     name = os.environ.get("VIBE_LOGNAME", "proj")

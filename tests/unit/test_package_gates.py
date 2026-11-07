@@ -251,6 +251,9 @@ class PreflightTest(PackageTestCase):
         errors = self.errors()
 
         self.assertTrue(any("Paketprüfung" in error for error in errors), errors)
+        self.assertTrue(
+            any(".vibe/project.env" in error for error in errors), errors
+        )
 
     def test_project_local_temp_files_do_not_dirty_the_tree(self):
         temp = self.project / ".vibe" / "tmp"
@@ -346,6 +349,26 @@ class GateTest(PackageTestCase):
         errors = self.errors()
 
         self.assertTrue(any("PASS" in error for error in errors), errors)
+
+    def test_newer_review_without_pass_blocks_an_older_pass(self):
+        self.create_package(review="Verdict: PASS")
+        (self.project / "docs" / "reviews" / "F1-review-2.md").write_text(
+            "# Review\n\nVerdict: CHANGES REQUIRED\n", encoding="utf-8"
+        )
+        support.commit_all(self.project, "F1: neues Review")
+
+        errors = self.errors()
+
+        self.assertTrue(any("PASS" in error for error in errors), errors)
+
+    def test_newer_pass_after_an_older_failure_is_accepted(self):
+        self.create_package(review="Verdict: CHANGES REQUIRED")
+        (self.project / "docs" / "reviews" / "F1-review-2.md").write_text(
+            "# Review\n\nVerdict: PASS\n", encoding="utf-8"
+        )
+        support.commit_all(self.project, "F1: Review behoben")
+
+        self.assertEqual(self.errors(), [])
 
     def test_ticket_without_proof_is_rejected(self):
         self.create_package(ticket_proof=False)

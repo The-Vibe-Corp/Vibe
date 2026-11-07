@@ -216,8 +216,13 @@ create_worktree() {
   WT_ROOT="$RUNTIME/worktrees"
   mkdir -p "$WT_ROOT" || return 1
   WT="$(mktemp -d "$WT_ROOT/${safe_name}-${safe_id}-XXXXXX")" || return 1
-  BRANCH="vibe/${safe_name}-${safe_id}-$(date +%s)-$$"
-  git -C "$P" worktree add --quiet -b "$BRANCH" "$WT" "$PACKAGE_BASE" >>"$LOG" 2>&1 || return 1
+  BRANCH="vibe/${safe_name}-${safe_id}-$(date +%s%N)-$$-${RANDOM}"
+  if ! git -C "$P" worktree add --quiet -b "$BRANCH" "$WT" "$PACKAGE_BASE" >>"$LOG" 2>&1; then
+    # Keine halbe Arbeitskopie zurücklassen, wenn das Anlegen scheitert.
+    rm -rf -- "$WT"
+    git -C "$P" worktree prune >>"$LOG" 2>&1 || true
+    return 1
+  fi
   return 0
 }
 run_agent() {
@@ -381,6 +386,15 @@ while [ "$PACKAGES" -lt "$MAXP" ] && [ "$STOP" = 0 ]; do
     if [ -n "$LAST_ID" ]; then echo "PAUSE: Arbeitspaket $LAST_ID beendet. Kein neues Paket gestartet." | tee -a "$LOG"
     else echo "PAUSE: Pause war vor dem Start angefordert. Kein Arbeitspaket gestartet." | tee -a "$LOG"; fi
     break
+  fi
+  # Zwischen zwei Paketen muss der Integrationsstand sauber bleiben. Sonst
+  # würde das nächste Paket auf einem fremden, ungeprüften Stand aufsetzen.
+  DIRTY_NOW="$(git -C "$P" status --porcelain)"
+  if [ -n "$DIRTY_NOW" ]; then
+    BLOCK_REASON="Integrationsstand ist nicht sauber: $DIRTY_NOW"
+    record_block "INTEGRATION" "$BLOCK_REASON"
+    echo "BLOCKIERT: $BLOCK_REASON" | tee -a "$LOG"
+    STOP=1; break
   fi
   if ! select_item; then echo "Keine offenen Arbeitspakete mehr." | tee -a "$LOG"; break; fi
   PACKAGES=$((PACKAGES + 1))

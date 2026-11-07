@@ -293,10 +293,16 @@ def preflight_errors(project, agents_dir, tester, reviewer):
     check_command = env.get("VERIFY_PACKAGE") or env.get("VERIFY_FULL") or ""
     if not check_command.strip() or "TODO" in check_command:
         errors.append(
-            "Paketprüfung fehlt: VERIFY_PACKAGE oder VERIFY_FULL muss einen "
-            "echten Prüfbefehl enthalten."
+            "Paketprüfung fehlt: VERIFY_PACKAGE oder VERIFY_FULL muss in "
+            ".vibe/project.env einen echten Prüfbefehl enthalten (TODO ersetzen)."
         )
     return errors
+
+
+def review_order(path):
+    """Sortierschlüssel für ``<ID>-review-N.md``; höhere Nummer ist neuer."""
+    match = re.search(r"-review-?(\d+)", path.name)
+    return (int(match.group(1)) if match else -1, path.name)
 
 
 def gate_errors(project, pid, base):
@@ -347,13 +353,15 @@ def gate_errors(project, pid, base):
     reviews = project / "docs" / "reviews"
     review_ok = False
     if reviews.is_dir():
-        for path in sorted(reviews.glob(pid + "-review*.md")):
-            if VERDICT_PATTERN.search(read_text(path)):
-                review_ok = True
-                break
+        paths = sorted(reviews.glob(pid + "-review*.md"), key=review_order)
+        # Das jüngste Review entscheidet: ein früheres PASS darf einen neueren
+        # Einwand nicht überdecken.
+        if paths and VERDICT_PATTERN.search(read_text(paths[-1])):
+            review_ok = True
     if not review_ok:
         errors.append(
-            "Review mit 'Verdict: PASS' fehlt (docs/reviews/" + pid + "-review*.md)."
+            "Jüngstes Review mit 'Verdict: PASS' fehlt (docs/reviews/"
+            + pid + "-review*.md)."
         )
 
     dirty = run_git(project, "status", "--porcelain").stdout.strip()

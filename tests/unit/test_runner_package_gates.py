@@ -138,6 +138,43 @@ class PreflightRunnerTest(RunnerGateTestCase):
 
 
 class WorktreeIsolationTest(RunnerGateTestCase):
+    def test_failed_worktree_creation_leaves_no_directory(self):
+        real_git = shutil.which("git")
+        wrapper = self.fakebin / "git"
+        wrapper.write_text(
+            "#!/bin/sh\n"
+            'case " $* " in\n'
+            '  *" worktree add "*) exit 1 ;;\n'
+            "esac\n"
+            'exec "' + real_git + '" "$@"\n',
+            encoding="utf-8",
+        )
+        wrapper.chmod(0o755)
+
+        result = self.run_runner()
+
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("Arbeitskopie", result.stdout)
+        self.assertEqual(self.worktrees(), [], "Arbeitskopie blieb liegen")
+        self.assertEqual(self.call_lines(), [])
+
+    def test_dirty_integration_tree_between_packages_blocks(self):
+        self.write_project(
+            feedback=(
+                "- [ ] F1 Erstes Paket\n  Beschreibung: Test\n"
+                "- [ ] F2 Zweites Paket\n  Beschreibung: Test\n"
+            )
+        )
+
+        result = self.run_runner(
+            FAKE_DIRTY_INTEGRATION=str(self.project), VIBE_MAX_PACKAGES="2"
+        )
+
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("Integrationsstand ist nicht sauber", result.stdout)
+        self.assertEqual(len(self.call_lines()), 1, self.call_lines())
+        self.assertEqual(self.worktrees(), [], "Arbeitskopie blieb liegen")
+
     def test_agent_works_in_a_worktree_under_runtime_and_it_is_removed(self):
         self.write_project(
             feedback="- [ ] F1 Erstes Paket\n  Beschreibung: Test\n"
