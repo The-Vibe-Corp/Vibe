@@ -15,6 +15,7 @@ import vibe_mcp
 import vibe_guide
 import vibe_questions
 import vibe_autonomous
+import vibe_harness
 import vibe_services
 
 try:
@@ -280,7 +281,19 @@ class H(BaseHTTPRequestHandler):
                 n = q.get("name", [""])[0]
                 if n: known(n)
                 return self._send(200, vibe_autonomous.status(PATHS.runtime, n))
-            if u.path == "/api/server": h = vibe.server_health(); return self._send(200, {"up": bool(h), "url": vibe.OC_URL, "info": h})
+            if u.path == "/api/harness":
+                data = vibe_harness.status(PATHS.state)
+                data["supported"] = vibe_harness.harness_ids()
+                return self._send(200, data)
+            if u.path == "/api/server":
+                h = vibe.server_health()
+                try:
+                    selected = vibe_harness.read_selection(PATHS.state)
+                except vibe_harness.HarnessError:
+                    selected = "unbekannt"
+                return self._send(200, {"up": bool(h), "url": vibe.OC_URL, "info": h,
+                                        "harness": selected,
+                                        "server_supported": selected == "opencode"})
             if u.path == "/api/stream": return self.stream(known(q["name"][0]), q.get("kind", ["run"])[0])
         except (AssertionError, ValueError) as e:
             return self._error(404, "not_found", str(e))
@@ -607,6 +620,21 @@ class H(BaseHTTPRequestHandler):
                     ok, msg = False, str(e)
             elif u.path == "/api/model": ok, msg = vibe_services.capture(vibe.cmd_model, body.get("agent", ""), body.get("model", ""), body.get("scope", "global"))
             elif u.path == "/api/server": ok, msg = vibe_services.capture(vibe.cmd_server, "start" if body.get("action") == "start" else "stop")
+            elif u.path == "/api/harness":
+                try:
+                    if body.get("action") == "use":
+                        chosen = body.get("harness", "")
+                        path = vibe_harness.write_selection(PATHS.state, chosen)
+                        ok, msg = True, "Gespeichert: " + chosen + " (" + path + ")"
+                    elif body.get("action") in (None, "", "setup"):
+                        chosen = body.get("harness") or vibe_harness.read_selection(PATHS.state)
+                        plan = vibe_harness.setup_plan(chosen)
+                        ok, msg = True, plan["hint"]
+                        extra["plan"] = plan
+                    else:
+                        ok, msg = False, "Unbekannte Aktion"
+                except vibe_harness.HarnessError as error:
+                    ok, msg = False, str(error)
             elif u.path == "/api/shutdown":
                 # Zuerst Streams und Handler informieren, dann die Antwort
                 # senden und den Annahme-Loop aus einem eigenen Thread stoppen.

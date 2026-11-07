@@ -65,7 +65,8 @@ function badge(v){v=v||'?';return el('span',{class:'pill '+(GOOD.includes(v)?'ok
 async function header(){try{const s=await api('/api/server');
  const quit=el('button',{class:'b quit',title:'Beendet diese App (das Dashboard), nicht opencode',on:{click:()=>askInline(quit,'Dashboard (diese App) beenden? Laufende Agentenläufe in tmux laufen weiter.','Ja, beenden',async()=>{await api('/api/shutdown',{});
    main.replaceChildren(el('div',{class:'card'},'Dashboard beendet. Neu starten im Terminal: vibe ui'));srvbox.replaceChildren()})}},'Dashboard beenden');
- srvbox.replaceChildren(el('span',{class:s.up?'ok':'mut'},'opencode-Server: '+(s.up?'an':'aus')),
+ srvbox.replaceChildren(el('span',{class:'ok'},'Harness: '+(s.harness||'?')),el('span',{class:'sep'}),
+  el('span',{class:s.up?'ok':'mut'},'opencode-Server: '+(s.up?'an':'aus')),
   el('button',{class:'b',title:'Startet/stoppt nur den gemeinsamen opencode-Server (Weboberfläche), nicht dieses Dashboard',on:{click:async()=>{toast((await api('/api/server',{action:s.up?'stop':'start'})).message);header()}}},s.up?'opencode stoppen':'opencode starten'),el('span',{class:'sep'}),quit)}catch(e){}}
 async function rootsCard(){const rs=await api('/api/roots');const inp=el('input',{placeholder:'/var/mnt/data/.../mein-entwicklungsordner'});
  const rows=rs.map(r=>el('div',{class:'bar'},el('b',{},r.path),el('span',{class:'mut'},r.projects.length+' Projekt(e)'+(r.projects.length?': '+r.projects.join(', '):'')),
@@ -675,9 +676,30 @@ async function mcpForm(scope,name){const d=await api('/api/mcp');let e={type:'lo
    el('div',{class:'bar'},el('button',{class:'b p',on:{click:async()=>{const r=await api('/api/mcp',{action:'save',scope:isNew?sc.value:scope,name:nm.value,old_name:isNew?'':name,create:isNew,entry:build(),expected:digest});toast(r.message);if(r.ok)mcp().catch(showErr)}}},'Speichern'),
     el('button',{class:'b',on:{click:async()=>{res.replaceChildren(el('div',{class:'mut'},'Teste … (kann bis zu einer Minute dauern, z. B. wenn npx Pakete lädt)'));const r=await api('/api/mcp',{action:'test',scope:isNew?sc.value:scope,name:isNew?'':name,entry:build()});mcpResult(r,res)}}},'Testen (mit den Werten oben)'),
     delMcp)),res)}
-async function env(){const d=await api('/api/doctor');const f=await api('/api/fritz');const rel=await api('/api/health');
+function harnessCard(hs){
+ const sel=el('select',{id:'harness-select','aria-label':'Harness'});
+ hs.harnesses.forEach(h=>sel.append(el('option',{value:h.harness},h.name+' ('+h.harness+')')));
+ sel.value=hs.selected;
+ const result=el('div',{});
+ const use=el('button',{class:'b p',id:'harness-use',on:{click:async()=>{
+  use.disabled=true;
+  try{const r=await api('/api/harness',{action:'use',harness:sel.value});
+   result.replaceChildren(el('span',{class:r.ok?'ok':'bad'},r.message));if(r.ok)header()}
+  catch(e){result.replaceChildren(el('span',{class:'bad'},String(e&&e.message||e)))}
+  finally{use.disabled=false}}}}, 'Harness verwenden');
+ const entries=hs.harnesses.map(h=>el('div',{class:'mut'},el('b',{},h.name+' ('+h.harness+')'),' – ',
+  h.installed?(h.version?'Version '+h.version:'vorhanden'):'nicht installiert',
+  h.hint?el('div',{},h.hint):null,
+  h.official?el('div',{},'Offiziell: '+h.official):null,
+  h.install_command&&h.install_command.length?el('div',{},'Einrichten: '+h.install_command.join(' ')):null));
+ return el('div',{class:'card',id:'harness'},el('b',{},'Harness'),
+  el('div',{class:'bar'},el('label',{style:'margin:0'},el('span',{},' Aktiver Harness '),sel),use),result,
+  el('div',{class:'mut'},'Die Auswahl gilt für neue Agentenläufe; laufende Prozesse werden nicht umgestellt. Ohne gespeicherte Auswahl bleibt opencode der Standard.'),
+  ...entries)}
+async function env(){const d=await api('/api/doctor');const f=await api('/api/fritz');const rel=await api('/api/health');const hs=await api('/api/harness');
  const origin=rel.release_origin==='installation'?'Installation':rel.release_origin==='quelle'?'Quelle':'unbekannt';
  main.replaceChildren(el('div',{class:'card'},el('b',{},'Release'),el('div',{},'Version '+rel.version+(rel.commit?' · Commit '+rel.commit:'')+' · '+origin)),
+  harnessCard(hs),
   el('div',{class:'card'},el('b',{},'Umgebungsprüfung'),...d.map(c=>el('div',{},el('span',{class:c.ok?'ok':'bad'},c.ok?'OK   ':'FEHL '),c.label,c.ok||!c.hint?null:el('span',{class:'mut'},'  → '+c.hint)))),fritzCard(f))}
 function fritzCard(f){
  const cb=el('input',{type:'checkbox'});cb.checked=!!f.automation;

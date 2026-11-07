@@ -65,6 +65,25 @@ Nicht-interaktive Varianten und Vorschau:
     python3 scripts/setup-vibe.py --dry-run --vibe /pfad/zu/VibeCode
     python3 scripts/setup-vibe.py --yes --install-deps --vibe /pfad/zu/VibeCode
 
+### Harness wählen (opencode oder Pi)
+
+Der Coding-Harness führt die Arbeitspakete aus. Standard ist opencode; seit
+AP04 ist Pi als erster alternativer Harness verfügbar. Die Auswahl lässt sich
+beim Setup, über die CLI und in der Oberfläche ändern:
+
+```
+python3 scripts/setup-vibe.py --harness pi
+vibe harness status
+vibe harness use pi
+vibe harness setup pi
+```
+
+Ohne gespeicherte Auswahl bleibt opencode der Standard. `vibe harness setup`
+zeigt den offiziellen Bezug und den Installationsbefehl; Pi benötigt Node.js
+22.19 oder neuer. In der Oberfläche steht die Auswahl in der Ansicht
+„Umgebung“. Grenzen und die geprüften Pi-Aufrufe beschreibt
+`docs/compatibility.md`.
+
 ### Vorschau, Update, Rollback und Uninstall
 
 Die Vorschau zeigt Ziel, Version und jede Datei mit Aktion (`+` neu,

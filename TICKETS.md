@@ -512,13 +512,18 @@ Ein fehlender externer Dienst bedeutet BLOCKIERT, nicht erledigt.
   Doku: docs/features/AP03.md; Trilium `z9AVIt88OWdN`
   Hinweis: Der konfigurierte Test-Agent (`test-agent`) war in dieser Sitzung nicht aufrufbar (`permission.rejected`); die Test-Herkunft ist in `docs/features/AP03.md` offen dokumentiert.
 
-- [ ] AP04 Harniss alternativen
+- [x] AP04 Harniss alternativen
   Beschreibung: Ich möchte, dass vibe unabhängiger vom coding harniss opencode wird.
   Lege die Grundlagen, dass der harniss leichter getauscht werden kann.
   Biete mir sowohl im set up als auch in der UI die möglichkeit an den harniss zu wechseln, bzw bei der ersten installation einene harniss der wahl zu wählen.
-  
+
   Vibe soll bei der einrichtung des harniss unterstüzen.
-  
+
   Als ersten alternativen harniss soll Pi benutzt werden https://github.com/earendil-works/pi - dies soll am ende von diesem AP möglich sein.
-  
+
   Es ist erlaubt unterarbeitspakete für diese ap zu erstellen, wenn benötigt.
+  Commit: bb74270
+  Test: test_default_is_opencode_when_no_selection_file_exists, test_corrupt_selection_file_is_reported_instead_of_silently_using_opencode, test_pi_run_command_uses_print_mode_and_the_agent_prompt, test_missing_pi_is_reported_with_the_binary_name (tests/unit/test_ap04_harness.py, 21 Tests), test_first_install_stores_the_chosen_harness (tests/unit/test_ap04_setup_harness.py, 6 Tests), test_harness_is_visible_and_pi_can_be_selected (tests/browser/test_ap04_harness_ui.py, 2 Tests)
+  Review: docs/reviews/AP04-review-1.md (CHANGES REQUIRED; 1 Medium in der Doku behoben, 3 Minor)
+  Doku: docs/features/AP04.md; docs/compatibility.md; Trilium `pVrde5xTkFvu`
+  Hinweis: Der konfigurierte Test-Agent (`test-agent`) war in dieser Sitzung nicht aufrufbar (`permission.rejected`); die Test-Herkunft ist in `docs/features/AP04.md` offen dokumentiert.

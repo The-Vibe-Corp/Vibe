@@ -1,18 +1,65 @@
-# opencode-Kompatibilität
+# Harness- und opencode-Kompatibilität
 
-Stand: 2026-10-30
-Geprüfte Version: **opencode 2.1.4**
-Adapter: `bin/vibe_opencode.py`
+Stand: 2026-11-07
+Geprüfte Version: **opencode 2.1.4**; **Pi 1.5.0** (CLI-Dokumentation und
+Quelltext, kein echter Modellaufruf)
+Adapter: `bin/vibe_opencode.py` (opencode), `bin/vibe_harness.py` (Auswahl und
+Start beider Harnesses)
 Bezug: `SPEC.md` (Abschnitte „Modelle und Anbieter“, „MCP-Verwaltung“,
-„Diagnose“), `TICKETS.md` V-007
+„Diagnose“), `TICKETS.md` V-007 und AP04
 
 ## Zweck
 
-vibe behandelt opencode als austauschbare externe Schnittstelle. Alle Annahmen
-über Unterbefehle, Ausgabeformate, Konfigurationsschema und Agentenregeln
-liegen deshalb in einem Adapter. Ändert sich opencode, wird zuerst der Adapter
-und diese Datei geprüft und angepasst — nicht verstreuter Code in CLI, Web-API
-oder MCP-Verwaltung.
+vibe behandelt das Coding-Harness als austauschbare externe Schnittstelle.
+Alle Annahmen über Unterbefehle, Ausgabeformate, Konfigurationsschema und
+Agentenregeln liegen deshalb in Adaptern. Ändert sich ein Harness, wird zuerst
+der zugehörige Adapter und diese Datei geprüft und angepasst — nicht
+verstreuter Code in CLI, Web-API oder MCP-Verwaltung.
+
+## Harness-Schicht (AP04)
+
+`bin/vibe_harness.py` kapselt die Auswahl und den Start des Harness:
+
+| Aufgabe | Verhalten |
+| --- | --- |
+| Auswahl | `harness.json` im Zustandsordner; `VIBE_HARNESS` überschreibt sie für einen Prozess. Fehlt die Datei, bleibt opencode der Default. |
+| Diagnose | `probe` ruft `<binary> --version` ohne Modellaufruf auf und meldet `ready`, `missing`, `timeout`, `error` oder `unknown`. |
+| Einrichtung | `setup_plan` nennt offiziellen Bezug, Hinweis und Installationsbefehl als Argumentliste. |
+| Modellliste | opencode über den bestehenden Adapter; Pi über `pi --list-models`. |
+| Agentenlauf | `run_argv` baut die Argumentliste für opencode oder Pi. |
+
+Die Auswahl ist in `setup-vibe.py` (`--harness`, interaktive Frage bei der
+ersten Installation) und in der Oberfläche (Umgebungsansicht, `/api/harness`)
+änderbar. Ein Update ohne `--harness` behält die gespeicherte Auswahl.
+
+### Pi 1.5.0
+
+Pi wird über `@earendil-works/pi-coding-agent` installiert und benötigt
+Node.js 22.19 oder neuer. vibe startet es im Print-Modus:
+
+```
+pi --print --no-session [--model <provider/modell>] [--name <titel>] -- <prompt>
+```
+
+Der Prompt-Text der gewählten opencode-Agentendatei wird der Aufgabe
+vorangestellt; Frontmatter wird nicht mitgesendet. `--no-session` verhindert
+Sitzungsdateien in `~/.pi/agent` und macht den Lauf mit der Schreib-Sandbox
+vereinbar, deren Wurzeldateisystem nur lesend eingebunden ist.
+
+Bekannte Grenzen von Pi in vibe:
+
+- Pi liest keine opencode-Agentendateien und keine Subagenten-/Rechteprüfung;
+  vibe übergibt deshalb nur den Prompt-Text.
+- Die Oberfläche zur Agentenverwaltung bleibt auf das opencode-Dateiformat
+  ausgelegt. Pi nutzt dieselben Dateien als Prompt-Quelle.
+- Pi-Projektkonfiguration unter `.pi` wird im Print-Modus ohne
+  Vertrauensentscheidung nicht geladen; `AGENTS.md` wird weiterhin gelesen.
+- MCP-Konfiguration und opencode-Server bleiben opencode-spezifisch. Bei
+  gewähltem Pi meldet `/api/server` `server_supported: false`.
+- Die Kostenerfassung liest weiterhin die opencode-Sitzungsdatenbank; für
+  Pi-Läufe gibt es noch keine Kostenzuordnung.
+- Pi-Sitzungen werden nicht fortgesetzt (`--no-session`); jeder Agentenlauf
+  ist eigenständig.
 
 ## Geprüfte Version und Verfahren
 
@@ -256,10 +303,10 @@ Verhalten:
 - `vibe models` zeigt nur die Liste. Fehler- und Warnmeldungen des Adapters
   (fehlendes Programm, ungeprüfte Version) erscheinen über `vibe doctor`;
   die Modellansicht bleibt bei einem Fehler leer.
-- Zwei ältere Aufrufe umgehen den Adapter weiterhin: `opencode session list`
-  im Projektmenü und `opencode run --standalone` beim Agentenstart. Beide
-  gehören nicht zu den in V-007 genannten Bereichen und werden in einem
-  Folgepaket übernommen.
+- `opencode session list` im Projektmenü umgeht den Adapter weiterhin. Der
+  Agentenstart läuft seit AP04 über `bin/vibe_harness.py`.
 - Die Tests des Adapters verwenden Fixtures und Attrappen; sie ersetzen keine
   manuelle Prüfung einer neu installierten Version nach dem oben genannten
-  Verfahren.
+  Verfahren. Pi wurde in dieser Umgebung nicht installiert; geprüft wurden die
+  offizielle CLI-Dokumentation und der Quelltext von Pi 1.5.0, nicht ein echter
+  Modellaufruf.

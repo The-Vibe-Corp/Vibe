@@ -65,8 +65,8 @@
   },
   {
    "path": "scripts/setup-vibe.py",
-   "sha256": "5623e02fc6c53258d52d7159f7368631ee28d4ef7abf3ab2e88954a5cd4eb71a",
-   "bytes": 58427
+   "sha256": "9d07bb0f186e8df67ed4ae5b0a42f91c01563d012e09aaf48aca1d621bd105e0",
+   "bytes": 62689
   },
   {
    "path": "setup-vibe.cmd",
@@ -230,18 +230,18 @@
   },
   {
    "path": "bin/vibe",
-   "sha256": "84f3dfc47ac028ccf3cd9a2455fa6dcac6f55e7eb612c119972f4dce7930db10",
-   "bytes": 199509
+   "sha256": "c4dbd2a3619304f5728f7b34f2ff884bfa0f8261c5f0507e4f3f32ee4872aad6",
+   "bytes": 202672
   },
   {
    "path": "bin/vibe-run.sh",
-   "sha256": "ed61e18825b64622538d7ed97d6c7805c595757f56837821de8c68232e6ebe13",
-   "bytes": 11351
+   "sha256": "6f50c7908baaca272a06e35f9a66c53df5f51f0e9d1e83473f229864c8e7baa8",
+   "bytes": 12776
   },
   {
    "path": "bin/vibe-web.py",
-   "sha256": "1e32edc203317d22dddc1cf832b384e6a8bd3ba235000394e8d08fa7f60e5047",
-   "bytes": 38946
+   "sha256": "0214b78fc4adbb5a4d05a25c53a56d35551e0941194983dc62b6bbc6befb98fe",
+   "bytes": 40392
   },
   {
    "path": "bin/vibe_sandbox.py",
@@ -275,13 +275,18 @@
   },
   {
    "path": "bin/web/app.js",
-   "sha256": "6dd1049865c3036915f82e3afbd1ea1b047584c9b8f00f0789130b81d0893d58",
-   "bytes": 77289
+   "sha256": "42a53a544cea65934f7ba201020d90d6497bed92a6673e707e383d697c98ba62",
+   "bytes": 78813
   },
   {
    "path": "templates/common/.opencode/agents/test-agent.md",
    "sha256": "339a884bda0ce261334a3ac2662f5b6582b88bcaa3601fc92b008fff16561912",
    "bytes": 2032
+  },
+  {
+   "path": "bin/vibe_harness.py",
+   "sha256": "026466b463fbf72d2cc784c18196a7790b050d1f15a61a24123ce987836d5de1",
+   "bytes": 20662
   }
  ],
  "aenderungen": [
@@ -709,6 +714,19 @@
     "bin/vibe_services.py",
     "bin/web/app.js",
     "bin/web/styles.css"
+   ]
+  },
+  {
+   "arbeitspaket": "AP04",
+   "datum": "2026-11-07",
+   "grund": "Austauschbares Coding-Harness: bin/vibe_harness.py kapselt Auswahl, Diagnose, Einrichtung, Modellliste und Startbefehl. opencode bleibt Default; Pi (@earendil-works/pi-coding-agent) ist der erste alternative Harness und wird im Print-Modus ohne Sitzungsdatei gestartet. Auswahl über Setup (--harness, interaktive Erstinstallation), CLI (vibe harness) und Oberfläche (/api/harness); bestehende Installationen ohne Auswahl bleiben unverändert.",
+   "dateien": [
+    "bin/vibe",
+    "bin/vibe-run.sh",
+    "bin/vibe-web.py",
+    "bin/web/app.js",
+    "bin/vibe_harness.py",
+    "scripts/setup-vibe.py"
    ]
   }
  ]
