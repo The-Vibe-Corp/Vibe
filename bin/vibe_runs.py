@@ -167,27 +167,34 @@ def translate_event(event, state):
     """Übersetzt ein opencode-JSON-Ereignis in Protokollzeilen und Zustand.
 
     Rückgabe: (Zeilen, Zustand geändert). Roh-JSON wird nie zurückgegeben.
+    F25: Eine Hauptsession, die von der bisher erfassten abweicht, wird
+    übernommen (zuletzt gewinnt) und einmalig als ``[Session]``-Zeile
+    mitgeloggt; der Paket-Läufer nutzt die Zeile, um dieselbe Session bei
+    einer Wiederholung fortzusetzen.
     """
     if not isinstance(event, dict):
         return [], False
     changed = False
+    session_lines = []
     session = event.get("sessionID")
-    if isinstance(session, str) and session and not state.get("session"):
+    if isinstance(session, str) and session and session != state.get("session"):
         state["session"] = session
         changed = True
+        session_lines.append("[Session] " + session)
 
     kind = event.get("type")
     part = event.get("part") if isinstance(event.get("part"), dict) else {}
     if kind == "text":
         text = part.get("text")
         if isinstance(text, str) and text:
-            return text.splitlines(), changed
-        return [], changed
+            return session_lines + text.splitlines(), changed
+        return session_lines, changed
     if kind == "reasoning":
         text = part.get("text")
         if isinstance(text, str) and text.strip():
-            return ["[Denken] " + line for line in text.splitlines()], changed
-        return [], changed
+            thinking = ["[Denken] " + line for line in text.splitlines()]
+            return session_lines + thinking, changed
+        return session_lines, changed
     if kind == "error":
         error = event.get("error")
         if isinstance(error, dict):
@@ -196,9 +203,11 @@ def translate_event(event, state):
         else:
             message = error
         message = " ".join(str(message or "").split())
-        return (["[Fehler] " + message] if message else []), changed
+        if message:
+            return session_lines + ["[Fehler] " + message], changed
+        return session_lines, changed
     if kind != "tool_use":
-        return [], changed
+        return session_lines, changed
 
     tool = part.get("tool") or part.get("name") or "?"
     tool_state = part.get("state") if isinstance(part.get("state"), dict) else {}
@@ -254,7 +263,7 @@ def translate_event(event, state):
     lines = [f"[Subagent] {agent or '?'}: {description or '(ohne Beschreibung)'} — {status}"]
     if output:
         lines.extend(output.splitlines())
-    return lines, changed
+    return session_lines + lines, changed
 
 
 def stream_events(stdin, emit, state_path):

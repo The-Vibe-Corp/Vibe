@@ -240,7 +240,14 @@ run_agent_in() {
       "${wrap[@]}" "${args[@]}" 2>&1 | tee -a "$LOG"
       exit "${PIPESTATUS[0]}"
     fi
-    "${wrap[@]}" opencode run $SERVER_ARGS --format json --auto --thinking --agent "$AGENT" "${MODEL_ARGS[@]}" --title "$title" "$prompt" 2>&1 | "${STREAM_FILTER[@]}" | tee -a "$LOG"
+    # F25: Ist eine Session aus einem unterbrochenen Versuch erfasst, wird
+    # derselbe Auftrag in derselben Session mit --session fortgesetzt statt
+    # neu zu beginnen. Ohne erfasste Session verhält sich der Aufruf wie
+    # bisher (eine leere Kennung wird nie übergeben).
+    local args=(opencode run $SERVER_ARGS --format json --auto --thinking)
+    [ -n "${RESUME_SESSION:-}" ] && args+=(--session "$RESUME_SESSION")
+    args+=(--agent "$AGENT" "${MODEL_ARGS[@]}" --title "$title" "$prompt")
+    "${wrap[@]}" "${args[@]}" 2>&1 | "${STREAM_FILTER[@]}" | tee -a "$LOG"
     exit "${PIPESTATUS[0]}"
   )
 }
@@ -336,6 +343,9 @@ if [ "${VIBE_PREFLIGHT_ASSIST:-0}" = "1" ] \
 fi
 ASSIST_ROUNDS=0
 ASSIST_MAX_ROUNDS=10
+# F25: Kennung der Session, die bei der nächsten Wiederholung fortgesetzt
+# wird. Sie bleibt leer, solange kein Versuch eine Session hinterlassen hat.
+RESUME_SESSION=""
 while :; do
   rm -f -- "$PREFLIGHT_ACTION_FILE"
   PREFLIGHT_OUT="$(python3 "$PACKAGES_PY" "${PREFLIGHT_ARGS[@]}" \
@@ -484,6 +494,9 @@ Vor dem Abschluss müssen im Paketbranch vorliegen: ein Commit mit Präfix '$ID:
 $QUESTION_HINT"
   ATTEMPT=0
   PACKAGE_DONE=0
+  # F25: Je Paket neu; die Sessions des Vorgängerpakets werden nicht
+  # weitergeführt.
+  RESUME_SESSION=""
   while [ "$ATTEMPT" -lt "$TRIES_PER_ITEM" ]; do
     ATTEMPT=$((ATTEMPT + 1))
     echo "--- Versuch $ATTEMPT/$TRIES_PER_ITEM für $ID in $WT ---" | tee -a "$LOG"
@@ -548,7 +561,23 @@ $QUESTION_HINT"
           SKIP="$SKIP,$ID"
           break
         fi
-        echo "Wiederhole $ID nach Fehlerklasse '$CLASS' (Versuch $ATTEMPT/$TRIES_PER_ITEM)." | tee -a "$LOG"
+        # F25: Die im gescheiterten Versuch erfasste Session wird bei der
+        # Wiederholung fortgesetzt (einfaches Continue), statt das Paket von
+        # neuem zu beginnen. Die [Session]-Zeile steht im Protokollanteil
+        # dieses Versuchs; ohne sie bleibt das bisherige Verhalten.
+        ATTEMPT_SESSION="$(sed -n "$((LOG_START_LINE + 1)),\$p" "$LOG" 2>/dev/null \
+          | sed -n 's/^\[Session] //p' | tail -n 1)"
+        case "$ATTEMPT_SESSION" in
+          *[!A-Za-z0-9_-]*) ATTEMPT_SESSION="" ;;
+        esac
+        if [ -n "$ATTEMPT_SESSION" ]; then
+          RESUME_SESSION="$ATTEMPT_SESSION"
+        fi
+        if [ -n "$RESUME_SESSION" ]; then
+          echo "Wiederhole $ID nach Fehlerklasse '$CLASS' (Versuch $ATTEMPT/$TRIES_PER_ITEM); die Session $RESUME_SESSION wird fortgesetzt." | tee -a "$LOG"
+        else
+          echo "Wiederhole $ID nach Fehlerklasse '$CLASS' (Versuch $ATTEMPT/$TRIES_PER_ITEM)." | tee -a "$LOG"
+        fi
         if [ "$RETRY_DELAY" -gt 0 ]; then sleep "$RETRY_DELAY"; fi
         ;;
     esac

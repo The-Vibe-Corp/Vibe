@@ -89,6 +89,10 @@ def write_project(project, env_text, feedback="", tickets=""):
     )
 
 
+# F25: Markierung des Datensatzendes je opencode-Aufruf in FAKE_ARGS_PATH.
+# Ein Prompt kann kein NUL-Byte enthalten, deshalb ist die Grenze eindeutig.
+ARGS_RECORD_END = "ARGS_RECORD_END"
+
 FAKE_OPENCODE = r'''#!/usr/bin/env python3
 """Schließt ein Arbeitspaket so ab, wie es die Abschlussschranke verlangt."""
 import json
@@ -106,9 +110,13 @@ cwd = pathlib.Path.cwd()
 
 args_path = os.environ.get("FAKE_ARGS_PATH")
 if args_path:
-    with open(args_path, "wb") as handle:
+    # F25: Je Aufruf wird die Argumentliste angehängt, nicht überschrieben.
+    # Datensatzende markiert ein Token, NUL-getrennt; ein Prompt kann kein
+    # NUL-Byte enthalten, deshalb ist die Grenze eindeutig erkennbar.
+    with open(args_path, "ab") as handle:
         for argument in args:
             handle.write(argument.encode("utf-8") + b"\0")
+        handle.write("ARGS_RECORD_END".encode("utf-8") + b"\0")
 
 output = os.environ.get("FAKE_OUTPUT")
 if output:
@@ -167,6 +175,21 @@ try:
 except (OSError, ValueError):
     counter = 0
 counter_path.write_text(str(counter + 1), encoding="utf-8")
+
+# F25: Ohne vorbereitete Ausgabe liefert das Fake je Aufruf eine
+# Hauptsession als JSON-Ereignis, wie es opencode mit --format json tut;
+# der Versuchszähler erzeugt eine eindeutige Kennung je Versuch. Mit
+# FAKE_OUTPUT bleibt die Ausgabe unverändert, weil die Ausgabe die
+# Session selbst vorgibt.
+if not output:
+    session = "ses_attempt" + str(counter + 1)
+    event = json.dumps({
+        "type": "text",
+        "sessionID": session,
+        "part": {"type": "text", "text": "Antwort " + session},
+    }, ensure_ascii=False)
+    sys.stdout.write(event + "\n")
+    sys.stdout.flush()
 
 sequence = os.environ.get("FAKE_MODE_SEQUENCE", "")
 if sequence:
@@ -271,6 +294,28 @@ raise SystemExit(3)
 FAKE_CURL = '''#!/usr/bin/env bash
 exit 7
 '''
+
+
+def opencode_arg_records(args_path):
+    """Zerlegt die per Aufruf angehängten Argumentlisten des opencode-Fakes.
+
+    Rückgabe: Liste von Argumentlisten, in Aufrufreihenfolge. Fehlt die Datei,
+    ist die Liste leer.
+    """
+    try:
+        raw = Path(args_path).read_bytes()
+    except OSError:
+        return []
+    tokens = raw.decode("utf-8", "surrogateescape").split("\0")
+    records = []
+    current = []
+    for token in tokens:
+        if token == ARGS_RECORD_END:
+            records.append(current)
+            current = []
+        elif token:
+            current.append(token)
+    return records
 
 
 def install_fake_tools(root):
