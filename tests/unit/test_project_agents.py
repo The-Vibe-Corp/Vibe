@@ -67,6 +67,18 @@ permission:
 Fremder Prompt.
 """
 
+VIBE_AGENT = """---
+description: Vibe-Standardagent
+mode: primary
+model: opencode/vibe-modell
+permission:
+  read: allow
+  edit: deny
+---
+
+Vibe-Prompt.
+"""
+
 ISOLATED_ENV = (
     "VIBE",
     "VIBE_NO_CONTAINER",
@@ -170,6 +182,15 @@ class ProjectAgentsFixture(unittest.TestCase):
     def write_global(self, name="tester", text=GLOBAL_AGENT):
         return self.write_agent(self.agents, name, text)
 
+    def write_vibe(self):
+        """Legt den reservierten Vibe-Agenten samt Rolle an (AP03)."""
+        path = self.write_global("vibe-agent", VIBE_AGENT)
+        data = self.cli.profiles_load()
+        data["rollen"] = dict(data.get("rollen", {}))
+        data["rollen"]["vibe-agent"] = "vibe"
+        self.cli.profiles_save(data)
+        return path
+
     def write_project_agent(self, project, name="tester", text=PROJECT_AGENT):
         return self.write_agent(project / ".opencode" / "agents", name, text)
 
@@ -184,59 +205,68 @@ class ProjectAgentsFixture(unittest.TestCase):
 
 
 class SelectionTest(ProjectAgentsFixture):
-    def test_default_selection_uses_all_available_agents_and_their_models(self):
+    def test_default_selection_uses_only_the_vibe_agent(self):
+        self.write_vibe()
         self.write_global()
         self.write_project_agent(self.project, "pruefer", PROJECT_AGENT)
         self.write_project_agent(self.other, "fremd", OTHER_AGENT)
 
         rows = self.rows()
 
-        self.assertEqual(sorted(rows), ["pruefer", "tester"])
-        self.assertEqual(rows["tester"]["scope"], "global")
-        self.assertEqual(rows["pruefer"]["scope"], "proj")
-        self.assertTrue(all(row["selected"] for row in rows.values()))
-        self.assertEqual(rows["tester"]["effective_model"], "opencode/global-modell")
-        self.assertEqual(rows["pruefer"]["effective_model"], "opencode/projekt-modell")
-        self.assertEqual(rows["tester"]["override"], "")
+        # AP03: Projekte dürfen nur systemweite Agenten verwenden. Der
+        # projektlokale Agent wird nicht angeboten; ohne .vibe/agents.json ist
+        # ausschließlich der Vibe-Agent konfiguriert.
+        self.assertEqual(sorted(rows), ["tester", "vibe-agent"])
+        self.assertTrue(rows["vibe-agent"]["configured"])
+        self.assertTrue(rows["vibe-agent"]["is_vibe"])
+        self.assertFalse(rows["tester"]["configured"])
+        self.assertFalse(rows["tester"]["selected"])
+        self.assertEqual(rows["vibe-agent"]["model"], "opencode/vibe-modell")
+        self.assertEqual(rows["vibe-agent"]["override"], "")
+        self.assertNotIn("pruefer", rows)
         # Die Auswahl ist reine Konfiguration: ohne Änderung entsteht keine Datei.
         self.assertFalse(self.config_path(self.project).exists())
 
-    def test_project_agent_shadows_the_global_agent_and_is_listed_once(self):
+    def test_project_local_agent_does_not_shadow_the_global_agent(self):
+        self.write_vibe()
         self.write_global()
         self.write_project_agent(self.project)
 
         rows = self.rows()
 
-        self.assertEqual(sorted(rows), ["tester"])
-        self.assertEqual(rows["tester"]["scope"], "proj")
-        self.assertEqual(rows["tester"]["effective_model"], "opencode/projekt-modell")
+        self.assertEqual(sorted(rows), ["tester", "vibe-agent"])
+        self.assertEqual(rows["tester"]["scope"], "global")
+        self.assertEqual(rows["tester"]["model"], "opencode/global-modell")
 
-    def test_disabled_agent_is_stored_for_one_project_only(self):
+    def test_deselected_agent_is_stored_for_one_project_only(self):
+        self.write_vibe()
         self.write_global()
 
+        self.select("proj", "tester", selected=True)
         self.select("proj", "tester", selected=False)
 
-        self.assertFalse(self.rows("proj")["tester"]["selected"])
-        # Das andere Projekt hat keine eigene Datei: dort bleibt der globale
-        # Agent ausgewählt, die Abwahl wirkt also nur im gewählten Projekt.
-        self.assertTrue(self.rows("other")["tester"]["selected"])
+        self.assertFalse(self.rows("proj")["tester"]["configured"])
+        # Das andere Projekt hat keine eigene Datei: dort ist ebenfalls nur der
+        # Vibe-Agent konfiguriert, die Abwahl wirkt also nur im gewählten Projekt.
+        self.assertFalse(self.rows("other")["tester"]["configured"])
         stored = json.loads(self.config_path(self.project).read_text(encoding="utf-8"))
-        self.assertEqual(stored["deaktiviert"], ["tester"])
+        self.assertEqual(stored["version"], 2)
+        self.assertNotIn("tester", stored["aktiv"])
+        self.assertIn("vibe-agent", stored["aktiv"])
         # Das andere Projekt bleibt ohne eigene Datei und unverändert.
         self.assertFalse(self.config_path(self.other).exists())
 
     def test_model_override_wins_over_the_agent_file_and_can_be_cleared(self):
+        self.write_vibe()
         self.write_global()
 
-        self.select("proj", "tester", model="opencode/projekt-speziell")
+        self.select("proj", "tester", selected=True, model="opencode/projekt-speziell")
 
         row = self.rows("proj")["tester"]
         self.assertEqual(row["model"], "opencode/global-modell")
         self.assertEqual(row["override"], "opencode/projekt-speziell")
         self.assertEqual(row["effective_model"], "opencode/projekt-speziell")
-        self.assertEqual(
-            self.rows("other")["tester"]["effective_model"], "opencode/global-modell"
-        )
+        self.assertEqual(self.rows("other")["tester"]["override"], "")
 
         self.select("proj", "tester", model="")
 
@@ -302,7 +332,9 @@ class SelectionTest(ProjectAgentsFixture):
         self.write_global()
         path = self.config_path(self.project)
         path.write_text(
-            json.dumps({"deaktiviert": [], "modelle": {}, "farbe": "rot"}),
+            json.dumps(
+                {"version": 2, "aktiv": [], "modelle": {}, "farbe": "rot"}
+            ),
             encoding="utf-8",
         )
 
@@ -316,7 +348,9 @@ class SelectionTest(ProjectAgentsFixture):
         self.write_global()
         path = self.config_path(self.project)
         path.write_text(
-            json.dumps({"version": 1, "deaktiviert": [], "modelle": {"tester": 5}}),
+            json.dumps(
+                {"version": 2, "aktiv": ["tester"], "modelle": {"tester": 5}}
+            ),
             encoding="utf-8",
         )
 
@@ -327,29 +361,37 @@ class SelectionTest(ProjectAgentsFixture):
         self.assertEqual(json.loads(path.read_text(encoding="utf-8"))["modelle"]["tester"], 5)
 
     def test_concurrent_change_is_refused(self):
+        self.write_vibe()
         self.write_global()
         path = self.config_path(self.project)
         path.write_text(
-            json.dumps({"version": 1, "deaktiviert": [], "modelle": {}}),
+            json.dumps(
+                {"version": 2, "aktiv": ["vibe-agent", "tester"], "modelle": {}}
+            ),
             encoding="utf-8",
         )
         snapshot = self.cli.vibe_storage.read_snapshot(path)
         path.write_text(
-            json.dumps({"version": 1, "deaktiviert": ["tester"], "modelle": {}}),
+            json.dumps({"version": 2, "aktiv": ["vibe-agent"], "modelle": {}}),
             encoding="utf-8",
         )
 
         with self.assertRaises(self.cli.vibe_storage.ConcurrentChangeError):
             self.cli.project_agents_save(
-                "proj", {"deaktiviert": [], "modelle": {}}, expected=snapshot.digest
+                "proj",
+                {"version": 2, "aktiv": ["vibe-agent", "tester"], "modelle": {}},
+                expected=snapshot.digest,
             )
 
         stored = json.loads(path.read_text(encoding="utf-8"))
-        self.assertEqual(stored["deaktiviert"], ["tester"])
+        self.assertEqual(stored["aktiv"], ["vibe-agent"])
 
     def test_cli_lists_selection_and_override(self):
+        self.write_vibe()
         self.write_global()
-        self.select("proj", "tester", model="opencode/projekt-speziell")
+        self.select(
+            "proj", "tester", selected=True, model="opencode/projekt-speziell"
+        )
 
         result = subprocess.run(
             [sys.executable, str(CLI), "project-agents", "proj"],
@@ -367,32 +409,43 @@ class SelectionTest(ProjectAgentsFixture):
 
 
 class RunSelectionTest(ProjectAgentsFixture):
-    def test_run_selection_rejects_a_disabled_agent(self):
+    def test_run_selection_rejects_a_deselected_agent(self):
+        self.write_vibe()
         self.write_global()
+        self.select("proj", "tester", selected=True)
         self.select("proj", "tester", selected=False)
 
         with self.assertRaises(ValueError) as caught:
             self.cli.run_agent_selection("proj", "tester")
 
-        self.assertIn("nicht ausgewählt", str(caught.exception))
+        message = str(caught.exception).lower()
+        self.assertIn("tester", message)
+        self.assertIn("nicht", message)
 
-    def test_run_selection_allows_other_agents_without_model(self):
+    def test_run_selection_allows_a_configured_agent_without_override(self):
+        self.write_vibe()
         self.write_global()
-        self.select("proj", "tester", selected=False)
+        self.select("proj", "tester", selected=True)
 
-        self.assertEqual(self.cli.run_agent_selection("proj", "build"), "")
+        self.assertEqual(self.cli.run_agent_selection("proj", "tester"), "")
 
     def test_run_selection_returns_the_project_override(self):
+        self.write_vibe()
         self.write_global()
-        self.select("proj", "tester", model="opencode/projekt-speziell")
+        self.select(
+            "proj", "tester", selected=True, model="opencode/projekt-speziell"
+        )
 
         self.assertEqual(
             self.cli.run_agent_selection("proj", "tester"), "opencode/projekt-speziell"
         )
-        self.assertEqual(self.cli.run_agent_selection("other", "tester"), "")
+        with self.assertRaises(ValueError):
+            self.cli.run_agent_selection("other", "tester")
 
-    def test_cmd_run_aborts_before_tmux_for_a_disabled_agent(self):
+    def test_cmd_run_aborts_before_tmux_for_a_deselected_agent(self):
+        self.write_vibe()
         self.write_global()
+        self.select("proj", "tester", selected=True)
         self.select("proj", "tester", selected=False)
 
         with mock.patch.object(self.cli, "tmux_has", return_value=False):
@@ -404,12 +457,17 @@ class RunSelectionTest(ProjectAgentsFixture):
                         with self.assertRaises(SystemExit) as caught:
                             self.cli.cmd_run("proj", "tester")
 
-        self.assertIn("nicht ausgewählt", str(caught.exception.code))
+        message = str(caught.exception.code).lower()
+        self.assertIn("tester", message)
+        self.assertIn("nicht", message)
         runner.assert_not_called()
 
     def test_cmd_run_passes_the_project_model_override(self):
+        self.write_vibe()
         self.write_global()
-        self.select("proj", "tester", model="opencode/projekt-speziell")
+        self.select(
+            "proj", "tester", selected=True, model="opencode/projekt-speziell"
+        )
         calls = []
         registry = mock.MagicMock()
 
@@ -436,6 +494,8 @@ class RunSelectionTest(ProjectAgentsFixture):
         self.assertEqual(argv[-2], "tester")
 
     def run_with_mocks(self):
+        # AP03: Ohne anderen Agenten ist der Vibe-Agent der Standardagent.
+        self.write_vibe()
         registry = mock.MagicMock()
         runner = mock.patch.object(self.cli, "run", return_value=(0, ""))
         with mock.patch.object(self.cli, "tmux_has", return_value=False):
@@ -448,7 +508,7 @@ class RunSelectionTest(ProjectAgentsFixture):
                     ):
                         with mock.patch.object(self.cli.vibe_runs, "rotate_log"):
                             with runner as fake_run:
-                                self.cli.cmd_run("proj", "tester")
+                                self.cli.cmd_run("proj", "vibe-agent")
         return registry, fake_run
 
     def test_cmd_run_updates_the_managed_rules_of_an_existing_project(self):

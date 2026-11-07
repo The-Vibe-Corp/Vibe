@@ -1,17 +1,20 @@
-"""Browserabnahme für die Agentenverwaltung und die Agentenauswahl je Projekt (F17).
+"""Browserabnahme für Agentenauswahl und Modellüberschreibung je Projekt (AP03).
 
 Die Tests starten das echte Dashboard auf einem eigenen Port und bedienen es
 mit Chromium über Playwright. Geprüft werden:
 
-* Die Modellauswahl im strukturierten Editor wird auch dann gespeichert, wenn
-  der Nutzer nicht zusätzlich „In Rohtext übernehmen“ anklickt.
-* Die Projekteinstellungen zeigen die Agenten des Projekts mit Auswahl und
-  wirksamem Modell.
-* Ein abgewählter Agent und eine Modellüberschreibung werden in
-  ``<Projekt>/.vibe/agents.json`` gespeichert und nach dem Neuladen angezeigt.
+* die Modellauswahl im Agenteneditor wird ohne zusätzlichen Zwischenschritt
+  gespeichert,
+* die Projekteinstellungen zeigen standardmäßig nur den konfigurierten
+  Vibe-Agenten; weitere systemweite Agenten lassen sich einblenden,
+* projektlokale Agentendateien werden nicht angeboten,
+* die Projektauswahl schreibt Version 2 mit ``aktiv`` und lässt den
+  Vibe-Agenten konfiguriert.
 
-Der Screenshot ``F17-agenten.png`` entsteht in diesem Test und zeigt die
-tatsächliche Oberfläche.
+Das frühere Verhalten mit Projektagenten und Konflikt-/Überschreibungsanzeige
+wird nicht mehr erwartet: AP03 erlaubt in Projekten ausschließlich systemweite
+Agenten. Die Screenshots der neuen Projektansicht entstehen in
+``test_ap03_agents_ui``.
 """
 import json
 import os
@@ -28,20 +31,31 @@ from playwright.sync_api import sync_playwright
 
 REPO = Path(__file__).resolve().parents[2]
 WEB = REPO / "bin" / "vibe-web.py"
-SHOTS = Path(os.environ.get("VIBE_VERIFY_SCREENSHOT_DIR", REPO / "docs" / "features"))
-SHOT = SHOTS / "F17-agenten.png"
 
 FAKE_OPENCODE = """#!/usr/bin/env bash
-if [ "$1" = "--version" ]; then
-  printf 'opencode v2.1.4\\n'
-  exit 0
-fi
-if [ "$1" = "models" ]; then
-  printf 'opencode/start\\nopencode/neu\\nopencode/anderes\\n'
-  exit 0
-fi
-echo 'unerwarteter Aufruf' >&2
+case "$1" in
+  --version)
+    printf 'opencode 2.1.4\\n'
+    exit 0
+    ;;
+  models)
+    printf 'opencode/start\\nopencode/neu\\nopencode/anderes\\nopencode/vibe-modell\\nopencode/tester-modell\\n'
+    exit 0
+    ;;
+esac
 exit 2
+"""
+
+VIBE_AGENT = """---
+description: Vibe-Standardagent für Nutzerunterstützung
+mode: primary
+model: opencode/vibe-modell
+permission:
+  read: allow
+  edit: deny
+---
+
+Du unterstützt den Nutzer bei der Benutzung und Konfiguration von vibe.
 """
 
 AGENT = """---
@@ -49,8 +63,22 @@ description: Testagent
 mode: subagent
 model: opencode/start
 temperature: 0.1
+permission:
+  read: allow
+  edit: deny
+  task: allow
 ---
+
 Test-Prompt.
+"""
+
+LOCAL_AGENT = """---
+description: Projektlokaler Agent
+mode: subagent
+model: opencode/lokal-modell
+---
+
+Nur im Projekt.
 """
 
 ISOLATED_ENV = (
@@ -88,6 +116,7 @@ def isolated_env(root, home, port, fake_bin):
             "VIBE_UI_PORT": str(port),
             "HOME": str(home),
             "VIBE_STATE": str(Path(root) / "_toolchain"),
+            "VIBE_RUNTIME": str(Path(root) / "_logs"),
             "VIBE_AGENTS_DIR": str(Path(home) / ".config" / "opencode" / "agents"),
             "VIBE_CONFIG_FILE": str(Path(home) / ".config" / "vibe" / "config.json"),
             "PATH": str(fake_bin) + os.pathsep + env.get("PATH", ""),
@@ -110,14 +139,18 @@ class ProjectAgentsBrowserTest(unittest.TestCase):
         cls.home = cls.root / "home"
         cls.global_agents = cls.home / ".config" / "opencode" / "agents"
         cls.global_agents.mkdir(parents=True)
+        cls.state = cls.root / "_toolchain"
+        cls.state.mkdir()
         cls.log_dir = cls.root / "_logs"
         cls.log_dir.mkdir()
-        (cls.root / "_toolchain").mkdir()
         fake_bin = cls.root / "fakebin"
         fake_bin.mkdir()
         fake = fake_bin / "opencode"
         fake.write_text(FAKE_OPENCODE, encoding="utf-8")
         fake.chmod(0o755)
+
+        cls._write_fixture()
+
         cls.port = free_port()
         env = isolated_env(cls.root, cls.home, cls.port, fake_bin)
         cls.proc = subprocess.Popen(
@@ -150,6 +183,19 @@ class ProjectAgentsBrowserTest(unittest.TestCase):
         cls.browser = cls.playwright.chromium.launch(headless=True)
 
     @classmethod
+    def _write_fixture(cls):
+        (cls.global_agents / "vibe-agent.md").write_text(
+            VIBE_AGENT, encoding="utf-8"
+        )
+        (cls.global_agents / "tester.md").write_text(AGENT, encoding="utf-8")
+        project_agents = cls.project / ".opencode" / "agents"
+        project_agents.mkdir(parents=True, exist_ok=True)
+        (project_agents / "lokal.md").write_text(LOCAL_AGENT, encoding="utf-8")
+        (cls.state / "profiles.json").write_text(
+            json.dumps({"rollen": {"vibe-agent": "vibe"}}), encoding="utf-8"
+        )
+
+    @classmethod
     def tearDownClass(cls):
         cls.browser.close()
         cls.playwright.stop()
@@ -169,7 +215,7 @@ class ProjectAgentsBrowserTest(unittest.TestCase):
         cls.tmp.cleanup()
 
     def setUp(self):
-        (self.global_agents / "tester.md").write_text(AGENT, encoding="utf-8")
+        self._write_fixture()
         agents_json = self.project / ".vibe" / "agents.json"
         if agents_json.exists():
             agents_json.unlink()
@@ -189,117 +235,161 @@ class ProjectAgentsBrowserTest(unittest.TestCase):
     def open_agents(self):
         self.page.goto(self.base + "/#t=" + self.token)
         self.page.get_by_role("button", name="Agenten & Modelle").click()
-        self.page.get_by_role("button", name="Neuer Agent").wait_for()
-        self.page.get_by_text("Testagent").wait_for()
+        self.page.locator("#agents").wait_for()
+        self.page.locator('tr[data-agent="tester"]').wait_for()
 
     def open_project_settings(self):
         self.page.goto(self.base + "/#t=" + self.token)
         # Ein reiner Hashwechsel löst keine neue Navigation aus; nach dem
         # ersten Aufruf steht die Oberfläche bereits auf der Projektliste.
-        # Der Test will aber ausdrücklich den Zustand nach einem echten
-        # Neuladen prüfen. Das Token bleibt in der Sitzung erhalten.
+        # Der Test prüft ausdrücklich den Zustand nach einem echten Neuladen.
         self.page.reload(wait_until="load")
         row = self.page.locator("tr.row", has_text="proj").first
         row.wait_for()
         row.click()
         self.page.get_by_role("tab", name="Einstellungen", exact=True).click()
         self.page.locator("#project-agents").wait_for()
-        self.page.locator('tr[data-project-agent="tester"]').wait_for()
+        self.page.locator('tr[data-project-agent="vibe-agent"]').wait_for()
 
     def agents_config(self):
         path = self.project / ".vibe" / "agents.json"
         if not path.exists():
-            return None
+            return {}
         return json.loads(path.read_text(encoding="utf-8"))
 
-    def test_model_selection_is_saved_without_manual_render(self):
+    def row_is_visible(self, locator):
+        return locator.count() > 0 and locator.first.is_visible()
+
+    def reveal_unconfigured(self):
+        if not self.row_is_visible(
+            self.page.locator('tr[data-project-agent="tester"]')
+        ):
+            self.page.locator('input[data-toggle="unconfigured"]').check()
+            self.page.locator('tr[data-project-agent="tester"]').wait_for()
+
+    def test_editor_model_selection_is_saved_without_manual_render(self):
+        """AK Editor: Modell und Prompt werden ohne Zwischenschritt gespeichert."""
         self.open_agents()
-        self.page.locator('tr[data-agent="tester"][data-scope="global"]').get_by_role(
+        self.page.locator('tr[data-agent="tester"]').get_by_role(
             "button", name="Bearbeiten"
         ).click()
-        self.page.get_by_role("button", name="In Rohtext übernehmen").wait_for()
+        self.page.get_by_label("Modell", exact=True).wait_for()
 
-        # Nur die strukturierte Modellauswahl ändern und direkt speichern.
-        # Ohne die F17-Korrektur bleibt diese Änderung im Rohtext unsichtbar
-        # und geht beim Speichern verloren.
         self.page.get_by_label("Modell", exact=True).select_option("opencode/neu")
         self.page.get_by_role("button", name="Speichern", exact=True).click()
 
         path = self.global_agents / "tester.md"
         self.wait_until(
             lambda: "model: opencode/neu" in path.read_text(encoding="utf-8"),
-            message="Die Modellauswahl wurde ohne „In Rohtext übernehmen“ nicht gespeichert",
+            message="Die Modellauswahl wurde nicht gespeichert",
         )
-        saved = path.read_text(encoding="utf-8")
-        self.assertIn("description: Testagent", saved)
+        self.assertIn("description: Testagent", path.read_text(encoding="utf-8"))
 
         # Erst wenn die Oberfläche die Antwort des ersten Speicherns
-        # verarbeitet hat, ist der Ausgangsstand der Felder aktuell. Sonst
-        # könnte die nachlaufende Antwort die folgende Eingabe überschreiben.
-        raw = self.page.get_by_label("Datei (Frontmatter + Prompt)")
+        # verarbeitet hat, ist der Ausgangsstand der Felder aktuell.
         self.wait_until(
-            lambda: "model: opencode/neu" in raw.input_value(),
-            message="Die Oberfläche hat das gespeicherte Modell nicht übernommen",
+            lambda: self.page.get_by_role(
+                "button", name="Speichern", exact=True
+            ).is_enabled(),
+            message="Der erste Speichervorgang ist nicht abgeschlossen",
         )
 
-        # Auch der Prompt ist ein strukturiertes Feld und wird ohne den
-        # Zwischenschritt „In Rohtext übernehmen“ gespeichert.
+        # Editor neu öffnen: Der Ausgangsstand kommt jetzt aus der
+        # gespeicherten Datei. Damit hängt der zweite Speichervorgang nicht
+        # vom asynchronen Aktualisieren der Feldbasis im ersten Durchlauf ab.
+        self.open_agents()
+        self.page.locator('tr[data-agent="tester"]').get_by_role(
+            "button", name="Bearbeiten"
+        ).click()
+        self.page.get_by_label("Modell", exact=True).wait_for()
+        self.assertEqual(
+            self.page.get_by_label("Modell", exact=True).input_value(),
+            "opencode/neu",
+        )
+
         self.page.get_by_label("Prompt", exact=True).fill("Neuer Prompt.")
         self.page.get_by_role("button", name="Speichern", exact=True).click()
         self.wait_until(
             lambda: "Neuer Prompt." in path.read_text(encoding="utf-8"),
-            message="Der Prompt wurde ohne „In Rohtext übernehmen“ nicht gespeichert",
+            message="Der Prompt wurde nicht gespeichert",
         )
 
-    def test_project_selection_and_model_override_are_saved_and_shown(self):
+    def test_project_settings_default_only_vibe_and_reveal_global_agents(self):
+        """AK Projekte: Standard nur Vibe, Einblenden nur systemweiter Agenten."""
         self.open_project_settings()
-        row = self.page.locator('tr[data-project-agent="tester"]')
-        self.assertEqual(row.get_attribute("data-selected"), "ja")
-        self.assertIn("opencode/start", row.inner_text())
-        # Ein fehlender Fehlerhinweis darf nicht als Text „null“ erscheinen.
-        self.assertNotIn("null", self.page.locator("#project-agents").inner_text())
-        self.assertIsNone(self.agents_config())
 
-        checkbox = self.page.get_by_label("Agent tester auswählen")
-        checkbox.uncheck()
-        self.wait_until(
-            lambda: (self.agents_config() or {}).get("deaktiviert") == ["tester"],
-            message="Der abgewählte Agent wurde nicht gespeichert",
+        vibe = self.page.locator('tr[data-project-agent="vibe-agent"]')
+        self.assertEqual(vibe.get_attribute("data-configured"), "ja")
+        self.assertTrue(
+            self.page.locator('input[data-configure="vibe-agent"]').is_checked()
         )
-        self.wait_until(
-            lambda: self.page.locator('tr[data-project-agent="tester"]').get_attribute(
-                "data-selected"
-            )
-            == "nein",
-            message="Die Oberfläche zeigt den abgewählten Agenten nicht",
+        self.assertTrue(
+            self.page.locator('input[data-configure="vibe-agent"]').is_disabled()
         )
 
-        self.page.get_by_label("Modell für tester").select_option("opencode/neu")
-        self.wait_until(
-            lambda: (self.agents_config() or {}).get("modelle")
-            == {"tester": "opencode/neu"},
-            message="Die Modellüberschreibung wurde nicht gespeichert",
-        )
-        self.wait_until(
-            lambda: "opencode/neu"
-            in self.page.locator('tr[data-project-agent="tester"]').inner_text(),
-            message="Das wirksame Modell zeigt die Überschreibung nicht",
+        tester = self.page.locator('tr[data-project-agent="tester"]')
+        self.assertFalse(
+            self.row_is_visible(tester),
+            "Ein nicht konfigurierter Agent ist standardmäßig sichtbar",
         )
 
-        SHOTS.mkdir(parents=True, exist_ok=True)
-        self.page.screenshot(path=str(SHOT))
-        self.assertTrue(SHOT.exists() and SHOT.stat().st_size > 0)
-
-        # Nach dem Neuladen bleiben Auswahl und Überschreibung erhalten.
-        self.open_project_settings()
-        row = self.page.locator('tr[data-project-agent="tester"]')
-        self.wait_until(
-            lambda: row.get_attribute("data-selected") == "nein",
-            message="Die Auswahl ging beim Neuladen verloren",
-        )
+        toggle = self.page.locator('input[data-toggle="unconfigured"]')
         self.assertEqual(
-            self.page.get_by_label("Modell für tester").input_value(), "opencode/neu"
+            toggle.get_attribute("aria-label"),
+            "Nicht konfigurierte Agenten anzeigen",
         )
+        toggle.check()
+        self.wait_until(
+            lambda: self.row_is_visible(
+                self.page.locator('tr[data-project-agent="tester"]')
+            ),
+            message="Der nicht konfigurierte Agent wurde nicht eingeblendet",
+        )
+
+        row = self.page.locator('tr[data-project-agent="tester"]')
+        self.assertEqual(row.get_attribute("data-configured"), "nein")
+        self.assertIn(
+            "Testagent", row.locator("td[data-aufgabe]").inner_text()
+        )
+        self.assertIn(
+            "opencode/start", row.locator("td[data-wirksam]").inner_text()
+        )
+        model = self.page.locator('select[data-model-override="tester"]')
+        self.assertEqual(model.get_attribute("aria-label"), "Modell für tester")
+
+        # Projektlokale Agentendateien sind auch nach dem Einblenden nicht
+        # Teil der Auswahl.
+        self.assertEqual(self.page.locator('tr[data-project-agent="lokal"]').count(), 0)
+
+    def test_project_selection_writes_version_two_and_keeps_vibe(self):
+        """AK Projektauswahl: Version 2 mit aktiv; Vibe bleibt konfiguriert."""
+        self.open_project_settings()
+        self.reveal_unconfigured()
+
+        configure = self.page.locator('input[data-configure="tester"]')
+        self.assertEqual(
+            configure.get_attribute("aria-label"), "Agent tester konfigurieren"
+        )
+        configure.check()
+        self.wait_until(
+            lambda: "tester" in self.agents_config().get("aktiv", []),
+            message="Der ausgewählte Agent wurde nicht in 'aktiv' gespeichert",
+        )
+        config = self.agents_config()
+        self.assertEqual(config.get("version"), 2)
+        self.assertIn("tester", config.get("aktiv", []))
+        self.assertIn("vibe-agent", config.get("aktiv", []))
+
+        # Abwählen entfernt nur den globalen Agenten; der Vibe-Agent bleibt.
+        self.reveal_unconfigured()
+        self.page.locator('input[data-configure="tester"]').uncheck()
+        self.wait_until(
+            lambda: "tester" not in self.agents_config().get("aktiv", []),
+            message="Der abgewählte Agent wurde nicht aus 'aktiv' entfernt",
+        )
+        config = self.agents_config()
+        self.assertEqual(config.get("version"), 2)
+        self.assertIn("vibe-agent", config.get("aktiv", []))
 
 
 if __name__ == "__main__":

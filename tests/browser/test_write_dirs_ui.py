@@ -51,6 +51,24 @@ Nur lesen.
 """
 
 
+ISOLATED_ENV = (
+    "VIBE",
+    "VIBE_NO_CONTAINER",
+    "HOME",
+    "VIBE_PROFILE",
+    "VIBE_INSTALL",
+    "VIBE_RUNTIME",
+    "VIBE_STATE",
+    "VIBE_AGENTS_DIR",
+    "VIBE_CONFIG_FILE",
+    "VIBE_CONFIG_DIR",
+    "VIBE_UI_PORT",
+    "VIBE_OPENCODE_PORT",
+    "VIBE_UI_BIND",
+    "VIBE_CONTAINER",
+)
+
+
 def free_port():
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         sock.bind(("127.0.0.1", 0))
@@ -70,13 +88,25 @@ class WriteDirsBrowserTest(unittest.TestCase):
         (cls.project / "FEEDBACK.md").write_text("# FEEDBACK\n", encoding="utf-8")
         cls.log_dir = cls.root / "_logs"
         cls.log_dir.mkdir()
+        (cls.root / "_toolchain").mkdir()
         cls.port = free_port()
         env = os.environ.copy()
+        # Ambient VIBE_* values (sandbox/container) would point vibe-web at the
+        # productive installation; the test must own all runtime paths.
+        for key in ISOLATED_ENV:
+            env.pop(key, None)
+        cls.home = cls.root / "home"
+        cls.home.mkdir()
         env.update(
             {
                 "VIBE": str(cls.root),
                 "VIBE_NO_CONTAINER": "1",
                 "VIBE_UI_PORT": str(cls.port),
+                "HOME": str(cls.home),
+                "VIBE_STATE": str(cls.root / "_toolchain"),
+                "VIBE_RUNTIME": str(cls.log_dir),
+                "VIBE_AGENTS_DIR": str(cls.home / ".config" / "opencode" / "agents"),
+                "VIBE_CONFIG_FILE": str(cls.home / ".config" / "vibe" / "config.json"),
             }
         )
         cls.proc = subprocess.Popen(
@@ -212,37 +242,38 @@ class WriteDirsBrowserTest(unittest.TestCase):
         )
         card.get_by_text("Standardliste aktiv.").wait_for()
 
-    def test_agent_editor_uses_project_write_dirs_and_global_stays_open(self):
+    def test_agent_editor_is_global_and_uses_open_write_rights(self):
+        """AP03: Der Editor legt ausschließlich systemweite Agenten an."""
         self.page.goto(self.base + "/#t=" + self.token)
         self.page.get_by_role("button", name="Agenten & Modelle").click()
         self.page.get_by_role("button", name="Neuer Agent").click()
 
         form = self.page.locator(".card", has_text="Datei (Frontmatter + Prompt)")
-        selects = form.locator("select")
-        selects.nth(0).select_option("proj")
-        selects.nth(3).select_option("voll")
+        geltung = form.get_by_label("Geltung", exact=True)
+        geltung.wait_for()
+        self.assertTrue(geltung.is_disabled())
+        self.assertEqual(geltung.input_value(), "global")
+        self.assertEqual(
+            geltung.evaluate("el => [...el.options].map(o => o.value)"),
+            ["global"],
+        )
+
+        form.get_by_label("Rechte", exact=True).select_option("voll")
         form.get_by_role("button", name="Datei aus Eingaben erzeugen").click()
 
         raw = form.locator("textarea.raw")
         self.wait_until(
-            lambda: f'"{os.path.realpath(self.project)}/**": allow' in raw.input_value(),
-            message="Projektvorlage enthält die erlaubten Verzeichnisse nicht",
-        )
-        text = raw.input_value()
-        self.assertIn('"/tmp/opencode/**": allow', text)
-        self.assertIn('"*": deny', text)
-        self.assertNotIn("  edit: allow", text)
-        form.get_by_text("Schreibrechte (edit, voll) nur in:").wait_for()
-        form.get_by_text("Shell (bash) bleibt erlaubt.").wait_for()
-
-        selects.nth(0).select_option("global")
-        form.get_by_role("button", name="Datei aus Eingaben erzeugen").click()
-        self.wait_until(
             lambda: "  edit: allow" in raw.input_value(),
             message="Globale Vorlage wurde eingeschränkt",
         )
-        self.assertNotIn('"*": deny', raw.input_value())
-        form.get_by_text("Global: volle Schreibrechte ohne Verzeichnisgrenze.").wait_for()
+        text = raw.input_value()
+        self.assertNotIn('"*": deny', text)
+        self.assertNotIn(
+            f'"{os.path.realpath(self.project)}/**": allow', text
+        )
+        form.get_by_text(
+            "Global: volle Schreibrechte ohne Verzeichnisgrenze."
+        ).wait_for()
 
     def test_apply_keeps_read_only_agent_unchanged(self):
         folder = self.project / ".opencode" / "agents"

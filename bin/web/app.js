@@ -157,20 +157,39 @@ function autonomousCard(d,name){
   el('div',{class:'mut'},'Ist der Modus aktiv, entscheidet der Agent ohne Antwort des Nutzers selbst und dokumentiert die Entscheidung als Antwort auf seine Rückfrage. Die Einstellung lässt sich auch während eines Laufs ändern und gilt nur für dieses Projekt.'))}
 function projectAgentsCard(name){
  const body=el('div',{},el('span',{class:'mut'},'Lade Agenten …'));
+ let showUnconfigured=false;
+ const rowFor=(data,a)=>{
+  const cb=el('input',{type:'checkbox','data-configure':a.name,'aria-label':'Agent '+a.name+' konfigurieren'});
+  cb.checked=!!a.configured;
+  if(a.is_vibe){cb.checked=true;cb.disabled=true}
+  cb.addEventListener('change',async()=>{const r=await api('/api/project-agents',{name,agent:a.name,selected:cb.checked});
+   toast(r.message);if(r.ok)load().catch(showErr);else cb.checked=!!a.configured});
+  const mo=modelSelect(data.models,data.info,a.override,'— Standard aus Agentendatei —');
+  mo.setAttribute('data-model-override',a.name);mo.setAttribute('aria-label','Modell für '+a.name);
+  mo.addEventListener('change',async()=>{const r=await api('/api/project-agents',{name,agent:a.name,model:mo.value});
+   toast(r.message);if(r.ok)load().catch(showErr)});
+  return el('tr',{'data-project-agent':a.name,'data-configured':a.configured?'ja':'nein'},
+   el('td',{},cb),
+   el('td',{},a.name,a.is_vibe?el('span',{class:'pill ok'},' vibe'):null),
+   el('td',{'data-aufgabe':a.name},a.description||'—'),
+   el('td',{class:'mut','data-ergebnis':a.name},a.result||'—'),
+   el('td',{'data-erlaubt':a.name},allowedLabel(a)),
+   el('td',{class:'mut','data-wirksam':a.name},a.effective_model||a.model||'—'),
+   el('td',{},mo))};
  const rowsCard=(data)=>{
-  const rows=data.agents.map(a=>{
-   const cb=el('input',{type:'checkbox','aria-label':'Agent '+a.name+' auswählen'});cb.checked=!!a.selected;
-   const mo=modelSelect(data.models,data.info,a.override,'— Standard aus Agentendatei —');mo.setAttribute('aria-label','Modell für '+a.name);
-   const change=async()=>{const r=await api('/api/project-agents',{name,agent:a.name,selected:cb.checked,model:mo.value});toast(r.message);if(r.ok)load().catch(showErr)};
-   cb.addEventListener('change',change);mo.addEventListener('change',change);
-   return el('tr',{'data-project-agent':a.name,'data-selected':a.selected?'ja':'nein'},
-    el('td',{},cb),el('td',{},a.name),el('td',{class:'mut'},a.scope==='global'?'global':'Projekt'),
-    el('td',{class:'mut'},a.effective_model||'—'),el('td',{},mo))});
-  const parts=[el('div',{class:'mut'},'Der Agent läuft mit dem Modell aus seiner Datei. Eine Auswahl hier gilt nur für dieses Projekt; abgewählte Agenten startet vibe nicht.'),
-   el('table',{},el('tr',{},...['Aktiv','Agent','Geltung','Wirksames Modell','Modell für dieses Projekt'].map(h=>el('th',{},h))),...rows)];
+  const visible=data.agents.filter(a=>showUnconfigured||a.configured||a.is_vibe).map(a=>rowFor(data,a));
+  const hidden=data.agents.filter(a=>!a.configured&&!a.is_vibe).length;
+  const toggle=el('input',{type:'checkbox','data-toggle':'unconfigured','aria-label':'Nicht konfigurierte Agenten anzeigen'});
+  toggle.checked=showUnconfigured;
+  toggle.addEventListener('change',()=>{showUnconfigured=toggle.checked;rowsCard(data)});
+  const parts=[
+   el('div',{class:'mut'},'Projekte verwenden ausschließlich systemweite Agenten. Standardmäßig ist nur der Vibe-Agent konfiguriert; weitere Agenten lassen sich einblenden und auswählen. Das Modell gilt nur für dieses Projekt und ändert die Agentendatei nicht.'),
+   el('label',{style:'margin:6px 0'},toggle,' Nicht konfigurierte Agenten anzeigen ('+hidden+')'),
+   el('div',{class:'tablewrap'},el('table',{},el('tr',{},...['Aktiv','Agent','Aufgabe','Ergebnis','Subagenten','Wirksames Modell','Modell für dieses Projekt'].map(h=>el('th',{},h))),...visible))];
+  if(!visible.length)parts.push(el('span',{class:'mut'},'Keine Agenten sichtbar.'));
   if(data.error)parts.push(el('div',{class:'bad'},data.error));
   body.replaceChildren(...parts)};
- const load=async()=>{const data=await api('/api/project-agents?name='+encodeURIComponent(name));rowsCard(data)};
+ const load=async()=>{rowsCard(await api('/api/project-agents?name='+encodeURIComponent(name)))};
  load().catch(e=>body.replaceChildren(el('div',{class:'bad'},'Agentenauswahl nicht verfügbar: '+String(e&&e.message||e))));
  return el('div',{class:'card',id:'project-agents'},el('b',{},'Agenten in diesem Projekt'),body)}
 function guideCard(name){
@@ -373,7 +392,7 @@ async function costDetail(name){
 }
 
 /* ---------- Agenten, Modelle, Profile ---------- */
-let AG=null,AGFILTER='alle';
+let AG=null;
 function mval(node){return node&&typeof node==='object'?String(node.wert??node.text??'unbekannt'):'unbekannt'}
 function msrc(node){if(!node||!node.quelle)return 'Quelle unbekannt';return node.quelle+(node.datum?' ('+node.datum+')':'')}
 function mart(node){return node&&node.art?' ['+node.art+']':''}
@@ -389,23 +408,46 @@ function modelLabel(id,info){const m=info[id];if(!m)return id;return `${id} — 
 function modelSelect(models,info,current,blank){const s=el('select',{});if(blank)s.append(el('option',{value:''},blank));const groups={};
  models.forEach(m=>{(groups[m.split('/')[0]]=groups[m.split('/')[0]]||[]).push(m)});if(current&&!models.includes(current))(groups[current.split('/')[0]]=groups[current.split('/')[0]]||[]).push(current);
  Object.entries(groups).forEach(([g,ms])=>{const og=el('optgroup',{label:g});ms.forEach(m=>og.append(el('option',{value:m},modelLabel(m,info))));s.append(og)});if(current)s.value=current;return s}
+function allowedLabel(agent){
+ if(agent.task_mode==='all')return 'alle';
+ if(agent.task_mode==='custom'&&agent.allowed_agents&&agent.allowed_agents.length)return agent.allowed_agents.join(', ');
+ return 'keine';
+}
 async function agents(){AG=await api('/api/agents');const d=AG;
- const sel=el('select',{'aria-label':'Bereich filtern'},el('option',{value:'alle'},'Alle'),el('option',{value:'global'},'Nur global (alle Projekte)'),...d.projects.map(p=>el('option',{value:p},'Projekt: '+p)));sel.value=AGFILTER;
- sel.addEventListener('change',()=>{AGFILTER=sel.value;agents().catch(showErr)});
- const rows=d.agents.filter(a=>AGFILTER==='alle'||a.scope===AGFILTER);
- const tb=el('table',{},el('tr',{},...['Agent','Geltung','Wirksam','Modus','Modell','Beschreibung',''].map(h=>el('th',{},h))));
- rows.forEach(a=>tb.append(el('tr',{'data-agent':a.name,'data-scope':a.scope},
-  el('td',{},a.name,a.role?el('span',{class:'pill',title:'Rolle laut profiles.json'},' Rolle '+a.role):null,
-   a.conflict?el('span',{class:'pill warn',title:'Gleicher Name in global und Projekt – der Projektagent gilt nur in seinem Projekt'},' Konflikt'):null,
-   a.valid?null:el('span',{class:'pill bad',title:'Datei ist kein gültiger Agent – im Rohtexteditor bearbeitbar'},' defekt')),
-  el('td',{},a.scope==='global'?el('span',{class:'pill ok'},'global'):el('span',{class:'pill'},'Projekt: '+a.scope)),
-  el('td',{class:'prio'},a.priority),
-  el('td',{},a.mode),el('td',{class:'mut'},a.model),el('td',{class:'mut'},a.description),
-  el('td',{},el('button',{class:'b',type:'button',on:{click:()=>agentForm(a.scope,a.name).catch(showErr)}},'Bearbeiten')))));
+ // AP03: Die allgemeine Verwaltung zeigt und ändert ausschließlich
+ // systemweite Agenten. Projektmodelle werden nur in den Projekteinstellungen
+ // überschrieben; projektlokale Agentendateien erscheinen hier nicht.
+ const va=d.vibe_agent||{};
+ const vibeText=!va.name?'Kein Vibe-Agent definiert. In der Liste einem Agenten die Rolle „vibe“ zuweisen.'
+  :(!va.configured?'Vibe-Agent '+va.name+' hat kein Modell konfiguriert. Vorher können keine Projekte ausgeführt werden.'
+   :'Vibe-Agent '+va.name+' ist bereit. Standardmodell: '+va.model+'. Ohne weitere Agenten übernimmt er alle Aufgaben.');
+ const status=el('div',{id:'vibe-status','data-vibe-configured':va.configured?'ja':'nein'},
+  el('div',{class:'bar'},el('b',{},'Vibe-Agent'),el('span',{class:'pill '+(va.configured?'ok':'bad')},va.configured?'bereit':'nicht konfiguriert')),
+  el('div',{class:'mut'},vibeText));
+ const rows=d.global_agents||[];
+ const tb=el('table',{},el('tr',{},...['Agent','Rolle','Aufgabe','Ergebnis','Subagenten','Standardmodell',''].map(h=>el('th',{},h))));
+ rows.forEach(a=>{
+  const role=el('select',{'data-role':a.name,'aria-label':'Rolle von '+a.name},
+   el('option',{value:''},'— keine Rolle —'),el('option',{value:'coder'},'coder'),
+   el('option',{value:'reviewer'},'reviewer'),el('option',{value:'vibe'},'vibe (Standardagent)'));
+  role.value=a.role||'';
+  role.addEventListener('change',async()=>{const r=await api('/api/agent',{action:'role',scope:'global',name:a.name,role:role.value});
+   toast(r.message);if(r.ok)agents().catch(showErr);else role.value=a.role||''});
+  tb.append(el('tr',{'data-agent':a.name,'data-scope':'global'},
+   el('td',{},a.name,a.is_vibe?el('span',{class:'pill ok'},' vibe'):null,
+    a.valid?null:el('span',{class:'pill bad',title:'Datei ist kein gültiger Agent – im Rohtexteditor bearbeitbar'},' defekt')),
+   el('td',{},role),
+   el('td',{'data-aufgabe':a.name},a.description||'—'),
+   el('td',{class:'mut','data-ergebnis':a.name},a.result||'—'),
+   el('td',{'data-erlaubt':a.name},allowedLabel(a)),
+   el('td',{class:'mut','data-modell':a.name},a.model_missing?'— nicht gesetzt —':a.model),
+   el('td',{},el('button',{class:'b',type:'button',on:{click:()=>agentForm('global',a.name).catch(showErr)}},'Bearbeiten'))));
+ });
  main.replaceChildren(el('div',{class:'card',id:'agents'},
-   el('div',{class:'bar'},el('b',{},'Agenten'),sel,el('button',{class:'b p',type:'button',on:{click:()=>agentForm(null,null).catch(showErr)}},'Neuer Agent')),
-   rows.length?tb:el('span',{class:'mut'},'Keine Agenten in diesem Bereich.'),
-   el('div',{class:'mut',style:'margin-top:8px'},'Global = ~/.config/opencode/agents (für alle Projekte). Projekt = <Projekt>/.opencode/agents (nur dort, Teil des Repos). Ein Projektagent mit demselben Namen überschreibt den globalen Agenten ausschließlich in seinem Projekt; „Wirksam“ nennt die tatsächliche Geltung.')),
+   el('div',{class:'bar'},el('b',{},'Agenten'),el('button',{class:'b p',type:'button',on:{click:()=>agentForm(null,null).catch(showErr)}},'Neuer Agent')),
+   status,
+   rows.length?el('div',{class:'tablewrap'},tb):el('span',{class:'mut'},'Keine systemweiten Agenten vorhanden.'),
+   el('div',{class:'mut',style:'margin-top:8px'},'Systemweite Agenten liegen unter ~/.config/opencode/agents und gelten für alle Projekte. Ein Projekt verwendet ausschließlich diese Agenten; nur sein Modell lässt sich in den Projekteinstellungen überschreiben. Aufgabe, Ergebnis und Subagenten-Rechte sind hier direkt sichtbar.')),
   profilesCard(d),modelsCard(d))}
 function profilesCard(d){const P=JSON.parse(JSON.stringify(d.profiles));const names=Object.keys(P.profile);const cur=el('select',{},...names.map(n=>el('option',{value:n},n+(n===P.aktiv?' (aktiv)':''))));cur.value=P.aktiv;
  const roles=['coder','reviewer'];const body=el('div',{});
@@ -414,8 +456,8 @@ function profilesCard(d){const P=JSON.parse(JSON.stringify(d.profiles));const na
     ...roles.map(r=>{const ms=modelSelect(d.models,d.info,prof[r]||'','— nicht ändern —');ms.addEventListener('change',()=>{prof[r]=ms.value});
       return el('tr',{},el('td',{},r),el('td',{class:'mut'},Object.entries(P.rollen).filter(([a,x])=>x===r).map(([a])=>a).join(', ')||'—'),el('td',{},ms))})))};
  cur.addEventListener('change',draw);draw();
- const rol=el('div',{class:'mut'},'Rollenzuordnung (globale Agenten): ',...d.agents.filter(a=>a.scope==='global').map(a=>{const s=el('select',{style:'width:auto;margin:0 8px 0 4px'},el('option',{value:''},'—'),...roles.map(r=>el('option',{value:r},r)));s.value=P.rollen[a.name]||'';
-   s.addEventListener('change',()=>{if(s.value)P.rollen[a.name]=s.value;else delete P.rollen[a.name]});return el('span',{},a.name,s)}));
+ const roleRows=(d.global_agents||[]).filter(a=>a.role).map(a=>a.name+' → '+a.role);
+ const rol=el('div',{class:'mut'},'Rollen werden in der Agentenliste gesetzt (Rolle je Agent). '+(roleRows.length?roleRows.join(' · '):'Noch keine Rolle zugewiesen.'));
  return el('div',{class:'card'},el('details',{open:'open'},el('summary',{},'Profile – Modelle pro Rolle umschalten (z. B. kostenlos ↔ bezahlt)'),
   el('div',{class:'mut',style:'margin:6px 0'},'Ein Profil legt fest, welches Modell die Rollen Coder und Reviewer nutzen. „Anwenden“ schreibt die model:-Zeile der zugeordneten globalen Agenten (mit Sicherung). Bezahlte Modelle erscheinen erst, wenn der Anbieter verbunden ist (/connect bzw. opencode auth login).'),
   el('div',{class:'bar'},cur,el('button',{class:'b',on:{click:async()=>{const r=await api('/api/profiles',{action:'save',data:P});toast(r.message)}}},'Profile speichern'),
@@ -470,13 +512,37 @@ async function agentForm(scope,name){const d=AG||await api('/api/agents');const 
  let text='',digest=null,fields={},backups=[];
  if(!isNew){const loaded=await api('/api/agent?scope='+encodeURIComponent(scope)+'&name='+encodeURIComponent(name));text=loaded.text;digest=loaded.digest;fields=loaded.fields||{};backups=loaded.backups||[]}
  const structured=!fields.invalid;
+ // AP03: In der allgemeinen Verwaltung werden ausschließlich systemweite
+ // Agenten angelegt und bearbeitet. Projekte überschreiben nur das Modell.
+ const row=(d.global_agents||[]).find(a=>a.name===name)||{};
  const nm=el('input',{'aria-label':'Name',placeholder:'name (a-z, 0-9, -, _)'});if(!isNew){nm.value=name;nm.setAttribute('disabled','disabled')}
- const sc=el('select',{'aria-label':'Geltung'},el('option',{value:'global'},'global (alle Projekte)'),...d.projects.map(p=>el('option',{value:p},'Projekt: '+p)));sc.value=scope||'global';if(!isNew)sc.setAttribute('disabled','disabled');
+ const sc=el('select',{'aria-label':'Geltung'},el('option',{value:'global'},'global (alle Projekte)'));sc.value='global';sc.setAttribute('disabled','disabled');
  const ds=el('input',{'aria-label':'Beschreibung',placeholder:'Wofür ist der Agent da? (Pflicht)',value:fields.description||''});
  const md=el('select',{'aria-label':'Modus'},el('option',{value:''},'— nicht gesetzt —'),el('option',{value:'subagent'},'subagent (wird von anderen aufgerufen)'),el('option',{value:'primary'},'primary (direkt startbar)'),el('option',{value:'all'},'all'));
  md.value=fields.mode||(isNew?'subagent':'');
  const mo=modelSelect(d.models,d.info,fields.model||'','— Standardmodell —');mo.setAttribute('aria-label','Modell');
- const permsFor=()=>sc.value==='global'?d.perms:d.perms_project;
+ // AP03: Rolle, Ergebnis und Subagenten-Rechte. Die Rolle wird in
+ // profiles.json geführt, das Ergebnis getrennt von der Agentendatei.
+ const ro=el('select',{'aria-label':'Rolle'},el('option',{value:''},'— keine Rolle —'),
+  el('option',{value:'coder'},'coder'),el('option',{value:'reviewer'},'reviewer'),
+  el('option',{value:'vibe'},'vibe (Standardagent)'));
+ ro.value=row.role||'';
+ const rs=el('input',{'aria-label':'Ergebnis',placeholder:'Was liefert der Agent?',value:row.result||''});
+ const tm=el('select',{'aria-label':'Subagenten-Rechte'},el('option',{value:'keine'},'keine'),
+  el('option',{value:'ausgewählt'},'ausgewählt'),el('option',{value:'alle'},'alle'));
+ tm.value=row.task_mode==='all'?'alle':(row.task_mode==='custom'?'ausgewählt':'keine');
+ const allowed=new Set(row.allowed_agents||[]);
+ const otherAgents=(d.global_agents||[]).filter(a=>a.name!==name&&(a.mode==='subagent'||a.mode==='all')).map(a=>a.name);
+ const subBox=el('div',{'data-subagents':'1'});
+ const drawSubs=()=>{subBox.replaceChildren();
+  if(tm.value!=='ausgewählt')return;
+  subBox.append(el('div',{class:'mut'},'Erlaubte Subagenten (nur systemweite Agenten):'));
+  otherAgents.forEach(a=>{const cb=el('input',{type:'checkbox','data-subagent':a,'aria-label':'Subagent '+a});
+   cb.checked=allowed.has(a);
+   cb.addEventListener('change',()=>{if(cb.checked)allowed.add(a);else allowed.delete(a)});
+   subBox.append(el('label',{style:'display:block'},cb,' ',a))})};
+ tm.addEventListener('change',drawSubs);drawSubs();
+ const permsFor=()=>d.perms;
  const pm=el('select',{'aria-label':'Rechte'});
  const setPerms=()=>{const keep=pm.value;const list=Object.entries(permsFor()).map(([k,v])=>el('option',{value:k},v));
   if(!isNew)list.unshift(el('option',{value:''},fields.permission_custom?'individuell – unverändert lassen':'— nicht gesetzt —'));
@@ -503,6 +569,10 @@ async function agentForm(scope,name){const d=AG||await api('/api/agents');const 
  const apply=async()=>{if(!structured){toast('Strukturierte Bearbeitung nicht möglich: '+fields.invalid);return}
   const r=await api('/api/agent',{action:'render',scope:sc.value,name:name,text:raw.value,values:{description:ds.value,mode:md.value,model:mo.value,temperature:tp.value,steps:st.value,permission:pm.value,prompt:pr.value}});
   toast(r.message);if(r.ok)raw.value=r.text};
+ // AP03: Vibe unterstützt aktiv bei der Formulierung des Prompts. Das Gerüst
+ // stellt Aufgabe und Ergebnis in den Mittelpunkt und kapselt die Aufgabe ab.
+ const scaffold=async()=>{const r=await api('/api/agent',{action:'scaffold',aufgabe:ds.value,ergebnis:rs.value});
+  toast(r.message);if(r.ok)pr.value=r.message};
  sc.addEventListener('change',()=>{setPerms();updHint();if(isNew)gen().catch(showErr)});
  if(isNew)setTimeout(()=>gen().catch(showErr),0);
  const kopf=isNew?el('div',{},el('div',{class:'grid'},el('div',{},el('label',{},'Name'),nm),el('div',{},el('label',{},'Geltung'),sc))):
@@ -513,16 +583,34 @@ async function agentForm(scope,name){const d=AG||await api('/api/agents');const 
   el('div',{class:'grid3'},el('div',{},el('label',{},'Modus'),md),el('div',{},el('label',{},'Modell'),mo),el('div',{},el('label',{},'Rechte'),pm)),
   hint,
   el('div',{class:'grid'},el('div',{},el('label',{},'Temperatur'),tp),el('div',{},el('label',{},'Max. Schritte'),st)),
+  el('div',{class:'grid'},el('div',{},el('label',{},'Rolle'),ro),el('div',{},el('label',{},'Ergebnis'),rs)),
+  el('label',{},'Subagenten-Rechte'),tm,subBox,
   el('label',{},'Prompt'),pr,unknown,
   el('div',{class:'bar'},isNew?el('button',{class:'b',type:'button',on:{click:()=>gen()}},'Datei aus Eingaben erzeugen'):
    el('button',{class:'b',type:'button',on:{click:()=>apply()}},'In Rohtext übernehmen'),
+   el('button',{class:'b',type:'button',on:{click:()=>scaffold()}},'Prompt-Gerüst'),
    el('span',{class:'mut'},'Das Ergebnis unten kann vor dem Speichern frei bearbeitet werden.')));
- const save=async()=>{const n=isNew?nm.value:name,s=isNew?sc.value:scope;
-  const payload={action:'save',scope:s,name:n,text:raw.value,create:isNew,expected:digest};
-  if(structured){const current=formValues(),changed={};for(const k in current)if(current[k]!==baseline[k])changed[k]=current[k];
-   if(Object.keys(changed).length)payload.values=changed}
-  const r=await api('/api/agent',payload);toast(r.message);if(r.ok){baseline=formValues();if(isNew)agents().catch(showErr);else{digest=r.digest;raw.value=r.text}}};
- const cp=el('select',{'aria-label':'Kopieren nach …'},el('option',{value:''},'Kopieren nach …'),...['global',...d.projects].filter(x=>x!==scope).map(x=>el('option',{value:x},x==='global'?'global':'Projekt: '+x)));
+ const save=async()=>{const n=isNew?nm.value:name,s='global';
+  if(!n){toast('Name fehlt');return}
+  // Ein laufendes Speichern sperrt den Knopf, damit ein zweiter Klick nicht
+  // mit veralteter Prüfsumme geschrieben wird.
+  saveBtn.disabled=true;
+  try{
+   const payload={action:'save',scope:s,name:n,text:raw.value,create:isNew,expected:digest};
+   if(structured){const current=formValues(),changed={};for(const k in current)if(current[k]!==baseline[k])changed[k]=current[k];
+    if(Object.keys(changed).length)payload.values=changed}
+   const allowedNow=[...allowed].sort();
+   const allowedBefore=[...(row.allowed_agents||[])].sort();
+   const modeNow=tm.value==='alle'?'all':(tm.value==='ausgewählt'?'custom':'none');
+   const taskChanged=isNew||modeNow!==(row.task_mode||'none')||(modeNow==='custom'&&allowedNow.join(',')!==allowedBefore.join(','));
+   if(isNew||ro.value!==(row.role||''))payload.role=ro.value;
+   if(isNew||rs.value!==(row.result||''))payload.result=rs.value;
+   if(taskChanged){if(modeNow==='all')payload.task_all=true;else payload.task_allowed=modeNow==='custom'?allowedNow:[]}
+   const r=await api('/api/agent',payload);toast(r.message);
+   if(r.ok){baseline=formValues();row.role=ro.value;row.result=rs.value;row.task_mode=modeNow;row.allowed_agents=allowedNow;
+    if(isNew)agents().catch(showErr);else{digest=r.digest;raw.value=r.text}}
+  }finally{saveBtn.disabled=false}};
+ const saveBtn=el('button',{class:'b p',type:'button',on:{click:save}},'Speichern');
  const delAgent=isNew?null:el('button',{class:'b d',type:'button',on:{click:()=>askInline(delAgent,'Agent „'+name+'“ löschen? Eine Sicherung bleibt in agent-backups.','Ja, löschen',async()=>{const r=await api('/api/agent',{action:'delete',scope,name});toast(r.message);if(r.ok)agents().catch(showErr)})}},'Löschen');
  const backupBox=el('div',{id:'agent-backups'},el('span',{class:'mut'},'Noch keine Sicherung.'));
  const drawBackups=()=>{backupBox.replaceChildren(...(backups.length?backups.map(b=>{const btn=el('button',{class:'b',type:'button',on:{click:()=>askInline(btn,'Sicherung „'+b+'“ wiederherstellen? Der aktuelle Stand wird vorher gesichert.','Ja, wiederherstellen',async()=>{const r=await api('/api/agent',{action:'restore',scope,name,backup:b});toast(r.message);if(r.ok)agentForm(scope,name).catch(showErr)})}},'Wiederherstellen');
@@ -530,8 +618,7 @@ async function agentForm(scope,name){const d=AG||await api('/api/agents');const 
  const backupBtn=isNew?null:el('button',{class:'b',type:'button',on:{click:async()=>{const loaded=await api('/api/agent?scope='+encodeURIComponent(scope)+'&name='+encodeURIComponent(name));backups=loaded.backups||[];drawBackups();backupBox.hidden=false;toast(backups.length?backups.length+' Sicherung(en).':'Noch keine Sicherung vorhanden.')}}},'Sicherungen anzeigen');
  main.replaceChildren(el('div',{class:'bar'},el('button',{class:'b',type:'button',on:{click:()=>agents().catch(showErr)}},'← zurück'),el('h2',{style:'margin:0'},isNew?'Neuer Agent':'Agent bearbeiten')),
   el('div',{class:'card'},kopf,felder,el('label',{},'Datei (Frontmatter + Prompt)'),raw,
-   el('div',{class:'bar'},el('button',{class:'b p',type:'button',on:{click:save}},'Speichern'),
-    isNew?null:cp,isNew?null:el('button',{class:'b',type:'button',on:{click:async()=>{if(!cp.value)return toast('Ziel wählen');const r=await api('/api/agent',{action:'copy',scope,name,to:cp.value});toast(r.message);if(r.ok)setTab('agents')}}},'Kopieren'),
+   el('div',{class:'bar'},saveBtn,
     isNew?null:backupBtn,delAgent)),
   isNew?null:el('div',{class:'card'},el('b',{},'Sicherungen'),el('div',{class:'mut'},'Vor jedem Speichern wird der bisherige Stand gesichert. Die Wiederherstellung sichert zuerst den aktuellen Stand.'),backupBox))}
 /* ---------- MCP-Tools ---------- */

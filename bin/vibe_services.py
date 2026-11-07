@@ -167,9 +167,13 @@ def project_agents_info(vibe, name):
         "info": {model["id"]: model for model in info.get("models", [])},
         "stand": info.get("stand", ""),
         "hinweis": info.get("hinweis", ""),
+        "available_unconfigured": 0,
     }
     try:
         data["agents"] = vibe.project_agent_rows(name)
+        data["available_unconfigured"] = sum(
+            1 for row in data["agents"] if not row.get("configured")
+        )
     except ValueError as error:
         data["error"] = str(error)
     try:
@@ -190,8 +194,13 @@ def agents_info(vibe):
         except ValueError as error:
             write_dirs[project] = []
             write_dirs_errors[project] = str(error)
+    profiles = vibe.profiles_load()
+    agents = vibe.agents_all()
     return {
-        "agents": vibe.agents_all(),
+        "agents": agents,
+        "global_agents": [row for row in agents if row["scope"] == "global"],
+        "vibe_agent": vibe.vibe_agent_status(),
+        "roles": profiles.get("rollen", {}),
         "projects": projects,
         "models": vibe.models_list(),
         "info": {model["id"]: model for model in info.get("models", [])},
@@ -209,7 +218,7 @@ def agents_info(vibe):
         "perms_project": vibe.PERM_LABELS_PROJECT,
         "write_dirs": write_dirs,
         "write_dirs_errors": write_dirs_errors,
-        "profiles": vibe.profiles_load(),
+        "profiles": profiles,
     }
 
 

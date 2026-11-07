@@ -230,8 +230,8 @@
   },
   {
    "path": "bin/vibe",
-   "sha256": "a9eac05ce0c547957b5c26f61f2a7f1788785d68d61853be3012a7e73eceb704",
-   "bytes": 183570
+   "sha256": "84f3dfc47ac028ccf3cd9a2455fa6dcac6f55e7eb612c119972f4dce7930db10",
+   "bytes": 199509
   },
   {
    "path": "bin/vibe-run.sh",
@@ -240,8 +240,8 @@
   },
   {
    "path": "bin/vibe-web.py",
-   "sha256": "92f240c3e0844cbbf691e9837c6539619f62eb340fe3c2b297585fb1a139e9cf",
-   "bytes": 35572
+   "sha256": "1e32edc203317d22dddc1cf832b384e6a8bd3ba235000394e8d08fa7f60e5047",
+   "bytes": 38946
   },
   {
    "path": "bin/vibe_sandbox.py",
@@ -260,8 +260,8 @@
   },
   {
    "path": "bin/vibe_services.py",
-   "sha256": "c61938e43dceef704a0e2605b0dfe45b59dcd9efa3ee3fbc22afed6cd7ce787a",
-   "bytes": 7894
+   "sha256": "5b538da160b8816aef3209ce0105ffc6dd89b75a8d5dd8e2b17605f73486949d",
+   "bytes": 8271
   },
   {
    "path": "bin/web/index.html",
@@ -270,13 +270,13 @@
   },
   {
    "path": "bin/web/styles.css",
-   "sha256": "f257de9c2dfc2a842cf3008e2fbdcdf19d492a73402ca8c5d17bb623cf7521ba",
-   "bytes": 6313
+   "sha256": "318cdcb853b15e3491e4a264251f64dc8b25cfc4a0092ff3e3f3318c7fefc64c",
+   "bytes": 6375
   },
   {
    "path": "bin/web/app.js",
-   "sha256": "7bb264556b714e6a00c4d33de28217a8d49309e104ba9400ab75dbd53de8ace2",
-   "bytes": 72422
+   "sha256": "6dd1049865c3036915f82e3afbd1ea1b047584c9b8f00f0789130b81d0893d58",
+   "bytes": 77289
   },
   {
    "path": "templates/common/.opencode/agents/test-agent.md",
@@ -697,6 +697,18 @@
     "templates/rebuild/.vibe/project.env",
     "templates/web/AGENTS.md",
     "templates/web/.vibe/project.env"
+   ]
+  },
+  {
+   "arbeitspaket": "AP03",
+   "datum": "2026-11-07",
+   "grund": "Überarbeitung der Agentenverwaltung: Die allgemeine Ansicht zeigt und bearbeitet nur systemweite Agenten mit den Rollen coder, reviewer und vibe, Hierarchie und Subagenten-Rechten. Der Vibe-Agent ist der Standardagent jedes Projekts; ohne konfiguriertes Modell verweigert der Läufer den Start. Aufgaben- und Ergebnistexte werden getrennt in $VIBE_STATE/agent-meta.json gespeichert, Agentendateien bleiben unverändert. Projektansicht verwendet ausschließlich globale Agenten und erlaubt Modellüberschreibungen je Projekt; die Oberfläche bietet Rollenzuweisung und eine Vorlage für neue Agenten.",
+   "dateien": [
+    "bin/vibe",
+    "bin/vibe-web.py",
+    "bin/vibe_services.py",
+    "bin/web/app.js",
+    "bin/web/styles.css"
    ]
   }
  ]

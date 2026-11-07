@@ -488,3 +488,32 @@ Ein fehlender externer Dienst bedeutet BLOCKIERT, nicht erledigt.
   behoben), `docs/reviews/V-022-review-2.md` (PASS, 0 Critical/High/Medium;
   2 Minor).
   Dokumentation: `docs/features/V-022.md`; Trilium `0nTTx7KSysUQ`.
+
+- [ ] AP03 Überarbeitung Agentenverwaltung
+  Beschreibung: Die Agentenverwaltung ist für die Menge der Agenten unübersichtlich geworden.
+  
+  Ich möchte die UI - sowohl im Allgemeinen, als auch je Projekt von neu aufbauen (komplett neu erstellen).
+  
+  Allgemeine Einstellungen:
+  Fokus der UI muss darauf liegen, einfach Agenten erstellen zu können und ihnen eine bestimmte Rolle zuweisen zu können.
+  
+  Es müssen hierarchien und berechtigungen existieren und einstellbar sein, damit klar ist, welcher Agent zugriff auf welche Sub Agenten hat.
+  
+  Für jeden Agenten muss schnell erkennbar sein: Was ist seine Aufgabe, was ist sein ergebnis, wen darf er aufrufen, welches modell wird im standard verwendet.
+  
+  Projekte dürfen nur die systemweit definierten agenten verwenden, lediglich die modell können je projekt (und auch nur in den jeweiligen Projekt einstellungen) geändert werden. Im Projekt nicht konfigurierte agenten sollen im standard nicht sichtbar, aber vorhanden sein.
+  
+  Es muss immer mindestens einen StandardAgenten gebenden "Vibe-Agent" - für diesen muss immer ein modell konfiguriert sein, vorher können keine projekte mit vibe ausgeführt werden. Sofern kein anderer Agent definiert ist, übernimmt der vibe agent alle aufgaben. Er benötigt dementsprechend einen allgemeinen prompt mit der einzigen spezialisierng - unterstüzung des nutzers bei der benutzung und konfiguration von vibe.
+  
+  Vibe soll den nutzer aktiv bei der formulierung der prompts der agenten unterstützen. Wichtigste priorität der agenten prompts ist die aufgabe und die abkapselung der aufgabe. Die ausführung und detailtiefe soll der agent selbst defninieren dürfen, aber nur in dem jeweils eigenen bereich.
+
+- [ ] AP04 Harniss alternativen
+  Beschreibung: Ich möchte, dass vibe unabhängiger vom coding harniss opencode wird.
+  Lege die Grundlagen, dass der harniss leichter getauscht werden kann.
+  Biete mir sowohl im set up als auch in der UI die möglichkeit an den harniss zu wechseln, bzw bei der ersten installation einene harniss der wahl zu wählen.
+  
+  Vibe soll bei der einrichtung des harniss unterstüzen.
+  
+  Als ersten alternativen harniss soll Pi benutzt werden https://github.com/earendil-works/pi - dies soll am ende von diesem AP möglich sein.
+  
+  Es ist erlaubt unterarbeitspakete für diese ap zu erstellen, wenn benötigt.

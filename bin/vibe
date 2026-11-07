@@ -1613,9 +1613,23 @@ def cmd_run(name, agent=None, out=None):
     if pause_after_active(name): print(col("y", "Pause angefordert: der Lauf startet kein Arbeitspaket. Aufheben: vibe pause " + name + " off", out), file=out)
     os.makedirs(LOGS, exist_ok=True)
     env = penv(name)
-    agent = agent or env.get("AGENT") or default_agent()
+    # Der Vibe-Agent ist der Standardagent. Eine Coder-Rolle greift nur noch,
+    # solange kein Vibe-Agent definiert ist; damit bleibt ein Altbestand ohne
+    # Rollenzuweisung startbar, ohne den Standardagenten zu verdrängen.
+    status = vibe_agent_status()
+    # Ein definierter Vibe-Agent muss ein Modell haben. Diese Sperre gilt
+    # ausnahmslos und damit auch dann, wenn in der Projektdatei noch ein
+    # alter AGENT-Eintrag steht: Der Vibe-Agent ist der Standardagent.
+    if status["name"] and not status["configured"]:
+        sys.exit("Der Vibe-Agent '" + status["name"] + "' hat kein Modell konfiguriert. Ohne Modell können keine Projekte ausgeführt werden.")
+    # Die Ausnahme für Altbestände gilt nur, solange gar kein Vibe-Agent
+    # definiert ist: dann bleibt ein ausdrücklich gewählter Agent oder die
+    # Coder-Rolle startbar.
+    agent = agent or env.get("AGENT") or status["name"]
     if not agent:
-        sys.exit("Kein Agent angegeben und kein AGENT in .vibe/project.env oder profiles.json (Rolle coder) konfiguriert.")
+        agent = default_agent()
+    if not agent:
+        sys.exit("Kein Vibe-Agent definiert. In der Agentenverwaltung muss ein Agent die Rolle 'vibe' erhalten.")
     agent = require_agent(agent)
     try:
         model = run_agent_selection(name, agent)
@@ -1973,6 +1987,149 @@ def permission_block(perm="lesen", write_dirs=None):
 def agent_dir(scope):
     return AGENTS_DIR if scope == "global" else vibe_opencode.agent_directory(ppath(scope))
 
+# ---------- Agenten-Metadaten (AP03) ----------
+# Ergebnis und Rolle sind keine opencode-Frontmatter-Felder. Sie werden deshalb
+# getrennt vom Agenten gepflegt; eine Änderung an "Ergebnis" verändert niemals
+# die Agentendatei. Der Zustand liegt im persönlichen Zustandsordner.
+AGENT_META_FILE = os.path.join(PATHS.state, "agent-meta.json")
+AGENT_META_KEYS = ("agents",)
+AGENT_META_ENTRY_KEYS = ("result",)
+ROLE_NAMES = ("coder", "reviewer", "vibe")
+
+
+def _agent_meta_check(data):
+    """Prüft und normalisiert die Metadaten ohne sie zu schreiben."""
+    if not isinstance(data, dict):
+        raise ValueError("Agenten-Metadaten müssen ein JSON-Objekt sein.")
+    unknown = sorted(set(data) - set(AGENT_META_KEYS))
+    if unknown:
+        raise ValueError("Unbekannte Felder in den Agenten-Metadaten: " + ", ".join(unknown))
+    agents = data.get("agents", {})
+    if not isinstance(agents, dict):
+        raise ValueError("'agents' muss ein Objekt mit Agentenname und Ergebnis sein.")
+    clean = {}
+    for name, entry in agents.items():
+        if not isinstance(name, str) or not NAME_RE.match(name):
+            raise ValueError("Ungültiger Agentenname in den Metadaten: " + repr(name))
+        if not isinstance(entry, dict):
+            raise ValueError("Metadaten von '" + name + "' müssen ein Objekt sein.")
+        entry_unknown = sorted(set(entry) - set(AGENT_META_ENTRY_KEYS))
+        if entry_unknown:
+            raise ValueError("Unbekannte Felder bei '" + name + "': " + ", ".join(entry_unknown))
+        result = entry.get("result", "")
+        if not isinstance(result, str):
+            raise ValueError("Das Ergebnis von '" + name + "' muss eine Zeichenkette sein.")
+        if result.strip():
+            clean[name] = {"result": result}
+    return {"agents": dict(sorted(clean.items()))}
+
+
+def agent_meta_load():
+    """Liest die Agenten-Metadaten; eine fehlende Datei ist der leere Zustand."""
+    snapshot = vibe_storage.read_snapshot(AGENT_META_FILE)
+    if not snapshot.exists:
+        return {"agents": {}}
+    try:
+        data = json.loads(snapshot.text)
+    except (TypeError, ValueError):
+        raise ValueError("Die Agenten-Metadaten sind kein gültiges JSON: " + AGENT_META_FILE)
+    return _agent_meta_check(data)
+
+
+def agent_meta_save(data, expected=None):
+    """Schreibt die Agenten-Metadaten atomar und prüft eine erwartete Prüfsumme."""
+    config = _agent_meta_check(data)
+    snapshot = vibe_storage.read_snapshot(AGENT_META_FILE)
+    if expected is not None:
+        vibe_storage.check_expected(AGENT_META_FILE, snapshot, expected)
+    os.makedirs(PATHS.state, exist_ok=True)
+    text = json.dumps(config, indent=1, ensure_ascii=False, sort_keys=True) + "\n"
+    vibe_storage.write_text(
+        AGENT_META_FILE,
+        text,
+        expected=snapshot.digest if snapshot.exists else vibe_storage.MISSING,
+    )
+    return config
+
+
+def agent_result(name):
+    """Ergebnis eines Agenten oder ein leerer Wert."""
+    if not NAME_RE.match(name or ""):
+        raise ValueError("Name: nur a-z, 0-9, _ und -")
+    return agent_meta_load()["agents"].get(name, {}).get("result", "")
+
+
+def agent_result_set(name, result):
+    """Setzt oder entfernt das Ergebnis eines Agenten."""
+    if not NAME_RE.match(name or ""):
+        raise ValueError("Name: nur a-z, 0-9, _ und -")
+    if not isinstance(result, str):
+        raise ValueError("Das Ergebnis muss eine Zeichenkette sein.")
+    data = agent_meta_load()
+    agents = dict(data["agents"])
+    if result.strip():
+        agents[name] = {"result": result}
+    else:
+        agents.pop(name, None)
+    agent_meta_save({"agents": agents})
+    return result
+
+
+def agent_role_set(name, role):
+    """Setzt die Rolle eines globalen Agenten; genau ein Agent trägt 'vibe'."""
+    if not NAME_RE.match(name or ""):
+        raise ValueError("Name: nur a-z, 0-9, _ und -")
+    role = str(role or "").strip()
+    if role and role not in ROLE_NAMES:
+        raise ValueError("Unbekannte Rolle: " + role)
+    if not os.path.exists(agent_path("global", name)):
+        raise ValueError("Agent nicht gefunden: " + name)
+    data, before = profiles_load(return_snapshot=True)
+    roles = dict(data.get("rollen", {}))
+    if roles.get(name) == "vibe" and role != "vibe":
+        others = [agent for agent, value in roles.items() if value == "vibe" and agent != name]
+        if not others:
+            raise ValueError(
+                "Der letzte Vibe-Agent kann nicht entfernt werden. Zuerst einem anderen Agenten die Rolle 'vibe' zuweisen."
+            )
+    if role == "vibe":
+        for agent, value in list(roles.items()):
+            if value == "vibe" and agent != name:
+                roles.pop(agent)
+    if role:
+        roles[name] = role
+    else:
+        roles.pop(name, None)
+    if roles == data.get("rollen", {}):
+        return roles
+    data["rollen"] = roles
+    profiles_save(data, expected=before.digest if before.exists else vibe_storage.MISSING)
+    return roles
+
+
+def vibe_agent_name():
+    """Name des globalen Agenten mit der reservierten Rolle 'vibe' oder ''."""
+    for name, role in profiles_load().get("rollen", {}).items():
+        if role == "vibe":
+            return name
+    return ""
+
+
+def vibe_agent_status():
+    """Zustand des Vibe-Agenten für Start und Oberfläche."""
+    name = vibe_agent_name()
+    if not name:
+        return {"name": "", "model": "", "configured": False, "missing_model": True}
+    model = ""
+    try:
+        parsed = _parse_agent_text(agent_read("global", name))
+        model = (parsed.get("model") or "").strip()
+    except ValueError:
+        pass
+    configured = bool(model)
+    return {"name": name, "model": model,
+            "configured": configured, "missing_model": not configured}
+
 def _frontmatter_parts(text):
     """Zerlegt einen Agenten in Frontmatter, Prompt und Zeilen.
 
@@ -2177,6 +2334,198 @@ def agent_render_fields(scope, text, values):
     agent_validate(new_text)
     return new_text
 
+def agent_task_policy(text):
+    """Liest ``permission.task`` als Modus und erlaubte Subagenten.
+
+    ``all`` bedeutet ``task: allow``, ``none`` bedeutet gesperrt (auch der
+    Standard ohne Eintrag) und ``custom`` nennt die ausdrücklich erlaubten
+    Namen. Unbekannte Werte werden sicher als gesperrt behandelt.
+    """
+    _m, _fm, _body, lines = _frontmatter_parts(text)
+    permission = next(
+        (section for section in _front_sections(lines) if section["key"] == "permission"),
+        None,
+    )
+    if not permission:
+        return {"mode": "none", "allowed": []}
+    block = lines[permission["start"]:permission["end"]]
+    task_index, task_indent, task_inline = None, 0, ""
+    for index, line in enumerate(block):
+        match = re.match(r"^([ \t]+)task:[ \t]*(.*)$", line)
+        if match:
+            task_index = index
+            task_indent = len(match.group(1))
+            task_inline = match.group(2).strip()
+            break
+    if task_index is None:
+        return {"mode": "none", "allowed": []}
+    if task_inline:
+        value = _unquote(task_inline).lower()
+        if value == "allow":
+            return {"mode": "all", "allowed": []}
+        return {"mode": "none", "allowed": []}
+    allowed, star = [], False
+    for line in block[task_index + 1:]:
+        if not line.strip():
+            continue
+        indent = len(line) - len(line.lstrip(" \t"))
+        if indent <= task_indent:
+            break
+        match = re.match(r"^[ \t]+([^:]+):[ \t]*(.*)$", line)
+        if not match:
+            continue
+        key = _unquote(match.group(1).strip())
+        value = _unquote(match.group(2).strip()).lower()
+        if key == "*":
+            star = value == "allow"
+            continue
+        if value == "allow":
+            allowed.append(key)
+    if star:
+        return {"mode": "all", "allowed": []}
+    unique = sorted(set(allowed))
+    return {"mode": "custom" if unique else "none", "allowed": unique}
+
+
+def _global_agent_map():
+    """Alle systemweiten Agenten mit Rohtext; projektlokale bleiben außen vor."""
+    folder = agent_dir("global")
+    if not os.path.isdir(folder):
+        return {}
+    agents = {}
+    for filename in sorted(os.listdir(folder)):
+        if not filename.endswith(".md"):
+            continue
+        name = filename[:-3]
+        if not NAME_RE.match(name):
+            continue
+        try:
+            with open(os.path.join(folder, filename), encoding="utf-8", errors="replace") as handle:
+                text = handle.read()
+            parsed = _parse_agent_text(text)
+        except (OSError, ValueError):
+            continue
+        agents[name] = {
+            "name": name,
+            "scope": "global",
+            "model": (parsed.get("model") or "").strip(),
+            "mode": parsed.get("mode") or "",
+            "description": (parsed.get("description") or "")[:110],
+            "text": text,
+        }
+    return agents
+
+
+def agent_validate_hierarchy(name, allowed):
+    """Prüft erlaubte Subagenten auf Existenz, Selbstbezug und Zyklen."""
+    if not NAME_RE.match(name or ""):
+        raise ValueError("Name: nur a-z, 0-9, _ und -")
+    if not isinstance(allowed, list) or any(
+        not isinstance(agent, str) or not NAME_RE.match(agent) for agent in allowed
+    ):
+        raise ValueError("Erlaubte Subagenten müssen eine Liste gültiger Agentennamen sein.")
+    global_agents = _global_agent_map()
+    for target in allowed:
+        if target == name:
+            raise ValueError("Ein Agent darf sich nicht selbst als Subagent aufrufen.")
+        info = global_agents.get(target)
+        if not info:
+            raise ValueError("Unbekannter oder nicht systemweiter Subagent: " + target)
+        mode = info["mode"] or "all"
+        if mode not in ("subagent", "all"):
+            raise ValueError(
+                "Agent '" + target + "' ist kein Subagent (mode " + mode + ") und darf nicht aufgerufen werden."
+            )
+    graph = {
+        agent: set(agent_task_policy(info["text"])["allowed"])
+        for agent, info in global_agents.items()
+    }
+
+    def reachable(start, goal, seen):
+        if start == goal:
+            return True
+        if start in seen or start not in graph:
+            return False
+        seen.add(start)
+        return any(reachable(nxt, goal, seen) for nxt in graph[start])
+
+    for target in allowed:
+        if reachable(target, name, set()):
+            raise ValueError(
+                "Zyklus in der Agentenhierarchie: '" + name + "' ruft '" + target + "' auf, der wiederum zurückruft."
+            )
+    return sorted(set(allowed))
+
+
+def agent_render_task(scope, text, allowed, allow_all=False):
+    """Schreibt ``permission.task`` und erhält alle anderen Zeilen unverändert."""
+    if not allow_all:
+        if not isinstance(allowed, list) or any(
+            not isinstance(agent, str) or not NAME_RE.match(agent)
+            for agent in allowed
+        ):
+            raise ValueError("Erlaubte Subagenten müssen eine Liste gültiger Agentennamen sein.")
+    m, fm, _body, lines = _frontmatter_parts(text)
+    sep = "\r\n" if "\r\n" in fm else "\n"
+    if allow_all:
+        task_lines = ["  task: allow"]
+    else:
+        names = sorted(set(allowed))
+        if not names:
+            task_lines = ["  task: deny"]
+        else:
+            task_lines = ["  task:", '    "*": deny']
+            task_lines += ["    " + agent + ": allow" for agent in names]
+    sections = _front_sections(lines)
+    permission = next((section for section in sections if section["key"] == "permission"), None)
+    if permission and permission["inline"]:
+        raise ValueError("permission: wird nur in Blockform unterstützt; Inline-Rechte werden nicht verändert.")
+    if permission is None:
+        lines.extend(["permission:"] + task_lines)
+    else:
+        start, end = permission["start"], permission["end"]
+        task_index = None
+        for index in range(start + 1, end):
+            if re.match(r"^[ \t]+task:", lines[index]):
+                task_index = index
+                break
+        if task_index is None:
+            lines[end:end] = task_lines
+        else:
+            indent = len(lines[task_index]) - len(lines[task_index].lstrip(" \t"))
+            task_end = task_index + 1
+            while task_end < end:
+                if not lines[task_end].strip():
+                    task_end += 1
+                    continue
+                if len(lines[task_end]) - len(lines[task_end].lstrip(" \t")) <= indent:
+                    break
+                task_end += 1
+            while task_end > task_index + 1 and not lines[task_end - 1].strip():
+                task_end -= 1
+            lines[task_index:task_end] = task_lines
+    return text[:m.start(1)] + sep.join(lines) + text[m.end(1):]
+
+
+def agent_prompt_scaffold(aufgabe, ergebnis, grenzen=""):
+    """Gerüst, das die Aufgabe in den Mittelpunkt stellt und sie abkapselt."""
+    aufgabe = str(aufgabe or "").strip()
+    ergebnis = str(ergebnis or "").strip()
+    if not aufgabe or not ergebnis:
+        raise ValueError("Aufgabe und Ergebnis müssen beschrieben sein.")
+    limits = str(grenzen or "").strip() or (
+        "Der Agent entscheidet Ausführung und Detailtiefe selbst, aber nur "
+        "innerhalb seines eigenen Bereichs."
+    )
+    return (
+        "## Aufgabe\n" + aufgabe + "\n\n"
+        "## Ergebnis\n" + ergebnis + "\n\n"
+        "## Grenzen\n" + limits + "\n\n"
+        "Die Aufgabe ist abzukapseln: Der Agent bearbeitet ausschließlich "
+        "seinen eigenen Bereich und trifft keine Entscheidungen außerhalb davon.\n"
+    )
+
+
 def agent_version(refresh=False):
     """Erkennt die opencode-Version einmal je Prozess."""
     global _AGENT_VERSION
@@ -2224,6 +2573,7 @@ def _agent_overlay(rows):
 def agents_all():
     out, scopes = [], ["global"] + projects()
     roles = profiles_load().get("rollen", {})
+    meta = agent_meta_load().get("agents", {})
     for scope in scopes:
         try: d = agent_dir(scope)
         except SystemExit: continue
@@ -2241,9 +2591,16 @@ def agents_all():
                 try: parsed = _parse_agent_text(text)
                 except ValueError: parsed = {}
                 valid = False
-            out.append({"name": n, "scope": scope, "model": parsed.get("model") or "-", "mode": parsed.get("mode") or "all",
+            raw_model = (parsed.get("model") or "").strip()
+            policy = agent_task_policy(text)
+            out.append({"name": n, "scope": scope, "model": raw_model or "-", "mode": parsed.get("mode") or "all",
                         "description": (parsed.get("description") or "")[:110], "valid": valid,
-                        "role": roles.get(n, "") if scope == "global" else ""})
+                        "role": roles.get(n, "") if scope == "global" else "",
+                        "result": meta.get(n, {}).get("result", "") if scope == "global" else "",
+                        "is_vibe": scope == "global" and roles.get(n) == "vibe",
+                        "model_missing": not raw_model,
+                        "allowed_agents": policy["allowed"] if scope == "global" else [],
+                        "task_mode": policy["mode"] if scope == "global" else "none"})
     overlay = _agent_overlay(out)
     for row in out:
         info = overlay[row["name"]]
@@ -2257,19 +2614,20 @@ def agents_all():
             row["priority"] = "überschreibt global" if info["global"] else "gilt nur in " + row["scope"]
     return out
 
-# ---------- Agentenauswahl je Projekt (F17) ----------
-# Gespeichert werden nur Abweichungen vom Standard: ``deaktiviert`` nennt die
-# für dieses Projekt abgewählten Agenten, ``modelle`` überschreibt das Modell
-# einzelner Agenten. Fehlt die Datei, sind alle verfügbaren Agenten ausgewählt
-# und jedes Modell kommt aus der jeweiligen Agentendatei. Neue Agenten sind
-# dadurch ohne weitere Pflege automatisch aktiv.
-PROJECT_AGENTS_VERSION = 1
-PROJECT_AGENTS_KEYS = ("version", "deaktiviert", "modelle")
+# ---------- Agentenauswahl je Projekt (F17/AP03) ----------
+# Projekte verwenden ausschließlich systemweite Agenten. Gespeichert wird in
+# Version 2 die ausdrückliche Liste der aktiven Agenten (``aktiv``) sowie
+# optionale Modellüberschreibungen (``modelle``). Ohne Datei ist nur der
+# Vibe-Agent aktiv. Version 1 (``deaktiviert``) wird beim Lesen migriert.
+PROJECT_AGENTS_VERSION = 2
+PROJECT_AGENTS_KEYS = ("version", "aktiv", "modelle")
 PROJECT_AGENT_MODEL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/@+-]*$")
+
 
 def project_agents_path(name):
     """Ablage der projektspezifischen Agentenauswahl."""
     return os.path.join(ppath(name), ".vibe", "agents.json")
+
 
 def _project_agents_check(data):
     """Prüft und normalisiert die Projektkonfiguration ohne sie zu schreiben."""
@@ -2281,12 +2639,12 @@ def _project_agents_check(data):
     version = data.get("version", PROJECT_AGENTS_VERSION)
     if version != PROJECT_AGENTS_VERSION:
         raise ValueError(f"Unbekannte Version der Agentenauswahl: {version!r}")
-    disabled = data.get("deaktiviert", [])
-    if not isinstance(disabled, list) or any(not isinstance(item, str) for item in disabled):
-        raise ValueError("'deaktiviert' muss eine Liste von Agentennamen sein.")
-    for item in disabled:
+    active = data.get("aktiv", [])
+    if not isinstance(active, list) or any(not isinstance(item, str) for item in active):
+        raise ValueError("'aktiv' muss eine Liste von Agentennamen sein.")
+    for item in active:
         if not NAME_RE.match(item):
-            raise ValueError("Ungültiger Agentenname in 'deaktiviert': " + repr(item))
+            raise ValueError("Ungültiger Agentenname in 'aktiv': " + repr(item))
     models = data.get("modelle", {})
     if not isinstance(models, dict):
         raise ValueError("'modelle' muss ein Objekt mit Agentenname und Modell sein.")
@@ -2302,23 +2660,50 @@ def _project_agents_check(data):
                 raise ValueError("Das Modell muss die Form 'anbieter/modell' ohne Leerzeichen haben.")
             clean_models[agent] = value
     return {"version": PROJECT_AGENTS_VERSION,
-            "deaktiviert": sorted(set(disabled)),
+            "aktiv": sorted(set(active)),
             "modelle": dict(sorted(clean_models.items()))}
+
+
+def _project_agents_default():
+    vibe = vibe_agent_name()
+    return {"version": PROJECT_AGENTS_VERSION,
+            "aktiv": [vibe] if vibe else [],
+            "modelle": {}}
+
 
 def _project_agents_read(snapshot):
     """Liest die Agentenauswahl aus einem Snapshot; fehlend heißt Standardzustand."""
     if not snapshot.exists:
-        return {"version": PROJECT_AGENTS_VERSION, "deaktiviert": [], "modelle": {}}
+        return _project_agents_default()
     try:
         data = json.loads(snapshot.text)
     except (TypeError, ValueError):
         raise ValueError("Die Agentenauswahl ist kein gültiges JSON: " + snapshot.path)
+    if not isinstance(data, dict):
+        raise ValueError("Die Agentenauswahl muss ein JSON-Objekt sein.")
+    version = data.get("version", 1)
+    if version == 1:
+        unknown = sorted(set(data) - {"version", "deaktiviert", "modelle"})
+        if unknown:
+            raise ValueError("Unbekannte Felder in der Agentenauswahl: " + ", ".join(unknown))
+        disabled = data.get("deaktiviert", [])
+        if not isinstance(disabled, list) or any(not isinstance(item, str) for item in disabled):
+            raise ValueError("'deaktiviert' muss eine Liste von Agentennamen sein.")
+        names = set(_global_agent_map())
+        active = names - set(disabled)
+        vibe = vibe_agent_name()
+        if vibe:
+            active.add(vibe)
+        data = {"version": PROJECT_AGENTS_VERSION, "aktiv": sorted(active),
+                "modelle": data.get("modelle", {})}
     return _project_agents_check(data)
+
 
 def project_agents_load(name, snapshot=None):
     """Liefert (Konfiguration, Snapshot); eine fehlende Datei bleibt unverändert."""
     snapshot = snapshot or vibe_storage.read_snapshot(project_agents_path(name))
     return _project_agents_read(snapshot), snapshot
+
 
 def project_agents_save(name, data, expected=None):
     """Schreibt die Agentenauswahl atomar und prüft eine erwartete Prüfsumme."""
@@ -2327,60 +2712,49 @@ def project_agents_save(name, data, expected=None):
     vibe_storage.write_text(project_agents_path(name), text, expected=expected)
     return config
 
-def project_agent_inventory(name):
-    """Verfügbare Agenten eines Projekts; Projektdateien überschreiben globale.
 
-    Gleiche Namen werden nur einmal geführt, weil opencode in einem Projekt
-    genau eine Datei je Agentennamen verwendet.
-    """
-    out = {}
-    for scope in ("global", name):
-        try:
-            folder = agent_dir(scope)
-        except (SystemExit, ValueError):
-            continue
-        if not os.path.isdir(folder):
-            continue
-        for filename in sorted(os.listdir(folder)):
-            if not filename.endswith(".md"):
-                continue
-            agent = filename[:-3]
-            if not NAME_RE.match(agent):
-                continue
-            try:
-                with open(os.path.join(folder, filename), encoding="utf-8", errors="replace") as handle:
-                    parsed = _parse_agent_text(handle.read())
-            except (OSError, ValueError):
-                parsed = {}
-            out[agent] = {"name": agent, "scope": scope,
-                          "model": (parsed.get("model") or "").strip(),
-                          "mode": parsed.get("mode") or "",
-                          "description": (parsed.get("description") or "")[:110]}
-    return out
+def project_agent_inventory(name):
+    """Verfügbare Agenten eines Projekts: ausschließlich systemweite Agenten."""
+    return {
+        agent: {key: value for key, value in info.items() if key != "text"}
+        for agent, info in _global_agent_map().items()
+    }
+
 
 def project_agent_rows(name):
     """Agenten eines Projekts mit Auswahl, Überschreibung und wirksamem Modell."""
-    inventory = project_agent_inventory(name)
+    global_agents = _global_agent_map()
+    inventory = {agent: {key: value for key, value in info.items() if key != "text"}
+                 for agent, info in global_agents.items()}
     config, _snapshot = project_agents_load(name)
-    disabled = set(config["deaktiviert"])
+    active = set(config["aktiv"])
     overrides = config["modelle"]
+    roles = profiles_load().get("rollen", {})
+    meta = agent_meta_load().get("agents", {})
     rows = []
     for agent in sorted(inventory):
         row = dict(inventory[agent])
+        is_vibe = roles.get(agent) == "vibe"
+        configured = agent in active or is_vibe
         base = row["model"] or "-"
         override = overrides.get(agent, "")
-        row.update(model=base, override=override,
+        policy = agent_task_policy(global_agents[agent]["text"])
+        row.update(configured=configured, selected=configured, is_vibe=is_vibe,
+                   model=base, override=override,
                    effective_model=override or base,
-                   selected=agent not in disabled)
+                   result=meta.get(agent, {}).get("result", ""),
+                   role=roles.get(agent, ""),
+                   allowed_agents=policy["allowed"] if policy["mode"] == "custom" else [],
+                   task_mode=policy["mode"])
         rows.append(row)
     return rows
+
 
 def project_agent_set(name, agent, selected=None, model=None):
     """Ändert Auswahl oder Modellüberschreibung genau eines Agenten.
 
     Es wird ausschließlich die Projektdatei geschrieben; Agentendateien und
-    andere Projekte bleiben unverändert. Eine ungültige Eingabe oder eine
-    unlesbare Datei führt zu einem Fehler, bevor etwas geschrieben wird.
+    andere Projekte bleiben unverändert. Der Vibe-Agent bleibt immer aktiv.
     """
     if not NAME_RE.match(agent or ""):
         raise ValueError("Agentenname: nur a-z, 0-9, _ und -")
@@ -2390,13 +2764,18 @@ def project_agent_set(name, agent, selected=None, model=None):
     if agent not in inventory:
         raise ValueError(f"Agent '{agent}' ist für dieses Projekt nicht verfügbar.")
     config, snapshot = project_agents_load(name)
-    disabled = set(config["deaktiviert"])
+    active = set(config["aktiv"])
+    vibe = vibe_agent_name()
+    if vibe:
+        active.add(vibe)
     models = dict(config["modelle"])
     if selected is not None:
         if selected:
-            disabled.discard(agent)
+            active.add(agent)
         else:
-            disabled.add(agent)
+            if agent == vibe:
+                raise ValueError("Der Vibe-Agent kann nicht abgewählt werden.")
+            active.discard(agent)
     if model is not None:
         if not isinstance(model, str):
             raise ValueError("Das Modell muss eine Zeichenkette sein.")
@@ -2407,16 +2786,28 @@ def project_agent_set(name, agent, selected=None, model=None):
             models[agent] = value
         else:
             models.pop(agent, None)
-    if disabled == set(config["deaktiviert"]) and models == config["modelle"]:
+    if active == set(config["aktiv"]) and models == config["modelle"]:
         return config
-    return project_agents_save(name, {"deaktiviert": sorted(disabled), "modelle": models},
+    return project_agents_save(name, {"version": PROJECT_AGENTS_VERSION,
+                                      "aktiv": sorted(active), "modelle": models},
                                expected=snapshot.digest if snapshot.exists else vibe_storage.MISSING)
 
+
 def run_agent_selection(name, agent):
-    """Prüft die Projektauswahl und liefert die Modellüberschreibung (oder '')."""
+    """Prüft die Projektauswahl und liefert die Modellüberschreibung (oder '').
+
+    Erst mit einem definierten Vibe-Agenten gilt die Projektauswahl. Solange
+    keiner eingerichtet ist, bleibt ein ausdrücklich gewählter systemweiter
+    Agent lauffähig; so starten bestehende Installationen vor der
+    Rollenzuweisung weiterhin.
+    """
     config, _snapshot = project_agents_load(name)
-    if agent in set(config["deaktiviert"]):
-        raise ValueError(f"Agent '{agent}' ist für dieses Projekt nicht ausgewählt.")
+    active = set(config["aktiv"])
+    vibe = vibe_agent_name()
+    if vibe:
+        active.add(vibe)
+        if agent not in active:
+            raise ValueError(f"Agent '{agent}' ist für dieses Projekt nicht ausgewählt oder nicht konfiguriert.")
     return config["modelle"].get(agent, "")
 
 def effective_agent(name, scope="global"):

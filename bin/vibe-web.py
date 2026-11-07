@@ -510,17 +510,66 @@ class H(BaseHTTPRequestHandler):
                         text = body.get("text", "")
                         if body.get("values") is not None:
                             text = vibe.agent_render_fields(scope, text, body.get("values"))
+                        # AP03: Ergebnis, Hierarchie und Rolle werden vor dem
+                        # Schreiben geprüft. Ungültige Werte dürfen die
+                        # Agentendatei nicht verändern.
+                        result = body.get("result")
+                        task_allowed = body.get("task_allowed")
+                        task_all = body.get("task_all")
+                        role = body.get("role")
+                        if result is not None and not isinstance(result, str):
+                            raise ValueError("Das Ergebnis muss eine Zeichenkette sein.")
+                        if role is not None:
+                            if not isinstance(role, str):
+                                raise ValueError("Die Rolle muss eine Zeichenkette sein.")
+                            if scope != "global":
+                                raise ValueError("Rollen gelten nur für systemweite Agenten.")
+                            role = role.strip()
+                            if role and role not in vibe.ROLE_NAMES:
+                                raise ValueError("Unbekannte Rolle: " + role)
+                            roles = vibe.profiles_load().get("rollen", {})
+                            if roles.get(an) == "vibe" and role != "vibe" and not any(
+                                value == "vibe" and agent != an
+                                for agent, value in roles.items()
+                            ):
+                                raise ValueError(
+                                    "Der letzte Vibe-Agent kann nicht entfernt werden. Zuerst einem anderen Agenten die Rolle 'vibe' zuweisen."
+                                )
+                        if task_all is not None:
+                            if not isinstance(task_all, bool):
+                                raise ValueError("'task_all' muss wahr oder falsch sein.")
+                            if scope != "global":
+                                raise ValueError("Subagenten-Rechte gelten nur für systemweite Agenten.")
+                            text = vibe.agent_render_task(scope, text, [], allow_all=task_all)
+                        elif task_allowed is not None:
+                            if scope != "global":
+                                raise ValueError("Subagenten-Rechte gelten nur für systemweite Agenten.")
+                            vibe.agent_validate_hierarchy(an, task_allowed)
+                            text = vibe.agent_render_task(scope, text, task_allowed)
                         warn = vibe.agent_write(scope, an, text, create=bool(body.get("create")), expected=body.get("expected"))
+                        if result is not None:
+                            vibe.agent_result_set(an, result)
+                        if role is not None:
+                            vibe.agent_role_set(an, role)
                         snapshot = vibe.agent_snapshot(scope, an)
                         extra["text"] = snapshot.text; extra["digest"] = snapshot.digest
                         ok, msg = True, "Gespeichert" + (" – Hinweis: " + " ".join(warn) if warn else "")
                     elif act == "delete": vibe.agent_delete(scope, an); ok, msg = True, "Gelöscht (Sicherung in agent-backups)"
+                    elif act == "role":
+                        if scope != "global":
+                            raise ValueError("Rollen gelten nur für systemweite Agenten.")
+                        vibe.agent_role_set(an, body.get("role", ""))
+                        ok, msg = True, "Rolle gespeichert"
                     elif act == "copy": vibe.agent_copy(scope, an, known_scope(body.get("to", "global"))); ok, msg = True, "Kopiert"
                     elif act == "render":
                         # Vorschau: strukturierte Eingaben in den Rohtext übernehmen,
                         # ohne die Datei zu verändern.
                         extra["text"] = vibe.agent_render_fields(scope, body.get("text", ""), body.get("values"))
                         ok, msg = True, "Eingaben in den Rohtext übernommen – noch nicht gespeichert"
+                    elif act == "scaffold":
+                        # AP03: Prompt-Gerüst für Aufgabe, Ergebnis und Grenzen.
+                        # Es wird nur zurückgegeben, nie geschrieben.
+                        ok, msg = True, vibe.agent_prompt_scaffold(body.get("aufgabe", ""), body.get("ergebnis", ""), body.get("grenzen", ""))
                     elif act == "restore":
                         vibe.agent_restore(scope, an, body.get("backup") or None)
                         snapshot = vibe.agent_snapshot(scope, an)
