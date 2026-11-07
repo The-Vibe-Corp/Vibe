@@ -10,3 +10,7 @@ web.token
 config-backups/
 agent-backups/
 _secrets.env
+
+# Laufzeit- und Sperrartefakte des Projekts
+.vibe/agents.json
+vibe-storage-locks-*/
