@@ -60,6 +60,30 @@ if [ -n "$MODEL" ]; then
   fi
   MODEL_ARGS=(--model "$MODEL")
 fi
+# Harness-Auswahl (AP04): Ohne vibe_harness.py bleibt der bisherige direkte
+# opencode-Pfad erhalten (ältere Installationen und Prüf-Attrappen). Der
+# Zustandsordner enthält harness.json; VIBE_HARNESS überschreibt ihn für
+# genau diesen Lauf.
+STATE="${VIBE_STATE:-$INSTALL}"
+HARNESS=opencode
+HARNESS_CLI="$BIN/vibe_harness.py"
+if [ -f "$HARNESS_CLI" ]; then
+  if ! HARNESS="$(python3 "$HARNESS_CLI" selected --state "$STATE" 2>>"$LOG")"; then
+    echo "ABBRUCH: Harness-Auswahl in $STATE/harness.json konnte nicht gelesen werden." | tee -a "$LOG"
+    exit 2
+  fi
+  case "$HARNESS" in
+    opencode|pi) ;;
+    *)
+      echo "ABBRUCH: Unbekannter Harness '$HARNESS' (erlaubt: opencode, pi)." | tee -a "$LOG"
+      exit 2
+      ;;
+  esac
+fi
+if [ "$HARNESS" = "pi" ] && [ ! -f "$HARNESS_CLI" ]; then
+  echo "ABBRUCH: Harness pi gewählt, aber $HARNESS_CLI fehlt. Installation aktualisieren (Setup --update)." | tee -a "$LOG"
+  exit 2
+fi
 MAXP="${VIBE_MAX_PACKAGES:-${MAX_PACKAGES:-80}}"
 if ! [[ "$MAXP" =~ ^[0-9]+$ ]]; then
   echo "ABBRUCH: MAX_PACKAGES muss eine Zahl sein." | tee -a "$LOG"
@@ -161,7 +185,8 @@ if [ "$SANDBOX_STATE" = "on" ]; then
   SANDBOX_WRAP=(python3 "$BIN/vibe_sandbox.py" "$P" --)
 elif curl -sf --max-time 2 "http://127.0.0.1:$OPENCODE_PORT/global/health" > /dev/null 2>&1; then SERVER_ARGS="--server http://127.0.0.1:$OPENCODE_PORT"; fi
 register_start
-echo "Lauf: ${RUN_ID:-ohne Register}, Modus: $SERVER_ARGS, Agent: $AGENT, Sandbox: $SANDBOX_STATE, höchstens $MAXP Durchgänge, höchstens $MAXR Wiederholungen je Paket" | tee -a "$LOG"
+if [ "$HARNESS" = "pi" ]; then RUN_MODE="Pi --print"; else RUN_MODE="$SERVER_ARGS"; fi
+echo "Lauf: ${RUN_ID:-ohne Register}, Harness: $HARNESS, Modus: $RUN_MODE, Agent: $AGENT, Sandbox: $SANDBOX_STATE, höchstens $MAXP Durchgänge, höchstens $MAXR Wiederholungen je Paket" | tee -a "$LOG"
 PAUSED=0; LAST_ID=""
 declare -A TRY; SKIP=""
 for n in $(seq 1 "$MAXP"); do
@@ -183,7 +208,14 @@ for n in $(seq 1 "$MAXP"); do
 $BLOCK
 Bearbeite NUR dieses Arbeitspaket gemäß deinem Workflow. Commit-Präfix: '$ID:'.
 $QUESTION_HINT"
-  "${SANDBOX_WRAP[@]}" opencode run $SERVER_ARGS --auto --thinking --agent "$AGENT" "${MODEL_ARGS[@]}" --title "$NAME $ID" "$PROMPT" 2>&1 | tee -a "$LOG"
+  if [ "$HARNESS" = "pi" ]; then
+    HARNESS_ARGS=(python3 "$HARNESS_CLI" run --harness pi --project "$P" --agent "$AGENT" --title "$NAME $ID" --prompt "$PROMPT")
+    [ -n "$MODEL" ] && HARNESS_ARGS+=(--model "$MODEL")
+    [ -n "${VIBE_AGENTS_DIR:-}" ] && HARNESS_ARGS+=(--agents-dir "$VIBE_AGENTS_DIR")
+    "${SANDBOX_WRAP[@]}" "${HARNESS_ARGS[@]}" 2>&1 | tee -a "$LOG"
+  else
+    "${SANDBOX_WRAP[@]}" opencode run $SERVER_ARGS --auto --thinking --agent "$AGENT" "${MODEL_ARGS[@]}" --title "$NAME $ID" "$PROMPT" 2>&1 | tee -a "$LOG"
+  fi
   RC=${PIPESTATUS[0]}
   echo "=== Agent beendet, Exit-Code $RC ===" | tee -a "$LOG"
   LAST_ID="$ID"

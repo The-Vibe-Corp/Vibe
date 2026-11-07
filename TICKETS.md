@@ -488,3 +488,14 @@ Ein fehlender externer Dienst bedeutet BLOCKIERT, nicht erledigt.
   behoben), `docs/reviews/V-022-review-2.md` (PASS, 0 Critical/High/Medium;
   2 Minor).
   Dokumentation: `docs/features/V-022.md`; Trilium `0nTTx7KSysUQ`.
+
+- [ ] AP04 Harniss alternativen
+  Beschreibung: Ich möchte, dass vibe unabhängiger vom coding harniss opencode wird.
+  Lege die Grundlagen, dass der harniss leichter getauscht werden kann.
+  Biete mir sowohl im set up als auch in der UI die möglichkeit an den harniss zu wechseln, bzw bei der ersten installation einene harniss der wahl zu wählen.
+
+  Vibe soll bei der einrichtung des harniss unterstüzen.
+
+  Als ersten alternativen harniss soll Pi benutzt werden https://github.com/earendil-works/pi - dies soll am ende von diesem AP möglich sein.
+
+  Es ist erlaubt unterarbeitspakete für diese ap zu erstellen, wenn benötigt.

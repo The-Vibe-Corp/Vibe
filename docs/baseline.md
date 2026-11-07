@@ -172,6 +172,7 @@ Codestelle und die in dieser Sitzung tatsächlich beobachtete Prüfung.
 | CLI | `vibe sandbox` | vorhanden und automatisiert geprüft | `bin/vibe:388-474`; `tests/unit/test_sandbox.py` prüft Status, Ein-/Ausschalten, Werkzeugliste, Ablehnung von Steuerzeichen, bubblewrap-Argumente, die `/tmp`-Grenze, die schreibgeschützte `.vibe`-Konfiguration und echte sandboxed Schreibversuche |
 | CLI | `vibe agent` | vorhanden, noch nicht geprüft | `bin/vibe:441-457`; `new/edit/show/rm`, Editor und Schreibzugriff nicht ausgeführt |
 | CLI | `vibe models` | vorhanden und manuell geprüft | `bin/vibe:459-466`; ausgeführt, Exit 0; Daten aus `data/models.json` bleiben ungeprüfte Altdaten (V-011) |
+| CLI | `vibe harness` | vorhanden und automatisiert geprüft | `bin/vibe` (`cmd_harness`), `bin/vibe_harness.py`; `tests/unit/test_ap04_harness.py` prüft Status, Auswahl, ungültige Namen, beschädigte Auswahl, Diagnose und Einrichtungsplan; `tests/unit/test_ap04_setup_harness.py` prüft die Auswahl im Setup |
 | CLI | `vibe model` | vorhanden, noch nicht geprüft | `bin/vibe:468-477`; schreibt Agentendatei, nicht ausgeführt |
 | CLI | `vibe profile` | teilweise vorhanden | `bin/vibe:515-528`; Liste ausgeführt, Exit 0; `use` schreibt Agenten und wurde nicht ausgeführt (V-012) |
 | CLI | `vibe costs` | vorhanden und automatisiert geprüft | `bin/vibe:1835-1873` (`cmd_costs`); `tests/unit/test_costs.py` prüft Übersicht, Paketzeilen, Summen, unbekannte Preise (0 €) und die Ausgabe in Euro; die opencode-Datenbank wird nur lesend gelesen |
@@ -223,6 +224,8 @@ eigenen Test.
 | API | `POST /api/autonomous` | vorhanden und automatisiert geprüft | `do_POST`; `tests/unit/test_questions.py` prüft Ein- und Ausschalten, die gespeicherte Datei, unbekannte Aktionen (400) und die Tokenpflicht (403) |
 | API | `POST /api/fritz` | vorhanden und automatisiert geprüft | `do_POST`; `tests/unit/test_fritz_reconnect.py` prüft Automatik an/aus, manuellen Reconnect, Fehlerfall, fehlende Konfiguration, unbekannte Aktion und Tokenpflicht |
 | API | `GET /api/server` | vorhanden, noch nicht geprüft | `do_GET`; Transportprüfung zentral in V-004, Fachfunktion nicht ausgeführt |
+| API | `GET /api/harness` | vorhanden und automatisiert geprüft | `do_GET`; `tests/browser/test_ap04_harness_ui.py` öffnet die Umgebungsansicht über das echte Dashboard und prüft den aktiven Harness und die Pi-Einrichtungshinweise; `bin/vibe_harness.py` liefert die Auswahl |
+| API | `POST /api/harness` | vorhanden und automatisiert geprüft | `do_POST`; `tests/browser/test_ap04_harness_ui.py` wechselt den Harness, prüft die gespeicherte Auswahl nach dem Neuladen und den sichtbaren Einrichtungsplan |
 | API | `GET /api/stream` | teilweise vorhanden | `stream()`; Token nur im Query-String (EventSource), Host geprüft; Origin nicht anwendbar; nicht ausgeführt |
 | API | `POST /api/run` | vorhanden, noch nicht geprüft | `do_POST`; Transportprüfung zentral in V-004, Fachfunktion nicht ausgeführt |
 | API | `POST /api/stop` | vorhanden, noch nicht geprüft | `do_POST`; Transportprüfung zentral in V-004, Fachfunktion nicht ausgeführt |

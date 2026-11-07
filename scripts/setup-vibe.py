@@ -35,9 +35,14 @@ from pathlib import Path
 
 KIT = Path(__file__).resolve().parent.parent
 MIN_PYTHON = (3, 8)
+if str(KIT / "bin") not in sys.path:
+    sys.path.insert(0, str(KIT / "bin"))
+import vibe_harness
+
 PROGRAM_FILES = (
     "vibe",
     "vibe-run.sh",
+    "vibe_harness.py",
     "vibe_runs.py",
     "vibe-web.py",
     "vibe_mcp.py",
@@ -62,6 +67,9 @@ UNKNOWN_VERSION = "unbekannt"
 LIVE_RUN_STATES = ("starting", "running")
 OFFICIAL_OPENCODE = "https://opencode.ai/docs/"
 OPENCODE_NPM_PACKAGE = "opencode-ai"
+OFFICIAL_PI = "https://pi.dev/docs/latest"
+PI_NPM_PACKAGE = "@earendil-works/pi-coding-agent"
+PI_NODE_MINIMUM = "22.19"
 BAD_TARGETS = {
     "/", "/usr", "/etc", "/bin", "/sbin", "/lib", "/lib64", "/proc", "/sys",
     "/dev", "/boot", "/root", "/run", "/var", "/tmp", "/home", "/opt", "/mnt",
@@ -99,8 +107,23 @@ DEPENDENCIES = (
     },
     {
         "name": "opencode",
-        "why": "Agentenläufe und Modellzugriff",
+        "why": "Agentenläufe und Modellzugriff (Harness opencode)",
         "required": True,
+        "harnesses": ("opencode",),
+        "packages": {},
+    },
+    {
+        "name": "node",
+        "why": "Laufzeit für Pi (mindestens " + PI_NODE_MINIMUM + ")",
+        "required": True,
+        "harnesses": ("pi",),
+        "packages": {"apt-get": "nodejs", "dnf": "nodejs", "pacman": "nodejs"},
+    },
+    {
+        "name": "pi",
+        "why": "Agentenläufe mit dem Harness Pi",
+        "required": True,
+        "harnesses": ("pi",),
         "packages": {},
     },
 )
@@ -225,11 +248,26 @@ def python_ok(version=None):
     return tuple(version[:2]) >= MIN_PYTHON
 
 
-def dependency_report(info, which=None):
-    """Liefert je Werkzeug Präsenz, Installierbarkeit und konkreten Hinweis."""
+def _dependency_applies(dependency, harness):
+    """Ein Harness-spezifisches Werkzeug gilt nur für den gewählten Harness."""
+    scoped = dependency.get("harnesses")
+    if not scoped:
+        return True
+    return (harness or "opencode") in scoped
+
+
+def dependency_report(info, which=None, harness=None):
+    """Liefert je Werkzeug Präsenz, Installierbarkeit und konkreten Hinweis.
+
+    Werkzeuge mit ``harnesses`` gelten nur für den gewählten Harness; ohne
+    Angabe bleibt opencode der Standard, damit bestehende Aufrufer unverändert
+    das bisherige Ergebnis erhalten.
+    """
     which = which or shutil.which
     result = []
     for dependency in DEPENDENCIES:
+        if not _dependency_applies(dependency, harness):
+            continue
         name = dependency["name"]
         present = bool(which(name))
         installable = False
@@ -246,6 +284,11 @@ def dependency_report(info, which=None):
                     )
                 elif name == "opencode" and info.get("npm_available"):
                     installable = True
+                elif name == "pi" and info.get("npm_available"):
+                    installable = True
+                elif name == "pi":
+                    hint = (f"Pi benötigt Node.js {PI_NODE_MINIMUM}+. Offiziell: "
+                            f"{OFFICIAL_PI} (kein automatisches Netzskript).")
                 else:
                     hint = f"Bitte offiziell installieren: {OFFICIAL_OPENCODE} (kein automatisches Netzskript)."
             elif info["immutable"] and not info["container"]:
@@ -258,8 +301,13 @@ def dependency_report(info, which=None):
                 installable = True
             elif name == "opencode" and info.get("npm_available"):
                 installable = True
+            elif name == "pi" and info.get("npm_available"):
+                installable = True
             elif name == "opencode":
                 hint = f"Bitte offiziell installieren: {OFFICIAL_OPENCODE} (kein automatisches Netzskript)."
+            elif name == "pi":
+                hint = (f"Pi benötigt Node.js {PI_NODE_MINIMUM}+. Offiziell: "
+                        f"{OFFICIAL_PI} (kein automatisches Netzskript).")
             else:
                 hint = "Kein Paket für diese Plattform bekannt; bitte manuell installieren."
         result.append(
@@ -315,6 +363,8 @@ def install_commands(info, names, prefix):
                     commands.append(prefix + [manager, "install", "-y"] + packages)
     if "opencode" in names and info.get("npm_available"):
         commands.append(prefix + ["npm", "install", "-g", OPENCODE_NPM_PACKAGE])
+    if "pi" in names and info.get("npm_available"):
+        commands.append(prefix + ["npm", "install", "-g", "--ignore-scripts", PI_NPM_PACKAGE])
     return commands
 
 
@@ -1162,6 +1212,11 @@ def parse_args(argv=None):
     )
     parser.add_argument("--no-register", action="store_true", help="Projektordner nicht registrieren")
     parser.add_argument("--no-launcher", action="store_true", help="keinen Startbefehl anlegen")
+    parser.add_argument(
+        "--harness",
+        choices=vibe_harness.harness_ids(),
+        help="Harness für Agentenläufe (Standard: gespeicherte Auswahl, sonst opencode)",
+    )
     return parser.parse_args(argv)
 
 
@@ -1290,6 +1345,36 @@ def main(argv=None, input_fn=None, output=print, which=None, runner=None,
         output("Projekte und Laufzeitdaten wurden nicht verändert.")
         return 0
 
+    # Harness-Auswahl (AP04): Eine gespeicherte Auswahl bleibt bei Updates
+    # erhalten; --harness setzt sie bewusst neu. Ohne Datei und ohne Angabe
+    # bleibt opencode der Standard, damit bestehende Installationen ihr
+    # Verhalten nicht ändern.
+    state_dir = target / "_toolchain"
+    selection_file = Path(vibe_harness.selection_path(state_dir))
+    stored_harness = None
+    if selection_file.exists():
+        try:
+            stored_harness = vibe_harness.read_selection(state_dir)
+        except vibe_harness.HarnessError as error:
+            output("FEHLER: " + str(error))
+            return 1
+    if options.harness:
+        chosen_harness = options.harness
+    elif stored_harness:
+        chosen_harness = stored_harness
+    elif interactive and not options.yes:
+        answer = input_fn(
+            f"Harness für Agentenläufe [opencode/pi] [{vibe_harness.DEFAULT_HARNESS}]: "
+        ).strip()
+        try:
+            chosen_harness = vibe_harness.definition(answer or vibe_harness.DEFAULT_HARNESS)["id"]
+        except vibe_harness.HarnessError as error:
+            output("FEHLER: " + str(error))
+            return 1
+    else:
+        chosen_harness = vibe_harness.DEFAULT_HARNESS
+    output("Harness: " + chosen_harness)
+
     existing = detect_existing(target)
     if options.reuse:
         mode = "reuse"
@@ -1320,7 +1405,7 @@ def main(argv=None, input_fn=None, output=print, which=None, runner=None,
     else:
         mode = "update"
 
-    report = dependency_report(info, which)
+    report = dependency_report(info, which, harness=chosen_harness)
     missing = [item for item in report if item["required"] and not item["present"]]
     output("Werkzeuge:")
     for item in report:
@@ -1338,6 +1423,11 @@ def main(argv=None, input_fn=None, output=print, which=None, runner=None,
         except SetupError as error:
             output("FEHLER: " + str(error))
             return 1
+        harness_plan = vibe_harness.setup_plan(chosen_harness)
+        output("Harness-Hinweis: " + harness_plan["hint"])
+        output("Harness offiziell: " + harness_plan["official"])
+        if harness_plan["install_command"]:
+            output("(dry-run) Harness einrichten: " + " ".join(harness_plan["install_command"]))
         for line in describe_plan(plan):
             output(line)
         prefix = privilege_prefix(info, is_root, has_sudo)
@@ -1419,6 +1509,15 @@ def main(argv=None, input_fn=None, output=print, which=None, runner=None,
         output("FEHLER: Installation fehlgeschlagen: " + str(error))
         return 1
 
+    # Eine bestehende Auswahl wird beim Update nicht neu geschrieben; ohne
+    # Datei oder mit --harness wird die getroffene Wahl gespeichert.
+    if options.harness or not selection_file.exists():
+        try:
+            vibe_harness.write_selection(state_dir, chosen_harness)
+        except (vibe_harness.HarnessError, OSError) as error:
+            output("FEHLER: Harness-Auswahl konnte nicht gespeichert werden: " + str(error))
+            return 1
+
     for warning in files["warnings"]:
         output("Hinweis: " + warning)
     output(f"Installation: {len(files['copied'])} Datei(en) kopiert, {len(files['skipped'])} unverändert.")
@@ -1445,7 +1544,7 @@ def main(argv=None, input_fn=None, output=print, which=None, runner=None,
         if not check["ok"]:
             output(f"Prüfung fehlgeschlagen: {check['label']} -> {check['hint']}")
 
-    report = dependency_report(info, which)
+    report = dependency_report(info, which, harness=chosen_harness)
     remaining = [item for item in report if item["required"] and not item["present"]]
     if remaining or dependency_failed:
         output("Unvollständig: folgende Werkzeuge fehlen noch: " + ", ".join(item["name"] for item in remaining))

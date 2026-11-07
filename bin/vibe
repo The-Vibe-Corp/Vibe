@@ -35,6 +35,7 @@ Aufruf:  vibe                 interaktives Menü
          vibe paths [prod|dev] [--json]   Profil, Pfade und Ports anzeigen
          vibe ui [stop]       Dashboard im Browser (nur localhost)
          vibe server [start|stop|status]  gemeinsamer opencode-Server mit Weboberfläche
+         vibe harness [status|list|use <name>|setup [name]]  Harness (opencode/Pi) wählen und einrichten
          vibe types           verfügbare Projekttypen
          vibe doctor          Umgebung prüfen
 """
@@ -48,7 +49,7 @@ except ImportError:  # pragma: no cover - Windows ohne Paket-Läufer
 
 if __name__ == "__main__": sys.modules["vibe"] = sys.modules[__name__]
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
-import vibe_storage, vibe_paths, vibe_opencode, vibe_models, vibe_runs, vibe_questions, vibe_autonomous
+import vibe_storage, vibe_paths, vibe_opencode, vibe_models, vibe_runs, vibe_questions, vibe_autonomous, vibe_harness
 
 try:
     PATHS = vibe_paths.resolve()
@@ -2625,8 +2626,8 @@ def apply_write_dirs_to_project(name):
     return changed
 
 def models_list():
-    """Alle Modelle verbundener Anbieter über den opencode-Kompatibilitätsadapter."""
-    return vibe_opencode.list_models()["models"]
+    """Alle Modelle des aktiven Harness (opencode-Adapter oder Pi-CLI)."""
+    return vibe_harness.list_models(state_dir=PATHS.state)["models"]
 
 def models_info():
     """Modellkatalog als normalisierte Sicht inklusive Prüfbefunden."""
@@ -2766,7 +2767,7 @@ def cmd_models(model_id=None):
     if not info.get("models"):
         print("Kein Modellkatalog gefunden: " + MODELS_FILE + " (install-vibe.sh ausführen).")
         current = models_list()
-        if current: print("Verfügbar laut opencode (ohne Katalog): " + ", ".join(current))
+        if current: print("Verfügbar laut aktivem Harness (ohne Katalog): " + ", ".join(current))
         return
     current = models_list()
     findings = list(info.get("findings") or [])
@@ -2799,7 +2800,7 @@ def cmd_model(agent, model, scope="global", out=None):
         snapshot = agent_snapshot(scope, agent)
         t = snapshot.text
         ml = models_list()
-        if ml and model not in ml: sys.exit(f"Modell '{model}' nicht in 'opencode models' (Anbieter per /connect verbinden).")
+        if ml and model not in ml: sys.exit(f"Modell '{model}' ist beim aktiven Harness nicht verfügbar (Anbieter verbinden).")
         m = re.search(r"^model:[ \t]*(\S+)", t, flags=re.M)
         t2 = t.replace(m.group(1), model) if m else t.replace("\n---", f"\nmodel: {model}\n---", 1)
         agent_write(scope, agent, t2, expected=snapshot.digest); print("Modell von", agent, "->", model, file=out)
@@ -2835,7 +2836,7 @@ def profile_apply(name):
     for agent, role in d["rollen"].items():
         model = prof.get(role, "")
         if not model: skipped.append(f"{agent}: für Rolle '{role}' ist im Profil kein Modell gesetzt"); continue
-        if ml and model not in ml: raise ValueError(f"Modell '{model}' ist bei opencode nicht verfügbar. Anbieter zuerst per /connect (TUI) oder 'opencode auth login' verbinden. Nichts wurde geändert.")
+        if ml and model not in ml: raise ValueError(f"Modell '{model}' ist beim aktiven Harness nicht verfügbar. Anbieter zuerst verbinden (opencode: /connect oder 'opencode auth login'; Pi: /login). Nichts wurde geändert.")
     for agent, role in d["rollen"].items():
         model = prof.get(role, "")
         if not model: continue
@@ -3546,6 +3547,42 @@ def cmd_server(action="status", out=None):
     else:
         h = server_health(); print("opencode-Server:", col("g", "läuft " + OC_URL + " " + h, stream=out) if h else "aus", file=out)
 
+def cmd_harness(action="status", name=None, out=None):
+    """Zeigt, wechselt und erklärt den Harness; die Auswahl liegt im Zustandsordner."""
+    out = out or sys.stdout
+    try:
+        if action in ("status", "list"):
+            data = vibe_harness.status(PATHS.state)
+            print("Harness:", data["selected"], file=out)
+            for item in data["harnesses"]:
+                marker = "*" if item["selected"] else " "
+                version = " " + item["version"] if item["version"] else ""
+                print(f" {marker} {item['harness']:<9}{item['status']:<9}{version}  {item['message']}", file=out)
+                if item["install_command"]:
+                    print("     Einrichten: " + shlex.join(item["install_command"]), file=out)
+                if not item["installed"]:
+                    print("     Hinweis: " + item["hint"], file=out)
+            return
+        if action == "use":
+            if not name:
+                sys.exit("Aufruf: vibe harness use <opencode|pi>")
+            path = vibe_harness.write_selection(PATHS.state, name)
+            print("Harness gespeichert:", name, "(" + path + ")", file=out)
+            return
+        if action == "setup":
+            chosen = name or vibe_harness.read_selection(PATHS.state)
+            plan = vibe_harness.setup_plan(chosen)
+            print("Harness:", plan["harness"], file=out)
+            print("Installiert:", "ja" if plan["installed"] else "nein", file=out)
+            print("Hinweis:", plan["hint"], file=out)
+            print("Offiziell:", plan["official"], file=out)
+            if plan["install_command"]:
+                print("Einrichten:", " ".join(plan["install_command"]), file=out)
+            return
+        sys.exit("Aufruf: vibe harness [status|list|use <name>|setup [name]]")
+    except vibe_harness.HarnessError as error:
+        sys.exit(str(error))
+
 def ui_session():
     return profile_session("vibe-ui")
 
@@ -3624,10 +3661,27 @@ def doctor_checks():
     def chk(label, ok, hint=""): r.append((label, bool(ok), hint))
     chk("im Container", in_container(), "distrobox enter " + CONTAINER)
     chk(f"VIBE-Ordner beschreibbar ({VIBE})", os.access(VIBE, os.W_OK))
-    for tool, hint in (("git", ""), ("tmux", "sudo dnf install -y tmux"), ("opencode", "Host-Installation prüfen"), ("java", "sudo dnf install -y java-25-openjdk-devel"), ("android", "Android CLI installieren"), ("adb", "android sdk install platform-tools"), ("python3", ""), ("curl", ""), ("flock", "util-linux")):
+    for tool, hint in (("git", ""), ("tmux", "sudo dnf install -y tmux"), ("java", "sudo dnf install -y java-25-openjdk-devel"), ("android", "Android CLI installieren"), ("adb", "android sdk install platform-tools"), ("python3", ""), ("curl", ""), ("flock", "util-linux")):
         chk(tool, shutil.which(tool) is not None, hint)
-    version = vibe_opencode.probe()
-    chk("opencode-Version " + (version.version or "?"), version.supported, version.message)
+    try:
+        selected = vibe_harness.read_selection(PATHS.state)
+    except vibe_harness.HarnessError as error:
+        selected = None
+        chk("Harness-Auswahl", False, str(error))
+    if selected:
+        info = vibe_harness.definition(selected)
+        chk(info["name"] + " installiert (" + info["binary"] + ")",
+            shutil.which(info["binary"]) is not None, info["hint"])
+        if selected == "opencode":
+            version = vibe_opencode.probe()
+            chk("opencode-Version " + (version.version or "?"), version.supported, version.message)
+        else:
+            chk("node für " + info["name"] + " (22.19+)",
+                shutil.which("node") is not None,
+                "Node.js 22.19 oder neuer installieren: " + info["official"])
+            probe = vibe_harness.probe(selected)
+            chk(info["name"] + "-Version " + (probe["version"] or "?"),
+                probe["status"] == "ready", probe["message"])
     chk("/dev/kvm", os.path.exists("/dev/kvm"), "KVM fehlt")
     chk("ANDROID_HOME gesetzt", bool(os.environ.get("ANDROID_HOME")), "source ~/.bashrc im Container")
     chk("Abnahme-Dateien + Prüfsummen", os.path.exists(os.path.join(VERIFY, "verify.sh")) and run(["sha256sum", "-c", os.path.expanduser("~/.config/schreibfuchs-verify.sha"), "--quiet"], cwd=VERIFY)[0] == 0, "install.sh / install2.sh ausführen")
@@ -3860,7 +3914,8 @@ def menu():
         ps = projects()
         print(); cmd_list()
         i = pick("Hauptmenü", ["Projekt öffnen", "Neues Projekt", "Entwicklungsordner verwalten", "Agenten anzeigen", "Agent anlegen/bearbeiten (global)", "Modelle (Einschätzung, Preis)", "Modell eines Agenten ändern",
-                               "Profil wechseln (kostenlos/bezahlt)", "MCP-Tools anzeigen", "Emulator starten", "Emulator stoppen", "Dashboard (Browser) starten", "opencode-Server (Weboberfläche) starten", "Projekttypen anzeigen", "Doctor (Umgebung prüfen)"])
+                               "Profil wechseln (kostenlos/bezahlt)", "MCP-Tools anzeigen", "Emulator starten", "Emulator stoppen", "Dashboard (Browser) starten", "opencode-Server (Weboberfläche) starten", "Projekttypen anzeigen", "Doctor (Umgebung prüfen)",
+                               "Harness anzeigen/wechseln (opencode/Pi)"])
         if i is None: return
         if i == 0:
             if not ps: print("Keine Projekte."); continue
@@ -3886,6 +3941,10 @@ def menu():
         elif i == 12: cmd_server("start")
         elif i == 13: cmd_types()
         elif i == 14: cmd_doctor()
+        elif i == 15:
+            cmd_harness("status")
+            n = input("Harness (opencode/pi, leer = nichts): ").strip()
+            if n: cmd_harness("use", n)
 
 def main():
     if not in_container() and not os.environ.get("VIBE_NO_CONTAINER") and shutil.which("distrobox"):
@@ -3915,6 +3974,7 @@ def main():
                  "mcp": lambda: cmd_mcp(r[0] if r else "list", r[1] if len(r) > 1 else None, r[2] if len(r) > 2 else "global", r[3] if len(r) > 3 else None),
                  "emu": lambda: cmd_emu(r[0]), "paths": lambda: cmd_paths(*r),
                  "ui": lambda: cmd_ui(r[0] if r else "start"), "server": lambda: cmd_server(r[0] if r else "status"),
+                 "harness": lambda: cmd_harness(r[0] if r else "status", r[1] if len(r) > 1 else None),
                  "types": lambda: cmd_types(), "doctor": lambda: cmd_doctor()}
         table[c]()
     except (KeyError, IndexError):

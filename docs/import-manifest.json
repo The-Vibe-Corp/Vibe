@@ -1,6 +1,6 @@
 {
  "version": 1,
- "stand": "2026-11-02",
+ "stand": "2026-11-07",
  "quelle": "Übernommener Programmstand aus der lokalen Installation unter $VIBE/_toolchain; die aktive Installation enthält zusätzlich lokale Geheimnis-Hooks (siehe docs/baseline.md, Abschnitt 3).",
  "hinweis": "SHA-256 der übernommenen Programmdateien. Beabsichtigte Änderungen an diesen Dateien sind nur zulässig, wenn dieser Eintrag im selben Arbeitspaket aktualisiert und begründet wird. Laufzeitdaten, Sicherungen und Geheimnisse sind nicht Bestandteil des Imports.",
  "scopes": [
@@ -65,8 +65,8 @@
   },
   {
    "path": "scripts/setup-vibe.py",
-   "sha256": "5623e02fc6c53258d52d7159f7368631ee28d4ef7abf3ab2e88954a5cd4eb71a",
-   "bytes": 58427
+   "sha256": "9d07bb0f186e8df67ed4ae5b0a42f91c01563d012e09aaf48aca1d621bd105e0",
+   "bytes": 62689
   },
   {
    "path": "setup-vibe.cmd",
@@ -230,18 +230,18 @@
   },
   {
    "path": "bin/vibe",
-   "sha256": "a9eac05ce0c547957b5c26f61f2a7f1788785d68d61853be3012a7e73eceb704",
-   "bytes": 183570
+   "sha256": "75a6c89b4a31341a9a2961b859fd1dceea183def71a0f1b27825e112eade6b42",
+   "bytes": 186733
   },
   {
    "path": "bin/vibe-run.sh",
-   "sha256": "ed61e18825b64622538d7ed97d6c7805c595757f56837821de8c68232e6ebe13",
-   "bytes": 11351
+   "sha256": "6f50c7908baaca272a06e35f9a66c53df5f51f0e9d1e83473f229864c8e7baa8",
+   "bytes": 12776
   },
   {
    "path": "bin/vibe-web.py",
-   "sha256": "92f240c3e0844cbbf691e9837c6539619f62eb340fe3c2b297585fb1a139e9cf",
-   "bytes": 35572
+   "sha256": "1811ee57f3a911716ecd0ca7bee1eba9f090438bf7be1dfbfbc37bd779695725",
+   "bytes": 37018
   },
   {
    "path": "bin/vibe_sandbox.py",
@@ -275,13 +275,18 @@
   },
   {
    "path": "bin/web/app.js",
-   "sha256": "7bb264556b714e6a00c4d33de28217a8d49309e104ba9400ab75dbd53de8ace2",
-   "bytes": 72422
+   "sha256": "98c5a9f2eda79c7f378da8692e32784ab9f4b527b5b31f43acfd6c820db184cd",
+   "bytes": 73946
   },
   {
    "path": "templates/common/.opencode/agents/test-agent.md",
    "sha256": "339a884bda0ce261334a3ac2662f5b6582b88bcaa3601fc92b008fff16561912",
    "bytes": 2032
+  },
+  {
+   "path": "bin/vibe_harness.py",
+   "sha256": "026466b463fbf72d2cc784c18196a7790b050d1f15a61a24123ce987836d5de1",
+   "bytes": 20662
   }
  ],
  "aenderungen": [
@@ -697,6 +702,19 @@
     "templates/rebuild/.vibe/project.env",
     "templates/web/AGENTS.md",
     "templates/web/.vibe/project.env"
+   ]
+  },
+  {
+   "arbeitspaket": "AP04",
+   "datum": "2026-11-07",
+   "grund": "Austauschbares Coding-Harness: bin/vibe_harness.py kapselt Auswahl, Diagnose, Einrichtung, Modellliste und Startbefehl. opencode bleibt Default; Pi (@earendil-works/pi-coding-agent) ist der erste alternative Harness und wird im Print-Modus ohne Sitzungsdatei gestartet. Auswahl über Setup (--harness, interaktive Erstinstallation), CLI (vibe harness) und Oberfläche (/api/harness); bestehende Installationen ohne Auswahl bleiben unverändert.",
+   "dateien": [
+    "bin/vibe",
+    "bin/vibe-run.sh",
+    "bin/vibe-web.py",
+    "bin/web/app.js",
+    "bin/vibe_harness.py",
+    "scripts/setup-vibe.py"
    ]
   }
  ]
