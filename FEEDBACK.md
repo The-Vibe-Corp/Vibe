@@ -183,3 +183,13 @@ Regeln (werden maschinell geprüft):
   Commit: 1b5bf9d; Test: test_simultaneous_projects_share_one_reconnect, test_a_failed_reconnect_is_reported_to_all_projects_and_not_repeated, test_a_waiting_project_never_starts_a_second_reconnect, test_a_recent_reconnect_is_reused_and_expires, test_automation_off_still_means_no_reconnect, test_a_manual_reconnect_participates_in_the_central_control, test_status_reports_the_central_result, test_a_project_name_with_control_characters_is_published_cleanly (tests/unit/test_fritz_coordination.py, 8 Tests), test_runner_tells_the_central_reconnect_which_project_continues (tests/unit/test_fritz_reconnect.py, 36 Tests gesamt)
   Review: docs/reviews/F18-review-1.md, docs/reviews/F18-review-2.md (PASS, 0 Critical/High/Medium; 3 Minor)
   Doku: docs/features/F18.md; Trilium `deX8hDMqAQ1k`
+
+- [x] F19 Ausgabe ansicht, im Projekte.
+  Beschreibung: Ich möchte im Ausgabefenster Syntax highlighting, ähnlich wie open code.
+  Weiterhin möchte ich in der Lage sein, dem agenten, während der ausführung zusätzliche anweisungen/oder informationen direkt in der aktiven arbeit zukommen zu lassen.
+  Außerdem möchte ich sehen, ob und welche sub agenten zu jedem zeitpunkt im projekt laufen und mir auch von diesen die ausgaben anzeigen lassen können.
+  Commit: 6cff1a2
+  Test: test_steering_is_delivered_and_marked_in_log, test_rejections_before_any_delivery, test_active_run_and_wrong_or_missing_password_is_rejected, test_subagents_reports_state_file_entries, test_output_of_a_captured_subagent, test_output_of_running_subagent_without_live_data_is_ok_false (tests/unit/test_output_view_f19_api.py), test_runner_logs_only_human_readable_lines, test_runner_calls_opencode_with_format_json (tests/unit/test_output_view_f19_runner.py, 19 Tests gesamt)
+  Review: docs/reviews/F19-review-1.md (CHANGES REQUIRED; 1 Medium als dokumentierte Umgebungsgrenze akzeptiert, 1 Medium Browsertest als Folgearbeit ausgewiesen, 3 Minor)
+  Doku: docs/features/F19.md; Trilium `dlKtNm7UtzYY`
+  Hinweis: Der konfigurierte Test-Agent (`test-agent`) war in dieser Sitzung nicht aufrufbar (`permission.rejected`); die Test-Herkunft ist in `docs/features/F19.md` offen dokumentiert. Ein dauerhafter Browsertest für die F19-Oberfläche bleibt ausdrücklich offene Folgearbeit.
