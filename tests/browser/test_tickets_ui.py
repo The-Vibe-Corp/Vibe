@@ -5,6 +5,7 @@ mit Chromium über Playwright. Geprüft werden Anlegen, Bearbeiten und Löschen
 von Arbeitspaketen in TICKETS.md sowie das Melden eines Bugs in FEEDBACK.md.
 """
 import os
+import re
 import socket
 import subprocess
 import sys
@@ -214,6 +215,75 @@ class WorkPackageBrowserTest(unittest.TestCase):
         self.wait_until(
             lambda: "F18 Geändertes Paket" not in self.ticket_text(),
             message="Arbeitspaket wurde nicht gelöscht",
+        )
+        text = self.ticket_text()
+        self.assertIn("- [ ] F15 Arbeitspakete", text)
+        self.assertIn("V-001 Erledigtes Paket", text)
+
+    def test_add_work_package_without_an_id_and_use_the_assigned_id(self):
+        """F23/AK8: Das Formular-Feld "ID des Arbeitspakets" bleibt leer.
+        Server und Oberfläche vergeben dann automatisch eine ID; sie wird
+        hier dynamisch gelesen ( Inhaltsliste ) und anschließend bearbeitet
+        und gelöscht."""
+        self.open_detail()
+
+        form = self.page.locator("#ticket-new")
+        # Das ID-Eingabefeld bleibt absichtlich leer.
+        form.locator("input").nth(1).fill("Auto Paket")
+        form.locator("textarea").fill("Zeile eins\nZeile zwei")
+        form.get_by_role("button", name="Arbeitspaket anlegen").click()
+
+        def assigned_id():
+            ids = self.page.eval_on_selector_all(
+                "#tickets .fbentry", "els => els.map(e => e.dataset.id)"
+            )
+            fresh = [i for i in ids if i not in ("F15", "V-001")]
+            return fresh[0] if len(fresh) == 1 else None
+
+        self.wait_until(
+            lambda: assigned_id() is not None,
+            message="Arbeitspaket ohne ID wurde nicht angelegt",
+        )
+        assigned = assigned_id()
+        self.assertTrue(assigned)
+        self.assertRegex(assigned, r"[A-Za-z0-9][A-Za-z0-9_.:-]*")
+
+        text = self.ticket_text()
+        self.assertIn("- [ ] %s Auto Paket" % assigned, text)
+        self.assertIn("  Beschreibung: Zeile eins\n  Zeile zwei", text)
+        self.assertIn("- [ ] F15 Arbeitspakete", text)
+        self.assertIn("- [x] V-001 Erledigtes Paket", text)
+
+        self.wait_until(
+            lambda: f"{assigned} angelegt"
+            in "\n".join(
+                self.page.locator(".toasttext").all_inner_texts()
+            ),
+            message="Meldung nennt nicht die tatsächlich vergebene ID",
+        )
+
+        entry = self.page.locator(
+            '#tickets .fbentry[data-id="%s"]' % assigned
+        )
+        entry.get_by_role("button", name="Bearbeiten").click()
+        entry.locator("textarea").fill("Geänderte Beschreibung")
+        entry.get_by_role("button", name="Speichern").click()
+
+        self.wait_until(
+            lambda: "  Beschreibung: Geänderte Beschreibung"
+            in self.ticket_text()
+            and "- [ ] %s Auto Paket" % assigned in self.ticket_text(),
+            message="Bearbeitetes Auto-Arbeitspaket wurde nicht gespeichert",
+        )
+
+        entry = self.page.locator(
+            '#tickets .fbentry[data-id="%s"]' % assigned
+        )
+        entry.get_by_role("button", name="Löschen").click()
+        entry.locator(".confirm").get_by_role("button", name="Ja, löschen").click()
+        self.wait_until(
+            lambda: "Auto Paket" not in self.ticket_text(),
+            message="Auto-Arbeitspaket wurde nicht gelöscht",
         )
         text = self.ticket_text()
         self.assertIn("- [ ] F15 Arbeitspakete", text)

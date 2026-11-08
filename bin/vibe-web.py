@@ -643,8 +643,11 @@ class H(BaseHTTPRequestHandler):
                 act = body.get("action") or "add"
                 try:
                     if act == "add":
-                        tid = (body.get("id") or "").strip(); assert tid, "ID fehlt"
-                        vibe.add_ticket(name, tid, body.get("title"), body.get("description", "")); ok, msg = True, f"{tid} angelegt"
+                        # F23: Ohne ID vergibt add_ticket die ID automatisch.
+                        tid = vibe.add_ticket(
+                            name, (body.get("id") or "").strip(),
+                            body.get("title"), body.get("description", ""))
+                        ok, msg = True, f"{tid} angelegt"
                     elif act == "update":
                         tid = (body.get("id") or "").strip(); assert tid, "ID fehlt"
                         vibe.ticket_update(name, tid, body.get("title"), body.get("description", "")); ok, msg = True, f"{tid} gespeichert"

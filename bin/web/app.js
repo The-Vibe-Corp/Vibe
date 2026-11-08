@@ -285,8 +285,8 @@ function ticketCard(d,name){const list=el('div',{});const cls=s=>s==='erledigt'?
  draw();
  return el('div',{class:'card',id:'tickets'},el('div',{class:'bar'},el('b',{},'Arbeitspakete ('+d.tickets.length+')'),toggle),list)}
 function ticketFormCard(d,name){
- const f={id:el('input',{placeholder:'z. B. F18','aria-label':'ID des Arbeitspakets'}),t:el('input',{}),b:el('textarea',{rows:3,placeholder:'Was soll umgesetzt werden?'})};
- return el('div',{class:'card',id:'ticket-new'},el('b',{},'Neues Arbeitspaket'),el('label',{},'ID'),f.id,el('label',{},'Titel'),f.t,el('label',{},'Beschreibung'),f.b,
+ const f={id:el('input',{placeholder:'leer lassen: automatisch vergebene ID','aria-label':'ID des Arbeitspakets'}),t:el('input',{}),b:el('textarea',{rows:3,placeholder:'Was soll umgesetzt werden?'})};
+ return el('div',{class:'card',id:'ticket-new'},el('b',{},'Neues Arbeitspaket'),el('label',{},'ID (automatisch vergeben, wenn leer)'),f.id,el('label',{},'Titel'),f.t,el('label',{},'Beschreibung'),f.b,
   el('div',{class:'bar'},el('button',{class:'b p',type:'button',on:{click:async()=>{const r=await api('/api/ticket',{name,action:'add',id:f.id.value,title:f.t.value,description:f.b.value});toast(r.message);if(r.ok)detail(name).catch(showErr)}}},'Arbeitspaket anlegen')))}
 function bugFormCard(d,name){
  const f={t:el('input',{}),b:el('textarea',{rows:3,placeholder:'Was funktioniert nicht?'})};

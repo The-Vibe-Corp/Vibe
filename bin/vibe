@@ -773,9 +773,18 @@ def _ticket_ids(text):
     return ids
 
 def add_ticket(name, tid, title, description=""):
-    """Legt ein Arbeitspaket in TICKETS.md an; die ID gibt der Nutzer vor."""
+    """Legt ein Arbeitspaket in TICKETS.md an.
+
+    Ohne ID (F23) wird die ID automatisch vergeben: fortlaufend mit dem
+    Präfix ``AP`` über die vorhandene Nummernvergabe. Eine eigene ID bleibt
+    erlaubt und wird unverändert geprüft."""
     tid = (tid or "").strip()
-    if not tid: raise ValueError("ID fehlt")
+    if not tid:
+        # Auto-IDs dürfen keine fehlende TICKETS.md still erzeugen.
+        if not os.path.exists(ticket_path(name)):
+            raise ValueError("Keine TICKETS.md vorhanden")
+        return "AP" + str(_add_entry(
+            name, "TICKETS.md", "AP", title, description))
     if not _ID_TOKEN.match(tid): raise ValueError("Ungültige ID: " + tid)
     title = _validate_title(title)
     fp = ticket_path(name)

@@ -95,7 +95,8 @@ vorliegt.
 - Offene, blockierte und erledigte Einträge werden unterschieden.
 - Feedback kann über die Oberfläche ergänzt werden.
 - Arbeitspakete können über die Oberfläche definiert, bearbeitet und gelöscht
-  werden; die ID vergibt der Nutzer.
+  werden; bei neuen Arbeitspaketen wird die ID automatisch vergeben, eine
+  eigene ID bleibt möglich.
 - Bugs können über die Oberfläche als Feedback mit ``Art: Bug`` gemeldet
   werden.
 - IDs sind eindeutig; parallele Schreibvorgänge erzeugen keine Doppelungen.
