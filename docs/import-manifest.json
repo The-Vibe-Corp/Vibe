@@ -25,8 +25,8 @@
     },
     {
       "path": "bin/vibe",
-      "sha256": "475df9dcd0a3744d3a32de76362d0abecf24ae27b77b592fc973f3d16488e1ab",
-      "bytes": 212577
+      "sha256": "2d760da624b98fc6753202fbad887a4357f740eb31b5f5dd7c733f547e22ce88",
+      "bytes": 215096
     },
     {
       "path": "bin/vibe-run.sh",
@@ -140,8 +140,8 @@
     },
     {
       "path": "templates/android/.vibe/project.env",
-      "sha256": "9cdb71f6c2266f9d06d4ca1b28e156e73cf3ec01daf2eead4a1b0db50ed06d9e",
-      "bytes": 313
+      "sha256": "7a6bca9668a5878f87111fb689f1fd849b82cbb53b88be87feaebfd36489ef7a",
+      "bytes": 285
     },
     {
       "path": "templates/android/AGENTS.md",
@@ -185,8 +185,8 @@
     },
     {
       "path": "templates/docker/.vibe/project.env",
-      "sha256": "c464921033f2596757f0e24466273b6fdc402fd71eca33d89175149026f60b21",
-      "bytes": 273
+      "sha256": "57a2fe326ad639997e7ce6e2a3d1a94d109b1582ffa94b9324b78c152d3d0053",
+      "bytes": 245
     },
     {
       "path": "templates/docker/AGENTS.md",
@@ -195,8 +195,8 @@
     },
     {
       "path": "templates/generic/.vibe/project.env",
-      "sha256": "28650b969b80f9968a3ec46451eebf2c8b6eeca17394bf1a7c93159706c091e4",
-      "bytes": 275
+      "sha256": "e7a35f3d5fbb0b0db25090fa1f9ea9157df674daa4d058fa1d334fa9b67524e9",
+      "bytes": 247
     },
     {
       "path": "templates/generic/AGENTS.md",
@@ -205,8 +205,8 @@
     },
     {
       "path": "templates/openwrt/.vibe/project.env",
-      "sha256": "4068a6783f2bd86092d31301e28f16e60b92cbeb8b1570ea77a9e8af0b310cb4",
-      "bytes": 276
+      "sha256": "6f52a2a3219a330107edb9c8321ea061b343fb14f128dcad3213c6a3019b653f",
+      "bytes": 248
     },
     {
       "path": "templates/openwrt/AGENTS.md",
@@ -260,8 +260,8 @@
     },
     {
       "path": "templates/rebuild/.vibe/project.env",
-      "sha256": "073fbe168ff7c019e7c78fe5e122677075c50f5feffd75bdd3f9cc6ad32c28ca",
-      "bytes": 893
+      "sha256": "7fee4f92442ce7c4190df7319de83e25d8e93cb5f2b9ffc15caf730d2d030d0a",
+      "bytes": 865
     },
     {
       "path": "templates/rebuild/AGENTS.md",
@@ -285,8 +285,8 @@
     },
     {
       "path": "templates/web/.vibe/project.env",
-      "sha256": "ec53bba7187335bf9370d8662be3f91aa03c135a0358de7da0add9689d7938ec",
-      "bytes": 345
+      "sha256": "414dac5b0e208a6cd1e7e2a91cc2ef139f8d7eee454c3e2a13a1b27f67e96894",
+      "bytes": 317
     },
     {
       "path": "templates/web/AGENTS.md",
@@ -846,6 +846,20 @@
       "dateien": [
         "bin/vibe_sandbox.py",
         "bin/vibe_harness.py"
+      ]
+    },
+    {
+      "arbeitspaket": "V-025",
+      "datum": "2026-11-08",
+      "grund": "Der in .vibe/project.env gespeicherte AGENT kann nach einer Umbenennung veraltet sein oder im Projekt nicht mehr aktiv sein. cmd_run prüft ihn jetzt gegen die systemweit vorhandenen und im Projekt aktiven Agenten, fällt auf den gültigen Vibe-Agenten zurück und korrigiert nur die AGENT-Zeile in project.env; ein ausdrücklich übergebenes Agentenargument bleibt unverändert. Ein Schreibfehler bei der Korrektur verhindert den Start mit dem Vibe-Agenten nicht. Die mitgelieferten Projektvorlagen enthalten keinen fest eingebauten AGENT-Namen mehr; neue Projekte verwenden damit den konfigurierten Vibe-Agenten, ohne beim ersten Start eine Korrektur zu benötigen.",
+      "dateien": [
+        "bin/vibe",
+        "templates/android/.vibe/project.env",
+        "templates/docker/.vibe/project.env",
+        "templates/generic/.vibe/project.env",
+        "templates/openwrt/.vibe/project.env",
+        "templates/rebuild/.vibe/project.env",
+        "templates/web/.vibe/project.env"
       ]
     }
   ]

@@ -1653,8 +1653,26 @@ def cmd_run(name, agent=None, out=None):
         sys.exit("Der Vibe-Agent '" + status["name"] + "' hat kein Modell konfiguriert. Ohne Modell können keine Projekte ausgeführt werden.")
     # Die Ausnahme für Altbestände gilt nur, solange gar kein Vibe-Agent
     # definiert ist: dann bleibt ein ausdrücklich gewählter Agent oder die
-    # Coder-Rolle startbar.
-    agent = agent or env.get("AGENT") or status["name"]
+    # Coder-Rolle startbar. Ein gespeicherter AGENT kann nach einer Umbenennung
+    # veraltet sein; er wird deshalb gegen die systemweit vorhandenen und im
+    # Projekt aktiven Agenten geprüft. Nur der gespeicherte Wert wird
+    # automatisch ersetzt, nie ein ausdrücklich übergebenes Argument.
+    stored_agent = (env.get("AGENT") or "").strip()
+    if agent is None and status["name"] and stored_agent:
+        config, _snapshot = project_agents_load(name)
+        active = set(config["aktiv"])
+        active.add(status["name"])
+        inventory = project_agent_inventory(name)
+        if stored_agent not in inventory or stored_agent not in active:
+            replacement = status["name"]
+            if replacement in inventory and replacement in active:
+                print(col("y", f"Agent '{stored_agent}' ist nicht verfügbar oder im Projekt nicht aktiv; verwende '{replacement}' und korrigiere .vibe/project.env."), file=out)
+                try:
+                    repair_project_agent(name, replacement)
+                except (OSError, ValueError, vibe_storage.StorageError) as error:
+                    print(col("r", "AGENT in .vibe/project.env konnte nicht korrigiert werden: " + str(error)), file=out)
+                stored_agent = replacement
+    agent = agent or stored_agent or status["name"]
     if not agent:
         agent = default_agent()
     if not agent:
@@ -2903,6 +2921,38 @@ def run_agent_selection(name, agent):
         if agent not in active:
             raise ValueError(f"Agent '{agent}' ist für dieses Projekt nicht ausgewählt oder nicht konfiguriert.")
     return config["modelle"].get(agent, "")
+
+
+def repair_project_agent(name, agent):
+    """Setzt AGENT in .vibe/project.env ohne Anführungszeichen und erhält alle anderen Zeilen.
+
+    Der Startagent wird bewusst unquoted geschrieben, damit die von Hand
+    gepflegte Projektdatei ihr bisheriges Format behält. Die Prüfsumme
+    verhindert, dass eine gleichzeitige Änderung still überschrieben wird.
+    """
+    if not NAME_RE.match(agent or ""):
+        raise ValueError("Ungültiger Agentenname für den Start: " + repr(agent))
+    fp = os.path.join(ppath(name), ".vibe", "project.env")
+    snapshot = vibe_storage.read_snapshot(fp)
+    if not snapshot.exists:
+        raise ValueError("Nicht für vibe vorbereitet: " + fp)
+    text = snapshot.text
+    newline = "\r\n" if "\r\n" in text else "\n"
+    pattern = re.compile(r"^(\s*)AGENT[ \t]*=[^\r\n]*(\r\n|\n|\r|$)", re.M)
+    if pattern.search(text):
+        updated = pattern.sub(
+            lambda hit: hit.group(1) + "AGENT=" + agent + hit.group(2),
+            text,
+            count=1,
+        )
+    else:
+        if text and not text.endswith(("\n", "\r")):
+            text += newline
+        updated = text + "AGENT=" + agent + newline
+    if updated == snapshot.text:
+        return
+    vibe_storage.write_text(fp, updated, expected=snapshot.digest)
+
 
 def effective_agent(name, scope="global"):
     """Bereich, dessen Datei für einen Agentennamen tatsächlich gilt."""
