@@ -79,3 +79,11 @@ pre.subagent-out.empty{color:var(--mut)}
 button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible,[role=tab]:focus-visible{outline:2px solid var(--ac);outline-offset:2px}
 [role=tabpanel][hidden]{display:none}
 @media(max-width:640px){.detailbar{position:static}.dactions{margin-left:0;flex-wrap:wrap}.dmeta{display:none}}
+/* F24: Agent-Tabs und Ausgabeflächen der aktiven Agenten in der Ausgabekarte.
+   Die Tabliste erscheint nur bei parallelen Agenten; die aktive Fläche füllt
+   dieselbe Höhe wie die Hauptausgabe. */
+.outtabs{border-bottom:0;margin:2px 0 6px;padding:0 4px;gap:2px}
+.outtabs [role=tab]{font-size:13px;padding:6px 12px}
+pre.outpane{background:#0d0f12;border:1px solid var(--line);border-radius:6px;padding:10px;height:320px;overflow:auto;white-space:pre-wrap;font:12px/1.4 ui-monospace,monospace;margin:0}
+.logcard.full pre.outpane{flex:1 1 auto;height:auto;min-height:0}
+pre.outpane.empty{color:var(--mut)}

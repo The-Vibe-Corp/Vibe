@@ -511,6 +511,14 @@ class H(BaseHTTPRequestHandler):
                 state = subagents_of(n)
                 answer = {"ok": True, "running": run_is_active(n),
                           "subagents": state["subagents"]}
+                # F24: Der Name des aktuell arbeitenden Agenten kommt aus dem
+                # Laufregister; ohne aktiven Lauf erscheint kein Name
+                # (fehlendes Feld statt erfundener Angabe).
+                record = vibe.run_registry().latest(
+                    project=vibe._real(vibe.ppath(n))
+                )
+                if record and record.get("state") in vibe_runs.LIVE_STATES:
+                    answer["agent"] = str(record.get("agent") or "")
                 if state["session"]:
                     answer["session"] = state["session"]
                 return self._send(200, answer)

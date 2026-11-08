@@ -35,8 +35,8 @@
     },
     {
       "path": "bin/vibe-web.py",
-      "sha256": "a6500fcfdd7e55ee20ceedb2adb8a0e5fc9517a4837a73778cce9d4d0157a4fd",
-      "bytes": 52939
+      "sha256": "aa19fe2e846eb57fa8faab18e542438ce645e98ae09e3aa49e02522cc7b7883f",
+      "bytes": 53417
     },
     {
       "path": "bin/vibe_autonomous.py",
@@ -105,8 +105,8 @@
     },
     {
       "path": "bin/web/app.js",
-      "sha256": "491c9457b89d65a7daac976c1b45586585600c8c41d5be16a17620606c065db1",
-      "bytes": 93523
+      "sha256": "93c0f797116517805f4054977bbe7b2c8a8513336522f9324f8548317bf4674f",
+      "bytes": 99817
     },
     {
       "path": "bin/web/index.html",
@@ -115,8 +115,8 @@
     },
     {
       "path": "bin/web/styles.css",
-      "sha256": "186fd8b3a08f8834402f44b7ad275b49e7cfbace1cfb97878e997be7c3369206",
-      "bytes": 7682
+      "sha256": "98c817b8500269047b7692c0a8ecb95ac12b39e159bb2a9a58da79c73bcc5421",
+      "bytes": 8291
     },
     {
       "path": "data/models.json",
@@ -827,6 +827,16 @@
       "grund": "Abschlussschranke erkennt bereits in den Integrationsstand gemergte Pakete: Gibt es seit der Basis keine neuen Commits, gilt das Paket als integriert, wenn der Nachweis-Commit Vorfahre der Basis ist und seine Betreffzeile das Paketpräfix trägt. Ein Paket, dessen [x]-Nachweis nur in der unversionierten Arbeitsnotiz stand, wird damit nach dem Merge nachgetragen, statt jeden Lauf erneut zu blockieren. Ticket, Feature-Doku, PASS-Review und sauberer Arbeitsbaum bleiben weiterhin Pflicht.",
       "dateien": [
         "bin/vibe_packages.py"
+      ]
+    },
+    {
+      "arbeitspaket": "F24",
+      "datum": "2026-11-08",
+      "grund": "Ausgabenansicht nennt den aktuell arbeitenden Agenten (Agentenzeile in der Ausgabekarte) und zeigt die Ausgabe paralleler Agenten als Tabs: GET /api/subagents meldet den Agentennamen des aktiven Laufregistereintrags (Feld 'agent', ohne aktiven Lauf fehlt das Feld); das Dashboard zeigt je laufendem Subagenten einen Tab und lädt die Ausgabe beim Tabwechsel nach (/api/subagent-output), beendete Subagenten verlieren ihren Tab, bei einem einzelnen aktiven Agenten bleibt es tablos. Beendete Subagenten bleiben in der F19-Übersichtskarte sichtbar.",
+      "dateien": [
+        "bin/vibe-web.py",
+        "bin/web/app.js",
+        "bin/web/styles.css"
       ]
     }
   ]

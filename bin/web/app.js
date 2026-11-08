@@ -139,7 +139,7 @@ async function detail(name){
   el('div',{class:'bar dactions'},el('button',{class:'b p',type:'button',on:{click:act('/api/run',{name})}},'Agentenlauf starten'),el('button',{class:'b',type:'button',on:{click:act('/api/stop',{name})}},'Stoppen')));
  const tiles=el('div',{class:'tiles'},tile('Offene Arbeitspakete',d.items.length,d.items.length?'warn':'ok'),tile('Änderungen',d.dirty,d.dirty?'warn':'ok'),tile('Branch',d.branch,'small'),tile('Letzter Commit',d.last||'—','small'));
  const L=logView(d,()=>stream('run'));
- const steer=steerCard(name,isPi),S=subagentCard(name,isPi);
+ const steer=steerCard(name,isPi),S=subagentCard(name,isPi),tabsOut=agentTabs(name,L);
  const panels={arbeit:tabPanel('arbeit',tiles,el('div',{class:'grid'},
    el('div',{},itemsCard,ticketCard(d,name),ticketFormCard(d,name),feedbackCard(d,name),bugFormCard(d,name),feedbackFormCard(d,name)),
    el('div',{},pauseCard(d,name),autonomousCard(d,name),checksCard,factsCard))),
@@ -150,11 +150,13 @@ async function detail(name){
  openTab=k=>showDetailTab(k,panels,tabs.btns);
  main.replaceChildren(...[head,initCard,tabs.list,panels.arbeit,panels.ausgabe,panels.assistent,panels.einstellungen].filter(Boolean));
  L.fit();
- function stream(kind){if(es)es.close();L.clear();es=new EventSource('/api/stream?name='+encodeURIComponent(name)+'&kind='+kind+'&t='+encodeURIComponent(T));
+ let streamKind='run';
+ function stream(kind){if(es)es.close();streamKind=kind;L.clear();es=new EventSource('/api/stream?name='+encodeURIComponent(name)+'&kind='+kind+'&t='+encodeURIComponent(T));
   es.onmessage=ev=>L.feed(JSON.parse(ev.data).join('\n')+'\n')}
+ const afterPoll=data=>tabsOut.sync(data,streamKind);
  function syncRun(){refreshRun().then(s=>steer.setState(!!(s&&s.running))).catch(()=>{})}
- stream('run');syncRun();S.poll().catch(()=>{});
- timer=setInterval(()=>{syncRun();S.poll().catch(()=>{})},3000)}
+ stream('run');syncRun();S.poll().then(afterPoll).catch(()=>{});
+ timer=setInterval(()=>{syncRun();S.poll().then(afterPoll).catch(()=>{})},3000)}
 function pauseCard(d,name){
  const active=!!d.pause_after;
  const btn=el('button',{class:'b'+(active?' p':''),on:{click:async()=>{const r=await api('/api/pause',{name,action:active?'off':'on'});toast(r.message);if(r.ok)detail(name).catch(showErr)}}},active?'Pause aufheben':'Nach aktuellem Paket anhalten');
@@ -330,7 +332,8 @@ function renderLogChunk(text){
  return frag}
 function logView(d,onRun){
  const pre=el('pre',{id:'log'});
- let logPaused=false,logBuf='',totalChars=0;
+ let logPaused=false,logBuf='',totalChars=0,hold=false,activePane=null;
+ const panes=new Map();
  function append(text){if(!text)return;const near=pre.scrollHeight-pre.scrollTop-pre.clientHeight<60;
   pre.append(renderLogChunk(text));totalChars+=String(text).length;
   if(totalChars>80000){while(totalChars>60000&&pre.firstChild){const n=pre.firstChild;totalChars-=(n.textContent||'').length;pre.removeChild(n)}}
@@ -340,13 +343,106 @@ function logView(d,onRun){
  const pauseBtn=el('button',{class:'b',type:'button'},'Pause'),fullBtn=el('button',{class:'b',type:'button'},'Vergrößern');
  const runBtn=el('button',{class:'b',type:'button',title:'Verbindet die Ausgabe wieder mit dem Agentenlauf',on:{click:onRun}},'Lauf-Log');
  const card=el('div',{class:'card logcard'});
- const fit=()=>{if(card.classList.contains('full'))return;const h=Math.max(240,window.innerHeight-pre.getBoundingClientRect().top-18);pre.style.height=h+'px'};
+ const fit=()=>{if(card.classList.contains('full'))return;const view=activePane||pre;
+  const h=Math.max(240,window.innerHeight-view.getBoundingClientRect().top-18);pre.style.height=h+'px';
+  if(activePane)activePane.style.height=h+'px'};
  pauseBtn.addEventListener('click',()=>{logPaused=!logPaused;pauseBtn.textContent=logPaused?'Fortsetzen':'Pause';pauseBtn.classList.toggle('p',logPaused);
   if(!logPaused&&logBuf){append(logBuf);logBuf='';pre.scrollTop=pre.scrollHeight}});
  fullBtn.addEventListener('click',()=>setLogFull(!card.classList.contains('full')));
- card.append(el('div',{class:'bar'},el('b',{},'Live-Ausgabe'),el('span',{class:'mut'},'Lauf-Ausgabe des aktuellen Projekts'),runBtn,pauseBtn,fullBtn),pre);
+ /* F24: Der aktive Agent wird in der Ausgabekarte gezeigt. Ohne aktiven
+    Lauf erscheint kein Agentenname. Der Name kommt ausschließlich aus der
+    Subagenten-API (Laufregister) und wird vom Dashboard nie erfunden. */
+ const agent=el('span',{class:'pill mut',id:'agent-active',title:'Der Agent, der in diesem Lauf arbeitet'},'—');
+ const setAgent=(name,running)=>{agent.textContent=running?(String(name||'').trim()||'Hauptagent'):'—';
+  agent.className='pill '+(running?'run':'mut');
+  agent.title=running?'Der Agent, der in diesem Lauf arbeitet.':'Kein aktiver Lauf.'};
+ card.append(el('div',{class:'bar'},el('b',{},'Live-Ausgabe'),agent,el('span',{class:'mut'},'Lauf-Ausgabe des aktuellen Projekts'),runBtn,pauseBtn,fullBtn),pre);
  LOG={card,pre,button:fullBtn,fit};
- return {card,fit,clear:()=>{pre.replaceChildren();totalChars=0;logBuf=''},feed:text=>{if(logPaused){logBuf=(logBuf+text).slice(-80000);return}append(text)}}}
+ /* F24: Nur der aktive Tab zeigt seine Ausgabe aktiv. Solange ein anderer
+    Agent angezeigt wird, läuft der Lauf-Stream in den Nachlade-Puffer; der
+    Rückwechsel zum Hauptagenten lädt ihn nach. */
+ function flush(){if(!logPaused&&logBuf){append(logBuf);logBuf='';pre.scrollTop=pre.scrollHeight}}
+ function showMain(){if(activePane){activePane.hidden=true;activePane=null}
+  pre.hidden=false;hold=false;flush();fit()}
+ function closePane(session){const pane=panes.get(session);if(!pane)return;
+  panes.delete(session);if(activePane===pane){activePane=null;hold=false;pre.hidden=false}
+  pane.remove()}
+ function openPane(session,id){
+  let pane=panes.get(session);
+  if(!pane){pane=el('pre',{class:'outpane','data-session':session,id:id||'outpane-'+session.replace(/[^A-Za-z0-9_-]/g,'_')});
+   panes.set(session,pane);card.append(pane)}
+  if(activePane&&activePane!==pane){activePane.hidden=true}
+  activePane=pane;pane.hidden=false;pre.hidden=true;hold=true;
+  if(!pane.dataset.text)pane.replaceChildren(renderLogChunk('Lade Ausgabe …'));
+  return pane}
+ return {card,pre,fit,
+  clear:()=>{pre.replaceChildren();totalChars=0;logBuf=''},
+  feed:text=>{if(logPaused||hold){logBuf=(logBuf+text).slice(-80000);return}append(text)},
+  setAgent,showMain,openPane,closePane}}
+/* F24: Agent-Tabs in der Ausgabekarte. Die Tabliste erscheint nur, solange
+   mehrere Agenten parallel arbeiten (Hauptagent plus laufende Subagenten).
+   Ein beendeter Subagent verliert damit automatisch seinen Tab; arbeitet nur
+   ein Agent, gibt es keine Tabliste und die Ausgabe zeigt ihn direkt. Nur der
+   aktive Tab wird aktiv gespeist; ein Tabwechsel lädt die Ausgabe nach. */
+function agentTabs(name,L){
+ // Die Tabliste ist nur im DOM, solange mehrere Agenten parallel arbeiten.
+ // So bleibt die Registerleiste des Projektdetails (F13) eindeutig.
+ const bar=el('div',{class:'tabs outtabs',role:'tablist','aria-label':'Aktive Agenten'});
+ const tabs=new Map();let active='main',order='',manual=false;
+ function mount(){if(!bar.isConnected&&L.pre)L.card.insertBefore(bar,L.pre)}
+ function unmount(){if(bar.isConnected)bar.remove()}
+ function createTab(key,label){const paneId=key==='main'?'':'outpane-'+String(key.slice(4)).replace(/[^A-Za-z0-9_-]/g,'_');
+  const b=el('button',{type:'button',role:'tab',id:'agenttab-'+key,...(paneId?{'aria-controls':paneId}:{})},label);
+  b.addEventListener('click',()=>choose(key));
+  b.addEventListener('keydown',e=>{const keys=[...tabs.keys()];const i=keys.indexOf(active);let n=-1;
+   if(e.key==='ArrowRight')n=(i+1)%keys.length;else if(e.key==='ArrowLeft')n=(i-1+keys.length)%keys.length;
+   else if(e.key==='Home')n=0;else if(e.key==='End')n=keys.length-1;else return;
+   e.preventDefault();choose(keys[n])});
+  return b}
+ function choose(key,byUser=true){const t=tabs.get(key);if(!t)return;
+  if(byUser)manual=true;
+  tabs.forEach((n,k)=>{const on=k===key;n.btn.setAttribute('aria-selected',on?'true':'false');n.btn.tabIndex=on?0:-1});
+  if(key==='main'){manual=true;L.showMain()}
+  else{const pane=L.openPane(t.session,t.paneId);t.pane=pane;loadOutput(t,pane)}
+  active=key;L.fit()}
+ async function loadOutput(t,pane){
+  try{const r=await api('/api/subagent-output?name='+encodeURIComponent(name)+'&session='+encodeURIComponent(t.session||''));
+   const text=r.ok?String(r.text||''):String(r.message||'Keine Ausgabe verfügbar.');
+   if(pane.dataset.text!==text){pane.dataset.text=text;pane.replaceChildren(renderLogChunk(text))}
+   pane.classList.toggle('empty',!r.ok)}
+  catch(e){const text='Ausgabe nicht abrufbar: '+String(e&&e.message||e);
+   if(pane.dataset.text!==text){pane.dataset.text=text;pane.replaceChildren(renderLogChunk(text))}}}
+ function fallbackToMain(){active='main';manual=false;L.showMain()}
+ function reset(){
+  unmount();tabs.forEach(n=>{n.btn.remove();L.closePane(n.session)});tabs.clear();order='';manual=false;
+  fallbackToMain();L.setAgent('',false)}
+ function sync(data,kind){
+  if(kind!=='run'){reset();return}
+  if(!data)return;
+  const running=!!data.running;
+  L.setAgent(String(data.agent||''),running);
+  const subs=(data.subagents||[]).filter(s=>s&&s.session&&s.status==='running');
+  const multiple=running&&subs.length>0;
+  if(!multiple){ // Ein Agent oder kein Lauf: keine Tabs, direkte Anzeige.
+   if(tabs.size){reset();return}
+   unmount();
+   if(active!=='main')fallbackToMain();
+   return}
+  const want=[['main','Hauptagent']].concat(subs.map(s=>['sub:'+s.session,s]));
+  const next=want.map(p=>p[0]).join('|'),fresh=next!==order;order=next;
+  mount();
+  want.forEach(pair=>{const[key,s]=pair;let t=tabs.get(key);
+   if(!t){t={key,session:s.session||'',paneId:'outpane-'+String(s.session||'').replace(/[^A-Za-z0-9_-]/g,'_'),label:''};
+    t.btn=createTab(key,'');tabs.set(key,t);bar.append(t.btn)}
+   const label=key==='main'?'Hauptagent':(String(s.agent||'Subagent')+(s.description?' — '+s.description:''));
+   if(t.label!==label){t.label=label;t.btn.textContent=label}});
+  for(const[key,t]of[...tabs]){if(!want.some(p=>p[0]===key)){t.btn.remove();tabs.delete(key);L.closePane(t.session)}}
+  if(!tabs.has(active))fallbackToMain();
+  const t=tabs.get(active);if(t){t.btn.setAttribute('aria-selected','true');t.btn.tabIndex=0}
+  if(!manual&&fresh&&active==='main'){const firstNY=subs[0];if(firstNY)choose('sub:'+firstNY.session,false)}
+  if(active!=='main'){const t2=tabs.get(active);if(t2)loadOutput(t2,t2.pane)}
+  L.fit()}
+ return {bar,sync,reset}}
 /* F19: Zusatzanweisung an den laufenden Agenten. Der Erfolg wird ausschließlich
    aus der Antwort der API abgeleitet; ohne aktiven Lauf ist der Knopf gesperrt. */
 function steerCard(name,isPi){
@@ -409,11 +505,13 @@ function subagentCard(name,isPi){
   return n}
  function showEmpty(message){nodes.clear();order='';openSession='';list.replaceChildren(el('span',{class:'mut'},message))}
  async function poll(){
-  let data;try{data=await api('/api/subagents?name='+encodeURIComponent(name))}catch(e){return}
+  // F24: Die Polling-Daten speisen zusätzlich die Agent-Tabs der Ausgabe;
+  // die Methode gibt sie daher an den Aufrufer zurück.
+  let data;try{data=await api('/api/subagents?name='+encodeURIComponent(name))}catch(e){return null}
   const subs=(data&&data.subagents)||[];
   const running=subs.filter(s=>s.status==='running').length;
   count.textContent=running+' aktiv / '+subs.length;count.className='pill '+(running?'run':'mut');
-  if(!subs.length){showEmpty(data&&data.running?'Der Lauf ist aktiv, aber es wurden noch keine Subagenten gestartet.':'Keine Subagenten erfasst.');return}
+  if(!subs.length){showEmpty(data&&data.running?'Der Lauf ist aktiv, aber es wurden noch keine Subagenten gestartet.':'Keine Subagenten erfasst.');return data}
   const next=subs.map(keyOf).join('|');
   if(next!==order){order=next;nodes.clear();openSession='';const frag=document.createDocumentFragment();
    subs.forEach(s=>{const n=build(s);nodes.set(keyOf(s),n);frag.append(n.card)});list.replaceChildren(frag)}
@@ -422,7 +520,8 @@ function subagentCard(name,isPi){
    n.status.textContent=s.status||'?';
    n.status.className='pill '+(s.status==='running'?'run':/error|fail|cancel/.test(String(s.status||''))?'bad':'mut');
    n.meta.textContent=(s.session||'ohne Session')+' · Start '+fmt(s.started)+(s.ended?' · Ende '+fmt(s.ended):'')});
-  if(openSession&&nodes.has(openSession))loadOutput(openSession);else openSession=''}
+  if(openSession&&nodes.has(openSession))loadOutput(openSession);else openSession='';
+  return data}
  return {card,poll}}
 function rightsCard(d,name){const inp=el('input',{placeholder:'/absoluter/pfad','aria-label':'Schreibverzeichnis'});
  const reset=el('button',{class:'b',on:{click:()=>askInline(reset,'Standardverzeichnisse wiederherstellen?','Ja, zurücksetzen',async()=>{const r=await api('/api/rights',{name,action:'reset'});toast(r.message);if(r.ok)detail(name).catch(showErr)})}},'Standard wiederherstellen');
