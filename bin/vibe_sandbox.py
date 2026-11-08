@@ -20,6 +20,11 @@ Zusätzlich gilt:
 - ``/tmp`` ist ein privater tmpfs und wird nach dem Binden der erlaubten
   Verzeichnisse schreibgeschützt. Temporärdateien gehören nach ``TMPDIR`` im
   Zustandsordner; ein explizit erlaubtes ``/tmp`` bleibt schreibbar.
+- ``/dev/shm`` ist ohne ausdrückliche Freigabe ein frisches, isoliertes
+  tmpfs (kein Zugriff auf das Host-Verzeichnis; Bug B5).
+- Der Zustandsort ist begrenzt und weicht bei zu langen Pfaden auf die kurze
+  tmpfs-Wurzel ``/tmp/opencode/vsb`` aus, damit Werkzeug-Sockets die
+  AF_UNIX-Pfadgrenze (108 Zeichen) nicht erreichen (Bug B5).
 - ``.vibe`` des Projekts bleibt auch im beschreibbaren Projektverzeichnis nur
   lesend, damit ein Agent seine Sandbox-Konfiguration nicht für spätere Läufe
   verändern kann.
@@ -45,6 +50,13 @@ import sys
 
 WRITE_DIRS_DEFAULT = "/tmp/opencode"
 SANDBOX_ROOT = "/tmp/opencode/vibe-sandbox"
+SHORT_STATE_ROOT = "/tmp/opencode/vsb"
+# Sicherheitsabstand zur AF_UNIX-Grenze von 108 Zeichen (Bug B5, siehe
+# docs/features/B5.md): Zustandspfade bleiben <= 84 Zeichen, damit
+# nachgeschaltete Werkzeugpfade die Grenze nicht erreichen — z. B.
+# ``TMPDIR = state + "/tmp"`` (<= 88 Zeichen) und darunter der tmux-Socket
+# ``TMPDIR/tmux-<uid>/default`` (<= 106 Zeichen).
+STATE_PATH_LIMIT = 84
 TOOL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]*$")
 
 # Caches, die für die jeweiligen Build-Werkzeuge beschreibbar sein müssen.
@@ -204,10 +216,25 @@ def project_write_dirs(project):
 
 
 def state_dir(project):
-    base = os.environ.get("VIBE_SANDBOX_ROOT") or SANDBOX_ROOT
+    """Zustandsort des Projekts unterhalb der Sandbox-Wurzel.
+
+    Werkzeuge im Lauf legen Sockets (tmux, IPC) unterhalb dieser Pfade an; die
+    AF_UNIX-Grenze liegt bei 108 Zeichen. Ist der berechnete Pfad länger als
+    die sichere Begrenzung (Bug B5: NTFS-Arbeitsbäume mit langen Pfaden, ein
+    nach oben gesetztes ``VIBE_SANDBOX_ROOT``), weicht die Funktion auf eine
+    kurze tmpfs-Wurzel unter /tmp aus; der SHA-256-Präfix des Projektwegs
+    bleibt als eindeutige Zuordnung erhalten. Die Begrenzung auf 84
+    Zeichen (``STATE_PATH_LIMIT``) hält Sicherheitsabstand zur AF_UNIX-Grenze
+    von 108: auch Nachfolger wie ``TMPDIR`` und der darunter liegende
+    tmux-Socket-Pfad überschreiten die Grenze nicht.
+    """
     digest = hashlib.sha256(os.path.realpath(project).encode("utf-8")).hexdigest()[:10]
     name = re.sub(r"[^A-Za-z0-9_-]", "_", os.path.basename(os.path.realpath(project)))
-    return os.path.join(os.path.abspath(os.path.expanduser(base)), f"{name}-{digest}")
+    base = os.environ.get("VIBE_SANDBOX_ROOT") or SANDBOX_ROOT
+    path = os.path.join(os.path.abspath(os.path.expanduser(base)), f"{name}-{digest}")
+    if len(path) <= STATE_PATH_LIMIT:
+        return path
+    return os.path.join(SHORT_STATE_ROOT, digest)
 
 
 def git_common_dir(project):
@@ -485,6 +512,17 @@ def bwrap_argv(project, command, bwrap=None, runtime=None):
         "/proc",
         "--tmpfs",
         "/tmp",
+    ]
+    # /dev/shm (Bug B5) vor allen Bindungen: bubblewrap stapelt Mounts in
+    # Argumentreihenfolge. Bindungen auf Pfade unter /dev/shm (z. B. ein
+    # Rückfrageordner oder ein Projekt im Prüf-tmpfs) müssen in der
+    # isolierten Ansicht ansetzen, sonst überschattet der frische Mount die
+    # Bindung. Ohne Freigabe bleibt das Host-Verzeichnis aus (der Agent
+    # konnte dort außerhalb der erlaubten Verzeichnisse schreiben); mit
+    # Freigabe übernimmt die Bindungsschleife unten die Rolle.
+    if "/dev/shm" not in directories:
+        argv += ["--tmpfs", "/dev/shm"]
+    argv += [
         "--unshare-pid",
         "--die-with-parent",
         "--new-session",

@@ -90,8 +90,8 @@
     },
     {
       "path": "bin/vibe_sandbox.py",
-      "sha256": "eb8482982eaf7ab7770fd8f296693d3c1ec1356ba6ecd200dde1dc29cd0393f7",
-      "bytes": 23968
+      "sha256": "7e62ef0fd03400e0cc888108fd489dbb3ec71fe22f8602d3c8773fdb6248fa66",
+      "bytes": 26137
     },
     {
       "path": "bin/vibe_services.py",
@@ -811,6 +811,14 @@
       "dateien": [
         "bin/vibe-web.py",
         "bin/web/app.js"
+      ]
+    },
+    {
+      "arbeitspaket": "B5",
+      "datum": "2026-11-08",
+      "grund": "Sandbox-Lücke und Zeichenlimit (Bug B5): /dev/shm ist bei aktiver Sandbox ohne ausdrückliche Freigabe in der Schreibrechte-Liste ein frisches, vom Host isoliertes tmpfs, damit Schreiben dorthin nicht das Host-Verzeichnis erreicht (je nach bubblewrap-Version zeigt --dev dort auf das Host-Verzeichnis). Der Sandbox-Zustandsort weicht bei zu langen Pfaden (lange NTFS-Arbeitsbäume, lang gesetztes VIBE_SANDBOX_ROOT) auf die kurze tmpfs-Wurzel /tmp/opencode/vsb aus, damit nachgeschaltete Werkzeug-Sockets die AF_UNIX-Grenze von 108 Zeichen nicht erreichen. Tool-Bindungen und die XDG/TMPDIR-Umleitung bleiben unverändert.",
+      "dateien": [
+        "bin/vibe_sandbox.py"
       ]
     }
   ]
