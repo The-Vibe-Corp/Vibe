@@ -110,6 +110,7 @@ vibe attach <projekt>        # an den Lauf anhängen
 vibe logs <projekt>          # Lauf-Log verfolgen
 vibe stop <projekt> [lauf]   # nur diesen Lauf beenden
 vibe pause <projekt> [on|off]
+vibe runs [list|prune]       # Läufe anzeigen; verwaiste Einträge aufräumen
 ```
 
 - Ein Lauf hat eine eindeutige ID, ein eigenes Log und ein eigenes
@@ -117,6 +118,10 @@ vibe pause <projekt> [on|off]
 - „Pause“ stoppt den laufenden Agenten nicht. Nach dem aktuellen Arbeitspaket
   wird kein neues begonnen; die Anforderung gilt einmalig.
 - „Stoppen“ beendet ausschließlich den gewählten Lauf.
+- `vibe runs` zeigt Registereinträge mit Zustand, Sitzungsstatus und
+  Projektpfad. `vibe runs prune` markiert Einträge, deren tmux-Sitzung nicht
+  mehr existiert, als beendet – auch wenn das Projektverzeichnis fehlt. Es
+  werden dabei niemals Sitzungen beendet.
 - „Dashboard beenden“ beendet weder Agentenläufe noch opencode. opencode wird
   getrennt über `vibe server stop` beendet.
 

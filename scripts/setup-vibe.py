@@ -1002,8 +1002,33 @@ def uninstall(vibe_root, home=None, remove_launcher=False, timestamp=None):
 
 
 def running_installation(vibe_root, runner=None, which=None):
-    """Nennt laufende Agentenläufe und Dashboard-/Server-Sitzungen dieser Installation."""
+    """Nennt laufende Agentenläufe und Dashboard-/Server-Sitzungen dieser Installation.
+
+    Ein Registereintrag in ``starting``/``running`` gilt nur dann als laufend,
+    wenn seine tmux-Sitzung tatsächlich existiert. Sonst ist der Lauf verwaist
+    und darf eine Aktualisierung nicht blockieren. Ohne prüfbare Sitzung
+    (tmux fehlt oder Eintrag ohne Sitzungsangabe) bleibt die Sperre konservativ.
+    """
     reasons = []
+    which = which or shutil.which
+    tmux = which("tmux")
+    runner = runner or subprocess.run
+
+    def session_state(session):
+        """True/False, wenn tmux die Sitzung prüfen kann; sonst None."""
+        if not tmux or not session:
+            return None
+        try:
+            completed = runner(
+                [tmux, "has-session", "-t", session],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return None
+        return getattr(completed, "returncode", 1) == 0
+
     runs_path = Path(vibe_root) / "_logs" / "runs.json"
     if runs_path.exists():
         try:
@@ -1017,24 +1042,23 @@ def running_installation(vibe_root, runner=None, which=None):
         for record in data.get("runs", []):
             if not isinstance(record, dict):
                 continue
-            if record.get("state") in LIVE_RUN_STATES:
-                reasons.append(f"Agentenlauf {record.get('id', '?')} ist {record.get('state')}")
-    which = which or shutil.which
-    tmux = which("tmux")
-    if tmux:
-        runner = runner or subprocess.run
-        for session in ("vibe-ui", "vibe-ui-dev", "vibe-server", "vibe-server-dev"):
-            try:
-                completed = runner(
-                    [tmux, "has-session", "-t", session],
-                    capture_output=True,
-                    text=True,
-                    timeout=5,
-                )
-            except (OSError, subprocess.SubprocessError):
+            if record.get("state") not in LIVE_RUN_STATES:
                 continue
-            if getattr(completed, "returncode", 1) == 0:
-                reasons.append(f"tmux-Sitzung {session} läuft")
+            run_id = record.get("id", "?")
+            session = str(record.get("session") or "")
+            state = session_state(session)
+            if state is False:
+                continue
+            if state is None:
+                reasons.append(
+                    f"Agentenlauf {run_id} ist {record.get('state')}; "
+                    f"tmux-Sitzung {session or '(ohne Angabe)'} nicht prüfbar"
+                )
+            else:
+                reasons.append(f"Agentenlauf {run_id} ist {record.get('state')}")
+    for session in ("vibe-ui", "vibe-ui-dev", "vibe-server", "vibe-server-dev"):
+        if session_state(session):
+            reasons.append(f"tmux-Sitzung {session} läuft")
     return reasons
 
 

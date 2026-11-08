@@ -8,6 +8,7 @@ Aufruf:  vibe                 interaktives Menü
          vibe attach <p>      an laufende Sitzung anhängen
          vibe logs <p>        Log verfolgen
          vibe stop <p> [lauf-id]  Lauf beenden (ohne ID: der letzte laufende Lauf)
+         vibe runs [list|prune]  Läufe anzeigen; prune markiert verwaiste Einträge als beendet
          vibe pause <p> [on|off]  nach dem aktuellen Arbeitspaket anhalten
          vibe ask "Frage" [--option "A" ...] [--project <p>] [--timeout <s>] [--no-wait]
                               Rückfrage an den Nutzer (erscheint im Dashboard)
@@ -1746,6 +1747,54 @@ def cmd_stop(name, run_id=None, out=None):
         print("Beendet:", name, "Lauf", record["id"], file=out)
     else:
         print("Beendet:", name, file=out)
+
+def cmd_runs(action="list"):
+    """Zeigt das Laufregister; ``prune`` beendet verwaiste Einträge.
+
+    Verwaist ist ein Eintrag in ``starting``/``running``, dessen tmux-Sitzung
+    nicht mehr existiert. Aufgeräumt wird ausschließlich das Register, nie eine
+    tmux-Sitzung; laufende Sitzungen und beendete Einträge bleiben unverändert.
+    """
+    action = (action or "list").lower()
+    if action not in ("list", "prune"):
+        sys.exit("vibe runs [list|prune]")
+    registry = run_registry()
+    records = registry.all()
+    if action == "list":
+        if not records:
+            print("Keine Läufe im Register.")
+            return
+        for record in reversed(records):
+            state = record.get("state") or "?"
+            session = str(record.get("session") or "")
+            line = f"{record.get('id', '?')}  {state}"
+            if state in vibe_runs.LIVE_STATES:
+                if not session:
+                    line += "  Sitzung nicht prüfbar"
+                elif tmux_session_exists(session):
+                    line += f"  Sitzung {session} läuft"
+                else:
+                    line += f"  Sitzung {session} verwaist"
+            print(line + "  " + str(record.get("project") or "?"))
+        return
+    ended = running = unknown = 0
+    for record in records:
+        if record.get("state") not in vibe_runs.LIVE_STATES:
+            continue
+        run_id = record.get("id") or "?"
+        session = str(record.get("session") or "")
+        if not session:
+            print(f"Unverändert: {run_id} (keine Sitzungsangabe, nicht prüfbar)")
+            unknown += 1
+            continue
+        if tmux_session_exists(session):
+            print(f"Läuft weiter: {run_id} (Sitzung {session})")
+            running += 1
+            continue
+        registry.finish(run_id, exit_code=None, state="ended")
+        print(f"Verwaist beendet: {run_id} (Sitzung {session} fehlt)")
+        ended += 1
+    print(f"{ended} verwaiste Einträge beendet, {running} laufen weiter, {unknown} nicht prüfbar.")
 
 class VerifyConfigError(ValueError):
     """Prüfkonfiguration ist unvollständig oder nur ein Platzhalter."""
@@ -4498,6 +4547,7 @@ def main():
     try:
         table = {"list": lambda: cmd_list(), "status": lambda: cmd_status(r[0]), "run": lambda: cmd_run(r[0], r[1] if len(r) > 1 else None),
                  "attach": lambda: cmd_attach(r[0]), "logs": lambda: cmd_logs(r[0]), "stop": lambda: cmd_stop(r[0], r[1] if len(r) > 1 else None),
+                 "runs": lambda: cmd_runs(r[0] if r else "list"),
                  "pause": lambda: cmd_pause(r[0], r[1] if len(r) > 1 else None),
                  "ask": lambda: cmd_ask(r), "questions": lambda: cmd_questions(),
                  "answer": lambda: cmd_answer(r),

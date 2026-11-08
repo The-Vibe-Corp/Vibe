@@ -155,6 +155,7 @@ Codestelle und die in dieser Sitzung tatsächlich beobachtete Prüfung.
 | CLI | `vibe attach` | vorhanden, noch nicht geprüft | `bin/vibe:231-233`; interaktive tmux-Anhängung, nicht ausgeführt |
 | CLI | `vibe logs` | vorhanden, noch nicht geprüft | `bin/vibe:235-239`; blockierendes `tail -f`, nicht ausgeführt |
 | CLI | `vibe stop` | vorhanden, noch nicht geprüft | `bin/vibe:241-242`; beendet tmux-Sitzung, nicht ausgeführt |
+| CLI | `vibe runs` | vorhanden und automatisiert geprüft | `bin/vibe` (`cmd_runs`); `tests/unit/test_run_control.py` prüft Liste und das Aufräumen verwaister Registereinträge ohne tmux-Sitzung, auch bei fehlendem Projektverzeichnis; es werden keine Sitzungen beendet |
 | CLI | `vibe pause` | vorhanden und automatisiert geprüft | `bin/vibe:404-448`; `tests/unit/test_pause_after_package.py` prüft Anfordern, Status, Aufheben und die Ablehnung unbekannter Projekte ohne Markierung; `bin/vibe-run.sh:31-65` verbraucht die Markierung und startet kein neues Paket |
 | CLI | `vibe ask` | vorhanden und automatisiert geprüft | `bin/vibe` (`cmd_ask`); `tests/unit/test_questions.py` prüft Stellen mit Auswahl, Projektableitung, Ablehnung unbekannter Projekte, Zeitlimit mit Exit-Code 3 und Fortsetzen mit `--wait`; `tests/browser/test_questions_ui.py` zeigt die Frage samt Vorschlägen im Dashboard |
 | CLI | `vibe questions` | vorhanden und automatisiert geprüft | `bin/vibe` (`cmd_questions`); `tests/unit/test_questions.py` prüft die Liste offener Fragen mit nummerierten Vorschlägen |
