@@ -322,9 +322,13 @@ def run_argv(name, prompt, project, agent=None, model=None, server_url=None,
     if not agent:
         raise HarnessError("Für Pi muss ein Agent mit Prompt-Datei gewählt sein.")
     message = agent_prompt(project, agent, agents_dir=agents_dir) + "\n\n---\n\n" + prompt
-    # Agentenläufe sind einmalig. Ohne Sitzungsdatei schreibt Pi nichts in
-    # ~/.pi/agent und funktioniert damit auch in der Schreib-Sandbox, deren
-    # Wurzeldateisystem nur lesend eingebunden ist.
+    # Agentenläufe sind einmalig. Ohne Sitzungsdatei schreibt Pi keine
+    # Sitzungsdateien; sein Agentenverzeichnis ~/.pi/agent liest und
+    # schreibt Pi trotzdem — auch mit --no-session (Sperrdatei
+    # trust.json.lock beim Lesen des Vertrauensspeichers; Bug B4). Die
+    # Scratch-Sandbox stellt deshalb über die Umgebungsvariable
+    # PI_CODING_AGENT_DIR einen beschreibbaren Agentenordner bereit
+    # (bin/vibe_sandbox.py, bwrap_argv()).
     argv = [target, "--print", "--no-session"]
     argv += model_args
     if title:

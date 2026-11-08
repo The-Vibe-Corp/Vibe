@@ -50,8 +50,8 @@
     },
     {
       "path": "bin/vibe_harness.py",
-      "sha256": "026466b463fbf72d2cc784c18196a7790b050d1f15a61a24123ce987836d5de1",
-      "bytes": 20662
+      "sha256": "1f5f5056f603608835ebc51083d1985e9eef3073b257822b91f54eb6c4ede427",
+      "bytes": 20911
     },
     {
       "path": "bin/vibe_mcp.py",
@@ -844,7 +844,8 @@
       "datum": "2026-11-08",
       "grund": "Pi-Harness in der Sandbox (Bug B4): Pi liest und schreibt sein Agentenverzeichnis unabhängig von XDG_* unter ~/.pi/agent (auch mit --no-session z. B. die Sperrdatei trust.json.lock beim Lesen der Vertrauensliste), während das Wurzel-Dateisystem der Sandbox nur lesend gebunden ist; der Lauf brach mit EROFS ab. Die Sandbox legt jetzt den beschreibbaren Pi-Agentenordner <Zustandsort>/pi/agent an, über --setenv PI_CODING_AGENT_DIR als dorthin umgeleitet und bindet die reale ~/.pi/agent/auth.json ausschließlich lesend ein, damit Modellprovider-Anmeldungen erhalten bleiben. Andere Verhalten (XDG/TMPDIR, Tool-Bindungen, /dev/shm, Zeichenlimit) bleiben unverändert.",
       "dateien": [
-        "bin/vibe_sandbox.py"
+        "bin/vibe_sandbox.py",
+        "bin/vibe_harness.py"
       ]
     }
   ]
