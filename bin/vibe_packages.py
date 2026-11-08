@@ -3,9 +3,10 @@
 
 Der Läufer benutzt dieses Modul, damit Auswahl, Vorabprüfung, Bewertung des
 Agentenergebnisses und Abschlussbericht versioniert und testbar sind. Die
-Datei arbeitet ausschließlich lokal: keine Modellaufrufe, keine Netzverbindung
-und keine Änderung an Projektdateien außer dem projektlokalen Auswahlstand
-unter ``.vibe/tmp/``.
+Datei arbeitet ausschließlich lokal: keine Modellaufrufe, keine Netzverbindung.
+Sie schreibt nur den projektlokalen Auswahlstand unter ``.vibe/tmp/`` und den
+Paketnachweis in die Laufzeitnotiz ``FEEDBACK.md`` bzw. ``TICKETS.md``; die
+Arbeitskopie erhält eine Kopie dieser Notizen.
 """
 import argparse
 import json
@@ -42,6 +43,14 @@ AGENT_NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
 VERDICT_PATTERN = re.compile(
     r"(?im)^\s*(?:[-*]\s*)?verdict\s*:\s*\**\s*PASS\b"
 )
+
+# Arbeitsnotizen sind Laufzeitstand (Datei oder UI), kein versionierter
+# Produktinhalt. Ihre Änderungen dürfen weder den Start noch die
+# Abschlussschranke blockieren. Die Arbeitskopie erhält eine Kopie; nach dem
+# Merge wird der Paketnachweis gezielt in den Projektordner zurückgeschrieben.
+WORK_NOTE_FILES = ("TICKETS.md", "FEEDBACK.md")
+PROOF_KEYS = ("Commit", "Test", "Datei", "Review", "Doku")
+PROOF_LINE = re.compile(r"^\s*(?:" + "|".join(PROOF_KEYS) + r")\s*:")
 
 QUOTA_PATTERNS = (
     r"\bquota\b",
@@ -91,6 +100,128 @@ def run_git(project, *args):
         capture_output=True,
         text=True,
     )
+
+
+def is_work_note_path(path):
+    """True, wenn ein Git-Statuspfad eine Arbeitsnotiz im Projektstamm ist."""
+    value = path.strip().strip('"').replace("\\", "/")
+    if " -> " in value:
+        value = value.split(" -> ", 1)[1].strip().strip('"')
+    # Nur die Dateien am Projektstamm; gleichnamige Dateien in Unterordnern
+    # sind normale Projektdateien und zählen weiterhin als Änderung.
+    return value in WORK_NOTE_FILES
+
+
+def dirty_report(project):
+    """Git-Status ohne Arbeitsnotizen; andere Änderungen bleiben sichtbar."""
+    status = run_git(project, "status", "--porcelain")
+    if status.returncode != 0:
+        return ""
+    return "\n".join(
+        line
+        for line in status.stdout.splitlines()
+        if not (len(line) > 3 and is_work_note_path(line[3:]))
+    )
+
+
+def copy_work_notes(project, worktree):
+    """Kopiert vorhandene Arbeitsnotizen in die Paket-Arbeitskopie."""
+    project, worktree = Path(project), Path(worktree)
+    copied = []
+    for name in WORK_NOTE_FILES:
+        source = project / name
+        if not source.is_file():
+            continue
+        write_text_atomic(worktree / name, read_text(source))
+        copied.append(name)
+    return copied
+
+
+def block_span(lines, pid):
+    """Zeilenbereich ``[start, end)`` des Ticketblocks mit dieser ID."""
+    for index, line in enumerate(lines):
+        if line.startswith("- ") and block_id(line) == pid:
+            end = index + 1
+            while end < len(lines) and (
+                lines[end].startswith((" ", "\t")) or not lines[end].strip()
+            ):
+                end += 1
+            return index, end
+    return None
+
+
+def _apply_proof(text, span, worktree_block):
+    """Hakt den Block ab und ersetzt seine Nachweiszeilen.
+
+    Nur die Checkbox und die Nachweiszeilen ändern sich; Beschreibungen,
+    Nachbemerkungen und andere Blöcke bleiben unverändert.
+    """
+    lines = text.splitlines()
+    start, end = span
+    block = lines[start:end]
+    block[0] = re.sub(r"^(- )\[ \]", r"\1[x]", block[0], count=1)
+    reduced, insert_at = [block[0]], None
+    for line in block[1:]:
+        if PROOF_LINE.match(line):
+            if insert_at is None:
+                insert_at = len(reduced)
+            continue
+        reduced.append(line)
+    if insert_at is None:
+        insert_at = len(reduced)
+        while insert_at > 1 and not reduced[insert_at - 1].strip():
+            insert_at -= 1
+    proof = [
+        line.rstrip()
+        for line in worktree_block.splitlines()
+        if PROOF_LINE.match(line)
+    ]
+    reduced[insert_at:insert_at] = proof
+    lines[start:end] = reduced
+    result = "\n".join(lines)
+    return result + "\n" if text.endswith("\n") else result
+
+
+def sync_proof(project, worktree, pid):
+    """Übernimmt ``[x]`` und Nachweiszeilen eines Pakets in den Projektordner.
+
+    Quelle ist die Arbeitskopie; Ziel ist derselbe Dateiname im Projekt. Der
+    Nachweis wird nur übernommen, wenn er vollständig ist. Liefert
+    ``(changed, message)``; bei ``changed=False`` bleibt die Zieldatei
+    unverändert.
+    """
+    project, worktree = Path(project), Path(worktree)
+    source_name, worktree_block = "", ""
+    for name in WORK_NOTE_FILES:
+        note = worktree / name
+        if not note.is_file():
+            continue
+        for block in read_blocks(note):
+            if block_id(block) == pid:
+                source_name, worktree_block = name, block
+                break
+        if worktree_block:
+            break
+    if not worktree_block:
+        return False, "Block " + pid + " fehlt in der Arbeitskopie."
+    if not is_done(worktree_block):
+        return False, "Block " + pid + " ist in der Arbeitskopie nicht abgehakt."
+    revision = proof_commit(worktree_block)
+    if not revision or not commit_exists(project, revision):
+        return False, "Nachweis-Commit für " + pid + " fehlt oder ist nicht vorhanden."
+    if not PROOF_PATTERN.search(worktree_block):
+        return False, "Nachweis 'Test:' oder 'Datei:' für " + pid + " fehlt."
+    target = project / source_name
+    if not target.is_file():
+        return False, source_name + " fehlt im Projektordner."
+    text = read_text(target)
+    span = block_span(text.splitlines(), pid)
+    if span is None:
+        return False, "Block " + pid + " fehlt in " + source_name + "."
+    updated = _apply_proof(text, span, worktree_block)
+    if updated != text:
+        write_text_atomic(target, updated)
+    return True, pid + " in " + source_name + " abgehakt."
 
 
 def read_env(path):
@@ -256,18 +387,26 @@ def agent_available(name, project, agents_dir):
 
 
 def ensure_project_exclude(project):
-    """Hält den projektlokalen Auswahlstand aus dem Git-Status heraus."""
+    """Hält Auswahlstand und Arbeitsnotizen aus dem Git-Status heraus.
+
+    Die Notizen bleiben so auch dann unsichtbar, wenn sie (noch) nicht
+    versioniert sind; ein späteres ``git add`` ist weiterhin möglich.
+    """
     git_dir = run_git(project, "rev-parse", "--absolute-git-dir")
     if git_dir.returncode != 0:
         return
     exclude = Path(git_dir.stdout.strip()) / "info" / "exclude"
     exclude.parent.mkdir(parents=True, exist_ok=True)
     lines = read_text(exclude).splitlines()
-    if ".vibe/tmp/" not in lines:
+    missing = [
+        entry for entry in (".vibe/tmp/",) + WORK_NOTE_FILES
+        if entry not in lines
+    ]
+    if missing:
         text = read_text(exclude)
         if text and not text.endswith("\n"):
             text += "\n"
-        write_text_atomic(exclude, text + ".vibe/tmp/\n")
+        write_text_atomic(exclude, text + "\n".join(missing) + "\n")
 
 
 def role_agents(state_dir, role):
@@ -326,7 +465,7 @@ def preflight_errors(project, agents_dir, tester, reviewer, state_dir=None):
     if branch.returncode != 0:
         errors.append("Detached HEAD: Der Lauf braucht einen Integrationsbranch.")
     ensure_project_exclude(project)
-    dirty = run_git(project, "status", "--porcelain").stdout.strip()
+    dirty = dirty_report(project)
     if dirty:
         errors.append("Arbeitsbaum ist nicht leer:\n" + dirty)
 
@@ -565,7 +704,7 @@ def gate_errors(project, pid, base):
             + pid + "-review*.md)."
         )
 
-    dirty = run_git(project, "status", "--porcelain").stdout.strip()
+    dirty = dirty_report(project)
     if dirty:
         errors.append("Arbeitskopie ist nicht sauber:\n" + dirty)
     return errors
@@ -643,6 +782,22 @@ def command_preflight(args):
     for error in errors:
         print("BLOCKIERT: " + error)
     return EXIT_USAGE if errors else EXIT_OK
+
+
+def command_copy_notes(args):
+    copied = copy_work_notes(args.project, args.worktree)
+    for name in copied:
+        print("OK: " + name + " in die Arbeitskopie übernommen.")
+    return EXIT_OK
+
+
+def command_sync_proof(args):
+    changed, message = sync_proof(args.project, args.worktree, args.id)
+    if not changed:
+        print("FEHLT: " + message)
+        return EXIT_NONE
+    print("OK: " + message)
+    return EXIT_OK
 
 
 def command_gate(args):
@@ -724,6 +879,21 @@ def build_parser():
     gate.add_argument("--id", required=True)
     gate.add_argument("--base", required=True)
     gate.set_defaults(handler=command_gate)
+
+    copy_notes = subparsers.add_parser(
+        "copy-notes", help="Arbeitsnotizen in die Arbeitskopie übernehmen"
+    )
+    copy_notes.add_argument("--project", required=True)
+    copy_notes.add_argument("--worktree", required=True)
+    copy_notes.set_defaults(handler=command_copy_notes)
+
+    sync_proof = subparsers.add_parser(
+        "sync-proof", help="Paketnachweis in den Projektordner zurückschreiben"
+    )
+    sync_proof.add_argument("--project", required=True)
+    sync_proof.add_argument("--worktree", required=True)
+    sync_proof.add_argument("--id", required=True)
+    sync_proof.set_defaults(handler=command_sync_proof)
 
     classify = subparsers.add_parser("classify", help="Agentenfehler einordnen")
     classify.add_argument("--exit-code", type=int, required=True)

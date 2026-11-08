@@ -266,11 +266,18 @@ gate_ok() {
   printf '%s\n' "$out" | tee -a "$LOG"
   return $rc
 }
-merge_and_cleanup() {
+merge_package() {
   if ! git -C "$P" merge --ff-only "$BRANCH" >>"$LOG" 2>&1; then
     echo "FEHLT: Merge von $BRANCH nach $BASE_BRANCH fehlgeschlagen." | tee -a "$LOG"
     return 1
   fi
+  return 0
+}
+sync_work_notes() {
+  python3 "$PACKAGES_PY" sync-proof \
+    --project "$P" --worktree "$WT" --id "$ID" >>"$LOG" 2>&1
+}
+cleanup_worktree() {
   # Nur gemergte Arbeitskopien und Branches werden entfernt. Blockierte
   # Arbeitskopien bleiben zur Diagnose liegen.
   if ! git -C "$P" worktree remove --force "$WT" >>"$LOG" 2>&1; then
@@ -504,6 +511,16 @@ while [ "$PACKAGES" -lt "$MAXP" ] && [ "$STOP" = 0 ]; do
     echo "BLOCKIERT: $BLOCK_REASON" | tee -a "$LOG"
     STOP=1; break
   fi
+  # Die Arbeitsnotizen sind Laufzeitstand und nicht versioniert; die
+  # Arbeitskopie enthält sie daher nicht. Sie werden hineinkopiert, damit
+  # Agent und Abschlussschranke den aktuellen Ticketstand sehen.
+  if ! python3 "$PACKAGES_PY" copy-notes \
+      --project "$P" --worktree "$WT" >>"$LOG" 2>&1; then
+    BLOCK_REASON="Arbeitsnotizen konnten nicht in die Arbeitskopie übernommen werden."
+    record_block "$ID" "$BLOCK_REASON"
+    echo "BLOCKIERT: $BLOCK_REASON" | tee -a "$LOG"
+    STOP=1; break
+  fi
   PROMPT="Arbeitspaket $ID. Der Punkt steht in $SOURCE des Projektordners. Wortlaut:
 $BLOCK
 Bearbeite NUR dieses Arbeitspaket gemäß deinem Workflow. Du arbeitest in der isolierten Arbeitskopie $WT auf dem Branch $BRANCH; der Integrationsstand $P bleibt unberührt. Committe dort mit dem Präfix '$ID:'.
@@ -541,12 +558,22 @@ $QUESTION_HINT"
         record_block "$ID" "$BLOCK_REASON"
         STOP=1; break
       fi
-      if ! merge_and_cleanup; then
+      if ! merge_package; then
         BLOCK_REASON="Merge für $ID fehlgeschlagen."
         record_block "$ID" "$BLOCK_REASON"
         echo "BLOCKIERT: $BLOCK_REASON" | tee -a "$LOG"
         STOP=1; break
       fi
+      # Der Nachweis wird aus der Arbeitskopie in den Projektordner
+      # zurückgeschrieben; erst danach wird die Arbeitskopie entfernt, damit
+      # das Paket im nächsten Lauf nicht erneut gewählt wird.
+      if ! sync_work_notes; then
+        BLOCK_REASON="Ticket-Nachweis für $ID konnte nicht in den Projektordner geschrieben werden."
+        record_block "$ID" "$BLOCK_REASON"
+        echo "BLOCKIERT: $BLOCK_REASON" | tee -a "$LOG"
+        STOP=1; break
+      fi
+      cleanup_worktree
       CLOSED+=("$ID")
       PACKAGE_DONE=1
       break

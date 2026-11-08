@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "stand": "2026-11-07",
+  "stand": "2026-11-08",
   "quelle": "Übernommener Programmstand aus der lokalen Installation unter $VIBE/_toolchain; die aktive Installation enthält zusätzlich lokale Geheimnis-Hooks (siehe docs/baseline.md, Abschnitt 3).",
   "hinweis": "SHA-256 der übernommenen Programmdateien. Beabsichtigte Änderungen an diesen Dateien sind nur zulässig, wenn dieser Eintrag im selben Arbeitspaket aktualisiert und begründet wird. Laufzeitdaten, Sicherungen und Geheimnisse sind nicht Bestandteil des Imports.",
   "scopes": [
@@ -30,8 +30,8 @@
     },
     {
       "path": "bin/vibe-run.sh",
-      "sha256": "e1ff87adbcd4e25276320fe6209e074e349f089548aeffe43cb11ba5a53e940f",
-      "bytes": 28872
+      "sha256": "269b35c906605f50d855fcd75feabd47d1d694b8b188a0deeb52fb3f5961a44a",
+      "bytes": 30029
     },
     {
       "path": "bin/vibe-web.py",
@@ -70,8 +70,8 @@
     },
     {
       "path": "bin/vibe_packages.py",
-      "sha256": "06f0d301b8f2606dd3a979c61bc6c71e8e2764fec0a13ad5142702f8ff41f55d",
-      "bytes": 26775
+      "sha256": "1e12d52997adc369a4e4916dcea021198ad3740e3202cb085e54c935cb2aea30",
+      "bytes": 33112
     },
     {
       "path": "bin/vibe_paths.py",
