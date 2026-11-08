@@ -1632,6 +1632,13 @@ def cmd_run(name, agent=None, out=None):
     if not agent:
         sys.exit("Kein Vibe-Agent definiert. In der Agentenverwaltung muss ein Agent die Rolle 'vibe' erhalten.")
     agent = require_agent(agent)
+    # B3: Zusatzanweisungen (F19) brauchen die Kennwortdatei <runtime>/opencode.password.
+    # Nur "vibe server start" legte sie bisher an; jeder andere Einstieg (Dashboard,
+    # autonome Läufe) endete beim Senden mit "Kennwortdatei fehlt". Der Laufstart
+    # richtet die Anmeldung deshalb automatisch ein: neue Zufallskennung nur, wenn
+    # die Datei fehlt, bestehender Inhalt bleibt unverändert. Ein Anlagefehler
+    # bricht den Laufstart mit der Meldung von ensure_opencode_password ab.
+    ensure_opencode_password()
     try:
         model = run_agent_selection(name, agent)
     except ValueError as error:
