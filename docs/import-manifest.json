@@ -1,808 +1,817 @@
 {
- "version": 1,
- "stand": "2026-11-07",
- "quelle": "Übernommener Programmstand aus der lokalen Installation unter $VIBE/_toolchain; die aktive Installation enthält zusätzlich lokale Geheimnis-Hooks (siehe docs/baseline.md, Abschnitt 3).",
- "hinweis": "SHA-256 der übernommenen Programmdateien. Beabsichtigte Änderungen an diesen Dateien sind nur zulässig, wenn dieser Eintrag im selben Arbeitspaket aktualisiert und begründet wird. Laufzeitdaten, Sicherungen und Geheimnisse sind nicht Bestandteil des Imports.",
- "scopes": [
-  "install-vibe.sh",
-  "bin",
-  "data/models.json",
-  "templates",
-  "scripts/setup-vibe.py",
-  "setup-vibe.cmd",
-  "VERSION"
- ],
- "files": [
-  {
-   "path": "VERSION",
-   "sha256": "f5e9382967c9833066a55808829f3750fc8e1181b170cafd222c37048bb49a77",
-   "bytes": 7
-  },
-  {
-   "path": "bin/fritz-reconnect.py",
-   "sha256": "16a2b80ed79313ae87c88dc7fc5041115a8a256dc805eb668845501eeb983ce2",
-   "bytes": 3293
-  },
-  {
-   "path": "bin/vibe",
-   "sha256": "1767702cbc32d77ca087f3d2d45347e07698527c1e3b9737d3ee976e70721693",
-   "bytes": 208447
-  },
-  {
-   "path": "bin/vibe-run.sh",
-   "sha256": "e1ff87adbcd4e25276320fe6209e074e349f089548aeffe43cb11ba5a53e940f",
-   "bytes": 28872
-  },
-  {
-   "path": "bin/vibe-web.py",
-   "sha256": "295cccd352f896ccc4c03a2b973b03c6f122ed3dca33ae603344ea1790d6c3c9",
-   "bytes": 52303
-  },
-  {
-   "path": "bin/vibe_autonomous.py",
-   "sha256": "3719eaa5a360e3a47afc3e0ead250d7e4b62e4fb4ca721d70a894c0c81ef7418",
-   "bytes": 5149
-  },
-  {
-   "path": "bin/vibe_guide.py",
-   "sha256": "d5fd488738af33fdb484a3b3e22818629ab66cb6d5edd72e1a63cf8b45c78936",
-   "bytes": 26241
-  },
-  {
-   "path": "bin/vibe_harness.py",
-   "sha256": "026466b463fbf72d2cc784c18196a7790b050d1f15a61a24123ce987836d5de1",
-   "bytes": 20662
-  },
-  {
-   "path": "bin/vibe_mcp.py",
-   "sha256": "4b0e1b0843ce79971e24144b3e69c9d38eaf0c099130fec3e8f7de60f9b6b6d2",
-   "bytes": 50973
-  },
-  {
-   "path": "bin/vibe_models.py",
-   "sha256": "9e013459696c2a1a9fab378a771961afc3630768bde066a674962792ca0762ab",
-   "bytes": 20977
-  },
-  {
-   "path": "bin/vibe_opencode.py",
-   "sha256": "5e2c58b801d759874ff4a8bb0dd2122c0fa638e4ca42e129f4b48b2dedebec83",
-   "bytes": 13639
-  },
-  {
-   "path": "bin/vibe_packages.py",
-   "sha256": "06f0d301b8f2606dd3a979c61bc6c71e8e2764fec0a13ad5142702f8ff41f55d",
-   "bytes": 26775
-  },
-  {
-   "path": "bin/vibe_paths.py",
-   "sha256": "7fb7282db29a46abfa68bd6e625c120b48bfbf642abb79866c97702a5f1006c7",
-   "bytes": 17565
-  },
-  {
-   "path": "bin/vibe_questions.py",
-   "sha256": "d5630e455a667973fdafbe91ad44944da0bf0a4865a4d714d00eee3065aeb10f",
-   "bytes": 11589
-  },
-  {
-   "path": "bin/vibe_runs.py",
-   "sha256": "9fcc9fddf480e654b3750166efcf3e18c3ea029085a417760ed5731be8f58cf0",
-   "bytes": 20379
-  },
-  {
-   "path": "bin/vibe_sandbox.py",
-   "sha256": "eb8482982eaf7ab7770fd8f296693d3c1ec1356ba6ecd200dde1dc29cd0393f7",
-   "bytes": 23968
-  },
-  {
-   "path": "bin/vibe_services.py",
-   "sha256": "5b538da160b8816aef3209ce0105ffc6dd89b75a8d5dd8e2b17605f73486949d",
-   "bytes": 8271
-  },
-  {
-   "path": "bin/vibe_storage.py",
-   "sha256": "2fad84e426278fa693c4f1b1fa14d33b97acb0942aaad803c9bd58728427b75f",
-   "bytes": 19810
-  },
-  {
-   "path": "bin/web/app.js",
-   "sha256": "fb13ecd82ff528a6189b3b69bebd6bf6069b9801fc4c75fefe8a21dcd38e92fd",
-   "bytes": 91467
-  },
-  {
-   "path": "bin/web/index.html",
-   "sha256": "db45ba1dd9e5da380f5c05c24b2158eefce9b7e8f87faeb33a9e88910d0cd73d",
-   "bytes": 588
-  },
-  {
-   "path": "bin/web/styles.css",
-   "sha256": "186fd8b3a08f8834402f44b7ad275b49e7cfbace1cfb97878e997be7c3369206",
-   "bytes": 7682
-  },
-  {
-   "path": "data/models.json",
-   "sha256": "abdbe9d9b2c0896d6a632a5a8140c38bf7b61e9bf9b64a7cca03bd33a5ea6751",
-   "bytes": 34162
-  },
-  {
-   "path": "install-vibe.sh",
-   "sha256": "1f1379cda496e6adc5a981adf7263916af72e2f2c29aa6c20c1f863aa4e66ad3",
-   "bytes": 370
-  },
-  {
-   "path": "scripts/setup-vibe.py",
-   "sha256": "435446bbbbb70e0e1a1fe5d660781ad3a6dfef28d45119f5a8b04961c512d014",
-   "bytes": 62713
-  },
-  {
-   "path": "setup-vibe.cmd",
-   "sha256": "eba97b935ea1d943c402c41cac96872d782a0f62e724f0e96f29e9e16a500c52",
-   "bytes": 377
-  },
-  {
-   "path": "templates/android/.vibe/project.env",
-   "sha256": "9cdb71f6c2266f9d06d4ca1b28e156e73cf3ec01daf2eead4a1b0db50ed06d9e",
-   "bytes": 313
-  },
-  {
-   "path": "templates/android/AGENTS.md",
-   "sha256": "e6997bc45c95152268ae110253b0345de637d299aad14e1aa0d62bafe1c640a8",
-   "bytes": 4461
-  },
-  {
-   "path": "templates/android/scripts/emulator-start.sh",
-   "sha256": "70b7415a36c7c1409838ee998b22c3b2576d6965c1b09334fe5b917300235fa9",
-   "bytes": 522
-  },
-  {
-   "path": "templates/android/scripts/emulator-stop.sh",
-   "sha256": "b9ebb326ec3a44655c9ab0ee4341a53e367d65d81fb103cb9206db15e533aee6",
-   "bytes": 87
-  },
-  {
-   "path": "templates/android/scripts/verify.sh",
-   "sha256": "d9972b72b48d370baf15a0e495c7bc3bf5b44e53bc63332da7d31e7eb69287c5",
-   "bytes": 138
-  },
-  {
-   "path": "templates/common/.opencode/agents/test-agent.md",
-   "sha256": "339a884bda0ce261334a3ac2662f5b6582b88bcaa3601fc92b008fff16561912",
-   "bytes": 2032
-  },
-  {
-   "path": "templates/common/FEEDBACK.md",
-   "sha256": "e843730d69d4f02f4bb9158a3a88826cb5074654c9c3077a5d2868cbf9343f35",
-   "bytes": 424
-  },
-  {
-   "path": "templates/common/TICKETS.md",
-   "sha256": "85601551f67bde402c5f7b50626f949653825696b80921b4a2f3d7207af16c9c",
-   "bytes": 195
-  },
-  {
-   "path": "templates/common/opencode.json",
-   "sha256": "2cf66ebdb7c6cacd36ad8a2f069738ef2e65632776c4fc16f09247f2abb2be70",
-   "bytes": 105
-  },
-  {
-   "path": "templates/docker/.vibe/project.env",
-   "sha256": "c464921033f2596757f0e24466273b6fdc402fd71eca33d89175149026f60b21",
-   "bytes": 273
-  },
-  {
-   "path": "templates/docker/AGENTS.md",
-   "sha256": "22821939ac9c03ab237d60f054197bbaa12bee3cf2c8d073c749ebb31c29e62f",
-   "bytes": 4356
-  },
-  {
-   "path": "templates/generic/.vibe/project.env",
-   "sha256": "28650b969b80f9968a3ec46451eebf2c8b6eeca17394bf1a7c93159706c091e4",
-   "bytes": 275
-  },
-  {
-   "path": "templates/generic/AGENTS.md",
-   "sha256": "336fe0cde42412396474853db8022f648d8f495dc1bb6f7b859207cae8045b59",
-   "bytes": 3844
-  },
-  {
-   "path": "templates/openwrt/.vibe/project.env",
-   "sha256": "4068a6783f2bd86092d31301e28f16e60b92cbeb8b1570ea77a9e8af0b310cb4",
-   "bytes": 276
-  },
-  {
-   "path": "templates/openwrt/AGENTS.md",
-   "sha256": "e9e96b933c68fc4aa9e7e9fb22171755649c9b68f8606f729b47c3e934f0abfd",
-   "bytes": 4477
-  },
-  {
-   "path": "templates/rebuild/.opencode/agents/rebuild-architecture.md",
-   "sha256": "8ce7fa84467c6ed0d62db5a736902604958d382e9275a69fe15dd76113a866e2",
-   "bytes": 670
-  },
-  {
-   "path": "templates/rebuild/.opencode/agents/rebuild-ci.md",
-   "sha256": "d7e19b8f5a447f93c303f5a4327ea0330e9f581e101b2a6d2814627c5cfafedd",
-   "bytes": 524
-  },
-  {
-   "path": "templates/rebuild/.opencode/agents/rebuild-discovery.md",
-   "sha256": "99767a5b5ca1d9c3385309f83c853819d3969967c7d1254e7429512f9538d722",
-   "bytes": 765
-  },
-  {
-   "path": "templates/rebuild/.opencode/agents/rebuild-implementation.md",
-   "sha256": "1d9b054e84fcd61464b373fbf82d1643895007f45f6643a5ea9f56abc43deef2",
-   "bytes": 659
-  },
-  {
-   "path": "templates/rebuild/.opencode/agents/rebuild-orchestrator.md",
-   "sha256": "2528c921eb3aaba2d56726c7223dd1d69ec67d6a6fa63587a24217021202543e",
-   "bytes": 818
-  },
-  {
-   "path": "templates/rebuild/.opencode/agents/rebuild-packaging.md",
-   "sha256": "e70b5b2a783e02d7aa3950d9976d4ea8ed134aa1bff853794f26426a32838a75",
-   "bytes": 657
-  },
-  {
-   "path": "templates/rebuild/.opencode/agents/rebuild-parity.md",
-   "sha256": "7f84afa58539462e45f38ee938a70c6072fb2f2d4518eb981e224dea3f62c8ea",
-   "bytes": 733
-  },
-  {
-   "path": "templates/rebuild/.opencode/agents/rebuild-reverse.md",
-   "sha256": "c4efc262aaf776517c1b862a4b57759e1459997f6a7a2b160ab2599817f54077",
-   "bytes": 767
-  },
-  {
-   "path": "templates/rebuild/.opencode/agents/rebuild-spec.md",
-   "sha256": "0cce4ad3d5c047efc2cc070fa1808d8c940ba8b229a1de25623d14d83a59211c",
-   "bytes": 767
-  },
-  {
-   "path": "templates/rebuild/.vibe/project.env",
-   "sha256": "073fbe168ff7c019e7c78fe5e122677075c50f5feffd75bdd3f9cc6ad32c28ca",
-   "bytes": 893
-  },
-  {
-   "path": "templates/rebuild/AGENTS.md",
-   "sha256": "bf2fca9d2f18a9b8f835dd275def2a50a67cac49d6791c8d0d3b83e3fda1def5",
-   "bytes": 7045
-  },
-  {
-   "path": "templates/rebuild/docs/parity.md",
-   "sha256": "fe705d851e19067b479c6763e06a37cd3173c79e191565a2b0fd021e7f7ff25e",
-   "bytes": 1675
-  },
-  {
-   "path": "templates/rebuild/docs/reverse-engineering.md",
-   "sha256": "f49ee59a97d45b58a989b32bc039fc9258edc36998ca71a0c68c2a014955cf5f",
-   "bytes": 1301
-  },
-  {
-   "path": "templates/rebuild/scripts/rebuild-env.py",
-   "sha256": "d3ee44c1f74e2885b2e2700c57fc246269505ee272abe3fe3bcfec07db399b03",
-   "bytes": 13279
-  },
-  {
-   "path": "templates/web/.vibe/project.env",
-   "sha256": "ec53bba7187335bf9370d8662be3f91aa03c135a0358de7da0add9689d7938ec",
-   "bytes": 345
-  },
-  {
-   "path": "templates/web/AGENTS.md",
-   "sha256": "5834184b5b6ad7843de78792cacc9247a59ee77e176470bee32c52f2d6f32da2",
-   "bytes": 4208
-  }
- ],
- "aenderungen": [
-  {
-   "arbeitspaket": "F1",
-   "datum": "2026-10-25",
-   "grund": "Feedback-Erfassung bietet nur noch Titel und Beschreibung; die Felder Schritte, Erwartet und Ist entfallen, Erwartet wird zu Beschreibung.",
-   "dateien": [
-    "bin/vibe",
-    "bin/vibe-web.py",
-    "templates/common/FEEDBACK.md"
-   ]
-  },
-  {
-   "arbeitspaket": "F2",
-   "datum": "2026-10-25",
-   "grund": "Projektdetail: vorhandene Feedback-Punkte bearbeiten und löschen, Live-Ausgabe pausierbar, bildschirmfüllend vergrößerbar und mit voller verfügbarer Höhe.",
-   "dateien": [
-    "bin/vibe",
-    "bin/vibe-web.py"
-   ]
-  },
-  {
-   "arbeitspaket": "F3",
-   "datum": "2026-10-25",
-   "grund": "Dynamische Schreibrechte je Projekt: editierbare Verzeichnisliste mit Standard /tmp/opencode und Projektverzeichnis, Anwendung auf Projektagenten, CLI und Dashboard.",
-   "dateien": [
-    "bin/vibe",
-    "bin/vibe-web.py"
-   ]
-  },
-  {
-   "arbeitspaket": "F4",
-   "datum": "2026-10-25",
-   "grund": "Pause nach dem aktuellen Arbeitspaket: einmalige Laufzeitmarkierung, die der Paket-Läufer zwischen zwei Paketen verbraucht; CLI, Dashboard und Projektstatus zeigen und schalten die Anforderung. Der Agent wird nicht unterbrochen.",
-   "dateien": [
-    "bin/vibe",
-    "bin/vibe-run.sh",
-    "bin/vibe-web.py"
-   ]
-  },
-  {
-   "arbeitspaket": "F5",
-   "datum": "2026-10-26",
-   "grund": "Fritzbox-Reconnect in der Oberfläche: Automatik (Standard aus) und manueller Reconnect im Tab Umgebung, CLI und Paket-Läufer nutzen dieselbe Einstellung; Reconnect-Helfer reproduzierbar im Repository und bei der Installation kopiert.",
-   "dateien": [
-    "bin/vibe",
-    "bin/vibe-run.sh",
-    "bin/vibe-web.py",
-    "bin/fritz-reconnect.py",
-    "install-vibe.sh"
-   ]
-  },
-  {
-   "arbeitspaket": "F6",
-   "datum": "2026-10-26",
-   "grund": "Universeller, interaktiver Setup: plattformübergreifendes Python-Skript (Linux/Container/Windows), Werkzeugprüfung mit Zustimmung, Wiederverwendung oder Aktualisierung einer bestehenden Installation ohne Überschreiben von Laufzeitdaten, Windows-Einstieg; install-vibe.sh delegiert nur noch.",
-   "dateien": [
+  "version": 1,
+  "stand": "2026-11-07",
+  "quelle": "Übernommener Programmstand aus der lokalen Installation unter $VIBE/_toolchain; die aktive Installation enthält zusätzlich lokale Geheimnis-Hooks (siehe docs/baseline.md, Abschnitt 3).",
+  "hinweis": "SHA-256 der übernommenen Programmdateien. Beabsichtigte Änderungen an diesen Dateien sind nur zulässig, wenn dieser Eintrag im selben Arbeitspaket aktualisiert und begründet wird. Laufzeitdaten, Sicherungen und Geheimnisse sind nicht Bestandteil des Imports.",
+  "scopes": [
     "install-vibe.sh",
-    "scripts/setup-vibe.py",
-    "setup-vibe.cmd"
-   ]
-  },
-  {
-   "arbeitspaket": "F7",
-   "datum": "2026-10-26",
-   "grund": "Optionale Shell-Sandbox je Projekt mit bubblewrap: Das Wurzeldateisystem wird nur lesend eingebunden, Schreibzugriffe sind auf die F3-Schreibverzeichnisse, konfigurierte Build-Tool-Caches und den opencode-Zustand begrenzt. CLI, Dashboard und Projektvorlagen schalten die Sandbox ein; ein sandboxed Lauf erzwingt --standalone. Fehlt bubblewrap, bricht der Start ab, statt ungeschützt zu laufen.",
-   "dateien": [
-    "bin/vibe",
-    "bin/vibe-run.sh",
-    "bin/vibe-web.py",
-    "bin/vibe_sandbox.py",
-    "scripts/setup-vibe.py",
-    "templates/android/.vibe/project.env",
-    "templates/docker/.vibe/project.env",
-    "templates/generic/.vibe/project.env",
-    "templates/openwrt/.vibe/project.env",
-    "templates/web/.vibe/project.env"
-   ]
-  },
-  {
-   "arbeitspaket": "F9",
-   "datum": "2026-10-26",
-   "grund": "Projektassistent für neue Projekte: führt in festen fachlichen Schritten durch Ziel, Nutzer, Umfang, Nicht-Umfang, Zielumgebung und Qualität; schreibt SPEC.md und ergänzt fehlende Grundlagen aus den Vorlagen, ohne vorhandene Dateien oder gefüllte Abschnitte zu überschreiben. Für fehlende Angaben kann ein Agent ausdrücklich einen Entwurf unter .vibe/guide/<schritt>.md erzeugen, der erst nach Bestätigung übernommen wird. Dashboard-Karte und Web-API, ohne CLI-Anbindung. Nachbesserung: Ein alter Entwurf wird vor dem Agentenstart beiseitegelegt statt danach gelöscht (kein Verlust eines frisch geschriebenen Entwurfs), innere ##-Überschriften eines Entwurfs werden eine Ebene tiefer gesetzt (sie erzeugen keine eigenen SPEC-Abschnitte), und die Karte zeigt die Ausgabe des letzten Agentenauftrags auch ohne Entwurf. Nachbesserung 2026-10-29: Zeilen innerhalb eingezäunter Codeblöcke eines Entwurfs bleiben beim Übernehmen wortgleich; nur echte ##-Überschriften werden eine Ebene tiefer gesetzt.",
-   "dateien": [
-    "bin/vibe-web.py",
-    "bin/vibe_guide.py"
-   ]
-  },
-  {
-   "arbeitspaket": "V-003",
-   "datum": "2026-10-26",
-   "grund": "Prozessaufrufe abgesichert: externe Programme starten mit Argumentlisten statt über eine Shell; projektkonfigurierte Prüfbefehle laufen nur an einer ausdrücklich benannten Shellgrenze; Agenten-, Emulator- und Projektnamen werden vor dem Start geprüft; Leseaktionen rufen Git ohne Projekt-Hooks (core.fsmonitor) auf.",
-   "dateien": [
-    "bin/vibe",
-    "bin/vibe-run.sh",
-    "bin/vibe-web.py",
-    "bin/vibe_mcp.py"
-   ]
-  },
-  {
-   "arbeitspaket": "V-004",
-   "datum": "2026-10-26",
-   "grund": "Web-API abgesichert: Bindung nur an Loopback (andere VIBE_UI_BIND-Werte brechen den Start ab), Health-Endpunkt mit vibe-/Instanzkennung ohne Geheimnisse, Host-/Origin-/Sec-Fetch-Site-Prüfung, Token nur per Header (Ausnahme EventSource-Stream), 1-MiB-Requestlimit, Pflicht zu application/json und Content-Length, strukturierte Fehler und tokenfreie Zugriffslogs.",
-   "dateien": [
-    "bin/vibe-web.py"
-   ]
-  },
-  {
-   "arbeitspaket": "V-005",
-   "datum": "2026-10-26",
-   "grund": "Gemeinsame Storage-Schicht für Konfigurationen und Agenten: atomare Writes über temporäre Datei und os.replace, Sperrdatei und Prüfsummenkontrolle gegen konkurrierende Änderungen, kollisionsfreie Sicherungen mit O_EXCL, Wiederherstellung mit vorheriger Sicherung sowie ehrliche Einordnung von FUSE/NTFS (keine zugesicherte Atomarität oder Unix-Rechte). CLI und Dashboard liefern und prüfen Prüfsummen beim Speichern; Agenten- und MCP-Sicherungen sind über CLI auflistbar und wiederherstellbar.",
-   "dateien": [
-    "bin/vibe",
-    "bin/vibe-web.py",
-    "bin/vibe_mcp.py",
-    "bin/vibe_storage.py"
-   ]
-  },
-  {
-   "arbeitspaket": "F10",
-   "datum": "2026-10-29",
-   "grund": "Agentenlauf endet automatisch: Der Läufer beendet die tmux-Sitzung mit dem letzten Arbeitspaket und der Abschlussprüfung, statt auf Eingabe zu warten. Dadurch meldet vibe keinen aktiven Lauf mehr, obwohl der Agent fertig ist. Ergebnis und Fehlerhinweis stehen zusätzlich im Lauf-Log. Das Projektdetail fragt den Laufzustand regelmäßig ab und wechselt ohne Neuladen auf „gestoppt“.",
-   "dateien": [
-    "bin/vibe",
-    "bin/vibe-run.sh",
-    "bin/vibe-web.py"
-   ]
-  },
-  {
-   "arbeitspaket": "F11",
-   "datum": "2026-10-29",
-   "grund": "Weniger modale Browserdialoge: Rückmeldungen erscheinen als nicht blockierende Statusmeldungen in einem höflich angekündigten Bereich (role=status, aria-live=polite, höchstens vier Meldungen, automatisches Ausblenden nach acht Sekunden). Bestätigungen für Löschen, Zurücksetzen, Beenden und FRITZ!Box-Reconnect stehen als Inline-Gruppe direkt an der auslösenden Schaltfläche mit Abbrechen und Escape; alert, confirm und prompt werden nicht mehr verwendet.",
-   "dateien": [
-    "bin/vibe-web.py"
-   ]
-  },
-  {
-   "arbeitspaket": "F12",
-   "datum": "2026-10-29",
-   "grund": "Kostenermittlung je Arbeitspaket und Projekt: Die opencode-Sitzungsdatenbank wird ausschließlich lesend ausgewertet (Eingabe inklusive gecachter Tokens, Ausgabe inklusive Reasoning), je Arbeitspaket und Agent/Modell in Euro umgerechnet und in CLI, HTTP-API und Dashboard dargestellt. Unbekannte Preise werden mit 0 angesetzt; eigene Preise je Projekt werden in _toolchain/costs.json gespeichert und überschreiben systemische Preise.",
-   "dateien": [
-    "bin/vibe",
-    "bin/vibe-web.py"
-   ]
-  },
-  {
-   "arbeitspaket": "F13",
-   "datum": "2026-10-30",
-   "grund": "Projektdetail neu strukturiert: feste Kopfleiste mit Projektname, Laufzustand und den Hauptaktionen, Kennzahlenkacheln und vier Register (Arbeit, Ausgabe, Assistent, Einstellungen) mit Tastaturbedienung und ARIA-Verknüpfung. Weniger wichtige Bereiche sind nicht mehr gleichzeitig sichtbar; die Prüfungsausgabe wird im Register Ausgabe gestreamt.",
-   "dateien": [
-    "bin/vibe-web.py"
-   ]
-  },
-  {
-   "arbeitspaket": "V-006",
-   "datum": "2026-10-30",
-   "grund": "Quellen, Installation, Laufzeit und Zustand sind getrennte Rollen mit eigener Konfiguration. Das Dev-Profil nutzt eigenen Arbeitsbereich, eigene Ports (Dashboard 8788, opencode 4097) und eigene tmux-Sitzungen und verweigert Pfade der produktiven Instanz. Persönliche Einstellungen (auch je Profil) überschreiben Defaults; Umgebung und ausdrückliche Übergaben überschreiben die Datei. Import von vibe und vibe-web legt keine Verzeichnisse oder Tokendateien an; Dashboard-Link und Paketläufer folgen den aufgelösten Ports und Pfaden.",
-   "dateien": [
-    "bin/vibe",
-    "bin/vibe-run.sh",
-    "bin/vibe-web.py",
-    "bin/vibe_mcp.py",
-    "bin/vibe_paths.py"
-   ]
-  },
-  {
-   "arbeitspaket": "V-007",
-   "datum": "2026-10-30",
-   "grund": "opencode-Kompatibilitätsadapter: Version, Modelllisting, Agentenregeln, MCP-Schema und Serverstart sind in bin/vibe_opencode.py gekapselt. Geprüft ist opencode 2.1.4; unbekannte Versionen werden gemeldet und versionabhängige Schreibvorgänge abgelehnt. Das MCP-Schema wird aus der vorhandenen Konfiguration erkannt; nur für die geprüfte Version darf eine leere Konfiguration das geprüfte Schema verwenden.",
-   "dateien": [
-    "bin/vibe",
-    "bin/vibe_mcp.py",
-    "bin/vibe_opencode.py",
-    "scripts/setup-vibe.py"
-   ]
-  },
-  {
-   "arbeitspaket": "V-008",
-   "datum": "2026-10-30",
-   "grund": "Projektverwaltung und Vorlagen regressionssicher: gleiche Projektnamen aus mehreren Entwicklungsordnern bleiben durch stabile, eindeutige Schlüssel unterscheidbar; Symlink-Aliase und doppelt eingelesene Wurzeln erzeugen keine Dubletten; nicht lesbare Ordner werden übersprungen. vibe init erhält vorhandene Dateien und folgt kaputten Symlinks nicht nach außerhalb des Projekts. Neue Vorlagentypen werden ohne Codeänderung erkannt.",
-   "dateien": [
-    "bin/vibe"
-   ]
-  },
-  {
-   "arbeitspaket": "V-009",
-   "datum": "2026-10-30",
-   "grund": "Ticket- und Feedbackverarbeitung stabilisiert: HTML-Kommentare (auch mehrzeilig und mitten in einer Zeile) werden ignoriert, mehrzeilige Bloecke und defekte Checkboxen behalten ID und Titel, nur die exakte Schreibweise - [x] gilt als erledigt, BLOCKIERT bleibt offen, fehlende oder unbekannte Nachweise werden als 'ohne Nachweis' sichtbar. Neue Feedbackeintraege werden validiert, mehrzeilig eingerueckt und ueber die Storage-Schicht mit erwarteter Pruefsumme geschrieben; bei parallelem Zugriff wird die naechste freie ID neu bestimmt statt doppelt vergeben.",
-   "dateien": [
-    "bin/vibe"
-   ]
-  },
-  {
-   "arbeitspaket": "V-010",
-   "datum": "2026-10-30",
-   "grund": "Agentenverwaltung vervollständigt: Agentendateien werden geparst, validiert und ohne Verlust unbekannter Frontmatter-Felder geschrieben; globale und projektbezogene Agenten sind getrennt bearbeitbar, Namenskonflikte und die tatsächlich wirksame Priorität (Projekt überschreibt global) werden angezeigt. Das Dashboard bietet strukturierten und Rohtexteditor, Vorlagenentwurf, Kopieren mit Ablehnung vorhandener Ziele, Sicherungen und Wiederherstellung. Agentenschreibvorgänge warnen bei einer ungeprüften opencode-Version, sperren aber nicht; fest eingebaute Kernagentennamen entfallen, Rollen stammen aus profiles.json und der Läufer bricht ohne konfigurierten Agenten ab.",
-   "dateien": [
-    "bin/vibe",
-    "bin/vibe-run.sh",
-    "bin/vibe-web.py",
-    "bin/vibe_guide.py"
-   ]
-  },
-  {
-   "arbeitspaket": "V-013",
-   "datum": "2026-10-30",
-   "grund": "MCP-Konfiguration verlustarm bearbeitet: JSONC-Kommentare, Trailing Commas und unbekannte Einstellungen bleiben beim Speichern erhalten, weil nur der betroffene Servereintrag und dessen geaenderte Felder ersetzt werden. Dateiprioritaet folgt opencode 2.1.4 (opencode.json vor opencode.jsonc vor .opencode/). Feldlisten stammen aus dem geprueften Schema; nicht unterstuetzte Felder werden abgelehnt, unbekannte Felder bestehender Eintraege bleiben erhalten. Maskierte Geheimnisse in Headern, Umgebungsvariablen, OAuth und URL-Parametern werden wiederhergestellt, sonst bricht der Schreibvorgang ab. Umbenennen auf vorhandene oder fehlende Namen wird abgelehnt.",
-   "dateien": [
-    "bin/vibe_mcp.py",
-    "bin/vibe_opencode.py"
-   ]
-  },
-  {
-   "arbeitspaket": "V-011",
-   "datum": "2026-10-30",
-   "grund": "Modellkatalog auf Schema 2 mit belegten Fakten, getrennten Einschätzungen, Preisangaben mit Währung/Einheit/Stand sowie Liste nicht übernommener Altbestände; neues Modul vibe_models.py wird bei der Installation mitkopiert.",
-   "dateien": [
-    "bin/vibe",
-    "bin/vibe-web.py",
-    "bin/vibe_models.py",
+    "bin",
     "data/models.json",
-    "scripts/setup-vibe.py"
-   ]
-  },
-  {
-   "arbeitspaket": "V-014",
-   "datum": "2026-10-30",
-   "grund": "MCP-Verbindungstests robust und begrenzt: nur initialize und tools/list ohne tools/call; unterstuetzte Transporte local/stdio und remote/Streamable HTTP werden ausgewiesen, unbekannte Transporte und Konfigurationsfehler getrennt gemeldet. Startwarnung, OAuth-Grenzen und Fehlerarten sind sichtbar; Zeit-, Ausgabe- und Werkzeuglimits sowie vollstaendiges Prozesscleanup inklusive Kindprozessen sind umgesetzt, Diagnosetexte werden von Geheimnissen befreit.",
-   "dateien": [
-    "bin/vibe_mcp.py",
-    "bin/vibe-web.py"
-   ]
-  },
-  {
-   "arbeitspaket": "V-015",
-   "datum": "2026-10-30",
-   "grund": "Agentenläufe und Projektprüfungen entkoppelt: neues Laufregister bin/vibe_runs.py mit eindeutigen Lauf-IDs, eigenem Zustand, atomarer Datei und Logrotation; Laufschlüssel verhindern Kollisionen gleich normalisierter Projektnamen bei Logs, tmux-Sitzungen und Pause-Markierungen. Der Paket-Läufer prüft Android-Abnahmedateien nur noch für TYPE=android, schreibt ein eigenes Prüfprotokoll, gibt den echten Exitcode der Prüfung zurück und begrenzt Wiederholungen über MAX_RETRIES. 'vibe stop' beendet genau einen Lauf; die Fritzbox-Automatik bleibt standardmäßig aus.",
-   "dateien": [
-    "bin/vibe",
-    "bin/vibe-run.sh",
-    "bin/vibe-web.py",
-    "bin/vibe_runs.py",
-    "scripts/setup-vibe.py"
-   ]
-  },
-  {
-   "arbeitspaket": "V-016",
-   "datum": "2026-10-31",
-   "grund": "Dashboard und opencode haben getrennte Lebenszyklen: Dashboard beenden stoppt weder Agentenläufe noch den opencode-Server, opencode stoppen beendet nicht das Dashboard. tmux-Sitzungen tragen die Markierung VIBE_MANAGED; nur markierte Sitzungen werden beendet, fremde Sitzungen und belegte Ports werden erkannt. Aktive SSE-Streams enden beim Beenden mit einer letzten Zeile, ein geschlossener Browser-Tab lässt die Hintergrundprozesse weiterlaufen.",
-   "dateien": [
-    "bin/vibe",
-    "bin/vibe-web.py"
-   ]
-  },
-  {
-   "arbeitspaket": "F14",
-   "datum": "2026-10-31",
-   "grund": "Neuer Projekttyp rebuild: Vorlage mit neun Projektagenten, Paritäts- und Speicherstandsregeln (fachlich 1:1, Originalformate lesen und schreiben), Werkzeugprüfer mit Pflicht- und optionalen Gruppen, Installationsplan und nur bestätigter Paketinstallation sowie Sandbox-Voreinstellungen für Wine, Java, Ghidra, Debugging und Packaging.",
-   "dateien": [
-    "bin/vibe_sandbox.py",
-    "templates/rebuild/.opencode/agents/rebuild-architecture.md",
-    "templates/rebuild/.opencode/agents/rebuild-ci.md",
-    "templates/rebuild/.opencode/agents/rebuild-discovery.md",
-    "templates/rebuild/.opencode/agents/rebuild-implementation.md",
-    "templates/rebuild/.opencode/agents/rebuild-orchestrator.md",
-    "templates/rebuild/.opencode/agents/rebuild-packaging.md",
-    "templates/rebuild/.opencode/agents/rebuild-parity.md",
-    "templates/rebuild/.opencode/agents/rebuild-reverse.md",
-    "templates/rebuild/.opencode/agents/rebuild-spec.md",
-    "templates/rebuild/.vibe/project.env",
-    "templates/rebuild/AGENTS.md",
-    "templates/rebuild/docs/parity.md",
-    "templates/rebuild/docs/reverse-engineering.md",
-    "templates/rebuild/scripts/rebuild-env.py"
-   ]
-  },
-  {
-   "arbeitspaket": "F15",
-   "datum": "2026-11-01",
-   "grund": "Arbeitspakete und Bugs aus der Oberfläche: Das Projektdetail listet TICKETS.md bearbeitbar (Anlegen mit eigener ID, Titel und Beschreibung ändern, Löschen), erhält eine eigene Bugmeldung als Feedback mit Art: Bug und zeigt Bugs in der Feedback-Liste. Markdown-Modell, HTTP-API und Browser-Oberfläche teilen dieselben Validierungs- und Konfliktschutzregeln wie das bestehende Feedback; erledigte Arbeitspakete bleiben schreibgeschützt.",
-   "dateien": [
-    "bin/vibe",
-    "bin/vibe-web.py"
-   ]
-  },
-  {
-   "arbeitspaket": "F16",
-   "datum": "2026-11-01",
-   "grund": "Rückfragen von Agenten an den Nutzer: neue Module vibe_questions.py und vibe_autonomous.py speichert Fragen und Antworten als getrennte JSON-Dateien im Laufzeitordner (zweite Antwort unmöglich, enge ID-Prüfung, Längengrenzen). CLI um ask/questions/answer erweitert, Dashboard zeigt offene Rückfragen mit Auswahl und freier Antwort, API GET/POST /api/questions, Sandbox bindet nur den Unterordner questions beschreibbar ein, Laufhinweis nennt vibe ask.",
-   "dateien": [
-    "bin/vibe",
-    "bin/vibe-run.sh",
-    "bin/vibe-web.py",
-    "bin/vibe_sandbox.py",
-    "bin/vibe_questions.py",
-    "bin/vibe_autonomous.py"
-   ]
-  },
-  {
-   "arbeitspaket": "F17",
-   "datum": "2026-11-02",
-   "grund": "Agentenverwaltung: geänderte strukturierte Felder werden beim Speichern übernommen; Agentenauswahl und Modellüberschreibung je Projekt in CLI, Läufer, HTTP-API und Dashboard.",
-   "dateien": [
-    "bin/vibe",
-    "bin/vibe-run.sh",
-    "bin/vibe-web.py"
-   ]
-  },
-  {
-   "arbeitspaket": "F18",
-   "datum": "2026-11-02",
-   "grund": "Zentraler Internet-Reconnect: Läufe mehrerer Projekte teilen sich eine Sperre und ein Ergebnis im Zustandsordner; höchstens ein Reconnect läuft gleichzeitig, wartende Projekte werden informiert und setzen ihren Lauf fort. Der Paket-Läufer übergibt seinen Projektnamen an die zentrale Steuerung.",
-   "dateien": [
-    "bin/vibe",
-    "bin/vibe-run.sh"
-   ]
-  },
-  {
-   "arbeitspaket": "V-018",
-   "datum": "2026-11-03",
-   "grund": "Reproduzierbare Installation aus dem Repository: Vorschau, Versionskennung aus VERSION und Git-Commit, Sicherung ersetzter Programmdateien und geänderter Nutzervorlagen, Rollback, Uninstall ohne Projekt- und Laufzeitdatenverlust, Update-Sperre bei laufenden Agenten- oder Dashboard-Sitzungen. models.json bleibt als Laufzeitdatei unangetastet. Schlägt ein Schritt nach dem Schreiben der Programmdateien fehl (Startbefehl, Projektregistrierung), wird die Installation vollständig zurückgenommen; ein reiner --reuse-Lauf ohne Schreibzugriff lässt eine vorhandene Versionskennung unverändert.",
-   "dateien": [
+    "templates",
     "scripts/setup-vibe.py",
+    "setup-vibe.cmd",
     "VERSION"
-   ]
-  },
-  {
-   "arbeitspaket": "V-021",
-   "datum": "2026-11-02",
-   "grund": "Setup installiert jedes vom Startbefehl importierte Modul, insbesondere vibe_autonomous.py; ein Regressionstest startet die frisch installierte CLI. Alle Projektvorlagen und vibe init tragen die allgemeinen Aufräumregeln für Projektordner nach, ohne vorhandene AGENTS.md-Inhalte zu überschreiben.",
-   "dateien": [
-    "scripts/setup-vibe.py",
-    "templates/android/AGENTS.md",
-    "templates/docker/AGENTS.md",
-    "templates/generic/AGENTS.md",
-    "templates/openwrt/AGENTS.md",
-    "templates/rebuild/AGENTS.md",
-    "templates/web/AGENTS.md",
-    "bin/vibe"
-   ]
-  },
-  {
-   "arbeitspaket": "V-022",
-   "datum": "2026-11-02",
-   "grund": "Allgemeine Git-Regeln für alle vibe-Projekte: Feature-Branch, zusammenhängende Commits, Prüfung von git status und Diff, keine fremden oder temporären Änderungen, keine History-Umschreibung. vibe init aktualisiert einen vorhandenen verwalteten Regelblock, ohne umgebende Inhalte zu verändern.",
-   "dateien": [
-    "bin/vibe",
-    "templates/android/AGENTS.md",
-    "templates/docker/AGENTS.md",
-    "templates/generic/AGENTS.md",
-    "templates/openwrt/AGENTS.md",
-    "templates/rebuild/AGENTS.md",
-    "templates/web/AGENTS.md"
-   ]
-  },
-  {
-   "arbeitspaket": "V-019",
-   "datum": "2026-11-03",
-   "grund": "Frontend und Backend schrittweise modularisiert: gemeinsame Dienste in bin/vibe_services.py, per-Aufruf-Ausgabestrom statt globaler stdout-Umleitung und getrennte statische Webdateien (HTML, CSS, JavaScript). Die Seite verhält sich unverändert; nur der Auslieferungsweg ist getrennt.",
-   "dateien": [
-    "bin/vibe",
-    "bin/vibe-web.py",
-    "bin/vibe_services.py",
-    "bin/web/index.html",
-    "bin/web/styles.css",
-    "bin/web/app.js",
-    "scripts/setup-vibe.py"
-   ]
-  },
-  {
-   "arbeitspaket": "V-020",
-   "datum": "2026-11-03",
-   "grund": "Releasebasis und Browserabnahme: gemeinsame Angabe von Version, Commit und Herkunft in bin/vibe_paths.py, Ausgabe in /api/health, in der Umgebungsansicht und in vibe doctor; reproduzierbarer Releasebau aus versionierten Dateien ohne persönliche Daten. Verhalten der Oberfläche ansonsten unverändert.",
-   "dateien": [
-    "bin/vibe",
-    "bin/vibe-web.py",
-    "bin/vibe_paths.py",
-    "bin/web/app.js"
-   ]
-  },
-  {
-   "arbeitspaket": "AP01",
-   "datum": "2026-11-06",
-   "grund": "Verbindliche Leitlinien für Coding-Agenten (KISS, Clean Code, Caching nur mit Invalidierung) in den allgemeinen Projektregeln; neue und bestehende Projekte übernehmen sie über Vorlagen, vibe init und vor jedem Agentenlauf.",
-   "dateien": [
-    "bin/vibe",
-    "templates/android/AGENTS.md",
-    "templates/docker/AGENTS.md",
-    "templates/generic/AGENTS.md",
-    "templates/openwrt/AGENTS.md",
-    "templates/rebuild/AGENTS.md",
-    "templates/web/AGENTS.md"
-   ]
-  },
-  {
-   "arbeitspaket": "AP02",
-   "datum": "2026-11-06",
-   "grund": "Verpflichtender, unabhängiger Test-Agent für neue und bestehende Projekte: Agentenvorlage, TESTER-Konfiguration, verbindliche Regel, automatisches Anlegen über vibe init/new/run und die Projektregistrierung. Vorhandene Agentendateien und TESTER-Werte bleiben unverändert.",
-   "dateien": [
-    "bin/vibe",
-    "scripts/setup-vibe.py",
-    "templates/common/.opencode/agents/test-agent.md",
-    "templates/android/AGENTS.md",
-    "templates/android/.vibe/project.env",
-    "templates/docker/AGENTS.md",
-    "templates/docker/.vibe/project.env",
-    "templates/generic/AGENTS.md",
-    "templates/generic/.vibe/project.env",
-    "templates/openwrt/AGENTS.md",
-    "templates/openwrt/.vibe/project.env",
-    "templates/rebuild/AGENTS.md",
-    "templates/rebuild/.vibe/project.env",
-    "templates/web/AGENTS.md",
-    "templates/web/.vibe/project.env"
-   ]
-  },
-  {
-   "arbeitspaket": "AP03",
-   "datum": "2026-11-07",
-   "grund": "Überarbeitung der Agentenverwaltung: Die allgemeine Ansicht zeigt und bearbeitet nur systemweite Agenten mit den Rollen coder, reviewer und vibe, Hierarchie und Subagenten-Rechten. Der Vibe-Agent ist der Standardagent jedes Projekts; ohne konfiguriertes Modell verweigert der Läufer den Start. Aufgaben- und Ergebnistexte werden getrennt in $VIBE_STATE/agent-meta.json gespeichert, Agentendateien bleiben unverändert. Projektansicht verwendet ausschließlich globale Agenten und erlaubt Modellüberschreibungen je Projekt; die Oberfläche bietet Rollenzuweisung und eine Vorlage für neue Agenten.",
-   "dateien": [
-    "bin/vibe",
-    "bin/vibe-web.py",
-    "bin/vibe_services.py",
-    "bin/web/app.js",
-    "bin/web/styles.css"
-   ]
-  },
-  {
-   "arbeitspaket": "AP04",
-   "datum": "2026-11-07",
-   "grund": "Austauschbares Coding-Harness: bin/vibe_harness.py kapselt Auswahl, Diagnose, Einrichtung, Modellliste und Startbefehl. opencode bleibt Default; Pi (@earendil-works/pi-coding-agent) ist der erste alternative Harness und wird im Print-Modus ohne Sitzungsdatei gestartet. Auswahl über Setup (--harness, interaktive Erstinstallation), CLI (vibe harness) und Oberfläche (/api/harness); bestehende Installationen ohne Auswahl bleiben unverändert.",
-   "dateien": [
-    "bin/vibe",
-    "bin/vibe-run.sh",
-    "bin/vibe-web.py",
-    "bin/web/app.js",
-    "bin/vibe_harness.py",
-    "scripts/setup-vibe.py"
-   ]
-  },
-  {
-   "arbeitspaket": "B1",
-   "datum": "2026-11-07",
-   "grund": "Kostentabelle aktualisiert sich nach jedem Arbeitspaket vollständig, ohne unveränderte Bereiche neu aufzubauen: Übersicht und Projektdetail fragen die Daten regelmäßig ab und ersetzen nur geänderte Projekt-, Paket- und Modellzeilen. Sitzungen unter gleichwertigen Pfadaliasen (zum Beispiel /run/host/... gegenüber dem Hostpfad) werden über die kanonischen opencode-Projektverzeichnisse dem richtigen Projekt zugeordnet. Zusätzlich liest die Kostenermittlung die opencode-Datenbank im Sandbox-Zustand jedes Projekts, weil Läufe mit eigenem XDG_DATA_HOME sonst gar nicht in der primären Datenbank erscheinen; Sitzungen werden über ihre ID einmal gezählt.",
-   "dateien": [
-    "bin/vibe",
-    "bin/web/app.js"
-   ]
-  },
-  {
-   "arbeitspaket": "F19",
-   "datum": "2026-11-07",
-   "grund": "Ausgabeansicht: Syntaxhervorhebung der Live-Ausgabe, Zusatzanweisungen an den laufenden Agenten über die opencode-Session (Basic-Auth mit Laufzeitkennwort, Kennzeile im Protokoll) und Übersicht erfasster Subagenten samt Ausgabe. Der Läufer liest opencode-JSON-Ereignisse und führt <log>.state.json.",
-   "dateien": [
-    "bin/vibe",
-    "bin/vibe-run.sh",
-    "bin/vibe-web.py",
-    "bin/vibe_runs.py",
-    "bin/web/app.js",
-    "bin/web/styles.css"
-   ]
-  },
-  {
-   "arbeitspaket": "AP05",
-   "datum": "2026-11-07",
-   "grund": "Saubere Paketabwicklung: Preflight auf sauberem Git-Stand mit verfügbaren Test-/Review-Agenten und echtem Paketprüfbefehl, jedes Paket in eigener Arbeitskopie unter dem Laufzeitordner, Abschlussschranke für Commit, Ticket-Nachweis, Feature-Dokumentation und Review, Fehlerklassen (Quota/Auth sofort, Netz/sonstiges begrenzt wiederholt), Auswahl nach TICKETS/FEEDBACK mit Abhängigkeiten, Abschlussbericht je Paket, Aufräumen nur gemergter Arbeitskopien sowie Sandbox-Schreibfreigabe für den gemeinsamen Git-Ordner einer Arbeitskopie. Neue Logik in bin/vibe_packages.py, Verdrahtung in bin/vibe-run.sh; VERIFY_PACKAGE in den Projektvorlagen.",
-   "dateien": [
-    "bin/vibe-run.sh",
-    "bin/vibe_packages.py",
-    "bin/vibe_sandbox.py",
-    "bin/vibe",
-    "scripts/setup-vibe.py",
-    "templates/android/.vibe/project.env",
-    "templates/docker/.vibe/project.env",
-    "templates/generic/.vibe/project.env",
-    "templates/openwrt/.vibe/project.env",
-    "templates/rebuild/.vibe/project.env",
-    "templates/web/.vibe/project.env",
-    ".vibe/project.env"
-   ]
-  },
-  {
-   "arbeitspaket": "F21",
-   "datum": "2026-11-07",
-   "grund": "Preflight löst einen fehlenden REVIEWER aus der Rolle reviewer in profiles.json auf und bevorzugt dabei einen verfügbaren Agenten; der ausdrücklich gesetzte Reviewer bleibt vorrangig. Der Läufer übergibt den Zustandsordner an den Preflight. blocked ist ein gültiger Endzustand im Laufregister, damit ein vom Preflight abgebrochener Lauf nicht auf starting hängen bleibt.",
-   "dateien": [
-    "bin/vibe-run.sh",
-    "bin/vibe_packages.py",
-    "bin/vibe_runs.py"
-   ]
-  },
-  {
-   "arbeitspaket": "F22",
-   "datum": "2026-11-07",
-   "grund": "Ein nicht bestandener Preflight fragt im Produktpfad vibe run über F16 nach, statt sofort abzubrechen. Die Rückfrage nennt Projekt und konkrete Befunde, bietet Erneut prüfen oder Lauf abbrechen und erlaubt zusätzlich eine freie Anweisung an den Agenten, der die Befunde im Projektordner zu beheben versucht; danach wird der Preflight erneut geprüft. Ohne Assistenzvariable, bei aktivem autonomem Modus und nach Zeitlimit bleibt der bisherige Abbruch erhalten.",
-   "dateien": [
-    "bin/vibe",
-    "bin/vibe-run.sh",
-    "bin/vibe_packages.py"
-   ]
-  },
-  {
-   "arbeitspaket": "F25",
-   "datum": "2026-11-07",
-   "grund": "Sessions, die von einem vorübergehenden Fehler (Klassen network/other) unterbrochen wurden, werden bei der Wiederholung mit opencode --session <Session-ID> fortgesetzt statt neu zu beginnen. Der Protokollierungsfilter übernimmt eine von der bisherigen abweichende Hauptsession (zuletzt gewinnt) und protokolliert die Übernahme als [Session]-Zeile; der Läufer liest die Session-Kennung aus der Zustandsdatei <log>.state.json, gegen den Standabgleich vor dem Versuch. Ohne erfasste Session und für den Pi-Harness bleibt das bisherige Verhalten.",
-   "dateien": [
-    "bin/vibe-run.sh",
-    "bin/vibe_runs.py"
-   ]
-  }
- ]
+  ],
+  "files": [
+    {
+      "path": "VERSION",
+      "sha256": "f5e9382967c9833066a55808829f3750fc8e1181b170cafd222c37048bb49a77",
+      "bytes": 7
+    },
+    {
+      "path": "bin/fritz-reconnect.py",
+      "sha256": "16a2b80ed79313ae87c88dc7fc5041115a8a256dc805eb668845501eeb983ce2",
+      "bytes": 3293
+    },
+    {
+      "path": "bin/vibe",
+      "sha256": "1767702cbc32d77ca087f3d2d45347e07698527c1e3b9737d3ee976e70721693",
+      "bytes": 208447
+    },
+    {
+      "path": "bin/vibe-run.sh",
+      "sha256": "e1ff87adbcd4e25276320fe6209e074e349f089548aeffe43cb11ba5a53e940f",
+      "bytes": 28872
+    },
+    {
+      "path": "bin/vibe-web.py",
+      "sha256": "a6500fcfdd7e55ee20ceedb2adb8a0e5fc9517a4837a73778cce9d4d0157a4fd",
+      "bytes": 52939
+    },
+    {
+      "path": "bin/vibe_autonomous.py",
+      "sha256": "3719eaa5a360e3a47afc3e0ead250d7e4b62e4fb4ca721d70a894c0c81ef7418",
+      "bytes": 5149
+    },
+    {
+      "path": "bin/vibe_guide.py",
+      "sha256": "d5fd488738af33fdb484a3b3e22818629ab66cb6d5edd72e1a63cf8b45c78936",
+      "bytes": 26241
+    },
+    {
+      "path": "bin/vibe_harness.py",
+      "sha256": "026466b463fbf72d2cc784c18196a7790b050d1f15a61a24123ce987836d5de1",
+      "bytes": 20662
+    },
+    {
+      "path": "bin/vibe_mcp.py",
+      "sha256": "4b0e1b0843ce79971e24144b3e69c9d38eaf0c099130fec3e8f7de60f9b6b6d2",
+      "bytes": 50973
+    },
+    {
+      "path": "bin/vibe_models.py",
+      "sha256": "9e013459696c2a1a9fab378a771961afc3630768bde066a674962792ca0762ab",
+      "bytes": 20977
+    },
+    {
+      "path": "bin/vibe_opencode.py",
+      "sha256": "5e2c58b801d759874ff4a8bb0dd2122c0fa638e4ca42e129f4b48b2dedebec83",
+      "bytes": 13639
+    },
+    {
+      "path": "bin/vibe_packages.py",
+      "sha256": "06f0d301b8f2606dd3a979c61bc6c71e8e2764fec0a13ad5142702f8ff41f55d",
+      "bytes": 26775
+    },
+    {
+      "path": "bin/vibe_paths.py",
+      "sha256": "7fb7282db29a46abfa68bd6e625c120b48bfbf642abb79866c97702a5f1006c7",
+      "bytes": 17565
+    },
+    {
+      "path": "bin/vibe_questions.py",
+      "sha256": "d5630e455a667973fdafbe91ad44944da0bf0a4865a4d714d00eee3065aeb10f",
+      "bytes": 11589
+    },
+    {
+      "path": "bin/vibe_runs.py",
+      "sha256": "9fcc9fddf480e654b3750166efcf3e18c3ea029085a417760ed5731be8f58cf0",
+      "bytes": 20379
+    },
+    {
+      "path": "bin/vibe_sandbox.py",
+      "sha256": "eb8482982eaf7ab7770fd8f296693d3c1ec1356ba6ecd200dde1dc29cd0393f7",
+      "bytes": 23968
+    },
+    {
+      "path": "bin/vibe_services.py",
+      "sha256": "5b538da160b8816aef3209ce0105ffc6dd89b75a8d5dd8e2b17605f73486949d",
+      "bytes": 8271
+    },
+    {
+      "path": "bin/vibe_storage.py",
+      "sha256": "2fad84e426278fa693c4f1b1fa14d33b97acb0942aaad803c9bd58728427b75f",
+      "bytes": 19810
+    },
+    {
+      "path": "bin/web/app.js",
+      "sha256": "491c9457b89d65a7daac976c1b45586585600c8c41d5be16a17620606c065db1",
+      "bytes": 93523
+    },
+    {
+      "path": "bin/web/index.html",
+      "sha256": "db45ba1dd9e5da380f5c05c24b2158eefce9b7e8f87faeb33a9e88910d0cd73d",
+      "bytes": 588
+    },
+    {
+      "path": "bin/web/styles.css",
+      "sha256": "186fd8b3a08f8834402f44b7ad275b49e7cfbace1cfb97878e997be7c3369206",
+      "bytes": 7682
+    },
+    {
+      "path": "data/models.json",
+      "sha256": "abdbe9d9b2c0896d6a632a5a8140c38bf7b61e9bf9b64a7cca03bd33a5ea6751",
+      "bytes": 34162
+    },
+    {
+      "path": "install-vibe.sh",
+      "sha256": "1f1379cda496e6adc5a981adf7263916af72e2f2c29aa6c20c1f863aa4e66ad3",
+      "bytes": 370
+    },
+    {
+      "path": "scripts/setup-vibe.py",
+      "sha256": "435446bbbbb70e0e1a1fe5d660781ad3a6dfef28d45119f5a8b04961c512d014",
+      "bytes": 62713
+    },
+    {
+      "path": "setup-vibe.cmd",
+      "sha256": "eba97b935ea1d943c402c41cac96872d782a0f62e724f0e96f29e9e16a500c52",
+      "bytes": 377
+    },
+    {
+      "path": "templates/android/.vibe/project.env",
+      "sha256": "9cdb71f6c2266f9d06d4ca1b28e156e73cf3ec01daf2eead4a1b0db50ed06d9e",
+      "bytes": 313
+    },
+    {
+      "path": "templates/android/AGENTS.md",
+      "sha256": "e6997bc45c95152268ae110253b0345de637d299aad14e1aa0d62bafe1c640a8",
+      "bytes": 4461
+    },
+    {
+      "path": "templates/android/scripts/emulator-start.sh",
+      "sha256": "70b7415a36c7c1409838ee998b22c3b2576d6965c1b09334fe5b917300235fa9",
+      "bytes": 522
+    },
+    {
+      "path": "templates/android/scripts/emulator-stop.sh",
+      "sha256": "b9ebb326ec3a44655c9ab0ee4341a53e367d65d81fb103cb9206db15e533aee6",
+      "bytes": 87
+    },
+    {
+      "path": "templates/android/scripts/verify.sh",
+      "sha256": "d9972b72b48d370baf15a0e495c7bc3bf5b44e53bc63332da7d31e7eb69287c5",
+      "bytes": 138
+    },
+    {
+      "path": "templates/common/.opencode/agents/test-agent.md",
+      "sha256": "339a884bda0ce261334a3ac2662f5b6582b88bcaa3601fc92b008fff16561912",
+      "bytes": 2032
+    },
+    {
+      "path": "templates/common/FEEDBACK.md",
+      "sha256": "e843730d69d4f02f4bb9158a3a88826cb5074654c9c3077a5d2868cbf9343f35",
+      "bytes": 424
+    },
+    {
+      "path": "templates/common/TICKETS.md",
+      "sha256": "85601551f67bde402c5f7b50626f949653825696b80921b4a2f3d7207af16c9c",
+      "bytes": 195
+    },
+    {
+      "path": "templates/common/opencode.json",
+      "sha256": "2cf66ebdb7c6cacd36ad8a2f069738ef2e65632776c4fc16f09247f2abb2be70",
+      "bytes": 105
+    },
+    {
+      "path": "templates/docker/.vibe/project.env",
+      "sha256": "c464921033f2596757f0e24466273b6fdc402fd71eca33d89175149026f60b21",
+      "bytes": 273
+    },
+    {
+      "path": "templates/docker/AGENTS.md",
+      "sha256": "22821939ac9c03ab237d60f054197bbaa12bee3cf2c8d073c749ebb31c29e62f",
+      "bytes": 4356
+    },
+    {
+      "path": "templates/generic/.vibe/project.env",
+      "sha256": "28650b969b80f9968a3ec46451eebf2c8b6eeca17394bf1a7c93159706c091e4",
+      "bytes": 275
+    },
+    {
+      "path": "templates/generic/AGENTS.md",
+      "sha256": "336fe0cde42412396474853db8022f648d8f495dc1bb6f7b859207cae8045b59",
+      "bytes": 3844
+    },
+    {
+      "path": "templates/openwrt/.vibe/project.env",
+      "sha256": "4068a6783f2bd86092d31301e28f16e60b92cbeb8b1570ea77a9e8af0b310cb4",
+      "bytes": 276
+    },
+    {
+      "path": "templates/openwrt/AGENTS.md",
+      "sha256": "e9e96b933c68fc4aa9e7e9fb22171755649c9b68f8606f729b47c3e934f0abfd",
+      "bytes": 4477
+    },
+    {
+      "path": "templates/rebuild/.opencode/agents/rebuild-architecture.md",
+      "sha256": "8ce7fa84467c6ed0d62db5a736902604958d382e9275a69fe15dd76113a866e2",
+      "bytes": 670
+    },
+    {
+      "path": "templates/rebuild/.opencode/agents/rebuild-ci.md",
+      "sha256": "d7e19b8f5a447f93c303f5a4327ea0330e9f581e101b2a6d2814627c5cfafedd",
+      "bytes": 524
+    },
+    {
+      "path": "templates/rebuild/.opencode/agents/rebuild-discovery.md",
+      "sha256": "99767a5b5ca1d9c3385309f83c853819d3969967c7d1254e7429512f9538d722",
+      "bytes": 765
+    },
+    {
+      "path": "templates/rebuild/.opencode/agents/rebuild-implementation.md",
+      "sha256": "1d9b054e84fcd61464b373fbf82d1643895007f45f6643a5ea9f56abc43deef2",
+      "bytes": 659
+    },
+    {
+      "path": "templates/rebuild/.opencode/agents/rebuild-orchestrator.md",
+      "sha256": "2528c921eb3aaba2d56726c7223dd1d69ec67d6a6fa63587a24217021202543e",
+      "bytes": 818
+    },
+    {
+      "path": "templates/rebuild/.opencode/agents/rebuild-packaging.md",
+      "sha256": "e70b5b2a783e02d7aa3950d9976d4ea8ed134aa1bff853794f26426a32838a75",
+      "bytes": 657
+    },
+    {
+      "path": "templates/rebuild/.opencode/agents/rebuild-parity.md",
+      "sha256": "7f84afa58539462e45f38ee938a70c6072fb2f2d4518eb981e224dea3f62c8ea",
+      "bytes": 733
+    },
+    {
+      "path": "templates/rebuild/.opencode/agents/rebuild-reverse.md",
+      "sha256": "c4efc262aaf776517c1b862a4b57759e1459997f6a7a2b160ab2599817f54077",
+      "bytes": 767
+    },
+    {
+      "path": "templates/rebuild/.opencode/agents/rebuild-spec.md",
+      "sha256": "0cce4ad3d5c047efc2cc070fa1808d8c940ba8b229a1de25623d14d83a59211c",
+      "bytes": 767
+    },
+    {
+      "path": "templates/rebuild/.vibe/project.env",
+      "sha256": "073fbe168ff7c019e7c78fe5e122677075c50f5feffd75bdd3f9cc6ad32c28ca",
+      "bytes": 893
+    },
+    {
+      "path": "templates/rebuild/AGENTS.md",
+      "sha256": "bf2fca9d2f18a9b8f835dd275def2a50a67cac49d6791c8d0d3b83e3fda1def5",
+      "bytes": 7045
+    },
+    {
+      "path": "templates/rebuild/docs/parity.md",
+      "sha256": "fe705d851e19067b479c6763e06a37cd3173c79e191565a2b0fd021e7f7ff25e",
+      "bytes": 1675
+    },
+    {
+      "path": "templates/rebuild/docs/reverse-engineering.md",
+      "sha256": "f49ee59a97d45b58a989b32bc039fc9258edc36998ca71a0c68c2a014955cf5f",
+      "bytes": 1301
+    },
+    {
+      "path": "templates/rebuild/scripts/rebuild-env.py",
+      "sha256": "d3ee44c1f74e2885b2e2700c57fc246269505ee272abe3fe3bcfec07db399b03",
+      "bytes": 13279
+    },
+    {
+      "path": "templates/web/.vibe/project.env",
+      "sha256": "ec53bba7187335bf9370d8662be3f91aa03c135a0358de7da0add9689d7938ec",
+      "bytes": 345
+    },
+    {
+      "path": "templates/web/AGENTS.md",
+      "sha256": "5834184b5b6ad7843de78792cacc9247a59ee77e176470bee32c52f2d6f32da2",
+      "bytes": 4208
+    }
+  ],
+  "aenderungen": [
+    {
+      "arbeitspaket": "F1",
+      "datum": "2026-10-25",
+      "grund": "Feedback-Erfassung bietet nur noch Titel und Beschreibung; die Felder Schritte, Erwartet und Ist entfallen, Erwartet wird zu Beschreibung.",
+      "dateien": [
+        "bin/vibe",
+        "bin/vibe-web.py",
+        "templates/common/FEEDBACK.md"
+      ]
+    },
+    {
+      "arbeitspaket": "F2",
+      "datum": "2026-10-25",
+      "grund": "Projektdetail: vorhandene Feedback-Punkte bearbeiten und löschen, Live-Ausgabe pausierbar, bildschirmfüllend vergrößerbar und mit voller verfügbarer Höhe.",
+      "dateien": [
+        "bin/vibe",
+        "bin/vibe-web.py"
+      ]
+    },
+    {
+      "arbeitspaket": "F3",
+      "datum": "2026-10-25",
+      "grund": "Dynamische Schreibrechte je Projekt: editierbare Verzeichnisliste mit Standard /tmp/opencode und Projektverzeichnis, Anwendung auf Projektagenten, CLI und Dashboard.",
+      "dateien": [
+        "bin/vibe",
+        "bin/vibe-web.py"
+      ]
+    },
+    {
+      "arbeitspaket": "F4",
+      "datum": "2026-10-25",
+      "grund": "Pause nach dem aktuellen Arbeitspaket: einmalige Laufzeitmarkierung, die der Paket-Läufer zwischen zwei Paketen verbraucht; CLI, Dashboard und Projektstatus zeigen und schalten die Anforderung. Der Agent wird nicht unterbrochen.",
+      "dateien": [
+        "bin/vibe",
+        "bin/vibe-run.sh",
+        "bin/vibe-web.py"
+      ]
+    },
+    {
+      "arbeitspaket": "F5",
+      "datum": "2026-10-26",
+      "grund": "Fritzbox-Reconnect in der Oberfläche: Automatik (Standard aus) und manueller Reconnect im Tab Umgebung, CLI und Paket-Läufer nutzen dieselbe Einstellung; Reconnect-Helfer reproduzierbar im Repository und bei der Installation kopiert.",
+      "dateien": [
+        "bin/vibe",
+        "bin/vibe-run.sh",
+        "bin/vibe-web.py",
+        "bin/fritz-reconnect.py",
+        "install-vibe.sh"
+      ]
+    },
+    {
+      "arbeitspaket": "F6",
+      "datum": "2026-10-26",
+      "grund": "Universeller, interaktiver Setup: plattformübergreifendes Python-Skript (Linux/Container/Windows), Werkzeugprüfung mit Zustimmung, Wiederverwendung oder Aktualisierung einer bestehenden Installation ohne Überschreiben von Laufzeitdaten, Windows-Einstieg; install-vibe.sh delegiert nur noch.",
+      "dateien": [
+        "install-vibe.sh",
+        "scripts/setup-vibe.py",
+        "setup-vibe.cmd"
+      ]
+    },
+    {
+      "arbeitspaket": "F7",
+      "datum": "2026-10-26",
+      "grund": "Optionale Shell-Sandbox je Projekt mit bubblewrap: Das Wurzeldateisystem wird nur lesend eingebunden, Schreibzugriffe sind auf die F3-Schreibverzeichnisse, konfigurierte Build-Tool-Caches und den opencode-Zustand begrenzt. CLI, Dashboard und Projektvorlagen schalten die Sandbox ein; ein sandboxed Lauf erzwingt --standalone. Fehlt bubblewrap, bricht der Start ab, statt ungeschützt zu laufen.",
+      "dateien": [
+        "bin/vibe",
+        "bin/vibe-run.sh",
+        "bin/vibe-web.py",
+        "bin/vibe_sandbox.py",
+        "scripts/setup-vibe.py",
+        "templates/android/.vibe/project.env",
+        "templates/docker/.vibe/project.env",
+        "templates/generic/.vibe/project.env",
+        "templates/openwrt/.vibe/project.env",
+        "templates/web/.vibe/project.env"
+      ]
+    },
+    {
+      "arbeitspaket": "F9",
+      "datum": "2026-10-26",
+      "grund": "Projektassistent für neue Projekte: führt in festen fachlichen Schritten durch Ziel, Nutzer, Umfang, Nicht-Umfang, Zielumgebung und Qualität; schreibt SPEC.md und ergänzt fehlende Grundlagen aus den Vorlagen, ohne vorhandene Dateien oder gefüllte Abschnitte zu überschreiben. Für fehlende Angaben kann ein Agent ausdrücklich einen Entwurf unter .vibe/guide/<schritt>.md erzeugen, der erst nach Bestätigung übernommen wird. Dashboard-Karte und Web-API, ohne CLI-Anbindung. Nachbesserung: Ein alter Entwurf wird vor dem Agentenstart beiseitegelegt statt danach gelöscht (kein Verlust eines frisch geschriebenen Entwurfs), innere ##-Überschriften eines Entwurfs werden eine Ebene tiefer gesetzt (sie erzeugen keine eigenen SPEC-Abschnitte), und die Karte zeigt die Ausgabe des letzten Agentenauftrags auch ohne Entwurf. Nachbesserung 2026-10-29: Zeilen innerhalb eingezäunter Codeblöcke eines Entwurfs bleiben beim Übernehmen wortgleich; nur echte ##-Überschriften werden eine Ebene tiefer gesetzt.",
+      "dateien": [
+        "bin/vibe-web.py",
+        "bin/vibe_guide.py"
+      ]
+    },
+    {
+      "arbeitspaket": "V-003",
+      "datum": "2026-10-26",
+      "grund": "Prozessaufrufe abgesichert: externe Programme starten mit Argumentlisten statt über eine Shell; projektkonfigurierte Prüfbefehle laufen nur an einer ausdrücklich benannten Shellgrenze; Agenten-, Emulator- und Projektnamen werden vor dem Start geprüft; Leseaktionen rufen Git ohne Projekt-Hooks (core.fsmonitor) auf.",
+      "dateien": [
+        "bin/vibe",
+        "bin/vibe-run.sh",
+        "bin/vibe-web.py",
+        "bin/vibe_mcp.py"
+      ]
+    },
+    {
+      "arbeitspaket": "V-004",
+      "datum": "2026-10-26",
+      "grund": "Web-API abgesichert: Bindung nur an Loopback (andere VIBE_UI_BIND-Werte brechen den Start ab), Health-Endpunkt mit vibe-/Instanzkennung ohne Geheimnisse, Host-/Origin-/Sec-Fetch-Site-Prüfung, Token nur per Header (Ausnahme EventSource-Stream), 1-MiB-Requestlimit, Pflicht zu application/json und Content-Length, strukturierte Fehler und tokenfreie Zugriffslogs.",
+      "dateien": [
+        "bin/vibe-web.py"
+      ]
+    },
+    {
+      "arbeitspaket": "V-005",
+      "datum": "2026-10-26",
+      "grund": "Gemeinsame Storage-Schicht für Konfigurationen und Agenten: atomare Writes über temporäre Datei und os.replace, Sperrdatei und Prüfsummenkontrolle gegen konkurrierende Änderungen, kollisionsfreie Sicherungen mit O_EXCL, Wiederherstellung mit vorheriger Sicherung sowie ehrliche Einordnung von FUSE/NTFS (keine zugesicherte Atomarität oder Unix-Rechte). CLI und Dashboard liefern und prüfen Prüfsummen beim Speichern; Agenten- und MCP-Sicherungen sind über CLI auflistbar und wiederherstellbar.",
+      "dateien": [
+        "bin/vibe",
+        "bin/vibe-web.py",
+        "bin/vibe_mcp.py",
+        "bin/vibe_storage.py"
+      ]
+    },
+    {
+      "arbeitspaket": "F10",
+      "datum": "2026-10-29",
+      "grund": "Agentenlauf endet automatisch: Der Läufer beendet die tmux-Sitzung mit dem letzten Arbeitspaket und der Abschlussprüfung, statt auf Eingabe zu warten. Dadurch meldet vibe keinen aktiven Lauf mehr, obwohl der Agent fertig ist. Ergebnis und Fehlerhinweis stehen zusätzlich im Lauf-Log. Das Projektdetail fragt den Laufzustand regelmäßig ab und wechselt ohne Neuladen auf „gestoppt“.",
+      "dateien": [
+        "bin/vibe",
+        "bin/vibe-run.sh",
+        "bin/vibe-web.py"
+      ]
+    },
+    {
+      "arbeitspaket": "F11",
+      "datum": "2026-10-29",
+      "grund": "Weniger modale Browserdialoge: Rückmeldungen erscheinen als nicht blockierende Statusmeldungen in einem höflich angekündigten Bereich (role=status, aria-live=polite, höchstens vier Meldungen, automatisches Ausblenden nach acht Sekunden). Bestätigungen für Löschen, Zurücksetzen, Beenden und FRITZ!Box-Reconnect stehen als Inline-Gruppe direkt an der auslösenden Schaltfläche mit Abbrechen und Escape; alert, confirm und prompt werden nicht mehr verwendet.",
+      "dateien": [
+        "bin/vibe-web.py"
+      ]
+    },
+    {
+      "arbeitspaket": "F12",
+      "datum": "2026-10-29",
+      "grund": "Kostenermittlung je Arbeitspaket und Projekt: Die opencode-Sitzungsdatenbank wird ausschließlich lesend ausgewertet (Eingabe inklusive gecachter Tokens, Ausgabe inklusive Reasoning), je Arbeitspaket und Agent/Modell in Euro umgerechnet und in CLI, HTTP-API und Dashboard dargestellt. Unbekannte Preise werden mit 0 angesetzt; eigene Preise je Projekt werden in _toolchain/costs.json gespeichert und überschreiben systemische Preise.",
+      "dateien": [
+        "bin/vibe",
+        "bin/vibe-web.py"
+      ]
+    },
+    {
+      "arbeitspaket": "F13",
+      "datum": "2026-10-30",
+      "grund": "Projektdetail neu strukturiert: feste Kopfleiste mit Projektname, Laufzustand und den Hauptaktionen, Kennzahlenkacheln und vier Register (Arbeit, Ausgabe, Assistent, Einstellungen) mit Tastaturbedienung und ARIA-Verknüpfung. Weniger wichtige Bereiche sind nicht mehr gleichzeitig sichtbar; die Prüfungsausgabe wird im Register Ausgabe gestreamt.",
+      "dateien": [
+        "bin/vibe-web.py"
+      ]
+    },
+    {
+      "arbeitspaket": "V-006",
+      "datum": "2026-10-30",
+      "grund": "Quellen, Installation, Laufzeit und Zustand sind getrennte Rollen mit eigener Konfiguration. Das Dev-Profil nutzt eigenen Arbeitsbereich, eigene Ports (Dashboard 8788, opencode 4097) und eigene tmux-Sitzungen und verweigert Pfade der produktiven Instanz. Persönliche Einstellungen (auch je Profil) überschreiben Defaults; Umgebung und ausdrückliche Übergaben überschreiben die Datei. Import von vibe und vibe-web legt keine Verzeichnisse oder Tokendateien an; Dashboard-Link und Paketläufer folgen den aufgelösten Ports und Pfaden.",
+      "dateien": [
+        "bin/vibe",
+        "bin/vibe-run.sh",
+        "bin/vibe-web.py",
+        "bin/vibe_mcp.py",
+        "bin/vibe_paths.py"
+      ]
+    },
+    {
+      "arbeitspaket": "V-007",
+      "datum": "2026-10-30",
+      "grund": "opencode-Kompatibilitätsadapter: Version, Modelllisting, Agentenregeln, MCP-Schema und Serverstart sind in bin/vibe_opencode.py gekapselt. Geprüft ist opencode 2.1.4; unbekannte Versionen werden gemeldet und versionabhängige Schreibvorgänge abgelehnt. Das MCP-Schema wird aus der vorhandenen Konfiguration erkannt; nur für die geprüfte Version darf eine leere Konfiguration das geprüfte Schema verwenden.",
+      "dateien": [
+        "bin/vibe",
+        "bin/vibe_mcp.py",
+        "bin/vibe_opencode.py",
+        "scripts/setup-vibe.py"
+      ]
+    },
+    {
+      "arbeitspaket": "V-008",
+      "datum": "2026-10-30",
+      "grund": "Projektverwaltung und Vorlagen regressionssicher: gleiche Projektnamen aus mehreren Entwicklungsordnern bleiben durch stabile, eindeutige Schlüssel unterscheidbar; Symlink-Aliase und doppelt eingelesene Wurzeln erzeugen keine Dubletten; nicht lesbare Ordner werden übersprungen. vibe init erhält vorhandene Dateien und folgt kaputten Symlinks nicht nach außerhalb des Projekts. Neue Vorlagentypen werden ohne Codeänderung erkannt.",
+      "dateien": [
+        "bin/vibe"
+      ]
+    },
+    {
+      "arbeitspaket": "V-009",
+      "datum": "2026-10-30",
+      "grund": "Ticket- und Feedbackverarbeitung stabilisiert: HTML-Kommentare (auch mehrzeilig und mitten in einer Zeile) werden ignoriert, mehrzeilige Bloecke und defekte Checkboxen behalten ID und Titel, nur die exakte Schreibweise - [x] gilt als erledigt, BLOCKIERT bleibt offen, fehlende oder unbekannte Nachweise werden als 'ohne Nachweis' sichtbar. Neue Feedbackeintraege werden validiert, mehrzeilig eingerueckt und ueber die Storage-Schicht mit erwarteter Pruefsumme geschrieben; bei parallelem Zugriff wird die naechste freie ID neu bestimmt statt doppelt vergeben.",
+      "dateien": [
+        "bin/vibe"
+      ]
+    },
+    {
+      "arbeitspaket": "V-010",
+      "datum": "2026-10-30",
+      "grund": "Agentenverwaltung vervollständigt: Agentendateien werden geparst, validiert und ohne Verlust unbekannter Frontmatter-Felder geschrieben; globale und projektbezogene Agenten sind getrennt bearbeitbar, Namenskonflikte und die tatsächlich wirksame Priorität (Projekt überschreibt global) werden angezeigt. Das Dashboard bietet strukturierten und Rohtexteditor, Vorlagenentwurf, Kopieren mit Ablehnung vorhandener Ziele, Sicherungen und Wiederherstellung. Agentenschreibvorgänge warnen bei einer ungeprüften opencode-Version, sperren aber nicht; fest eingebaute Kernagentennamen entfallen, Rollen stammen aus profiles.json und der Läufer bricht ohne konfigurierten Agenten ab.",
+      "dateien": [
+        "bin/vibe",
+        "bin/vibe-run.sh",
+        "bin/vibe-web.py",
+        "bin/vibe_guide.py"
+      ]
+    },
+    {
+      "arbeitspaket": "V-013",
+      "datum": "2026-10-30",
+      "grund": "MCP-Konfiguration verlustarm bearbeitet: JSONC-Kommentare, Trailing Commas und unbekannte Einstellungen bleiben beim Speichern erhalten, weil nur der betroffene Servereintrag und dessen geaenderte Felder ersetzt werden. Dateiprioritaet folgt opencode 2.1.4 (opencode.json vor opencode.jsonc vor .opencode/). Feldlisten stammen aus dem geprueften Schema; nicht unterstuetzte Felder werden abgelehnt, unbekannte Felder bestehender Eintraege bleiben erhalten. Maskierte Geheimnisse in Headern, Umgebungsvariablen, OAuth und URL-Parametern werden wiederhergestellt, sonst bricht der Schreibvorgang ab. Umbenennen auf vorhandene oder fehlende Namen wird abgelehnt.",
+      "dateien": [
+        "bin/vibe_mcp.py",
+        "bin/vibe_opencode.py"
+      ]
+    },
+    {
+      "arbeitspaket": "V-011",
+      "datum": "2026-10-30",
+      "grund": "Modellkatalog auf Schema 2 mit belegten Fakten, getrennten Einschätzungen, Preisangaben mit Währung/Einheit/Stand sowie Liste nicht übernommener Altbestände; neues Modul vibe_models.py wird bei der Installation mitkopiert.",
+      "dateien": [
+        "bin/vibe",
+        "bin/vibe-web.py",
+        "bin/vibe_models.py",
+        "data/models.json",
+        "scripts/setup-vibe.py"
+      ]
+    },
+    {
+      "arbeitspaket": "V-014",
+      "datum": "2026-10-30",
+      "grund": "MCP-Verbindungstests robust und begrenzt: nur initialize und tools/list ohne tools/call; unterstuetzte Transporte local/stdio und remote/Streamable HTTP werden ausgewiesen, unbekannte Transporte und Konfigurationsfehler getrennt gemeldet. Startwarnung, OAuth-Grenzen und Fehlerarten sind sichtbar; Zeit-, Ausgabe- und Werkzeuglimits sowie vollstaendiges Prozesscleanup inklusive Kindprozessen sind umgesetzt, Diagnosetexte werden von Geheimnissen befreit.",
+      "dateien": [
+        "bin/vibe_mcp.py",
+        "bin/vibe-web.py"
+      ]
+    },
+    {
+      "arbeitspaket": "V-015",
+      "datum": "2026-10-30",
+      "grund": "Agentenläufe und Projektprüfungen entkoppelt: neues Laufregister bin/vibe_runs.py mit eindeutigen Lauf-IDs, eigenem Zustand, atomarer Datei und Logrotation; Laufschlüssel verhindern Kollisionen gleich normalisierter Projektnamen bei Logs, tmux-Sitzungen und Pause-Markierungen. Der Paket-Läufer prüft Android-Abnahmedateien nur noch für TYPE=android, schreibt ein eigenes Prüfprotokoll, gibt den echten Exitcode der Prüfung zurück und begrenzt Wiederholungen über MAX_RETRIES. 'vibe stop' beendet genau einen Lauf; die Fritzbox-Automatik bleibt standardmäßig aus.",
+      "dateien": [
+        "bin/vibe",
+        "bin/vibe-run.sh",
+        "bin/vibe-web.py",
+        "bin/vibe_runs.py",
+        "scripts/setup-vibe.py"
+      ]
+    },
+    {
+      "arbeitspaket": "V-016",
+      "datum": "2026-10-31",
+      "grund": "Dashboard und opencode haben getrennte Lebenszyklen: Dashboard beenden stoppt weder Agentenläufe noch den opencode-Server, opencode stoppen beendet nicht das Dashboard. tmux-Sitzungen tragen die Markierung VIBE_MANAGED; nur markierte Sitzungen werden beendet, fremde Sitzungen und belegte Ports werden erkannt. Aktive SSE-Streams enden beim Beenden mit einer letzten Zeile, ein geschlossener Browser-Tab lässt die Hintergrundprozesse weiterlaufen.",
+      "dateien": [
+        "bin/vibe",
+        "bin/vibe-web.py"
+      ]
+    },
+    {
+      "arbeitspaket": "F14",
+      "datum": "2026-10-31",
+      "grund": "Neuer Projekttyp rebuild: Vorlage mit neun Projektagenten, Paritäts- und Speicherstandsregeln (fachlich 1:1, Originalformate lesen und schreiben), Werkzeugprüfer mit Pflicht- und optionalen Gruppen, Installationsplan und nur bestätigter Paketinstallation sowie Sandbox-Voreinstellungen für Wine, Java, Ghidra, Debugging und Packaging.",
+      "dateien": [
+        "bin/vibe_sandbox.py",
+        "templates/rebuild/.opencode/agents/rebuild-architecture.md",
+        "templates/rebuild/.opencode/agents/rebuild-ci.md",
+        "templates/rebuild/.opencode/agents/rebuild-discovery.md",
+        "templates/rebuild/.opencode/agents/rebuild-implementation.md",
+        "templates/rebuild/.opencode/agents/rebuild-orchestrator.md",
+        "templates/rebuild/.opencode/agents/rebuild-packaging.md",
+        "templates/rebuild/.opencode/agents/rebuild-parity.md",
+        "templates/rebuild/.opencode/agents/rebuild-reverse.md",
+        "templates/rebuild/.opencode/agents/rebuild-spec.md",
+        "templates/rebuild/.vibe/project.env",
+        "templates/rebuild/AGENTS.md",
+        "templates/rebuild/docs/parity.md",
+        "templates/rebuild/docs/reverse-engineering.md",
+        "templates/rebuild/scripts/rebuild-env.py"
+      ]
+    },
+    {
+      "arbeitspaket": "F15",
+      "datum": "2026-11-01",
+      "grund": "Arbeitspakete und Bugs aus der Oberfläche: Das Projektdetail listet TICKETS.md bearbeitbar (Anlegen mit eigener ID, Titel und Beschreibung ändern, Löschen), erhält eine eigene Bugmeldung als Feedback mit Art: Bug und zeigt Bugs in der Feedback-Liste. Markdown-Modell, HTTP-API und Browser-Oberfläche teilen dieselben Validierungs- und Konfliktschutzregeln wie das bestehende Feedback; erledigte Arbeitspakete bleiben schreibgeschützt.",
+      "dateien": [
+        "bin/vibe",
+        "bin/vibe-web.py"
+      ]
+    },
+    {
+      "arbeitspaket": "F16",
+      "datum": "2026-11-01",
+      "grund": "Rückfragen von Agenten an den Nutzer: neue Module vibe_questions.py und vibe_autonomous.py speichert Fragen und Antworten als getrennte JSON-Dateien im Laufzeitordner (zweite Antwort unmöglich, enge ID-Prüfung, Längengrenzen). CLI um ask/questions/answer erweitert, Dashboard zeigt offene Rückfragen mit Auswahl und freier Antwort, API GET/POST /api/questions, Sandbox bindet nur den Unterordner questions beschreibbar ein, Laufhinweis nennt vibe ask.",
+      "dateien": [
+        "bin/vibe",
+        "bin/vibe-run.sh",
+        "bin/vibe-web.py",
+        "bin/vibe_sandbox.py",
+        "bin/vibe_questions.py",
+        "bin/vibe_autonomous.py"
+      ]
+    },
+    {
+      "arbeitspaket": "F17",
+      "datum": "2026-11-02",
+      "grund": "Agentenverwaltung: geänderte strukturierte Felder werden beim Speichern übernommen; Agentenauswahl und Modellüberschreibung je Projekt in CLI, Läufer, HTTP-API und Dashboard.",
+      "dateien": [
+        "bin/vibe",
+        "bin/vibe-run.sh",
+        "bin/vibe-web.py"
+      ]
+    },
+    {
+      "arbeitspaket": "F18",
+      "datum": "2026-11-02",
+      "grund": "Zentraler Internet-Reconnect: Läufe mehrerer Projekte teilen sich eine Sperre und ein Ergebnis im Zustandsordner; höchstens ein Reconnect läuft gleichzeitig, wartende Projekte werden informiert und setzen ihren Lauf fort. Der Paket-Läufer übergibt seinen Projektnamen an die zentrale Steuerung.",
+      "dateien": [
+        "bin/vibe",
+        "bin/vibe-run.sh"
+      ]
+    },
+    {
+      "arbeitspaket": "V-018",
+      "datum": "2026-11-03",
+      "grund": "Reproduzierbare Installation aus dem Repository: Vorschau, Versionskennung aus VERSION und Git-Commit, Sicherung ersetzter Programmdateien und geänderter Nutzervorlagen, Rollback, Uninstall ohne Projekt- und Laufzeitdatenverlust, Update-Sperre bei laufenden Agenten- oder Dashboard-Sitzungen. models.json bleibt als Laufzeitdatei unangetastet. Schlägt ein Schritt nach dem Schreiben der Programmdateien fehl (Startbefehl, Projektregistrierung), wird die Installation vollständig zurückgenommen; ein reiner --reuse-Lauf ohne Schreibzugriff lässt eine vorhandene Versionskennung unverändert.",
+      "dateien": [
+        "scripts/setup-vibe.py",
+        "VERSION"
+      ]
+    },
+    {
+      "arbeitspaket": "V-021",
+      "datum": "2026-11-02",
+      "grund": "Setup installiert jedes vom Startbefehl importierte Modul, insbesondere vibe_autonomous.py; ein Regressionstest startet die frisch installierte CLI. Alle Projektvorlagen und vibe init tragen die allgemeinen Aufräumregeln für Projektordner nach, ohne vorhandene AGENTS.md-Inhalte zu überschreiben.",
+      "dateien": [
+        "scripts/setup-vibe.py",
+        "templates/android/AGENTS.md",
+        "templates/docker/AGENTS.md",
+        "templates/generic/AGENTS.md",
+        "templates/openwrt/AGENTS.md",
+        "templates/rebuild/AGENTS.md",
+        "templates/web/AGENTS.md",
+        "bin/vibe"
+      ]
+    },
+    {
+      "arbeitspaket": "V-022",
+      "datum": "2026-11-02",
+      "grund": "Allgemeine Git-Regeln für alle vibe-Projekte: Feature-Branch, zusammenhängende Commits, Prüfung von git status und Diff, keine fremden oder temporären Änderungen, keine History-Umschreibung. vibe init aktualisiert einen vorhandenen verwalteten Regelblock, ohne umgebende Inhalte zu verändern.",
+      "dateien": [
+        "bin/vibe",
+        "templates/android/AGENTS.md",
+        "templates/docker/AGENTS.md",
+        "templates/generic/AGENTS.md",
+        "templates/openwrt/AGENTS.md",
+        "templates/rebuild/AGENTS.md",
+        "templates/web/AGENTS.md"
+      ]
+    },
+    {
+      "arbeitspaket": "V-019",
+      "datum": "2026-11-03",
+      "grund": "Frontend und Backend schrittweise modularisiert: gemeinsame Dienste in bin/vibe_services.py, per-Aufruf-Ausgabestrom statt globaler stdout-Umleitung und getrennte statische Webdateien (HTML, CSS, JavaScript). Die Seite verhält sich unverändert; nur der Auslieferungsweg ist getrennt.",
+      "dateien": [
+        "bin/vibe",
+        "bin/vibe-web.py",
+        "bin/vibe_services.py",
+        "bin/web/index.html",
+        "bin/web/styles.css",
+        "bin/web/app.js",
+        "scripts/setup-vibe.py"
+      ]
+    },
+    {
+      "arbeitspaket": "V-020",
+      "datum": "2026-11-03",
+      "grund": "Releasebasis und Browserabnahme: gemeinsame Angabe von Version, Commit und Herkunft in bin/vibe_paths.py, Ausgabe in /api/health, in der Umgebungsansicht und in vibe doctor; reproduzierbarer Releasebau aus versionierten Dateien ohne persönliche Daten. Verhalten der Oberfläche ansonsten unverändert.",
+      "dateien": [
+        "bin/vibe",
+        "bin/vibe-web.py",
+        "bin/vibe_paths.py",
+        "bin/web/app.js"
+      ]
+    },
+    {
+      "arbeitspaket": "AP01",
+      "datum": "2026-11-06",
+      "grund": "Verbindliche Leitlinien für Coding-Agenten (KISS, Clean Code, Caching nur mit Invalidierung) in den allgemeinen Projektregeln; neue und bestehende Projekte übernehmen sie über Vorlagen, vibe init und vor jedem Agentenlauf.",
+      "dateien": [
+        "bin/vibe",
+        "templates/android/AGENTS.md",
+        "templates/docker/AGENTS.md",
+        "templates/generic/AGENTS.md",
+        "templates/openwrt/AGENTS.md",
+        "templates/rebuild/AGENTS.md",
+        "templates/web/AGENTS.md"
+      ]
+    },
+    {
+      "arbeitspaket": "AP02",
+      "datum": "2026-11-06",
+      "grund": "Verpflichtender, unabhängiger Test-Agent für neue und bestehende Projekte: Agentenvorlage, TESTER-Konfiguration, verbindliche Regel, automatisches Anlegen über vibe init/new/run und die Projektregistrierung. Vorhandene Agentendateien und TESTER-Werte bleiben unverändert.",
+      "dateien": [
+        "bin/vibe",
+        "scripts/setup-vibe.py",
+        "templates/common/.opencode/agents/test-agent.md",
+        "templates/android/AGENTS.md",
+        "templates/android/.vibe/project.env",
+        "templates/docker/AGENTS.md",
+        "templates/docker/.vibe/project.env",
+        "templates/generic/AGENTS.md",
+        "templates/generic/.vibe/project.env",
+        "templates/openwrt/AGENTS.md",
+        "templates/openwrt/.vibe/project.env",
+        "templates/rebuild/AGENTS.md",
+        "templates/rebuild/.vibe/project.env",
+        "templates/web/AGENTS.md",
+        "templates/web/.vibe/project.env"
+      ]
+    },
+    {
+      "arbeitspaket": "AP03",
+      "datum": "2026-11-07",
+      "grund": "Überarbeitung der Agentenverwaltung: Die allgemeine Ansicht zeigt und bearbeitet nur systemweite Agenten mit den Rollen coder, reviewer und vibe, Hierarchie und Subagenten-Rechten. Der Vibe-Agent ist der Standardagent jedes Projekts; ohne konfiguriertes Modell verweigert der Läufer den Start. Aufgaben- und Ergebnistexte werden getrennt in $VIBE_STATE/agent-meta.json gespeichert, Agentendateien bleiben unverändert. Projektansicht verwendet ausschließlich globale Agenten und erlaubt Modellüberschreibungen je Projekt; die Oberfläche bietet Rollenzuweisung und eine Vorlage für neue Agenten.",
+      "dateien": [
+        "bin/vibe",
+        "bin/vibe-web.py",
+        "bin/vibe_services.py",
+        "bin/web/app.js",
+        "bin/web/styles.css"
+      ]
+    },
+    {
+      "arbeitspaket": "AP04",
+      "datum": "2026-11-07",
+      "grund": "Austauschbares Coding-Harness: bin/vibe_harness.py kapselt Auswahl, Diagnose, Einrichtung, Modellliste und Startbefehl. opencode bleibt Default; Pi (@earendil-works/pi-coding-agent) ist der erste alternative Harness und wird im Print-Modus ohne Sitzungsdatei gestartet. Auswahl über Setup (--harness, interaktive Erstinstallation), CLI (vibe harness) und Oberfläche (/api/harness); bestehende Installationen ohne Auswahl bleiben unverändert.",
+      "dateien": [
+        "bin/vibe",
+        "bin/vibe-run.sh",
+        "bin/vibe-web.py",
+        "bin/web/app.js",
+        "bin/vibe_harness.py",
+        "scripts/setup-vibe.py"
+      ]
+    },
+    {
+      "arbeitspaket": "B1",
+      "datum": "2026-11-07",
+      "grund": "Kostentabelle aktualisiert sich nach jedem Arbeitspaket vollständig, ohne unveränderte Bereiche neu aufzubauen: Übersicht und Projektdetail fragen die Daten regelmäßig ab und ersetzen nur geänderte Projekt-, Paket- und Modellzeilen. Sitzungen unter gleichwertigen Pfadaliasen (zum Beispiel /run/host/... gegenüber dem Hostpfad) werden über die kanonischen opencode-Projektverzeichnisse dem richtigen Projekt zugeordnet. Zusätzlich liest die Kostenermittlung die opencode-Datenbank im Sandbox-Zustand jedes Projekts, weil Läufe mit eigenem XDG_DATA_HOME sonst gar nicht in der primären Datenbank erscheinen; Sitzungen werden über ihre ID einmal gezählt.",
+      "dateien": [
+        "bin/vibe",
+        "bin/web/app.js"
+      ]
+    },
+    {
+      "arbeitspaket": "F19",
+      "datum": "2026-11-07",
+      "grund": "Ausgabeansicht: Syntaxhervorhebung der Live-Ausgabe, Zusatzanweisungen an den laufenden Agenten über die opencode-Session (Basic-Auth mit Laufzeitkennwort, Kennzeile im Protokoll) und Übersicht erfasster Subagenten samt Ausgabe. Der Läufer liest opencode-JSON-Ereignisse und führt <log>.state.json.",
+      "dateien": [
+        "bin/vibe",
+        "bin/vibe-run.sh",
+        "bin/vibe-web.py",
+        "bin/vibe_runs.py",
+        "bin/web/app.js",
+        "bin/web/styles.css"
+      ]
+    },
+    {
+      "arbeitspaket": "AP05",
+      "datum": "2026-11-07",
+      "grund": "Saubere Paketabwicklung: Preflight auf sauberem Git-Stand mit verfügbaren Test-/Review-Agenten und echtem Paketprüfbefehl, jedes Paket in eigener Arbeitskopie unter dem Laufzeitordner, Abschlussschranke für Commit, Ticket-Nachweis, Feature-Dokumentation und Review, Fehlerklassen (Quota/Auth sofort, Netz/sonstiges begrenzt wiederholt), Auswahl nach TICKETS/FEEDBACK mit Abhängigkeiten, Abschlussbericht je Paket, Aufräumen nur gemergter Arbeitskopien sowie Sandbox-Schreibfreigabe für den gemeinsamen Git-Ordner einer Arbeitskopie. Neue Logik in bin/vibe_packages.py, Verdrahtung in bin/vibe-run.sh; VERIFY_PACKAGE in den Projektvorlagen.",
+      "dateien": [
+        "bin/vibe-run.sh",
+        "bin/vibe_packages.py",
+        "bin/vibe_sandbox.py",
+        "bin/vibe",
+        "scripts/setup-vibe.py",
+        "templates/android/.vibe/project.env",
+        "templates/docker/.vibe/project.env",
+        "templates/generic/.vibe/project.env",
+        "templates/openwrt/.vibe/project.env",
+        "templates/rebuild/.vibe/project.env",
+        "templates/web/.vibe/project.env",
+        ".vibe/project.env"
+      ]
+    },
+    {
+      "arbeitspaket": "F21",
+      "datum": "2026-11-07",
+      "grund": "Preflight löst einen fehlenden REVIEWER aus der Rolle reviewer in profiles.json auf und bevorzugt dabei einen verfügbaren Agenten; der ausdrücklich gesetzte Reviewer bleibt vorrangig. Der Läufer übergibt den Zustandsordner an den Preflight. blocked ist ein gültiger Endzustand im Laufregister, damit ein vom Preflight abgebrochener Lauf nicht auf starting hängen bleibt.",
+      "dateien": [
+        "bin/vibe-run.sh",
+        "bin/vibe_packages.py",
+        "bin/vibe_runs.py"
+      ]
+    },
+    {
+      "arbeitspaket": "F22",
+      "datum": "2026-11-07",
+      "grund": "Ein nicht bestandener Preflight fragt im Produktpfad vibe run über F16 nach, statt sofort abzubrechen. Die Rückfrage nennt Projekt und konkrete Befunde, bietet Erneut prüfen oder Lauf abbrechen und erlaubt zusätzlich eine freie Anweisung an den Agenten, der die Befunde im Projektordner zu beheben versucht; danach wird der Preflight erneut geprüft. Ohne Assistenzvariable, bei aktivem autonomem Modus und nach Zeitlimit bleibt der bisherige Abbruch erhalten.",
+      "dateien": [
+        "bin/vibe",
+        "bin/vibe-run.sh",
+        "bin/vibe_packages.py"
+      ]
+    },
+    {
+      "arbeitspaket": "F25",
+      "datum": "2026-11-07",
+      "grund": "Sessions, die von einem vorübergehenden Fehler (Klassen network/other) unterbrochen wurden, werden bei der Wiederholung mit opencode --session <Session-ID> fortgesetzt statt neu zu beginnen. Der Protokollierungsfilter übernimmt eine von der bisherigen abweichende Hauptsession (zuletzt gewinnt) und protokolliert die Übernahme als [Session]-Zeile; der Läufer liest die Session-Kennung aus der Zustandsdatei <log>.state.json, gegen den Standabgleich vor dem Versuch. Ohne erfasste Session und für den Pi-Harness bleibt das bisherige Verhalten.",
+      "dateien": [
+        "bin/vibe-run.sh",
+        "bin/vibe_runs.py"
+      ]
+    },
+    {
+      "arbeitspaket": "F20",
+      "datum": "2026-11-08",
+      "grund": "Dashboard stellt sich bei gewähltem Pi auf Pi um: /api/steer lehnt bei Pi wegen Print-Modus (--no-session, keine fortsetzbare Session) ab; die Oberfläche zeigt Pi-Hinweise in Kopfleiste, Projekt-Detail, Steuer- und Subagentenkarte, Agenten-/Modellansicht, Sandbox-Karte und MCP-Tab und blendet die opencode-Server-Steuerung sowie den opencode-Weblink aus.",
+      "dateien": [
+        "bin/vibe-web.py",
+        "bin/web/app.js"
+      ]
+    }
+  ]
 }

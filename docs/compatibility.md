@@ -55,7 +55,13 @@ Bekannte Grenzen von Pi in vibe:
 - Pi-Projektkonfiguration unter `.pi` wird im Print-Modus ohne
   Vertrauensentscheidung nicht geladen; `AGENTS.md` wird weiterhin gelesen.
 - MCP-Konfiguration und opencode-Server bleiben opencode-spezifisch. Bei
-  gewähltem Pi meldet `/api/server` `server_supported: false`.
+  gewähltem Pi meldet `/api/server` `server_supported:false` und die
+  Oberfläche blendet die opencode-Server-Steuerung sowie den
+  opencode-Weboberflächen-Link aus (F20).
+- Zusatzanweisungen während des Laufs sind opencode-bezogen. Bei gewähltem
+  Pi lehnt die API `/api/steer` die Anweisung ab (Print-Modus, keine
+  fortsetzbare Session) und versucht keine Zustellung; die Steuerkarte
+  nennt die Grenze vorab (F20).
 - Die Kostenerfassung liest weiterhin die opencode-Sitzungsdatenbank; für
   Pi-Läufe gibt es noch keine Kostenzuordnung.
 - Pi-Sitzungen werden nicht fortgesetzt (`--no-session`); jeder Agentenlauf

@@ -315,6 +315,19 @@ def steer_project(name, text):
         return False, "Bitte eine Zusatzanweisung eingeben."
     if len(text) > STEER_MAX_CHARS:
         return False, f"Die Zusatzanweisung ist länger als {STEER_MAX_CHARS} Zeichen."
+    # F20: Bei Pi gibt es keine fortsetzbare Session, an die die Anweisung
+    # gehen könnte. Die Auswahl wird vor dem Session-Bezug geprüft; eine
+    # unlesbare/unbekannte Auswahl verhält sich wie bisher (opencode).
+    try:
+        selected = vibe_harness.read_selection(PATHS.state)
+    except vibe_harness.HarnessError:
+        selected = "opencode"
+    if selected == "pi":
+        return False, (
+            "Zusatzanweisungen sind bei Pi nicht möglich: Pi läuft im "
+            "Print-Modus (--no-session) ohne fortsetzbare Session; die "
+            "Anweisung kann nicht an den Agenten übermittelt werden."
+        )
     if not run_is_active(name):
         return False, "Kein aktiver Lauf: Eine Zusatzanweisung ist nur während der Ausführung möglich."
     state = subagents_of(name)

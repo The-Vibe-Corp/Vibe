@@ -63,11 +63,17 @@ window.addEventListener('resize',()=>{if(LOG)LOG.fit()});
 const GOOD=['sehr schnell','schnell','gering','geeignet','gut','ja'],MID=['mittel','bedingt','unklar'],BAD=['langsam','hoch','eingeschränkt','nicht empfohlen','nein'];
 function badge(v){v=v||'?';return el('span',{class:'pill '+(GOOD.includes(v)?'ok':MID.includes(v)?'warn':BAD.includes(v)?'bad':'mut')},v)}
 async function header(){try{const s=await api('/api/server');
- const quit=el('button',{class:'b quit',title:'Beendet diese App (das Dashboard), nicht opencode',on:{click:()=>askInline(quit,'Dashboard (diese App) beenden? Laufende Agentenläufe in tmux laufen weiter.','Ja, beenden',async()=>{await api('/api/shutdown',{});
+ const isPi=(s.harness||'opencode')==='pi';
+ const quit=el('button',{class:'b quit',title:isPi?'Beendet diese App (das Dashboard), nicht laufende Agentenläufe in tmux':'Beendet diese App (das Dashboard), nicht opencode',on:{click:()=>askInline(quit,'Dashboard (diese App) beenden? Laufende Agentenläufe in tmux laufen weiter.','Ja, beenden',async()=>{await api('/api/shutdown',{});
    main.replaceChildren(el('div',{class:'card'},'Dashboard beendet. Neu starten im Terminal: vibe ui'));srvbox.replaceChildren()})}},'Dashboard beenden');
  srvbox.replaceChildren(el('span',{class:'ok'},'Harness: '+(s.harness||'?')),el('span',{class:'sep'}),
-  el('span',{class:s.up?'ok':'mut'},'opencode-Server: '+(s.up?'an':'aus')),
-  el('button',{class:'b',title:'Startet/stoppt nur den gemeinsamen opencode-Server (Weboberfläche), nicht dieses Dashboard',on:{click:async()=>{toast((await api('/api/server',{action:s.up?'stop':'start'})).message);header()}}},s.up?'opencode stoppen':'opencode starten'),el('span',{class:'sep'}),quit)}catch(e){}}
+  ...((isPi?[el('span',{class:'mut'},'Pi: Agentenläufe laufen ohne opencode-Server'),el('span',{class:'sep'})
+      ]:[el('span',{class:s.up?'ok':'mut'},'opencode-Server: '+(s.up?'an':'aus')),
+      el('button',{class:'b',title:'Startet/stoppt nur den gemeinsamen opencode-Server (Weboberfläche), nicht dieses Dashboard',on:{click:async()=>{toast((await api('/api/server',{action:s.up?'stop':'start'})).message);header()}}},s.up?'opencode stoppen':'opencode starten'),el('span',{class:'sep'})])),
+  quit)}catch(e){}}
+/* F20: Welche Alternative gilt? Die Karten richten ihre Hinweise und
+   steuerbaren Elemente nach der aktiv gewählten Harness-Auswahl aus. */
+const harnessSelected=async()=>{try{const s=await api('/api/server');return (s&&s.harness)||'opencode'}catch(e){return 'opencode'}};
 async function rootsCard(){const rs=await api('/api/roots');const inp=el('input',{placeholder:'/var/mnt/data/.../mein-entwicklungsordner'});
  const rows=rs.map(r=>el('div',{class:'bar'},el('b',{},r.path),el('span',{class:'mut'},r.projects.length+' Projekt(e)'+(r.projects.length?': '+r.projects.join(', '):'')),
   r.fixed?el('span',{class:'pill'},'Standard'):el('button',{class:'b d',on:{click:async()=>{await api('/api/roots',{action:'remove',path:r.path});setTab('projects')}}},'entfernen')));
@@ -107,6 +113,7 @@ function detailTabs(panels){const btns={},list=el('div',{class:'tabs',role:'tabl
 async function detail(name){
  clearInterval(timer);if(es){es.close();es=null}exitLogFull();LOG=null;window.scrollTo(0,0);
  const d=await api('/api/project?name='+encodeURIComponent(name));
+ const isPi=(await harnessSelected())==='pi';
  const runPill=el('span',{id:'runstate',class:'pill '+(d.running?'run':''),title:d.running?'Der Paket-Läufer ist aktiv.':'Der Agentenlauf ist beendet.'},d.running?'läuft':'gestoppt');
  const refreshRun=async()=>{const s=await api('/api/run-state?name='+encodeURIComponent(name));
   runPill.textContent=s.running?'läuft':'gestoppt';runPill.className='pill '+(s.running?'run':'');
@@ -122,7 +129,7 @@ async function detail(name){
   el('div',{class:'mut'},'quick prüft Struktur und Sicherheit, full zusätzlich Unit- und Browsertests. Die Ausgabe erscheint im Bereich „Ausgabe“.'),
   el('div',{class:'bar'},el('button',{class:'b',type:'button',on:{click:startVerify('quick')}},'Prüfung quick'),
    el('button',{class:'b',type:'button',on:{click:startVerify('full')}},'Prüfung full'),
-   el('a',{href:OC_URL,target:'_blank'},'opencode-Weboberfläche')));
+   isPi?null:el('a',{href:OC_URL,target:'_blank'},'opencode-Weboberfläche')));
  const tsel=el('select',{});api('/api/types').then(t=>t.forEach(x=>{const o=el('option',{},x);if(x===d.type)o.selected=true;tsel.append(o)}));
  const initCard=d.init?null:el('div',{class:'card warnbox'},el('b',{class:'warn'},'Noch nicht für vibe vorbereitet'),el('div',{class:'mut'},'Ergänzt fehlende Dateien (FEEDBACK.md, TICKETS.md, AGENTS.md, .vibe/project.env). Vorhandenes wird nie überschrieben, es wird nichts committet.'),
   el('div',{class:'bar'},tsel,el('button',{class:'b p',type:'button',on:{click:act('/api/init',{name,type:tsel.value})}},'Für vibe vorbereiten')));
@@ -132,13 +139,13 @@ async function detail(name){
   el('div',{class:'bar dactions'},el('button',{class:'b p',type:'button',on:{click:act('/api/run',{name})}},'Agentenlauf starten'),el('button',{class:'b',type:'button',on:{click:act('/api/stop',{name})}},'Stoppen')));
  const tiles=el('div',{class:'tiles'},tile('Offene Arbeitspakete',d.items.length,d.items.length?'warn':'ok'),tile('Änderungen',d.dirty,d.dirty?'warn':'ok'),tile('Branch',d.branch,'small'),tile('Letzter Commit',d.last||'—','small'));
  const L=logView(d,()=>stream('run'));
- const steer=steerCard(name),S=subagentCard(name);
+ const steer=steerCard(name,isPi),S=subagentCard(name,isPi);
  const panels={arbeit:tabPanel('arbeit',tiles,el('div',{class:'grid'},
    el('div',{},itemsCard,ticketCard(d,name),ticketFormCard(d,name),feedbackCard(d,name),bugFormCard(d,name),feedbackFormCard(d,name)),
    el('div',{},pauseCard(d,name),autonomousCard(d,name),checksCard,factsCard))),
   ausgabe:tabPanel('ausgabe',el('div',{class:'output-layout'},L.card,el('div',{class:'output-side',id:'f19-controls'},steer.card,S.card))),
   assistent:tabPanel('assistent',guideCard(name)),
-  einstellungen:tabPanel('einstellungen',el('div',{class:'grid'},projectAgentsCard(name),rightsCard(d,name),sandboxCard(d,name)))};
+  einstellungen:tabPanel('einstellungen',el('div',{class:'grid'},projectAgentsCard(name),rightsCard(d,name),sandboxCard(d,name,isPi)))};
  const tabs=detailTabs(panels);
  openTab=k=>showDetailTab(k,panels,tabs.btns);
  main.replaceChildren(...[head,initCard,tabs.list,panels.arbeit,panels.ausgabe,panels.assistent,panels.einstellungen].filter(Boolean));
@@ -342,7 +349,7 @@ function logView(d,onRun){
  return {card,fit,clear:()=>{pre.replaceChildren();totalChars=0;logBuf=''},feed:text=>{if(logPaused){logBuf=(logBuf+text).slice(-80000);return}append(text)}}}
 /* F19: Zusatzanweisung an den laufenden Agenten. Der Erfolg wird ausschließlich
    aus der Antwort der API abgeleitet; ohne aktiven Lauf ist der Knopf gesperrt. */
-function steerCard(name){
+function steerCard(name,isPi){
  const ta=el('textarea',{rows:2,maxlength:'4000',id:'steer-text','aria-label':'Zusatzanweisung an den laufenden Agenten',placeholder:'Zusatzanweisung an den laufenden Agenten …'});
  const btn=el('button',{class:'b p',type:'button',id:'steer-send'},'Anweisung senden');
  const state=el('span',{class:'pill mut',id:'steer-state'},'Lauf unbekannt');
@@ -359,18 +366,22 @@ function steerCard(name){
  ta.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key==='Enter'){e.preventDefault();send()}});
  const card=el('div',{class:'card',id:'steer-card'},
   el('div',{class:'bar'},el('b',{},'Agent steuern'),state),
-  el('div',{class:'mut'},'Die Anweisung wird direkt an die aktive opencode-Session übermittelt und im Laufprotokoll vermerkt. Sie ist nur während eines Laufs möglich.'),
+  el('div',{class:'mut'},isPi
+   ? 'Bei Pi ist das Steuern nicht möglich: Pi läuft im Print-Modus (--no-session) ohne fortsetzbare Session; eine Zusatzanweisung kann nicht an den Agenten übermittelt werden.'
+   : 'Die Anweisung wird direkt an die aktive opencode-Session übermittelt und im Laufprotokoll vermerkt. Sie ist nur während eines Laufs möglich.'),
   ta,el('div',{class:'bar'},btn,el('span',{class:'mut'},'Strg/⌘ + Enter sendet')));
  return {card,setState:running=>{state.textContent=running?'Lauf aktiv':'Kein aktiver Lauf';state.className='pill '+(running?'run':'mut');btn.disabled=!running}}}
 /* F19: Übersicht der erfassten Subagenten mit Ausgabe. Die Liste wird aus der
    Zustandsdatei des Laufs gespeist; ohne Erfassung werden keine Einträge
    erfunden. */
-function subagentCard(name){
+function subagentCard(name,isPi){
  const count=el('span',{class:'pill mut',id:'subagent-count'},'–');
  const list=el('div',{class:'subagents',id:'subagent-list'});
  const card=el('div',{class:'card',id:'subagents-card'},
   el('div',{class:'bar'},el('b',{},'Subagenten'),count),
-  el('div',{class:'mut'},'Erfasste Subagenten des aktuellen Projekts. Eine Ausgabe erscheint, sobald der Subagent sie liefert.'),
+  el('div',{class:'mut'},isPi
+   ? 'Bei Pi gibt es keine Subagenten-Prüfung und keine erfassten Subagenten-Läufe; die Liste zeigt nur Einträge, wenn der Lauf sie setzt.'
+   : 'Erfasste Subagenten des aktuellen Projekts. Eine Ausgabe erscheint, sobald der Subagent sie liefert.'),
   list);
  const nodes=new Map();let order='',openSession='';
  const fmt=ts=>{if(!ts)return '—';try{return new Date(ts*1000).toLocaleTimeString()}catch(e){return '—'}};
@@ -428,7 +439,7 @@ function rightsCard(d,name){const inp=el('input',{placeholder:'/absoluter/pfad',
   el('div',{class:'bar'},reset,
    el('button',{class:'b',on:{click:async()=>{const r=await api('/api/rights',{name,action:'apply'});toast(r.message);if(r.ok)detail(name).catch(showErr)}}},'Auf Projektagenten anwenden')),
   el('div',{class:'mut'},d.write_dirs_custom?'Eigene Liste aktiv.':'Standardliste aktiv.'))}
-function sandboxCard(d,name){const s=d.sandbox||{enabled:false,tools:[],write_dirs:[],missing_tools:[],error:null,bwrap:''};
+function sandboxCard(d,name,isPi){const s=d.sandbox||{enabled:false,tools:[],write_dirs:[],missing_tools:[],error:null,bwrap:''};
  const active=!!s.enabled,missing=s.missing_tools||[],dirs=s.write_dirs||[],tools=s.tools||[];
  const state=!active?'aus':(s.error?'Fehler':(!s.bwrap?'bubblewrap fehlt':(missing.length?'Werkzeuge fehlen':'bereit')));
  const tone=!active?'mut':(s.error||!s.bwrap||missing.length?'bad':'ok');
@@ -436,7 +447,9 @@ function sandboxCard(d,name){const s=d.sandbox||{enabled:false,tools:[],write_di
  return el('div',{class:'card',id:'sandbox'},el('div',{class:'bar'},el('b',{},'Sandbox (Shell und Build-Werkzeuge)'),el('span',{class:'pill '+tone},state),
    el('button',{class:'b'+(active?'':' p'),on:{click:async()=>{const r=await api('/api/sandbox',{name,action:active?'off':'on'});toast(r.message);if(r.ok)detail(name).catch(showErr)}}},active?'Sandbox ausschalten':'Sandbox einschalten'),
    el('button',{class:'b',on:{click:async()=>{const r=await api('/api/sandbox',{name,action:'check'});toast(r.message)}}},'Prüfen')),
-  el('div',{class:'mut'},'Aktiv läuft der Agent mit eigenem opencode-Server in bubblewrap. Schreiben ist nur in den Verzeichnissen unten, in den Caches der Build-Werkzeuge und in einem privaten Temporärordner möglich; /tmp ist sonst schreibgeschützt. MCP und Netzwerk bleiben verfügbar; Lesezugriffe werden nicht eingeschränkt.'),
+  el('div',{class:'mut'},isPi
+   ? 'Aktiv läuft der Agent mit Pi im Print-Modus (ohne opencode-Server) in bubblewrap. Schreiben ist nur in den Verzeichnissen unten, in den Caches der Build-Werkzeuge und in einem privaten Temporärordner möglich; /tmp ist sonst schreibgeschützt. MCP und Netzwerk bleiben verfügbar; Lesezugriffe werden nicht eingeschränkt.'
+   : 'Aktiv läuft der Agent mit eigenem opencode-Server in bubblewrap. Schreiben ist nur in den Verzeichnissen unten, in den Caches der Build-Werkzeuge und in einem privaten Temporärordner möglich; /tmp ist sonst schreibgeschützt. MCP und Netzwerk bleiben verfügbar; Lesezugriffe werden nicht eingeschränkt.'),
   el('div',{class:'mut'},'Die Sandbox-Konfiguration (.vibe/project.env, .vibe/permissions.json) ist im Lauf schreibgeschützt.'),
   s.error?el('div',{class:'bad'},'Fehler: '+s.error):null,
   missing.length?el('div',{class:'bad'},'Fehlende Werkzeuge: '+missing.join(', ')):null,
@@ -634,6 +647,7 @@ function allowedLabel(agent){
  return 'keine';
 }
 async function agents(){AG=await api('/api/agents');const d=AG;
+ const isPi=(await harnessSelected())==='pi';
  // AP03: Die allgemeine Verwaltung zeigt und ändert ausschließlich
  // systemweite Agenten. Projektmodelle werden nur in den Projekteinstellungen
  // überschrieben; projektlokale Agentendateien erscheinen hier nicht.
@@ -667,9 +681,11 @@ async function agents(){AG=await api('/api/agents');const d=AG;
    el('div',{class:'bar'},el('b',{},'Agenten'),el('button',{class:'b p',type:'button',on:{click:()=>agentForm(null,null).catch(showErr)}},'Neuer Agent')),
    status,
    rows.length?el('div',{class:'tablewrap'},tb):el('span',{class:'mut'},'Keine systemweiten Agenten vorhanden.'),
-   el('div',{class:'mut',style:'margin-top:8px'},'Systemweite Agenten liegen unter ~/.config/opencode/agents und gelten für alle Projekte. Ein Projekt verwendet ausschließlich diese Agenten; nur sein Modell lässt sich in den Projekteinstellungen überschreiben. Aufgabe, Ergebnis und Subagenten-Rechte sind hier direkt sichtbar.')),
-  profilesCard(d),modelsCard(d))}
-function profilesCard(d){const P=JSON.parse(JSON.stringify(d.profiles));const names=Object.keys(P.profile);const cur=el('select',{},...names.map(n=>el('option',{value:n},n+(n===P.aktiv?' (aktiv)':''))));cur.value=P.aktiv;
+   el('div',{class:'mut',style:'margin-top:8px'},isPi
+    ? 'Bei Pi ist die Agentendatei nur die Prompt-Quelle: Der Lauf liest den Prompt-Text der Datei, Frontmatter (Beschreibung, Rechte, Modell) bleibt ungenutzt. Die Dateien liegen weiterhin unter ~/.config/opencode/agents und gelten für alle Projekte.'
+    : 'Systemweite Agenten liegen unter ~/.config/opencode/agents und gelten für alle Projekte. Ein Projekt verwendet ausschließlich diese Agenten; nur sein Modell lässt sich in den Projekteinstellungen überschreiben. Aufgabe, Ergebnis und Subagenten-Rechte sind hier direkt sichtbar.')),
+  profilesCard(d,isPi),modelsCard(d,isPi))}
+function profilesCard(d,isPi){const P=JSON.parse(JSON.stringify(d.profiles));const names=Object.keys(P.profile);const cur=el('select',{},...names.map(n=>el('option',{value:n},n+(n===P.aktiv?' (aktiv)':''))));cur.value=P.aktiv;
  const roles=['coder','reviewer'];const body=el('div',{});
  const draw=()=>{const prof=P.profile[cur.value];body.replaceChildren(
    el('table',{},el('tr',{},el('th',{},'Rolle'),el('th',{},'Agenten in dieser Rolle'),el('th',{},'Modell im Profil „'+cur.value+'“')),
@@ -679,10 +695,10 @@ function profilesCard(d){const P=JSON.parse(JSON.stringify(d.profiles));const na
  const roleRows=(d.global_agents||[]).filter(a=>a.role).map(a=>a.name+' → '+a.role);
  const rol=el('div',{class:'mut'},'Rollen werden in der Agentenliste gesetzt (Rolle je Agent). '+(roleRows.length?roleRows.join(' · '):'Noch keine Rolle zugewiesen.'));
  return el('div',{class:'card'},el('details',{open:'open'},el('summary',{},'Profile – Modelle pro Rolle umschalten (z. B. kostenlos ↔ bezahlt)'),
-  el('div',{class:'mut',style:'margin:6px 0'},'Ein Profil legt fest, welches Modell die Rollen Coder und Reviewer nutzen. „Anwenden“ schreibt die model:-Zeile der zugeordneten globalen Agenten (mit Sicherung). Bezahlte Modelle erscheinen erst, wenn der Anbieter verbunden ist (/connect bzw. opencode auth login).'),
+  el('div',{class:'mut',style:'margin:6px 0'},'Ein Profil legt fest, welches Modell die Rollen Coder und Reviewer nutzen. „Anwenden“ schreibt die model:-Zeile der zugeordneten globalen Agenten (mit Sicherung). '+(isPi?'Bezahlte Modelle erscheinen erst, wenn der Anbieter in Pi angemeldet ist (Ergebnis von „pi --list-models“).':'Bezahlte Modelle erscheinen erst, wenn der Anbieter verbunden ist (/connect bzw. opencode auth login).')),
   el('div',{class:'bar'},cur,el('button',{class:'b',on:{click:async()=>{const r=await api('/api/profiles',{action:'save',data:P});toast(r.message)}}},'Profile speichern'),
    el('button',{class:'b p',on:{click:async()=>{const sv=await api('/api/profiles',{action:'save',data:P});const r=await api('/api/profiles',{action:'use',profile:cur.value});toast(r.message);if(r.ok)agents().catch(showErr)}}},'Speichern und anwenden')),body,rol))}
-function modelsCard(d){const used={};d.agents.forEach(a=>{(used[a.model]=used[a.model]||[]).push(a.name+(a.scope==='global'?'':'@'+a.scope))});
+function modelsCard(d,isPi){const used={};d.agents.forEach(a=>{(used[a.model]=used[a.model]||[]).push(a.name+(a.scope==='global'?'':'@'+a.scope))});
  const K=d.katalog||{};const known=d.models.length>0;
  const ids=d.models.filter(m=>m.startsWith('opencode/')||d.info[m]);Object.keys(d.info).forEach(i=>{if(!ids.includes(i))ids.push(i)});
  const other={};d.models.filter(m=>!m.startsWith('opencode/')&&!d.info[m]).forEach(m=>{other[m.split('/')[0]]=(other[m.split('/')[0]]||0)+1});
@@ -700,7 +716,9 @@ function modelsCard(d){const used={};d.agents.forEach(a=>{(used[a.model]=used[a.
     el('div',{class:'mproof'},el('b',{},'Preis und Beleg'),mPrice(m),
      el('div',{class:'mut'},'ID-Beleg: '+(beleg.quelle||'—')+(beleg.datum?' ('+beleg.datum+')':'')),
      el('div',{class:'mut'},'ID-Status: '+(m.id_status||'unbekannt')),
-     gone?el('div',{class:'bad'},'Nicht in „opencode models“ (Anbieter nicht verbunden oder Modell entfernt).'):null,
+     gone?el('div',{class:'bad'},isPi
+      ?'Nicht in „pi --list-models“ (Pi meldet dieses Modell nicht; Anbieter in Pi abgemeldet oder Modell entfernt).'
+      :'Nicht in „opencode models“ (Anbieter nicht verbunden oder Modell entfernt).'):null,
      m.id_status==='entfernt'?el('div',{class:'bad'},'Als entfernt geführt'+(m.entfernt_am?' seit '+m.entfernt_am:'')+(m.entfernt_quelle?' ('+m.entfernt_quelle+')':'')):null))));
    det.style.display='none'}
   const price=(m&&m.preis)||{};
@@ -843,6 +861,7 @@ async function agentForm(scope,name){const d=AG||await api('/api/agents');const 
   isNew?null:el('div',{class:'card'},el('b',{},'Sicherungen'),el('div',{class:'mut'},'Vor jedem Speichern wird der bisherige Stand gesichert. Die Wiederherstellung sichert zuerst den aktuellen Stand.'),backupBox))}
 /* ---------- MCP-Tools ---------- */
 async function mcp(){const d=await api('/api/mcp');
+ const isPi=(await harnessSelected())==='pi';
  const tb=el('table',{},el('tr',{},...['Name','Geltung','Typ','Ziel','aktiv',''].map(h=>el('th',{},h))));
  d.servers.forEach(s=>{ if(s.error){tb.append(el('tr',{},el('td',{colspan:'6',class:'bad'},s.scope+': Konfiguration nicht lesbar: '+s.error)));return}
   tb.append(el('tr',{},el('td',{},s.name),el('td',{},s.scope==='global'?el('span',{class:'pill ok'},'global'):el('span',{class:'pill'},'Projekt: '+s.scope)),el('td',{},s.type),el('td',{class:'mut'},s.target),el('td',{},badge(s.enabled?'ja':'nein')),
@@ -853,7 +872,7 @@ async function mcp(){const d=await api('/api/mcp');
  main.replaceChildren(el('div',{class:'card'},el('div',{class:'bar'},el('b',{},'MCP-Server (Model Context Protocol)'),el('button',{class:'b p',on:{click:()=>mcpForm(null,null).catch(showErr)}},'Neuer MCP-Server')),
   d.servers.length?tb:el('span',{class:'mut'},'Keine MCP-Server konfiguriert.'),
   el('div',{class:'mut',style:'margin-top:8px'},'MCP-Server geben dem Agenten zusätzliche Werkzeuge (z. B. Notizen, Datenbanken, Dokumentation). Die Werkzeuge belegen Kontext und kosten dadurch Tokens: nur aktivieren, was gebraucht wird. Geheimnisse (Token, Schlüssel) werden hier maskiert; beim Speichern bleiben sie unverändert.'),
-  el('div',{class:'mut'},'Verbindungstest: startet bei local ein Programm und stellt bei remote eine Netzverbindung her. Unterstützt werden local (stdio) und remote (Streamable HTTP); andere Transporte werden nicht getestet. Geprüft werden nur initialize und tools/list, keine fachlichen Werkzeuge. OAuth: vibe führt keine Anmeldung durch und liest keine Tokens; bei OAuth-Servern zuerst „opencode mcp auth“ ausführen.'),
+  el('div',{class:'mut'},'Verbindungstest: startet bei local ein Programm und stellt bei remote eine Netzverbindung her. Unterstützt werden local (stdio) und remote (Streamable HTTP); andere Transporte werden nicht getestet. Geprüft werden nur initialize und tools/list, keine fachlichen Werkzeuge. OAuth: vibe führt keine Anmeldung durch und liest keine Tokens. '+(isPi?'Bei Pi werden MCP-Server vom Agentenlauf nicht eingebunden; die Konfiguration richtet sich auf opencode aus.':'Bei OAuth-Servern zuerst „opencode mcp auth“ ausführen.')),
   layouts.length?el('div',{class:'mut'},'Konfigurationsdateien: '+layouts.join(' | ')):null),el('div',{id:'mcpres'}))}
 function mcpResult(r,into){const t=r.result;const box=into||document.getElementById('mcpres');if(!box)return toast(r.message);
  box.replaceChildren(el('div',{class:'card '+(t&&t.ok?'':'err')},el('b',{class:t&&t.ok?'ok':'bad'},t?(t.ok?'Test bestanden':'Test fehlgeschlagen'):'Fehler'),r.ok?null:el('div',{class:'bad'},r.message),
