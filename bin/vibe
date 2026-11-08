@@ -246,9 +246,27 @@ def profile_session(base):
     """Eigene tmux-Sitzung je Profil, damit Dev und Prod parallel laufen."""
     return base if PATHS.profile == "prod" else base + "-" + PATHS.profile
 
+def tmux_session_state(session):
+    """Prüft eine bereits aufgelöste Sitzung: True, False oder None.
+
+    ``True`` bedeutet vorhanden, ``False`` sicher nicht vorhanden (tmux
+    antwortet regulär mit Exit 1). Fehlt tmux oder endet die Abfrage anders
+    (nicht ausführbar, Zeitüberschreitung, unerwarteter Fehlercode), ist das
+    Ergebnis ``None``: nicht prüfbar. Aufrufer dürfen ``None`` nie als
+    "Sitzung fehlt" behandeln.
+    """
+    if not session:
+        return None
+    code = run(["tmux", "has-session", "-t", session])[0]
+    if code == 0:
+        return True
+    if code == 1:
+        return False
+    return None
+
 def tmux_session_exists(session):
     """Prüft eine bereits aufgelöste Sitzung (nicht den Projektnamen)."""
-    return run(["tmux", "has-session", "-t", session])[0] == 0
+    return tmux_session_state(session) is True
 
 def session_marker(session):
     """Markierung einer tmux-Sitzung: run, ui, server oder fremd.
@@ -1771,10 +1789,14 @@ def cmd_runs(action="list"):
             if state in vibe_runs.LIVE_STATES:
                 if not session:
                     line += "  Sitzung nicht prüfbar"
-                elif tmux_session_exists(session):
-                    line += f"  Sitzung {session} läuft"
                 else:
-                    line += f"  Sitzung {session} verwaist"
+                    live = tmux_session_state(session)
+                    if live is True:
+                        line += f"  Sitzung {session} läuft"
+                    elif live is False:
+                        line += f"  Sitzung {session} verwaist"
+                    else:
+                        line += f"  Sitzung {session} nicht prüfbar"
             print(line + "  " + str(record.get("project") or "?"))
         return
     ended = running = unknown = 0
@@ -1787,7 +1809,12 @@ def cmd_runs(action="list"):
             print(f"Unverändert: {run_id} (keine Sitzungsangabe, nicht prüfbar)")
             unknown += 1
             continue
-        if tmux_session_exists(session):
+        live = tmux_session_state(session)
+        if live is None:
+            print(f"Unverändert: {run_id} (Sitzung {session} nicht prüfbar)")
+            unknown += 1
+            continue
+        if live:
             print(f"Läuft weiter: {run_id} (Sitzung {session})")
             running += 1
             continue

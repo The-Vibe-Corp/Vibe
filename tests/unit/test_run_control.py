@@ -11,6 +11,7 @@ import importlib.machinery
 import importlib.util
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -578,6 +579,9 @@ class RunsCommandTest(CliFixture):
             "#!/bin/sh\n"
             'printf \'%s\\n\' "$*" >> "$FAKE_TMUX_CALLS"\n'
             'if [ "$1" = "has-session" ]; then\n'
+            '  if [ -n "$FAKE_TMUX_HAS_SESSION_RC" ]; then\n'
+            '    exit "$FAKE_TMUX_HAS_SESSION_RC"\n'
+            "  fi\n"
             '  name=""\n'
             '  prev=""\n'
             '  for arg in "$@"; do\n'
@@ -627,13 +631,14 @@ class RunsCommandTest(CliFixture):
         data = json.loads(self.runs_path().read_text(encoding="utf-8"))
         return {record["id"]: record for record in data.get("runs", [])}
 
-    def run_cli_with_tmux(self, *args):
-        return self.run_cli(
-            *args,
-            PATH=str(self.fakebin) + os.pathsep + os.environ.get("PATH", ""),
-            FAKE_TMUX_SESSIONS=str(self.sessions_file),
-            FAKE_TMUX_CALLS=str(self.calls_file),
-        )
+    def run_cli_with_tmux(self, *args, **extra):
+        env = {
+            "PATH": str(self.fakebin) + os.pathsep + os.environ.get("PATH", ""),
+            "FAKE_TMUX_SESSIONS": str(self.sessions_file),
+            "FAKE_TMUX_CALLS": str(self.calls_file),
+        }
+        env.update(extra)
+        return self.run_cli(*args, **env)
 
     def tmux_calls(self):
         return [
@@ -731,6 +736,52 @@ class RunsCommandTest(CliFixture):
 
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(self.read_runs()["orphan-weg"]["state"], "ended")
+        self.assertFalse(
+            [call for call in self.tmux_calls() if "kill-session" in call]
+        )
+
+    def test_runs_list_marks_an_unverifiable_session_not_as_orphaned(self):
+        self.write_runs(
+            [self.record("unklar-1", "running", "vibe-unklar", self.project)]
+        )
+        before = self.runs_path().read_bytes()
+
+        result = self.run_cli_with_tmux(
+            "runs", "list", FAKE_TMUX_HAS_SESSION_RC="2"
+        )
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.runs_path().read_bytes(), before, "runs list darf nichts ändern")
+        line = self.line_for(result.stdout, "unklar-1")
+        self.assertIn("nicht prüfbar", line.lower())
+        self.assertNotIn("verwaist", line.lower())
+
+    def test_prune_keeps_unverifiable_records_and_reports_them(self):
+        record = self.record("unklar-1", "running", "vibe-unklar", self.project)
+        self.write_runs([record])
+
+        result = self.run_cli_with_tmux(
+            "runs", "prune", FAKE_TMUX_HAS_SESSION_RC="2"
+        )
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(
+            self.read_runs()["unklar-1"],
+            record,
+            "ein nicht prüfbarer Eintrag darf nicht als ended markiert werden",
+        )
+        line = self.line_for(result.stdout, "unklar-1")
+        self.assertIn("nicht prüfbar", line.lower())
+        summary = [
+            candidate
+            for candidate in result.stdout.splitlines()
+            if "unklar-1" not in candidate and "nicht prüfbar" in candidate.lower()
+        ]
+        self.assertTrue(summary, f"Zusammenfassung fehlt:\n{result.stdout}")
+        self.assertTrue(
+            any(re.search(r"\b1\b", candidate) for candidate in summary),
+            f"Zusammenfassung muss den Eintrag als nicht prüfbar zählen:\n{result.stdout}",
+        )
         self.assertFalse(
             [call for call in self.tmux_calls() if "kill-session" in call]
         )

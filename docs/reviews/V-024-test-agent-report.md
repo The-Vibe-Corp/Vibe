@@ -92,3 +92,39 @@ python3 -m unittest discover -s tests/unit -p 'test_run_control.py' -v
 
 Die Guard-Gegenfälle (existierende Sitzung, fehlendes tmux, unlesbares
 Register) sowie `runs list`/`runs prune` bleiben streng und grün.
+
+## Nachtrag Reviewrunde 1
+
+Der Reviewer beanstandete, dass `list`/`prune` eine nicht prüfbare
+tmux-Abfrage wie eine fehlende Sitzung behandelten. Der Test-Agent ergänzte
+daraufhin in `RunsCommandTest`:
+
+- `test_runs_list_marks_an_unverifiable_session_not_as_orphaned` —
+  Fake-tmux antwortet mit Exit 2; die Zeile muss „nicht prüfbar“ und darf
+  nicht „verwaist“ enthalten; das Register bleibt byte-identisch.
+- `test_prune_keeps_unverifiable_records_and_reports_them` — der Record
+  bleibt vollständig unverändert, die Ausgabe nennt „nicht prüfbar“, die
+  Zusammenfassung zählt ihn, und es gibt kein `kill-session`.
+
+Rotphase am damaligen Stand:
+
+```
+python3 -m unittest discover -s tests/unit -p 'test_run_control.py' -v
+→ Ran 30 tests, FAILED (failures=2), Exit 1
+   FAIL: test_prune_keeps_unverifiable_records_and_reports_them
+   FAIL: test_runs_list_marks_an_unverifiable_session_not_as_orphaned
+```
+
+Zusätzlich ergänzte der Test-Agent die Regressionssicherung
+`test_force_bypasses_the_guard_of_a_live_session` in `RunningGuardTest`
+(existierende Sitzung: ohne `--force` Sperre, mit `--force` Durchlassen).
+
+Grünphase nach der Anpassung:
+
+```
+python3 -m unittest discover -s tests/unit -p 'test_run_control.py' -v
+→ Ran 30 tests, OK, Exit 0
+
+python3 -m unittest discover -s tests/unit -p 'test_install_lifecycle.py' -v
+→ Ran 43 tests, OK, Exit 0
+```

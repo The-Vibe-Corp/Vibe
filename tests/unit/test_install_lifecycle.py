@@ -829,6 +829,44 @@ class RunningGuardTest(InstallLifecycleBase):
         self.assertEqual(code, 0)
         self.assertNotEqual((self.toolchain / "bin" / "vibe").read_text(encoding="utf-8"), "ALT\n")
 
+    def test_force_bypasses_the_guard_of_a_live_session(self):
+        self.install(timestamp="20261101-100000")
+        (self.toolchain / "bin" / "vibe").write_text("ALT\n", encoding="utf-8")
+        self.write_runs(
+            [
+                {
+                    "id": "lauf-live",
+                    "state": "running",
+                    "session": "vibe-lauf-live",
+                    "project": str(self.root / "proj"),
+                }
+            ]
+        )
+        which, runner = self.tmux_check({"vibe-lauf-live"})
+
+        blocked, blocked_output = self.run_main(
+            ["--yes", "--update", "--vibe", str(self.vibe)],
+            which=which,
+            runner=runner,
+        )
+
+        self.assertEqual(blocked, 1, blocked_output)
+        self.assertIn("wird gerade verwendet", blocked_output)
+        self.assertEqual(
+            (self.toolchain / "bin" / "vibe").read_text(encoding="utf-8"), "ALT\n"
+        )
+
+        forced, forced_output = self.run_main(
+            ["--yes", "--update", "--force", "--vibe", str(self.vibe)],
+            which=which,
+            runner=runner,
+        )
+
+        self.assertEqual(forced, 0, forced_output)
+        self.assertNotEqual(
+            (self.toolchain / "bin" / "vibe").read_text(encoding="utf-8"), "ALT\n"
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

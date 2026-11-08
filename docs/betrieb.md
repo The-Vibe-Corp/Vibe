@@ -100,8 +100,9 @@ Ein Update ist gesperrt, solange ein Agentenlauf oder eine Dashboard-Sitzung
 dieser Installation läuft. Ein Registereintrag zählt dabei nur, wenn seine
 tmux-Sitzung tatsächlich existiert; verwaiste Einträge ohne Sitzung blockieren
 nicht. `vibe runs prune` markiert solche Einträge als beendet, auch wenn das
-Projektverzeichnis fehlt, und beendet niemals eine Sitzung. `--force` hebt die
-Sperre nur nach ausdrücklicher Entscheidung auf. Die Versionskennung steht in `_toolchain/version.json`
+Projektverzeichnis fehlt, und beendet niemals eine Sitzung. Ist tmux nicht
+prüfbar, bleiben die Einträge unverändert und werden als „nicht prüfbar“
+gemeldet. `--force` hebt die Sperre nur nach ausdrücklicher Entscheidung auf. Die Versionskennung steht in `_toolchain/version.json`
 (Version, Commit, Zeitpunkt, Modus, Quelle); fehlt `VERSION`, lautet die Angabe
 ausdrücklich `unbekannt`.
 
