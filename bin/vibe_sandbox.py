@@ -13,8 +13,12 @@ Die Sandbox begrenzt Schreibzugriffe auf:
 - die im Projekt konfigurierten Build-Tool-Caches (``SANDBOX_TOOLS``),
 - den Rückfrageordner ``questions`` des Laufzeitordners (F16, nur dieser
   Unterordner; Token, Protokolle und Laufregister bleiben unerreichbar) und
-- die technisch notwendigen Caches für MCP-Laufzeiten und
-- ``/tmp/opencode`` für den opencode-Zustand.
+- die technisch notwendigen Caches für MCP-Laufzeiten,
+- ``/tmp/opencode`` für den opencode-Zustand und
+- der eigene, beschreibbare Pi-Agentenordner über ``PI_CODING_AGENT_DIR``
+  (Bug B4: Pi liest und schreibt ``~/.pi/agent`` unabhängig von XDG_* —
+  auch mit ``--no-session``, zum Beispiel die Sperrdatei
+  ``trust.json.lock`` beim Lesen der Vertrauensliste).
 
 Zusätzlich gilt:
 - ``/tmp`` ist ein privater tmpfs und wird nach dem Binden der erlaubten
@@ -564,6 +568,29 @@ def bwrap_argv(project, command, bwrap=None, runtime=None):
         if problem:
             raise ValueError(problem)
         argv += ["--ro-bind", auth, target]
+    # Pi folgt nicht XDG_*: Es liest und schreibt sein Agentenverzeichnis
+    # unter ``~/.pi/agent`` — auch im Print-Modus mit ``--no-session``
+    # (Sperrdatei ``trust.json.lock`` beim Lesen der Vertrauensliste;
+    # Bug B4). Das Wurzel-Dateisystem der Sandbox ist nur lesend; Pi
+    # erhält deshalb hier den eigenen, beschreibbaren Agentenordner unter
+    # dem Zustandsort. Die Umgebungsvariable ``PI_CODING_AGENT_DIR`` ist
+    # die von Pi auswertbare Umleitung. Eine bereits umgebungsseitig
+    # gesetzte Belegung überschreibt die Sandbox bewusst, damit die
+    # Schreibgrenze deterministisch bleibt.
+    pi_agent = os.path.join(state_path, "pi", "agent")
+    problem = _ensure_dir(pi_agent)
+    if problem:
+        raise ValueError(problem)
+    argv += ["--setenv", "PI_CODING_AGENT_DIR", pi_agent]
+    # Anmeldedaten der Modellprovider liegen in ``~/.pi/agent/auth.json``.
+    # Ohne Lesegabe bleibt Pi ohne Provider; die Datei wird in den
+    # Agentenordner nur lesend gebunden, damit Pi sie nicht über die
+    # Sandbox-Grenze hinaus verändern kann. Fehlt sie, startet Pi ohne
+    # Anmeldung; der Lauf endet dann sichtbar mit der Meldung von Pi, dass
+    # keine Modelle verfügbar sind.
+    pi_auth = os.path.expanduser("~/.pi/agent/auth.json")
+    if os.path.isfile(pi_auth):
+        argv += ["--ro-bind", pi_auth, os.path.join(pi_agent, "auth.json")]
     argv += [
         "--setenv",
         "XDG_DATA_HOME",

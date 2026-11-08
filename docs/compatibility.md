@@ -42,14 +42,31 @@ pi --print --no-session [--model <provider/modell>] [--name <titel>] -- <prompt>
 ```
 
 Der Prompt-Text der gewählten opencode-Agentendatei wird der Aufgabe
-vorangestellt; Frontmatter wird nicht mitgesendet. `--no-session` verhindert
-Sitzungsdateien in `~/.pi/agent` und macht den Lauf mit der Schreib-Sandbox
-vereinbar, deren Wurzeldateisystem nur lesend eingebunden ist.
+vorangestellt; Frontmatter wird nicht mitgesendet. `--no-session` allein
+machte den Lauf **nicht** Sandbox-verträglich: Pi liest und schreibt sein
+Agentenverzeichnis `~/.pi/agent` unabhängig von `XDG_*` — auch ohne
+Sitzungsdateien, zum Beispiel die Sperrdatei `trust.json.lock` beim Lesen
+der Vertrauensliste (Bug B4). Die Scratch-Sandbox (F7) legt deshalb vor
+jedem Lauf den eigenen, beschreibbaren Agentenordner
+`<Sandbox-Zustandsort>/pi/agent` an, legt ihn über die von Pi
+ausgewertete Umgebungsvariable `PI_CODING_AGENT_DIR` als Agentenverzeichnis
+fest und bindet die reale `~/.pi/agent/auth.json` in diesen Ordner
+ausschließlich lesend ein, damit Pi beim Lauf auf die angemeldeten
+Modellprovider zugreifen kann. Ohne Sandbox (`SANDBOX=off`) läuft Pi
+unverändert mit dem normalen `~/.pi/agent`.
 
 Bekannte Grenzen von Pi in vibe:
 
 - Pi liest keine opencode-Agentendateien und keine Subagenten-/Rechteprüfung;
   vibe übergibt deshalb nur den Prompt-Text.
+- Mit Sandbox enthält der Pi-Agentenordner nur `auth.json` (lesend
+  gebunden) und die vom Lauf erzeugten Dateien. Nutzerbezogene
+  Konfigurationen wie `settings.json` und `models-store.json` werden
+  bewusst nicht gebunden: Schreibzugriffe von Pi innerhalb der Sandbox
+  sollen im Sandbox-Zustandsort landen, nicht in `~/.pi/agent`. Pi im
+  Lauf kennt deshalb keine davon abgeleiteten Voreinstellungen
+  (Standardmodell, benutzerdefinierte Anbieter); vibe setzt `--model`
+  ausdrücklich, und die Anmeldung kommt allein aus `auth.json`.
 - Die Oberfläche zur Agentenverwaltung bleibt auf das opencode-Dateiformat
   ausgelegt. Pi nutzt dieselben Dateien als Prompt-Quelle.
 - Pi-Projektkonfiguration unter `.pi` wird im Print-Modus ohne
