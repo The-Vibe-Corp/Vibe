@@ -77,7 +77,11 @@ verlangen, sonst wird ein bereits erledigtes Paket endlos erneut gewählt.
   Preflight und Schranke deckt zusätzlich den versionierten Fall ab, solange
   der Integrationsstand sauber ist.
 - Ein bereits vor dieser Änderung gemergtes, aber nicht abgehaktes Paket wird
-  nicht automatisch nachgetragen. Es muss einmalig von Hand abgehakt werden.
+  nicht rückwirkend automatisch nachgetragen. Es muss einmalig von Hand
+  abgehakt werden. Für künftige Fälle erkennt die Abschlussschranke seit
+  V-023 ein bereits integriertes Paket (Nachweis-Commit als Vorfahre der
+  Basis) und der Läufer trägt den Nachweis per `sync-proof` nach
+  (`docs/features/V-023.md`).
 - Die Änderung wirkt erst nach der Installation im Produktivstand
   (`_toolchain`); das Repository selbst ist der Entwicklungsstand.
 

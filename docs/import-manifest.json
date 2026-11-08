@@ -70,8 +70,8 @@
     },
     {
       "path": "bin/vibe_packages.py",
-      "sha256": "1e12d52997adc369a4e4916dcea021198ad3740e3202cb085e54c935cb2aea30",
-      "bytes": 33112
+      "sha256": "5830e8db5f110e502278051f84ed468e030521942b597b32ca555647c21b4b5c",
+      "bytes": 34271
     },
     {
       "path": "bin/vibe_paths.py",
@@ -819,6 +819,14 @@
       "grund": "Sandbox-Lücke und Zeichenlimit (Bug B5): /dev/shm ist bei aktiver Sandbox ohne ausdrückliche Freigabe in der Schreibrechte-Liste ein frisches, vom Host isoliertes tmpfs, damit Schreiben dorthin nicht das Host-Verzeichnis erreicht (je nach bubblewrap-Version zeigt --dev dort auf das Host-Verzeichnis). Der Sandbox-Zustandsort weicht bei zu langen Pfaden (lange NTFS-Arbeitsbäume, lang gesetztes VIBE_SANDBOX_ROOT) auf die kurze tmpfs-Wurzel /tmp/opencode/vsb aus, damit nachgeschaltete Werkzeug-Sockets die AF_UNIX-Grenze von 108 Zeichen nicht erreichen. Tool-Bindungen und die XDG/TMPDIR-Umleitung bleiben unverändert.",
       "dateien": [
         "bin/vibe_sandbox.py"
+      ]
+    },
+    {
+      "arbeitspaket": "V-023",
+      "datum": "2026-11-08",
+      "grund": "Abschlussschranke erkennt bereits in den Integrationsstand gemergte Pakete: Gibt es seit der Basis keine neuen Commits, gilt das Paket als integriert, wenn der Nachweis-Commit Vorfahre der Basis ist und seine Betreffzeile das Paketpräfix trägt. Ein Paket, dessen [x]-Nachweis nur in der unversionierten Arbeitsnotiz stand, wird damit nach dem Merge nachgetragen, statt jeden Lauf erneut zu blockieren. Ticket, Feature-Doku, PASS-Review und sauberer Arbeitsbaum bleiben weiterhin Pflicht.",
+      "dateien": [
+        "bin/vibe_packages.py"
       ]
     }
   ]

@@ -288,6 +288,24 @@ def commit_exists(project, revision):
     return run_git(project, "cat-file", "-e", revision + "^{commit}").returncode == 0
 
 
+def commit_subject(project, revision):
+    """Liefert die Betreffzeile eines Commits oder ``""``."""
+    if not revision:
+        return ""
+    result = run_git(project, "log", "-1", "--format=%s", revision)
+    return result.stdout.strip() if result.returncode == 0 else ""
+
+
+def commit_is_ancestor(project, revision, base):
+    """True, wenn ``revision`` bereits im Stand ``base`` enthalten ist."""
+    if not revision or not base:
+        return False
+    return (
+        run_git(project, "merge-base", "--is-ancestor", revision, base).returncode
+        == 0
+    )
+
+
 def proof_ok(project, block):
     revision = proof_commit(block)
     if not revision or not commit_exists(project, revision):
@@ -658,11 +676,6 @@ def gate_errors(project, pid, base):
         for line in log.stdout.splitlines():
             if "\t" in line:
                 commits.append(tuple(line.split("\t", 1)))
-    if not commits:
-        errors.append("Kein Commit seit dem Integrationsstand.")
-    if not any(subject.startswith(pid + ":") for _, subject in commits):
-        errors.append("Commit mit Präfix '" + pid + ":' fehlt.")
-
     block = None
     for _, blocks in collect_blocks(project):
         for candidate in blocks:
@@ -671,6 +684,24 @@ def gate_errors(project, pid, base):
                 break
         if block is not None:
             break
+
+    revision = proof_commit(block) if block is not None else ""
+    # Ein Paket kann bereits in den Integrationsstand gemergt sein, während
+    # sein Nachweis nur in der unversionierten Arbeitsnotiz steht. Dann gibt es
+    # keine neuen Commits; der Nachweis liegt vielmehr als Vorfahre der Basis
+    # vor. Dieser Fall ist kein fehlender Paketabschluss.
+    already_integrated = (
+        not commits
+        and bool(revision)
+        and commit_subject(project, revision).startswith(pid + ":")
+        and commit_is_ancestor(project, revision, base)
+    )
+    if not already_integrated:
+        if not commits:
+            errors.append("Kein Commit seit dem Integrationsstand.")
+        if not any(subject.startswith(pid + ":") for _, subject in commits):
+            errors.append("Commit mit Präfix '" + pid + ":' fehlt.")
+
     if block is None:
         errors.append("Ticket " + pid + " fehlt in TICKETS.md/FEEDBACK.md.")
     else:
@@ -679,12 +710,12 @@ def gate_errors(project, pid, base):
         proof, reason = proof_ok(project, block)
         if not proof:
             errors.append("Nachweis für " + pid + " fehlt: " + reason + ".")
-        else:
-            revision = proof_commit(block)
-            if not any(commit.startswith(revision) for commit, _ in commits):
-                errors.append(
-                    "Nachweis-Commit " + revision + " gehört nicht zu diesem Paketbranch."
-                )
+        elif not already_integrated and not any(
+            commit.startswith(revision) for commit, _ in commits
+        ):
+            errors.append(
+                "Nachweis-Commit " + revision + " gehört nicht zu diesem Paketbranch."
+            )
 
     feature = project / "docs" / "features" / (pid + ".md")
     if not feature.is_file() or not read_text(feature).strip():
