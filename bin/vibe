@@ -37,6 +37,7 @@ Aufruf:  vibe                 interaktives Menü
          vibe ui [stop]       Dashboard im Browser (nur localhost)
          vibe server [start|stop|status]  gemeinsamer opencode-Server mit Weboberfläche
          vibe harness [status|list|use <name>|setup [name]]  Harness (opencode/Pi) wählen und einrichten
+         vibe github <p> [status|link <url>|unlink|branches|fetch|pull|push|issues|issues-import|pr]  GitHub-Verknüpfung (optional je Projekt); alle Aktionen bewusst, Merge-Request nur mit --confirm
          vibe types           verfügbare Projekttypen
          vibe doctor          Umgebung prüfen
 """
@@ -50,7 +51,7 @@ except ImportError:  # pragma: no cover - Windows ohne Paket-Läufer
 
 if __name__ == "__main__": sys.modules["vibe"] = sys.modules[__name__]
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
-import vibe_storage, vibe_paths, vibe_opencode, vibe_models, vibe_runs, vibe_questions, vibe_autonomous, vibe_harness
+import vibe_storage, vibe_paths, vibe_opencode, vibe_models, vibe_runs, vibe_questions, vibe_autonomous, vibe_harness, vibe_github
 
 try:
     PATHS = vibe_paths.resolve()
@@ -92,6 +93,7 @@ GENERAL_RULES = """<!-- vibe:general-rules -->
 
 - Änderungen auf einem Feature-Branch umsetzen, nicht direkt auf main, master oder einem geschützten Branch.
 - Jedes abgeschlossene Arbeitspaket als zusammenhängenden Commit sichern; keine Zwischenstände oder fremden Änderungen mitcommitten.
+- Commit-Meldungen sind für Menschen verständlich, auf das Wesentliche reduziert und erläutern das Warum der Änderung.
 - Vor jedem Commit `git status` und den relevanten Diff prüfen und ausschließlich Dateien des eigenen Arbeitspakets stagen.
 - Keine temporären Dateien, Protokolle, Build-Artefakte, Arbeitskopien oder Screenshots ohne Nachweiswert committen.
 - Fremde oder vorbestehende Änderungen nicht löschen, überschreiben, stashen oder mitcommitten.
@@ -982,6 +984,197 @@ def cmd_sandbox(name, action=None, value=None):
     print("opencode-Zustand:", st["state_dir"])
     if st["error"]: print(col("r", "Fehler: " + st["error"]))
     print(col("d", "Anpassen: vibe sandbox " + name + " on|off|tools \"git node npm\". Die Sandbox begrenzt Schreiben auf diese Verzeichnisse und Tool-Caches; /tmp ist privat und schreibgeschützt, Temporärdateien liegen im Zustandsordner. MCP und Netzwerk bleiben erlaubt, Lesezugriffe werden nicht eingeschränkt."))
+
+# ---------- GitHub-Verknüpfung je Projekt (AP6) ----------
+def github_env_path(name):
+    return os.path.join(ppath(name), ".vibe", "project.env")
+
+def github_status(name):
+    """Zustandsansicht mit bewusstem Fern-Abgleich: ls-remote (kein Merge)."""
+    return vibe_github.status(ppath(name))
+
+def github_branches(name):
+    return vibe_github.branches(ppath(name))
+
+def github_link(name, url):
+    """Neue/aktualisierte GitHub-Verknüpfung: Remote origin + Konfiguration."""
+    slug = vibe_github.parse_remote_url(url)
+    rc, out = vibe_github.git(ppath(name), "remote", "get-url", "origin")
+    if rc == 0:
+        rc, out = vibe_github.git(ppath(name), "remote", "set-url", "origin", url)
+    else:
+        rc, out = vibe_github.git(ppath(name), "remote", "add", "origin", url)
+    if rc != 0:
+        raise ValueError("Git-Remote konnte nicht gesetzt werden: " + (out or "unbekannt"))
+    # origin/HEAD gleich mit versorgen, damit der Merge-Request-Fluss
+    # (auch aus der Oberfläche) ohne Vorarbeit eine Basis kennt.
+    vibe_github.set_head_default(ppath(name))
+    values = {"GITHUB_ENABLED": "1"}
+    if slug:
+        values["GITHUB_REPO"] = slug
+    set_env_values(name, values)
+    return github_status(name)
+
+def github_unlink(name):
+    """Löst die GitHub-Verknüpfung (Remote origin + Schlüssel) ohne Fremdänderungen."""
+    rc, out = vibe_github.git(ppath(name), "remote", "remove", "origin")
+    if rc != 0 and "No such remote" not in out:
+        raise ValueError("Git-Remote konnte nicht entfernt werden: " + (out or "unbekannt"))
+    set_env_values(name, {"GITHUB_ENABLED": "", "GITHUB_REPO": ""})
+    return github_status(name)
+
+def github_issues(name, label=None):
+    """Offene GitHub-Issues (etikettenfilterbar, Standardlabel pro Projekt)."""
+    config = vibe_github.read_config(github_env_path(name))
+    if not config["repo"]:
+        raise ValueError("Nicht verknüpft: GITHUB_REPO fehlt")
+    wanted = config["label"] if label is None else label
+    issues = vibe_github.list_issues(config["repo"], wanted, api=config["api"])
+    for issue in issues:
+        issue["label_requested"] = wanted
+    return issues
+
+def github_issues_import(name, label=None):
+    """Übernimmt offene GitHub-Issues als Arbeitspakete in TICKETS.md."""
+    list_out = github_issues(name, label)
+    added = vibe_github.import_issues_into_tickets(ppath(name), list_out)
+    return added, len(list_out)
+
+def github_pr(name, title=None, base=None, confirm=False):
+    """Merge-Request stellen; Push und API nur mit ausdrücklicher Freigabe."""
+    config = vibe_github.read_config(github_env_path(name))
+    if not config["enabled"]:
+        raise ValueError("GitHub ist für dieses Projekt nicht aktiv (GITHUB_ENABLED=1)")
+    if not config["repo"]:
+        raise ValueError("Kein Repository verknüpft: GITHUB_REPO fehlt")
+    project = ppath(name)
+    branch = vibe_github.current_branch(project)
+    if not branch:
+        raise ValueError("Kein Branch ausgecheckt: Merge-Request verweigert")
+    if not confirm:
+        planned_base = base or vibe_github.default_base(project) or "(unbekannt; --base angeben)"
+        return {"ok": False, "planned": branch + " -> " + planned_base,
+                "message": "Vorgesehener Merge-Request: "
+                           + branch + " -> " + planned_base
+                           + "  (ausführen mit --confirm bzw. Bestätigung in der Oberfläche)"}
+    ok, message = vibe_github.push(project, branch)
+    if not ok:
+        raise ValueError(message)
+    if not base and not vibe_github.default_base(project):
+        # Bewusster, einmaliger Nachversuch in der bestätigten Aktion:
+        # origin/HEAD nachziehen, statt mit unbekannter Basis zu scheitern.
+        vibe_github.set_head_default(project)
+    request = vibe_github.create_pull_request(
+        project, config["repo"], branch,
+        base=base, title=title or ("Merge-Request: " + branch),
+        body=None, api=config["api"])
+    return {"ok": True, "branch": branch, "base": request.get("base"),
+            "number": request.get("number"), "url": request.get("url"),
+            "message": "Merge-Request erstellt: " + (request.get("url") or branch)}
+
+def cmd_github(name=None, action="status", value=None, label=None, title=None,
+               base=None, confirm=False, out=None):
+    """CLI-Zugang zu den GitHub-Funktionen (optional, pro Projekt)."""
+    if name is None:
+        print(__doc__)
+        sys.exit(2)
+    out = out or sys.stdout
+    def line(*parts): print(*parts, file=out)
+    try:
+        if action in (None, "", "status"):
+            st = github_status(name)
+            state = "verknüpft mit " + st["repo"] if st["repo"] else "nicht verknüpft"
+            line(col("b", "GitHub für " + name + ": ") + state)
+            line("Aktiv:", "ja" if st["enabled"] else "nein", " Label:", st["label"],
+                 " API:", st["api"])
+            line("Branch:", st["branch"],
+                 "Ahead/Behind: %d/%d" % (st["ahead"], st["behind"]),
+                 "(ungesendete Commits)" if st["unpushed"] else "")
+            for remote in st["remotes"]:
+                line("Remote " + remote["name"] + ": " + remote["url"])
+            line("Branchübersicht: vibe github " + name + " branches")
+        elif action == "link":
+            if not value:
+                raise ValueError("URL fehlt: vibe github <projekt> link https://github.com/owner/name.git")
+            github_link(name, value)
+            line("Verknüpft: " + vibe_github.mask_url(value))
+        elif action == "unlink":
+            github_unlink(name)
+            line("Verknüpfung gelöst (Remote origin entfernt)")
+        elif action == "branches":
+            rows = github_branches(name)
+            if not rows:
+                line("Keine lokalen Branches.")
+            for row in rows:
+                mark = "*" if row["current"] else " "
+                line(f"{mark} {row['name']:24} Ahead/Behind: {row['ahead']}/{row['behind']}  {row['last'][:60]}")
+        elif action == "fetch":
+            ok, message = vibe_github.fetch(ppath(name))
+            line(message)
+            sys.exit(0 if ok else 1)
+        elif action == "pull":
+            ok, message = vibe_github.pull(ppath(name))
+            line(message)
+            sys.exit(0 if ok else 1)
+        elif action == "push":
+            ok, message = vibe_github.push(ppath(name))
+            line(message)
+            sys.exit(0 if ok else 1)
+        elif action == "issues":
+            rows = github_issues(name, label)
+            line("Offene Issues: %d" % len(rows))
+            for issue in rows:
+                line("* %s: %s" % (issue["number"], issue["title"]))
+                if issue["html_url"]:
+                    line("  " + issue["html_url"])
+        elif action == "issues-import":
+            added, seen = github_issues_import(name, label)
+            if added:
+                line("Arbeitspakete übernommen (%d von %d Issues): %s"
+                     % (len(added), seen, ", ".join(added)))
+            else:
+                line("Keine neuen Issues (%d gesehen); TICKETS.md unverändert." % seen)
+        elif action == "pr":
+            result = github_pr(name, title=title, base=base, confirm=confirm)
+            line(result["message"])
+        else:
+            raise ValueError('Aktion unbekannt: "%s" (status|link|unlink|branches|fetch|'
+                             'pull|push|issues|issues-import|pr)' % action)
+    except ValueError as e:
+        sys.exit(str(e))
+    except Exception as e:  # GitHubError u. a.: verständlich, ohne Token
+        sys.exit(str(e))
+
+def _parse_github_cli(rest):
+    """CLI-Optionen (--confirm, --label/--title/--base Wert, Position und Action)."""
+    options = {"label": None, "title": None, "base": None, "confirm_on": False}
+    positional = []
+    index = 0
+    while index < len(rest):
+        token = rest[index]
+        if token == "--confirm":
+            options["confirm_on"] = True
+        elif token in ("--label", "--title", "--base"):
+            if index + 1 >= len(rest):
+                raise ValueError("Option " + token + " erwartet einen Wert")
+            options[{"--label": "label", "--title": "title", "--base": "base"}[token]] = rest[index + 1]
+            index += 1
+        else:
+            positional.append(token)
+        index += 1
+    if len(positional) < 1:
+        raise ValueError("Projekt fehlt: vibe github <projekt> [aktion]")
+    return positional[0], (positional[1] if len(positional) > 1 else "status"), \
+           (positional[2] if len(positional) > 2 else None), options
+
+def github_cli(rest):
+    """CLI-Dispatch: vibe github <projekt> [aktion|optionen]."""
+    try:
+        name, action, value, options = _parse_github_cli(rest)
+    except ValueError as e:
+        sys.exit(str(e))
+    cmd_github(name, action, value, label=options["label"], title=options["title"],
+               base=options["base"], confirm=options["confirm_on"])
 
 def sess(name): return profile_session("vibe-" + run_key(name))
 def tmux_has_session(name): return run(["tmux", "has-session", "-t", sess(name)])[0] == 0
@@ -4645,6 +4838,7 @@ def main():
                  "emu": lambda: cmd_emu(r[0]), "paths": lambda: cmd_paths(*r),
                  "ui": lambda: cmd_ui(r[0] if r else "start"), "server": lambda: cmd_server(r[0] if r else "status"),
                  "harness": lambda: cmd_harness(r[0] if r else "status", r[1] if len(r) > 1 else None),
+                 "github": lambda: github_cli(r),
                  "types": lambda: cmd_types(), "doctor": lambda: cmd_doctor()}
         table[c]()
     except (KeyError, IndexError):

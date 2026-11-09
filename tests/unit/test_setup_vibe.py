@@ -40,6 +40,7 @@ PROGRAM_FILES = (
     "vibe_autonomous.py",
     "vibe_harness.py",
     "vibe_services.py",
+    "vibe_github.py",
     "fritz-reconnect.py",
 )
 WEB_FILES = ("index.html", "styles.css", "app.js")

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "stand": "2026-11-08",
+  "stand": "2026-11-09",
   "quelle": "Übernommener Programmstand aus der lokalen Installation unter $VIBE/_toolchain; die aktive Installation enthält zusätzlich lokale Geheimnis-Hooks (siehe docs/baseline.md, Abschnitt 3).",
   "hinweis": "SHA-256 der übernommenen Programmdateien. Beabsichtigte Änderungen an diesen Dateien sind nur zulässig, wenn dieser Eintrag im selben Arbeitspaket aktualisiert und begründet wird. Laufzeitdaten, Sicherungen und Geheimnisse sind nicht Bestandteil des Imports.",
   "scopes": [
@@ -25,8 +25,8 @@
     },
     {
       "path": "bin/vibe",
-      "sha256": "2d760da624b98fc6753202fbad887a4357f740eb31b5f5dd7c733f547e22ce88",
-      "bytes": 215096
+      "sha256": "a6243e78ee8829ae7649f57b02955aee59372407dffa8075be2bfbb49b90cd6f",
+      "bytes": 224442
     },
     {
       "path": "bin/vibe-run.sh",
@@ -35,13 +35,18 @@
     },
     {
       "path": "bin/vibe-web.py",
-      "sha256": "6757b112c07c8ccd7b97047156307197763409f5a8eb032d9f8a3c10bc718fd6",
-      "bytes": 53523
+      "sha256": "f22bd4b1cf0f27463a85201c119d9b07420f12f4159aabf626c91bb6021edff7",
+      "bytes": 58054
     },
     {
       "path": "bin/vibe_autonomous.py",
       "sha256": "3719eaa5a360e3a47afc3e0ead250d7e4b62e4fb4ca721d70a894c0c81ef7418",
       "bytes": 5149
+    },
+    {
+      "path": "bin/vibe_github.py",
+      "sha256": "b6db2db49b114469a34609edb4f6e72471615914d9669bd627acb64a0bd1edd5",
+      "bytes": 21504
     },
     {
       "path": "bin/vibe_guide.py",
@@ -95,8 +100,8 @@
     },
     {
       "path": "bin/vibe_services.py",
-      "sha256": "5b538da160b8816aef3209ce0105ffc6dd89b75a8d5dd8e2b17605f73486949d",
-      "bytes": 8271
+      "sha256": "ac49905bd5cf66698c214ddc00cf58c42990b933eb541fbaef83cbb70359517e",
+      "bytes": 8845
     },
     {
       "path": "bin/vibe_storage.py",
@@ -105,8 +110,8 @@
     },
     {
       "path": "bin/web/app.js",
-      "sha256": "bc80937dc3961fa327d2777c1e7f58bcbcf092bd007ac1c290a9877c28be1b87",
-      "bytes": 99879
+      "sha256": "98b516fb83eb53d234d22548b09e02dd9ec7214d6f2a747a7ca294324f375512",
+      "bytes": 105595
     },
     {
       "path": "bin/web/index.html",
@@ -130,8 +135,8 @@
     },
     {
       "path": "scripts/setup-vibe.py",
-      "sha256": "a34a3cf53f16c2992a8fcb63cbdab878fcd70bd74b633aba27c684aba705e567",
-      "bytes": 63638
+      "sha256": "1c17c140b82adeb8efe209bf56fa6db840bb8e6fd7b3aca6de091e89d35a332f",
+      "bytes": 63660
     },
     {
       "path": "setup-vibe.cmd",
@@ -145,8 +150,8 @@
     },
     {
       "path": "templates/android/AGENTS.md",
-      "sha256": "e6997bc45c95152268ae110253b0345de637d299aad14e1aa0d62bafe1c640a8",
-      "bytes": 4461
+      "sha256": "cf3883ec03a1d6b6263150ea5c12cf309891921c4c250417b96f55020b14837b",
+      "bytes": 4584
     },
     {
       "path": "templates/android/scripts/emulator-start.sh",
@@ -190,8 +195,8 @@
     },
     {
       "path": "templates/docker/AGENTS.md",
-      "sha256": "22821939ac9c03ab237d60f054197bbaa12bee3cf2c8d073c749ebb31c29e62f",
-      "bytes": 4356
+      "sha256": "c10401b2693f57b2e50f47d321c0954b0820adcc9a276ba72919bed74f035a37",
+      "bytes": 4479
     },
     {
       "path": "templates/generic/.vibe/project.env",
@@ -200,8 +205,8 @@
     },
     {
       "path": "templates/generic/AGENTS.md",
-      "sha256": "336fe0cde42412396474853db8022f648d8f495dc1bb6f7b859207cae8045b59",
-      "bytes": 3844
+      "sha256": "b0031a0f2478557560580fd1835732aec5b8deec15e8c5d512eb78f042a7ee30",
+      "bytes": 3967
     },
     {
       "path": "templates/openwrt/.vibe/project.env",
@@ -210,8 +215,8 @@
     },
     {
       "path": "templates/openwrt/AGENTS.md",
-      "sha256": "e9e96b933c68fc4aa9e7e9fb22171755649c9b68f8606f729b47c3e934f0abfd",
-      "bytes": 4477
+      "sha256": "fa333287c74e2aa6f197e72291852e198dfa5a70f2723c390bd022d598bd1026",
+      "bytes": 4600
     },
     {
       "path": "templates/rebuild/.opencode/agents/rebuild-architecture.md",
@@ -265,8 +270,8 @@
     },
     {
       "path": "templates/rebuild/AGENTS.md",
-      "sha256": "bf2fca9d2f18a9b8f835dd275def2a50a67cac49d6791c8d0d3b83e3fda1def5",
-      "bytes": 7045
+      "sha256": "cbb74b6656756ccd549d82bf6406f0e73d18f0454ed31e5c20286c5daacf7e66",
+      "bytes": 7168
     },
     {
       "path": "templates/rebuild/docs/parity.md",
@@ -290,8 +295,8 @@
     },
     {
       "path": "templates/web/AGENTS.md",
-      "sha256": "5834184b5b6ad7843de78792cacc9247a59ee77e176470bee32c52f2d6f32da2",
-      "bytes": 4208
+      "sha256": "01ac956108575bf53ef7c891635bc169b902cf14d444d3ab63d6ceca919804cf",
+      "bytes": 4331
     }
   ],
   "aenderungen": [
@@ -860,6 +865,25 @@
         "templates/openwrt/.vibe/project.env",
         "templates/rebuild/.vibe/project.env",
         "templates/web/.vibe/project.env"
+      ]
+    },
+    {
+      "arbeitspaket": "AP6",
+      "datum": "2026-11-09",
+      "grund": "GitHub-Verknüpfung je Projekt als Einzelfeature (AP6): neues Modul bin/vibe_github.py für Konfiguration (GITHUB_ENABLED/GITHUB_REPO/GITHUB_LABEL/GITHUB_API), Git-Status/Branches (Ahead/Behind gegen aktuelles origin via ls-remote, gezielter Objekt-Nachzug), fetch/pull --ff-only/push mit Argumentlisten, Issues (Listen, Import in TICKETS.md, idempotent und atomar) und Merge-Request-Erstellung mit Freigabepflicht; Token nur aus der Umgebung (GITHUB_TOKEN/GH_TOKEN), nie gespeichert. CLI (vibe github), Web-API (/api/github), Projekt-Detail-Karte „Git & GitHub“ und Regel-Ergänzung für verständliche Commit-Meldungen in GENERAL_RULES, den Projektvorlagen und der Projekt-AGENTS.md.",
+      "dateien": [
+        "bin/vibe",
+        "bin/vibe-web.py",
+        "bin/vibe_services.py",
+        "bin/vibe_github.py",
+        "bin/web/app.js",
+        "templates/android/AGENTS.md",
+        "templates/docker/AGENTS.md",
+        "templates/generic/AGENTS.md",
+        "templates/openwrt/AGENTS.md",
+        "templates/rebuild/AGENTS.md",
+        "templates/web/AGENTS.md",
+        "scripts/setup-vibe.py"
       ]
     }
   ]

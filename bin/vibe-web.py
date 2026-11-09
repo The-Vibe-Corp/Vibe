@@ -16,6 +16,7 @@ import vibe_guide
 import vibe_questions
 import vibe_autonomous
 import vibe_harness
+import vibe_github
 import vibe_services
 
 try:
@@ -613,7 +614,7 @@ class H(BaseHTTPRequestHandler):
             return self._error(e.status, e.code, e.message)
         try:
             name = body.get("name", "")
-            if u.path in ("/api/run", "/api/stop", "/api/verify", "/api/feedback", "/api/ticket", "/api/init", "/api/rights", "/api/pause", "/api/sandbox", "/api/guide", "/api/costs", "/api/autonomous", "/api/steer"): known(name)
+            if u.path in ("/api/run", "/api/stop", "/api/verify", "/api/feedback", "/api/ticket", "/api/init", "/api/rights", "/api/pause", "/api/sandbox", "/api/guide", "/api/costs", "/api/autonomous", "/api/steer", "/api/github"): known(name)
             extra = {}
             if u.path == "/api/steer": ok, msg = steer_project(name, body.get("text", ""))
             elif u.path == "/api/run": ok, msg = vibe_services.capture(vibe.cmd_run, name, body.get("agent") or None)
@@ -704,6 +705,80 @@ class H(BaseHTTPRequestHandler):
                     if status is not None: extra["sandbox"] = status
                 except ValueError as e:
                     ok, msg = False, str(e)
+            elif u.path == "/api/github":
+                act = body.get("action") or "status"; ok, msg = True, ""
+                try:
+                    if act == "settings":
+                        values = {}
+                        if "enabled" in body:
+                            values["GITHUB_ENABLED"] = "1" if body.get("enabled") else ""
+                        if "repo" in body:
+                            repo = str(body.get("repo") or "").strip()
+                            if repo and not vibe_github.RE_REPO.match(repo):
+                                raise ValueError("Repository in der Form owner/name angeben")
+                            values["GITHUB_REPO"] = repo
+                        if "label" in body:
+                            label = str(body.get("label") or "").strip()
+                            if any(c in label for c in ("\n", "\r", "\x00")):
+                                raise ValueError("Label darf keine Zeilenumbrüche enthalten")
+                            values["GITHUB_LABEL"] = label
+                        if "api" in body:
+                            api = str(body.get("api") or "").strip()
+                            if api:
+                                vibe_github.check_api(api)
+                            values["GITHUB_API"] = api
+                        if values:
+                            vibe.set_env_values(name, values)
+                        msg = "GitHub-Einstellungen gespeichert"
+                        extra["github"] = vibe_github.status(name)
+                    elif act == "link":
+                        url = str(body.get("url") or "").strip()
+                        if not url:
+                            raise ValueError("Remote-Adresse fehlt")
+                        extra["github"] = vibe.github_link(name, url)
+                        msg = "Verknüpfung gespeichert: " + vibe_github.mask_url(url)
+                    elif act == "unlink":
+                        extra["github"] = vibe.github_unlink(name)
+                        msg = "Verknüpfung gelöst"
+                    elif act == "fetch":
+                        ok, msg = vibe_github.fetch(vibe.ppath(name))
+                        extra["github"] = vibe_github.status(name)
+                    elif act == "pull":
+                        ok, msg = vibe_github.pull(vibe.ppath(name))
+                        extra["github"] = vibe_github.status(name)
+                    elif act == "push":
+                        ok, msg = vibe_github.push(vibe.ppath(name))
+                        extra["github"] = vibe_github.status(name)
+                    elif act == "issues":
+                        label = body.get("label")
+                        extra["issues"] = vibe.github_issues(name, None if label is None else str(label))
+                        extra["label"] = str(label) if label is not None else ""
+                        msg = "%d offene Issue(s) geladen" % len(extra["issues"])
+                    elif act == "import":
+                        added, seen = vibe.github_issues_import(name, str(body.get("label") or "") if body.get("label") is not None else None)
+                        ok = bool(added) or seen == 0
+                        if not added and seen:
+                            msg = "Keine neuen Issues (%d gesehen); TICKETS.md unverändert." % seen
+                        else:
+                            msg = ("Arbeitspakete übernommen: " + ", ".join(added)) if added else "Keine offenen Issues."
+                    elif act == "pr":
+                        result = vibe.github_pr(name, title=body.get("title") or None,
+                                                base=body.get("base") or None,
+                                                confirm=bool(body.get("confirm")))
+                        if not result.get("ok"):
+                            ok = False
+                        msg = result.get("message") or ""
+                        extra["pull_request"] = result
+                    else:
+                        ok, msg = False, "Unbekannte Aktion"
+                        extra["github"] = vibe_github.status(name)
+                except ValueError as e:
+                    ok, msg = False, str(e)
+                    extra["github"] = vibe_github.status(name)
+                try:
+                    extra["github"] = extra.get("github") or vibe_github.status(name)
+                except Exception:  # noqa: BLE001 - Statusansicht bleibt best effort
+                    pass
             elif u.path == "/api/pause":
                 act = body.get("action") or "on"; ok, msg = True, ""
                 try:

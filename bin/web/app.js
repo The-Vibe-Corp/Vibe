@@ -145,7 +145,7 @@ async function detail(name){
    el('div',{},pauseCard(d,name),autonomousCard(d,name),checksCard,factsCard))),
   ausgabe:tabPanel('ausgabe',el('div',{class:'output-layout'},L.card,el('div',{class:'output-side',id:'f19-controls'},steer.card,S.card))),
   assistent:tabPanel('assistent',guideCard(name)),
-  einstellungen:tabPanel('einstellungen',el('div',{class:'grid'},projectAgentsCard(name),rightsCard(d,name),sandboxCard(d,name,isPi)))};
+  einstellungen:tabPanel('einstellungen',el('div',{class:'grid'},projectAgentsCard(name),rightsCard(d,name),sandboxCard(d,name,isPi),githubCard(d,name)))};
  const tabs=detailTabs(panels);
  openTab=k=>showDetailTab(k,panels,tabs.btns);
  main.replaceChildren(...[head,initCard,tabs.list,panels.arbeit,panels.ausgabe,panels.assistent,panels.einstellungen].filter(Boolean));
@@ -556,6 +556,69 @@ function sandboxCard(d,name,isPi){const s=d.sandbox||{enabled:false,tools:[],wri
   el('label',{},'Build-Werkzeuge (Leerzeichen oder Komma)'),inp,
   el('div',{class:'bar'},el('button',{class:'b',on:{click:async()=>{const r=await api('/api/sandbox',{name,action:'tools',tools:inp.value});toast(r.message);if(r.ok)detail(name).catch(showErr)}}},'Werkzeuge speichern')),
   el('details',{},el('summary',{},'Erlaubte Schreibverzeichnisse ('+dirs.length+')'),el('div',{},...dirs.map(p=>el('div',{class:'mut'},p)))))}
+
+/* ---------- Git & GitHub (AP6: optional je Projekt) ---------- */
+function githubCard(d,name){
+ const g=d.github||{enabled:false,repo:'',label:'vibe',api:'',branch:'-',remotes:[],branches:[],ahead:0,behind:0,unpushed:false};
+ const active=!!g.enabled;
+ const fact=(k,v)=>el('div',{class:'factrow'},el('span',{class:'mut'},k),el('span',{},String(v)));
+ const errBox=el('div',{class:''});
+ const issuesBox=el('div',{class:'mut'});
+ const setErr=message=>{errBox.className=String(message||'').length?'bad':'';errBox.textContent=String(message||'')};
+ const refresh=()=>detail(name).catch(showErr);
+ const post=async body=>{const r=await api('/api/github',body);toast(r.message||'');return r};
+ const enabled=el('input',{type:'checkbox','aria-label':'GitHub-Verknüpfung aktiv'});enabled.checked=active;
+ const repo=el('input',{value:g.repo||'',placeholder:'owner/name','aria-label':'GitHub-Repository (owner/name)'});
+ const label=el('input',{value:g.label||'vibe',placeholder:'vibe','aria-label':'GitHub-Label für vibe-Aufgaben'});
+ const apiIn=el('input',{value:(g.api&&g.api!=='https://api.github.com')?g.api:'',placeholder:'https://api.github.com (Standard)','aria-label':'GitHub-API-Basis'});
+ const save=el('button',{class:'b p',on:{click:async()=>{const r=await api('/api/github',{name,action:'settings',enabled:enabled.checked,repo:repo.value.trim(),label:label.value.trim(),api:apiIn.value.trim()});
+   if(!r.ok)setErr(r.message);toast(r.message);if(r.ok){setErr('');refresh()}}}},'Speichern');
+ const linkBtn=el('button',{class:'b',on:{click:async()=>{
+   const value=repo.value.trim();
+   if(!value||!value.includes('/')){setErr('Repository in der Form owner/name angeben');return}
+   const r=await api('/api/github',{name,action:'link',url:'https://github.com/'+value+'.git'});
+   if(!r.ok)setErr(r.message);toast(r.message);if(r.ok){setErr('');refresh()}}}},'Mit GitHub verknüpfen');
+ const unlinkBtn=el('button',{class:'b',on:{click:async()=>{const r=await api('/api/github',{name,action:'unlink'});
+   if(!r.ok)setErr(r.message);toast(r.message);if(r.ok){setErr('');refresh()}}}},'Verknüpfung lösen');
+ const fetchBtn=el('button',{class:'b',on:{click:async()=>{const r=await post({name,action:'fetch'});if(r.ok)refresh()}}},'Abrufen (fetch, kein Merge)');
+ const pushBtn=el('button',{class:'b',on:{click:async()=>{const r=await post({name,action:'push'});if(r.ok)refresh()}}},'Push (Branch nach origin)');
+ const pullBtn=el('button',{class:'b',on:{click:async()=>{const r=await post({name,action:'pull'});if(r.ok)refresh()}}},'Pull (aufholen, --ff-only)');
+ const issueFilter=el('input',{value:g.label||'vibe',placeholder:'Label (leer = alle)','aria-label':'Issues nach Label filtern'});
+ const loadBtn=el('button',{class:'b',on:{click:async()=>{const r=await api('/api/github',{name,action:'issues',label:issueFilter.value.trim()});
+   if(!r.ok){setErr(r.message);toast(r.message);return}
+   const rows=(r.issues||[]).map(i=>el('div',{class:'mut'},el('b',{},'GH-'+i.number+' '),i.title,
+     i.labels&&i.labels.length?el('span',{class:'mut'},' ['+i.labels.join(', ')+']'):null));
+   issuesBox.replaceChildren(...(rows.length?rows:[el('span',{class:'mut'},'Keine offenen Issues für dieses Label.')]))}}},'Issues laden');
+ const importBtn=el('button',{class:'b',on:{click:async()=>{const r=await api('/api/github',{name,action:'import',label:issueFilter.value.trim()});
+   if(!r.ok)setErr(r.message);else setErr('');toast(r.message);if(r.ok)refresh()}}},'Import');
+ const prBtn=el('button',{class:'b p',on:{click:()=>{askInline(prBtn,'Merge-Request stellen: Erst den aktuellen Branch nach origin pushen, dann den Merge-Request über GitHub anlegen. Fortfahren?','Ja, stellen',async()=>{
+   const r=await api('/api/github',{name,action:'pr',confirm:true});
+   if(!r.ok)setErr(r.message);toast(r.message||'Fehler beim Merge-Request');if(r.ok)refresh()})}}},'Merge-Request stellen');
+ const facts=[fact('Zustand',active?'aktiv':'aus'),fact('Repository',g.repo||'—'),fact('Branch',g.branch||'-'),
+   fact('Ahead/Behind',(g.ahead||0)+' / '+(g.behind||0)+(g.unpushed?' (ungesendete Commits)':''))];
+ if(g.error)facts.push(fact('Hinweis',String(g.error)));
+ const remoteRows=(g.remotes||[]).map(r=>el('div',{class:'mut'},'Remote '+r.name+': '+r.url));
+ const branchRows=(g.branches||[]).map(b=>el('div',{class:'mut'},(b.current?'* ':'  ')+b.name+' (Ahead/Behind '+b.ahead+'/'+b.behind+')'));
+ const card=el('div',{class:'card','data-section':'github'},el('b',{},'Git & GitHub'),
+   el('div',{class:'mut'},'GitHub ist optional je Projekt. Updates und Branches bleiben bewusste Aktionen; es gibt keinen automatischen Push oder Merge. Der Merge-Request überträgt den Paket-Branch erst nach ausdrücklicher Freigabe.'),
+   el('label',{class:'inline'},enabled,' GitHub-Verknüpfung aktiv'),
+   el('label',{},'Repository (owner/name)'),repo,
+   el('label',{},'Label für vibe-Aufgaben'),label,
+   el('label',{},'API-Basis (optional)'),apiIn,
+   el('div',{class:'bar'},save,linkBtn,unlinkBtn),
+   ...facts,
+   remoteRows.length?el('div',{'data-remotes':''},...remoteRows):null,
+   el('div',{class:'bar'},fetchBtn,pushBtn,pullBtn),
+   branchRows.length?el('details',{},el('summary',{},'Branches ('+branchRows.length+')'),el('div',{},...branchRows))
+                    :el('div',{class:'mut'},'Keine lokalen Branches erkannt.'),
+   active?el('div',{class:'bar'},prBtn):null,
+   el('hr'),
+   el('b',{},'Issues als Arbeitspakete'),
+   el('div',{class:'mut'},'Offene GitHub-Issues nach Label filtern und als Arbeitspakete (GH-Nummer) in TICKETS.md übernehmen.'),
+   el('label',{},'Label-Filter'),issueFilter,
+   el('div',{class:'bar'},loadBtn,importBtn),
+   issuesBox,errBox);
+ return card}
 
 /* ---------- Kosten ---------- */
 const PRICE_SOURCE={user:'eigener Preis',system:'Systempreis',kostenlos:'kostenlos',unbekannt:'Preis unbekannt'};

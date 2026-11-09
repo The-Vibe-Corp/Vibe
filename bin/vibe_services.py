@@ -19,6 +19,7 @@ import re
 import subprocess
 
 import vibe_autonomous
+import vibe_github
 import vibe_guide
 
 ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
@@ -121,6 +122,14 @@ def project_detail(vibe, paths, name):
         data["autonomous"] = vibe_autonomous.is_enabled(paths.runtime, name)
     except ValueError:
         data["autonomous"] = False
+    try:
+        data["github"] = vibe_github.status(vibe.ppath(name))
+        data["github"]["branches"] = vibe_github.branches(vibe.ppath(name))
+    except Exception as error:  # noqa: BLE001 - Ansicht degradiert, Dashboard bleibt nutzbar
+        data["github"] = {"enabled": False, "repo": "", "label": vibe_github.DEFAULT_LABEL,
+                          "api": vibe_github.OFFICIAL_API, "remotes": [], "branch": "-",
+                          "ahead": 0, "behind": 0, "unpushed": False, "branches": [],
+                          "error": str(error)}
     return data
 
 
