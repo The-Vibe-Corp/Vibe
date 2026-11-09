@@ -291,12 +291,19 @@ def agent_prompt(project, agent, agents_dir=None):
 
 
 def run_argv(name, prompt, project, agent=None, model=None, server_url=None,
-             title=None, binary=None, agents_dir=None):
+             title=None, binary=None, agents_dir=None, events=False):
     """Baut die Argumentliste für einen Agentenlauf.
 
     opencode erhält unverändert die bisher geprüften Argumente. Pi läuft im
     Print-Modus; der Prompt der Agentendatei wird der Aufgabe vorangestellt,
     weil Pi keine opencode-Agentendateien liest.
+
+    ``events=True`` baut bei Pi die strukturierte Ereignisausgabe ein
+    (``--mode json``, Pi-Dokumentation docs/json.md); der Läufer nutzt sie
+    für die Subagentenerfassung (F19/F24). Ohne ``events`` bleibt die Liste
+    byte-identisch zum bisherigen Verhalten. opencode erhält seine
+    Ereignisoption weiterhin vom Läufer (``--format json``) und wird von
+    ``events`` nie beeinflusst.
     """
     info = definition(name)
     if not isinstance(prompt, str) or not prompt.strip():
@@ -330,6 +337,8 @@ def run_argv(name, prompt, project, agent=None, model=None, server_url=None,
     # PI_CODING_AGENT_DIR einen beschreibbaren Agentenordner bereit
     # (bin/vibe_sandbox.py, bwrap_argv()).
     argv = [target, "--print", "--no-session"]
+    if events:
+        argv += ["--mode", "json"]
     argv += model_args
     if title:
         argv += ["--name", str(title)]
@@ -439,7 +448,7 @@ def _cmd_run(args):
         argv = run_argv(
             args.harness, prompt, args.project,
             agent=args.agent, model=args.model, server_url=args.server_url,
-            title=args.title, agents_dir=args.agents_dir,
+            title=args.title, agents_dir=args.agents_dir, events=args.json,
         )
     except HarnessError as error:
         print("Harness: " + str(error), file=sys.stderr)
@@ -490,6 +499,11 @@ def main(argv=None):
     run.add_argument("--prompt", default=None)
     run.add_argument("--prompt-file", default=None)
     run.add_argument("--state", default=None)
+    # B6: Pi mit strukturiertem Ereignisstrom starten (--mode json). Die
+    # Erfassung (F19/F24) setzt diese Argumente; ohne Flag bleibt der
+    # Klartext-Print-Modus (bisheriges Verhalten).
+    run.add_argument("--json", action="store_true",
+                     help="Pi: Ereignisausgabe --mode json ankoppeln")
 
     args = parser.parse_args(argv)
 

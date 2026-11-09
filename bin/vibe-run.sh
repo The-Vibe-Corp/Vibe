@@ -234,10 +234,14 @@ run_agent_in() {
   (
     cd "$dir" || exit 1
     if [ "$HARNESS" = "pi" ]; then
-      local args=(python3 "$HARNESS_CLI" run --harness pi --project "$dir" --agent "$AGENT" --title "$title" --prompt "$prompt")
+      # B6: Pi gibt mit --mode json strukturierte Ereignisse aus. Derselbe
+      # Erfassungsfilter wie beim opencode-Zweig macht daraus menschenlesbare
+      # Protokollzeilen und die Zustandsdatei für die Ausgabeansicht (F24);
+      # maßgeblich bleibt der Exit-Code des Agentenprozesses.
+      local args=(python3 "$HARNESS_CLI" run --harness pi --json --project "$dir" --agent "$AGENT" --title "$title" --prompt "$prompt")
       [ -n "$MODEL" ] && args+=(--model "$MODEL")
       [ -n "${VIBE_AGENTS_DIR:-}" ] && args+=(--agents-dir "$VIBE_AGENTS_DIR")
-      "${wrap[@]}" "${args[@]}" 2>&1 | tee -a "$LOG"
+      "${wrap[@]}" "${args[@]}" 2>&1 | "${STREAM_FILTER[@]}" | tee -a "$LOG"
       exit "${PIPESTATUS[0]}"
     fi
     # F25: Ist eine Session aus einem unterbrochenen Versuch erfasst, wird

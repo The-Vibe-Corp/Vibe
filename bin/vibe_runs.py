@@ -97,6 +97,25 @@ SUBAGENT_FINISHED = ("completed", "error", "failed", "cancelled", "canceled")
 # verwenden "subagent". Beide Formen werden erkannt.
 SUBAGENT_TOOLS = ("task", "subagent")
 
+# Pi 1.5.0 liefert im JSON-Modus (--mode json) genau diese Ereignistypen
+# (Pi-Dokumentation docs/json.md). Der Erfassungsfilter erkennt die Form
+# automatisch anhand des Ereignistyps; opencode nutzt eine andere Menge
+# (text/reasoning/error/tool_use), so dass sich beide Formen nicht stören.
+PI_EVENT_TYPES = (
+    "session",
+    "agent_start", "agent_end", "agent_settled",
+    "turn_start", "turn_end",
+    "message_start", "message_update", "message_end",
+    "tool_execution_start", "tool_execution_update", "tool_execution_end",
+    "queue_update", "entry_appended", "session_info_changed",
+    "thinking_level_changed",
+    "compaction_start", "compaction_end",
+    "auto_retry_start", "auto_retry_end",
+    "summarization_retry_scheduled", "summarization_retry_attempt_start",
+    "summarization_retry_finished",
+    "bash_execution_update", "extension_error",
+)
+
 
 def subagent_state_path(log_path):
     """Zustandsdatei mit Hauptsession und erfassten Subagenten je Laufprotokoll."""
@@ -266,12 +285,191 @@ def translate_event(event, state):
     return session_lines + lines, changed
 
 
+def _pi_result_text(result):
+    """Vereinigt die Textblöcke eines Pi-Werkzeupergebnisses zur Ausgabe.
+
+    Pi liefert Werkzeupergebnisse als ``{"content":[{"type":"text",...}]}``
+    (Pi-Dokumentation docs/json.md). Andere Blockarten (Bilder, Details)
+    tragen nichts zur erfassten Ausgabe bei.
+    """
+    if isinstance(result, str):
+        return result
+    if not isinstance(result, dict):
+        return ""
+    content = result.get("content")
+    if isinstance(content, str):
+        return content
+    if not isinstance(content, list):
+        return ""
+    texts = [
+        block["text"]
+        for block in content
+        if isinstance(block, dict) and block.get("type") == "text"
+        and isinstance(block.get("text"), str)
+    ]
+    return "\n".join(texts)
+
+
+def _pi_tool_detail(inputs):
+    """Kurzinfo einer Pi-Werkzeugausführung (analog opencode-Übersetzung)."""
+    detail = (
+        inputs.get("description") or inputs.get("command")
+        or inputs.get("filePath") or ""
+    )
+    return " ".join(str(detail).split())
+
+
+def _pi_new_entry(tool_call, inputs, now):
+    """Lege den Subagenteneintrag für ein Pi-Subagenten-Werkzeug an."""
+    return {
+        "session": tool_call,
+        "agent": str(inputs.get("agent") or ""),
+        "description": str(inputs.get("description") or ""),
+        "prompt": inputs.get("prompt") if isinstance(inputs.get("prompt"), str) else "",
+        "status": "running",
+        "started": int(now),
+        "ended": 0,
+        "output": "",
+    }
+
+
+def _pi_tool_lines(event, state, mode):
+    """Übersetzt eine Pi-Werkzeugausführung in Zeilen und Subagentenzustand.
+
+    ``mode`` ist der Ereignistyp ohne Präfix (``start``/``update``/``end``).
+    Subagenten-Werkzeuge (SUBAGENT_TOOLS) erzeugen einen Eintrag mit dem
+    ``toolCallId`` als Tab-Schlüssel (``session``).
+    """
+    tool = str(event.get("toolName") or "?")
+    inputs = event.get("args") if isinstance(event.get("args"), dict) else {}
+    tool_call = str(event.get("toolCallId") or "")
+    detail = _pi_tool_detail(inputs)
+    now = int(time.time())
+    changed = False
+    if mode == "start":
+        line = f"[Werkzeug] {tool} — läuft" + (": " + detail if detail else "")
+        if tool in SUBAGENT_TOOLS:
+            entry = _subagent_entry(state, tool_call, "", "")
+            if entry is None:
+                entry = _pi_new_entry(tool_call, inputs, now)
+                state["subagents"].append(entry)
+            for key, value in (
+                ("session", tool_call), ("agent", str(inputs.get("agent") or "")),
+                ("description", str(inputs.get("description") or "")),
+            ):
+                if value and entry.get(key) != value:
+                    entry[key] = value
+            prompt = inputs.get("prompt")
+            if isinstance(prompt, str) and prompt and entry.get("prompt") != prompt:
+                entry["prompt"] = prompt
+            if entry.get("status") != "running":
+                entry["status"] = "running"
+            if not isinstance(entry.get("started"), int):
+                entry["started"] = now
+            entry["ended"] = 0
+            changed = True
+        return [line], changed
+    if mode == "update":
+        if tool not in SUBAGENT_TOOLS:
+            return [], False
+        entry = _subagent_entry(state, tool_call, "", "")
+        if entry is None:
+            entry = _pi_new_entry(tool_call, inputs, now)
+            state["subagents"].append(entry)
+        text = _pi_result_text(event.get("partialResult"))
+        if text and entry.get("output") != text:
+            entry["output"] = text
+        return [], True
+    # mode == "end"
+    failed = bool(event.get("isError"))
+    line = f"[Werkzeug] {tool} — " + ("Fehler" if failed else "abgeschlossen")
+    if tool not in SUBAGENT_TOOLS:
+        return [line], False
+    entry = _subagent_entry(state, tool_call, "", "")
+    if entry is None:
+        entry = _pi_new_entry(tool_call, inputs, now)
+        state["subagents"].append(entry)
+    ending = ("error" if failed else "completed")
+    if entry.get("status") != ending:
+        entry["status"] = ending
+    text = _pi_result_text(event.get("result"))
+    if text and entry.get("output") != text:
+        entry["output"] = text
+    if isinstance(entry.get("ended"), int) and entry.get("ended") != now:
+        entry["ended"] = now
+    if not isinstance(entry.get("started"), int):
+        entry["started"] = now
+    return [line], True
+
+
+def translate_pi_event(event, state):
+    """Übersetzt ein Pi-JSON-Ereignis in Protokollzeilen und Zustand.
+
+    Pi 1.5.0 liefert im JSON-Modus (``--mode json``) einen JSONL-Strom mit
+    Session-Header, Nachrichten- und Werkzeigereignissen (Pi-Dokumentation
+    docs/json.md). Rückgabe ist gleich der von :func:`translate_event`:
+    ``(Zeilen, Zustand geändert)``.
+
+    Der Session-Header erzeugt nur eine ``[Session]``-Zeile. Die Kennung
+    wird bewusst nicht als Hauptsession übernommen: Pi läuft mit
+    ``--no-session``, die Kennung ist ephemeral, und die opencode-Live-
+    Abfrage dürfte niemals mit ihr befragt werden. Verheiratete Zustände
+    der opencode-Übersetzung bleiben dadurch unverändert.
+    """
+    if not isinstance(event, dict):
+        return [], False
+    kind = str(event.get("type") or "")
+    if kind == "session":
+        session_id = event.get("id")
+        if isinstance(session_id, str) and session_id:
+            return ["[Session] " + session_id], False
+        return [], False
+    if kind == "message_end":
+        message = (
+            event.get("message") if isinstance(event.get("message"), dict) else {}
+        )
+        if message.get("role") != "assistant":
+            return [], False
+        content = message.get("content")
+        if isinstance(content, str):
+            blocks = [{"type": "text", "text": content}] if content else []
+        elif isinstance(content, list):
+            blocks = content
+        else:
+            blocks = []
+        lines = []
+        for block in blocks:
+            if not isinstance(block, dict):
+                continue
+            text = block.get("text")
+            if not isinstance(text, str) or not text.strip():
+                continue
+            if block.get("type") == "thinking":
+                lines.extend("[Denken] " + line for line in text.splitlines())
+            elif block.get("type") == "text":
+                lines.extend(text.splitlines())
+        return lines, False
+    if not kind.startswith("tool_execution_"):
+        # Streaming-Deltas und Rauschen (message_update, turn_*, agent_*,
+        # queue, compaction, retry) erzeugen keine Zeilen und keine
+        # Zustandsänderung.
+        return [], False
+    mode = kind[len("tool_execution_"):]
+    if mode not in ("start", "update", "end"):
+        return [], False
+    return _pi_tool_lines(event, state, mode)
+
+
 def stream_events(stdin, emit, state_path):
     """Liest JSON-Zeilen von stdin, schreibt Klartext und pflegt den Zustand.
 
     Nicht-JSON-Zeilen (z. B. stderr des Agenten) werden unverändert
     durchgereicht. Jede Zustandsänderung wird atomar gespeichert, damit das
     Dashboard nie eine halbe Datei liest.
+
+    B6: Die Ereignisform wird automatisch erkannt — opencode-Ereignisse
+    behalten ihr Verhalten, Ereignisse vom Pi-JSON-Modus gehen durch die
+    Pi-Übersetzung. Beide Formen teilen sich dieselbe Zustandsdatei.
     """
     state = load_subagent_state(state_path)
     for raw in stdin:
@@ -286,7 +484,10 @@ def stream_events(stdin, emit, state_path):
         except ValueError:
             emit("opencode: " + line)
             continue
-        lines, changed = translate_event(event, state)
+        if isinstance(event, dict) and event.get("type") in PI_EVENT_TYPES:
+            lines, changed = translate_pi_event(event, state)
+        else:
+            lines, changed = translate_event(event, state)
         for output_line in lines:
             emit(output_line)
         if changed:

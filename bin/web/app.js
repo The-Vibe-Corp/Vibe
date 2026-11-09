@@ -478,7 +478,7 @@ function subagentCard(name,isPi){
  const card=el('div',{class:'card',id:'subagents-card'},
   el('div',{class:'bar'},el('b',{},'Subagenten'),count),
   el('div',{class:'mut'},isPi
-   ? 'Bei Pi gibt es keine Subagenten-Prüfung und keine erfassten Subagenten-Läufe; die Liste zeigt nur Einträge, wenn der Lauf sie setzt.'
+   ? 'Bei Pi erfasst der Lauf Subagenten aus seinem Ereignisstrom; eine Live-Prüfung am opencode-Server gibt es nicht. Die Liste zeigt Einträge, sobald der Lauf sie setzt.'
    : 'Erfasste Subagenten des aktuellen Projekts. Eine Ausgabe erscheint, sobald der Subagent sie liefert.'),
   list);
  const nodes=new Map();let order='',openSession='';
