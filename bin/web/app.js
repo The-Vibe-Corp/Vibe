@@ -136,7 +136,9 @@ async function detail(name){
  const head=el('div',{class:'bar detailbar'},
   el('button',{class:'b',type:'button',on:{click:()=>setTab('projects')}},'← zurück'),
   el('div',{class:'dhead'},el('h2',{},name),runPill,el('span',{class:'mut dmeta',title:d.path},d.type+' · '+d.branch+' · '+d.dirty+' Änderungen · '+d.path)),
-  el('div',{class:'bar dactions'},el('button',{class:'b p',type:'button',on:{click:act('/api/run',{name})}},'Agentenlauf starten'),el('button',{class:'b',type:'button',on:{click:act('/api/stop',{name})}},'Stoppen')));
+  el('div',{class:'bar dactions'},
+   d.dirty?el('button',{class:'b',type:'button',on:{click:function(){askInline(this,'Nicht committete Änderungen bleiben unverändert. Lauf trotzdem starten?','Trotz Änderungen starten',async()=>{const r=await api('/api/run',{name,keep_changes:true});toast(r.message);detail(name).catch(showErr)})}}},'Trotz Änderungen starten'):null,
+   el('button',{class:'b p',type:'button',on:{click:act('/api/run',{name})}},'Agentenlauf starten'),el('button',{class:'b',type:'button',on:{click:act('/api/stop',{name})}},'Stoppen')));
  const tiles=el('div',{class:'tiles'},tile('Offene Arbeitspakete',d.items.length,d.items.length?'warn':'ok'),tile('Änderungen',d.dirty,d.dirty?'warn':'ok'),tile('Branch',d.branch,'small'),tile('Letzter Commit',d.last||'—','small'));
  const L=logView(d,()=>stream('run'));
  const steer=steerCard(name,isPi),S=subagentCard(name,isPi),tabsOut=agentTabs(name,L);

@@ -51,7 +51,7 @@ except ImportError:  # pragma: no cover - Windows ohne Paket-Läufer
 
 if __name__ == "__main__": sys.modules["vibe"] = sys.modules[__name__]
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
-import vibe_storage, vibe_paths, vibe_opencode, vibe_models, vibe_runs, vibe_questions, vibe_autonomous, vibe_harness, vibe_github
+import vibe_storage, vibe_paths, vibe_opencode, vibe_models, vibe_runs, vibe_questions, vibe_autonomous, vibe_harness, vibe_github, vibe_packages
 
 try:
     PATHS = vibe_paths.resolve()
@@ -1804,21 +1804,44 @@ def default_agent():
         if role == "coder": return agent
     return ""
 
-def cmd_run(name, agent=None, out=None):
+def pending_changes(project):
+    """Nicht committete Projektänderungen ohne die verwalteten Arbeitsnotizen."""
+    return vibe_packages.dirty_report(project)
+
+
+def changed_file(project, name):
+    """True, wenn genau diese Datei nicht committete Änderungen hat."""
+    result = vibe_packages.run_git(project, "status", "--porcelain", "--", name)
+    return result.returncode == 0 and bool(result.stdout.strip())
+
+
+def cmd_run(name, agent=None, out=None, keep_changes=False):
     out = out or sys.stdout
     p = ppath(name)
     if agent is not None: require_agent(agent)
     if tmux_has(name): print("Läuft bereits. vibe attach", name, file=out); return
     if not is_init(name): sys.exit("Projekt ist nicht für vibe vorbereitet: vibe init " + name)
+    # F27: Ein ausdrücklich angeforderter Neustart darf vorhandene Änderungen
+    # behalten. Sie werden nur genannt, nie gestaged, committet, gestasht oder
+    # wiederhergestellt; der Preflight lässt ausschließlich diesen Befund zu.
+    pending = pending_changes(p) if keep_changes else ""
+    if pending:
+        print(col("y", "Lauf startet trotz nicht committeter Änderungen; sie bleiben unverändert:\n" + pending), file=out)
     # Die allgemeinen Leitlinien gelten auch für bestehende Projekte. Vor dem
     # Start wird der verwaltete Regelblock deshalb auf den aktuellen Stand
     # gebracht; fremde Inhalte außerhalb der Marker bleiben unverändert.
-    try:
-        rules = ensure_general_rules(p)
-    except (OSError, vibe_storage.StorageError) as error:
-        sys.exit("Allgemeine Regeln in AGENTS.md konnten nicht aktualisiert werden: " + str(error))
-    if rules:
-        print(col("y", "Allgemeine Regeln in AGENTS.md aktualisiert; bitte prüfen und committen."), file=out)
+    # F27: Hat AGENTS.md selbst nicht committete Änderungen, wird sie nicht
+    # überschrieben. Sonst würde ein älterer Regelsatz die Nutzeränderung
+    # verwerfen und der Lauf anschließend am eigenen Schreibzugriff scheitern.
+    if changed_file(p, "AGENTS.md"):
+        print(col("y", "AGENTS.md hat nicht committete Änderungen; die allgemeinen Regeln werden nicht automatisch aktualisiert und bleiben unverändert."), file=out)
+    else:
+        try:
+            rules = ensure_general_rules(p)
+        except (OSError, vibe_storage.StorageError) as error:
+            sys.exit("Allgemeine Regeln in AGENTS.md konnten nicht aktualisiert werden: " + str(error))
+        if rules:
+            print(col("y", "Allgemeine Regeln in AGENTS.md aktualisiert; bitte prüfen und committen."), file=out)
     # Der unabhängige Test-Agent ist für jedes Projekt Pflicht. Bestehende
     # Projekte erhalten ihn vor dem nächsten Lauf; vorhandene Dateien und ein
     # gesetzter TESTER bleiben unverändert.
@@ -1903,7 +1926,10 @@ def cmd_run(name, agent=None, out=None):
     # wird erst im Läufer an opencode übergeben; Agentendateien bleiben
     # unverändert, andere Projekte sehen die Überschreibung nicht.
     # F22: Nur der Produktpfad aktiviert die Rückfrage-Assistenz im Preflight.
-    inner = ("source ~/.bashrc; " + child_exports()
+    # F27: Die ausdrückliche Neustart-Absicht reist als Umgebungsvariable zum
+    # Läufer; sie wird nie als Positionsargument ausgewertet.
+    keep_export = " export VIBE_KEEP_CHANGES=1;" if keep_changes else ""
+    inner = ("source ~/.bashrc; " + child_exports() + keep_export
              + ' export VIBE_PREFLIGHT_ASSIST=1 VIBE_LOGNAME="$1" VIBE_RUN_ID="$2" VIBE_SESSION="$3" VIBE_MODEL="$7"; bash "$4" "$5" "$6" "$7"')
     rc, output = run(["tmux", "new-session", "-d", "-s", session,
                    "-e", MANAGED_VAR + "=run", "-c", p,
@@ -1915,6 +1941,33 @@ def cmd_run(name, agent=None, out=None):
         return
     print(col("g", f"Gestartet: Lauf {run_id}, tmux-Sitzung {session}, Agent {agent}"), file=out)
     print("Zuschauen: vibe attach", name, "| Log: vibe logs", name, file=out)
+
+def cmd_run_cli(args):
+    """``vibe run <projekt> [agent] [--keep-changes]`` ohne Positionsverwechslung.
+
+    Die Option darf vor oder nach dem Agenten stehen. Unbekannte Optionen
+    werden abgelehnt, statt als Agentenname zu gelten.
+    """
+    keep_changes = False
+    positional = []
+    for arg in args:
+        if arg == "--keep-changes":
+            if keep_changes:
+                sys.exit("--keep-changes darf nur einmal angegeben werden.")
+            keep_changes = True
+        elif arg.startswith("-"):
+            sys.exit("Unbekannte Option für vibe run: " + arg)
+        else:
+            positional.append(arg)
+    if not positional:
+        sys.exit("Projektname fehlt: vibe run <projekt> [agent] [--keep-changes]")
+    if len(positional) > 2:
+        sys.exit("Aufruf: vibe run <projekt> [agent] [--keep-changes]")
+    cmd_run(
+        positional[0],
+        positional[1] if len(positional) > 1 else None,
+        keep_changes=keep_changes,
+    )
 
 def cmd_attach(name):
     if not tmux_has(name): sys.exit("Keine laufende Sitzung für " + name)
@@ -4815,7 +4868,7 @@ def main():
     if not a: return menu()
     c, r = a[0], a[1:]
     try:
-        table = {"list": lambda: cmd_list(), "status": lambda: cmd_status(r[0]), "run": lambda: cmd_run(r[0], r[1] if len(r) > 1 else None),
+        table = {"list": lambda: cmd_list(), "status": lambda: cmd_status(r[0]), "run": lambda: cmd_run_cli(r),
                  "attach": lambda: cmd_attach(r[0]), "logs": lambda: cmd_logs(r[0]), "stop": lambda: cmd_stop(r[0], r[1] if len(r) > 1 else None),
                  "runs": lambda: cmd_runs(r[0] if r else "list"),
                  "pause": lambda: cmd_pause(r[0], r[1] if len(r) > 1 else None),

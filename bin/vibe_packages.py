@@ -465,12 +465,17 @@ def agent_for_role(role, state_dir, project, agents_dir):
     return candidates[0] if candidates else ""
 
 
-def preflight_errors(project, agents_dir, tester, reviewer, state_dir=None):
+def preflight_errors(project, agents_dir, tester, reviewer, state_dir=None,
+                     allow_dirty=False):
     """Prüft die Startbedingungen und liefert alle Befunde als Liste.
 
     Eine fehlende REVIEWER-Zuordnung wird aus der Rolle ``reviewer`` in
     ``<state_dir>/profiles.json`` ergänzt. Ein ausdrücklich gesetzter Reviewer
     (Argument oder project.env) bleibt vorrangig.
+
+    ``allow_dirty`` überspringt ausschließlich den Befund eines unsauberen
+    Arbeitsbaums. Alle anderen Startbedingungen bleiben unverändert streng;
+    die Änderungen selbst werden weder gelesen noch verändert.
     """
     project = Path(project)
     errors = []
@@ -484,7 +489,7 @@ def preflight_errors(project, agents_dir, tester, reviewer, state_dir=None):
         errors.append("Detached HEAD: Der Lauf braucht einen Integrationsbranch.")
     ensure_project_exclude(project)
     dirty = dirty_report(project)
-    if dirty:
+    if dirty and not allow_dirty:
         errors.append("Arbeitsbaum ist nicht leer:\n" + dirty)
 
     env = read_env(project / ".vibe" / "project.env")
@@ -553,7 +558,7 @@ def _assist_result(errors, action, instruction=""):
 
 def assist_preflight(project, agents_dir, tester, reviewer, state_dir=None,
                      runtime=None, project_name="", timeout=ASSIST_DEFAULT_TIMEOUT,
-                     rounds=0):
+                     rounds=0, allow_dirty=False):
     """Führt den Preflight mit F16-Rückfragen zu einem startbaren Stand.
 
     Liefert ein Ergebnis mit den zuletzt bestehenden Befunden und der nächsten
@@ -565,7 +570,8 @@ def assist_preflight(project, agents_dir, tester, reviewer, state_dir=None,
     """
     questions, autonomous = _question_modules()
     errors = preflight_errors(
-        project, agents_dir, tester, reviewer, state_dir
+        project, agents_dir, tester, reviewer, state_dir,
+        allow_dirty=allow_dirty,
     )
     if not errors:
         return _assist_result([], "pass")
@@ -646,7 +652,8 @@ def assist_preflight(project, agents_dir, tester, reviewer, state_dir=None,
                 "Ungültige Antwort auf Rückfrage " + qid + "; Lauf abgebrochen."
             ], "invalid")
         errors = preflight_errors(
-            project, agents_dir, tester, reviewer, state_dir
+            project, agents_dir, tester, reviewer, state_dir,
+            allow_dirty=allow_dirty,
         )
         if not errors:
             return _assist_result([], "pass")
@@ -797,6 +804,7 @@ def command_preflight(args):
             project_name=args.project_name,
             timeout=args.timeout,
             rounds=args.assist_rounds,
+            allow_dirty=args.allow_dirty,
         )
         errors = result["errors"]
         if args.action_file:
@@ -808,8 +816,14 @@ def command_preflight(args):
                 return EXIT_USAGE
     else:
         errors = preflight_errors(
-            args.project, args.agents_dir, args.tester, args.reviewer, args.state
+            args.project, args.agents_dir, args.tester, args.reviewer, args.state,
+            allow_dirty=args.allow_dirty,
         )
+    if args.allow_dirty:
+        dirty = dirty_report(args.project)
+        if dirty:
+            print("HINWEIS: Lauf trotz nicht committeter Änderungen; sie "
+                  "bleiben unverändert:\n" + dirty)
     for error in errors:
         print("BLOCKIERT: " + error)
     return EXIT_USAGE if errors else EXIT_OK
@@ -902,6 +916,10 @@ def build_parser():
     preflight.add_argument(
         "--assist-rounds", type=int, default=0,
         help="bereits ausgeführte Agentenrunden der Assistenz (F22)",
+    )
+    preflight.add_argument(
+        "--allow-dirty", action="store_true",
+        help="unsauberen Arbeitsbaum ausdrücklich zulassen (F27)",
     )
     preflight.set_defaults(handler=command_preflight)
 

@@ -339,6 +339,13 @@ PREFLIGHT_ARGS=(preflight --project "$P"
   --agents-dir "${VIBE_AGENTS_DIR:-$HOME/.config/opencode/agents}"
   --tester "${TESTER:-}" --reviewer "${REVIEWER:-}"
   --state "$STATE")
+# F27: Ein ausdrücklich angeforderter Neustart darf einen unsauberen
+# Integrationsstand zulassen. Die Änderungen bleiben dabei unangetastet; der
+# Preflight überspringt ausschließlich diesen einen Befund. Die Abschluss-
+# prüfung verlangt weiterhin einen sauberen Stand.
+if [ "${VIBE_KEEP_CHANGES:-0}" = "1" ]; then
+  PREFLIGHT_ARGS+=(--allow-dirty)
+fi
 PREFLIGHT_ACTION_FILE="$RUNTIME/$NAME.preflight-action.json"
 if [ "${VIBE_PREFLIGHT_ASSIST:-0}" = "1" ] \
     && [ -f "$BIN/vibe_questions.py" ] \
@@ -494,7 +501,14 @@ while [ "$PACKAGES" -lt "$MAXP" ] && [ "$STOP" = 0 ]; do
   fi
   # Zwischen zwei Paketen muss der Integrationsstand sauber bleiben. Sonst
   # würde das nächste Paket auf einem fremden, ungeprüften Stand aufsetzen.
+  # F27: Ein ausdrücklich angeforderter Neustart lässt vorhandene Änderungen
+  # bis zur Gesamtprüfung zu; sie bleiben unverändert und werden nicht Teil
+  # der Paketbranches. Die abschließende Prüfung bleibt streng.
   DIRTY_NOW="$(git -C "$P" status --porcelain)"
+  if [ -n "$DIRTY_NOW" ] && [ "${VIBE_KEEP_CHANGES:-0}" = "1" ]; then
+    echo "HINWEIS: Nicht committete Änderungen bleiben unverändert; die Gesamtprüfung verlangt weiterhin einen sauberen Integrationsstand." | tee -a "$LOG"
+    DIRTY_NOW=""
+  fi
   if [ -n "$DIRTY_NOW" ]; then
     BLOCK_REASON="Integrationsstand ist nicht sauber: $DIRTY_NOW"
     record_block "INTEGRATION" "$BLOCK_REASON"

@@ -617,7 +617,7 @@ class H(BaseHTTPRequestHandler):
             if u.path in ("/api/run", "/api/stop", "/api/verify", "/api/feedback", "/api/ticket", "/api/init", "/api/rights", "/api/pause", "/api/sandbox", "/api/guide", "/api/costs", "/api/autonomous", "/api/steer", "/api/github"): known(name)
             extra = {}
             if u.path == "/api/steer": ok, msg = steer_project(name, body.get("text", ""))
-            elif u.path == "/api/run": ok, msg = vibe_services.capture(vibe.cmd_run, name, body.get("agent") or None)
+            elif u.path == "/api/run": ok, msg = vibe_services.capture(vibe.cmd_run, name, body.get("agent") or None, keep_changes=bool(body.get("keep_changes")))
             elif u.path == "/api/stop": ok, msg = vibe_services.capture(vibe.cmd_stop, name, body.get("run_id") or None)
             elif u.path == "/api/verify": ok, msg = vibe_services.verify_bg(vibe, name, "full" if body.get("mode") == "full" else "quick")
             elif u.path == "/api/init": ok, msg = vibe_services.capture(vibe.cmd_init, name, body.get("type") or None)

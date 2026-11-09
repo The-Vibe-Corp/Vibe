@@ -25,18 +25,18 @@
     },
     {
       "path": "bin/vibe",
-      "sha256": "a6243e78ee8829ae7649f57b02955aee59372407dffa8075be2bfbb49b90cd6f",
-      "bytes": 224442
+      "sha256": "8dcb6864c94c5aacfa35432ddb7dd2e5b9e6c813dc10a6d38cecc6be9d03dda3",
+      "bytes": 226976
     },
     {
       "path": "bin/vibe-run.sh",
-      "sha256": "269b35c906605f50d855fcd75feabd47d1d694b8b188a0deeb52fb3f5961a44a",
-      "bytes": 30029
+      "sha256": "f4f11bd29c4d63e786000123c98a22f0c6e221d064d3c19285aa709d8cf06a21",
+      "bytes": 30863
     },
     {
       "path": "bin/vibe-web.py",
-      "sha256": "f22bd4b1cf0f27463a85201c119d9b07420f12f4159aabf626c91bb6021edff7",
-      "bytes": 58054
+      "sha256": "8def9c7316f976e6469de3bbf74640e8be88b84fa004eb0a45912788de064a8a",
+      "bytes": 58099
     },
     {
       "path": "bin/vibe_autonomous.py",
@@ -75,8 +75,8 @@
     },
     {
       "path": "bin/vibe_packages.py",
-      "sha256": "5830e8db5f110e502278051f84ed468e030521942b597b32ca555647c21b4b5c",
-      "bytes": 34271
+      "sha256": "d9505bdcf86b632f3e37abeb19a95df607165f73d6db881fd4c33fcbd2b875d7",
+      "bytes": 35090
     },
     {
       "path": "bin/vibe_paths.py",
@@ -110,8 +110,8 @@
     },
     {
       "path": "bin/web/app.js",
-      "sha256": "98b516fb83eb53d234d22548b09e02dd9ec7214d6f2a747a7ca294324f375512",
-      "bytes": 105595
+      "sha256": "ba2919f9a3937a13f01ba21de1393ec9499ba0bc0e238f660c748137bdbae839",
+      "bytes": 105937
     },
     {
       "path": "bin/web/index.html",
@@ -884,6 +884,18 @@
         "templates/rebuild/AGENTS.md",
         "templates/web/AGENTS.md",
         "scripts/setup-vibe.py"
+      ]
+    },
+    {
+      "arbeitspaket": "F27",
+      "datum": "2026-11-09",
+      "grund": "Unterbrochenen Lauf trotz nicht committeter Projektänderungen wieder anstoßen (F27): explizite Option --keep-changes/VIBE_KEEP_CHANGES=1 im CLI, Preflight --allow-dirty mit unveränderter Blockade anderer Befunde, API-Feld keep_changes und Dashboard-Aktion „Trotz Änderungen starten“ mit Bestätigung und Dateinennung; die Abschlussprüfung blockiert weiterhin einen unsauberen Integrationsstand. Zusätzlich überschreibt vibe eine uncommittet geänderte AGENTS.md nicht mehr, sondern warnt.",
+      "dateien": [
+        "bin/vibe",
+        "bin/vibe-run.sh",
+        "bin/vibe-web.py",
+        "bin/vibe_packages.py",
+        "bin/web/app.js"
       ]
     }
   ]
