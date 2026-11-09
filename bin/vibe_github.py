@@ -34,6 +34,7 @@ DEFAULT_LABEL = "vibe"
 TOKEN_ENV = ("GITHUB_TOKEN", "GH_TOKEN")
 TRUE_VALUES = ("1", "true", "yes", "on")
 TIMEOUT_GIT = 120
+TIMEOUT_REMOTE_READ = 10
 TIMEOUT_HTTP = 30
 RE_REPO = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 TICKET_GH_RE = re.compile(r"(?m)^\s*-\s*\[[^\]]*\]\s*GH-(\d+)\b")
@@ -147,19 +148,26 @@ def _require_github_slug(parts):
     return slug
 
 
-def git(project_path, *args):
-    """Führt Git mit Argumentlisten aus (ohne Shell, mit Zeitlimit)."""
+def git(project_path, *args, timeout=TIMEOUT_GIT):
+    """Führt Git mit Argumentlisten aus (ohne Shell, mit Zeitlimit).
+
+    Ohne Terminal-Prompt: Eine nicht erreichbare oder nach Zugangsdaten
+    fragende Gegenstelle darf das Dashboard nicht anhalten.
+    """
     argv = ["git", "--no-pager", "-c", "core.fsmonitor=false", *[str(a) for a in args]]
     if not all(isinstance(a, str) for a in argv):
         raise ValueError("Argumentliste erwartet: nur Zeichenketten")
+    env = os.environ.copy()
+    env.setdefault("GIT_TERMINAL_PROMPT", "0")
+    env.setdefault("GCM_INTERACTIVE", "never")
     try:
         result = subprocess.run(argv, cwd=str(project_path), capture_output=True,
-                                text=True, timeout=TIMEOUT_GIT)
+                                text=True, timeout=timeout, env=env)
         return result.returncode, (result.stdout + result.stderr).strip()
     except FileNotFoundError:
         return 127, "Programm nicht gefunden: git"
     except subprocess.TimeoutExpired:
-        return 124, f"Zeitüberschreitung nach {TIMEOUT_GIT:g} s: {' '.join(argv)}"
+        return 124, f"Zeitüberschreitung nach {timeout:g} s: {' '.join(argv)}"
     except OSError as error:
         return 126, f"Programm nicht ausführbar: git: {error}"
 
@@ -196,29 +204,43 @@ def mask_url(url):
     return scheme + "://***@" + after
 
 
-def _push_state(project_path, branch, remote_sha=None):
-    """Ahead/Behind des Branches gegen origin (aktuell via ls-remote).
+def _local_push_state(project_path, branch):
+    """Ahead/Behind gegen die lokale Fern-Referenz, ohne Netzwerk."""
+    rc, _ = git(project_path, "rev-parse", "--verify", "--quiet",
+                "origin/" + branch)
+    if rc != 0:
+        return 0, 0
+    return _revision_compare_local(project_path, branch, "origin/" + branch)
 
-    Es wird nichts ins lokale Fern-Referenzlayout geschrieben und nichts
-    zusammengeführt. Der bewusste Abgleich liest die Fern-Referenz und
-    zieht bei unbekanntem Fern-Objekt nur dieses Objekt nach (kein Merge,
-    keine verschobenen Fern-Referenzen). Ohne Remote-Eintrag oder bei
-    Fehler bleibt der Stand bei 0/0 (keine veralteten Referenzen).
-    ``remote_sha`` darf eine bereits ermittelte Fern-SHA sein, damit
-    Branchlisten mit einem einzigen ls-remote auskommen.
+
+def _push_state(project_path, branch, remote_sha=None, *, remote=True):
+    """Ahead/Behind des Branches gegen origin.
+
+    Mit ``remote=False`` wird ausschließlich die lokale
+    ``origin/<branch>``-Referenz gelesen; es findet keine Netzwerkabfrage
+    statt. Das Dashboard nutzt diesen Modus, damit ein nicht erreichbares
+    Remote das Öffnen eines Projekts nicht blockiert.
+
+    Mit ``remote=True`` wird die aktuelle Fern-Referenz via ls-remote
+    gelesen. Es wird nichts ins lokale Fern-Referenzlayout geschrieben und
+    nichts zusammengeführt. Der bewusste Abgleich zieht bei unbekanntem
+    Fern-Objekt nur dieses Objekt nach (kein Merge, keine verschobenen
+    Fern-Referenzen). Ohne Remote-Eintrag oder bei Fehler bleibt der Stand
+    bei 0/0 (keine veralteten Referenzen). ``remote_sha`` darf eine bereits
+    ermittelte Fern-SHA sein, damit Branchlisten mit einem einzigen
+    ls-remote auskommen.
     """
     if not branch:
         return 0, 0
     if not any(r["name"] == "origin" for r in remotes(project_path)):
         return 0, 0
+    if not remote:
+        return _local_push_state(project_path, branch)
     if remote_sha is None:
-        rc, out = git(project_path, "ls-remote", "origin", "refs/heads/" + branch)
+        rc, out = git(project_path, "ls-remote", "origin",
+                      "refs/heads/" + branch, timeout=TIMEOUT_REMOTE_READ)
         if rc != 0:
-            rc, _ = git(project_path, "rev-parse", "--verify", "--quiet",
-                        "origin/" + branch)
-            if rc != 0:
-                return 0, 0
-            return _revision_compare_local(project_path, branch, "origin/" + branch)
+            return _local_push_state(project_path, branch)
         remote_sha = _lsremote_sha(out, branch)
         if not remote_sha:
             return 0, 0
@@ -227,7 +249,8 @@ def _push_state(project_path, branch, remote_sha=None):
         # damit rev-list gegen die rohe SHA rechnen kann. Das zieht keine
         # Merge-Kopien und verschiebt keine Fern-Referenzen; scheitert der
         # Nachzug, bleibt der Stand bei 0/0 (keine veralteten Referenzen).
-        git(project_path, "fetch", "--quiet", "origin", remote_sha)
+        git(project_path, "fetch", "--quiet", "origin", remote_sha,
+            timeout=TIMEOUT_REMOTE_READ)
     return _revision_compare_local(project_path, branch, remote_sha)
 
 
@@ -256,12 +279,18 @@ def _revision_compare_local(project_path, left, right):
     return int(fields[0]), int(fields[1])
 
 
-def status(project_path):
-    """Leseansicht: konfigurierte Verknüpfung und Git-Zustand."""
+def status(project_path, *, remote=True):
+    """Leseansicht: konfigurierte Verknüpfung und Git-Zustand.
+
+    ``remote=False`` liest Ahead/Behind nur aus lokalen Referenzen und
+    vermeidet jede Netzwerkabfrage. Ohne aktivierte GitHub-Verknüpfung
+    wird ebenfalls nie eine Fernabfrage ausgelöst.
+    """
     project = str(project_path)
     config = read_config(os.path.join(project, ".vibe", "project.env"))
     branch = current_branch(project)
-    ahead, behind = _push_state(project, branch)
+    ahead, behind = _push_state(project, branch,
+                                remote=remote and config["enabled"])
     return {
         "enabled": config["enabled"],
         "repo": config["repo"],
@@ -275,25 +304,30 @@ def status(project_path):
     }
 
 
-def branches(project_path):
+def branches(project_path, *, remote=True):
     """Lokale Branches mit aktuell-Flag und Abstand zum Upstream.
 
     Ein einziger ls-remote liefert alle Fern-SHA-Werte; der Abstand wird
-    je Branch lokal gerechnet."""
+    je Branch lokal gerechnet. Mit ``remote=False`` oder ohne aktivierte
+    GitHub-Verknüpfung bleiben lokale Referenzen die Grundlage und es
+    findet keine Netzwerkabfrage statt."""
     project = str(project_path)
+    config = read_config(os.path.join(project, ".vibe", "project.env"))
+    use_remote = remote and config["enabled"]
     head = current_branch(project)
     rc, out = git(project, "for-each-ref", "refs/heads",
                   "--format=%(refname:short)\t%(objectname:short)\t%(contents:subject)")
     rows = []
     if rc != 0:
         return rows
-    remote = _remote_shas(project)
+    remote_shas = _remote_shas(project) if use_remote else {}
     for line in out.splitlines():
         fields = line.split("\t")
         if not fields or not fields[0]:
             continue
         name = fields[0]
-        ahead, behind = _push_state(project, name, remote.get(name))
+        ahead, behind = _push_state(project, name, remote_shas.get(name),
+                                    remote=use_remote)
         rows.append({
             "name": name,
             "current": name == head,
@@ -308,7 +342,8 @@ def _remote_shas(project):
     """Fern-SHA-Werte von origin in einem ls-remote (None bei Fernfehler)."""
     if not any(r["name"] == "origin" for r in remotes(project)):
         return {}
-    rc, out = git(project, "ls-remote", "--heads", "origin")
+    rc, out = git(project, "ls-remote", "--heads", "origin",
+                  timeout=TIMEOUT_REMOTE_READ)
     if rc != 0:
         return {}
     mapping = {}

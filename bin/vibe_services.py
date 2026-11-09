@@ -123,8 +123,12 @@ def project_detail(vibe, paths, name):
     except ValueError:
         data["autonomous"] = False
     try:
-        data["github"] = vibe_github.status(vibe.ppath(name))
-        data["github"]["branches"] = vibe_github.branches(vibe.ppath(name))
+        # Die Projektansicht darf nie auf ein Git-Remote warten. Fernstatus
+        # (ahead/behind) kommt hier ausschließlich aus lokalen Referenzen;
+        # bewusste Netzaktionen laufen über die GitHub-Aktionen.
+        data["github"] = vibe_github.status(vibe.ppath(name), remote=False)
+        data["github"]["branches"] = vibe_github.branches(vibe.ppath(name),
+                                                          remote=False)
     except Exception as error:  # noqa: BLE001 - Ansicht degradiert, Dashboard bleibt nutzbar
         data["github"] = {"enabled": False, "repo": "", "label": vibe_github.DEFAULT_LABEL,
                           "api": vibe_github.OFFICIAL_API, "remotes": [], "branch": "-",
