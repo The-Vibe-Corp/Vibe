@@ -207,5 +207,6 @@ für die geänderten Programmdateien und `scripts/setup-vibe.py`,
 ## Trilium
 
 Trilium-Eintrag: `RTYec92LsBSL` („AP6 Vorbereitung für github Repo“ im
-Projektordner „vibe“ / „Features“); wird beim Abschluss um die Commit- und
-Review-Kennungen ergänzt.
+Projektordner „vibe“ / „Features“); enthält die Prüfnachweise und wurde am
+2026-11-09 um den Commitstand (`86e90d8`) und die Reviewrunden 1–3
+(abgeschlossen mit PASS) ergänzt.
