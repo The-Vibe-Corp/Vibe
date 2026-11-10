@@ -64,8 +64,8 @@ def _parse(text):
     """Liest den Zustand streng; unbekannte Einträge werden ignoriert."""
     try:
         data = json.loads(text)
-    except json.JSONDecodeError:
-        raise ValueError("Autonomer Modus ist nicht lesbar")
+    except json.JSONDecodeError as error:
+        raise ValueError("Autonomer Modus ist nicht lesbar") from error
     if not isinstance(data, dict):
         raise ValueError("Autonomer Modus ist nicht lesbar")
     raw = data.get("projects", {})
@@ -90,8 +90,8 @@ def load(runtime):
             text = handle.read()
     except FileNotFoundError:
         return _empty()
-    except OSError:
-        raise ValueError("Autonomer Modus ist nicht lesbar")
+    except OSError as error:
+        raise ValueError("Autonomer Modus ist nicht lesbar") from error
     return _parse(text)
 
 

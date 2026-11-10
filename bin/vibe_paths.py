@@ -242,8 +242,16 @@ def _resolve_profile(overrides, environ, config):
     return profile
 
 
-class Paths:
-    """Aufgelöste Pfade, Ports und Profile für einen vibe-Aufruf."""
+class Paths:  # pylint: disable=too-many-instance-attributes
+    """Aufgelöste Pfade, Ports und Profile für einen vibe-Aufruf.
+
+    Bewusste Ausnahme zur Attributanzahl: Die FIELDS bleiben flache,
+    benannte Attribute (13 Werte), weil sie genau die vier Pfadrollen plus
+    die Port-/Bind-Einstellungen des Modulkopfs abbilden. Eine Gruppierung
+    in Unterobjekten würde das Kernmodell der Auflösung verkomplizieren
+    (KISS): Aufrufer greifen überall direkt auf die Felder wie
+    ``paths.runtime`` oder ``paths.ui_port`` zu.
+    """
 
     FIELDS = (
         "profile",

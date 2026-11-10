@@ -45,6 +45,7 @@ def is_unknown(value):
 
 
 def parse_date(value):
+    """Liest ein ISO-Datum (JJJJ-MM-TT) oder lässt unbekannt (None) stehen."""
     text = _text(value)
     if not _DATUM_RE.match(text):
         return None

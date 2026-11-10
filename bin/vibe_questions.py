@@ -143,17 +143,17 @@ def create(runtime, project="", agent="", text="", options=None, free_text=True,
 def _load_answer(runtime, qid):
     try:
         with open(_path(runtime, qid, ANSWER_SUFFIX), encoding="utf-8") as handle:
-            answer = json.load(handle)
+            data = json.load(handle)
     except FileNotFoundError:
         return None
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ValueError("Antwort nicht lesbar: " + qid) from error
+    if not isinstance(data, dict):
         raise ValueError("Antwort nicht lesbar: " + qid)
-    if not isinstance(answer, dict):
-        raise ValueError("Antwort nicht lesbar: " + qid)
-    answer.setdefault("option", None)
-    answer.setdefault("option_text", None)
-    answer.setdefault("text", "")
-    return answer
+    data.setdefault("option", None)
+    data.setdefault("option_text", None)
+    data.setdefault("text", "")
+    return data
 
 
 def load(runtime, qid):
@@ -161,10 +161,10 @@ def load(runtime, qid):
     try:
         with open(_path(runtime, qid, ".json"), encoding="utf-8") as handle:
             record = json.load(handle)
-    except FileNotFoundError:
-        raise ValueError("Rückfrage nicht gefunden: " + qid)
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
-        raise ValueError("Rückfrage nicht lesbar: " + qid)
+    except FileNotFoundError as error:
+        raise ValueError("Rückfrage nicht gefunden: " + qid) from error
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ValueError("Rückfrage nicht lesbar: " + qid) from error
     if not isinstance(record, dict) or record.get("id") != qid:
         raise ValueError("Rückfrage nicht lesbar: " + qid)
     record.setdefault("project", "")
@@ -262,8 +262,8 @@ def answer(runtime, qid, option=None, text="", by="web"):
             expected=vibe_storage.MISSING,
             mode=0o600,
         )
-    except vibe_storage.ConcurrentChangeError:
-        raise ValueError("Rückfrage ist bereits beantwortet: " + qid)
+    except vibe_storage.ConcurrentChangeError as error:
+        raise ValueError("Rückfrage ist bereits beantwortet: " + qid) from error
     return answer_record
 
 
@@ -297,7 +297,8 @@ def wait(runtime, qid, timeout=90.0, interval=WAIT_INTERVAL):
 def project_for_path(path, projects):
     """Projektname, in dessen Ordner ``path`` liegt (längster Treffer)."""
     target = os.path.realpath(os.path.abspath(os.path.expanduser(str(path))))
-    best = None
+    best_name = None
+    best_root = ""
     for name, root in sorted(projects.items()):
         if not root:
             continue
@@ -305,6 +306,6 @@ def project_for_path(path, projects):
             os.path.abspath(os.path.expanduser(str(root)))
         )
         if target == candidate or target.startswith(candidate + os.sep):
-            if best is None or len(candidate) > len(best[1]):
-                best = (name, candidate)
-    return best[0] if best else None
+            if best_name is None or len(candidate) > len(best_root):
+                best_name, best_root = name, candidate
+    return best_name

@@ -20,8 +20,8 @@
     },
     {
       "path": "bin/fritz-reconnect.py",
-      "sha256": "16a2b80ed79313ae87c88dc7fc5041115a8a256dc805eb668845501eeb983ce2",
-      "bytes": 3293
+      "sha256": "e5ae3183efcb76dace1e0bcbde9993be7afe82d93d7877da9ee39846cf45330a",
+      "bytes": 4194
     },
     {
       "path": "bin/vibe",
@@ -35,78 +35,78 @@
     },
     {
       "path": "bin/vibe-web.py",
-      "sha256": "6bcbbf920db9e20d5d06c35467c8e394cd3d136e6edb79714ec7e6a2edd9ca75",
-      "bytes": 61207
+      "sha256": "bf3c6b797a357545a6db52fa08493e31c3ad3d7f69e23bc0a3bdee9db151e0c5",
+      "bytes": 65334
     },
     {
       "path": "bin/vibe_autonomous.py",
-      "sha256": "3719eaa5a360e3a47afc3e0ead250d7e4b62e4fb4ca721d70a894c0c81ef7418",
-      "bytes": 5149
+      "sha256": "51ad254cfb7b3268b28b92c11101118128d77b10d97adc33eb73c82b83b43acc",
+      "bytes": 5189
     },
     {
       "path": "bin/vibe_github.py",
-      "sha256": "f808dbf19e65e0b043c3f1c7d7d6dadc4fe0307ac307b872151ba9690cd760c3",
-      "bytes": 30239
+      "sha256": "fc73e22d80f1e9a04579e0c60a4f88de4a2ba200cf35a32f63d6a9f9d9a7d279",
+      "bytes": 30796
     },
     {
       "path": "bin/vibe_guide.py",
-      "sha256": "d5fd488738af33fdb484a3b3e22818629ab66cb6d5edd72e1a63cf8b45c78936",
-      "bytes": 26241
+      "sha256": "5f3960c199534fe83685b6572f5bdf6c85c940bb6c6ee3cb54313733f2642f4a",
+      "bytes": 27530
     },
     {
       "path": "bin/vibe_harness.py",
-      "sha256": "d915fcfddd579a8ff4a0128bb5fa7350beb53cdae57737d523aed3d433719745",
-      "bytes": 21708
+      "sha256": "2e613abcb90a6eec6b21dfd4e963692f8b0bba39ce1ee53ab8cdcef729b7fc98",
+      "bytes": 21634
     },
     {
       "path": "bin/vibe_mcp.py",
-      "sha256": "20ec043a9b912bc8769ba41ec29ee77790b6eee2f069ed491951156b9fc89d63",
-      "bytes": 52599
+      "sha256": "c056d9c7927ad03ce5c69ca97c93c9ba088f73566f7649611b066f7b3274c00a",
+      "bytes": 55440
     },
     {
       "path": "bin/vibe_models.py",
-      "sha256": "9e013459696c2a1a9fab378a771961afc3630768bde066a674962792ca0762ab",
-      "bytes": 20977
+      "sha256": "645ed7fb1bf3cfc9bb66488d47ca49316b98ec95f887156f3ddd754d95b8c50b",
+      "bytes": 21057
     },
     {
       "path": "bin/vibe_opencode.py",
-      "sha256": "f1ecde3bf4063913fbe2b78840ac85763667789d790b78639d5935d5bee606bc",
-      "bytes": 16360
+      "sha256": "ac3b26da4208a087a09c67c389238c82802d7c1bd50b10d9bcd9492a07050462",
+      "bytes": 16753
     },
     {
       "path": "bin/vibe_packages.py",
-      "sha256": "29fcb0a80ba776da1c540394eaccc70aa9c0a0852bef23b246aeb3a8476192bd",
-      "bytes": 38067
+      "sha256": "a585ef32d131f06fbf4e789b9260a1b7d718d553977e666ba44cc8c60f2e8bbd",
+      "bytes": 40115
     },
     {
       "path": "bin/vibe_paths.py",
-      "sha256": "9bd00fbfc0c8e9acd91043f1d7461dbcbd6af932da7819bd95c546c02ae211f7",
-      "bytes": 18288
+      "sha256": "f988fcb1991c776cf2ba3f2dbbb645272d83b7c31d9a870f08659066647ab674",
+      "bytes": 18748
     },
     {
       "path": "bin/vibe_questions.py",
-      "sha256": "d5630e455a667973fdafbe91ad44944da0bf0a4865a4d714d00eee3065aeb10f",
-      "bytes": 11589
+      "sha256": "9a4bb9a2a182977c276b04676b133d918c97ed4f0a957c4d6f0e72835848b5cd",
+      "bytes": 11677
     },
     {
       "path": "bin/vibe_runs.py",
-      "sha256": "3fd628919a69bed995740320225a34071998b54c6e911e246b3d8e7c33118f0a",
-      "bytes": 28495
+      "sha256": "068d6cd87876c01f2169e480aac012f963517a58be41a8811e8fd6f952694b29",
+      "bytes": 28799
     },
     {
       "path": "bin/vibe_sandbox.py",
-      "sha256": "00e126c27fe3262cc61916c96db87bcd29c0fec2a9e86b48b25f65dd45e7ee71",
-      "bytes": 27776
+      "sha256": "3edb8046ad3dd29bc65a3c3d4c0cc743d79648d8b09938b7057447972ca1fdfd",
+      "bytes": 28218
     },
     {
       "path": "bin/vibe_services.py",
-      "sha256": "3896b231c70c38979d900a965449aee7c3a3e7a84fe78e933807d86d038ff053",
-      "bytes": 9211
+      "sha256": "0117a37f4ea9d6ff1ba404a2099cfede19df7ea2e4a56faf6ff777b34def1ab8",
+      "bytes": 10053
     },
     {
       "path": "bin/vibe_storage.py",
-      "sha256": "2fad84e426278fa693c4f1b1fa14d33b97acb0942aaad803c9bd58728427b75f",
-      "bytes": 19810
+      "sha256": "7b6aa4118259dc3440b37eaeec5eaa96eac7d928e6e704b2310946490bd25fbb",
+      "bytes": 21156
     },
     {
       "path": "bin/web/app.js",
@@ -950,11 +950,24 @@
     {
       "arbeitspaket": "F28",
       "datum": "2026-11-10",
-      "grund": "F28 überarbeitet die Module gemäß pylint-Bericht 4.0.5 (Kopie: docs/reviews/F28-nutzer-pylint-report_2026_11_10.txt; zulässige Ausnahmen offen dokumentiert in tests/unit/test_f28_pylint_quality.py). In vibe-web.py und vibe_mcp.py Anweisungen je auf eine Zeile verteilt und fehlende Docstrings ergänzt; in vibe_paths.py die Schleife in Paths.__init__ durch explizite Feldzuweisungen ersetzt und except-Bläcke mit 'from' als Ausnahmekette notiert. Kein Verhaltensunterschied (AK2); die drei Dateien sind im Manifest-Bereich 'bin', daher wurden Größe und SHA-256 in diesem Eintrag aktualisiert und dadurch begründet.",
+      "grund": "F28 überarbeitet die 16 Python-Module unter bin/ gemäß pylint-Bericht 4.0.5 (Kopie: docs/reviews/F28-nutzer-pylint-report_2026_11_10.txt; Baseline: docs/reviews/F28-pylint-baseline_2026_11_10.txt; zulässige Ausnahmen offen dokumentiert in tests/unit/test_f28_pylint_quality.py). Fehlende Docstrings ergänzt, Ausgaben mit %-Formatierung auf f-Strings gestellt, Ausnahmeketten mit 'from' notiert, Ausnahmen überwiegend verengt, encoding='utf-8' an offenen Textdateien, check=False an beabsichtigten Prozessprüfungen, Importe aufgeteilt/nach oben, drei echte Entflechtungen der duplicate-code-Paare (fsync_dir in vibe_storage, discard_quiet geteilt, run_command in vibe_opencode), Zeilenbezogene, deutsch begründete Disables nur an bewussten Fallback-Fängen, http.server-Vertragsnamen und spät gebundenen Importen. Kein Verhaltensunterschied (AK2); alle 16 Dateien sind im Manifest-Bereich 'bin', daher wurde Größe und SHA-256 dieses Eintrags aktualisiert und dadurch begründet.",
       "dateien": [
+        "bin/fritz-reconnect.py",
         "bin/vibe-web.py",
+        "bin/vibe_autonomous.py",
+        "bin/vibe_github.py",
+        "bin/vibe_guide.py",
+        "bin/vibe_harness.py",
         "bin/vibe_mcp.py",
-        "bin/vibe_paths.py"
+        "bin/vibe_models.py",
+        "bin/vibe_opencode.py",
+        "bin/vibe_packages.py",
+        "bin/vibe_paths.py",
+        "bin/vibe_questions.py",
+        "bin/vibe_runs.py",
+        "bin/vibe_sandbox.py",
+        "bin/vibe_services.py",
+        "bin/vibe_storage.py"
       ]
     }
   ]

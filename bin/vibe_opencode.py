@@ -123,6 +123,7 @@ class VersionInfo:
 
     @property
     def supported(self):
+        """True für exakt geprüfte oder als kompatibel angenommene Versionen."""
         return self.status in ("supported", "assumed") and bool(self.profile)
 
     @property
@@ -131,6 +132,7 @@ class VersionInfo:
         return self.status == "supported"
 
     def as_dict(self):
+        """Kurzfassung für Meldungen: status, version, message, TESTED_VERSION."""
         return {
             "status": self.status,
             "version": self.version,
@@ -145,19 +147,23 @@ def _short(text, limit=SHORT_LIMIT):
     return value if len(value) <= limit else value[: limit - 1] + "…"
 
 
-def run_command(argv, timeout=15):
+def run_command(argv, timeout=15, environ=None):
     """Startet ein Programm ohne Shell und liefert ``(Exitcode, Ausgabe)``.
 
     Die Semantik entspricht ``vibe.run``: 127 = Programm nicht gefunden,
     124 = Zeitüberschreitung, 126 = nicht ausführbar. Der Adapter bleibt
     dadurch unabhängig von ``bin/vibe`` und ohne zirkulären Import.
+
+    ``environ`` ist für Diagnosen mit eigener Umgebung gedacht (z. B. ein
+    temporärer PATH in Tests); bei ``None`` erbt das Programm die Umgebung.
     """
     if (not isinstance(argv, (list, tuple)) or not argv
             or not all(isinstance(arg, str) for arg in argv)):
         raise ValueError("Argumentliste erwartet: Programm und Argumente als Zeichenketten")
     argv = list(argv)
     try:
-        process = subprocess.run(argv, capture_output=True, text=True, timeout=timeout)
+        process = subprocess.run(argv, capture_output=True, text=True,
+                                 timeout=timeout, env=environ, check=False)
         return process.returncode, (process.stdout + process.stderr).strip()
     except FileNotFoundError:
         return 127, "Programm nicht gefunden: " + argv[0]

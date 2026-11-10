@@ -39,7 +39,10 @@ import urllib.request
 
 if os.path.dirname(os.path.realpath(__file__)) not in sys.path:
     sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
-import vibe_storage  # gemeinsame Storage-Schicht: Kollisionserkennung (V-005)
+# Bewusste Ausnahme (wrong-import-position): Der sys.path-Zusatz für die
+# Skriptausführung liegt bewusst vor dem Import; das Modul wird auch einzeln
+# mit unvollständiger Installation aufgerufen (gemeinsame Storage-Schicht, V-005).
+import vibe_storage  # pylint: disable=wrong-import-position
 
 OFFICIAL_API = "https://api.github.com"
 DEFAULT_LABEL = "vibe"
@@ -82,9 +85,13 @@ def token_state_dir(environ=None):
     if state:
         return os.path.abspath(state)
     try:  # CLI-Kontext ohne VIBE_STATE: denselben Zustandsordner auflösen
-        import vibe_paths
+        # Bewusste Ausnahme (import-outside-toplevel): spät importiert, scheitert
+        # die Auflösung, bleibt der Token-Umgang mit dem Ausweichpfad unten.
+        import vibe_paths  # pylint: disable=import-outside-toplevel
         return os.path.abspath(vibe_paths.resolve().state)
-    except Exception:  # noqa: BLE001 - Bestandssicherer Ausweichpfad, Tests isoliert
+    # Bewusste Ausnahme (broad-exception-caught): bestandssicherer Ausweichpfad,
+    # auch unter isolierten Tests nie stoppend.
+    except Exception:  # noqa: BLE001; pylint: disable=broad-exception-caught
         return os.path.join(os.path.expanduser("~"), ".local", "state", "vibe")
 
 
@@ -122,10 +129,7 @@ def save_token(token):
             pass
         os.replace(tmp, path)
     except OSError:
-        try:
-            os.unlink(tmp)
-        except OSError:
-            pass
+        vibe_storage.discard_quiet(tmp)
         raise
 
 
@@ -287,7 +291,7 @@ def git(project_path, *args, timeout=TIMEOUT_GIT):
     _apply_credential_env(env, token_from_env() or read_stored_token())
     try:
         result = subprocess.run(argv, cwd=str(project_path), capture_output=True,
-                                text=True, timeout=timeout, env=env)
+                                text=True, timeout=timeout, env=env, check=False)
         return result.returncode, (result.stdout + result.stderr).strip()
     except FileNotFoundError:
         return 127, "Programm nicht gefunden: git"
@@ -305,8 +309,8 @@ def _apply_credential_env(env, token):
         count = int(env.get("GIT_CONFIG_COUNT") or 0)
     except ValueError:
         count = 0
-    env["GIT_CONFIG_KEY_%d" % count] = CREDENTIAL_CONFIG_KEY
-    env["GIT_CONFIG_VALUE_%d" % count] = CREDENTIAL_HELPER_VALUE
+    env[f"GIT_CONFIG_KEY_{count}"] = CREDENTIAL_CONFIG_KEY
+    env[f"GIT_CONFIG_VALUE_{count}"] = CREDENTIAL_HELPER_VALUE
     env["GIT_CONFIG_COUNT"] = str(count + 1)
     env[CREDENTIAL_ENV_NAME] = token
     return env
@@ -333,6 +337,7 @@ def _auth_guidance(message):
 
 
 def current_branch(project_path):
+    """Aktuell ausgecheckter Branch; ohne Branch bleibt der Leerwert."""
     rc, out = git(project_path, "symbolic-ref", "--short", "HEAD")
     return out.strip() if rc == 0 and out.strip() else ""
 
@@ -524,7 +529,7 @@ def fetch(project_path):
     rc, out = git(project_path, "fetch", "--all", "--quiet")
     if rc != 0:
         return False, _auth_guidance("Abruf fehlgeschlagen: " + (out or "unbekannter Fehler"))
-    return True, "Abgleich beendet (%d Remote(s))" % count
+    return True, f"Abgleich beendet ({count} Remote(s))"
 
 
 def pull(project_path):
@@ -536,7 +541,7 @@ def pull(project_path):
     rc, out = git(project, "pull", "--ff-only")
     if rc != 0:
         return False, _auth_guidance("Zusammenführen nicht möglich: " + (out or "unbekannter Fehler"))
-    return True, "Branch %s aufgeholt (%s)" % (branch, out or "aktuell")
+    return True, f"Branch {branch} aufgeholt ({out or 'aktuell'})"
 
 
 def push(project_path, branch=""):
@@ -548,7 +553,7 @@ def push(project_path, branch=""):
     rc, out = git(project, "push", "-u", "origin", branch)
     if rc != 0:
         return False, _auth_guidance("Push fehlgeschlagen: " + (out or "unbekannter Fehler"))
-    return True, "Branch %s nach origin übertragen" % branch
+    return True, f"Branch {branch} nach origin übertragen"
 
 
 def check_api(url):
@@ -590,7 +595,7 @@ def _http_json(method, url, *, token="", payload=None, timeout=TIMEOUT_HTTP):
         except (ValueError, UnicodeDecodeError):
             detail = ""
         raise GitHubError(
-            "GitHub-Fehler %d: %s" % (error.code, detail or error.reason or "unbekannt.")
+            f"GitHub-Fehler {error.code}: {detail or error.reason or 'unbekannt.'}"
         ) from None
     except (urllib.error.URLError, OSError) as error:
         raise GitHubError("GitHub nicht erreichbar: " + str(getattr(error, "reason", error))) from None
@@ -697,7 +702,7 @@ def quote(value):
 
 def _sanitize_title(value, number):
     text = " ".join(str(value or "").split())
-    return text or "Issue %s" % number
+    return text or f"Issue {number}"
 
 
 def import_issues_into_tickets(project_path, issues):
@@ -727,10 +732,10 @@ def import_issues_into_tickets(project_path, issues):
             continue
         if not number or number in existing:
             continue
-        entry = "- [ ] GH-%d %s" % (number, _sanitize_title(issue.get("title"), number))
+        entry = f"- [ ] GH-{number} {_sanitize_title(issue.get('title'), number)}"
         existing.add(number)
         block.append(entry)
-        added.append("GH-%d" % number)
+        added.append(f"GH-{number}")
     if not block:
         return 0
     if text and not text.endswith(("\n", "\r")):
@@ -742,4 +747,3 @@ def import_issues_into_tickets(project_path, issues):
         raise ValueError("TICKETS.md wurde zwischenzeitlich geändert — "
                          "Import wiederholen (" + str(error) + ").") from None
     return len(added)
-

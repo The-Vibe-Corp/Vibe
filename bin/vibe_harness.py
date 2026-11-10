@@ -28,7 +28,6 @@ import json
 import os
 import re
 import shutil
-import subprocess
 import sys
 
 import vibe_opencode
@@ -89,6 +88,7 @@ def definition(name):
 
 
 def selection_path(state_dir):
+    """Pfad der Auswahl-Datei im Zustandsordner."""
     return os.path.join(str(state_dir), SELECTION_FILE)
 
 
@@ -116,11 +116,11 @@ def read_selection(state_dir, environ=None):
     except FileNotFoundError:
         return DEFAULT_HARNESS
     except OSError as error:
-        raise HarnessError(f"Harness-Auswahl {path} ist nicht lesbar: {error}")
+        raise HarnessError(f"Harness-Auswahl {path} ist nicht lesbar: {error}") from error
     try:
         data = json.loads(raw)
     except ValueError as error:
-        raise HarnessError(f"Harness-Auswahl {path} ist kein gültiges JSON: {error}")
+        raise HarnessError(f"Harness-Auswahl {path} ist kein gültiges JSON: {error}") from error
     if not isinstance(data, dict) or not isinstance(data.get("harness"), str):
         raise HarnessError(f"Harness-Auswahl {path} enthält kein Feld 'harness'.")
     return definition(data["harness"])["id"]
@@ -133,7 +133,7 @@ def write_selection(state_dir, name, expected=None):
     try:
         os.makedirs(str(state_dir), exist_ok=True)
     except OSError as error:
-        raise HarnessError(f"Zustandsordner {state_dir} konnte nicht angelegt werden: {error}")
+        raise HarnessError(f"Zustandsordner {state_dir} konnte nicht angelegt werden: {error}") from error
     text = json.dumps({"harness": chosen}, indent=1) + "\n"
     snapshot = vibe_storage.read_snapshot(path)
     if expected is None:
@@ -141,28 +141,20 @@ def write_selection(state_dir, name, expected=None):
     try:
         vibe_storage.write_text(path, text, expected=expected)
     except vibe_storage.StorageError as error:
-        raise HarnessError(f"Harness-Auswahl {path} konnte nicht gespeichert werden: {error}")
+        raise HarnessError(f"Harness-Auswahl {path} konnte nicht gespeichert werden: {error}") from error
     return path
 
 
 def _run(runner, argv, timeout, environ=None):
+    """Startet das Programm für Diagnosen; ``runner`` ersetzt es in Tests.
+
+    Ohne Test-Runner wird auf die gemeinsame Semantik des opencode-Adapters
+    zurückgegriffen (127/124/126), optional mit eigener Umgebung für
+    PATH-beschränkte Diagnosen.
+    """
     if runner is not None:
         return runner(argv, timeout)
-    if environ is None:
-        return vibe_opencode.run_command(argv, timeout)
-    # Eigene Umgebung für Diagnosen (z. B. ein temporärer PATH in Tests);
-    # Semantik wie vibe_opencode.run_command: 127/124/126.
-    try:
-        process = subprocess.run(
-            argv, capture_output=True, text=True, timeout=timeout, env=environ
-        )
-        return process.returncode, (process.stdout + process.stderr).strip()
-    except FileNotFoundError:
-        return 127, "Programm nicht gefunden: " + argv[0]
-    except subprocess.TimeoutExpired:
-        return 124, f"Zeitüberschreitung nach {timeout:g} s: {argv[0]}"
-    except OSError as error:
-        return 126, f"Programm nicht ausführbar: {argv[0]}: {error}"
+    return vibe_opencode.run_command(argv, timeout, environ=environ)
 
 
 def probe(name=None, state_dir=None, binary=None, runner=None, timeout=10, environ=None):
@@ -278,7 +270,7 @@ def agent_prompt(project, agent, agents_dir=None):
         except FileNotFoundError:
             continue
         except OSError as error:
-            raise HarnessError(f"Agentendatei {path} ist nicht lesbar: {error}")
+            raise HarnessError(f"Agentendatei {path} ist nicht lesbar: {error}") from error
         match = FRONTMATTER_RE.match(text)
         body = text[match.end():] if match else text
         if not body.strip():
@@ -461,9 +453,13 @@ def _cmd_run(args):
     except OSError as error:
         print(f"Harness-Programm nicht ausführbar: {argv[0]}: {error}", file=sys.stderr)
         return 126
+    # execvp ersetzt das Prozessbild; ein Ende im selben Pythonprozess gibt
+    # es nicht. Diese Rückgabe ist konsistenzhalber vorhanden.
+    return 126
 
 
 def main(argv=None):
+    """Kommandozeileneinstieg; Rückgabe ist der Prozessende-Code."""
     parser = argparse.ArgumentParser(prog="vibe_harness.py")
     sub = parser.add_subparsers(dest="command", required=True)
 

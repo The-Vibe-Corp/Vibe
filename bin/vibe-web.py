@@ -1,30 +1,44 @@
 #!/usr/bin/env python3
 """vibe-web — lokales Dashboard (nur Standardbibliothek). Start über: vibe ui"""
-import os, sys, json, time, secrets, threading, contextlib, signal, base64, http.client
-import importlib.util, importlib.machinery
+import os
+import sys
+import json
+import time
+import secrets
+import threading
+import contextlib
+import signal
+import base64
+import http.client
+import importlib.util
+import importlib.machinery
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs, quote
 
 HERE = os.path.dirname(os.path.realpath(__file__))
 sys.path.insert(0, HERE)
-import vibe_storage, vibe_paths, vibe_runs
+# sys.path wurde erst um HERE erweitert; Kopfimporte der Geschwistermodule
+# würden sonst auf das produktive bin/ zeigen statt auf diese Arbeitskopie.
+import vibe_storage  # pylint: disable=wrong-import-position
+import vibe_paths  # pylint: disable=wrong-import-position
+import vibe_runs  # pylint: disable=wrong-import-position
 _loader = importlib.machinery.SourceFileLoader("vibe", os.path.join(HERE, "vibe"))
 _spec = importlib.util.spec_from_loader("vibe", _loader)
 vibe = importlib.util.module_from_spec(_spec)
 sys.modules["vibe"] = vibe
 _loader.exec_module(vibe)
-import vibe_mcp
-import vibe_guide
-import vibe_questions
-import vibe_autonomous
-import vibe_harness
-import vibe_github
-import vibe_services
+import vibe_mcp  # pylint: disable=wrong-import-position
+import vibe_guide  # pylint: disable=wrong-import-position
+import vibe_questions  # pylint: disable=wrong-import-position
+import vibe_autonomous  # pylint: disable=wrong-import-position
+import vibe_harness  # pylint: disable=wrong-import-position
+import vibe_github  # pylint: disable=wrong-import-position
+import vibe_services  # pylint: disable=wrong-import-position
 
 try:
     PATHS = vibe_paths.resolve()
 except vibe_paths.ConfigError as error:
-    raise SystemExit("Pfadkonfiguration: " + str(error))
+    raise SystemExit("Pfadkonfiguration: " + str(error)) from error
 
 PORT = PATHS.ui_port
 BIND = PATHS.ui_bind
@@ -39,7 +53,10 @@ TOKEN = None
 INSTANCE = None
 STARTED = time.time()
 ANSI = vibe_services.ANSI
-SRV = None
+# Absichtlich ohne snake_case-Umbenennung: tests/unit/test_vibe_paths.py prüft
+# SRV als Attribut des importierten Moduls; ein Umbenennen würde die
+# beobachtbare Oberfläche und die Annahmetests brechen.
+SRV = None  # pylint: disable=invalid-name
 # Wird beim Beenden gesetzt. Aktive SSE-Streams prüfen das Ereignis und senden
 # eine letzte Zeile, statt bis zum Verbindungsabbruch weiterzulaufen.
 STOP = threading.Event()
@@ -56,17 +73,18 @@ def prepare_runtime():
     """Legt Laufzeitordner und Kennungen erst beim Start an.
 
     Der Import dieses Moduls bleibt damit ohne Nebenwirkungen: keine
-    Verzeichnisse, keine Tokendateien, kein Serverprozess.
+    Verzeichnisse, keine Tokendateien, kein Serverprozess. Die Kennungen
+    werden als Paar zurückgegeben.
     """
-    global TOKEN, INSTANCE
     try:
         vibe_paths.ensure(PATHS, "runtime")
     except vibe_paths.ConfigError as error:
-        raise SystemExit("Pfadkonfiguration: " + str(error))
-    TOKEN = secrets.token_urlsafe(24)
-    INSTANCE = secrets.token_hex(8)
-    write_private(INSTFILE, INSTANCE)
-    write_private(TOKFILE, TOKEN)
+        raise SystemExit("Pfadkonfiguration: " + str(error)) from error
+    token = secrets.token_urlsafe(24)
+    instance = secrets.token_hex(8)
+    write_private(INSTFILE, instance)
+    write_private(TOKFILE, token)
+    return token, instance
 
 def redact(text):
     """Entfernt das Token aus jeder nach außen gegebenen Meldung."""
@@ -74,6 +92,7 @@ def redact(text):
     return text.replace(TOKEN, "[entfernt]") if TOKEN else text
 
 def split_host(value):
+    """Liefert den Hostnamen ohne Port und ohne IPv6-Klammern."""
     text = (value or "").strip().lower()
     if text.startswith("["):
         end = text.find("]")
@@ -83,6 +102,7 @@ def split_host(value):
     return text
 
 def host_allowed(value):
+    """Prüft, ob der angegebene Host zur Loopback-Liste gehört."""
     return split_host(value) in LOOPBACK_HOSTS
 
 def origin_allowed(value):
@@ -231,7 +251,9 @@ def subagents_of(name):
     session = state.get("session") or ""
     entries = [public_subagent(entry) for entry in state.get("subagents") or []]
     if session:
-        known = {entry.get("session") for entry in entries if entry.get("session")}
+        # Die Set-Abbildung wurde nie gelesen; der Unterstrich markiert das
+        # angedeutete, nicht ausgebaute Feld.
+        _known = {entry.get("session") for entry in entries if entry.get("session")}
         for live in live_subagents(session):
             existing = next(
                 (entry for entry in entries if entry.get("session") == live["session"]),
@@ -261,7 +283,10 @@ def run_is_active(name):
     """
     if vibe.run_state(name).get("running"):
         return True
-    record = vibe.run_registry().latest(project=vibe._real(vibe.ppath(name)))
+    record = vibe.run_registry().latest(
+        # Interne Pfadauflösung des Schwestermoduls; eine öffentliche
+        # Entsprechung gibt es dort nicht, nur ihre Verwendung.
+        project=vibe._real(vibe.ppath(name)))  # pylint: disable=protected-access
     return bool(record and record.get("state") in vibe_runs.LIVE_STATES)
 
 
@@ -355,6 +380,8 @@ def steer_project(name, text):
 
 
 class RequestError(Exception):
+    """Fehlerbearbeitung bei ungültiger Anfrage: HTTP-Status und Fehlercode."""
+
     def __init__(self, status, code, message):
         super().__init__(message)
         self.status = status
@@ -363,11 +390,13 @@ class RequestError(Exception):
 
 
 def known(n):
+    """Prüft, ob es das Projekt gibt, und gibt den Namen unverändert zurück."""
     if n not in vibe.projects():
         raise AssertionError("Unbekanntes Projekt: " + n)
     return n
 
 def known_scope(s):
+    """Erlaubt nur 'global' oder ein bekanntes Projekt."""
     if s != "global":
         known(s)
     return s
@@ -385,7 +414,7 @@ def shutdown_server(delay=0.2):
         with contextlib.suppress(Exception):
             SRV.shutdown()
 
-def request_stop(signum=None, frame=None):
+def request_stop(_signum=None, _frame=None):
     """Signalhandler: keine Prozessabbrüche mitten in einer Antwort."""
     STOP.set()
     threading.Thread(
@@ -393,6 +422,13 @@ def request_stop(signum=None, frame=None):
     ).start()
 
 class H(BaseHTTPRequestHandler):
+    """Verarbeitet die Dashboard-Anfragen: Lesen mit Token, Schreiben mit Origin-Schutz."""
+
+    # Der Superhandler legt close_connection erst in handle()/parse_request()
+    # pro Anfrage neu fest; der Klassenwert ist nur die Ablage vor dem ersten
+    # Aufruf und gibt das Attribut für die Prüfung als definiert an.
+    close_connection = False
+
     def log_message(self, *a):
         pass
 
@@ -402,7 +438,10 @@ class H(BaseHTTPRequestHandler):
             path = urlparse(getattr(self, "path", "")).path
             sys.stderr.write(f"[vibe] {self.command} {path} -> {code}\n")
             sys.stderr.flush()
-        except Exception:
+        # Nur die realistischen Ursachen des Protokollierens: Fehler beim
+        # Schreiben auf die Standardfehlerausgabe oder beim Verarbeiten
+        # der Adressangabe; höheres Unerwartetes ist hier nicht nötig.
+        except (OSError, ValueError):
             pass
 
     def _send(self, code, body, ctype="application/json"):
@@ -458,9 +497,9 @@ class H(BaseHTTPRequestHandler):
             raise RequestError(411, "length_required", "Content-Length fehlt")
         try:
             length = int(raw)
-        except ValueError:
+        except ValueError as error:
             self.close_connection = True
-            raise RequestError(400, "invalid_length", "Content-Length ist keine Zahl")
+            raise RequestError(400, "invalid_length", "Content-Length ist keine Zahl") from error
         if length < 0:
             self.close_connection = True
             raise RequestError(400, "invalid_length", "Content-Length ist negativ")
@@ -476,8 +515,8 @@ class H(BaseHTTPRequestHandler):
             return {}
         try:
             value = json.loads(data.decode("utf-8"))
-        except (UnicodeDecodeError, json.JSONDecodeError):
-            raise RequestError(400, "invalid_json", "Ungültiges JSON")
+        except (UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise RequestError(400, "invalid_json", "Ungültiges JSON") from error
         if not isinstance(value, dict):
             raise RequestError(400, "invalid_request", "JSON-Objekt erwartet")
         return value
@@ -500,11 +539,14 @@ class H(BaseHTTPRequestHandler):
             "release_origin": release["origin"],
         })
 
-    def do_GET(self):
+    # http.server findet GET- und POST-Zustellung über diese konventionellen
+    # Namen der Basisklasse; ein snake_case-Stil bricht die Weiterleitung.
+    def do_GET(self):  # pylint: disable=invalid-name
+        """Verarbeitet GET-Anfragen des Dashboards (Status, Streams, Daten)."""
         u = urlparse(self.path)
         q = parse_qs(u.query)
         if not self._guard(False):
-            return
+            return None
         if u.path == "/":
             return self._send(200, page(), "text/html")
         if u.path.startswith("/static/"):
@@ -514,7 +556,7 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, data, ctype)
         if u.path == "/api/health":
             return self._health()
-        if not self._authorized(allow_query=(u.path == "/api/stream")):
+        if not self._authorized(allow_query=u.path == "/api/stream"):
             return self._error(403, "unauthorized", "Token fehlt oder falsch")
         try:
             if u.path == "/api/projects":
@@ -531,7 +573,9 @@ class H(BaseHTTPRequestHandler):
                 # Laufregister; ohne aktiven Lauf erscheint kein Name
                 # (fehlendes Feld statt erfundener Angabe).
                 record = vibe.run_registry().latest(
-                    project=vibe._real(vibe.ppath(n))
+                    # Wie in run_is_active: interne Pfadauflösung des
+                    # Schwestermoduls, ohne öffentliche Entsprechung.
+                    project=vibe._real(vibe.ppath(n))  # pylint: disable=protected-access
                 )
                 if record and record.get("state") in vibe_runs.LIVE_STATES:
                     answer["agent"] = str(record.get("agent") or "")
@@ -631,13 +675,19 @@ class H(BaseHTTPRequestHandler):
             return self._error(404, "not_found", str(e))
         except KeyError as e:
             return self._error(400, "invalid_request", "Parameter fehlt: " + str(e))
-        except Exception as e:
+        # Letzte Abdeckung: Jede unerwartete Ausnahme wird als 500
+        # strukturiert beantwortet, statt die Verbindung unkontrolliert abzubrechen.
+        except Exception as e:  # pylint: disable=broad-exception-caught
             return self._error(500, "internal_error", f"{type(e).__name__}: {e}")
         self._error(404, "not_found", "nicht gefunden")
-    def do_POST(self):
+        return None
+    # http.server findet POST-Zustellung über den klassenkonventionellen
+    # Namen; ein snake_case-Stil bricht die Weiterleitung.
+    def do_POST(self):  # pylint: disable=invalid-name
+        """Verarbeitet die POST-Anfragen des Dashboards (steuernde Befehle)."""
         u = urlparse(self.path)
         if not self._guard(True):
-            return
+            return None
         if not self._authorized():
             return self._error(403, "unauthorized", "Token fehlt oder falsch")
         try:
@@ -721,7 +771,10 @@ class H(BaseHTTPRequestHandler):
                         vibe.root_remove(path)
                         p = path
                     else:
-                        vibe._pm.clear()
+                        # Cache-Auflösung des Schwestermoduls; die Leere der
+                        # Projektliste gehört zum gewählten Verhalten, eine
+                        # öffentliche Entsprechung fehlt dort.
+                        vibe._pm.clear()  # pylint: disable=protected-access
                         p = ""
                     pm = vibe.project_map()
                     found = [k for k, v in pm.items() if p and os.path.dirname(v) == os.path.abspath(os.path.expanduser(p))]
@@ -838,12 +891,12 @@ class H(BaseHTTPRequestHandler):
                         label = body.get("label")
                         extra["issues"] = vibe.github_issues(name, None if label is None else str(label))
                         extra["label"] = str(label) if label is not None else ""
-                        msg = "%d offene Issue(s) geladen" % len(extra["issues"])
+                        msg = f"{len(extra['issues'])} offene Issue(s) geladen"
                     elif act == "import":
                         added, seen = vibe.github_issues_import(name, str(body.get("label") or "") if body.get("label") is not None else None)
                         ok = bool(added) or seen == 0
                         if not added and seen:
-                            msg = "Keine neuen Issues (%d gesehen); TICKETS.md unverändert." % seen
+                            msg = f"Keine neuen Issues ({seen} gesehen); TICKETS.md unverändert."
                         else:
                             msg = ("Arbeitspakete übernommen: " + ", ".join(added)) if added else "Keine offenen Issues."
                     elif act == "pr":
@@ -862,8 +915,10 @@ class H(BaseHTTPRequestHandler):
                     extra["github"] = vibe_github.status(name)
                 try:
                     extra["github"] = extra.get("github") or vibe_github.status(name)
-                except Exception:
-                    # noqa: BLE001 - Statusansicht bleibt best effort
+                # Die Statusansicht ist best effort: Alle praktischen Ursachen
+                # dort sind Dateisystem- oder Text- und Adress-Lesefehler;
+                # Git-Aufrufe fängt vibe_github selbst ab.
+                except (OSError, ValueError):
                     pass
             elif u.path == "/api/pause":
                 act = body.get("action") or "on"
@@ -1145,7 +1200,7 @@ class H(BaseHTTPRequestHandler):
                 STOP.set()
                 self._send(200, {"ok": True, "message": "Dashboard wird beendet"})
                 threading.Thread(target=shutdown_server, daemon=True).start()
-                return
+                return None
             else:
                 return self._error(404, "not_found", "nicht gefunden")
             message = redact(msg)
@@ -1158,9 +1213,13 @@ class H(BaseHTTPRequestHandler):
             self._error(400, "invalid_request", str(e))
         except ValueError as e:
             self._error(400, "invalid_request", str(e))
-        except Exception as e:
+        # Letzte Abdeckung: Jede unerwartete Ausnahme wird als 500
+        # strukturiert beantwortet, statt die Verbindung unkontrolliert abzubrechen.
+        except Exception as e:  # pylint: disable=broad-exception-caught
             self._error(500, "internal_error", f"{type(e).__name__}: {e}")
+        return None
     def stream(self, name, kind):
+        """Sendet den Protokollstand als SSE-Antwort, bis STOP gesetzt wird."""
         path = vibe.logpath(name, "verify" if kind == "verify" else "run")
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream")
@@ -1199,19 +1258,21 @@ STATIC_FILES = {
     "/static/styles.css": ("web/styles.css", "text/css"),
     "/static/app.js": ("web/app.js", "application/javascript"),
 }
-_PAGE = None
 
 def page():
     """Liefert die Oberfläche aus der eigenen HTML-Datei.
 
     Der opencode-Link kommt aus einem Meta-Feld; damit bleibt das getrennte
-    JavaScript unverändert und ohne serverseitige Textersetzung.
+    JavaScript unverändert und ohne serverseitige Textersetzung. Der einmal
+    gelesene Inhalt wird am Funktionsobjekt abgelegt, damit der Modulnamensbereich
+    keine globale Änderung fürs Zwischenspeichern braucht.
     """
-    global _PAGE
-    if _PAGE is None:
+    if page.cache is None:
         with open(os.path.join(HERE, "web", "index.html"), encoding="utf-8") as handle:
-            _PAGE = handle.read()
-    return _PAGE.replace("__OPENCODE_URL__", vibe.OC_URL)
+            page.cache = handle.read()
+    return page.cache.replace("__OPENCODE_URL__", vibe.OC_URL)
+
+page.cache = None
 
 def static_asset(path):
     """Liest ausschließlich die freigegebenen statischen Dateien."""
@@ -1229,8 +1290,9 @@ if __name__ == "__main__":
     # Kein erneuter Container-Eintritt: vibe ui startet dieses Skript bereits
     # mit den aufgelösten Pfaden im richtigen Kontext.
     os.environ["VIBE_NO_CONTAINER"] = "1"
-    prepare_runtime()
-    SRV = ThreadingHTTPServer((BIND, PORT), H)
+    TOKEN, INSTANCE = prepare_runtime()
+    # Selber Testpin wie oben: SRV bleibt Modulattribut (tests/unit).
+    SRV = ThreadingHTTPServer((BIND, PORT), H)  # pylint: disable=invalid-name
     # Keine daemon-Handler: server_close() wartet auf die Streams, die STOP
     # innerhalb einer Sekunde sehen. So endet der Prozess sauber statt mitten
     # in einer offenen Antwort abgeschnitten zu werden.

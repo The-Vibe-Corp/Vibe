@@ -31,6 +31,7 @@ REQUIRED = ("FRITZ_ADDR", "FRITZ_USER", "FRITZ_PASS")
 
 
 def load_env(path):
+    """Liest ``KEY=WERT``-Zeilen; unlesbare oder unvollständige Datei beendet (2)."""
     try:
         with open(path, encoding="utf-8") as handle:
             lines = handle.read().splitlines()
@@ -55,6 +56,7 @@ def load_env(path):
 
 
 def connection(env):
+    """Verbindung zur Box mit Zugangsdaten aus der Umgebungsdatei."""
     return FritzConnection(
         address=env["FRITZ_ADDR"],
         user=env["FRITZ_USER"],
@@ -63,15 +65,19 @@ def connection(env):
 
 
 def external_ip(connection_object):
+    """Aktuelle Internet-IP; Abfragefehler gelten als unbekannt (None)."""
     try:
         return connection_object.call_action(
             SERVICE, "GetExternalIPAddress"
         ).get("NewExternalIPAddress")
-    except Exception:
+    except Exception:  # pylint: disable=broad-exception-caught
+        # Bewusster Fallback: fritzconnection wirft Aktions- und Netzfehler
+        # untypisiert; eine gescheiterte Abfrage gilt als unbekannt (None).
         return None
 
 
 def main():
+    """Trennung anstoßen, auf neue IP warten; Exit-Codes siehe Modulkopf."""
     env = load_env(ENV_PATH)
     router = connection(env)
     old_ip = external_ip(router)
@@ -79,7 +85,9 @@ def main():
     try:
         router.call_action(SERVICE, "ForceTermination")
         print("ForceTermination ok")
-    except Exception as error:
+    except Exception as error:  # pylint: disable=broad-exception-caught
+        # Bewusster Fang: Die Aktions-API unterscheidet Trennungsfehler nur
+        # über den Meldungstext (707/711); alles andere wird als Fehler gemeldet.
         message = str(error)
         if "707" in message or "711" in message:
             print(
@@ -96,7 +104,9 @@ def main():
             if new_ip and new_ip != old_ip:
                 print("neue IP:", new_ip)
                 sys.exit(0)
-        except Exception:
+        except Exception:  # pylint: disable=broad-exception-caught
+            # Bewusster Durchlauf: Ein einzelner Abfrageschlag darf scheitern;
+            # die Warteschleife versucht erneut, bis das Zeitlimit greift.
             pass
     print("IP hat sich nicht geändert", file=sys.stderr)
     sys.exit(1)

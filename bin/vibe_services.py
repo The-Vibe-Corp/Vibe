@@ -51,7 +51,9 @@ def capture(fn, *args, **kwargs):
         if not message or message == "None":
             message = strip_ansi(buffer.getvalue()).strip()
         return False, strip_ansi(message).strip()
-    except Exception as error:  # noqa: BLE001 - wie bisher als Meldung zurückgeben
+    except Exception as error:  # noqa: BLE001; pylint: disable=broad-exception-caught
+        # Wie bisher: Ausnahmen werden als Meldungstext zurückgegeben; der
+        # aufrufende Thread endet also nicht abstürzend.
         return False, str(error)
 
 
@@ -107,7 +109,9 @@ def project_detail(vibe, paths, name):
     data["write_dirs_custom"] = vibe.write_dirs_custom(name)
     try:
         data["sandbox"] = vibe.sandbox_status(name)
-    except Exception as error:  # noqa: BLE001 - Dashboard zeigt den Zustand an
+    except Exception as error:  # noqa: BLE001; pylint: disable=broad-exception-caught
+        # Bewusstes Abfangen: Die Dashboard-Ansicht zeigt den Fehler im Zustand
+        # und bleibt sonst nutzbar, statt das Dashboard ganz abzubrechen.
         data["sandbox"] = {
             "enabled": False,
             "tools": [],
@@ -129,7 +133,9 @@ def project_detail(vibe, paths, name):
         data["github"] = vibe_github.status(vibe.ppath(name), remote=False)
         data["github"]["branches"] = vibe_github.branches(vibe.ppath(name),
                                                           remote=False)
-    except Exception as error:  # noqa: BLE001 - Ansicht degradiert, Dashboard bleibt nutzbar
+    except Exception as error:  # noqa: BLE001; pylint: disable=broad-exception-caught
+        # Bewusste Entschärfung: Die Ansicht degradiert, das Dashboard bleibt
+        # nutzbar; Git-Fehler tragen den Klartext im Feld "error".
         data["github"] = {"enabled": False, "repo": "", "label": vibe_github.DEFAULT_LABEL,
                           "api": vibe_github.OFFICIAL_API, "remotes": [], "branch": "-",
                           "ahead": 0, "behind": 0, "unpushed": False, "branches": [],
@@ -192,7 +198,9 @@ def project_agents_info(vibe, name):
         data["error"] = str(error)
     try:
         data["models"] = vibe.models_list()
-    except Exception:  # noqa: BLE001 - leere Liste ist ein gültiger Zustand
+    except Exception as _error:  # noqa: BLE001; pylint: disable=broad-exception-caught
+        # Bewusst ohne Fehlerpfad: Ein nicht lesbarer Modellkatalog ist ein
+        # gültiger Zustand; die Oberfläche zeigt die leere Liste an.
         data["models"] = []
     return data
 
@@ -244,8 +252,11 @@ def verify_bg(vibe, name, mode):
         return False, str(error)
     if not argv:
         return False, "Keine Prüfbefehle in .vibe/project.env"
-    log = open(vibe.logpath(name, "verify"), "w")
-    log.write(f"$ {vibe.verify_command(name, mode)}\n")
-    log.flush()
-    subprocess.Popen(argv, cwd=vibe.ppath(name), stdout=log, stderr=subprocess.STDOUT)
+    # Bewusster Hintergrundstart (consider-using-with): Ein mit-Block um den
+    # Startvorgang würde die Dashboard-Anfrage auf die Prüfungsdauer blockieren.
+    with open(vibe.logpath(name, "verify"), "w", encoding="utf-8") as log:
+        log.write(f"$ {vibe.verify_command(name, mode)}\n")
+        log.flush()
+        subprocess.Popen(  # pylint: disable=consider-using-with
+            argv, cwd=vibe.ppath(name), stdout=log, stderr=subprocess.STDOUT)
     return True, "Prüfung gestartet"

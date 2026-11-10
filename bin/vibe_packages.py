@@ -80,6 +80,7 @@ NETWORK_PATTERNS = (
 
 
 def read_text(path):
+    """Liest eine Datei als Text; bei Lesefehler eine leere Zeichenkette."""
     try:
         return Path(path).read_text(encoding="utf-8", errors="replace")
     except OSError:
@@ -87,6 +88,7 @@ def read_text(path):
 
 
 def write_text_atomic(path, text):
+    """Schreibt Text über eine temporäre Datei, damit kein Halbstand bleibt."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(path.name + ".tmp")
@@ -95,10 +97,12 @@ def write_text_atomic(path, text):
 
 
 def run_git(project, *args):
+    """Führt Git im Projektordner aus; Aufrufer werten den Exitcode aus."""
     return subprocess.run(
         ["git", "-C", str(project), *args],
         capture_output=True,
         text=True,
+        check=False,  # bewusst: fehlgeschlagene Prüfungen werten die Aufrufer über returncode aus
     )
 
 
@@ -227,6 +231,7 @@ def sync_proof(project, worktree, pid):
 
 
 def read_env(path):
+    """Liest ``SCHLUESSEL=WERT``-Zeilen aus einer Env-Datei."""
     values = {}
     for line in read_text(path).splitlines():
         line = line.strip()
@@ -267,15 +272,18 @@ def read_blocks(path):
 
 
 def block_id(block):
+    """Kennung aus der Kopfzeile eines Blocks; ohne Passform leer."""
     match = re.match(r"- (?:\[[ xX]\]\s*)?(\S+)", block)
     return match.group(1) if match else ""
 
 
 def is_done(block):
+    """True, wenn der Block mit der abgehakten Checkbox beginnt."""
     return bool(CHECKBOX_DONE.match(block))
 
 
 def is_blocked(block):
+    """True, wenn der Block die Blockierungsmarke enthält."""
     return BLOCK_MARKER in block.upper()
 
 
@@ -313,6 +321,7 @@ def proof_commit(block):
 
 
 def commit_exists(project, revision):
+    """True, wenn der Commit im Projektordner vorhanden ist."""
     if not revision:
         return False
     return run_git(project, "cat-file", "-e", revision + "^{commit}").returncode == 0
@@ -337,6 +346,7 @@ def commit_is_ancestor(project, revision, base):
 
 
 def proof_ok(project, block):
+    """Prüft Commit- und Test/Datei-Nachweis; liefert ``(ok, Grund)``."""
     revisions = proof_commits(block)
     if not revisions or not any(
         commit_exists(project, revision) for revision in revisions
@@ -348,6 +358,7 @@ def proof_ok(project, block):
 
 
 def dependencies(block):
+    """Gültige Abhängigkeitskennungen des Blocks in genannter Reihenfolge."""
     match = DEPENDENCY_PATTERN.search(block)
     if not match:
         return []
@@ -359,11 +370,13 @@ def dependencies(block):
 
 
 def priority(block):
+    """Priorität als Zahl; ohne Angabe 9 (hinter allen genannten)."""
     match = PRIORITY_PATTERN.search(block)
     return int(match.group(1)[1]) if match else 9
 
 
 def collect_blocks(project):
+    """Liest TICKETS.md und FEEDBACK.md als Paare aus Quelle und Blöcken."""
     project = Path(project)
     return [
         ("TICKETS.md", read_blocks(project / "TICKETS.md")),
@@ -372,6 +385,7 @@ def collect_blocks(project):
 
 
 def done_ids(project):
+    """Alle Kennungen, die abgehakt sind und einen Nachweis besitzen."""
     done = set()
     for _, blocks in collect_blocks(project):
         for block in blocks:
@@ -418,7 +432,7 @@ def select_package(project, skip=None, state_path=None):
             "id": pid,
             "block": block,
             "source": source,
-            "priority": "P%d" % priority(block) if priority(block) < 9 else "",
+            "priority": f"P{priority(block)}" if priority(block) < 9 else "",
         }
         target = Path(state_path) if state_path else project / ".vibe" / "tmp" / "next-package.json"
         write_text_atomic(target, json.dumps(selected, ensure_ascii=False, indent=1) + "\n")
@@ -427,6 +441,7 @@ def select_package(project, skip=None, state_path=None):
 
 
 def agent_available(name, project, agents_dir):
+    """True, wenn die Agentendatei im Projekt oder im globalen Ordner liegt."""
     if not name:
         return False
     candidates = [
@@ -556,8 +571,10 @@ def _question_modules():
     if bin_dir not in sys.path:
         sys.path.insert(0, bin_dir)
     try:
-        import vibe_questions
-        import vibe_autonomous
+        # Späte Einbindung ist Absicht: Ein unvollständiger Auslieferungsstand
+        # ohne F16 darf bereits das Laden dieses Moduls nicht abbrechen.
+        import vibe_questions  # pylint: disable=import-outside-toplevel
+        import vibe_autonomous  # pylint: disable=import-outside-toplevel
     except ImportError:
         return None, None
     return vibe_questions, vibe_autonomous
@@ -862,6 +879,7 @@ def status_report(project):
 
 
 def command_select(args):
+    """Befehl ``select``: wählt ein Paket und gibt seine Kennung aus."""
     selected = select_package(args.project, skip=args.skip, state_path=args.state)
     if selected is None:
         return EXIT_NONE
@@ -870,6 +888,7 @@ def command_select(args):
 
 
 def command_preflight(args):
+    """Befehl ``preflight``: prüft die Startbedingungen und meldet Befunde."""
     if args.assist:
         result = assist_preflight(
             args.project,
@@ -908,6 +927,7 @@ def command_preflight(args):
 
 
 def command_copy_notes(args):
+    """Befehl ``copy-notes``: übernimmt Arbeitsnotizen in die Arbeitskopie."""
     copied = copy_work_notes(args.project, args.worktree)
     for name in copied:
         print("OK: " + name + " in die Arbeitskopie übernommen.")
@@ -915,6 +935,7 @@ def command_copy_notes(args):
 
 
 def command_sync_proof(args):
+    """Befehl ``sync-proof``: schreibt den Paketnachweis zurück."""
     changed, message = sync_proof(args.project, args.worktree, args.id)
     if not changed:
         print("FEHLT: " + message)
@@ -924,6 +945,7 @@ def command_sync_proof(args):
 
 
 def command_gate(args):
+    """Befehl ``gate``: prüft die Abschlussschranke eines Pakets."""
     errors = gate_errors(args.project, args.id, args.base)
     for error in errors:
         print("FEHLT: " + error)
@@ -935,6 +957,7 @@ def command_gate(args):
 
 
 def command_classify(args):
+    """Befehl ``classify``: ordnet einen Agentenfehler einer Kategorie zu."""
     text = ""
     if args.log:
         lines = read_text(args.log).splitlines()
@@ -946,11 +969,13 @@ def command_classify(args):
 
 
 def command_status(args):
+    """Befehl ``status``: gibt den Paketstand als JSON aus."""
     print(json.dumps(status_report(args.project), ensure_ascii=False))
     return EXIT_OK
 
 
 def build_parser():
+    """Baut die argparse-Befehlszeile aller Unterbefehle."""
     parser = argparse.ArgumentParser(
         description="Paketauswahl und Abschlussschranke für vibe-run.sh"
     )
@@ -1018,13 +1043,13 @@ def build_parser():
     copy_notes.add_argument("--worktree", required=True)
     copy_notes.set_defaults(handler=command_copy_notes)
 
-    sync_proof = subparsers.add_parser(
+    sync_proof_parser = subparsers.add_parser(
         "sync-proof", help="Paketnachweis in den Projektordner zurückschreiben"
     )
-    sync_proof.add_argument("--project", required=True)
-    sync_proof.add_argument("--worktree", required=True)
-    sync_proof.add_argument("--id", required=True)
-    sync_proof.set_defaults(handler=command_sync_proof)
+    sync_proof_parser.add_argument("--project", required=True)
+    sync_proof_parser.add_argument("--worktree", required=True)
+    sync_proof_parser.add_argument("--id", required=True)
+    sync_proof_parser.set_defaults(handler=command_sync_proof)
 
     classify = subparsers.add_parser("classify", help="Agentenfehler einordnen")
     classify.add_argument("--exit-code", type=int, required=True)
@@ -1040,6 +1065,7 @@ def build_parser():
 
 
 def main(argv=None):
+    """Führt den gewählten Unterbefehl aus und liefert seinen Exitcode."""
     parser = build_parser()
     args = parser.parse_args(argv)
     return args.handler(args)

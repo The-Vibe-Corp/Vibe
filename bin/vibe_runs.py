@@ -18,9 +18,11 @@ Eigenschaften:
 * **Begrenzte Datei** — nur die letzten Einträge bleiben erhalten.
 
 Dieses Modul startet keine Prozesse, spricht nicht mit dem Netzwerk und ruft
-keine Modelle auf. Es schreibt ausschließlich im Laufzeitordner. Es ist bewusst
-eigenständig (nur Standardbibliothek): ``bin/vibe-run.sh`` ruft es als Skript
-auf, auch wenn die Installation unvollständig ist.
+keine Modelle auf. Es schreibt ausschließlich im Laufzeitordner und nutzt nur
+die Standardbibliothek plus die im selben Ordner gelieferte
+Gemeinschaftsschicht
+``vibe_storage`` (liegt im selben ``bin``-Ordner): ``bin/vibe-run.sh`` ruft
+es als Skript auf, auch wenn die übrige Installation unvollständig ist.
 
 Aufruf aus ``bin/vibe`` und ``bin/vibe-run.sh``:
 
@@ -41,6 +43,10 @@ import secrets
 import sys
 import tempfile
 import time
+
+# Die Gemeinschaftsschicht liegt als Datei im selben bin-Ordner (Skriptpfad
+# ist sys.path[0]); aus ihr kommt die gemeinsame Verzeichnis-Fsync-Hilfe.
+import vibe_storage
 
 try:  # Nur unter POSIX verfügbar; ohne Sperre bleibt der letzte Schreibvorgang gewinnen.
     import fcntl
@@ -494,20 +500,6 @@ def stream_events(stdin, emit, state_path):
             save_subagent_state(state_path, state)
 
 
-def _fsync_dir(directory):
-    """Sichert den Verzeichniseintrag nach ``os.replace`` (best effort)."""
-    try:
-        fd = os.open(directory, os.O_RDONLY)
-    except OSError:
-        return
-    try:
-        os.fsync(fd)
-    except OSError:
-        pass
-    finally:
-        os.close(fd)
-
-
 def _atomic_write(path, text):
     directory = os.path.dirname(os.path.abspath(path))
     os.makedirs(directory, exist_ok=True)
@@ -518,7 +510,7 @@ def _atomic_write(path, text):
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(tmp, path)
-        _fsync_dir(directory)
+        vibe_storage.fsync_dir(directory)
     except OSError:
         with contextlib.suppress(OSError):
             os.unlink(tmp)
@@ -537,7 +529,7 @@ class RunRegistry:
     @contextlib.contextmanager
     def _locked(self):
         os.makedirs(self.runtime, exist_ok=True)
-        handle = open(self.lock_path, "a+")
+        handle = open(self.lock_path, "a+", encoding="utf-8")
         try:
             if fcntl is not None:
                 fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
@@ -567,9 +559,11 @@ class RunRegistry:
         _atomic_write(self.path, text)
 
     def all(self):
+        """Alle erfassten Läufe; die Reihenfolge folgt dem Register."""
         return self._read()
 
     def get(self, run_id):
+        """Laufdatensatz als Kopie oder None, wenn die ID unbekannt ist."""
         for record in reversed(self._read()):
             if record.get("id") == run_id:
                 return dict(record)
@@ -661,6 +655,7 @@ def _state(value):
 
 
 def build_parser():
+    """Argumentkatalog für Kommandozeilenaufrufe des Registrier-Skripts."""
     parser = argparse.ArgumentParser(
         prog="vibe_runs.py", description="Laufregister für Agentenläufe (V-015)"
     )
@@ -703,6 +698,7 @@ def build_parser():
 
 
 def main(argv=None):
+    """Kommandozeileneinstieg; Rückgabe ist der Prozessende-Code."""
     parser = build_parser()
     args = parser.parse_args(list(sys.argv[1:] if argv is None else argv))
     if not args.command:

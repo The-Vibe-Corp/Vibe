@@ -140,6 +140,7 @@ TOOL_DEFAULTS = {
 
 
 def read_env_file(path):
+    """Liest einfache ``KEY=WERT``-Zeilen; eine fehlende Datei bleibt leer."""
     values = {}
     try:
         with open(path, encoding="utf-8") as handle:
@@ -181,6 +182,7 @@ def normalize_tools(value):
 
 
 def normalize_dir(value):
+    """Prüft ein Schreibverzeichnis: absolut, expandiert, ohne Wurzel ``/``."""
     if not isinstance(value, str):
         raise ValueError("Pfad muss Text sein")
     text = value.strip()
@@ -206,7 +208,7 @@ def project_write_dirs(project):
         with open(path, encoding="utf-8") as handle:
             data = json.load(handle)
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
-        raise ValueError("Schreibrechte nicht lesbar: " + str(error))
+        raise ValueError("Schreibrechte nicht lesbar: " + str(error)) from error
     if not isinstance(data, dict) or not isinstance(data.get("write_dirs"), list):
         raise ValueError(
             "Schreibrechte nicht lesbar: 'write_dirs' fehlt oder ist keine Liste"
@@ -407,6 +409,7 @@ def check(project):
                 capture_output=True,
                 text=True,
                 timeout=15,
+                check=False,
             )
         except (OSError, subprocess.SubprocessError) as error:
             problems.append("bubblewrap startet nicht: " + str(error))
@@ -644,6 +647,9 @@ def run(project, command):
     except OSError as error:
         print("bubblewrap nicht ausführbar: " + str(error), file=sys.stderr)
         return 2
+    # execvpe ersetzt das Prozessbild; ein Ende im selben Pythonprozess gibt
+    # es nicht. Diese Rückgabe ist konsistenzhalber vorhanden.
+    return 2
 
 
 def _print_status(state):
@@ -671,6 +677,7 @@ def _print_status(state):
 
 
 def main(argv=None):
+    """Kommandozeileneinstieg; Rückgabe ist der Prozessende-Code (siehe Modulkopf)."""
     arguments = list(sys.argv[1:] if argv is None else argv)
     if not arguments or arguments[0] in ("-h", "--help"):
         print(__doc__.strip())
