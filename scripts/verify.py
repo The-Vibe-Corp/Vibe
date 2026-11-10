@@ -8,6 +8,9 @@ einer temporären Umgebung aus:
 
 * HOME, VIBE, TMPDIR und die XDG-Verzeichnisse liegen unter einem eigenen
   temporären Prüfverzeichnis. Die Konfiguration des Aufrufers wird nur gelesen.
+* Ein geerbtes TMUX wird entfernt; TMUX_TMPDIR zeigt auf ein eigenes
+  Verzeichnis. So kann kein Test den tmux-Server der aufrufenden Sitzung
+  beenden (Dashboard, opencode, laufender Lauf).
 * Für Dashboard, opencode, Tests und Prüfung werden eigene freie Ports
   bereitgestellt (VIBE_UI_PORT, VIBE_OPENCODE_PORT, VIBE_TEST_PORT,
   VIBE_VERIFY_PORT).
@@ -196,6 +199,7 @@ def prepare_environment(base):
     screenshots = base / "screenshots"
     opencode_config = base / "opencode-config"
     opencode_state = base / "state"
+    tmux = base / "tmux"
     for folder in (
         home / ".config",
         home / ".cache" / "opencode",
@@ -207,8 +211,11 @@ def prepare_environment(base):
         screenshots,
         opencode_config,
         opencode_state,
+        tmux,
     ):
         folder.mkdir(parents=True, exist_ok=True)
+    # tmux akzeptiert TMUX_TMPDIR nur ohne fremde Schreibrechte.
+    tmux.chmod(0o700)
     # opencode startet ohne vorhandenen Modellcache einen Hintergrunddienst und
     # wartet auf dessen Port. Eine leere Cache-Markierung lässt 'opencode models'
     # den mitgelieferten Katalog verwenden; es werden keine echten Anbieter-
@@ -234,12 +241,18 @@ def prepare_environment(base):
     for key in list(environment):
         if key.startswith("VIBE_") or key == "PYTHONPATH" or key.startswith("XDG_"):
             environment.pop(key, None)
+    # Ein geerbtes TMUX gewinnt in tmux gegen TMUX_TMPDIR. Ohne Entfernen
+    # erreicht ein Test, der seinen tmux-Server aufräumt, den Server der
+    # aufrufenden Sitzung und beendet Dashboard, opencode und laufende Läufe.
+    for key in ("TMUX", "TMUX_PANE"):
+        environment.pop(key, None)
     environment.update(
         {
             "HOME": str(home),
             "VIBE": str(vibe),
             "PYTHONUSERBASE": python_userbase,
             "TMPDIR": str(tmp),
+            "TMUX_TMPDIR": str(tmux),
             "XDG_STATE_HOME": str(opencode_state),
             "VIBE_VERIFY_ROOT": str(base),
             "VIBE_VERIFY_SCREENSHOT_DIR": str(screenshots),

@@ -42,6 +42,8 @@ import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+from tests.support.tmux_cleanup import cleanup_env
+
 REPO = Path(__file__).resolve().parents[2]
 CLI = REPO / "bin" / "vibe"
 WEB = REPO / "bin" / "vibe-web.py"
@@ -271,7 +273,7 @@ class ApiFixture(unittest.TestCase):
             pass
         subprocess.run(
             ["tmux", "kill-server"],
-            env={**os.environ, "TMUX_TMPDIR": str(cls.tmux_dir)},
+            env=cleanup_env(os.environ, cls.tmux_dir),
             capture_output=True,
             timeout=20,
         )
