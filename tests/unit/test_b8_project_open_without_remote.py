@@ -74,6 +74,19 @@ import vibe_services  # noqa: E402 - nutzt dasselbe vibe_github-Modul
 UNREACHABLE_ORIGIN = "https://192.0.2.1/b8/nie-erreichbar.git"
 NETWORK_GIT = ("ls-remote", "fetch")
 
+# Dieselbe ENV-Isolation wie in der etablierten B8-Suite (B8Case): kein
+# produktives HOME, kein produktiver Zustand, keine geerbten Zugangsdaten.
+ISOLATED_ENV_KEYS = (
+    "VIBE", "VIBE_NO_CONTAINER", "HOME", "VIBE_STATE",
+    "VIBE_INSTALL", "VIBE_RUNTIME", "VIBE_AGENTS_DIR", "VIBE_CONFIG_FILE",
+    "VIBE_PROFILE", "VIBE_UI_PORT", "VIBE_UI_BIND", "VIBE_OPENCODE_PORT",
+    "XDG_CONFIG_HOME", "XDG_STATE_HOME", "XDG_CACHE_HOME", "XDG_DATA_HOME",
+    "GITHUB_TOKEN", "GH_TOKEN",
+    "GIT_TERMINAL_PROMPT", "GIT_ASKPASS", "SSH_ASKPASS",
+    "GIT_CONFIG_GLOBAL", "GIT_CONFIG_SYSTEM", "GIT_CONFIG_NOSYSTEM",
+    "http_proxy", "https_proxy", "all_proxy", "NO_PROXY",
+)
+
 GIT_IDENTITY = {
     "GIT_AUTHOR_NAME": "Test",
     "GIT_AUTHOR_EMAIL": "test@example.invalid",
@@ -180,6 +193,44 @@ class ProjectWithoutReachableOrigin(unittest.TestCase):
         self.real_git = vibe_github.git
         self.network_calls = []
 
+        # Isolierte Umgebung: eigener Home-/Zustands-/Laufzeitordner, keine
+        # geerbten Zugangsdaten oder produktiven Pfade in den Modulaufrufen.
+        self.home = self.root / "home"
+        self.home.mkdir()
+        self.state = self.root / "state"
+        self.state.mkdir()
+        self.runtime = self.root / "runtime"
+        self.runtime.mkdir()
+        self.install = self.root / "install"
+        self.install.mkdir()
+        self.agents = self.home / ".config" / "opencode" / "agents"
+        self.agents.mkdir(parents=True)
+        self.saved_env = {key: os.environ.get(key) for key in ISOLATED_ENV_KEYS}
+        self.addCleanup(self.restore_env)
+        for key in ("GITHUB_TOKEN", "GH_TOKEN", "GIT_TERMINAL_PROMPT",
+                    "GIT_ASKPASS", "SSH_ASKPASS", "http_proxy",
+                    "https_proxy", "all_proxy"):
+            os.environ.pop(key, None)
+        os.environ.pop("VIBE_CONFIG_FILE", None)
+        os.environ.pop("VIBE_PROFILE", None)
+        os.environ.update({
+            "VIBE": str(self.root),
+            "VIBE_NO_CONTAINER": "1",
+            "VIBE_STATE": str(self.state),
+            "VIBE_RUNTIME": str(self.runtime),
+            "VIBE_INSTALL": str(self.install),
+            "VIBE_AGENTS_DIR": str(self.agents),
+            "HOME": str(self.home),
+            "XDG_CONFIG_HOME": str(self.home / ".config"),
+            "XDG_STATE_HOME": str(self.home / ".local" / "state"),
+            "XDG_CACHE_HOME": str(self.home / ".cache"),
+            "XDG_DATA_HOME": str(self.home / ".local" / "share"),
+            "GIT_CONFIG_GLOBAL": os.devnull,
+            "GIT_CONFIG_SYSTEM": os.devnull,
+            "GIT_CONFIG_NOSYSTEM": "1",
+            "NO_PROXY": "127.0.0.1,localhost",
+        })
+
         git(self.project, "init", "-q", "-b", "main")
         (self.project / "base.txt").write_text("Basis\n", encoding="utf-8")
         git(self.project, "add", "base.txt")
@@ -219,6 +270,14 @@ class ProjectWithoutReachableOrigin(unittest.TestCase):
         (self.project / ".vibe" / "project.env").write_text(
             "\n".join(lines) + "\n", encoding="utf-8"
         )
+
+    def restore_env(self):
+        """Stellt die ursprüngliche Umgebung wieder her (keine Reste an Tests)."""
+        for key, value in self.saved_env.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
 
     @contextlib.contextmanager
     def no_network_git(self):
