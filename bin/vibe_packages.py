@@ -598,9 +598,19 @@ def _agent_instruction(errors):
     return "\n".join(lines)
 
 
-def _assist_result(errors, action, instruction=""):
-    """Ergebnis der Assistenz für den Aufrufer und die Aktionsdatei."""
-    return {"errors": errors, "action": action, "instruction": instruction}
+def _assist_result(errors, action, instruction="", source=""):
+    """Ergebnis der Assistenz für den Aufrufer und die Aktionsdatei.
+
+    ``source`` unterscheidet die Nutzeranweisung (``user``) von der aus den
+    Befunden abgeleiteten Anweisung (``findings``), damit das Protokoll die
+    Herkunft korrekt benennt.
+    """
+    return {
+        "errors": errors,
+        "action": action,
+        "instruction": instruction,
+        "source": source,
+    }
 
 
 def assist_preflight(project, agents_dir, tester, reviewer, state_dir=None,
@@ -689,7 +699,7 @@ def assist_preflight(project, agents_dir, tester, reviewer, state_dir=None,
                 "PREFLIGHT: Anweisung des Nutzers erhalten; Agent wird "
                 "beauftragt."
             )
-            return _assist_result(errors, "agent", instruction)
+            return _assist_result(errors, "agent", instruction, "user")
         if option == 1:
             print("PREFLIGHT: Lauf auf Wunsch abgebrochen.")
             return _assist_result(errors, "abort")
@@ -697,7 +707,9 @@ def assist_preflight(project, agents_dir, tester, reviewer, state_dir=None,
             print(
                 "PREFLIGHT: Agent wird beauftragt, die Befunde zu beheben."
             )
-            return _assist_result(errors, "agent", _agent_instruction(errors))
+            return _assist_result(
+                errors, "agent", _agent_instruction(errors), "findings"
+            )
         if option != 0:
             print(
                 "PREFLIGHT: Ungültige Antwort auf Rückfrage " + qid

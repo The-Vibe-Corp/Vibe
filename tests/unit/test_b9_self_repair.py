@@ -90,6 +90,7 @@ B9_MODE steuert das Verhalten:
 * ``fix-tests``         — Paket lässt den Pakettest scheitern; Reparatur behebt ihn.
 * ``fix-gate``          — Paket lässt Doku/Review fehlen; Reparatur ergänzt sie.
 * ``persist-gate``      — Doku/Review fehlen dauerhaft; Reparatur ändert nichts.
+* ``repair-quota``      — Schrankenbefund; die Reparatur endet mit Quota-Fehler.
 * ``fix-integration``   — Paket vollständig; Reparatur räumt den Projektordner auf.
 """
 import json
@@ -211,7 +212,7 @@ is_package = (
 
 if is_package:
     log_call("package")
-    if mode in ("fix-gate", "persist-gate"):
+    if mode in ("fix-gate", "persist-gate", "repair-quota"):
         incomplete_package(pid)
     else:
         complete_package(pid)
@@ -244,6 +245,9 @@ if mode == "fix-gate":
     write_evidence(pid)
     commit(pid + ": Reparatur")
     sys.exit(0)
+if mode == "repair-quota":
+    print("429 rate limit: quota exceeded", file=sys.stderr)
+    sys.exit(1)
 # persist-gate: absichtlich nichts beheben.
 sys.exit(0)
 '''
@@ -312,6 +316,11 @@ class PackageGateTest(unittest.TestCase):
             encoding="utf-8",
         )
 
+    def write_proof_block(self, text):
+        (self.project / "FEEDBACK.md").write_text(
+            "# FEEDBACK\n\n" + text, encoding="utf-8"
+        )
+
     def write_evidence(self):
         self.write("docs/features/F1.md", "# F1\n\nDoku.\n")
         self.write(
@@ -361,6 +370,64 @@ class PackageGateTest(unittest.TestCase):
         self.assertTrue(errors, "Schranke akzeptierte fremde Nachweise")
         self.assertIn(foreign_a, combined)
         self.assertIn(foreign_b, combined)
+
+    def test_gate_finds_package_commit_on_wrapped_commit_line(self):
+        """Ein Paket-Commit auf der eingerückten Fortsetzungszeile genügt.
+
+        Charakterisierung: Dieses Verhalten ist in ``bb94d86`` bereits
+        umgesetzt. Der Test wurde nachgezogen und ist deshalb sofort grün;
+        eine Rotphase wird hier nicht behauptet.
+        """
+        self.write("impl.txt", "umsetzung\n")
+        self.commit("F1: Umsetzung")
+        self.write("tests/test_f1.py", "def test_f1():\n    pass\n")
+        package_commit = self.commit("F1: Tests")
+        self.write_proof_block(
+            "- [x] F1 Umbrochener Nachweis\n"
+            "  Beschreibung: Test\n"
+            "  Commit: %s (Umsetzung),\n"
+            "    %s (Tests); Test: test_f1\n"
+            % (self.base[:7], package_commit)
+        )
+        self.write_evidence()
+        self.commit("F1: Nachweis")
+
+        self.assertEqual(self.errors(), [])
+
+    def test_gate_stops_commit_collection_at_next_proof_field(self):
+        """Ein Hash im folgenden ``Test:``-Feld gilt nicht als Commit.
+
+        Charakterisierung: Auch dieses Verhalten ist in ``bb94d86`` bereits
+        umgesetzt; der Test ist sofort grün und belegt nur die bestehende
+        Feldgrenze, keine neue Rotphase.
+        """
+        support.git(self.project, "checkout", "-q", "-b", "other")
+        self.write("fremd.txt", "fremd\n")
+        foreign = self.commit("Other: fremd")
+        support.git(self.project, "checkout", "-q", "main")
+        self.write("impl.txt", "umsetzung\n")
+        package_commit = self.commit("F1: Umsetzung")
+        self.write_proof_block(
+            "- [x] F1 Neues Feld\n"
+            "  Beschreibung: Test\n"
+            "  Commit: %s (Umsetzung),\n"
+            "    %s (Tests)\n"
+            "  Test: %s; test_f1\n"
+            % (self.base[:7], foreign, package_commit)
+        )
+        self.write_evidence()
+        self.commit("F1: Nachweis")
+
+        errors = self.errors()
+        combined = "\n".join(errors)
+
+        self.assertTrue(errors, "Hash im Test-Feld wurde als Commit gelesen")
+        self.assertIn(foreign, combined)
+        self.assertNotIn(
+            package_commit,
+            combined,
+            "Der Hash aus dem Test-Feld wurde als Commit geprüft.",
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -752,6 +819,18 @@ class RunnerPreflightOptionTest(B9RunnerFixture):
         self.assertIn("unfertig.txt", calls[0]["prompt"])
         self.assertFalse((project / "unfertig.txt").exists())
         self.assertIn("Geschlossen: F1", self.output())
+        # Option 2 nutzt die aus den Befunden abgeleitete Anweisung; das
+        # Laufprotokoll darf sie nicht als Nutzeranweisung ausgeben.
+        self.assertIn(
+            "Befunden abgeleiteten Anweisung",
+            self.output(),
+            "Das Protokoll unterscheidet die Befund-Anweisung nicht.",
+        )
+        self.assertNotIn(
+            "Anweisung des Nutzers",
+            self.output(),
+            "Option 2 wurde als Nutzeranweisung protokolliert.",
+        )
 
 
 class RunnerPackageRepairTest(B9RunnerFixture):
@@ -851,6 +930,36 @@ class RunnerPackageRepairTest(B9RunnerFixture):
         )
         self.assertIn("BLOCKIERT", output)
         self.assertIn("docs/features/F1.md", output)
+
+    def test_quota_during_repair_blocks_without_second_round_and_names_quota(self):
+        """Quota beim Reparatur-Agenten blockiert sofort und ohne zweite Runde."""
+        project = self.make_project()
+        base = self.head(project)
+
+        result = self.run_runner(
+            project, B9_MODE="repair-quota", VIBE_MAX_PACKAGES="1"
+        )
+        output = self.combined(result)
+        calls = self.calls()
+
+        self.assertEqual(result.returncode, 1, output)
+        self.assertEqual(
+            [call["kind"] for call in calls],
+            ["package", "repair"],
+            "Nach dem Quota-Fehler wurde eine weitere Reparaturrunde gestartet.",
+        )
+        self.assertEqual(self.head(project), base, "Trotz Quota-Fehler wurde gemergt")
+        self.assertNotEqual(
+            support.git(project, "cat-file", "-e", "HEAD:impl-F1.txt").returncode,
+            0,
+        )
+        # Die Quota-Meldung des Agenten steht zwar im Protokoll; entscheidend
+        # ist die Klassifizierung durch den Läufer in der BLOCKIERT-Zeile.
+        self.assertRegex(
+            output,
+            r"(?im)^BLOCKIERT:.*(?:Quota|Kontingent)",
+            "Der Läufer nennt die Quota-Klassifizierung nicht: %s" % output,
+        )
 
 
 class RunnerIntegrationAssistTest(B9RunnerFixture):

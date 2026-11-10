@@ -342,3 +342,103 @@ Test-Agenten am Arbeitspaket und sind mit `bb94d86` versioniert:
   Optionen erweitert; ein Invalid-Option-Test auf Index 3 nachgezogen.
 * `tests/unit/test_runner_package_gates.py` — zwei Tests an
   Reparaturrunden und die dauerhaft fehlerhafte F2-Sequenz angepasst.
+
+## Nachtrag Review-Runde 1
+
+Die Review-Runde 1 endete mit PASS und drei nicht blockierenden
+Minor-Befunden. Der Test-Agent hat daraufhin ausschließlich
+`tests/unit/test_b9_self_repair.py` ergänzt; Produktionsdateien wurden von
+ihm nicht geändert.
+
+### 1. Minor-Befunde und testseitige Behandlung
+
+| # | Minor-Befund | Testseitige Behandlung |
+|---|---|---|
+| 1 | Umbrochenes Nachweisfeld: Die Schranke findet den Paket-Commit auch auf einer eingerückten Fortsetzungszeile; ein anschließendes neues Nachweisfeld darf nicht als Commit-Fortsetzung gelten. Das Verhalten war bereits in `bb94d86` implementiert und nur nicht charakterisiert. | Zwei Charakterisierungstests in `PackageGateTest`: `test_gate_finds_package_commit_on_wrapped_commit_line` und `test_gate_stops_commit_collection_at_next_proof_field`. |
+| 2 | Quota/Auth beim Reparatur-Agenten: Ein Quota-Fehler während einer Reparaturrunde muss sofort blockieren und als Quota/Kontingent benannt werden, statt nur den generischen Reparaturfehler zu melden. | Fake-Agent-Modus `repair-quota` und neuer Läufertest `test_quota_during_repair_blocks_without_second_round_and_names_quota`. |
+| 3 | Protokollzeile bei Option 2: Die aus den Befunden abgeleitete Anweisung muss im Laufprotokoll von einer Nutzeranweisung unterscheidbar sein. | `RunnerPreflightOptionTest.test_preflight_option_two_runs_the_agent_in_the_project` um die entsprechenden Protokollassertions erweitert. |
+
+### 2. Neue Charakterisierungstests
+
+Beide Tests liegen in `PackageGateTest` und arbeiten mit echten
+Mini-Repositories. Ihre Docstrings nennen ausdrücklich, dass das geprüfte
+Verhalten bereits in `bb94d86` umgesetzt war; eine Rotphase wurde für sie
+deshalb nicht beobachtet und wird nicht behauptet.
+
+| Testname | Vorbedingung | Aktion | Erwartetes Ergebnis | Beobachteter Status |
+|---|---|---|---|---|
+| `test_gate_finds_package_commit_on_wrapped_commit_line` | F1-Umsetzungs- und Test-Commit auf `main`; die Nachweiszeile beginnt mit `Commit: <basis> (Umsetzung),` und führt den F1-Paketcommit eingerückt auf der Fortsetzungszeile; `Test:` steht auf derselben Fortsetzungszeile; Doku und Review sind vorhanden. | `gate_errors(project, "F1", base)`. | Leere Fehlerliste: Der Paket-Commit auf der Fortsetzungszeile belegt das Paket. | Grün; Charakterisierung ohne Rotphase. |
+| `test_gate_stops_commit_collection_at_next_proof_field` | Fremdcommit auf Branch `other`; F1-Commit auf `main`; `Commit:` nennt Basis und Fremdcommit, danach beginnt ein neues `Test:`-Feld mit dem F1-Commit-Hash. | `gate_errors(project, "F1", base)`. | Nichtleere Fehlerliste; der Fremdcommit wird genannt; der F1-Hash aus dem `Test:`-Feld wird nicht als Commit geprüft. | Grün; Charakterisierung ohne Rotphase. |
+
+### 3. Neue Rot-Tests und Grünphase
+
+**Quota beim Reparatur-Agenten.**
+`RunnerPackageRepairTest.test_quota_during_repair_blocks_without_second_round_and_names_quota`
+nutzt den neuen Fake-Agent-Modus `repair-quota`: Der Paketlauf hinterlässt
+wie `persist-gate` einen Schrankenbefund, der Reparaturaufruf endet mit
+Exit 1 und `429 rate limit: quota exceeded`. Vorbedingung ist ein Projekt
+mit einem Paket und `VIBE_MAX_PACKAGES=1`; Aktion ist der Läuferlauf.
+Erwartet werden Exit 1, genau die Aufrufe `["package", "repair"]` (keine
+zweite Reparaturrunde), ein unveränderter HEAD, ein fehlender
+`HEAD:impl-F1.txt`-Pfad und eine `BLOCKIERT:`-Zeile, die Quota/Kontingent
+nennt.
+
+**Protokollzeile bei Option 2.**
+`RunnerPreflightOptionTest.test_preflight_option_two_runs_the_agent_in_the_project`
+wurde um zwei Assertions erweitert: Die Ausgabe muss „Befunden
+abgeleiteten Anweisung“ enthalten und darf nicht „Anweisung des Nutzers“
+enthalten. Die übrigen Abläufe und Erwartungen des Tests — Frage mit drei
+Optionen, Reparatur im Projektordner, anschließendes Paket,
+`Geschlossen: F1` — blieben unverändert.
+
+**Beobachtete Rotphase vor der Implementierung:**
+
+```
+python3 -m unittest tests.unit.test_b9_self_repair -v
+```
+
+```
+Ran 15 tests in 7.428s
+
+FAILED (failures=2)
+```
+
+Exit-Code: 1. Beide Fehlschläge traten aus den erwarteten Gründen auf:
+
+* `test_quota_during_repair_blocks_without_second_round_and_names_quota`:
+  `AssertionError: Regex didn't match: '(?im)^BLOCKIERT:.*(?:Quota|Kontingent)'`.
+  Der Läufer meldete nur
+  `BLOCKIERT: Reparatur für F1 fehlgeschlagen (Exit-Code 1). …`.
+* `test_preflight_option_two_runs_the_agent_in_the_project`:
+  `AssertionError: 'Befunden abgeleiteten Anweisung' not found in
+  'PREFLIGHT: Agent wird mit der Anweisung des Nutzers beauftragt …'`.
+
+Die beiden Charakterisierungstests und die übrigen Tests waren in diesem
+Lauf grün. Rotprotokoll: `/tmp/opencode/b9-review1-newtests-red.log`.
+
+**Grünphase nach der Implementierung:**
+
+```
+python3 -m unittest tests.unit.test_b9_self_repair -v
+```
+
+```
+Ran 15 tests in 7.577s
+
+OK
+```
+
+Exit-Code: 0. Alle 15 Tests sind grün, einschließlich der beiden
+Charakterisierungstests, des Quota-Tests und der erweiterten
+Protokollprüfung. Grünprotokoll: `/tmp/opencode/b9-review1-green.log`.
+
+### 4. Unveränderte Aussagen
+
+Keine bestehende Assertion wurde abgeschwächt, kein Test wurde gelöscht
+und keine Erwartung wurde durch eine Attrappe ersetzt. Die
+Charakterisierungstests ergänzen die bestehende Abdeckung; der Quota-Test
+und die Protokollprüfung verschärfen sie. Der Test-Agent hat keine
+Produktionsdatei geändert. Die Anpassungen an `bin/vibe-run.sh` und
+`bin/vibe_packages.py` stammen vom Coding-Agenten und sind nicht Teil der
+Testarbeit; in diesem Nachtrag wurde ausschließlich diese Berichtsdatei
+geändert.

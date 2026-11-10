@@ -287,6 +287,7 @@ repair_package_finding() {
   fi
   REPAIR_ROUNDS=$((REPAIR_ROUNDS + 1))
   echo "REPARATUR: $finding (Runde $REPAIR_ROUNDS/$REPAIR_MAX_ROUNDS) im Arbeitsbaum $WT." | tee -a "$LOG"
+  REPAIR_LOG_START="$(wc -l < "$LOG" 2>/dev/null || echo 0)"
   local prompt="Die Abschlussprüfung für Arbeitspaket $ID ist nicht bestanden.
 Befund: $finding
 Details:
@@ -296,7 +297,16 @@ Behebe ausschließlich diesen Befund in der Arbeitskopie $WT. Verwirf keine frem
   run_agent_in "$WT" "$prompt" "$NAME $ID Reparatur"
   local rc=$?
   if [ "$rc" != 0 ]; then
-    REPAIR_ERROR="Reparatur für $ID fehlgeschlagen (Exit-Code $rc)."
+    local repair_class
+    repair_class="$(python3 "$PACKAGES_PY" classify --exit-code "$rc" --log "$LOG" --since "$REPAIR_LOG_START" 2>>"$LOG")"
+    case "$repair_class" in
+      quota)
+        REPAIR_ERROR="Quota/Kontingent beim Reparaturauftrag für $ID; der Lauf hält sofort an." ;;
+      auth)
+        REPAIR_ERROR="Anmeldung/Autorisierung beim Reparaturauftrag für $ID fehlgeschlagen; der Lauf hält sofort an." ;;
+      *)
+        REPAIR_ERROR="Reparatur für $ID fehlgeschlagen (Exit-Code $rc)." ;;
+    esac
     return 1
   fi
   return 0
@@ -454,15 +464,32 @@ value = data.get("instruction")
 print(value if isinstance(value, str) else "")
 PY
 )"
+    PREFLIGHT_SOURCE="$(python3 - "$PREFLIGHT_ACTION_FILE" <<'PY'
+import json
+import sys
+try:
+    with open(sys.argv[1], encoding="utf-8") as handle:
+        data = json.load(handle)
+except (OSError, ValueError):
+    data = {}
+value = data.get("source")
+print(value if isinstance(value, str) else "")
+PY
+)"
     rm -f -- "$PREFLIGHT_ACTION_FILE"
     if [ "$PREFLIGHT_ACTION" = "agent" ]; then
       ASSIST_ROUNDS=$((ASSIST_ROUNDS + 1))
-      echo "PREFLIGHT: Agent wird mit der Anweisung des Nutzers beauftragt (Runde $ASSIST_ROUNDS/$ASSIST_MAX_ROUNDS)." | tee -a "$LOG"
+      if [ "$PREFLIGHT_SOURCE" = "findings" ]; then
+        ASSIST_ORIGIN="einer aus den Befunden abgeleiteten Anweisung"
+      else
+        ASSIST_ORIGIN="der Anweisung des Nutzers"
+      fi
+      echo "PREFLIGHT: Agent wird mit $ASSIST_ORIGIN beauftragt (Runde $ASSIST_ROUNDS/$ASSIST_MAX_ROUNDS)." | tee -a "$LOG"
       ASSIST_PROMPT="$heading
 Befunde:
 $PREFLIGHT_OUT
 
-Anweisung des Nutzers:
+Anweisung:
 $PREFLIGHT_INSTRUCTION
 
 Behebe ausschließlich diese Befunde im Projektordner. Verwirf keine fremden Änderungen. Committe nur, wenn die Anweisung es verlangt. Ändere keine Arbeitspakete und starte keinen neuen Lauf. Beende danach deine Arbeit; der Preflight wird erneut geprüft."
