@@ -69,4 +69,4 @@ Nicht unabhängig ausführbar (Werkzeugrechte des Reviewers): alle Build-/Testau
 - Der im Arbeitsbaum uncommittete PNG-Stand ist kein F27-Defekt, muss aber gemäß Abschnitt „Projektordner sauber halten" vor dem nächsten fremden Commit geklärt werden (siehe Befund 1).
 - Beide Minors bleiben offen und nicht blockierend; sie schmälern nur die Beweiskraft eines Testfalls bzw. zweier Nebenfälle, nicht die Kriterienerfüllung.
 
-> Transparenzhinweis des Koordinators: Der Abschnitt „Befunde" sowie einzelne zerlesene Randwörter der agentenseitig über die Chat-Schnittstelle übergebenen Antwort wurden ohne sachliche Änderung lesbar Aufgabenlogik wiedergegeben; Verdict, Befunde und Nachweislisten sind inhaltlich unverändert übernommen.
+> Transparenzhinweis des Koordinators: Die agentenseitig über die Chat-Schnittstelle übergebene Review-Antwort wurde ohne sachliche Änderung gespeichert; ausschließlich zerlesene Randwörter der Übertragung wurden korrigiert und der Hinweis auf den Beobachtungspunkt zum Arbeitsbaum ergänzt. Verdict, Befunde, Kriterienbewertung und Nachweislisten sind unverändert übernommen.
