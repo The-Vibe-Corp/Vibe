@@ -261,14 +261,45 @@ run_agent() {
 run_package_tests() {
   local cmd="${VERIFY_PACKAGE:-${VERIFY_FULL:-}}"
   echo "=== Paketprüfung für $ID ===" | tee -a "$LOG"
-  ( cd "$WT" && bash -lc "$cmd" ) >>"$LOG" 2>&1
+  local output
+  output="$( cd "$WT" && bash -lc "$cmd" 2>&1 )"
+  local rc=$?
+  printf '%s\n' "$output" >>"$LOG"
+  PACKAGE_TEST_OUT="$output"
+  return "$rc"
 }
 gate_ok() {
   local out rc
   out="$(python3 "$PACKAGES_PY" gate --project "$WT" --id "$ID" --base "$PACKAGE_BASE" 2>&1)"
   rc=$?
   printf '%s\n' "$out" | tee -a "$LOG"
+  GATE_OUT="$out"
   return $rc
+}
+# B9: Ein Pakettest- oder Schrankenbefund geht mit den konkreten Befunden an
+# den Agenten zurück in denselben Arbeitsbaum. Die Zahl der Runden ist
+# begrenzt; danach blockiert das Paket mit den letzten Befunden.
+repair_package_finding() {
+  local finding="$1" details="$2"
+  if [ "$REPAIR_ROUNDS" -ge "$REPAIR_MAX_ROUNDS" ]; then
+    REPAIR_ERROR="Reparaturlimit für $ID nach $REPAIR_MAX_ROUNDS Runden erreicht."
+    return 1
+  fi
+  REPAIR_ROUNDS=$((REPAIR_ROUNDS + 1))
+  echo "REPARATUR: $finding (Runde $REPAIR_ROUNDS/$REPAIR_MAX_ROUNDS) im Arbeitsbaum $WT." | tee -a "$LOG"
+  local prompt="Die Abschlussprüfung für Arbeitspaket $ID ist nicht bestanden.
+Befund: $finding
+Details:
+$details
+
+Behebe ausschließlich diesen Befund in der Arbeitskopie $WT. Verwirf keine fremden Änderungen. Bearbeite keine anderen Arbeitspakete, starte keinen neuen Lauf, merge oder pushe nicht und schwäche die Abnahme nicht ab. Committe mit dem Präfix '$ID:'. Beende danach deine Arbeit; Paketprüfung und Abschlussschranke werden erneut ausgeführt."
+  run_agent_in "$WT" "$prompt" "$NAME $ID Reparatur"
+  local rc=$?
+  if [ "$rc" != 0 ]; then
+    REPAIR_ERROR="Reparatur für $ID fehlgeschlagen (Exit-Code $rc)."
+    return 1
+  fi
+  return 0
 }
 merge_package() {
   if ! git -C "$P" merge --ff-only "$BRANCH" >>"$LOG" 2>&1; then
@@ -337,30 +368,17 @@ fi
 # und ein echter Paketprüfbefehl. Ohne diese Bedingungen startet kein Paket.
 # F22: Der Produktpfad ``vibe run`` setzt VIBE_PREFLIGHT_ASSIST=1. Dann fragt
 # der Preflight bei einem Befund über F16 nach, statt sofort abzubrechen.
-# Eine freie Antwort ist eine Anweisung an den Agenten; er versucht die
-# Befunde im Projektordner zu beheben, danach wird erneut geprüft.
-PREFLIGHT_ARGS=(preflight --project "$P"
-  --agents-dir "${VIBE_AGENTS_DIR:-$HOME/.config/opencode/agents}"
-  --tester "${TESTER:-}" --reviewer "${REVIEWER:-}"
-  --state "$STATE")
+# B9: Die Rückfrage bietet zusätzlich "Agent behebt die Befunde"; eine freie
+# Antwort ist eine Anweisung an den Agenten. Nach jedem Agentenlauf wird der
+# Preflight erneut geprüft. Derselbe Weg behebt am Laufende einen unsauberen
+# Integrationsstand.
 # F27: Ein ausdrücklich angeforderter Neustart darf einen unsauberen
 # Integrationsstand zulassen. Die Änderungen bleiben dabei unangetastet; der
 # Preflight überspringt ausschließlich diesen einen Befund. Die Abschluss-
 # prüfung verlangt weiterhin einen sauberen Stand.
-if [ "${VIBE_KEEP_CHANGES:-0}" = "1" ]; then
-  PREFLIGHT_ARGS+=(--allow-dirty)
-fi
 PREFLIGHT_ACTION_FILE="$RUNTIME/$NAME.preflight-action.json"
-if [ "${VIBE_PREFLIGHT_ASSIST:-0}" = "1" ] \
-    && [ -f "$BIN/vibe_questions.py" ] \
-    && [ -f "$BIN/vibe_autonomous.py" ] \
-    && [ -f "$BIN/vibe_storage.py" ]; then
-  PREFLIGHT_ARGS+=(--assist --runtime "$RUNTIME" --project-name "$NAME"
-    --timeout "${VIBE_PREFLIGHT_QUESTION_TIMEOUT:-600}"
-    --action-file "$PREFLIGHT_ACTION_FILE")
-fi
-ASSIST_ROUNDS=0
 ASSIST_MAX_ROUNDS=10
+REPAIR_MAX_ROUNDS=2
 # F25: Kennung der Session, die bei der nächsten Wiederholung fortgesetzt
 # wird. Sie bleibt leer, solange kein Versuch eine Session hinterlassen hat.
 RESUME_SESSION=""
@@ -381,16 +399,39 @@ if isinstance(session, str) and session:
     print(session)
 PY
 }
-while :; do
-  rm -f -- "$PREFLIGHT_ACTION_FILE"
-  PREFLIGHT_OUT="$(python3 "$PACKAGES_PY" "${PREFLIGHT_ARGS[@]}" \
-    --assist-rounds "$ASSIST_ROUNDS" 2>&1)"
-  PREFLIGHT_RC=$?
-  if [ "$PREFLIGHT_RC" = 0 ]; then
-    rm -f -- "$PREFLIGHT_ACTION_FILE"
-    break
+# B9/F22: Führt den Preflight bis zum Bestehen oder Abbruch aus. ``phase``
+# unterscheidet den Laufstart (F27: --allow-dirty) vom Laufende (nie
+# --allow-dirty). ``intro`` benennt die Prüfung in der Rückfrage.
+preflight_with_assist() {
+  local phase="$1" intro="$2"
+  local heading="$intro"
+  [ -n "$heading" ] || heading="Der Preflight für '$NAME' ist nicht bestanden."
+  local args=(preflight --project "$P"
+    --agents-dir "${VIBE_AGENTS_DIR:-$HOME/.config/opencode/agents}"
+    --tester "${TESTER:-}" --reviewer "${REVIEWER:-}"
+    --state "$STATE")
+  if [ "$phase" = "start" ] && [ "${VIBE_KEEP_CHANGES:-0}" = "1" ]; then
+    args+=(--allow-dirty)
   fi
-  PREFLIGHT_ACTION="$(python3 - "$PREFLIGHT_ACTION_FILE" <<'PY'
+  if [ "${VIBE_PREFLIGHT_ASSIST:-0}" = "1" ] \
+      && [ -f "$BIN/vibe_questions.py" ] \
+      && [ -f "$BIN/vibe_autonomous.py" ] \
+      && [ -f "$BIN/vibe_storage.py" ]; then
+    args+=(--assist --runtime "$RUNTIME" --project-name "$NAME"
+      --timeout "${VIBE_PREFLIGHT_QUESTION_TIMEOUT:-600}"
+      --action-file "$PREFLIGHT_ACTION_FILE" --assist-reason "$heading")
+  fi
+  ASSIST_ROUNDS=0
+  while :; do
+    rm -f -- "$PREFLIGHT_ACTION_FILE"
+    PREFLIGHT_OUT="$(python3 "$PACKAGES_PY" "${args[@]}" \
+      --assist-rounds "$ASSIST_ROUNDS" 2>&1)"
+    PREFLIGHT_RC=$?
+    if [ "$PREFLIGHT_RC" = 0 ]; then
+      rm -f -- "$PREFLIGHT_ACTION_FILE"
+      return 0
+    fi
+    PREFLIGHT_ACTION="$(python3 - "$PREFLIGHT_ACTION_FILE" <<'PY'
 import json
 import sys
 try:
@@ -401,7 +442,7 @@ except (OSError, ValueError):
 print(data.get("action") or "abort")
 PY
 )"
-  PREFLIGHT_INSTRUCTION="$(python3 - "$PREFLIGHT_ACTION_FILE" <<'PY'
+    PREFLIGHT_INSTRUCTION="$(python3 - "$PREFLIGHT_ACTION_FILE" <<'PY'
 import json
 import sys
 try:
@@ -413,31 +454,37 @@ value = data.get("instruction")
 print(value if isinstance(value, str) else "")
 PY
 )"
-  rm -f -- "$PREFLIGHT_ACTION_FILE"
-  if [ "$PREFLIGHT_ACTION" = "agent" ]; then
-    ASSIST_ROUNDS=$((ASSIST_ROUNDS + 1))
-    echo "PREFLIGHT: Agent wird mit der Anweisung des Nutzers beauftragt (Runde $ASSIST_ROUNDS/$ASSIST_MAX_ROUNDS)." | tee -a "$LOG"
-    ASSIST_PROMPT="Der Preflight für '$NAME' ist nicht bestanden. Befunde:
+    rm -f -- "$PREFLIGHT_ACTION_FILE"
+    if [ "$PREFLIGHT_ACTION" = "agent" ]; then
+      ASSIST_ROUNDS=$((ASSIST_ROUNDS + 1))
+      echo "PREFLIGHT: Agent wird mit der Anweisung des Nutzers beauftragt (Runde $ASSIST_ROUNDS/$ASSIST_MAX_ROUNDS)." | tee -a "$LOG"
+      ASSIST_PROMPT="$heading
+Befunde:
 $PREFLIGHT_OUT
 
 Anweisung des Nutzers:
 $PREFLIGHT_INSTRUCTION
 
 Behebe ausschließlich diese Befunde im Projektordner. Verwirf keine fremden Änderungen. Committe nur, wenn die Anweisung es verlangt. Ändere keine Arbeitspakete und starte keinen neuen Lauf. Beende danach deine Arbeit; der Preflight wird erneut geprüft."
-    run_agent_in "$P" "$ASSIST_PROMPT" "$NAME Preflight"
-    ASSIST_RC=$?
-    if [ "$ASSIST_RC" != 0 ]; then
-      echo "ABBRUCH: Preflight-Agent fehlgeschlagen (Exit-Code $ASSIST_RC); die Befunde sind nicht behoben." | tee -a "$LOG"
-      register_finish 2 blocked
-      exit 2
+      run_agent_in "$P" "$ASSIST_PROMPT" "$NAME Preflight"
+      ASSIST_RC=$?
+      if [ "$ASSIST_RC" != 0 ]; then
+        echo "ABBRUCH: Preflight-Agent fehlgeschlagen (Exit-Code $ASSIST_RC); die Befunde sind nicht behoben." | tee -a "$LOG"
+        return 2
+      fi
+      continue
     fi
-    continue
-  fi
-  printf '%s\n' "$PREFLIGHT_OUT" | tee -a "$LOG"
+    printf '%s\n' "$PREFLIGHT_OUT" | tee -a "$LOG"
+    return 1
+  done
+}
+preflight_with_assist start ""
+PREFLIGHT_RC=$?
+if [ "$PREFLIGHT_RC" != 0 ]; then
   echo "ABBRUCH: Preflight nicht bestanden. Es wurde kein Arbeitspaket gestartet." | tee -a "$LOG"
   register_finish 2 blocked
   exit 2
-done
+fi
 BASE_BRANCH="$(git -C "$P" symbolic-ref --quiet --short HEAD)"
 git -C "$P" worktree prune >>"$LOG" 2>&1 || true
 register_start
@@ -565,15 +612,33 @@ $QUESTION_HINT"
     RC=$?
     echo "=== Agent beendet, Exit-Code $RC ===" | tee -a "$LOG"
     if [ "$RC" = 0 ]; then
-      if ! run_package_tests; then
-        BLOCK_REASON="Pakettests für $ID sind nicht grün."
+      REPAIR_ROUNDS=0
+      REPAIR_ERROR=""
+      REPAIR_FINDING=""
+      PACKAGE_OK=0
+      while :; do
+        if ! run_package_tests; then
+          REPAIR_FINDING="Pakettests für $ID sind nicht grün."
+          REPAIR_DETAILS="$PACKAGE_TEST_OUT"
+        elif ! gate_ok; then
+          REPAIR_FINDING="Abschlussschranke für $ID nicht erfüllt."
+          REPAIR_DETAILS="$GATE_OUT"
+        else
+          PACKAGE_OK=1
+          break
+        fi
+        if ! repair_package_finding "$REPAIR_FINDING" "$REPAIR_DETAILS"; then
+          break
+        fi
+      done
+      if [ "$PACKAGE_OK" != 1 ]; then
+        if [ -n "$REPAIR_ERROR" ]; then
+          BLOCK_REASON="$REPAIR_ERROR $REPAIR_FINDING"
+        else
+          BLOCK_REASON="$REPAIR_FINDING"
+        fi
         record_block "$ID" "$BLOCK_REASON"
         echo "BLOCKIERT: $BLOCK_REASON" | tee -a "$LOG"
-        STOP=1; break
-      fi
-      if ! gate_ok; then
-        BLOCK_REASON="Abschlussschranke für $ID nicht erfüllt."
-        record_block "$ID" "$BLOCK_REASON"
         STOP=1; break
       fi
       if ! merge_package; then
@@ -673,14 +738,21 @@ if [ "$PAUSED" = 1 ]; then
   printf '\a'; echo "Angehalten auf Wunsch. Die Abschlussprüfung wurde nicht ausgeführt. Nächster Start: vibe run $NAME" | tee -a "$LOG"; exit 0
 fi
 # Die Gesamtprüfung läuft ausschließlich auf einem sauberen Integrationsstand.
+# B9: Mit aktiver Assistenz darf der Agent den Stand zuvor bereinigen; ohne
+# Assistenz oder nach Abbruch bleibt es beim bisherigen Blockieren.
 INTEGRATION_DIRTY="$(git -C "$P" status --porcelain)"
 if [ -n "$INTEGRATION_DIRTY" ]; then
-  BLOCK_REASON="Integrationsstand ist nicht sauber: $INTEGRATION_DIRTY"
-  record_block "INTEGRATION" "$BLOCK_REASON"
-  report
-  register_finish 1 blocked
-  echo "ABBRUCH: $BLOCK_REASON" | tee -a "$LOG"
-  exit 1
+  preflight_with_assist end "Der Abschluss für '$NAME' ist nicht möglich: Der Integrationsstand ist nicht sauber."
+  INTEGRATION_RC=$?
+  INTEGRATION_DIRTY="$(git -C "$P" status --porcelain)"
+  if [ "$INTEGRATION_RC" != 0 ] || [ -n "$INTEGRATION_DIRTY" ]; then
+    BLOCK_REASON="Integrationsstand ist nicht sauber: $INTEGRATION_DIRTY"
+    record_block "INTEGRATION" "$BLOCK_REASON"
+    report
+    register_finish 1 blocked
+    echo "ABBRUCH: $BLOCK_REASON" | tee -a "$LOG"
+    exit 1
+  fi
 fi
 echo "=== Abschlussprüfung ===" | tee -a "$LOG" "$VLOG"
 VOUT=$(final_verify 2>&1); VRC=$?

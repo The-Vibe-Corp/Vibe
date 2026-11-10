@@ -7,9 +7,10 @@ aus dem Implementierungsdiff. Geprüft werden:
   hält am bisherigen Verhalten fest (Abbruch ohne Rückfrage).
 * ``vibe run`` startet den Läufer mit ``VIBE_PREFLIGHT_ASSIST=1``.
 * Bei aktivierter Assistenz legt der Läufer eine F16-Rückfrage mit Projekt,
-  konkreten Befunden und genau den Optionen „Erneut prüfen“ und „Lauf
-  abbrechen“ an; eine freie Antwort wird als Anweisung an den Agenten
-  verstanden, der die Befunde im Projektordner beheben soll.
+  konkreten Befunden und genau den drei Optionen „Erneut prüfen“, „Lauf
+  abbrechen“ und „Agent behebt die Befunde“ an; eine freie Antwort wird als
+  Anweisung an den Agenten verstanden, der die Befunde im Projektordner
+  beheben soll.
 * Eine freie Antwort beauftragt den konfigurierten Agenten im Projektordner;
   nach einem erfolgreichen Agentenlauf wird der Preflight erneut geprüft. Ein
   fehlgeschlagener Agentenlauf beendet den Lauf mit Exit-Code 2, ohne ein
@@ -518,7 +519,7 @@ class QuestionContentTest(PreflightAssistFixture):
     """Verhalten 2: Inhalt und Form der Rückfrage."""
 
     def test_blocked_preflight_asks_with_project_findings_and_exact_options(self):
-        """Die Frage nennt Projekt und Befund, bietet nur die zwei Optionen."""
+        """Die Frage nennt Projekt und Befund, bietet die drei Optionen."""
         self.make_dirty("unfertig.txt")
 
         self.start(VIBE_PREFLIGHT_ASSIST="1",
@@ -529,7 +530,8 @@ class QuestionContentTest(PreflightAssistFixture):
         self.assertIn("Arbeitsbaum", record.get("text", ""))
         self.assertIn("unfertig.txt", record.get("text", ""))
         self.assertEqual(
-            record.get("options"), ["Erneut prüfen", "Lauf abbrechen"]
+            record.get("options"),
+            ["Erneut prüfen", "Lauf abbrechen", "Agent behebt die Befunde"],
         )
         self.assertIs(record.get("free_text"), True)
 
@@ -547,7 +549,8 @@ class QuestionContentTest(PreflightAssistFixture):
 
         self.assertIs(record.get("free_text"), True)
         self.assertEqual(
-            record.get("options"), ["Erneut prüfen", "Lauf abbrechen"]
+            record.get("options"),
+            ["Erneut prüfen", "Lauf abbrechen", "Agent behebt die Befunde"],
         )
         self.assertIn("Anweisung", text)
         self.assertIn("Agent", text)
@@ -687,7 +690,7 @@ class InvalidAnswerTest(PreflightAssistFixture):
         # nicht auslösen.
         dirty.unlink()
         self.wait_until_clean()
-        self.answer(record, 2)
+        self.answer(record, 3)
         rc = self.wait_exit(timeout=60)
         output = self.combined_output()
 

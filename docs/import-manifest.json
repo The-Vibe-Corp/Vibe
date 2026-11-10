@@ -30,8 +30,8 @@
     },
     {
       "path": "bin/vibe-run.sh",
-      "sha256": "586d3b095ea9dae95cd8b2ad682904d0a9a3b51f2b0915b1bbf7d0172e744a35",
-      "bytes": 31187
+      "sha256": "d1de74d56077cc9baaa8e45e64cc9bf9962b6abc4087e87336023ca1da12bc0a",
+      "bytes": 34124
     },
     {
       "path": "bin/vibe-web.py",
@@ -75,8 +75,8 @@
     },
     {
       "path": "bin/vibe_packages.py",
-      "sha256": "d9505bdcf86b632f3e37abeb19a95df607165f73d6db881fd4c33fcbd2b875d7",
-      "bytes": 35090
+      "sha256": "3cacd67eba1dac91149dda237554b531f230f7fb753b916759be19d5ac20fe11",
+      "bytes": 37761
     },
     {
       "path": "bin/vibe_paths.py",
@@ -936,6 +936,15 @@
       "grund": "Review Runde 1 (docs/reviews/B8-review-1.md, Minor): Modul-Docstring beschreibt das B8-Standardverhalten der Status-Ebene (fernfrei ohne GITHUB_ENABLED und in der Projektansicht, ls-remote nur im Fern-Modus mit aktiver Verknüpfung) und dokumentiert die bewusste setdefault-Übersteuerbarkeit der promptfreien Git-Voreinstellung. Kein Verhaltensunterschied.",
       "dateien": [
         "bin/vibe_github.py"
+      ]
+    },
+    {
+      "arbeitspaket": "B9",
+      "datum": "2026-11-10",
+      "grund": "B9 behebt zwei belegte Blockaden: Die Abschlussschranke liest alle Commits einer (auch umbrochenen) Nachweiszeile und akzeptiert das Paket, wenn einer davon auf dem Paketbranch liegt. Preflight, Pakettest/Schranke und ein unsauberer Integrationsstand am Laufende bieten die F16-Option 'Agent behebt die Befunde'; Pakettest-/Schrankenbefunde werden bis zu zwei Runden im selben Arbeitsbaum mit den konkreten Befunden repariert, danach blockiert das Paket.",
+      "dateien": [
+        "bin/vibe-run.sh",
+        "bin/vibe_packages.py"
       ]
     }
   ]

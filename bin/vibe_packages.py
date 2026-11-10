@@ -24,7 +24,8 @@ EXIT_USAGE = 2
 # Entscheidung fragen. Die Assistenz ist nur im Produktpfad ``vibe run``
 # aktiv; ein direkter Läuferaufruf und Tests ohne die Variable bleiben beim
 # bisherigen sofortigen Abbruch.
-ASSIST_OPTIONS = ["Erneut prüfen", "Lauf abbrechen"]
+ASSIST_OPTIONS = ["Erneut prüfen", "Lauf abbrechen", "Agent behebt die Befunde"]
+ASSIST_AGENT_OPTION = 2
 ASSIST_DEFAULT_TIMEOUT = 600.0
 ASSIST_MAX_ROUNDS = 10
 
@@ -32,7 +33,6 @@ CHECKBOX_DONE = re.compile(r"^- \[[xX]\]")
 CHECKBOX_ANY = re.compile(r"^- \[[ xX]\]")
 BLOCK_MARKER = "BLOCKIERT:"
 ID_PATTERN = re.compile(r"[A-Za-z][A-Za-z0-9_-]*\d+")
-COMMIT_PATTERN = re.compile(r"Commit\s*:\s*`?([0-9a-fA-F]{7,40})`?")
 PROOF_PATTERN = re.compile(r"(?:Test|Datei)\s*:\s*\S+")
 DEPENDENCY_PATTERN = re.compile(r"Abhängigkeiten\s*:\s*(.+)")
 PRIORITY_PATTERN = re.compile(r"Priorität\s*:\s*(P\d)")
@@ -206,8 +206,10 @@ def sync_proof(project, worktree, pid):
         return False, "Block " + pid + " fehlt in der Arbeitskopie."
     if not is_done(worktree_block):
         return False, "Block " + pid + " ist in der Arbeitskopie nicht abgehakt."
-    revision = proof_commit(worktree_block)
-    if not revision or not commit_exists(project, revision):
+    revisions = proof_commits(worktree_block)
+    if not revisions or not any(
+        commit_exists(project, revision) for revision in revisions
+    ):
         return False, "Nachweis-Commit für " + pid + " fehlt oder ist nicht vorhanden."
     if not PROOF_PATTERN.search(worktree_block):
         return False, "Nachweis 'Test:' oder 'Datei:' für " + pid + " fehlt."
@@ -277,9 +279,37 @@ def is_blocked(block):
     return BLOCK_MARKER in block.upper()
 
 
+def proof_commits(block):
+    """Alle Commits einer Nachweiszeile, auch über umbrochene Zeilen.
+
+    Das Nachweisfeld beginnt mit ``Commit:`` und darf auf Folgezeilen
+    fortgesetzt werden, solange diese eingerückt sind und kein neues
+    Nachweisfeld beginnen. Dadurch zählt ein Paket als belegt, sobald einer
+    der genannten Commits zum Paketbranch gehört.
+    """
+    revisions = []
+    collecting = False
+    for line in (block or "").splitlines():
+        stripped = line.strip()
+        if re.match(r"(?i)^Commit\s*:", stripped):
+            collecting = True
+            payload = stripped.split(":", 1)[1]
+        elif collecting and line[:1] in (" ", "\t") and not PROOF_LINE.match(line):
+            payload = stripped
+        elif collecting:
+            break
+        else:
+            continue
+        for revision in re.findall(r"\b[0-9a-fA-F]{7,40}\b", payload):
+            if revision not in revisions:
+                revisions.append(revision)
+    return revisions
+
+
 def proof_commit(block):
-    match = COMMIT_PATTERN.search(block)
-    return match.group(1) if match else ""
+    """Erster genannter Commit; bleibt für Aufrufer mit Einzelnachweis gültig."""
+    revisions = proof_commits(block)
+    return revisions[0] if revisions else ""
 
 
 def commit_exists(project, revision):
@@ -307,8 +337,10 @@ def commit_is_ancestor(project, revision, base):
 
 
 def proof_ok(project, block):
-    revision = proof_commit(block)
-    if not revision or not commit_exists(project, revision):
+    revisions = proof_commits(block)
+    if not revisions or not any(
+        commit_exists(project, revision) for revision in revisions
+    ):
         return False, "Commit fehlt oder ist nicht vorhanden"
     if not PROOF_PATTERN.search(block):
         return False, "Test: oder Datei: fehlt"
@@ -531,9 +563,11 @@ def _question_modules():
     return vibe_questions, vibe_autonomous
 
 
-def _assist_text(project_name, errors):
+def _assist_text(project_name, errors, intro=""):
     """Formuliert die Rückfrage aus den aktuellen Preflight-Befunden."""
-    lines = ["Der Preflight für '" + project_name + "' ist nicht bestanden.", ""]
+    if not intro:
+        intro = "Der Preflight für '" + project_name + "' ist nicht bestanden."
+    lines = [intro, ""]
     for error in errors:
         lines.append("- " + str(error).replace("\n", "\n  "))
     lines.append("")
@@ -542,13 +576,26 @@ def _assist_text(project_name, errors):
         "'Erneut prüfen' wählen."
     )
     lines.append(
-        "Alternativ eine Anweisung als freie Antwort senden: Der Agent "
-        "versucht dann, die Befunde zu beheben; danach wird erneut geprüft."
+        "'Agent behebt die Befunde' beauftragt den Agenten, die Befunde im "
+        "Projektordner zu beheben; danach wird erneut geprüft. Alternativ "
+        "eine Anweisung als freie Antwort senden: Sie hat Vorrang und wird "
+        "dem Agenten als Anweisung übergeben."
     )
     text = "\n".join(lines).strip()
     if len(text) > 3900:
         text = text[:3899] + "…"
     return text
+
+
+def _agent_instruction(errors):
+    """Auftrag an den Agenten, der ohne Freitext aus den Befunden entsteht."""
+    lines = [
+        "Behebe die folgenden Befunde im Projektordner, ohne fremde "
+        "Änderungen zu verwerfen:"
+    ]
+    for error in errors:
+        lines.append("- " + str(error).replace("\n", "\n  "))
+    return "\n".join(lines)
 
 
 def _assist_result(errors, action, instruction=""):
@@ -558,15 +605,18 @@ def _assist_result(errors, action, instruction=""):
 
 def assist_preflight(project, agents_dir, tester, reviewer, state_dir=None,
                      runtime=None, project_name="", timeout=ASSIST_DEFAULT_TIMEOUT,
-                     rounds=0, allow_dirty=False):
+                     rounds=0, allow_dirty=False, intro=""):
     """Führt den Preflight mit F16-Rückfragen zu einem startbaren Stand.
 
     Liefert ein Ergebnis mit den zuletzt bestehenden Befunden und der nächsten
     Aktion. Eine leere Fehlerliste bedeutet, dass der Preflight bestanden ist.
     Eine freie Antwort ist eine Anweisung an den Agenten; der Aufrufer führt
-    sie im Projektordner aus und ruft diese Funktion danach erneut auf. Ohne
-    nutzbare F16-Module, bei aktivem autonomem Modus oder nach einem
-    Abbruch/Zeitlimit bleiben die Befunde bestehen.
+    sie im Projektordner aus und ruft diese Funktion danach erneut auf. Die
+    Option ``Agent behebt die Befunde`` erzeugt denselben Agentenauftrag aus
+    den aktuellen Befunden. Ohne nutzbare F16-Module, bei aktivem autonomem
+    Modus oder nach einem Abbruch/Zeitlimit bleiben die Befunde bestehen.
+    ``intro`` ersetzt den Einleitungssatz, wenn die Assistenz nicht am
+    Laufstart, sondern an der Abschlussprüfung eingesetzt wird.
     """
     questions, autonomous = _question_modules()
     errors = preflight_errors(
@@ -593,7 +643,7 @@ def assist_preflight(project, agents_dir, tester, reviewer, state_dir=None,
                 runtime,
                 project=name,
                 agent="vibe",
-                text=_assist_text(name, errors),
+                text=_assist_text(name, errors, intro),
                 options=ASSIST_OPTIONS,
                 free_text=True,
             )
@@ -603,7 +653,7 @@ def assist_preflight(project, agents_dir, tester, reviewer, state_dir=None,
         print(
             "PREFLIGHT: Rückfrage " + qid + " gestellt; Antwort im Dashboard "
             "oder mit: vibe answer " + qid
-            + " --option <1|2> oder --text \"Anweisung\""
+            + " --option <1|2|3> oder --text \"Anweisung\""
         )
         try:
             mode, answer = questions.wait_for(
@@ -643,6 +693,11 @@ def assist_preflight(project, agents_dir, tester, reviewer, state_dir=None,
         if option == 1:
             print("PREFLIGHT: Lauf auf Wunsch abgebrochen.")
             return _assist_result(errors, "abort")
+        if option == ASSIST_AGENT_OPTION:
+            print(
+                "PREFLIGHT: Agent wird beauftragt, die Befunde zu beheben."
+            )
+            return _assist_result(errors, "agent", _agent_instruction(errors))
         if option != 0:
             print(
                 "PREFLIGHT: Ungültige Antwort auf Rückfrage " + qid
@@ -692,16 +747,20 @@ def gate_errors(project, pid, base):
         if block is not None:
             break
 
-    revision = proof_commit(block) if block is not None else ""
+    revisions = proof_commits(block)
     # Ein Paket kann bereits in den Integrationsstand gemergt sein, während
     # sein Nachweis nur in der unversionierten Arbeitsnotiz steht. Dann gibt es
     # keine neuen Commits; der Nachweis liegt vielmehr als Vorfahre der Basis
-    # vor. Dieser Fall ist kein fehlender Paketabschluss.
+    # vor. Dieser Fall ist kein fehlender Paketabschluss. Bei mehreren
+    # gelisteten Commits genügt einer, der Vorfahre der Basis ist und das
+    # Paketpräfix trägt.
     already_integrated = (
         not commits
-        and bool(revision)
-        and commit_subject(project, revision).startswith(pid + ":")
-        and commit_is_ancestor(project, revision, base)
+        and any(
+            commit_subject(project, revision).startswith(pid + ":")
+            and commit_is_ancestor(project, revision, base)
+            for revision in revisions
+        )
     )
     if not already_integrated:
         if not commits:
@@ -718,10 +777,16 @@ def gate_errors(project, pid, base):
         if not proof:
             errors.append("Nachweis für " + pid + " fehlt: " + reason + ".")
         elif not already_integrated and not any(
-            commit.startswith(revision) for commit, _ in commits
+            revision
+            for revision in revisions
+            if any(
+                commit.startswith(revision) and subject.startswith(pid + ":")
+                for commit, subject in commits
+            )
         ):
             errors.append(
-                "Nachweis-Commit " + revision + " gehört nicht zu diesem Paketbranch."
+                "Nachweis-Commit(s) " + ", ".join(revisions)
+                + " gehören nicht zu diesem Paketbranch."
             )
 
     feature = project / "docs" / "features" / (pid + ".md")
@@ -805,6 +870,7 @@ def command_preflight(args):
             timeout=args.timeout,
             rounds=args.assist_rounds,
             allow_dirty=args.allow_dirty,
+            intro=args.assist_reason,
         )
         errors = result["errors"]
         if args.action_file:
@@ -916,6 +982,10 @@ def build_parser():
     preflight.add_argument(
         "--assist-rounds", type=int, default=0,
         help="bereits ausgeführte Agentenrunden der Assistenz (F22)",
+    )
+    preflight.add_argument(
+        "--assist-reason", default="",
+        help="Einleitungssatz der Rückfrage (Standard: Preflight)",
     )
     preflight.add_argument(
         "--allow-dirty", action="store_true",
