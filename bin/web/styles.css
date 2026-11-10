@@ -62,6 +62,24 @@ pre.subagent-out.empty{color:var(--mut)}
 .tabs [role=tab]{background:none;border:0;border-bottom:2px solid transparent;color:var(--mut);padding:10px 14px;cursor:pointer;font-size:14px;white-space:nowrap}
 .tabs [role=tab]:hover{color:var(--tx)}
 .tabs [role=tab][aria-selected=true]{color:var(--tx);border-bottom-color:var(--ac)}
+/* AP7: Einstellungs-Tab als Abschnittsstapel. Die Leiste zeigt Zustand und
+   Sprungziele; optionale Abschnitte sind eingeklappte Karten. */
+.settingsstack{display:flex;flex-direction:column;gap:14px}
+.settings-nav{display:flex;gap:8px;flex-wrap:wrap;margin:0}
+.settingschip{display:inline-flex;align-items:center;gap:8px;margin:0}
+.seccard{padding:0;margin:0}
+/* Sprungabstand: mit Abstand zur fixen Kopfleiste, damit der
+   Zusammenfassungstitel des Abschnitts nach dem Chip-Klick sichtbar bleibt.
+   Nachweis aus der Reviewrunde 1/2: die fixe .detailbar misst gerendert
+   76.06 px, deshalb 78 px Sprungabstand (im Alignment-Regime gemessen). */
+.seccard,#project-agents{scroll-margin-top:78px}
+.seccard>summary{padding:12px 14px;list-style:none;display:flex;align-items:center;gap:8px;cursor:pointer}
+.seccard>summary::-webkit-details-marker{display:none}
+.seccard>summary::before{content:'▸';color:var(--mut);font-size:12px}
+.seccard[open]>summary::before{content:'▾'}
+.seccard>summary::after{content:'';flex:1}
+.seccard[open]>summary{border-bottom:1px solid var(--line)}
+.seccard>.secbody{padding:14px;margin:0}
 .detailbar{position:sticky;top:0;z-index:60;background:var(--bg);border-bottom:1px solid var(--line);margin:0 0 14px;padding:10px 0;align-items:center}
 .dhead{display:flex;gap:10px;align-items:center;flex-wrap:wrap;min-width:0}
 .dhead h2{font-size:18px}

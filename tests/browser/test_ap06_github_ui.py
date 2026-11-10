@@ -348,12 +348,26 @@ class GitHubCardUiTest(unittest.TestCase):
         self.page.close()
 
     # ------------------------------------------------------------ helpers
+    def expand_optional(self, selector):
+        """AP7-neutral: klappt einen Abschnitt auf, falls er als <details>
+        umgesetzt ist. Auf der Bestandsstruktur bleibt der Aufruf ein No-op."""
+        summary = self.page.locator(selector + " > summary")
+        if summary.count():
+            section = self.page.locator(selector).first
+            section.evaluate("el => el.scrollIntoView({block: 'center'})")
+            if not section.evaluate("el => !!el.open"):
+                summary.click()
+                assert section.evaluate("el => !!el.open"), \
+                    "%s ließ sich nicht aufklappen" % selector
+
     def open_project_settings(self, name):
         self.page.goto(self.base + "/#t=" + self.token)
         self.page.wait_for_selector(".row")
         self.page.locator(".row").filter(has_text=name).first.click()
         self.page.get_by_role("tab", name="Einstellungen").click()
-        return self.git_card()
+        card = self.git_card()
+        self.expand_optional("#github")
+        return card
 
     def git_card(self):
         card = self.page.locator(".card").filter(has_text="Git & GitHub").first
@@ -647,6 +661,16 @@ class LinkOnlyMergeRequestUiTest(unittest.TestCase):
     def tearDown(self):
         self.page.close()
 
+    def expand_optional(self, selector):
+        summary = self.page.locator(selector + " > summary")
+        if summary.count():
+            section = self.page.locator(selector).first
+            section.evaluate("el => el.scrollIntoView({block: 'center'})")
+            if not section.evaluate("el => !!el.open"):
+                summary.click()
+                assert section.evaluate("el => !!el.open"), \
+                    "%s ließ sich nicht aufklappen" % selector
+
     def open_project_settings(self, name):
         self.page.goto(self.base + "/#t=" + self.token)
         self.page.wait_for_selector(".row")
@@ -654,6 +678,7 @@ class LinkOnlyMergeRequestUiTest(unittest.TestCase):
         self.page.get_by_role("tab", name="Einstellungen").click()
         card = self.page.locator(".card").filter(has_text="Git & GitHub").first
         card.wait_for(state="visible", timeout=15000)
+        self.expand_optional("#github")
         return card
 
     def test_merge_request_after_link_only_sends_default_base(self):

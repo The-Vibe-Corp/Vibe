@@ -176,6 +176,42 @@ class WriteDirsBrowserTest(unittest.TestCase):
     def toasts(self):
         return self.page.locator("#toasts .toast").all_inner_texts()
 
+    def expand_optional(self, selector):
+        """AP7-neutral: klappt einen Abschnitt auf, falls er als <details>
+        umgesetzt ist. Auf der Bestandsstruktur bleibt der Aufruf ein No-op."""
+        summary = self.page.locator(selector + " > summary")
+        if summary.count():
+            section = self.page.locator(selector).first
+            section.evaluate("el => el.scrollIntoView({block: 'center'})")
+            if not section.evaluate("el => !!el.open"):
+                summary.click()
+                self.wait_until(
+                    lambda: section.evaluate("el => !!el.open"),
+                    message="%s ließ sich nicht aufklappen" % selector,
+                )
+
+    def mark_card(self, selector):
+        """Markiert den aktuellen DOM-Knoten einer Karte.
+
+        Aktionen wie Hinzufügen/Entfernen/Zurücksetzen lösen serverseitig
+        einen Refresh aus, der das ganze Detail-DOM asynchron ersetzt und
+        optionale Abschnitte wieder einklappt. Der Marker macht diesen
+        Ersatz deterministisch erkennbar, damit der Test erst auf dem
+        finalen DOM weiterprüft.
+        """
+        self.page.locator(selector).first.evaluate(
+            "el => { el.dataset.staleMarker = '1' }")
+
+    def wait_for_card_rebuild(self, selector, message):
+        self.wait_until(
+            lambda: self.page.evaluate(
+                "sel => { const el = document.querySelector(sel);"
+                " return !!(el && !el.dataset.staleMarker) }",
+                selector,
+            ),
+            message=message,
+        )
+
     def open_detail(self):
         self.page.goto(self.base + "/#t=" + self.token)
         row = self.page.locator("tr.row", has_text="proj").first
@@ -183,6 +219,7 @@ class WriteDirsBrowserTest(unittest.TestCase):
         row.click()
         self.page.get_by_role("tab", name="Einstellungen", exact=True).click()
         self.page.get_by_text("Schreibrechte (Agenten)").wait_for()
+        self.expand_optional("#settings-rechte")
 
     def rights_card(self):
         return self.page.locator(".card", has_text="Schreibrechte (Agenten)")
@@ -213,6 +250,7 @@ class WriteDirsBrowserTest(unittest.TestCase):
         self.assertIn("die Liste ist keine Sandbox", card.inner_text())
 
         extra = "/tmp/opencode/f3-ui"
+        self.mark_card("#settings-rechte")
         card.get_by_placeholder("/absoluter/pfad").fill(extra)
         card.get_by_role("button", name="Hinzufügen").click()
         self.wait_until(
@@ -220,10 +258,16 @@ class WriteDirsBrowserTest(unittest.TestCase):
             and os.path.realpath(extra) in self.stored_dirs(),
             message="Hinzugefügtes Verzeichnis wurde nicht gespeichert",
         )
+        self.wait_for_card_rebuild(
+            "#settings-rechte",
+            "Die Schreibrechte-Karte wurde nach dem Hinzufügen nicht neu aufgebaut",
+        )
+        self.expand_optional("#settings-rechte")
         card.get_by_text(os.path.realpath(extra), exact=True).wait_for()
         self.assertIn("Eigene Liste aktiv.", card.inner_text())
 
         row = card.locator(".bar", has_text=os.path.realpath(extra))
+        self.mark_card("#settings-rechte")
         row.get_by_role("button", name="Entfernen").click()
         self.wait_until(
             lambda: self.stored_dirs() is not None
@@ -234,12 +278,30 @@ class WriteDirsBrowserTest(unittest.TestCase):
             self.stored_dirs(), ["/tmp/opencode", project_path]
         )
 
-        card.get_by_role("button", name="Standard wiederherstellen").click()
-        card.locator(".confirm").get_by_role("button", name="Ja, zurücksetzen").click()
+        self.wait_for_card_rebuild(
+            "#settings-rechte",
+            "Die Schreibrechte-Karte wurde nach dem Entfernen nicht neu aufgebaut",
+        )
+        self.expand_optional("#settings-rechte")
+        self.rights_card().get_by_role(
+            "button", name="Standard wiederherstellen").click()
+        self.rights_card().locator(".confirm").first.wait_for(
+            state="visible", timeout=10000)
+        self.mark_card("#settings-rechte")
+        self.rights_card().locator(".confirm").get_by_role(
+            "button", name="Ja, zurücksetzen").click()
         self.wait_until(
             lambda: self.stored_dirs() is None,
             message="Zurücksetzen entfernte die eigene Liste nicht",
         )
+        # Der Erfolg baut die Karte asynchron neu (und klappt den Abschnitt
+        # wieder ein); erst den neuen DOM-Knoten abwarten, dann aufklappen
+        # und den Text prüfen.
+        self.wait_for_card_rebuild(
+            "#settings-rechte",
+            "Die Schreibrechte-Karte wurde nach dem Zurücksetzen nicht neu aufgebaut",
+        )
+        self.expand_optional("#settings-rechte")
         card.get_by_text("Standardliste aktiv.").wait_for()
 
     def test_agent_editor_is_global_and_uses_open_write_rights(self):
@@ -318,6 +380,7 @@ class WriteDirsBrowserTest(unittest.TestCase):
             "element => !element.isConnected", arg=previous_card
         )
         shot_card = self.rights_card()
+        self.expand_optional("#settings-rechte")
         shot_card.get_by_text("Standardliste aktiv.").wait_for()
 
         SHOT.parent.mkdir(parents=True, exist_ok=True)

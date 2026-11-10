@@ -147,7 +147,7 @@ async function detail(name){
    el('div',{},pauseCard(d,name),autonomousCard(d,name),checksCard,factsCard))),
   ausgabe:tabPanel('ausgabe',el('div',{class:'output-layout'},L.card,el('div',{class:'output-side',id:'f19-controls'},steer.card,S.card))),
   assistent:tabPanel('assistent',guideCard(name)),
-  einstellungen:tabPanel('einstellungen',el('div',{class:'grid'},projectAgentsCard(name),rightsCard(d,name),sandboxCard(d,name,isPi),githubCard(d,name)))};
+  einstellungen:tabPanel('einstellungen',settingsPanel(d,name,isPi))};
  const tabs=detailTabs(panels);
  openTab=k=>showDetailTab(k,panels,tabs.btns);
  main.replaceChildren(...[head,initCard,tabs.list,panels.arbeit,panels.ausgabe,panels.assistent,panels.einstellungen].filter(Boolean));
@@ -169,7 +169,48 @@ function autonomousCard(d,name){
  const btn=el('button',{class:'b'+(active?'':' p'),type:'button',on:{click:async()=>{const r=await api('/api/autonomous',{name,action:active?'off':'on'});toast(r.message);if(r.ok)detail(name).catch(showErr)}}},active?'Autonomen Modus ausschalten':'Autonomen Modus einschalten');
  return el('div',{class:'card',id:'autonomous'},el('div',{class:'bar'},el('b',{},'Autonomer Modus'),el('span',{class:'pill '+(active?'warn':'mut')},active?'aktiv':'aus'),btn),
   el('div',{class:'mut'},'Ist der Modus aktiv, entscheidet der Agent ohne Antwort des Nutzers selbst und dokumentiert die Entscheidung als Antwort auf seine Rückfrage. Die Einstellung lässt sich auch während eines Laufs ändern und gilt nur für dieses Projekt.'))}
-function projectAgentsCard(name){
+/* AP7: Einstellungs-Tab neu gegliedert. Wichtiges (Agenten) steht offen oben,
+   optionale Bereiche sind als sichtbare Aufklapunkte eingeklappt. Die
+   Abschnittsleiste zeigt den Zustand je Bereich und springt bei Klick dorthin,
+   sodass der Standardzustand ohne Scrollen bedienbar bleibt. */
+function settingsSection(id,title,open,body){
+ return el('details',{class:'card seccard',id,...(open?{open:'open'}:{})},
+  el('summary',{},el('span',{},title)),el('div',{class:'secbody'},body))}
+function sandboxStatus(s){
+ const active=!!(s&&s.enabled),missing=(s&&s.missing_tools)||[];
+ const state=!active?'aus':(s.error?'Fehler':(!s.bwrap?'bubblewrap fehlt':(missing.length?'Werkzeuge fehlen':'bereit')));
+ const tone=!active?'mut':(s.error||!s.bwrap||missing.length?'bad':'ok');
+ return {state,tone}}
+function settingsPanel(d,name,isPi){
+ const g=d.github||{enabled:false};
+ const sandbox=sandboxStatus(d.sandbox);
+ const zustand={agenten:'…',
+  rechte:d.write_dirs_error?'Fehler':(d.write_dirs_custom?(d.write_dirs.length+' Verzeichnisse'):'Standardliste'),
+  sandbox:sandbox.state,github:g.enabled?'aktiv':'aus'};
+ const tone=key=>{
+  if(key==='agenten')return 'mut';
+  if(key==='rechte')return zustand.rechte==='Fehler'?'bad':'mut';
+  if(key==='sandbox')return sandbox.tone;
+  return g.enabled?'ok':'mut'};
+ const chips={},sections={};
+ for(const[key,label] of [['agenten','Agenten'],['rechte','Schreibrechte'],['sandbox','Sandbox'],['github','Git & GitHub']]){
+  chips[key]=el('button',{class:'b settingschip',type:'button','data-goto':key,
+   on:{click:()=>to(key)},
+   title:'Öffnet den Abschnitt „'+label+'“'},el('span',{},label),
+   el('span',{class:'pill '+tone(key)},zustand[key]))}
+ const to=key=>{const sec=sections[key];if(!sec)return;
+  if(sec.tagName==='DETAILS')sec.open=true;sec.scrollIntoView({block:'start'})}
+ const agentPill=chips.agenten.querySelector('.pill');
+ const agentsSec=projectAgentsCard(name,(text,t)=>{agentPill.textContent=text;
+  if(t)agentPill.className='pill '+t});
+ const rechteSec=settingsSection('settings-rechte','Schreibrechte (Agenten)',false,rightsBody(d,name));
+ const sandboxSec=settingsSection('sandbox','Sandbox (optional)',false,sandboxBody(d,name,isPi));
+ const githubSec=settingsSection('github','Git & GitHub (optional)',false,githubBody(d,name));
+ sections.agenten=agentsSec;sections.rechte=rechteSec;sections.sandbox=sandboxSec;sections.github=githubSec;
+ return el('div',{class:'settingsstack'},
+  el('div',{class:'settings-nav','aria-label':'Einstellungsbereiche'},...Object.values(chips)),
+  agentsSec,rechteSec,sandboxSec,githubSec)}
+function projectAgentsCard(name,onPill){
  const body=el('div',{},el('span',{class:'mut'},'Lade Agenten …'));
  let showUnconfigured=false;
  const rowFor=(data,a)=>{
@@ -203,9 +244,11 @@ function projectAgentsCard(name){
   if(!visible.length)parts.push(el('span',{class:'mut'},'Keine Agenten sichtbar.'));
   if(data.error)parts.push(el('div',{class:'bad'},data.error));
   body.replaceChildren(...parts)};
- const load=async()=>{rowsCard(await api('/api/project-agents?name='+encodeURIComponent(name)))};
- load().catch(e=>body.replaceChildren(el('div',{class:'bad'},'Agentenauswahl nicht verfügbar: '+String(e&&e.message||e))));
- return el('div',{class:'card',id:'project-agents'},el('b',{},'Agenten in diesem Projekt'),body)}
+ const load=async()=>{const data=await api('/api/project-agents?name='+encodeURIComponent(name));rowsCard(data);
+  if(onPill)onPill(String(data.agents.filter(a=>a.configured||a.is_vibe).length)+' aktiv')};
+ load().catch(e=>{body.replaceChildren(el('div',{class:'bad'},'Agentenauswahl nicht verfügbar: '+String(e&&e.message||e)));
+  if(onPill)onPill('Fehler','bad')});
+ return el('section',{class:'card',id:'project-agents'},el('b',{},'Agenten in diesem Projekt'),body)}
 function guideCard(name){
  const body=el('div',{},el('span',{class:'mut'},'Lade Projektassistent …'));
  const load=async()=>{const g=await api('/api/guide?name='+encodeURIComponent(name));body.replaceChildren(...drawGuide(g,name))};
@@ -525,12 +568,12 @@ function subagentCard(name,isPi){
   if(openSession&&nodes.has(openSession))loadOutput(openSession);else openSession='';
   return data}
  return {card,poll}}
-function rightsCard(d,name){const inp=el('input',{placeholder:'/absoluter/pfad','aria-label':'Schreibverzeichnis'});
+function rightsBody(d,name){const inp=el('input',{placeholder:'/absoluter/pfad','aria-label':'Schreibverzeichnis'});
  const reset=el('button',{class:'b',on:{click:()=>askInline(reset,'Standardverzeichnisse wiederherstellen?','Ja, zurücksetzen',async()=>{const r=await api('/api/rights',{name,action:'reset'});toast(r.message);if(r.ok)detail(name).catch(showErr)})}},'Standard wiederherstellen');
  const rows=el('div',{},...(d.write_dirs.length?d.write_dirs.map(p=>el('div',{class:'bar'},el('span',{class:'mut'},p),
    el('button',{class:'b d',on:{click:async()=>{const r=await api('/api/rights',{name,action:'remove',path:p});toast(r.message);if(r.ok)detail(name).catch(showErr)}}},'Entfernen'))):[el('span',{class:'mut'},'Keine Verzeichnisse – Schreiben ist gesperrt.')]));
  const sandboxOn=!!(d.sandbox&&d.sandbox.enabled);
- return el('div',{class:'card'},el('b',{},'Schreibrechte (Agenten)'),
+ return el('div',{},
   el('div',{class:'mut'},sandboxOn
    ? 'Sandbox aktiv: Schreibwerkzeug (edit) und Shell-Befehle (bash) können nur in diesen Verzeichnissen, den Caches der Build-Werkzeuge und /tmp/opencode schreiben. MCP und Netzwerk bleiben erlaubt; Lesezugriffe werden nicht eingeschränkt.'
    : 'Verzeichnisse für das Schreibwerkzeug (edit) der Projektagenten. Voreingestellt sind /tmp/opencode und das Projektverzeichnis. Agenten ohne Schreibrecht bleiben unverändert. Shell-Befehle (bash) bleiben erlaubt und können Dateien außerhalb dieser Liste ändern – die Liste ist keine Sandbox.'),
@@ -540,12 +583,11 @@ function rightsCard(d,name){const inp=el('input',{placeholder:'/absoluter/pfad',
   el('div',{class:'bar'},reset,
    el('button',{class:'b',on:{click:async()=>{const r=await api('/api/rights',{name,action:'apply'});toast(r.message);if(r.ok)detail(name).catch(showErr)}}},'Auf Projektagenten anwenden')),
   el('div',{class:'mut'},d.write_dirs_custom?'Eigene Liste aktiv.':'Standardliste aktiv.'))}
-function sandboxCard(d,name,isPi){const s=d.sandbox||{enabled:false,tools:[],write_dirs:[],missing_tools:[],error:null,bwrap:''};
+function sandboxBody(d,name,isPi){const s=d.sandbox||{enabled:false,tools:[],write_dirs:[],missing_tools:[],error:null,bwrap:''};
  const active=!!s.enabled,missing=s.missing_tools||[],dirs=s.write_dirs||[],tools=s.tools||[];
- const state=!active?'aus':(s.error?'Fehler':(!s.bwrap?'bubblewrap fehlt':(missing.length?'Werkzeuge fehlen':'bereit')));
- const tone=!active?'mut':(s.error||!s.bwrap||missing.length?'bad':'ok');
+ const st=sandboxStatus(s),state=st.state,tone=st.tone;
  const inp=el('input',{value:tools.join(' '),placeholder:'git node npm','aria-label':'Build-Werkzeuge'});
- return el('div',{class:'card',id:'sandbox'},el('div',{class:'bar'},el('b',{},'Sandbox (Shell und Build-Werkzeuge)'),el('span',{class:'pill '+tone},state),
+ return el('div',{},el('div',{class:'bar'},el('span',{class:'pill '+tone},state),
    el('button',{class:'b'+(active?'':' p'),on:{click:async()=>{const r=await api('/api/sandbox',{name,action:active?'off':'on'});toast(r.message);if(r.ok)detail(name).catch(showErr)}}},active?'Sandbox ausschalten':'Sandbox einschalten'),
    el('button',{class:'b',on:{click:async()=>{const r=await api('/api/sandbox',{name,action:'check'});toast(r.message)}}},'Prüfen')),
   el('div',{class:'mut'},isPi
@@ -557,10 +599,11 @@ function sandboxCard(d,name,isPi){const s=d.sandbox||{enabled:false,tools:[],wri
   !active?el('div',{class:'mut'},'Ohne Sandbox bleiben Shell-Befehle (bash) außerhalb der Liste möglich.'):null,
   el('label',{},'Build-Werkzeuge (Leerzeichen oder Komma)'),inp,
   el('div',{class:'bar'},el('button',{class:'b',on:{click:async()=>{const r=await api('/api/sandbox',{name,action:'tools',tools:inp.value});toast(r.message);if(r.ok)detail(name).catch(showErr)}}},'Werkzeuge speichern')),
-  el('details',{},el('summary',{},'Erlaubte Schreibverzeichnisse ('+dirs.length+')'),el('div',{},...dirs.map(p=>el('div',{class:'mut'},p)))))}
+  el('b',{},'Erlaubte Schreibverzeichnisse ('+dirs.length+')'),el('div',{},...dirs.map(p=>el('div',{class:'mut'},p))))}
 
-/* ---------- Git & GitHub (AP6: optional je Projekt) ---------- */
-function githubCard(d,name){
+/* ---------- Git & GitHub (AP6: optional je Projekt; AP7: Aktionen erscheinen
+   nur bei aktiver Verknüpfung, damit der aus-Zustand übersichtlich bleibt) ---------- */
+function githubBody(d,name){
  const g=d.github||{enabled:false,repo:'',label:'vibe',api:'',branch:'-',remotes:[],branches:[],ahead:0,behind:0,unpushed:false};
  const active=!!g.enabled;
  const fact=(k,v)=>el('div',{class:'factrow'},el('span',{class:'mut'},k),el('span',{},String(v)));
@@ -601,26 +644,27 @@ function githubCard(d,name){
  if(g.error)facts.push(fact('Hinweis',String(g.error)));
  const remoteRows=(g.remotes||[]).map(r=>el('div',{class:'mut'},'Remote '+r.name+': '+r.url));
  const branchRows=(g.branches||[]).map(b=>el('div',{class:'mut'},(b.current?'* ':'  ')+b.name+' (Ahead/Behind '+b.ahead+'/'+b.behind+')'));
- const card=el('div',{class:'card','data-section':'github'},el('b',{},'Git & GitHub'),
-   el('div',{class:'mut'},'GitHub ist optional je Projekt. Updates und Branches bleiben bewusste Aktionen; es gibt keinen automatischen Push oder Merge. Der Merge-Request überträgt den Paket-Branch erst nach ausdrücklicher Freigabe.'),
+ const conn=el('div',{},
+   el('div',{class:'mut'},'GitHub ist optional je Projekt. Die Einstellungen gelten nur für dieses Projekt; Updates und Branches bleiben bewusste Aktionen (kein automatischer Push oder Merge).'),
    el('label',{class:'inline'},enabled,' GitHub-Verknüpfung aktiv'),
    el('label',{},'Repository (owner/name)'),repo,
    el('label',{},'Label für vibe-Aufgaben'),label,
    el('label',{},'API-Basis (optional)'),apiIn,
-   el('div',{class:'bar'},save,linkBtn,unlinkBtn),
+   el('div',{class:'bar'},save,linkBtn,unlinkBtn));
+ const actions=active?el('div',{class:'gh-actions'},
    ...facts,
    remoteRows.length?el('div',{'data-remotes':''},...remoteRows):null,
    el('div',{class:'bar'},fetchBtn,pushBtn,pullBtn),
    branchRows.length?el('details',{},el('summary',{},'Branches ('+branchRows.length+')'),el('div',{},...branchRows))
                     :el('div',{class:'mut'},'Keine lokalen Branches erkannt.'),
-   active?el('div',{class:'bar'},prBtn):null,
+   el('div',{class:'bar'},prBtn),
    el('hr'),
    el('b',{},'Issues als Arbeitspakete'),
    el('div',{class:'mut'},'Offene GitHub-Issues nach Label filtern und als Arbeitspakete (GH-Nummer) in TICKETS.md übernehmen.'),
    el('label',{},'Label-Filter'),issueFilter,
    el('div',{class:'bar'},loadBtn,importBtn),
-   issuesBox,errBox);
- return card}
+   issuesBox):null;
+ return el('div',{},conn,actions,errBox)}
 
 /* ---------- Kosten ---------- */
 const PRICE_SOURCE={user:'eigener Preis',system:'Systempreis',kostenlos:'kostenlos',unbekannt:'Preis unbekannt'};

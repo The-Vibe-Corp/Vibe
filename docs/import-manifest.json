@@ -45,8 +45,8 @@
     },
     {
       "path": "bin/vibe_github.py",
-      "sha256": "b6db2db49b114469a34609edb4f6e72471615914d9669bd627acb64a0bd1edd5",
-      "bytes": 21504
+      "sha256": "2f60bd7f64745345d0ec4423f3691982d25e4b1cc2708aa8aa329fc72e029586",
+      "bytes": 23124
     },
     {
       "path": "bin/vibe_guide.py",
@@ -100,8 +100,8 @@
     },
     {
       "path": "bin/vibe_services.py",
-      "sha256": "ac49905bd5cf66698c214ddc00cf58c42990b933eb541fbaef83cbb70359517e",
-      "bytes": 8845
+      "sha256": "da15ab8f4eb059ae8b93d6d6a386b811619e2b9ee8f66373f10aaef8c7e2bbf0",
+      "bytes": 9149
     },
     {
       "path": "bin/vibe_storage.py",
@@ -110,8 +110,8 @@
     },
     {
       "path": "bin/web/app.js",
-      "sha256": "1d66adce8ebb1e5143d1da80da5e8695a0b8f292022b2cda4a994dac4d9c8a9c",
-      "bytes": 105969
+      "sha256": "941ba9c53d34691f13f9b42ee50999fcbd7790b60a1674150d2d15b515910f6d",
+      "bytes": 108420
     },
     {
       "path": "bin/web/index.html",
@@ -120,8 +120,8 @@
     },
     {
       "path": "bin/web/styles.css",
-      "sha256": "98c817b8500269047b7692c0a8ecb95ac12b39e159bb2a9a58da79c73bcc5421",
-      "bytes": 8291
+      "sha256": "4f44d4e8be99c75ee6452d493308adaece5e3f5b0cc191f15734e0f128d9106f",
+      "bytes": 9414
     },
     {
       "path": "data/models.json",
@@ -896,6 +896,15 @@
         "bin/vibe-web.py",
         "bin/vibe_packages.py",
         "bin/web/app.js"
+      ]
+    },
+    {
+      "arbeitspaket": "AP7",
+      "datum": "2026-11-10",
+      "grund": "Einstellungs-Register im Projekt-Detail neu aufgebaut: Abschnittsleiste mit Zustandsanzeige und Sprungzielen, Agenten-Abschnitt dauerhaft offen, Schreibrechte/Sandbox/Git-GitHub als eingeklappte optionale Abschnitte; GitHub-Aktionen erscheinen nur bei aktiver Verknüpfung. Manifest zusätzlich gegen die bereits am Ausgangsstand abweichenden Einträge bin/vibe_github.py und bin/vibe_services.py (geändert in B8 ohne Manifest-Sync) abgeglichen.",
+      "dateien": [
+        "bin/web/app.js",
+        "bin/web/styles.css"
       ]
     }
   ]

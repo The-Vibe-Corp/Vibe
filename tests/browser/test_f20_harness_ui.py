@@ -265,6 +265,19 @@ class HarnessUiBase(unittest.TestCase):
             "b.classList.contains('on') && " + marker + " === " + target + ")"
         )
 
+    def expand_optional(self, selector):
+        """AP7-neutral: klappt einen Einstellungsabschnitt auf, falls er als
+        <details> umgesetzt ist. Auf der Bestandsstruktur bleibt der Aufruf
+        ein No-op."""
+        summary = self.page.locator(selector + " > summary")
+        if summary.count():
+            section = self.page.locator(selector).first
+            section.evaluate("el => el.scrollIntoView({block: 'center'})")
+            if not section.evaluate("el => !!el.open"):
+                summary.click()
+                assert section.evaluate("el => !!el.open"), \
+                    "%s ließ sich nicht aufklappen" % selector
+
     def open_models_table(self):
         """Klappt die Modell-Liste auf (Muster tests/browser/test_models_ui.py)."""
         details = self.page.locator("#models details").first
@@ -407,6 +420,7 @@ class PiHarnessUiTest(HarnessUiBase):
         self.open_detail_tab("Einstellungen")
         card = self.page.locator("#sandbox")
         card.wait_for()
+        self.expand_optional("#sandbox")
         import re
         text = card.inner_text()
         self.assertNotIn("opencode-Server in bubblewrap", text)
@@ -474,9 +488,11 @@ class OpencodeRegressionUiTest(HarnessUiBase):
         self.open_detail_tab("Einstellungen")
         sandbox = self.page.locator("#sandbox")
         sandbox.wait_for()
+        self.expand_optional("#sandbox")
         self.assertIn("opencode-Server in bubblewrap", sandbox.inner_text())
         # „Voreingestellt sind …“ steht in der Karte „Schreibrechte (Agenten)“,
         # nicht in der Sandbox-Karte (Bestandsstruktur bin/web/app.js).
+        self.expand_optional("#settings-rechte")
         self.assertIn(
             "Voreingestellt sind /tmp/opencode",
             self.page.locator(
