@@ -526,6 +526,41 @@ class VersionAndRoleTest(AgentFixture):
             any("Agentenregeln" in warning for warning in warnings), warnings
         )
 
+    def test_agent_version_warning_warns_for_an_assumed_version(self):
+        """Auch eine als "assumed" behandelte Version wird als ungeprüft gemeldet.
+
+        Das Warnkriterium ist "nicht exakt geprüft", nicht das alte
+        "supported=False": Eine Version mit Fallback-Profil gilt als
+        unterstützt, darf aber nicht stillschweigend als geprüft gelten.
+        """
+        info = self.cli.vibe_opencode.VersionInfo(
+            "assumed",
+            "opencode 2.2.6 ist nicht geprüft (geprüft: 2.1.4).",
+            version="2.2.6",
+            profile=self.cli.vibe_opencode.PROFILES["2.1.4"],
+        )
+        with mock.patch.object(self.cli.vibe_opencode, "probe", return_value=info):
+            self.cli._AGENT_VERSION = None
+
+            warning = self.cli.agent_version_warning()
+
+        self.assertIn("nicht geprüft", warning)
+        self.assertIn("2.2.6", warning)
+
+    def test_agent_version_warning_is_silent_for_the_checked_version(self):
+        info = self.cli.vibe_opencode.VersionInfo(
+            "supported",
+            "opencode 2.1.4 ist geprüft.",
+            version="2.1.4",
+            profile=self.cli.vibe_opencode.PROFILES["2.1.4"],
+        )
+        with mock.patch.object(self.cli.vibe_opencode, "probe", return_value=info):
+            self.cli._AGENT_VERSION = None
+
+            warning = self.cli.agent_version_warning()
+
+        self.assertEqual(warning, "")
+
     def test_roles_are_configured_instead_of_hardcoded_core_names(self):
         self.assertFalse(hasattr(self.cli, "CORE_AGENTS"))
         self.assertEqual(self.cli.profiles_load()["rollen"], {})

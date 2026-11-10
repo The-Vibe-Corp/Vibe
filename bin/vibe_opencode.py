@@ -1,12 +1,16 @@
-"""Kompatibilitätsadapter für die opencode-CLI (V-007, nur Standardbibliothek).
+"""Kompatibilitätsadapter für die opencode-CLI (V-007, F26; nur Standardbibliothek).
 
 Der Adapter kapselt alle Annahmen über opencode an einer Stelle. Geprüft ist
 ausschließlich die in ``docs/compatibility.md`` dokumentierte Version
-(``TESTED_VERSION``). Andere Versionen werden nicht stillschweigend wie die
-geprüfte Version behandelt: versionabhängige Schreibvorgänge werden mit einer
-verständlichen Meldung abgelehnt. Agentenregeln und Agentenverzeichnis gelten
-dagegen unabhängig von der erkannten Version; ihre Versionsprüfung gehört zu
-V-010.
+(``TESTED_VERSION``). Eine lesbare, aber nicht exakt geprüfte Version (z. B.
+nach einem opencode-Update) wird als ``assumed`` geführt und mit dem am besten
+passenden geprüften Profil behandelt; Meldungen weisen weiterhin darauf hin,
+dass die Version nicht geprüft ist. Ohne lesbare Version wird nichts
+angenommen: versionabhängige Schreibvorgänge werden mit einer verständlichen
+Meldung abgelehnt. Agentenregeln und Agentenverzeichnis gelten unabhängig von
+der erkannten Version. Die Profile in ``PROFILES`` sind die Erweiterungsstelle
+für weitere geprüfte Versionen; die Auswahl des Harness liegt in
+``bin/vibe_harness.py`` (z. B. pi).
 
 Der Import des Moduls startet keine Prozesse und verändert keine Dateien.
 """
@@ -53,6 +57,29 @@ PROFILES = {
 TESTED_PROFILE = PROFILES[TESTED_VERSION]
 
 
+def _closest_profile(detected):
+    """Bestes geprüftes Profil für eine nicht exakt geprüfte Version (F26).
+
+    Wählt die höchste geprüfte Version bis einschließlich der erkannten
+    Version; liegt die erkannte Version vor allen geprüften, das älteste
+    Profil. Liefert ``None``, wenn kein Profil existiert. Diese Annahme wird
+    nie stillschweigend getroffen: die Meldungen nennen die ungeprüfte
+    Version.
+    """
+    if not detected:
+        return None
+    candidates = []
+    for key, profile in PROFILES.items():
+        checked = tuple(int(part) for part in key.split("."))
+        candidates.append((checked, profile))
+    candidates.sort(key=lambda item: item[0])
+    at_or_below = [item for item in candidates if item[0] <= detected]
+    if at_or_below:
+        return at_or_below[-1][1]
+    # Erkannte Version unter allen geprüften: das älteste Profil liegt am nächsten.
+    return candidates[0][1]
+
+
 def mcp_entry_fields(type_name, profile=None):
     """Liefert die vom geprüften Schema unterstützten Felder eines Servertyps."""
     profile = profile or TESTED_PROFILE
@@ -79,7 +106,12 @@ class CompatibilityError(Exception):
 
 @dataclass(frozen=True)
 class VersionInfo:
-    """Ergebnis der Versionsprüfung; ``status`` ist supported, unknown, missing, timeout oder error."""
+    """Ergebnis der Versionsprüfung.
+
+    ``status`` ist ``supported`` (exakt geprüft), ``assumed`` (vermutlich
+    kompatibel über ein Fallback-Profil), ``unknown`` (Version nicht lesbar),
+    ``missing``, ``timeout`` oder ``error``.
+    """
 
     status: str
     message: str
@@ -91,7 +123,12 @@ class VersionInfo:
 
     @property
     def supported(self):
-        return self.status == "supported" and bool(self.profile)
+        return self.status in ("supported", "assumed") and bool(self.profile)
+
+    @property
+    def checked(self):
+        """Nur die exakt geprüfte Version gilt als geprüft (F26)."""
+        return self.status == "supported"
 
     def as_dict(self):
         return {
@@ -157,29 +194,48 @@ def probe(binary="opencode", timeout=15, runner=None):
             output=_short(output),
         )
     version = ".".join(match.groups())
+    detected = tuple(int(part) for part in match.groups())
     profile = PROFILES.get(version)
-    if profile is None:
+    if profile is not None:
+        return VersionInfo(
+            "supported",
+            f"opencode {version} ist geprüft.",
+            version=version,
+            major=detected[0],
+            exit_code=code,
+            output=_short(output),
+            profile=profile,
+        )
+    fallback = _closest_profile(detected)
+    if fallback is None:
         return VersionInfo(
             "unknown",
             f"opencode {version} ist nicht geprüft (geprüft: {TESTED_VERSION}).",
             version=version,
-            major=int(match.group(1)),
+            major=detected[0],
             exit_code=code,
             output=_short(output),
         )
     return VersionInfo(
-        "supported",
-        f"opencode {version} ist geprüft.",
+        "assumed",
+        f"opencode {version} ist nicht geprüft (geprüft: {fallback['version']}); "
+        "es wird das geprüfte Profil dieser Version verwendet.",
         version=version,
-        major=int(match.group(1)),
+        major=detected[0],
         exit_code=code,
         output=_short(output),
-        profile=profile,
+        profile=fallback,
     )
 
 
 def require_supported(info):
-    """Bricht ab, wenn die Version nicht geprüft ist; nennt die geprüfte Version."""
+    """Bricht ab, wenn keine Version erkennbar ist; nennt die geprüfte Version.
+
+    Geprüfte Versionen und als ``assumed`` behandelte Versionen mit
+    Fallback-Profil geben ihr Profil zurück. Ohne lesbare Version
+    (fehlendes Programm, Fehler, Zeitüberschreitung, unlesbare Ausgabe)
+    gibt es keine Annahme und damit keinen Schreib- oder Startvorgang.
+    """
     if not info.supported:
         suffix = "" if TESTED_VERSION in info.message else f" Geprüft ist opencode {TESTED_VERSION}."
         raise CompatibilityError(info.message + suffix)
@@ -224,7 +280,7 @@ def list_models(binary="opencode", timeout=30, runner=None, info=None):
         else:
             result["models"] = models
             result["ok"] = True
-    if info.status == "unknown":
+    if info.status in ("unknown", "assumed"):
         result["warning"] = info.message
     return result
 
@@ -302,11 +358,18 @@ def detect_mcp_layout(config, info=None, binary="opencode", runner=None):
     if info.supported:
         layout = info.profile.get("mcp_layout")
         if layout in (LAYOUT_SERVERS, LAYOUT_CLASSIC):
+            if info.checked:
+                message = (f"Leere Konfiguration: geprüftes Schema für opencode "
+                           f"{info.version} wird verwendet.")
+            else:
+                message = (f"Leere Konfiguration: für opencode {info.version} wird das "
+                           f"Schema der geprüften Version {info.profile['version']} "
+                           f"angenommen; {info.version} selbst ist nicht geprüft.")
             return {
                 "layout": layout,
                 "servers": {},
                 "source": "profile",
-                "message": f"Leere Konfiguration: geprüftes Schema für opencode {info.version} wird verwendet.",
+                "message": message,
             }
     return {
         "layout": LAYOUT_UNKNOWN,

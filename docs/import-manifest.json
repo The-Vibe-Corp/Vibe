@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "stand": "2026-11-09",
+  "stand": "2026-11-10",
   "quelle": "Übernommener Programmstand aus der lokalen Installation unter $VIBE/_toolchain; die aktive Installation enthält zusätzlich lokale Geheimnis-Hooks (siehe docs/baseline.md, Abschnitt 3).",
   "hinweis": "SHA-256 der übernommenen Programmdateien. Beabsichtigte Änderungen an diesen Dateien sind nur zulässig, wenn dieser Eintrag im selben Arbeitspaket aktualisiert und begründet wird. Laufzeitdaten, Sicherungen und Geheimnisse sind nicht Bestandteil des Imports.",
   "scopes": [
@@ -25,8 +25,8 @@
     },
     {
       "path": "bin/vibe",
-      "sha256": "8dcb6864c94c5aacfa35432ddb7dd2e5b9e6c813dc10a6d38cecc6be9d03dda3",
-      "bytes": 226976
+      "sha256": "be587f4498a46fd409cbeb3c6cc484ec05093e02dccdbfc90f7c1ddc90805cad",
+      "bytes": 228178
     },
     {
       "path": "bin/vibe-run.sh",
@@ -35,8 +35,8 @@
     },
     {
       "path": "bin/vibe-web.py",
-      "sha256": "8def9c7316f976e6469de3bbf74640e8be88b84fa004eb0a45912788de064a8a",
-      "bytes": 58099
+      "sha256": "be3681ec5780243c612caa68e2f85bbbe6c4ef9dd687803192f1f697cf7e87c8",
+      "bytes": 58292
     },
     {
       "path": "bin/vibe_autonomous.py",
@@ -60,8 +60,8 @@
     },
     {
       "path": "bin/vibe_mcp.py",
-      "sha256": "4b0e1b0843ce79971e24144b3e69c9d38eaf0c099130fec3e8f7de60f9b6b6d2",
-      "bytes": 50973
+      "sha256": "2a0f10cf2cb71167ae95c23c0e36b53efc9d1de4c4347833cfef61e85a74e7fc",
+      "bytes": 51525
     },
     {
       "path": "bin/vibe_models.py",
@@ -70,8 +70,8 @@
     },
     {
       "path": "bin/vibe_opencode.py",
-      "sha256": "5e2c58b801d759874ff4a8bb0dd2122c0fa638e4ca42e129f4b48b2dedebec83",
-      "bytes": 13639
+      "sha256": "f1ecde3bf4063913fbe2b78840ac85763667789d790b78639d5935d5bee606bc",
+      "bytes": 16360
     },
     {
       "path": "bin/vibe_packages.py",
@@ -905,6 +905,17 @@
       "dateien": [
         "bin/web/app.js",
         "bin/web/styles.css"
+      ]
+    },
+    {
+      "arbeitspaket": "F26",
+      "datum": "2026-11-10",
+      "grund": "opencode-Integration blockiert keine neueren Versionen mehr (F26): Eine lesbare, aber nicht exakt geprüfte opencode-Version (z. B. 2.2.6 nach einem Update) wird als assumed geführt und mit dem am besten passenden geprüften Profil behandelt (höchste geprüfte Version ≤ erkannt, sonst das älteste). Die Annahme wird nie stillschweigend getroffen: Doctor zeigt eine eigene HINW-Zeile mit der ungeprüften Version, die Agentenverwaltung warnt, das Modelllisting trägt eine Warnung, die MCP-Speicherung nennt den Hinweis in der Erfolgsmeldung und der Serverstart meldet vor dem Start. Fail-closed bleibt ohne lesbare Version (fehlendes Programm, Fehler, Zeitüberschreitung, unlesbare Ausgabe). Warnkriterium der Agentenverwaltung ist jetzt nicht exakt geprüft statt supported.",
+      "dateien": [
+        "bin/vibe",
+        "bin/vibe-web.py",
+        "bin/vibe_mcp.py",
+        "bin/vibe_opencode.py"
       ]
     }
   ]

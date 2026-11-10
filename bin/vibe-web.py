@@ -976,7 +976,11 @@ class H(BaseHTTPRequestHandler):
             elif u.path == "/api/mcp":
                 act = body.get("action"); scope = known_scope(body.get("scope", "global")); entry = body.get("entry")
                 try:
-                    if act == "save": p = vibe_mcp.save(scope, name, entry, body.get("old_name") or None, bool(body.get("create")), expected=body.get("expected")); ok, msg = True, "Gespeichert in " + p + " (Sicherung in config-backups). opencode liest die Konfiguration beim nächsten Start."
+                    if act == "save":
+                        p = vibe_mcp.save(scope, name, entry, body.get("old_name") or None, bool(body.get("create")), expected=body.get("expected"))
+                        notice = vibe_mcp.version_notice()
+                        ok, msg = True, ("Gespeichert in " + p + " (Sicherung in config-backups). opencode liest die Konfiguration beim nächsten Start."
+                                         + (" Hinweis: " + notice if notice else ""))
                     elif act == "delete": vibe_mcp.delete(scope, name); ok, msg = True, "Gelöscht (Sicherung in config-backups)"
                     elif act == "toggle": en = vibe_mcp.toggle(scope, name); ok, msg = True, "aktiviert" if en else "deaktiviert"
                     elif act == "test": extra["result"] = vibe_mcp.test(scope, name or None, entry); ok, msg = True, "Test beendet"

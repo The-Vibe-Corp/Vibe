@@ -26,6 +26,11 @@ Alles hier Genannte ist bewusst nicht zugesagt, bis ein Ticket es ändert.
   Entwicklungsumgebung dieses Pakets hatte 2.2.5 installiert; `vibe doctor`
   meldet sie ausdrücklich als ungeprüft. Versionsabhängige Schreibvorgänge
   (z. B. das MCP-Schema unbekannter Versionen) werden nicht erzwungen.
+- Seit F26 gilt für lesbare, nicht exakt geprüfte Versionen (z. B. 2.2.6 nach
+  einem Update): vibe behandelt sie als vermutlich kompatibel, verwendet das
+  am besten passende geprüfte Profil und meldet die ungeprüfte Version in
+  Doctor, Agentenverwaltung, Modelllisting, MCP-Speicherung und Serverstart.
+  Ohne lesbare Version bleiben Schreib- und Startvorgänge gesperrt.
 - Agentenregeln, Modelllisting und MCP-Schema werden über einen Adapter
   gekapselt. Änderungen an opencode können den Adapter dennoch brechen; dann
   ist zuerst `docs/compatibility.md` zu befolgen.

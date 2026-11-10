@@ -495,7 +495,7 @@ class SessionMarkerUnitTest(LifecycleFixture):
         ), mock.patch.object(
             module.vibe_opencode,
             "server_command",
-            lambda port: ["opencode", "serve"],
+            lambda port, info=None: ["opencode", "serve"],
         ):
             module.cmd_server("start")
 

@@ -2892,15 +2892,17 @@ def agent_version(refresh=False):
     return _AGENT_VERSION
 
 def agent_version_warning():
-    """Hinweis, wenn die installierte opencode-Version nicht geprüft ist.
+    """Hinweis, wenn die installierte opencode-Version nicht exakt geprüft ist.
 
     Die Agentenregeln und das Verzeichnis ``.opencode/agents`` gelten
     unabhängig von der erkannten Version (V-007). Ein harter Riegel würde die
     Agentenverwaltung nach jedem opencode-Update ohne fachlichen Grund sperren;
-    deshalb wird der Unterschied nur gemeldet.
+    deshalb wird der Unterschied nur gemeldet (F26). Auch eine über ein
+    Fallback-Profil behandelte Version (assumed) bleibt eine ungeprüfte
+    Version und wird gemeldet.
     """
     info = agent_version()
-    if info.supported: return ""
+    if info.checked: return ""
     return (info.message + " Die Agentenregeln gelten unverändert; "
             "der Schreibvorgang wird nicht gesperrt.")
 
@@ -4434,10 +4436,15 @@ def cmd_server(action="status", out=None):
                 sys.exit(f"tmux-Sitzung {session} gehört nicht zu vibe; nichts gestartet.")
             print("opencode-Server startet bereits (tmux attach -t " + session + ").", file=out)
             return
+        # F26: Die Version wird einmal erkannt und dem Adapter übergeben, so
+        # dass Startbefehl und Hinweis aus derselben Prüfung stammen.
+        version_info = vibe_opencode.probe()
         try:
-            command = vibe_opencode.server_command(PATHS.opencode_port)
+            command = vibe_opencode.server_command(PATHS.opencode_port, info=version_info)
         except vibe_opencode.CompatibilityError as error:
             sys.exit(str(error))
+        if not version_info.checked:
+            print("Hinweis: " + version_info.message, file=out)
         # F19: Der Server erhält ein eigenes Kennwort für angemeldete
         # Zusatzanweisungen. Das Kennwort selbst steht nie in der Befehlszeile;
         # der Kindprozess liest es beim Start aus der Laufzeitdatei.
@@ -4573,7 +4580,10 @@ def cmd_paths(*arguments):
 
 def doctor_checks():
     r = []
-    def chk(label, ok, hint=""): r.append((label, bool(ok), hint))
+    def chk(label, ok, hint="", warn=False):
+        # F26: Ein Hinweis bei bestandener Prüfung erscheint nur mit warn=True;
+        # sonst bleibt ok+hint die gewohnte reine OK-Zeile (Installationshinweise).
+        r.append((label, bool(ok), hint if (warn or not ok) else ""))
     chk("im Container", in_container(), "distrobox enter " + CONTAINER)
     chk(f"VIBE-Ordner beschreibbar ({VIBE})", os.access(VIBE, os.W_OK))
     for tool, hint in (("git", ""), ("tmux", "sudo dnf install -y tmux"), ("java", "sudo dnf install -y java-25-openjdk-devel"), ("android", "Android CLI installieren"), ("adb", "android sdk install platform-tools"), ("python3", ""), ("curl", ""), ("flock", "util-linux")):
@@ -4589,7 +4599,15 @@ def doctor_checks():
             shutil.which(info["binary"]) is not None, info["hint"])
         if selected == "opencode":
             version = vibe_opencode.probe()
-            chk("opencode-Version " + (version.version or "?"), version.supported, version.message)
+            if version.checked:
+                chk("opencode-Version " + version.version, True, "")
+            elif version.supported:
+                # F26: Vermutlich kompatibel über das Fallback-Profil; kein
+                # Fehler, aber sichtbarer Hinweis mit der ungeprüften Version.
+                chk("opencode-Version " + version.version + " (nicht geprüft)",
+                    True, version.message, warn=True)
+            else:
+                chk("opencode-Version " + (version.version or "?"), False, version.message)
         else:
             chk("node für " + info["name"] + " (22.19+)",
                 shutil.which("node") is not None,
@@ -4621,7 +4639,10 @@ def cmd_doctor():
           + (" · Commit " + release["commit"] if release["commit"] else "")
           + " · " + origin)
     for label, ok, hint in doctor_checks():
-        print(f"  {col('g','OK  ') if ok else col('r','FEHL')} {label}" + (f"  -> {hint}" if not ok and hint else ""))
+        if ok and hint:
+            print(f"  {col('y','HINW')} {label} -> {hint}")
+        else:
+            print(f"  {col('g','OK  ') if ok else col('r','FEHL')} {label}" + (f"  -> {hint}" if not ok and hint else ""))
 
 def cmd_mcp(action="list", name=None, scope="global", backup=None):
     import vibe_mcp

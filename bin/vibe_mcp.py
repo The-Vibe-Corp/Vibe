@@ -191,10 +191,11 @@ def load(scope):
     snapshot = vibe_storage.read_snapshot(p)
     text = snapshot.text if snapshot.exists else ""
     data = jsonc_loads(text)
-    # Das Schema wird aus der vorhandenen Konfiguration erkannt. Nur für eine
-    # geprüfte opencode-Version darf eine leere Datei das geprüfte Schema
-    # verwenden; sonst bleibt das Schema unbekannt und Schreibvorgänge werden
-    # abgelehnt (V-007).
+    # Das Schema wird aus der vorhandenen Konfiguration erkannt. Eine leere
+    # Datei bekommt das Schema aus dem Profil der geprüften Version; seit F26
+    # auch über das Fallback-Profil einer lesbaren, nicht exakt geprüften
+    # Version (version_notice in der Erfolgsmeldung). Unlesbare Versionen
+    # bleiben unbekannt und Schreibvorgänge werden abgelehnt (V-007, F26).
     layout_info = vibe_opencode.detect_mcp_layout(data)
     layout, servers = layout_info["layout"], layout_info["servers"]
     digest = snapshot.digest if snapshot.exists else vibe_storage.MISSING
@@ -206,6 +207,16 @@ def _require_known_layout(layout):
             "MCP-Schema nicht feststellbar; die installierte opencode-Version ist nicht geprüft. "
             f"Geprüft ist opencode {vibe_opencode.TESTED_VERSION}. Die Konfiguration wird nicht verändert."
         )
+
+def version_notice(info=None):
+    """Meldung, wenn die erkannte opencode-Version nicht exakt geprüft ist (F26).
+
+    Schreibvorgänge laufen über das Fallback-Profil weiter; die ungeprüfte
+    Version wird aber nicht stillschweigend behandelt, sondern der
+    Erfolgsmeldung beigefügt. Jeder Aufruf erkennt die Version frisch.
+    """
+    info = info or vibe_opencode.probe()
+    return "" if info.checked else info.message
 
 def backup_dir():
     return os.path.join(vibe.PATHS.state, "config-backups")
