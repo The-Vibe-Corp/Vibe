@@ -9,8 +9,12 @@ Standardbibliothek (urllib); die API-Basis ist konfigurierbar
 (``GITHUB_API``, Standard https://api.github.com), damit Prüfungen gegen
 einen lokalen Scheindienst laufen können. Der GitHub-Dienst selbst wird nur
 bei einer bewussten Aktion kontaktiert (Issues, Merge-Request); die
-Git-Status-Ebene liest die aktuelle Fern-Referenz bewusst via ls-remote und
-zieht unbekannte Fern-Objekte nach, ohne etwas zusammenzuführen.
+Git-Status-Ebene bleibt ohne aktivierte Verknüpfung und in der
+Projektansicht (``remote=False``) grundsätzlich fernfrei und liest
+Ahead/Behind aus der lokalen ``origin/<branch>``-Referenz. Nur bei
+aktivierter Verknüpfung im Fern-Modus liest sie die aktuelle Fern-Referenz
+via ls-remote und zieht unbekannte Fern-Objekte nach, ohne etwas
+zusammenzuführen.
 
 Der GitHub-Zugangstoken (B7): Standardmäßig kommt er aus der Umgebung
 (``GITHUB_TOKEN`` oder ``GH_TOKEN``). Zusätzlich kann er in der Oberfläche
@@ -263,7 +267,11 @@ def git(project_path, *args, timeout=TIMEOUT_GIT):
     """Führt Git mit Argumentlisten aus (ohne Shell, mit Zeitlimit).
 
     Ohne Terminal-Prompt: Eine nicht erreichbare oder nach Zugangsdaten
-    fragende Gegenstelle darf das Dashboard nicht anhalten.
+    fragende Gegenstelle darf das Dashboard nicht anhalten. Die Werte
+    werden mit ``setdefault`` gesetzt: Betreiber dürfen die Voreinstellung
+    (``GIT_TERMINAL_PROMPT=0``, ``GCM_INTERACTIVE=never``) in ihrer
+    Serverumgebung bewusst übersteuern (z. B. Askpass-Setup); ausgeliefert
+    wird ohne Übersteuerung stets die promptfreie Voreinstellung.
 
     Mit verfügbarem GitHub-Token (B7, Umgebung oder hinterlegt) erhält der
     Lauf eine URL-gültige Credential-Konfiguration für https://github.com

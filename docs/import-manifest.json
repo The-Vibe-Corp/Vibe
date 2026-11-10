@@ -45,8 +45,8 @@
     },
     {
       "path": "bin/vibe_github.py",
-      "sha256": "53ec444c0ec59e7543d252c148fda7dc972a1e638d098622c0643d06a3c0b036",
-      "bytes": 29725
+      "sha256": "f808dbf19e65e0b043c3f1c7d7d6dadc4fe0307ac307b872151ba9690cd760c3",
+      "bytes": 30239
     },
     {
       "path": "bin/vibe_guide.py",
@@ -928,6 +928,14 @@
         "bin/vibe_services.py",
         "bin/vibe_github.py",
         "bin/web/app.js"
+      ]
+    },
+    {
+      "arbeitspaket": "B8",
+      "datum": "2026-11-10",
+      "grund": "Review Runde 1 (docs/reviews/B8-review-1.md, Minor): Modul-Docstring beschreibt das B8-Standardverhalten der Status-Ebene (fernfrei ohne GITHUB_ENABLED und in der Projektansicht, ls-remote nur im Fern-Modus mit aktiver Verknüpfung) und dokumentiert die bewusste setdefault-Übersteuerbarkeit der promptfreien Git-Voreinstellung. Kein Verhaltensunterschied.",
+      "dateien": [
+        "bin/vibe_github.py"
       ]
     }
   ]
