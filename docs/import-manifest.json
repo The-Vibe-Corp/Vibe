@@ -35,8 +35,8 @@
     },
     {
       "path": "bin/vibe-web.py",
-      "sha256": "1dbfd698b25156554063a17193186870b83a531ca97905ef34059b27c1608232",
-      "bytes": 58949
+      "sha256": "6bcbbf920db9e20d5d06c35467c8e394cd3d136e6edb79714ec7e6a2edd9ca75",
+      "bytes": 61207
     },
     {
       "path": "bin/vibe_autonomous.py",
@@ -60,8 +60,8 @@
     },
     {
       "path": "bin/vibe_mcp.py",
-      "sha256": "2a0f10cf2cb71167ae95c23c0e36b53efc9d1de4c4347833cfef61e85a74e7fc",
-      "bytes": 51525
+      "sha256": "20ec043a9b912bc8769ba41ec29ee77790b6eee2f069ed491951156b9fc89d63",
+      "bytes": 52599
     },
     {
       "path": "bin/vibe_models.py",
@@ -80,8 +80,8 @@
     },
     {
       "path": "bin/vibe_paths.py",
-      "sha256": "7fb7282db29a46abfa68bd6e625c120b48bfbf642abb79866c97702a5f1006c7",
-      "bytes": 17565
+      "sha256": "9bd00fbfc0c8e9acd91043f1d7461dbcbd6af932da7819bd95c546c02ae211f7",
+      "bytes": 18288
     },
     {
       "path": "bin/vibe_questions.py",
@@ -945,6 +945,16 @@
       "dateien": [
         "bin/vibe-run.sh",
         "bin/vibe_packages.py"
+      ]
+    },
+    {
+      "arbeitspaket": "F28",
+      "datum": "2026-11-10",
+      "grund": "F28 überarbeitet die Module gemäß pylint-Bericht 4.0.5 (Kopie: docs/reviews/F28-nutzer-pylint-report_2026_11_10.txt; zulässige Ausnahmen offen dokumentiert in tests/unit/test_f28_pylint_quality.py). In vibe-web.py und vibe_mcp.py Anweisungen je auf eine Zeile verteilt und fehlende Docstrings ergänzt; in vibe_paths.py die Schleife in Paths.__init__ durch explizite Feldzuweisungen ersetzt und except-Bläcke mit 'from' als Ausnahmekette notiert. Kein Verhaltensunterschied (AK2); die drei Dateien sind im Manifest-Bereich 'bin', daher wurden Größe und SHA-256 in diesem Eintrag aktualisiert und dadurch begründet.",
+      "dateien": [
+        "bin/vibe-web.py",
+        "bin/vibe_mcp.py",
+        "bin/vibe_paths.py"
       ]
     }
   ]

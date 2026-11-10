@@ -101,8 +101,8 @@ def validate_port(value):
         if not text or not text.lstrip("+").isdigit():
             raise ValueError(text)
         port = int(text, 10)
-    except (TypeError, ValueError):
-        raise ConfigError(f"Port ist keine ganze Zahl: {value!r}")
+    except (TypeError, ValueError) as exc:
+        raise ConfigError(f"Port ist keine ganze Zahl: {value!r}") from exc
     if not 1 <= port <= 65535:
         raise ConfigError(f"Port liegt außerhalb von 1..65535: {port}")
     return port
@@ -115,11 +115,11 @@ def validate_bind(value):
         return "127.0.0.1"
     try:
         address = ipaddress.ip_address(text)
-    except ValueError:
+    except ValueError as exc:
         raise ConfigError(
             "vibe bindet nur an Loopback (z. B. 127.0.0.1); "
             f"{text!r} ist keine IP-Adresse"
-        )
+        ) from exc
     if address.version != 4 or not address.is_loopback:
         raise ConfigError(
             "vibe bindet nur an IPv4-Loopback; "
@@ -175,11 +175,11 @@ def load_config(path=None, environ=None):
     except FileNotFoundError:
         return {}
     except OSError as error:
-        raise ConfigError(f"Konfiguration {target} ist nicht lesbar: {error}")
+        raise ConfigError(f"Konfiguration {target} ist nicht lesbar: {error}") from error
     try:
         data = json.loads(raw)
     except json.JSONDecodeError as error:
-        raise ConfigError(f"Konfiguration {target} ist kein gültiges JSON: {error}")
+        raise ConfigError(f"Konfiguration {target} ist kein gültiges JSON: {error}") from error
     if not isinstance(data, dict):
         raise ConfigError(f"Konfiguration {target} muss ein JSON-Objekt enthalten")
     return data
@@ -262,14 +262,27 @@ class Paths:
     )
 
     def __init__(self, **values):
-        for field in self.FIELDS:
-            setattr(self, field, values[field])
+        self.profile = values["profile"]
+        self.workspace = values["workspace"]
+        self.source = values["source"]
+        self.install = values["install"]
+        self.runtime = values["runtime"]
+        self.state = values["state"]
+        self.code_bin = values["code_bin"]
+        self.config_file = values["config_file"]
+        self.agents_dir = values["agents_dir"]
+        self.ui_port = values["ui_port"]
+        self.opencode_port = values["opencode_port"]
+        self.ui_bind = values["ui_bind"]
+        self.container = values["container"]
 
     @property
     def opencode_url(self):
+        """Basis-URL des opencode-Servers für dieses Profil."""
         return f"http://127.0.0.1:{self.opencode_port}"
 
     def as_dict(self):
+        """Werte aller Felder als freigabefähiges Wörterbuch (enthält URL)."""
         values = {field: getattr(self, field) for field in self.FIELDS}
         values["opencode_url"] = self.opencode_url
         return values
@@ -450,7 +463,9 @@ def ensure(paths, *roles):
         try:
             os.makedirs(target, exist_ok=True)
         except OSError as error:
-            raise ConfigError(f"Verzeichnis {target} konnte nicht angelegt werden: {error}")
+            raise ConfigError(
+                f"Verzeichnis {target} konnte nicht angelegt werden: {error}"
+            ) from error
         created.append(target)
     return created
 

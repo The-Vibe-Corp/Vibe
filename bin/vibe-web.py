@@ -10,7 +10,9 @@ sys.path.insert(0, HERE)
 import vibe_storage, vibe_paths, vibe_runs
 _loader = importlib.machinery.SourceFileLoader("vibe", os.path.join(HERE, "vibe"))
 _spec = importlib.util.spec_from_loader("vibe", _loader)
-vibe = importlib.util.module_from_spec(_spec); sys.modules["vibe"] = vibe; _loader.exec_module(vibe)
+vibe = importlib.util.module_from_spec(_spec)
+sys.modules["vibe"] = vibe
+_loader.exec_module(vibe)
 import vibe_mcp
 import vibe_guide
 import vibe_questions
@@ -361,11 +363,13 @@ class RequestError(Exception):
 
 
 def known(n):
-    if n not in vibe.projects(): raise AssertionError("Unbekanntes Projekt: " + n)
+    if n not in vibe.projects():
+        raise AssertionError("Unbekanntes Projekt: " + n)
     return n
 
 def known_scope(s):
-    if s != "global": known(s)
+    if s != "global":
+        known(s)
     return s
 
 def shutdown_server(delay=0.2):
@@ -389,7 +393,8 @@ def request_stop(signum=None, frame=None):
     ).start()
 
 class H(BaseHTTPRequestHandler):
-    def log_message(self, *a): pass
+    def log_message(self, *a):
+        pass
 
     def log_request(self, code="-", size="-"):
         """Zugriffslog ohne Query-String: Tokens gelangen nicht in Logs."""
@@ -402,10 +407,14 @@ class H(BaseHTTPRequestHandler):
 
     def _send(self, code, body, ctype="application/json"):
         b = body if isinstance(body, bytes) else (json.dumps(body, ensure_ascii=False).encode() if ctype == "application/json" else body.encode())
-        self.send_response(code); self.send_header("Content-Type", ctype + "; charset=utf-8")
-        self.send_header("Content-Length", str(len(b))); self.send_header("Cache-Control", "no-store")
-        self.send_header("X-Content-Type-Options", "nosniff"); self.send_header("Referrer-Policy", "no-referrer")
-        self.end_headers(); self.wfile.write(b)
+        self.send_response(code)
+        self.send_header("Content-Type", ctype + "; charset=utf-8")
+        self.send_header("Content-Length", str(len(b)))
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.end_headers()
+        self.wfile.write(b)
 
     def _error(self, code, slug, message):
         """Strukturierte Fehlerantwort; Meldungen werden vom Token bereinigt."""
@@ -492,18 +501,24 @@ class H(BaseHTTPRequestHandler):
         })
 
     def do_GET(self):
-        u = urlparse(self.path); q = parse_qs(u.query)
-        if not self._guard(False): return
-        if u.path == "/": return self._send(200, page(), "text/html")
+        u = urlparse(self.path)
+        q = parse_qs(u.query)
+        if not self._guard(False):
+            return
+        if u.path == "/":
+            return self._send(200, page(), "text/html")
         if u.path.startswith("/static/"):
             data, ctype = static_asset(u.path)
-            if data is None: return self._error(404, "not_found", "nicht gefunden")
+            if data is None:
+                return self._error(404, "not_found", "nicht gefunden")
             return self._send(200, data, ctype)
-        if u.path == "/api/health": return self._health()
+        if u.path == "/api/health":
+            return self._health()
         if not self._authorized(allow_query=(u.path == "/api/stream")):
             return self._error(403, "unauthorized", "Token fehlt oder falsch")
         try:
-            if u.path == "/api/projects": return self._send(200, [vibe_services.project_row(vibe, n) for n in vibe.projects()])
+            if u.path == "/api/projects":
+                return self._send(200, [vibe_services.project_row(vibe, n) for n in vibe.projects()])
             if u.path == "/api/run-state":
                 n = known(q["name"][0])
                 return self._send(200, {"running": run_is_active(n), "pause_after": vibe.pause_after_active(n)})
@@ -555,33 +570,47 @@ class H(BaseHTTPRequestHandler):
                     "agent": entry.get("agent") or "",
                     "description": entry.get("description") or "",
                 })
-            if u.path == "/api/project": return self._send(200, vibe_services.project_detail(vibe, PATHS, known(q["name"][0])))
-            if u.path == "/api/roots": return self._send(200, vibe_services.roots_info(vibe))
-            if u.path == "/api/agents": return self._send(200, vibe_services.agents_info(vibe))
-            if u.path == "/api/project-agents": return self._send(200, vibe_services.project_agents_info(vibe, known(q["name"][0])))
+            if u.path == "/api/project":
+                return self._send(200, vibe_services.project_detail(vibe, PATHS, known(q["name"][0])))
+            if u.path == "/api/roots":
+                return self._send(200, vibe_services.roots_info(vibe))
+            if u.path == "/api/agents":
+                return self._send(200, vibe_services.agents_info(vibe))
+            if u.path == "/api/project-agents":
+                return self._send(200, vibe_services.project_agents_info(vibe, known(q["name"][0])))
             if u.path == "/api/costs":
                 n = q.get("name", [""])[0]
                 return self._send(200, vibe.costs_project(known(n)) if n else vibe.costs_overview())
             if u.path == "/api/agent":
-                scope = known_scope(q["scope"][0]); snapshot = vibe.agent_snapshot(scope, q["name"][0])
-                try: fields = vibe.agent_fields(scope, snapshot.text)
+                scope = known_scope(q["scope"][0])
+                snapshot = vibe.agent_snapshot(scope, q["name"][0])
+                try:
+                    fields = vibe.agent_fields(scope, snapshot.text)
                 except ValueError as error:
                     # Eine defekte Datei bleibt im Rohtexteditor bearbeitbar.
                     fields = {"invalid": str(error)}
                 return self._send(200, {"text": snapshot.text, "digest": snapshot.digest,
                                         "fields": fields,
                                         "backups": list(reversed(vibe.agent_backups(scope, q["name"][0])))})
-            if u.path == "/api/mcp": return self._send(200, {"servers": vibe_mcp.list_all(), "projects": vibe.projects()})
+            if u.path == "/api/mcp":
+                return self._send(200, {"servers": vibe_mcp.list_all(), "projects": vibe.projects()})
             if u.path == "/api/mcp_entry":
-                scope = known_scope(q["scope"][0]); return self._send(200, vibe_mcp.get_entry(scope, q["name"][0]))
-            if u.path == "/api/types": return self._send(200, vibe.types())
-            if u.path == "/api/guide": return self._send(200, vibe_services.guide_info(vibe, known(q["name"][0])))
-            if u.path == "/api/doctor": return self._send(200, [{"label": a, "ok": b, "hint": c} for a, b, c in vibe.doctor_checks()])
-            if u.path == "/api/fritz": return self._send(200, vibe.fritz_status())
-            if u.path == "/api/questions": return self._send(200, {"questions": vibe_questions.open_questions(PATHS.runtime)})
+                scope = known_scope(q["scope"][0])
+                return self._send(200, vibe_mcp.get_entry(scope, q["name"][0]))
+            if u.path == "/api/types":
+                return self._send(200, vibe.types())
+            if u.path == "/api/guide":
+                return self._send(200, vibe_services.guide_info(vibe, known(q["name"][0])))
+            if u.path == "/api/doctor":
+                return self._send(200, [{"label": a, "ok": b, "hint": c} for a, b, c in vibe.doctor_checks()])
+            if u.path == "/api/fritz":
+                return self._send(200, vibe.fritz_status())
+            if u.path == "/api/questions":
+                return self._send(200, {"questions": vibe_questions.open_questions(PATHS.runtime)})
             if u.path == "/api/autonomous":
                 n = q.get("name", [""])[0]
-                if n: known(n)
+                if n:
+                    known(n)
                 return self._send(200, vibe_autonomous.status(PATHS.runtime, n))
             if u.path == "/api/harness":
                 data = vibe_harness.status(PATHS.state)
@@ -596,7 +625,8 @@ class H(BaseHTTPRequestHandler):
                 return self._send(200, {"up": bool(h), "url": vibe.OC_URL, "info": h,
                                         "harness": selected,
                                         "server_supported": selected == "opencode"})
-            if u.path == "/api/stream": return self.stream(known(q["name"][0]), q.get("kind", ["run"])[0])
+            if u.path == "/api/stream":
+                return self.stream(known(q["name"][0]), q.get("kind", ["run"])[0])
         except (AssertionError, ValueError) as e:
             return self._error(404, "not_found", str(e))
         except KeyError as e:
@@ -606,38 +636,54 @@ class H(BaseHTTPRequestHandler):
         self._error(404, "not_found", "nicht gefunden")
     def do_POST(self):
         u = urlparse(self.path)
-        if not self._guard(True): return
-        if not self._authorized(): return self._error(403, "unauthorized", "Token fehlt oder falsch")
+        if not self._guard(True):
+            return
+        if not self._authorized():
+            return self._error(403, "unauthorized", "Token fehlt oder falsch")
         try:
             body = self._read_json()
         except RequestError as e:
             return self._error(e.status, e.code, e.message)
         try:
             name = body.get("name", "")
-            if u.path in ("/api/run", "/api/stop", "/api/verify", "/api/feedback", "/api/ticket", "/api/init", "/api/rights", "/api/pause", "/api/sandbox", "/api/guide", "/api/costs", "/api/autonomous", "/api/steer", "/api/github"): known(name)
+            if u.path in ("/api/run", "/api/stop", "/api/verify", "/api/feedback", "/api/ticket", "/api/init", "/api/rights", "/api/pause", "/api/sandbox", "/api/guide", "/api/costs", "/api/autonomous", "/api/steer", "/api/github"):
+                known(name)
             extra = {}
-            if u.path == "/api/steer": ok, msg = steer_project(name, body.get("text", ""))
-            elif u.path == "/api/run": ok, msg = vibe_services.capture(vibe.cmd_run, name, body.get("agent") or None, keep_changes=bool(body.get("keep_changes")))
-            elif u.path == "/api/stop": ok, msg = vibe_services.capture(vibe.cmd_stop, name, body.get("run_id") or None)
-            elif u.path == "/api/verify": ok, msg = vibe_services.verify_bg(vibe, name, "full" if body.get("mode") == "full" else "quick")
-            elif u.path == "/api/init": ok, msg = vibe_services.capture(vibe.cmd_init, name, body.get("type") or None)
+            if u.path == "/api/steer":
+                ok, msg = steer_project(name, body.get("text", ""))
+            elif u.path == "/api/run":
+                ok, msg = vibe_services.capture(vibe.cmd_run, name, body.get("agent") or None, keep_changes=bool(body.get("keep_changes")))
+            elif u.path == "/api/stop":
+                ok, msg = vibe_services.capture(vibe.cmd_stop, name, body.get("run_id") or None)
+            elif u.path == "/api/verify":
+                ok, msg = vibe_services.verify_bg(vibe, name, "full" if body.get("mode") == "full" else "quick")
+            elif u.path == "/api/init":
+                ok, msg = vibe_services.capture(vibe.cmd_init, name, body.get("type") or None)
             elif u.path == "/api/feedback":
                 act = body.get("action") or "add"
                 try:
                     if act == "add":
-                        t = (body.get("title") or "").strip(); assert t, "Titel fehlt"
+                        t = (body.get("title") or "").strip()
+                        assert t, "Titel fehlt"
                         kind = body.get("kind") or "feedback"
                         if kind == "bug":
-                            num = vibe.add_bug(name, t, body.get("description", "")); ok, msg = True, f"B{num} eingetragen"
+                            num = vibe.add_bug(name, t, body.get("description", ""))
+                            ok, msg = True, f"B{num} eingetragen"
                         else:
-                            num = vibe.add_feedback(name, t, body.get("description", "")); ok, msg = True, f"F{num} eingetragen"
+                            num = vibe.add_feedback(name, t, body.get("description", ""))
+                            ok, msg = True, f"F{num} eingetragen"
                     elif act == "update":
-                        fid = (body.get("id") or "").strip(); assert fid, "Feedback-ID fehlt"
-                        vibe.feedback_update(name, fid, body.get("title"), body.get("description", "")); ok, msg = True, f"{fid} gespeichert"
+                        fid = (body.get("id") or "").strip()
+                        assert fid, "Feedback-ID fehlt"
+                        vibe.feedback_update(name, fid, body.get("title"), body.get("description", ""))
+                        ok, msg = True, f"{fid} gespeichert"
                     elif act == "delete":
-                        fid = (body.get("id") or "").strip(); assert fid, "Feedback-ID fehlt"
-                        vibe.feedback_delete(name, fid); ok, msg = True, f"{fid} gelöscht"
-                    else: ok, msg = False, "Unbekannte Aktion"
+                        fid = (body.get("id") or "").strip()
+                        assert fid, "Feedback-ID fehlt"
+                        vibe.feedback_delete(name, fid)
+                        ok, msg = True, f"{fid} gelöscht"
+                    else:
+                        ok, msg = False, "Unbekannte Aktion"
                 except ValueError as e:
                     ok, msg = False, str(e)
             elif u.path == "/api/ticket":
@@ -650,63 +696,91 @@ class H(BaseHTTPRequestHandler):
                             body.get("title"), body.get("description", ""))
                         ok, msg = True, f"{tid} angelegt"
                     elif act == "update":
-                        tid = (body.get("id") or "").strip(); assert tid, "ID fehlt"
-                        vibe.ticket_update(name, tid, body.get("title"), body.get("description", "")); ok, msg = True, f"{tid} gespeichert"
+                        tid = (body.get("id") or "").strip()
+                        assert tid, "ID fehlt"
+                        vibe.ticket_update(name, tid, body.get("title"), body.get("description", ""))
+                        ok, msg = True, f"{tid} gespeichert"
                     elif act == "delete":
-                        tid = (body.get("id") or "").strip(); assert tid, "ID fehlt"
-                        vibe.ticket_delete(name, tid); ok, msg = True, f"{tid} gelöscht"
-                    else: ok, msg = False, "Unbekannte Aktion"
+                        tid = (body.get("id") or "").strip()
+                        assert tid, "ID fehlt"
+                        vibe.ticket_delete(name, tid)
+                        ok, msg = True, f"{tid} gelöscht"
+                    else:
+                        ok, msg = False, "Unbekannte Aktion"
                 except ValueError as e:
                     ok, msg = False, str(e)
-            elif u.path == "/api/new": ok, msg = vibe_services.capture(vibe.cmd_new, name, body.get("type", "generic"), body.get("tpl") or None)
+            elif u.path == "/api/new":
+                ok, msg = vibe_services.capture(vibe.cmd_new, name, body.get("type", "generic"), body.get("tpl") or None)
             elif u.path == "/api/roots":
-                act = body.get("action"); path = body.get("path", "")
+                act = body.get("action")
+                path = body.get("path", "")
                 try:
-                    if act == "add": p = vibe.root_add(path)
-                    elif act == "remove": vibe.root_remove(path); p = path
-                    else: vibe._pm.clear(); p = ""
-                    pm = vibe.project_map(); found = [k for k, v in pm.items() if p and os.path.dirname(v) == os.path.abspath(os.path.expanduser(p))]
+                    if act == "add":
+                        p = vibe.root_add(path)
+                    elif act == "remove":
+                        vibe.root_remove(path)
+                        p = path
+                    else:
+                        vibe._pm.clear()
+                        p = ""
+                    pm = vibe.project_map()
+                    found = [k for k, v in pm.items() if p and os.path.dirname(v) == os.path.abspath(os.path.expanduser(p))]
                     ok, msg = True, (f"{len(found)} Projekt(e) in {p}: {', '.join(found) or '-'}" if act == "add" else "OK")
                 except ValueError as e:
                     ok, msg = False, str(e)
             elif u.path == "/api/rights":
-                act = body.get("action"); ok, msg, changed = True, "", None
+                act = body.get("action")
+                ok, msg, changed = True, "", None
                 try:
                     if act == "add":
-                        dirs = vibe.write_dirs_add(name, body.get("path", "")); msg = "Verzeichnis hinzugefügt"
+                        dirs = vibe.write_dirs_add(name, body.get("path", ""))
+                        msg = "Verzeichnis hinzugefügt"
                     elif act in ("remove", "rm"):
-                        dirs = vibe.write_dirs_remove(name, body.get("path", "")); msg = "Verzeichnis entfernt"
+                        dirs = vibe.write_dirs_remove(name, body.get("path", ""))
+                        msg = "Verzeichnis entfernt"
                     elif act == "reset":
-                        dirs = vibe.write_dirs_reset(name); msg = "Standardverzeichnisse wiederhergestellt"
+                        dirs = vibe.write_dirs_reset(name)
+                        msg = "Standardverzeichnisse wiederhergestellt"
                     elif act == "apply":
-                        dirs = vibe.write_dirs(name); changed = vibe.apply_write_dirs_to_project(name)
+                        dirs = vibe.write_dirs(name)
+                        changed = vibe.apply_write_dirs_to_project(name)
                         msg = ("Schreibrechte auf " + str(len(changed)) + " Projektagent(en) angewendet: " + ", ".join(changed)) if changed else "Nichts geändert – keine Projektagenten mit Schreibrecht vorhanden"
                     else:
                         ok, msg, dirs = False, "Unbekannte Aktion", None
                     if dirs is not None:
-                        extra["write_dirs"] = dirs; extra["custom"] = vibe.write_dirs_custom(name)
-                    if changed is not None: extra["changed"] = changed
+                        extra["write_dirs"] = dirs
+                        extra["custom"] = vibe.write_dirs_custom(name)
+                    if changed is not None:
+                        extra["changed"] = changed
                 except ValueError as e:
                     ok, msg = False, str(e)
             elif u.path == "/api/sandbox":
-                act = body.get("action"); ok, msg, status = True, "", None
+                act = body.get("action")
+                ok, msg, status = True, "", None
                 try:
                     if act == "on":
-                        status = vibe.sandbox_set(name, True); msg = "Sandbox eingeschaltet"
+                        status = vibe.sandbox_set(name, True)
+                        msg = "Sandbox eingeschaltet"
                     elif act == "off":
-                        status = vibe.sandbox_set(name, False); msg = "Sandbox ausgeschaltet"
+                        status = vibe.sandbox_set(name, False)
+                        msg = "Sandbox ausgeschaltet"
                     elif act == "tools":
-                        status = vibe.sandbox_tools(name, body.get("tools", "")); msg = "Build-Werkzeuge gespeichert"
+                        status = vibe.sandbox_tools(name, body.get("tools", ""))
+                        msg = "Build-Werkzeuge gespeichert"
                     elif act == "check":
-                        checked = vibe.sandbox_check(name); ok, msg = checked["ok"], checked["message"]
-                        status = vibe.sandbox_status(name); extra["check"] = checked
+                        checked = vibe.sandbox_check(name)
+                        ok, msg = checked["ok"], checked["message"]
+                        status = vibe.sandbox_status(name)
+                        extra["check"] = checked
                     else:
                         ok, msg = False, "Unbekannte Aktion"
-                    if status is not None: extra["sandbox"] = status
+                    if status is not None:
+                        extra["sandbox"] = status
                 except ValueError as e:
                     ok, msg = False, str(e)
             elif u.path == "/api/github":
-                act = body.get("action") or "status"; ok, msg = True, ""
+                act = body.get("action") or "status"
+                ok, msg = True, ""
                 try:
                     if act == "settings":
                         values = {}
@@ -740,7 +814,8 @@ class H(BaseHTTPRequestHandler):
                     elif act == "unlink":
                         extra["github"] = vibe.github_unlink(name)
                         msg = "Verknüpfung gelöst"
-                    elif act == "token.save":  # B7: Token in der Oberfläche hinterlegen
+                    elif act == "token.save":
+                        # B7: Token in der Oberfläche hinterlegen
                         vibe_github.save_token(body.get("token") or "")
                         extra["github"] = vibe.github_status(name)
                         extra["auth"] = (extra["github"] or {}).get("auth")
@@ -787,13 +862,16 @@ class H(BaseHTTPRequestHandler):
                     extra["github"] = vibe_github.status(name)
                 try:
                     extra["github"] = extra.get("github") or vibe_github.status(name)
-                except Exception:  # noqa: BLE001 - Statusansicht bleibt best effort
+                except Exception:
+                    # noqa: BLE001 - Statusansicht bleibt best effort
                     pass
             elif u.path == "/api/pause":
-                act = body.get("action") or "on"; ok, msg = True, ""
+                act = body.get("action") or "on"
+                ok, msg = True, ""
                 try:
                     if act in ("on", "an", "request"):
-                        vibe.pause_after_request(name); msg = "Pause nach dem aktuellen Arbeitspaket angefordert"
+                        vibe.pause_after_request(name)
+                        msg = "Pause nach dem aktuellen Arbeitspaket angefordert"
                     elif act in ("off", "aus", "cancel"):
                         released = vibe.pause_after_cancel(name)
                         msg = "Pause-Anforderung aufgehoben" if released else "Keine Pause angefordert"
@@ -803,7 +881,8 @@ class H(BaseHTTPRequestHandler):
                 except ValueError as e:
                     ok, msg = False, str(e)
             elif u.path == "/api/costs":
-                act = body.get("action") or "prices"; ok, msg = True, ""
+                act = body.get("action") or "prices"
+                ok, msg = True, ""
                 try:
                     if act == "prices":
                         vibe.costs_set_prices(name, body.get("prices") or {}, expected=body.get("expected"))
@@ -816,7 +895,8 @@ class H(BaseHTTPRequestHandler):
                 except ValueError as e:
                     ok, msg = False, str(e)
             elif u.path == "/api/fritz":
-                act = body.get("action"); ok, msg = True, ""
+                act = body.get("action")
+                ok, msg = True, ""
                 try:
                     if act in ("automation", "on", "off", "set"):
                         enabled = (act == "on") if act in ("on", "off") else body.get("enabled")
@@ -825,7 +905,8 @@ class H(BaseHTTPRequestHandler):
                         vibe.fritz_automation_set(enabled)
                         msg = "Fritzbox-Automatik " + ("an" if enabled else "aus")
                     elif act == "reconnect":
-                        result = vibe.fritz_reconnect(); extra["result"] = result
+                        result = vibe.fritz_reconnect()
+                        extra["result"] = result
                         ok, msg = result["ok"], result["message"]
                     else:
                         ok, msg = False, "Unbekannte Aktion"
@@ -873,17 +954,21 @@ class H(BaseHTTPRequestHandler):
                 try:
                     if act == "save":
                         result = vibe_guide.apply(path, body.get("answers") or {}, replace=body.get("replace") or (), name=name, templates_dir=vibe.TPL)
-                        ok, msg = True, result["message"]; extra["guide"] = result
+                        ok, msg = True, result["message"]
+                        extra["guide"] = result
                     elif act == "agent":
                         started = vibe_guide.start_agent(path, body.get("step", ""), name=name, note=body.get("note", ""), log_dir=vibe.LOGS)
-                        ok, msg = True, "Agentenauftrag gestartet. Der Entwurf erscheint nach dem Lauf unter .vibe/guide/."; extra["agent"] = started
+                        ok, msg = True, "Agentenauftrag gestartet. Der Entwurf erscheint nach dem Lauf unter .vibe/guide/."
+                        extra["agent"] = started
                     elif act == "draft_apply":
                         result = vibe_guide.draft_apply(path, body.get("step", ""), name=name, templates_dir=vibe.TPL)
-                        ok, msg = True, "Entwurf übernommen. " + result["message"]; extra["guide"] = result
+                        ok, msg = True, "Entwurf übernommen. " + result["message"]
+                        extra["guide"] = result
                     elif act == "draft_discard":
                         vibe_guide.draft_discard(path, body.get("step", ""))
                         ok, msg = True, "Entwurf verworfen."
-                    else: ok, msg = False, "Unbekannte Aktion"
+                    else:
+                        ok, msg = False, "Unbekannte Aktion"
                 except ValueError as e:
                     ok, msg = False, str(e)
             elif u.path == "/api/project-agents":
@@ -903,7 +988,9 @@ class H(BaseHTTPRequestHandler):
                 dirs = vibe.write_dirs(scope) if scope != "global" else None
                 ok, msg = True, vibe.agent_template(body.get("description", ""), body.get("mode", "subagent"), body.get("model", ""), body.get("temperature", ""), body.get("steps", ""), body.get("perm", "lesen"), body.get("prompt", ""), write_dirs=dirs)
             elif u.path == "/api/agent":
-                act = body.get("action"); scope = known_scope(body.get("scope", "global")); an = body.get("name", "")
+                act = body.get("action")
+                scope = known_scope(body.get("scope", "global"))
+                an = body.get("name", "")
                 try:
                     if act == "save":
                         # Die strukturierten Eingaben sind auch ohne Klick auf
@@ -955,15 +1042,20 @@ class H(BaseHTTPRequestHandler):
                         if role is not None:
                             vibe.agent_role_set(an, role)
                         snapshot = vibe.agent_snapshot(scope, an)
-                        extra["text"] = snapshot.text; extra["digest"] = snapshot.digest
+                        extra["text"] = snapshot.text
+                        extra["digest"] = snapshot.digest
                         ok, msg = True, "Gespeichert" + (" – Hinweis: " + " ".join(warn) if warn else "")
-                    elif act == "delete": vibe.agent_delete(scope, an); ok, msg = True, "Gelöscht (Sicherung in agent-backups)"
+                    elif act == "delete":
+                        vibe.agent_delete(scope, an)
+                        ok, msg = True, "Gelöscht (Sicherung in agent-backups)"
                     elif act == "role":
                         if scope != "global":
                             raise ValueError("Rollen gelten nur für systemweite Agenten.")
                         vibe.agent_role_set(an, body.get("role", ""))
                         ok, msg = True, "Rolle gespeichert"
-                    elif act == "copy": vibe.agent_copy(scope, an, known_scope(body.get("to", "global"))); ok, msg = True, "Kopiert"
+                    elif act == "copy":
+                        vibe.agent_copy(scope, an, known_scope(body.get("to", "global")))
+                        ok, msg = True, "Kopiert"
                     elif act == "render":
                         # Vorschau: strukturierte Eingaben in den Rohtext übernehmen,
                         # ohne die Datei zu verändern.
@@ -976,25 +1068,36 @@ class H(BaseHTTPRequestHandler):
                     elif act == "restore":
                         vibe.agent_restore(scope, an, body.get("backup") or None)
                         snapshot = vibe.agent_snapshot(scope, an)
-                        extra["text"] = snapshot.text; extra["digest"] = snapshot.digest
+                        extra["text"] = snapshot.text
+                        extra["digest"] = snapshot.digest
                         ok, msg = True, "Sicherung wiederhergestellt"
-                    else: ok, msg = False, "Unbekannte Aktion"
+                    else:
+                        ok, msg = False, "Unbekannte Aktion"
                 except vibe_storage.ConcurrentChangeError as e:
                     return self._error(409, "conflict", str(e))
                 except ValueError as e:
                     ok, msg = False, str(e)
             elif u.path == "/api/mcp":
-                act = body.get("action"); scope = known_scope(body.get("scope", "global")); entry = body.get("entry")
+                act = body.get("action")
+                scope = known_scope(body.get("scope", "global"))
+                entry = body.get("entry")
                 try:
                     if act == "save":
                         p = vibe_mcp.save(scope, name, entry, body.get("old_name") or None, bool(body.get("create")), expected=body.get("expected"))
                         notice = vibe_mcp.version_notice()
                         ok, msg = True, ("Gespeichert in " + p + " (Sicherung in config-backups). opencode liest die Konfiguration beim nächsten Start."
                                          + (" Hinweis: " + notice if notice else ""))
-                    elif act == "delete": vibe_mcp.delete(scope, name); ok, msg = True, "Gelöscht (Sicherung in config-backups)"
-                    elif act == "toggle": en = vibe_mcp.toggle(scope, name); ok, msg = True, "aktiviert" if en else "deaktiviert"
-                    elif act == "test": extra["result"] = vibe_mcp.test(scope, name or None, entry); ok, msg = True, "Test beendet"
-                    else: ok, msg = False, "Unbekannte Aktion"
+                    elif act == "delete":
+                        vibe_mcp.delete(scope, name)
+                        ok, msg = True, "Gelöscht (Sicherung in config-backups)"
+                    elif act == "toggle":
+                        en = vibe_mcp.toggle(scope, name)
+                        ok, msg = True, "aktiviert" if en else "deaktiviert"
+                    elif act == "test":
+                        extra["result"] = vibe_mcp.test(scope, name or None, entry)
+                        ok, msg = True, "Test beendet"
+                    else:
+                        ok, msg = False, "Unbekannte Aktion"
                 except vibe_storage.ConcurrentChangeError as e:
                     return self._error(409, "conflict", str(e))
                 except ValueError as e:
@@ -1003,17 +1106,24 @@ class H(BaseHTTPRequestHandler):
                 act = body.get("action")
                 try:
                     if act == "save":
-                        d = vibe.profiles_load(); data = body.get("data") or {}
+                        d = vibe.profiles_load()
+                        data = body.get("data") or {}
                         for k in ("rollen", "profile"):
-                            if isinstance(data.get(k), dict): d[k] = data[k]
-                        vibe.profiles_save(d); ok, msg = True, "Profile gespeichert"
+                            if isinstance(data.get(k), dict):
+                                d[k] = data[k]
+                        vibe.profiles_save(d)
+                        ok, msg = True, "Profile gespeichert"
                     elif act == "use":
-                        done, skipped = vibe.profile_apply(body.get("profile", "")); ok, msg = True, "Angewendet: " + "; ".join(done) + (" | übersprungen: " + "; ".join(skipped) if skipped else "")
-                    else: ok, msg = False, "Unbekannte Aktion"
+                        done, skipped = vibe.profile_apply(body.get("profile", ""))
+                        ok, msg = True, "Angewendet: " + "; ".join(done) + (" | übersprungen: " + "; ".join(skipped) if skipped else "")
+                    else:
+                        ok, msg = False, "Unbekannte Aktion"
                 except ValueError as e:
                     ok, msg = False, str(e)
-            elif u.path == "/api/model": ok, msg = vibe_services.capture(vibe.cmd_model, body.get("agent", ""), body.get("model", ""), body.get("scope", "global"))
-            elif u.path == "/api/server": ok, msg = vibe_services.capture(vibe.cmd_server, "start" if body.get("action") == "start" else "stop")
+            elif u.path == "/api/model":
+                ok, msg = vibe_services.capture(vibe.cmd_model, body.get("agent", ""), body.get("model", ""), body.get("scope", "global"))
+            elif u.path == "/api/server":
+                ok, msg = vibe_services.capture(vibe.cmd_server, "start" if body.get("action") == "start" else "stop")
             elif u.path == "/api/harness":
                 try:
                     if body.get("action") == "use":
@@ -1034,11 +1144,14 @@ class H(BaseHTTPRequestHandler):
                 # senden und den Annahme-Loop aus einem eigenen Thread stoppen.
                 STOP.set()
                 self._send(200, {"ok": True, "message": "Dashboard wird beendet"})
-                threading.Thread(target=shutdown_server, daemon=True).start(); return
-            else: return self._error(404, "not_found", "nicht gefunden")
+                threading.Thread(target=shutdown_server, daemon=True).start()
+                return
+            else:
+                return self._error(404, "not_found", "nicht gefunden")
             message = redact(msg)
             out = {"ok": ok, "message": message}
-            if not ok: out["error"] = {"code": "rejected", "message": message}
+            if not ok:
+                out["error"] = {"code": "rejected", "message": message}
             out.update(extra)
             self._send(200 if ok else 400, out)
         except AssertionError as e:
@@ -1049,9 +1162,13 @@ class H(BaseHTTPRequestHandler):
             self._error(500, "internal_error", f"{type(e).__name__}: {e}")
     def stream(self, name, kind):
         path = vibe.logpath(name, "verify" if kind == "verify" else "run")
-        self.send_response(200); self.send_header("Content-Type", "text/event-stream"); self.send_header("Cache-Control", "no-store"); self.end_headers()
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
         def send(lines):
-            self.wfile.write(("data: " + json.dumps(lines, ensure_ascii=False) + "\n\n").encode()); self.wfile.flush()
+            self.wfile.write(("data: " + json.dumps(lines, ensure_ascii=False) + "\n\n").encode())
+            self.wfile.flush()
         try:
             pos = os.path.getsize(path) if os.path.exists(path) else 0
             send(vibe_services.tail(path, 80) or ["(noch keine Ausgabe)"])
@@ -1060,12 +1177,17 @@ class H(BaseHTTPRequestHandler):
                     break
                 if os.path.exists(path):
                     size = os.path.getsize(path)
-                    if size < pos: pos = 0
+                    if size < pos:
+                        pos = 0
                     if size > pos:
                         with open(path, "rb") as f:
-                            f.seek(pos); chunk = f.read(); pos = size
-                        send(ANSI.sub("", chunk.decode("utf-8", "replace")).splitlines()); continue
-                self.wfile.write(b": ping\n\n"); self.wfile.flush()
+                            f.seek(pos)
+                            chunk = f.read()
+                            pos = size
+                        send(ANSI.sub("", chunk.decode("utf-8", "replace")).splitlines())
+                        continue
+                self.wfile.write(b": ping\n\n")
+                self.wfile.flush()
             if STOP.is_set():
                 send(["Dashboard wird beendet."])
         except (BrokenPipeError, ConnectionResetError, OSError):
