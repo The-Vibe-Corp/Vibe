@@ -740,6 +740,16 @@ class H(BaseHTTPRequestHandler):
                     elif act == "unlink":
                         extra["github"] = vibe.github_unlink(name)
                         msg = "Verknüpfung gelöst"
+                    elif act == "token.save":  # B7: Token in der Oberfläche hinterlegen
+                        vibe_github.save_token(body.get("token") or "")
+                        extra["github"] = vibe.github_status(name)
+                        extra["auth"] = (extra["github"] or {}).get("auth")
+                        msg = "GitHub-Token gespeichert"
+                    elif act == "token.clear":
+                        vibe_github.delete_token()
+                        extra["github"] = vibe.github_status(name)
+                        extra["auth"] = (extra["github"] or {}).get("auth")
+                        msg = "GitHub-Token entfernt"
                     elif act == "fetch":
                         ok, msg = vibe_github.fetch(vibe.ppath(name))
                         extra["github"] = vibe_github.status(name)

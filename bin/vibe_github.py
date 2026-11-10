@@ -12,15 +12,23 @@ bei einer bewussten Aktion kontaktiert (Issues, Merge-Request); die
 Git-Status-Ebene liest die aktuelle Fern-Referenz bewusst via ls-remote und
 zieht unbekannte Fern-Objekte nach, ohne etwas zusammenzuführen.
 
-Der Access-Token kommt ausschließlich aus der Umgebung (``GITHUB_TOKEN``
-oder ``GH_TOKEN``) und taucht in keinem Log, keiner Konfiguration und
-keiner Fehlermeldung auf.
+Der GitHub-Zugangstoken (B7): Standardmäßig kommt er aus der Umgebung
+(``GITHUB_TOKEN`` oder ``GH_TOKEN``). Zusätzlich kann er in der Oberfläche
+hinterlegt werden; die Datei liegt im Zustandsordner (``VIBE_STATE``, damit
+sie niemals in einem Git-Repository landet) und wird mit 0600 (best
+effort) gespeichert. Der Token taucht in keinem Log, keiner Konfiguration
+im Projekt und keiner Fehlermeldung auf. Gespeicherte Zugangsdaten werden
+ausdrücklich nur GitHub-Endpunkten übergeben: der offiziellen REST-API
+(api.github.com) und Git-URLs mit dem Host github.com. Gegenüber
+konfigurierbaren anderen Hosts wird niemals der hinterlegte Token
+versendet; der Umgebungstoken behält sein bisheriges REST-Verhalten.
 """
 import json
 import os
 import re
 import subprocess
 import sys
+import tempfile
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -50,6 +58,109 @@ def token_from_env():
         value = os.environ.get(key)
         if value:
             return value
+    return ""
+
+
+TOKEN_FILE = "github-token"
+CREDENTIAL_ENV_NAME = "VIBE_GITHUB_CREDENTIAL"
+# URL-gültige Konfiguration: Die Zugangsdaten gelten ausschließlich für
+# https://github.com von Git-Aufrufen, nie für andere Hosts.
+CREDENTIAL_CONFIG_KEY = "credential.https://github.com.helper"
+CREDENTIAL_HELPER_VALUE = ("!f() { printf 'username=x-access-token\\n'; "
+                           "printf 'password=%s\\n' "
+                           "\"$VIBE_GITHUB_CREDENTIAL\"; }; f")
+
+
+def token_state_dir(environ=None):
+    """Zustandsordner für den Token: außerhalb jedes Git-Repositories."""
+    env = os.environ if environ is None else environ
+    state = str(env.get("VIBE_STATE") or "").strip()
+    if state:
+        return os.path.abspath(state)
+    try:  # CLI-Kontext ohne VIBE_STATE: denselben Zustandsordner auflösen
+        import vibe_paths
+        return os.path.abspath(vibe_paths.resolve().state)
+    except Exception:  # noqa: BLE001 - Bestandssicherer Ausweichpfad, Tests isoliert
+        return os.path.join(os.path.expanduser("~"), ".local", "state", "vibe")
+
+
+def token_state_path(environ=None):
+    """Pfad der Token-Datei im Zustandsordner (je Aufruf neu aufgelöst)."""
+    return os.path.join(token_state_dir(environ), TOKEN_FILE)
+
+
+def save_token(token):
+    """Hinterlegt einen GitHub-Token im Zustandsordner (0600, best effort).
+
+    Ungültige Eingaben werden abgelehnt, bevor irgendetwas geschrieben
+    wird; der Inhalt erscheint in keiner Meldung. Auf Dateisystemen ohne
+    wirksame Unix-Rechte (FUSE/NTFS, siehe SPEC) bleibt der Modus best
+    effort und die Funktion gibt kein falsches Sicherheitsversprechen."""
+    value = str(token or "").strip()
+    if not value:
+        raise ValueError("Kein GitHub-Token angegeben: In der Karte einfügen")
+    if "\x00" in value or any(ord(c) < 32 for c in value):
+        raise ValueError("Token enthält unerlaubte Steuerzeichen")
+    path = token_state_path()
+    directory = os.path.dirname(path)
+    os.makedirs(directory, exist_ok=True)
+    try:
+        os.chmod(directory, 0o700)
+    except OSError:
+        pass  # nicht überall wirksame Rechte (FUSE/NTFS) - kein Fehler
+    handle, tmp = tempfile.mkstemp(prefix=".github-token-", dir=directory)
+    try:
+        with os.fdopen(handle, "w", encoding="utf-8") as out:
+            out.write(value)
+        try:
+            os.chmod(tmp, 0o600)
+        except OSError:
+            pass
+        os.replace(tmp, path)
+    except OSError:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def read_stored_token(environ=None):
+    """Gespeicherten Token lesen (Leerwert, wenn nicht existiert/lesbar)."""
+    try:
+        with open(token_state_path(environ), encoding="utf-8") as handle:
+            return handle.read().strip()
+    except (FileNotFoundError, NotADirectoryError, IsADirectoryError,
+            PermissionError, OSError):
+        return ""
+
+
+def delete_token(environ=None):
+    """Entfernt die gespeicherte Token-Datei; eine fehlende Datei bleibt kein Fehler."""
+    try:
+        os.unlink(token_state_path(environ))
+    except OSError:
+        pass
+
+
+def token_status(environ=None):
+    """Token-Kennung ohne Inhalt: {set, source} (umgebung gewinnt)."""
+    if token_from_env():
+        return {"set": True, "source": "umgebung"}
+    if read_stored_token(environ):
+        return {"set": True, "source": "gespeichert"}
+    return {"set": False, "source": ""}
+
+
+def token_for_rest(api=None):
+    """Token für die REST-Ebene: Umgebung gewinnt; hinterlegter Token geht
+    ausdrücklich nur an die offizielle GitHub-API (github.com)."""
+    token = token_from_env()
+    if token:
+        return token
+    api_value = str(api or "").strip().rstrip("/")
+    if not api_value or api_value == OFFICIAL_API:
+        return read_stored_token()
     return ""
 
 
@@ -153,13 +264,19 @@ def git(project_path, *args, timeout=TIMEOUT_GIT):
 
     Ohne Terminal-Prompt: Eine nicht erreichbare oder nach Zugangsdaten
     fragende Gegenstelle darf das Dashboard nicht anhalten.
-    """
+
+    Mit verfügbarem GitHub-Token (B7, Umgebung oder hinterlegt) erhält der
+    Lauf eine URL-gültige Credential-Konfiguration für https://github.com
+    über die Umgebungs-Konfiguration (``GIT_CONFIG_*``). Der Tokeninhalt liegt
+    nur in der Prozessumgebung (``VIBE_GITHUB_CREDENTIAL``) und niemals in
+    argv, Logs oder der Konfiguration."""
     argv = ["git", "--no-pager", "-c", "core.fsmonitor=false", *[str(a) for a in args]]
     if not all(isinstance(a, str) for a in argv):
         raise ValueError("Argumentliste erwartet: nur Zeichenketten")
     env = os.environ.copy()
     env.setdefault("GIT_TERMINAL_PROMPT", "0")
     env.setdefault("GCM_INTERACTIVE", "never")
+    _apply_credential_env(env, token_from_env() or read_stored_token())
     try:
         result = subprocess.run(argv, cwd=str(project_path), capture_output=True,
                                 text=True, timeout=timeout, env=env)
@@ -170,6 +287,41 @@ def git(project_path, *args, timeout=TIMEOUT_GIT):
         return 124, f"Zeitüberschreitung nach {timeout:g} s: {' '.join(argv)}"
     except OSError as error:
         return 126, f"Programm nicht ausführbar: git: {error}"
+
+
+def _apply_credential_env(env, token):
+    """Injiziert die github.com-Zugangsdaten über GIT_CONFIG_* (keine argv)."""
+    if not token:
+        return env  # Kein Token: Git verhält sich unverändert (kein Prompt)
+    try:
+        count = int(env.get("GIT_CONFIG_COUNT") or 0)
+    except ValueError:
+        count = 0
+    env["GIT_CONFIG_KEY_%d" % count] = CREDENTIAL_CONFIG_KEY
+    env["GIT_CONFIG_VALUE_%d" % count] = CREDENTIAL_HELPER_VALUE
+    env["GIT_CONFIG_COUNT"] = str(count + 1)
+    env[CREDENTIAL_ENV_NAME] = token
+    return env
+
+
+# Fehlerbilder der Authentifizierung (B7): von diesen Ausgaben wird der
+# Nutzer klar zur Token-Hinterlegung geführt, statt einer rohen Meldung.
+_TOKEN_GUIDANCE = (
+    "Keine gültigen GitHub-Zugangsdaten: In der Karte „Git & GitHub“ einen "
+    "Token hinterlegen (Token speichern) oder GITHUB_TOKEN setzen. GitHub "
+    "empfiehlt dafür einen Personal Access Token.")
+_AUTH_PATTERNS = ("could not read Username", "terminal prompts disabled",
+                  "Authentication failed", "cannot exec", "askpass")
+
+
+def _auth_guidance(message):
+    """Ergänzt bei Auth-Fehlern eine verständliche Handlungsanweisung."""
+    text = str(message or "")
+    if "Zugangsdaten" in text:
+        return text
+    if any(pattern in text for pattern in _AUTH_PATTERNS):
+        return text + "\n" + _TOKEN_GUIDANCE
+    return text
 
 
 def current_branch(project_path):
@@ -301,6 +453,7 @@ def status(project_path, *, remote=True):
         "ahead": ahead,
         "behind": behind,
         "unpushed": ahead > 0,
+        "auth": token_status(),
     }
 
 
@@ -362,7 +515,7 @@ def fetch(project_path):
         return False, "Kein Remote konfiguriert: erst verknüpfen (link)"
     rc, out = git(project_path, "fetch", "--all", "--quiet")
     if rc != 0:
-        return False, "Abruf fehlgeschlagen: " + (out or "unbekannter Fehler")
+        return False, _auth_guidance("Abruf fehlgeschlagen: " + (out or "unbekannter Fehler"))
     return True, "Abgleich beendet (%d Remote(s))" % count
 
 
@@ -374,7 +527,7 @@ def pull(project_path):
         return False, "Kein Branch ausgecheckt (detached HEAD): Pull verweigert"
     rc, out = git(project, "pull", "--ff-only")
     if rc != 0:
-        return False, "Zusammenführen nicht möglich: " + (out or "unbekannter Fehler")
+        return False, _auth_guidance("Zusammenführen nicht möglich: " + (out or "unbekannter Fehler"))
     return True, "Branch %s aufgeholt (%s)" % (branch, out or "aktuell")
 
 
@@ -386,7 +539,7 @@ def push(project_path, branch=""):
         return False, "Kein Branch ausgecheckt: Push verweigert"
     rc, out = git(project, "push", "-u", "origin", branch)
     if rc != 0:
-        return False, "Push fehlgeschlagen: " + (out or "unbekannter Fehler")
+        return False, _auth_guidance("Push fehlgeschlagen: " + (out or "unbekannter Fehler"))
     return True, "Branch %s nach origin übertragen" % branch
 
 
@@ -442,11 +595,16 @@ def _http_json(method, url, *, token="", payload=None, timeout=TIMEOUT_HTTP):
 
 
 def list_issues(repo, label=None, api=None, token=None):
-    """Offene GitHub-Issues; Label-Filter (Leerwert = alle Issues)."""
+    """Offene GitHub-Issues; Label-Filter (Leerwert = alle Issues).
+
+    Ohne ausdrücklich übergebenen Token: Umgebungs-Token, sonst der
+    gespeicherte Token (B7) — letzterer nur für die offizielle API."""
     repo = str(repo or "").strip()
     if not RE_REPO.match(repo):
         raise GitHubError("Repository in owner/name angeben")
-    api = (api or OFFICIAL_API).rstrip("/")
+    api_value = (api or OFFICIAL_API)
+    token = token if token is not None else token_for_rest(api_value)
+    api = api_value.rstrip("/")
     query = {"state": "open", "per_page": "100"}
     if label:
         query["labels"] = str(label)
@@ -495,10 +653,11 @@ def create_pull_request(project_path, repo, head, base=None, title=None, body=No
     title = str(title or "").strip()
     if not title:
         raise GitHubError("Titel für den Merge-Request fehlt")
-    token = token or token_from_env()
+    token = token if token is not None else token_for_rest(api or OFFICIAL_API)
     if not token:
         raise GitHubError("Kein GitHub-Zugangstoken in der Umgebung "
-                          "(GITHUB_TOKEN oder GH_TOKEN) gesetzt.")
+                          "(GITHUB_TOKEN oder GH_TOKEN) gesetzt oder in der "
+                          "Karte hinterlegt.")
     api = (api or OFFICIAL_API).rstrip("/")
     base = str(base or "").strip()
     if not base:

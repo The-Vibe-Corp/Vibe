@@ -133,6 +133,7 @@ def project_detail(vibe, paths, name):
         data["github"] = {"enabled": False, "repo": "", "label": vibe_github.DEFAULT_LABEL,
                           "api": vibe_github.OFFICIAL_API, "remotes": [], "branch": "-",
                           "ahead": 0, "behind": 0, "unpushed": False, "branches": [],
+                          "auth": vibe_github.token_status(),
                           "error": str(error)}
     return data
 

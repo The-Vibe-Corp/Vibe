@@ -602,7 +602,9 @@ function sandboxBody(d,name,isPi){const s=d.sandbox||{enabled:false,tools:[],wri
   el('b',{},'Erlaubte Schreibverzeichnisse ('+dirs.length+')'),el('div',{},...dirs.map(p=>el('div',{class:'mut'},p))))}
 
 /* ---------- Git & GitHub (AP6: optional je Projekt; AP7: Aktionen erscheinen
-   nur bei aktiver Verknüpfung, damit der aus-Zustand übersichtlich bleibt) ---------- */
+   nur bei aktiver Verknüpfung, damit der aus-Zustand übersichtlich bleibt;
+   B7: GitHub-Zugang (Token) direkt in der Karte hinterlegen und entfernen;
+   fehlgeschlagene Aktionen bleiben dauerhaft in der Fehlerbox stehen) ---------- */
 function githubBody(d,name){
  const g=d.github||{enabled:false,repo:'',label:'vibe',api:'',branch:'-',remotes:[],branches:[],ahead:0,behind:0,unpushed:false};
  const active=!!g.enabled;
@@ -611,11 +613,35 @@ function githubBody(d,name){
  const issuesBox=el('div',{class:'mut'});
  const setErr=message=>{errBox.className=String(message||'').length?'bad':'';errBox.textContent=String(message||'')};
  const refresh=()=>detail(name).catch(showErr);
- const post=async body=>{const r=await api('/api/github',body);toast(r.message||'');return r};
+ const post=async body=>{const r=await api('/api/github',body);toast(r.message||'');if(r.ok)setErr('');else setErr(r.message);return r};
  const enabled=el('input',{type:'checkbox','aria-label':'GitHub-Verknüpfung aktiv'});enabled.checked=active;
  const repo=el('input',{value:g.repo||'',placeholder:'owner/name','aria-label':'GitHub-Repository (owner/name)'});
  const label=el('input',{value:g.label||'vibe',placeholder:'vibe','aria-label':'GitHub-Label für vibe-Aufgaben'});
  const apiIn=el('input',{value:(g.api&&g.api!=='https://api.github.com')?g.api:'',placeholder:'https://api.github.com (Standard)','aria-label':'GitHub-API-Basis'});
+ /* B7: GitHub-Zugang (Token) direkt in der Karte, ohne CLI oder Umgebungsvariable.
+    Der Zustand spiegelt g.auth (set/source ohne Geheimnis) und wird nach
+    speichern/entfernen unverzüglich in der Zeile aktualisiert (kein Refresh,
+    damit der aufgeklappte Abschnitt geöffnet bleibt). */
+ const authLine=el('div',{class:'mut','data-auth':''});
+ const setAuth=source=>{
+  const text=source==='umgebung'?'Zugang über die Umgebung (GITHUB_TOKEN/GH_TOKEN).'
+    :source==='gespeichert'?'GitHub-Token gespeichert (im Zustandsordner, außerhalb jedes Projektordners).'
+    :'';
+  authLine.textContent='GitHub-Zugang: '+(text
+    ||'Kein Token hinterlegt — für Push, private Repositories und Merge-Requests ist ein Token nötig. GitHub empfiehlt einen Personal Access Token.');
+ };
+ setAuth(g.auth&&g.auth.set?g.auth.source:'');
+ const tokenIn=el('input',{type:'password',placeholder:'GitHub-Token einfügen (Personal Access Token)','aria-label':'GitHub-Token einfügen'});
+ const tokenSave=el('button',{class:'b p',on:{click:async()=>{
+   const value=tokenIn.value.trim();
+   if(!value){setErr('Kein Token angegeben: GitHub-Token einfügen, dann speichern.');return}
+   const r=await api('/api/github',{name,action:'token.save',token:value});
+   setErr(r.ok?'':r.message);toast(r.message||'');
+   if(r.ok){tokenIn.value='';setAuth(r.auth&&r.auth.set?r.auth.source:'')}}}},'Token hinterlegen');
+ const tokenClear=el('button',{class:'b',on:{click:async()=>{
+   const r=await api('/api/github',{name,action:'token.clear'});
+   setErr(r.ok?'':r.message);toast(r.message||'');
+   if(r.ok){tokenIn.value='';setAuth(r.auth&&r.auth.set?r.auth.source:'')}}}},'Token entfernen');
  const save=el('button',{class:'b p',on:{click:async()=>{const r=await api('/api/github',{name,action:'settings',enabled:enabled.checked,repo:repo.value.trim(),label:label.value.trim(),api:apiIn.value.trim()});
    if(!r.ok)setErr(r.message);toast(r.message);if(r.ok){setErr('');refresh()}}}},'Speichern');
  const linkBtn=el('button',{class:'b',on:{click:async()=>{
@@ -646,6 +672,8 @@ function githubBody(d,name){
  const branchRows=(g.branches||[]).map(b=>el('div',{class:'mut'},(b.current?'* ':'  ')+b.name+' (Ahead/Behind '+b.ahead+'/'+b.behind+')'));
  const conn=el('div',{},
    el('div',{class:'mut'},'GitHub ist optional je Projekt. Die Einstellungen gelten nur für dieses Projekt; Updates und Branches bleiben bewusste Aktionen (kein automatischer Push oder Merge).'),
+   authLine,
+   el('div',{class:'bar'},tokenIn,tokenSave,tokenClear),
    el('label',{class:'inline'},enabled,' GitHub-Verknüpfung aktiv'),
    el('label',{},'Repository (owner/name)'),repo,
    el('label',{},'Label für vibe-Aufgaben'),label,

@@ -37,7 +37,7 @@ Aufruf:  vibe                 interaktives Menü
          vibe ui [stop]       Dashboard im Browser (nur localhost)
          vibe server [start|stop|status]  gemeinsamer opencode-Server mit Weboberfläche
          vibe harness [status|list|use <name>|setup [name]]  Harness (opencode/Pi) wählen und einrichten
-         vibe github <p> [status|link <url>|unlink|branches|fetch|pull|push|issues|issues-import|pr]  GitHub-Verknüpfung (optional je Projekt); alle Aktionen bewusst, Merge-Request nur mit --confirm
+         vibe github <p> [status|token [clear]|link <url>|unlink|branches|fetch|pull|push|issues|issues-import|pr]  GitHub-Verknüpfung (optional je Projekt); alle Aktionen bewusst, Merge-Request nur mit --confirm; token hinterlegt den GitHub-Zugang ohne Log/argv
          vibe types           verfügbare Projekttypen
          vibe doctor          Umgebung prüfen
 """
@@ -1092,6 +1092,10 @@ def cmd_github(name=None, action="status", value=None, label=None, title=None,
                  "(ungesendete Commits)" if st["unpushed"] else "")
             for remote in st["remotes"]:
                 line("Remote " + remote["name"] + ": " + remote["url"])
+            auth = st.get("auth") or {}
+            line("Zugangstoken:", (auth.get("source") or "-"
+                                   ) + (" (hinterlegt)" if auth.get("set") else
+                                        "(kein Token)"))
             line("Branchübersicht: vibe github " + name + " branches")
         elif action == "link":
             if not value:
@@ -1120,6 +1124,19 @@ def cmd_github(name=None, action="status", value=None, label=None, title=None,
             ok, message = vibe_github.push(ppath(name))
             line(message)
             sys.exit(0 if ok else 1)
+        elif action == "token":  # B7: Token hinterlegen/entfernen (nicht als Argument)
+            if value in ("clear", "--clear"):
+                vibe_github.delete_token()
+                line("GitHub-Token entfernt")
+            elif value in (None, ""):
+                import getpass
+                token = getpass.getpass("GitHub-Token (Eingabe bleibt unsichtbar): ")
+                vibe_github.save_token(token)
+                line("GitHub-Token gespeichert")
+            else:
+                raise ValueError('Token nie als Argument angeben. Befehle: '
+                                 '"vibe github <projekt> token" (Eingabe, unsichtbar) '
+                                 'oder "vibe github <projekt> token clear"')
         elif action == "issues":
             rows = github_issues(name, label)
             line("Offene Issues: %d" % len(rows))

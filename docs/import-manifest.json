@@ -25,8 +25,8 @@
     },
     {
       "path": "bin/vibe",
-      "sha256": "be587f4498a46fd409cbeb3c6cc484ec05093e02dccdbfc90f7c1ddc90805cad",
-      "bytes": 228178
+      "sha256": "d2c76a6e8ea6642003c2fd08fcd87872f25b95114359b03df815396729749765",
+      "bytes": 229213
     },
     {
       "path": "bin/vibe-run.sh",
@@ -35,8 +35,8 @@
     },
     {
       "path": "bin/vibe-web.py",
-      "sha256": "be3681ec5780243c612caa68e2f85bbbe6c4ef9dd687803192f1f697cf7e87c8",
-      "bytes": 58292
+      "sha256": "1dbfd698b25156554063a17193186870b83a531ca97905ef34059b27c1608232",
+      "bytes": 58949
     },
     {
       "path": "bin/vibe_autonomous.py",
@@ -45,8 +45,8 @@
     },
     {
       "path": "bin/vibe_github.py",
-      "sha256": "2f60bd7f64745345d0ec4423f3691982d25e4b1cc2708aa8aa329fc72e029586",
-      "bytes": 23124
+      "sha256": "53ec444c0ec59e7543d252c148fda7dc972a1e638d098622c0643d06a3c0b036",
+      "bytes": 29725
     },
     {
       "path": "bin/vibe_guide.py",
@@ -100,8 +100,8 @@
     },
     {
       "path": "bin/vibe_services.py",
-      "sha256": "da15ab8f4eb059ae8b93d6d6a386b811619e2b9ee8f66373f10aaef8c7e2bbf0",
-      "bytes": 9149
+      "sha256": "3896b231c70c38979d900a965449aee7c3a3e7a84fe78e933807d86d038ff053",
+      "bytes": 9211
     },
     {
       "path": "bin/vibe_storage.py",
@@ -110,8 +110,8 @@
     },
     {
       "path": "bin/web/app.js",
-      "sha256": "941ba9c53d34691f13f9b42ee50999fcbd7790b60a1674150d2d15b515910f6d",
-      "bytes": 108420
+      "sha256": "4913eda1ec796d1a9ee83f4a565e6a59a08d5ea67ba85818fb2d6b25e0202e8b",
+      "bytes": 110355
     },
     {
       "path": "bin/web/index.html",
@@ -916,6 +916,18 @@
         "bin/vibe-web.py",
         "bin/vibe_mcp.py",
         "bin/vibe_opencode.py"
+      ]
+    },
+    {
+      "arbeitspaket": "B7",
+      "datum": "2026-11-10",
+      "grund": "GitHub-Authentifizierung als Bug B7: GitHub-Token über die Karte „Git & GitHub“ hinterlegen/entfernen (Datei im Zustandsordner VIBE_STATE, 0600 best effort, außerhalb jedes Git-Repositorys). Git-Aktionen bekommen URL-gültige Zugangsdaten für https://github.com über GIT_CONFIG_* + Prozessumgebung (x-access-token), niemals über argv; REST greift auf Umgebung oder gespeicherten Token zurück (gespeichert nur für api.github.com). Auth-Fehlerbilder (could not read Username, terminal prompts disabled, kaputtes askpass, Authentication failed) melden klaren Anweisungshinweis; fehlgeschlagene Karten-Aktionen bleiben in der Fehlerbox stehen statt nur als kurzlebiger Toast. CLI: vibe github <p> token [clear].",
+      "dateien": [
+        "bin/vibe",
+        "bin/vibe-web.py",
+        "bin/vibe_services.py",
+        "bin/vibe_github.py",
+        "bin/web/app.js"
       ]
     }
   ]
