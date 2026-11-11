@@ -183,6 +183,10 @@ ob die Verbindungen wirklich funktionieren.
 - Bestandsaufnahme: `docs/baseline.md` — Zeilen `vibe github` und
   `POST /api/github` um die AP9-Aktionen ergänzt; `tests/unit/
   test_baseline_inventory.py` 8/8 OK.
-- Review: `docs/reviews/AP9-review-*.md` (unabhängiger Reviewer).
-- Trilium: Notiz „AP9 — GitHub-Token je Projekt, Branch-Kontrolle,
-  Merge-Request-Automatik“ (über Trilium-MCP angelegt).
+- Review: `docs/reviews/AP9-review-1.md` (Runde 1, CHANGES REQUIRED mit
+  1 Medium + 5 Minor — alle behoben) und `docs/reviews/AP9-review-2.md`
+  (Runde 2, Verdict: PASS, 1 Minor zur Trilium-Aktualisierung — erledigt).
+- Trilium: Notiz „AP9 Bereit für GitHub Teil 3 (Token je Projekt,
+  Branch-Kontrolle, Merge-Request-Automatik)“ unter vibe/Features
+  (Trilium-MCP, `RZaerCNe9ngJ`), inklusive Runde-2-Ergänzungen
+  (SPEC-Auslegung, scrypt-Kompromiss, Verkabelungstest).
