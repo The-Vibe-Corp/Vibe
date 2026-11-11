@@ -53,6 +53,18 @@ ASSIST_OPTIONS = ["Erneut prüfen", "Lauf abbrechen", "Agent behebt die Befunde"
 ASSIST_AGENT_OPTION = 2
 ASSIST_DEFAULT_TIMEOUT = 600.0
 ASSIST_MAX_ROUNDS = 10
+# AP10: Feste Optionen der Schranken-Rückfrage an blockierten Paketen. Die
+# Nummerierung ist nullbasiert (wie in vibe_questions.answer): 0 überspringt
+# das Paket, 1 bricht den Lauf ab, 2 beauftragt den Agenten; Freitext hat
+# Vorrang und wird als Anweisung übergeben.
+BARRIER_OPTIONS = [
+    "Paket überspringen und Lauf fortsetzen",
+    "Lauf abbrechen",
+    "Agent behebt die Befunde",
+]
+BARRIER_SKIP_OPTION = 0
+BARRIER_ABORT_OPTION = 1
+BARRIER_AGENT_OPTION = 2
 
 CHECKBOX_DONE = re.compile(r"^- \[[xX]\]")
 CHECKBOX_ANY = re.compile(r"^- \[[ xX]\]")
@@ -718,7 +730,7 @@ def _assist_result(errors, action, instruction="", source=""):
 
 def assist_preflight(project, agents_dir, tester, reviewer, state_dir=None,
                      runtime=None, project_name="", timeout=ASSIST_DEFAULT_TIMEOUT,
-                     rounds=0, allow_dirty=False, intro=""):
+                     rounds=0, allow_dirty=False, intro="", max_rounds=None):
     """Führt den Preflight mit F16-Rückfragen zu einem startbaren Stand.
 
     Liefert ein Ergebnis mit den zuletzt bestehenden Befunden und der nächsten
@@ -729,7 +741,9 @@ def assist_preflight(project, agents_dir, tester, reviewer, state_dir=None,
     den aktuellen Befunden. Ohne nutzbare F16-Module, bei aktivem autonomem
     Modus oder nach einem Abbruch/Zeitlimit bleiben die Befunde bestehen.
     ``intro`` ersetzt den Einleitungssatz, wenn die Assistenz nicht am
-    Laufstart, sondern an der Abschlussprüfung eingesetzt wird.
+    Laufstart, sondern an der Abschlussprüfung eingesetzt wird. ``max_rounds``
+    begrenzt die Agentenrunden ausdrücklich (AP10: ``assist_rounds``); ohne
+    Angabe gilt der Modulstandard.
     """
     questions, autonomous = _question_modules()
     errors = preflight_errors(
@@ -740,17 +754,17 @@ def assist_preflight(project, agents_dir, tester, reviewer, state_dir=None,
         return _assist_result([], "pass")
     if questions is None or autonomous is None or not runtime:
         return _assist_result(errors, "unavailable")
-
+    limit = ASSIST_MAX_ROUNDS if max_rounds is None else max_rounds
     name = project_name or os.path.basename(os.path.normpath(str(project)))
     if autonomous.is_enabled(runtime, name):
         return _assist_result(errors, "autonomous")
-    if rounds >= ASSIST_MAX_ROUNDS:
+    if rounds >= limit:
         return _assist_result(errors + [
-            "Rückfrage-Assistenz nach " + str(ASSIST_MAX_ROUNDS)
+            "Rückfrage-Assistenz nach " + str(limit)
             + " Runden beendet."
         ], "max")
 
-    for _round in range(ASSIST_MAX_ROUNDS):
+    for _round in range(limit):
         try:
             qid = questions.create(
                 runtime,
@@ -830,8 +844,170 @@ def assist_preflight(project, agents_dir, tester, reviewer, state_dir=None,
         if autonomous.is_enabled(runtime, name):
             return _assist_result(errors, "autonomous")
     return _assist_result(errors + [
-        "Rückfrage-Assistenz nach " + str(ASSIST_MAX_ROUNDS) + " Runden beendet."
+        "Rückfrage-Assistenz nach " + str(limit) + " Runden beendet."
     ], "max")
+
+
+def _barrier_text(project_name, package_id, reason):
+    """Formuliert die Rückfrage an der blockierten Schranke."""
+    lines = [
+        "Projekt '" + project_name + "', Arbeitspaket " + package_id
+        + ": Die Abschlussschranke ist nicht erfüllt; das Paket ist "
+        "blockiert.",
+        "",
+        "Grund: " + (reason.strip() if isinstance(reason, str) and reason.strip()
+                     else "nicht angegeben"),
+        "",
+        "'Paket überspringen und Lauf fortsetzen' lässt das Paket ungemergt "
+        "blockiert zurück und arbeitet mit den weiteren Paketen weiter. "
+        "'Lauf abbrechen' hält den Lauf an (bisheriges Verhalten).",
+        "'Agent behebt die Befunde' startet eine weitere Reparaturrunde im "
+        "Arbeitsbaum; danach wird erneut geprüft. Alternativ eine Anweisung "
+        "als freie Antwort senden: Sie hat Vorrang und wird dem Agenten als "
+        "Anweisung übergeben.",
+    ]
+    text = "\n".join(lines).strip()
+    if len(text) > 3900:
+        text = text[:3899] + "…"
+    return text
+
+
+def assist_barrier(project, package_id, reason="", runtime=None,
+                   project_name="", timeout=ASSIST_DEFAULT_TIMEOUT):
+    """Stellt die Schranken-Rückfrage für ein blockiertes Paket (AP10).
+
+    Analog ``assist_preflight`` über F16, aber unabhängig von
+    ``VIBE_PREFLIGHT_ASSIST``: Bei einem blockierten Paket (Reparaturlimit
+    erreicht oder Reparatur-/Schrankenbefund endgültig) fragt die Funktion,
+    wie weiter zu verfahren ist. Die Optionen sind in ``BARRIER_OPTIONS``
+    festgelegt; eine freie Antwort ist eine Anweisung an den Agenten und hat
+    Vorrang. Liefert ein Ergebnis mit ``action``:
+
+    * ``skip`` — Paket überspringen; der Aufrufer setzt mit dem nächsten
+      Paket fort (die Abschlussschranke bleibt unangetastet, das Paket wird
+      nicht gemergt).
+    * ``abort`` — Lauf abbrechen (bisheriges Verhalten).
+    * ``agent`` — weitere Reparaturrunde; ``instruction`` trägt die
+      Nutzeranweisung (``source`` = ``user``) oder ist leer für die aus dem
+      Befund abgeleitete Anweisung (``source`` = ``findings``).
+    * ``autonomous`` — der Agent entscheidet selbst und überspringt.
+    * ``timeout`` — die Rückfrage blieb ohne Antwort.
+    * ``unavailable`` — ohne nutzbare F16-Module oder Laufzeit; der Aufrufer
+      blockiert wie bisher.
+    * ``invalid`` — die Antwort war nicht lesbar oder ungültig.
+    """
+    questions, autonomous = _question_modules()
+    errors = [reason] if isinstance(reason, str) and reason.strip() else []
+    if questions is None or autonomous is None or not runtime:
+        return _assist_result(errors, "unavailable")
+    name = project_name or os.path.basename(os.path.normpath(str(project)))
+    if autonomous.is_enabled(runtime, name):
+        print(
+            "BARRIER: Autonomer Modus aktiv für " + name
+            + "; der Agent überspringt das blockierte Paket."
+        )
+        return _assist_result(errors, "autonomous")
+    try:
+        qid = questions.create(
+            runtime,
+            project=name,
+            agent="vibe",
+            text=_barrier_text(name, package_id, reason),
+            options=BARRIER_OPTIONS,
+            free_text=True,
+        )
+    except (OSError, ValueError) as error:
+        print("BARRIER: Rückfrage konnte nicht gestellt werden: " + str(error))
+        return _assist_result(errors, "unavailable")
+    print(
+        "BARRIER: Rückfrage " + qid + " gestellt; Antwort im Dashboard "
+        "oder mit: vibe answer " + qid
+        + " --option <1|2|3> oder --text \"Anweisung\""
+    )
+    try:
+        mode, answer = questions.wait_for(
+            runtime,
+            qid,
+            timeout=timeout,
+            stop=lambda: autonomous.is_enabled(runtime, name),
+        )
+    except ValueError as error:
+        print("BARRIER: Rückfrage " + qid + " nicht lesbar: " + str(error))
+        return _assist_result(errors + [
+            "Rückfrage " + qid + " nicht lesbar; Lauf abgebrochen."
+        ], "invalid")
+    if mode == "stop":
+        print("BARRIER: Autonomer Modus aktiv; keine Rückfrage mehr.")
+        return _assist_result(errors, "autonomous")
+    if mode != "answer":
+        print(
+            "BARRIER: Keine Antwort auf Rückfrage " + qid
+            + " innerhalb von " + f"{timeout:g}" + " s."
+        )
+        return _assist_result(errors + [
+            "Rückfrage " + qid + " blieb ohne Antwort; Lauf abgebrochen."
+        ], "timeout")
+    option = answer.get("option")
+    text = answer.get("text")
+    instruction = text.strip() if isinstance(text, str) else ""
+    if instruction:
+        print(
+            "BARRIER: Anweisung des Nutzers erhalten; Agent wird beauftragt."
+        )
+        return _assist_result(errors, "agent", instruction, "user")
+    if option == BARRIER_SKIP_OPTION:
+        print(
+            "BARRIER: Paket " + package_id
+            + " wird auf Nutzerentscheidung übersprungen; der Lauf setzt fort."
+        )
+        return _assist_result(errors, "skip")
+    if option == BARRIER_ABORT_OPTION:
+        print("BARRIER: Lauf auf Nutzerentscheidung abgebrochen.")
+        return _assist_result(errors, "abort")
+    if option == BARRIER_AGENT_OPTION:
+        print(
+            "BARRIER: Agent wird beauftragt, die Befunde zu beheben."
+        )
+        return _assist_result(errors, "agent", "", "findings")
+    print(
+        "BARRIER: Ungültige Antwort auf Rückfrage " + qid
+        + " (Option " + repr(option) + "); Lauf abgebrochen."
+    )
+    return _assist_result(errors + [
+        "Ungültige Antwort auf Rückfrage " + qid + "; Lauf abgebrochen."
+    ], "invalid")
+
+
+def mark_blocked(project, pid, note):
+    """Vermerkt ``BLOCKIERT:`` am Arbeitspaket in den Arbeitsnotizen (AP10).
+
+    Die Zeile wird eingerückt an den Block in TICKETS.md/FEEDBACK.md des
+    Projektordners angehängt, damit die Auswahl das blockierte Paket nicht
+    erneut wählt (``is_blocked``) und der Grund im Projektordner sichtbar
+    bleibt. Bereits vorhandene Blockierungsmarken bleiben unverändert
+    (idempotent). Liefert ``(changed, message)``.
+    """
+    project = Path(project)
+    for name in WORK_NOTE_FILES:
+        target = project / name
+        if not target.is_file():
+            continue
+        text = read_text(target)
+        lines = text.splitlines()
+        span = block_span(lines, pid)
+        if span is None:
+            continue
+        start, end = span
+        if any("BLOCKIERT" in line.upper() for line in lines[start:end]):
+            return False, "Block " + pid + " ist bereits als blockiert vermerkt."
+        insert = end
+        while insert > start and not lines[insert - 1].strip():
+            insert -= 1
+        lines.insert(insert, "  " + BLOCK_MARKER + " " + note)
+        updated = "\n".join(lines) + ("\n" if text.endswith("\n") else "")
+        write_text_atomic(target, updated)
+        return True, "Block " + pid + " in " + name + " als blockiert vermerkt."
+    return False, "Block " + pid + " fehlt in TICKETS.md/FEEDBACK.md."
 
 
 def review_order(path):
@@ -1093,6 +1269,7 @@ def command_preflight(args):
             rounds=args.assist_rounds,
             allow_dirty=args.allow_dirty,
             intro=args.assist_reason,
+            max_rounds=args.assist_max,
         )
         errors = result["errors"]
         if args.action_file:
@@ -1145,6 +1322,44 @@ def command_gate(args):
         return EXIT_NONE
     print("OK: Abschlussschranke für " + args.id + " erfüllt.")
     return EXIT_OK
+
+
+def command_barrier(args):
+    """Befehl ``barrier``: stellt die Schranken-Rückfrage eines Pakets (AP10).
+
+    Der Läufer ruft dies auf, wenn ein Arbeitspaket an der Reparatur-
+    schranke blockiert ist und ``override="ask"`` wirksam ist. Diagnosen der
+    Rückfrage gehen auf die Standardfehlerausgabe, damit die Standardausgabe
+    ausschließlich das Ergebnis als JSON enthält und der Läufer sie parsen
+    kann.
+    """
+    real_stdout = sys.stdout
+    try:
+        sys.stdout = sys.stderr
+        result = assist_barrier(
+            args.project,
+            args.id,
+            reason=args.reason,
+            runtime=args.runtime,
+            project_name=args.project_name,
+            timeout=args.timeout,
+        )
+    finally:
+        sys.stdout = real_stdout
+    print(json.dumps(result, ensure_ascii=False))
+    return EXIT_OK
+
+
+def command_mark_blocked(args):
+    """Befehl ``mark-blocked``: vermerkt ein Paket als blockiert (AP10).
+
+    Wird vom Läufer genutzt, wenn der Nutzer das Überspringen eines
+    blockierten Pakets entschieden hat; die Blockierungsmarke verhindert die
+    erneute Auswahl im Projektordner.
+    """
+    changed, message = mark_blocked(args.project, args.id, args.note)
+    print(("OK: " if changed else "HINWEIS: ") + message)
+    return EXIT_OK if changed else EXIT_NONE
 
 
 def command_classify(args):
@@ -1234,6 +1449,10 @@ def build_parser():
         help="bereits ausgeführte Agentenrunden der Assistenz (F22)",
     )
     preflight.add_argument(
+        "--assist-max", type=int, default=None,
+        help="Höchstzahl der Agentenrunden der Assistenz (AP10)",
+    )
+    preflight.add_argument(
         "--assist-reason", default="",
         help="Einleitungssatz der Rückfrage (Standard: Preflight)",
     )
@@ -1269,6 +1488,27 @@ def build_parser():
     classify.add_argument("--log", default=None)
     classify.add_argument("--since", type=int, default=0)
     classify.set_defaults(handler=command_classify)
+
+    barrier = subparsers.add_parser(
+        "barrier",
+        help="Schranken-Rückfrage für ein blockiertes Paket stellen (AP10)",
+    )
+    barrier.add_argument("--project", required=True)
+    barrier.add_argument("--id", required=True)
+    barrier.add_argument("--reason", default="")
+    barrier.add_argument("--runtime", default=None)
+    barrier.add_argument("--project-name", default="")
+    barrier.add_argument("--timeout", type=float, default=ASSIST_DEFAULT_TIMEOUT)
+    barrier.set_defaults(handler=command_barrier)
+
+    mark_blocked_parser = subparsers.add_parser(
+        "mark-blocked",
+        help="Arbeitspaket als blockiert vermerken (AP10)",
+    )
+    mark_blocked_parser.add_argument("--project", required=True)
+    mark_blocked_parser.add_argument("--id", required=True)
+    mark_blocked_parser.add_argument("--note", required=True)
+    mark_blocked_parser.set_defaults(handler=command_mark_blocked)
 
     status = subparsers.add_parser("status", help="Paketstand ausgeben")
     status.add_argument("--project", required=True)

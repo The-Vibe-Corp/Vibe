@@ -39,6 +39,7 @@ Aufruf:  vibe                 interaktives Menü
          vibe ui [stop]       Dashboard im Browser (nur localhost)
          vibe server [start|stop|status]  gemeinsamer opencode-Server mit Weboberfläche
          vibe harness [status|list|use <name>|setup [name]]  Harness (opencode/Pi) wählen und einrichten
+         vibe gates [status] [<schranke> <wert>]  Schranken des Läufers zeigen oder setzen (global oder mit --project <p> je Projekt)
          vibe github <p> [status|token [clear]|link <url>|unlink|branches|fetch|pull|push [branch]|checkout <branch>|test|issues|issues-import|pr]  GitHub-Verknüpfung (optional je Projekt); alle Aktionen bewusst, Merge-Request nur mit --confirm; Token wird je Projekt verschlüsselt gespeichert (AP9), test prüft die Verbindungen
          vibe types           verfügbare Projekttypen
          vibe doctor          Umgebung prüfen
@@ -54,6 +55,10 @@ except ImportError:  # pragma: no cover - Windows ohne Paket-Läufer
 if __name__ == "__main__": sys.modules["vibe"] = sys.modules[__name__]
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
 import vibe_storage, vibe_paths, vibe_opencode, vibe_models, vibe_runs, vibe_questions, vibe_autonomous, vibe_harness, vibe_github, vibe_packages, vibe_limits
+try:  # AP10: Ältere Installationen ohne vibe_gates.py dürfen weiterhin starten.
+    import vibe_gates
+except ImportError:  # pragma: no cover - unvollständige Installation
+    vibe_gates = None
 
 try:
     PATHS = vibe_paths.resolve()
@@ -963,8 +968,13 @@ def cmd_priority(name, action=None, values=None):
     print(col("d", "Die Priorisierung ist verbindlich: der Läufer wählt den ersten geeigneten Eintrag vor der Standardordnung; erledigte Aufgaben werden der Priorisierung entnommen."))
 
 # ---------- Shell-Sandbox je Projekt ----------
-def set_env_values(name, values):
-    """Ersetzt oder ergänzt Schlüssel in .vibe/project.env und erhält alle anderen Zeilen."""
+def set_env_values(name, values, quote=True):
+    """Ersetzt oder ergänzt Schlüssel in .vibe/project.env und erhält alle anderen Zeilen.
+
+    ``quote=False`` schreibt die Werte ohne Anführungszeichen (AP10-Schranken:
+    reine Zahlen und ``ask``/``off`` brauchen keine Quotierung und der
+    Abnahmetest verlangt die Zeilenform ``SCHLUESSEL=WERT``).
+    """
     fp = os.path.join(ppath(name), ".vibe", "project.env")
     snapshot = vibe_storage.read_snapshot(fp)
     if not snapshot.exists:
@@ -975,10 +985,19 @@ def set_env_values(name, values):
     for key, value in values.items():
         if not re.fullmatch(r"[A-Z_]+", key):
             raise ValueError("Ungültiger Einstellungsschlüssel: " + key)
+        if value is None:
+            # AP10: Ein leerer Projektwert entfernt die Zeile vollständig,
+            # damit die Schranke wieder als „nicht gesetzt“ gilt.
+            pattern = re.compile(r"^\s*" + re.escape(key) + r"\s*=")
+            lines = [line for line in lines if not pattern.match(line)]
+            continue
         text_value = str(value)
         if any(c in text_value for c in ("\x00", "\n", "\r")):
             raise ValueError("Einstellung enthält unerlaubte Steuerzeichen: " + key)
-        line = f'{key}="{text_value}"' if text_value else f'{key}=""'
+        if quote:
+            line = f'{key}="{text_value}"' if text_value else f'{key}=""'
+        else:
+            line = f"{key}={text_value}"
         pattern = re.compile(r"^\s*" + re.escape(key) + r"\s*=")
         replaced = False
         target = None
@@ -4860,6 +4879,104 @@ def cmd_limits(action="status"):
         print(problem, file=sys.stderr)
     print(vibe_limits.describe(PATHS.state))
 
+# ---------- Schrankeneinstellungen des Läufers (AP10) ----------
+# Die Schranken sind global in <Zustand>/gates.json abgelegt und können je
+# Projekt in .vibe/project.env optional abweichen (Priorität: Projekt >
+# global > Voreinstellung). Sie steuern Reparaturrunden, Assistenzrunden,
+# Wiederholungen, das Durchgangslimit und die Rückfrage an blockierten Paketen.
+GATES_USAGE = ("Aufruf: vibe gates [--project <projekt>] [status] "
+               "[<schranke> <wert>]  Schranken: "
+               + ", ".join(vibe_gates.DEFAULTS) if vibe_gates else
+               "Aufruf: vibe gates — vibe_gates.py fehlt in der Installation")
+
+def project_for_cwd():
+    """Name und Pfad des Projekts, in dem der Aufruf läuft (oder None, None).
+
+    Ein Projekt gilt als gefunden, wenn der aktuelle Ordner der registrierte
+    Projektpfad ist oder darin liegt. So zeigt `vibe gates status` im
+    Projektordner automatisch dessen abweichende Werte.
+    """
+    cwd = os.path.realpath(os.getcwd())
+    for name, path in project_map().items():
+        real = os.path.realpath(path)
+        if cwd == real or cwd.startswith(real + os.sep):
+            return name, real
+    return None, None
+
+def _gates_show(project_name=None):
+    """Zeigt die wirksamen Schranken samt Herkunft (AP10)."""
+    if vibe_gates is None:
+        sys.exit("vibe_gates.py fehlt in der Installation; "
+                 "bitte Setup --update ausführen.")
+    project_dir = None
+    if project_name is not None:
+        project_dir = ppath(project_name)
+    else:
+        project_name, project_dir = project_for_cwd()
+    result = vibe_gates.effective(PATHS.state, project_dir)
+    where = f" (Projekt: {project_name})" if project_name else ""
+    print(col("b", "Wirksame Schranken des Läufers" + where + ":"))
+    for key, entry in result["gates"].items():
+        print(f"  {key:<14}{str(entry['value']):<6}{entry['origin']}")
+    for message in result["problems"]:
+        print(col("y", "Hinweis: " + message))
+
+def cmd_gates(rest=None):
+    """Zeigt oder setzt die Läufer-Schranken (AP10).
+
+    Ohne Argumente bzw. mit ``status`` werden die wirksamen Werte samt
+    Herkunft gezeigt (Projekt aus dem aktuellen Ordner, falls registriert,
+    oder mit ``--project <name>``). ``<schranke> <wert>`` setzt global;
+    ``--project <name> <schranke> <wert>`` schreibt den Projektwert, ein
+    leerer Wert entfernt ihn. Unbekannte Schranken und ungültige Werte
+    werden ohne Schreibvorgang mit Fehler abgewiesen.
+    """
+    if vibe_gates is None:
+        sys.exit("vibe_gates.py fehlt in der Installation; "
+                 "bitte Setup --update ausführen.")
+    args = list(rest or [])
+    project_name = None
+    if args and args[0] == "--project":
+        if len(args) < 2: sys.exit(GATES_USAGE)
+        project_name, args = args[1], args[2:]
+    if not args or args[0] == "status":
+        _gates_show(project_name)
+        return
+    if len(args) != 2: sys.exit(GATES_USAGE)
+    key, value = args
+    if project_name is not None and value == "":
+        # Leerer Wert entfernt den Projektwert (set_env_values löscht die
+        # Zeile); der Schlüssel wird trotzdem gegen die bekannten Schranken
+        # geprüft, damit Tippfehler nicht still durchlaufen.
+        gate_env = vibe_gates.PROJECT_ENV_KEYS.get(key)
+        if gate_env is None:
+            sys.exit("Unbekannte Schranke: " + key)
+        try:
+            set_env_values(project_name, {gate_env: None}, quote=False)
+        except (OSError, ValueError) as error:
+            sys.exit("Projektschranke nicht entfernt: " + str(error))
+        print(f"Projektschranke entfernt ({project_name}): {gate_env}")
+        _gates_show(project_name)
+        return
+    try:
+        parsed = vibe_gates.validate(key, value)
+    except ValueError as error:
+        sys.exit(str(error))
+    if project_name is None:
+        try:
+            vibe_gates.save(PATHS.state, key, parsed)
+        except OSError as error:
+            sys.exit("Schranke nicht gespeichert: " + str(error))
+        print(f"Gespeichert (global): {key}={parsed}")
+    else:
+        gate_env = vibe_gates.PROJECT_ENV_KEYS[key]
+        try:
+            set_env_values(project_name, {gate_env: str(parsed)}, quote=False)
+        except (OSError, ValueError) as error:
+            sys.exit("Projektschranke nicht gespeichert: " + str(error))
+        print(f"Gespeichert (Projekt {project_name}): {gate_env}={parsed}")
+    _gates_show(project_name)
+
 def cmd_harness(action="status", name=None, out=None):
     """Zeigt, wechselt und erklärt den Harness; die Auswahl liegt im Zustandsordner."""
     out = out or sys.stdout
@@ -5306,6 +5423,7 @@ def main():
                  "ui": lambda: cmd_ui(r[0] if r else "start"), "server": lambda: cmd_server(r[0] if r else "status"),
                  "harness": lambda: cmd_harness(r[0] if r else "status", r[1] if len(r) > 1 else None),
                  "limits": lambda: cmd_limits(r[0] if r else "status"),
+                 "gates": lambda: cmd_gates(r),
                  "github": lambda: github_cli(r),
                  "types": lambda: cmd_types(), "doctor": lambda: cmd_doctor()}
         table[c]()

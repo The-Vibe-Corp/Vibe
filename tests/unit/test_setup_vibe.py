@@ -40,6 +40,7 @@ PROGRAM_FILES = (
     "vibe_autonomous.py",
     "vibe_harness.py",
     "vibe_limits.py",
+    "vibe_gates.py",
     "vibe_services.py",
     "vibe_github.py",
     "fritz-reconnect.py",

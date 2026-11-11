@@ -352,6 +352,8 @@ class RunnerFixture(unittest.TestCase):
                 env.pop(key, None)
         for key in (
             "AGENT",
+            "TESTER",
+            "REVIEWER",
             "MAX_PACKAGES",
             "MAX_RETRIES",
             "SANDBOX",

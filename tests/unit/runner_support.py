@@ -68,6 +68,10 @@ def install_runner(install):
     # Stände ohne dieses Modul bleiben unverändert lauffähig.
     for source in sorted(BIN.glob("vibe_limits*.py")):
         shutil.copy(source, bin_dir / source.name)
+    # AP10: Die Schrankeneinstellungen liegen als eigenes Modul vor. Auch
+    # hier bleiben ältere Stände ohne dieses Modul unverändert lauffähig.
+    for source in sorted(BIN.glob("vibe_gates*.py")):
+        shutil.copy(source, bin_dir / source.name)
     return bin_dir
 
 

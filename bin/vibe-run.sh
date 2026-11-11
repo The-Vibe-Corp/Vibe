@@ -130,16 +130,55 @@ case "$LIMIT_MODE" in
   stop|continue) ;;
   *) LIMIT_MODE="stop" ;;
 esac
+# AP10: Wirksame Schrankeneinstellungen. Ohne Modul bleiben alle Werte leer
+# und der Läufer nutzt die bisherigen Voreinstellungen. Meldungen zu defekten
+# Werten gehen ins Laufprotokoll; defekte Schranken gelten konservativ als
+# Voreinstellung. Die Projektwerte aus .vibe/project.env sind bereits in der
+# Umgebung (set -a) und schlagen die globalen Einstellungen; die Umgebungs-
+# variable VIBE_MAX_PACKAGES behält für die Durchgangsschranke den Vorrang.
+GATES_CLI="$BIN/vibe_gates.py"
+GATE_PACKAGES=""
+GATE_RETRIES=""
+GATE_REPAIR_ROUNDS=""
+GATE_ASSIST_ROUNDS=""
+GATE_OVERRIDE_EFF=""
+if [ -f "$GATES_CLI" ]; then
+  eval "$(python3 "$GATES_CLI" json --state "$STATE" --project "$P" 2>>"$LOG" | python3 -c '
+import json
+import shlex
+import sys
+
+data = json.load(sys.stdin)
+gates = data.get("gates") if isinstance(data, dict) else None
+if not isinstance(gates, dict):
+    raise SystemExit(1)
+for key, name in (
+    ("packages", "GATE_PACKAGES"),
+    ("retries", "GATE_RETRIES"),
+    ("repair_rounds", "GATE_REPAIR_ROUNDS"),
+    ("assist_rounds", "GATE_ASSIST_ROUNDS"),
+    ("override", "GATE_OVERRIDE_EFF"),
+):
+    entry = gates.get(key)
+    value = entry.get("value") if isinstance(entry, dict) else entry
+    print(name + "=" + shlex.quote("" if value is None else str(value)))
+' 2>>"$LOG")" || true
+fi
+# Ohne Gates-Modul gilt der Projektwert (bereits in der Umgebung) oder "ask";
+# ein defekter Wert blockiert konservativ (kein "ask", keine Rückfrage).
+if [ -z "$GATE_OVERRIDE_EFF" ]; then
+  GATE_OVERRIDE_EFF="${GATE_OVERRIDE:-ask}"
+fi
 if [ "$HARNESS" = "pi" ] && [ ! -f "$HARNESS_CLI" ]; then
   echo "ABBRUCH: Harness pi gewählt, aber $HARNESS_CLI fehlt. Installation aktualisieren (Setup --update)." | tee -a "$LOG"
   exit 2
 fi
-MAXP="${VIBE_MAX_PACKAGES:-${MAX_PACKAGES:-80}}"
+MAXP="${VIBE_MAX_PACKAGES:-${MAX_PACKAGES:-${GATE_PACKAGES:-80}}}"
 if ! [[ "$MAXP" =~ ^[0-9]+$ ]]; then
   echo "ABBRUCH: MAX_PACKAGES muss eine Zahl sein." | tee -a "$LOG"
   exit 2
 fi
-MAXR="${MAX_RETRIES:-2}"
+MAXR="${MAX_RETRIES:-${GATE_RETRIES:-2}}"
 if ! [[ "$MAXR" =~ ^[0-9]+$ ]]; then
   echo "ABBRUCH: MAX_RETRIES muss eine Zahl sein." | tee -a "$LOG"
   exit 2
@@ -298,21 +337,24 @@ gate_ok() {
 }
 # B9: Ein Pakettest- oder Schrankenbefund geht mit den konkreten Befunden an
 # den Agenten zurück in denselben Arbeitsbaum. Die Zahl der Runden ist
-# begrenzt; danach blockiert das Paket mit den letzten Befunden.
-repair_package_finding() {
-  local finding="$1" details="$2"
-  if [ "$REPAIR_ROUNDS" -ge "$REPAIR_MAX_ROUNDS" ]; then
-    REPAIR_ERROR="Reparaturlimit für $ID nach $REPAIR_MAX_ROUNDS Runden erreicht."
-    return 1
-  fi
-  REPAIR_ROUNDS=$((REPAIR_ROUNDS + 1))
-  echo "REPARATUR: $finding (Runde $REPAIR_ROUNDS/$REPAIR_MAX_ROUNDS) im Arbeitsbaum $WT." | tee -a "$LOG"
+# begrenzt; danach entscheidet die Schranken-Rückfrage (AP10) oder das Paket
+# blockiert mit den letzten Befunden.
+repair_round() {
+  # $1 = Befund, $2 = Details, $3 = Rundenanzeige, $4 = optionale Anweisung
+  local finding="$1" details="$2" round="$3" instruction="${4:-}"
+  echo "REPARATUR: $finding (Runde $round/$REPAIR_MAX_ROUNDS) im Arbeitsbaum $WT." | tee -a "$LOG"
   REPAIR_LOG_START="$(wc -l < "$LOG" 2>/dev/null || echo 0)"
   local prompt="Die Abschlussprüfung für Arbeitspaket $ID ist nicht bestanden.
 Befund: $finding
 Details:
 $details
-
+"
+  if [ -n "$instruction" ]; then
+    prompt+="Anweisung:
+$instruction
+"
+  fi
+  prompt+="
 Behebe ausschließlich diesen Befund in der Arbeitskopie $WT. Verwirf keine fremden Änderungen. Bearbeite keine anderen Arbeitspakete, starte keinen neuen Lauf, merge oder pushe nicht und schwäche die Abnahme nicht ab. Committe mit dem Präfix '$ID:'. Beende danach deine Arbeit; Paketprüfung und Abschlussschranke werden erneut ausgeführt."
   run_agent_in "$WT" "$prompt" "$NAME $ID Reparatur"
   local rc=$?
@@ -331,7 +373,80 @@ Behebe ausschließlich diesen Befund in der Arbeitskopie $WT. Verwirf keine frem
   fi
   return 0
 }
+# AP10: Schranken-Rückfrage (F16) am erreichtem Reparaturlimit. Rückgabe:
+# 0 = eine zusätzliche Reparaturrunde lief; die Prüfung wird erneut
+# ausgeführt und jede weitere Runde erfordert eine neue Entscheidung;
+# 2 = Paket überspringen (Nutzer- oder autonome Entscheidung); 1 = blockieren
+# (override=off, ohne Module, ohne Antwort, ungültige Antwort oder
+# fehlgeschlagene zusätzliche Runde). Die Abschlussschranke selbst bleibt
+# unangetastet; ein übersprungenes Paket wird nie gemergt.
+barrier_repair_round() {
+  local finding="$1" details="$2"
+  if [ "$GATE_OVERRIDE_EFF" != "ask" ]; then
+    REPAIR_ERROR="Reparaturlimit für $ID nach $REPAIR_MAX_ROUNDS Runden erreicht."
+    return 1
+  fi
+  local out
+  # AP10: Wartezeit der Schranken-Rückfrage. Ein Lauf kann unbeaufsichtigt
+  # starten; dann soll er nicht zehn Minuten auf eine Antwort warten. Das
+  # Preflight-Zeitlimit gilt weiterhin, wenn es gesetzt ist; sonst 60 s.
+  # VIBE_BARRIER_QUESTION_TIMEOUT setzt beides für die Schranke außer Kraft.
+  if ! out="$(python3 "$PACKAGES_PY" barrier --project "$P" --id "$ID" \
+      --reason "Reparaturlimit für $ID nach $REPAIR_MAX_ROUNDS Runden erreicht. $finding" \
+      --runtime "$RUNTIME" --project-name "$NAME" \
+      --timeout "${VIBE_BARRIER_QUESTION_TIMEOUT:-${VIBE_PREFLIGHT_QUESTION_TIMEOUT:-60}}" 2>>"$LOG")" \
+      || [ -z "$out" ]; then
+    REPAIR_ERROR="Reparaturlimit für $ID nach $REPAIR_MAX_ROUNDS Runden erreicht. (Rückfrage nicht möglich.)"
+    return 1
+  fi
+  BARRIER_ACTION=""
+  BARRIER_INSTRUCTION=""
+  eval "$(printf '%s' "$out" | python3 -c '
+import json
+import shlex
+import sys
+
+data = json.load(sys.stdin)
+action = data.get("action")
+instruction = data.get("instruction")
+print("BARRIER_ACTION=" + shlex.quote(action if isinstance(action, str) else ""))
+print("BARRIER_INSTRUCTION=" + shlex.quote(instruction if isinstance(instruction, str) else ""))
+' 2>>"$LOG")" || true
+  case "$BARRIER_ACTION" in
+    skip)
+      BARRIER_NOTE="auf Nutzerentscheidung übersprungen (Reparaturlimit für $ID nach $REPAIR_MAX_ROUNDS Runden erreicht)"
+      return 2 ;;
+    autonomous)
+      BARRIER_NOTE="autonome Entscheidung: übersprungen (Reparaturlimit für $ID nach $REPAIR_MAX_ROUNDS Runden erreicht)"
+      return 2 ;;
+    agent)
+      echo "SCHRANKE: Nutzerentscheidung — zusätzliche Reparaturrunde läuft." | tee -a "$LOG"
+      REPAIR_ROUNDS=$((REPAIR_ROUNDS + 1))
+      repair_round "$finding" "$details" "$REPAIR_ROUNDS" "$BARRIER_INSTRUCTION"
+      return $?
+      ;;
+    *)
+      REPAIR_ERROR="Reparaturlimit für $ID nach $REPAIR_MAX_ROUNDS Runden erreicht."
+      return 1 ;;
+  esac
+}
+repair_package_finding() {
+  local finding="$1" details="$2"
+  if [ "$REPAIR_ROUNDS" -ge "$REPAIR_MAX_ROUNDS" ]; then
+    barrier_repair_round "$finding" "$details"
+    return $?
+  fi
+  REPAIR_ROUNDS=$((REPAIR_ROUNDS + 1))
+  repair_round "$finding" "$details" "$REPAIR_ROUNDS"
+}
 merge_package() {
+  # Arbeitsnotizen sind Laufzeitstand (wie dirty_report): lokale, uncommittete
+  # Änderungen an ihnen — zurückgeschriebener Nachweis, Blockievermerk (AP10) —
+  # dürfen den ff-Merge nicht blockieren. Der Paketbranch enthält dieselben
+  # Notizen bereits (sie werden beim Paketstart in die Arbeitskopie kopiert
+  # und dort committet), deshalb liefert der Merge denselben Stand zurück.
+  # Manuelle Notizänderungen aus dieser Zeit sind vom Läufer nicht erzeugt.
+  git -C "$P" checkout -q -- TICKETS.md FEEDBACK.md 2>>"$LOG" || true
   if ! git -C "$P" merge --ff-only "$BRANCH" >>"$LOG" 2>&1; then
     echo "FEHLT: Merge von $BRANCH nach $BASE_BRANCH fehlgeschlagen." | tee -a "$LOG"
     return 1
@@ -407,8 +522,12 @@ fi
 # Preflight überspringt ausschließlich diesen einen Befund. Die Abschluss-
 # prüfung verlangt weiterhin einen sauberen Stand.
 PREFLIGHT_ACTION_FILE="$RUNTIME/$NAME.preflight-action.json"
-ASSIST_MAX_ROUNDS=10
-REPAIR_MAX_ROUNDS=2
+# AP10: Reparatur- und Assistenzrunden sind Schrankeneinstellungen; ohne
+# Gates-Modul gelten die bisherigen Voreinstellungen. Die Projektsumgebung
+# kann REPAIR_ROUNDS als Zähler nicht dienen, weil der Projekt-Schlüssel
+# denselben Namen trägt; gelesen wird ausschließlich GATE_REPAIR_ROUNDS.
+REPAIR_MAX_ROUNDS="${GATE_REPAIR_ROUNDS:-2}"
+ASSIST_MAX_ROUNDS="${GATE_ASSIST_ROUNDS:-10}"
 # F25: Kennung der Session, die bei der nächsten Wiederholung fortgesetzt
 # wird. Sie bleibt leer, solange kein Versuch eine Session hinterlassen hat.
 RESUME_SESSION=""
@@ -449,7 +568,8 @@ preflight_with_assist() {
       && [ -f "$BIN/vibe_storage.py" ]; then
     args+=(--assist --runtime "$RUNTIME" --project-name "$NAME"
       --timeout "${VIBE_PREFLIGHT_QUESTION_TIMEOUT:-600}"
-      --action-file "$PREFLIGHT_ACTION_FILE" --assist-reason "$heading")
+      --action-file "$PREFLIGHT_ACTION_FILE" --assist-reason "$heading"
+      --assist-max "$ASSIST_MAX_ROUNDS")
   fi
   ASSIST_ROUNDS=0
   while :; do
@@ -567,6 +687,13 @@ record_block() {
   BLOCKED_IDS+=("$1")
   BLOCKED_REPORT+=("$1 ($2)")
 }
+# Arbeitsnotizen (TICKETS.md/FEEDBACK.md am Projektstamm) sind Laufzeitstand
+# wie in dirty_report (bin/vibe_packages.py). Ihre uncommitteten Änderungen —
+# Blockievermerk (AP10), zurückgeschriebener Paketnachweis — blockieren die
+# Integrationsprüfungen des Läufers nicht; andere Änderungen bleiben sichtbar.
+work_note_noise() {
+  grep -vE '^.. (TICKETS\.md|FEEDBACK\.md)$' || true
+}
 report() {
   local status_json
   OPEN_LIST="keine"; BLOCKED_LIST="keine"; DONE_LIST="keine"
@@ -626,7 +753,7 @@ while [ "$PACKAGES" -lt "$MAXP" ] && [ "$STOP" = 0 ]; do
   # F27: Ein ausdrücklich angeforderter Neustart lässt vorhandene Änderungen
   # bis zur Gesamtprüfung zu; sie bleiben unverändert und werden nicht Teil
   # der Paketbranches. Die abschließende Prüfung bleibt streng.
-  DIRTY_NOW="$(git -C "$P" status --porcelain)"
+  DIRTY_NOW="$(git -C "$P" status --porcelain | work_note_noise)"
   if [ -n "$DIRTY_NOW" ] && [ "${VIBE_KEEP_CHANGES:-0}" = "1" ]; then
     echo "HINWEIS: Nicht committete Änderungen bleiben unverändert; die Gesamtprüfung verlangt weiterhin einen sauberen Integrationsstand." | tee -a "$LOG"
     DIRTY_NOW=""
@@ -696,6 +823,7 @@ $QUESTION_HINT"
       REPAIR_ERROR=""
       REPAIR_FINDING=""
       PACKAGE_OK=0
+      REPAIR_RC=0
       while :; do
         if ! run_package_tests; then
           REPAIR_FINDING="Pakettests für $ID sind nicht grün."
@@ -707,10 +835,24 @@ $QUESTION_HINT"
           PACKAGE_OK=1
           break
         fi
-        if ! repair_package_finding "$REPAIR_FINDING" "$REPAIR_DETAILS"; then
-          break
-        fi
+        repair_package_finding "$REPAIR_FINDING" "$REPAIR_DETAILS"
+        REPAIR_RC=$?
+        [ "$REPAIR_RC" != 0 ] && break
       done
+      if [ "$REPAIR_RC" = 2 ]; then
+        # AP10: Bewusstes Fortsetzen — das Paket wird auf Nutzer- oder
+        # autonome Entscheidung übersprungen. Der Blockievermerk verhindert
+        # die erneute Auswahl; Merge, Abschlussschranke und STOP bleiben
+        # unangetastet, der Lauf fährt mit dem nächsten Paket fort.
+        if ! python3 "$PACKAGES_PY" mark-blocked --project "$P" --id "$ID" \
+            --note "$BARRIER_NOTE" >>"$LOG" 2>&1; then
+          echo "WARNUNG: Blockievermerk für $ID konnte nicht geschrieben werden; das Paket wird nur in diesem Lauf übersprungen." | tee -a "$LOG"
+        fi
+        SKIP="$SKIP,$ID"
+        record_block "$ID" "$BARRIER_NOTE"
+        echo "BLOCKIERT: $ID $BARRIER_NOTE." | tee -a "$LOG"
+        break
+      fi
       if [ "$PACKAGE_OK" != 1 ]; then
         if [ -n "$REPAIR_ERROR" ]; then
           BLOCK_REASON="$REPAIR_ERROR $REPAIR_FINDING"
@@ -838,11 +980,11 @@ fi
 # Die Gesamtprüfung läuft ausschließlich auf einem sauberen Integrationsstand.
 # B9: Mit aktiver Assistenz darf der Agent den Stand zuvor bereinigen; ohne
 # Assistenz oder nach Abbruch bleibt es beim bisherigen Blockieren.
-INTEGRATION_DIRTY="$(git -C "$P" status --porcelain)"
+INTEGRATION_DIRTY="$(git -C "$P" status --porcelain | work_note_noise)"
 if [ -n "$INTEGRATION_DIRTY" ]; then
   preflight_with_assist end "Der Abschluss für '$NAME' ist nicht möglich: Der Integrationsstand ist nicht sauber."
   INTEGRATION_RC=$?
-  INTEGRATION_DIRTY="$(git -C "$P" status --porcelain)"
+  INTEGRATION_DIRTY="$(git -C "$P" status --porcelain | work_note_noise)"
   if [ "$INTEGRATION_RC" != 0 ] || [ -n "$INTEGRATION_DIRTY" ]; then
     BLOCK_REASON="Integrationsstand ist nicht sauber: $INTEGRATION_DIRTY"
     record_block "INTEGRATION" "$BLOCK_REASON"
