@@ -82,6 +82,28 @@ unbekannte werden im Hinweis genannt.
     Eintrag (T0 erledigt, X9 fehlt), effektive Reihenfolge T2 vor T1
     ohne T0, Meldung vorhanden.
 
+Review Runde 2, Finding M1 (Standardordnung in der Karte; Testfälle
+unabhängig aus dem Arbeitspaket und SPEC.md abgeleitet):
+
+ 9. ``test_standard_order_display_and_pill_without_configuration``
+    (AK-C) — ohne PACKAGE_ORDER zeigt die Karte die offenen Pakete in
+    der Läufer-Standardordnung: gemischte offene Einträge aus
+    TICKETS.md (nach Priorität: T2/P0 vor T1/P1, trotz Dateireihenfolge)
+    und FEEDBACK.md (F1 dahinter); jede Zeile trägt die Pille
+    „Standardordnung“.
+10. ``test_blank_save_writes_the_displayed_standard_order`` (AK-D)
+    — blankes „Speichern“ (ohne Verschiebung) legt genau die angezeigte
+    Läufer-Standardordnung als PACKAGE_ORDER ab: nach Reload zeigt GET
+    diese Reihenfolge als priorisiert, die Karte zeigt sie weiterhin und
+    der Läufer (``bin/vibe_packages.py select``) wählt dasselbe Paket
+    zuerst (T2).
+11. ``test_blocked_package_appears_in_standard_order_and_keeps_position``
+    (AK-E) — ein BLOCKIERT-Paket (T0, Priorität P0) und ein bereites
+    offenes Paket (T1, P1) erscheinen ohne PACKAGE_ORDER in der
+    Standardordnung (T0 vor T1); blankes „Speichern“ legt diese Position
+    ab, das gesperrte Paket behält sie nach dem Neuöffnen (Konsistenz zu
+    ``test_blocked_package_keeps_its_saved_position_after_save``).
+
 Die Tests starten das echte Dashboard auf einem eigenen Port mit
 vollständig isolierten VIBE_*-Pfaden (Muster
 tests/browser/test_ap7_settings_ui.py) und bedienen es mit Chromium über
@@ -702,6 +724,240 @@ class Ap11PriorityBrowserTest(unittest.TestCase):
         elif isinstance(value, list):
             for item in value:
                 yield from self._keys(item)
+
+
+
+    # ------------------- Review Runde 2, Finding M1 (AK-C/D/E)
+    def write_mixed_open_fixture(self):
+        """Gemischte offene Quellen: TICKETS mit Prioritäten, FEEDBACK.
+
+        Ersetzt die Fixture durch zwei offene TICKETS-Einträge, deren
+        Prioritäten gegen die Dateireihenfolge laufen (T1 zuerst in der
+        Datei, aber P1; T2 danach mit P0) und einen offenen
+        FEEDBACK-Eintrag F1. Stellt beide Dateien nach dem Test wieder
+        her.
+        """
+        tickets = self.project / "TICKETS.md"
+        feedback = self.project / "FEEDBACK.md"
+        original_tickets = tickets.read_text(encoding="utf-8")
+        original_feedback = feedback.read_text(encoding="utf-8")
+        self.addCleanup(
+            lambda: (tickets.write_text(original_tickets, encoding="utf-8"),
+                     feedback.write_text(original_feedback, encoding="utf-8")))
+        tickets.write_text(
+            "# TICKETS\n\n"
+            "- [ ] T1 Erste Aufgabe\n  Beschreibung: offen\n"
+            "  Priorität: P1\n\n"
+            "- [ ] T2 Zweite Aufgabe\n  Beschreibung: offen\n"
+            "  Priorität: P0\n",
+            encoding="utf-8")
+        feedback.write_text(
+            "# FEEDBACK\n\n"
+            "- [ ] F1 Feedback-Paket\n  Beschreibung: offen\n",
+            encoding="utf-8")
+
+    def write_blocked_first_fixture(self):
+        """Gesperrtes P0-Paket vor bereitem P1-Paket in TICKETS.md.
+
+        Die Standardordnung des Läufers wählt T0 (BLOCKIERT, P0) vor T1
+        (offen, P1); die Dateireihenfolge (d.items) listet T1 zuerst.
+        Stellt die Datei nach dem Test wieder her.
+        """
+        tickets = self.project / "TICKETS.md"
+        original = tickets.read_text(encoding="utf-8")
+        self.addCleanup(
+            lambda: tickets.write_text(original, encoding="utf-8"))
+        tickets.write_text(
+            "# TICKETS\n\n"
+            "- [ ] T1 Bereite Aufgabe\n  Beschreibung: offen\n"
+            "  Priorität: P1\n\n"
+            "- [ ] T0 Gesperrt\n  Beschreibung: wartet\n"
+            "  BLOCKIERT: fehlende Freigabe\n  Priorität: P0\n",
+            encoding="utf-8")
+
+    def row_text(self, identifier):
+        """Der Zeilentext eines Kartenpakets inklusive seiner Pillen."""
+        row = self.items_card().locator(
+            ".item", has_text=identifier).first
+        row.wait_for(timeout=10000)
+        return row.inner_text()
+
+    def get_priority_payload(self):
+        """GET /api/priority?name=proj mit Token als JSON-Antwort."""
+        request = urllib.request.Request(
+            self.base + "/api/priority?name=proj", method="GET")
+        request.add_header("X-Token", self.token)
+        with urllib.request.urlopen(request, timeout=20) as response:
+            return json.loads(response.read().decode("utf-8"))
+
+    def package_order_value(self):
+        """Der Kennungswert von PACKAGE_ORDER aus project.env als Liste."""
+        text = self.env_path.read_text(encoding="utf-8")
+        match = re.search(
+            r'(?m)^\s*PACKAGE_ORDER\s*=\s*["\']?([^"\'\n]*)', text)
+        if not match:
+            return None
+        return [token for token in re.split(r"[,;\s]+", match.group(1))
+                if token]
+
+    def test_standard_order_display_and_pill_without_configuration(self):
+        """AK-C — Karte zeigt die Läufer-Standardordnung samt Pille.
+
+        Vorbedingung: gemischte offene Quellen (TICKETS: T2 mit P0, T1
+        mit P1 — T1 steht zuerst in der Datei; FEEDBACK: F1 offen); kein
+        PACKAGE_ORDER-Eintrag; Maske „Arbeit“ geöffnet.
+        Aktion: die Karte inspizieren.
+        Erwartet: die Karte listet die offenen Pakete in der Läufer-
+        Standardordnung T2 (P0) vor T1 (P1) vor F1 (FEEDBACK dahinter)
+        — nicht in der d.items-Dateireihenfolge F1/T1/T2 — und jede
+        Zeile trägt die Pille „Standardordnung“.
+        """
+        self.write_mixed_open_fixture()
+        self.open_work()
+
+        self.wait_until(
+            lambda: self.item_ids() == ["T2", "T1", "F1"],
+            message="die Karte zeigt ohne PACKAGE_ORDER nicht die "
+                    "Läufer-Standardordnung (TICKETS nach Priorität vor "
+                    "FEEDBACK): " + ", ".join(self.item_ids()))
+        for identifier in ("T2", "T1", "F1"):
+            self.assertIn(
+                "Standardordnung", self.row_text(identifier),
+                "Zeile %s trägt nicht die „Standardordnung“-Pille: %r"
+                % (identifier, self.row_text(identifier)))
+
+    def test_blank_save_writes_the_displayed_standard_order(self):
+        """AK-D — Blankes „Speichern“ legt die Standardordnung ab.
+
+        Vorbedingung: gemischte offene Quellen wie in AK-C; kein
+        PACKAGE_ORDER-Eintrag; Maske „Arbeit“ geöffnet und die Karte
+        zeigt die Läufer-Standardordnung.
+        Aktion: „Speichern“ ohne jede Verschiebung klicken; danach das
+        Projekt neu öffnen, GET /api/priority auswerten und den Läufer
+        (``bin/vibe_packages.py select``) abfragen.
+        Erwartet: PACKAGE_ORDER enthält genau die angezeigte Reihenfolge
+        T2 vor T1 vor F1; nach dem Neuöffnen zeigt die Karte diese
+        Reihenfolge mit „priorisiert“-Pille je Zeile; GET nennt sie als
+        priorisierte (effektive) Reihenfolge; der Läufer wählt T2 zuerst.
+        """
+        self.write_mixed_open_fixture()
+        self.open_work()
+        self.wait_until(
+            lambda: self.item_ids() == ["T2", "T1", "F1"],
+            message="Vorbedingung verletzt: die Karte zeigt nicht die "
+                    "Läufer-Standardordnung: "
+                    + ", ".join(self.item_ids()))
+
+        self.save_button().click()
+
+        self.wait_until(
+            lambda: "PACKAGE_ORDER" in self.env_path.read_text(
+                encoding="utf-8"),
+            message="Speichern schrieb kein PACKAGE_ORDER nach project.env")
+        self.assertEqual(
+            ["T2", "T1", "F1"], self.package_order_value(),
+            "blankes Speichern legte nicht die angezeigte Standardordnung "
+            "ab: " + self.env_path.read_text(encoding="utf-8"))
+        text = self.env_path.read_text(encoding="utf-8")
+        self.assertIn("TYPE=generic", text,
+                      "Speichern beschädigte project.env")
+        self.assertIn("TESTER=test-agent", text,
+                      "Speichern beschädigte project.env")
+
+        payload = self.get_priority_payload()
+        queue = [entry["id"] for entry in payload.get("queue", [])
+                 if isinstance(entry, dict) and "id" in entry]
+        self.assertEqual(
+            ["T2", "T1", "F1"], queue,
+            "GET zeigt die gespeicherte Standardordnung nicht als "
+            "effektive Reihenfolge: "
+            + json.dumps(payload, ensure_ascii=False))
+
+        runner = subprocess.run(
+            [sys.executable,
+             str(Path(__file__).resolve().parents[2] / "bin"
+                 / "vibe_packages.py"),
+             "select", "--project", str(self.project)],
+            capture_output=True, text=True, check=False, timeout=60,
+            env={key: value for key, value in os.environ.items()
+                 if not key.startswith("VIBE_")})
+        self.assertEqual(
+            0, runner.returncode,
+            "Läufer-Auswahl schlug fehl: " + runner.stdout + runner.stderr)
+        self.assertEqual(
+            "T2", runner.stdout.strip(),
+            "der Läufer wählt nicht das erste Paket der gespeicherten "
+            "Standardordnung: " + runner.stdout)
+
+        self.open_project()
+        self.assertEqual(
+            ["T2", "T1", "F1"], self.item_ids(),
+            "die Karte zeigt nach dem Speichern nicht die übernommene "
+            "Standardordnung: " + ", ".join(self.item_ids()))
+        for identifier in ("T2", "T1", "F1"):
+            self.assertIn(
+                "priorisiert", self.row_text(identifier),
+                "Zeile %s ist nach dem Speichern nicht als priorisiert "
+                "gekennzeichnet: %r"
+                % (identifier, self.row_text(identifier)))
+
+    def test_blocked_package_appears_in_standard_order_and_keeps_position(
+            self):
+        """AK-E — BLOCKIERT-Paket steht in der Standardordnung und bleibt.
+
+        Vorbedingung: TICKETS.md mit bereitem offenen T1 (Priorität P1)
+        und gesperrtem T0 (BLOCKIERT, Priorität P0); kein
+        PACKAGE_ORDER-Eintrag; Maske „Arbeit“ geöffnet.
+        Aktion: die Karte inspizieren, danach blankes „Speichern“ (ohne
+        Verschiebung) klicken und das Projekt neu öffnen.
+        Erwartet: die Karte zeigt T0 vor T1 (Läufer-Standardordnung nach
+        Priorität), die T0-Zeile trägt BLOCKIERT- und
+        „Standardordnung“-Pille; PACKAGE_ORDER enthält T0 vor T1; nach
+        dem Neuöffnen behält das gesperrte T0 seine Position (T0 vor T1)
+        und ist dort als „priorisiert“ gekennzeichnet — konsistent zum
+        bestehenden Verhalten nach gezogener Position.
+        """
+        self.write_blocked_first_fixture()
+        self.open_work()
+
+        self.wait_until(
+            lambda: self.item_ids() == ["T0", "T1"],
+            message="die Karte zeigt das gesperrte P0-Paket nicht vor dem "
+                    "bereiten P1-Paket in der Standardordnung: "
+                    + ", ".join(self.item_ids()))
+        blocked_text = self.row_text("T0")
+        self.assertIn(
+            "BLOCKIERT", blocked_text,
+            "T0-Zeile ohne BLOCKIERT-Pille: " + blocked_text)
+        self.assertIn(
+            "Standardordnung", blocked_text,
+            "T0-Zeile ohne „Standardordnung“-Pille: " + blocked_text)
+
+        self.save_button().click()
+
+        self.wait_until(
+            lambda: "PACKAGE_ORDER" in self.env_path.read_text(
+                encoding="utf-8"),
+            message="Speichern schrieb kein PACKAGE_ORDER nach project.env")
+        self.assertEqual(
+            ["T0", "T1"], self.package_order_value(),
+            "blankes Speichern legte nicht die angezeigte Standardordnung "
+            "ab: " + self.env_path.read_text(encoding="utf-8"))
+
+        self.open_project()
+        self.assertEqual(
+            ["T0", "T1"], self.item_ids(),
+            "das gesperrte Paket verlor nach dem Speichern seine "
+            "Position: " + ", ".join(self.item_ids()))
+        blocked_text = self.row_text("T0")
+        self.assertIn(
+            "BLOCKIERT", blocked_text,
+            "T0-Zeile ohne BLOCKIERT-Pille nach dem Speichern: "
+            + blocked_text)
+        self.assertIn(
+            "priorisiert", blocked_text,
+            "T0-Zeile ist nach dem Speichern nicht als priorisiert "
+            "gekennzeichnet: " + blocked_text)
 
 
 if __name__ == "__main__":

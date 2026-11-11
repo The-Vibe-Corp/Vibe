@@ -707,11 +707,12 @@
       "arbeitspaket": "F29",
       "dateien": [
         "bin/vibe-web.py",
+        "bin/vibe_packages.py",
         "bin/web/app.js",
         "bin/web/styles.css"
       ],
       "datum": "2026-11-11",
-      "grund": "Feedback zu AP11: POST /api/priority antwortet beim Speichern mit ok (UnboundLocalError behoben); die Reihenfolge der offenen Arbeitspakete wird per Drag&Drop am Handle direkt in der Maske Arbeit geändert und gespeichert statt im Einstellungs-Tab."
+      "grund": "Feedback zu AP11: POST /api/priority antwortet beim Speichern mit ok (UnboundLocalError behoben); die Reihenfolge der offenen Arbeitspakete wird per Drag&Drop am Handle direkt in der Maske Arbeit geändert und gespeichert statt im Einstellungs-Tab; die Standardordnungs-Anzeige folgt der Läufer-Standardordnung (TICKETS vor FEEDBACK, innerhalb der TICKETS nach Priorität)."
     }
   ],
   "files": [
@@ -776,9 +777,9 @@
       "sha256": "ac3b26da4208a087a09c67c389238c82802d7c1bd50b10d9bcd9492a07050462"
     },
     {
-      "bytes": 48003,
+      "bytes": 49281,
       "path": "bin/vibe_packages.py",
-      "sha256": "51d2821d3d9c39dc41add215264dcf523048d063d6bd2ea8c3fc771d11c69755"
+      "sha256": "f65e89ff207038031e3b06f5541cb93b7ec8517eb0347a10d41659b844d4cf7a"
     },
     {
       "bytes": 18748,
@@ -811,9 +812,9 @@
       "sha256": "7b6aa4118259dc3440b37eaeec5eaa96eac7d928e6e704b2310946490bd25fbb"
     },
     {
-      "bytes": 119012,
+      "bytes": 119585,
       "path": "bin/web/app.js",
-      "sha256": "dea4bb48b2e9b363960a140e0aeb2c2730efd6d8dbea1af5b7d7afb945a55013"
+      "sha256": "569631b4e1c5d22c40d2da9b4b6997920fc4606579371d0039a4e197f3f2847f"
     },
     {
       "bytes": 588,

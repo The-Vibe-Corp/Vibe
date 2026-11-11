@@ -781,10 +781,13 @@ function openPackagesCard(d,name){
      (data.order), nicht der Auswahl-Queue — gesperrte und abhängigkeits-
      geblockte Pakete fehlen in der Queue, gehören aber mit ihrer gezogenen
      Position in die Karte, damit sie vorn stehen, sobald sie frei sind.
-     Offene Pakete ohne Eintrag in der Priorisierung folgen in der
-     Standardordnung (d.items). Erledigte und unbekannte Einträge (fehlt)
-     erscheinen nicht als Zeile; unbekannte werden im Hinweis genannt und
-     beim nächsten Speichern aus PACKAGE_ORDER entfernt. */
+     F29-Review 2 M1: Offene Pakete ohne Eintrag in der Priorisierung folgen
+     in der Läufer-Standardordnung (data.standard: TICKETS vor FEEDBACK,
+     innerhalb der TICKETS nach Priorität) — blankes Speichern legt sonst
+     eine Ordnung ab, die der Läufer ohne Priorisierung nicht wählen würde.
+     Erledigte und unbekannte Einträge (fehlt) erscheinen nicht als Zeile;
+     unbekannte werden im Hinweis genannt und beim nächsten Speichern aus
+     PACKAGE_ORDER entfernt. */
   const order=data.order||[];
   const visible=new Set((d.items||[]).map(i=>i.id));
   const configured=new Set(),missing=[];
@@ -793,8 +796,16 @@ function openPackagesCard(d,name){
    return true})
    .map(o=>({id:o.id,title:o.title,ordered:true,state:stateOf[o.id]}));
   order.forEach(o=>configured.add(o.id));
-  rows.push(...(d.items||[]).filter(i=>!configured.has(i.id))
-   .map(i=>({id:i.id,title:i.title,state:i.state,ordered:false})));
+  const shown=new Set(rows.map(r=>r.id));
+  const byId=new Map((d.items||[]).map(i=>[i.id,i]));
+  const remaining=(d.items||[]).filter(i=>!configured.has(i.id));
+  const ids=data.standard&&data.standard.length
+   ?data.standard.map(o=>o.id):remaining.map(i=>i.id);
+  ids.concat(remaining.filter(i=>!ids.includes(i.id)).map(i=>i.id))
+   .forEach(id=>{
+    const i=byId.get(id);
+    if(i&&!shown.has(id)){shown.add(id);
+     rows.push({id:i.id,title:i.title,state:i.state,ordered:false})}});
   hintBox.textContent=missing.length
    ?('Unbekannte Kennungen in der gespeicherten Priorisierung (nicht in diesem Projekt): '+missing.join(', ')+'. Sie werden beim nächsten Speichern entfernt.')
    :'';

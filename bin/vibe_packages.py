@@ -968,9 +968,13 @@ def priority_view(project):
     """Priorisierung je Projekt: konfigurierte Einträge und wirksame Ordnung.
 
     Liefert ``order`` mit Status je konfiguriertem Eintrag (offen, erledigt,
-    gesperrt oder fehlt) und ``queue`` mit der effektiven Abarbeitungs-
-    reihenfolge aller offenen Pakete. Die Ansicht ändert nichts; sie nutzt
-    dieselbe Auswahllogik wie der Läufer.
+    gesperrt oder fehlt), ``queue`` mit der effektiven Abarbeitungsreihenfolge
+    aller bereiten offenen Pakete und ``standard`` mit der Läufer-
+    Standardordnung (TICKETS vor FEEDBACK, innerhalb der TICKETS nach
+    Priorität) über alle nicht erledigten Pakete — inklusive gesperrter und
+    abhängigkeitsgeblockter, weil auch für sie die spätere Abarbeitungs-
+    position gilt. Die Ansicht ändert nichts; sie nutzt dieselbe Auswahllogik
+    wie der Läufer.
     """
     project = Path(project)
     located = {}
@@ -1010,7 +1014,29 @@ def priority_view(project):
                 "title": block_title(selected["block"]),
             })
             skip.add(selected["id"])
-    return {"key": ORDER_KEY, "order": entries, "queue": queue}
+    # Standardordnung wie im Fallback von select_package: TICKETS.md vor
+    # FEEDBACK.md, innerhalb der TICKETS nach (Priorität, Blockindex) — ohne
+    # Ready-Prüfung, weil gesperrte/geblockte Pakete ihre Position behalten.
+    standard = []
+    for source, blocks in collect_blocks(project):
+        candidates = []
+        for index, block in enumerate(blocks):
+            key = (priority(block), index) if source == "TICKETS.md" \
+                else (0, index)
+            candidates.append((key, block))
+        candidates.sort(key=lambda item: item[0])
+        for _, block in candidates:
+            pid = block_id(block)
+            if not pid or (is_done(block) and proof_ok(project, block)[0]):
+                continue
+            standard.append({
+                "id": pid,
+                "source": source,
+                "title": block_title(block),
+                "status": "gesperrt" if is_blocked(block) else "offen",
+            })
+    return {"key": ORDER_KEY, "order": entries, "queue": queue,
+            "standard": standard}
 
 
 def normalize_order(project, text):
