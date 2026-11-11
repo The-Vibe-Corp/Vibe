@@ -58,5 +58,6 @@ Zuordnung der Projekt-Dokumentation zu den Notizen in Trilium (Stand 2026-11-12)
 | vibe | Features | AP10 Schrankeneinstellungen und bewusstes Fortsetzen | `LjeuWE7WkXs4` |
 | vibe | Features | AP11 Priorisierung der Abarbeitungsreihenfolge | `KrGYItU1tR0u` |
 | vibe | Features | F29 Feedback zu AP11: Priorisierung speichern und direkt bedienen | `7IOsrEg6dGdu` |
+| vibe | Features | AP12 Bereit für GitHub Teil 4 (öffentliches Repository) | `lqgo0AGRnMHB` |
 | vibe | Features | B1 Kostentabelle aktualisiert sich nach jedem AP | `V3AV2elZkQgo` |
 | vibe | Analyse | Arbeitspakete bleiben offen — Ursachen und Maßnahmen | `nLcQBDnwBXZW` |
