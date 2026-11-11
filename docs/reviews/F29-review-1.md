@@ -1,0 +1,49 @@
+# F29 — Review Runde 1
+
+Datum: 2026-11-11 · Arbeitspaket: F29 „Feedback zu AP11" · Ausgangscommit: `cd05345` · Implementierungscommit: `df858c3`
+
+Unveränderte Kopie der Antwort des unabhängigen Review-Agenten (code-reviewer) gegen den Arbeitsstand df858c3.
+
+## Summary
+- Critical: 0
+- High: 0
+- Medium: 2
+- Minor: 2
+- Verdict: CHANGES REQUIRED
+
+## Acceptance criteria
+| Criterion | Status | Implementation (file:line) | Test (file:method) / Evidence |
+|---|---|---|---|
+| F29 AK 1: Speichern der Priorisierung antwortet erfolgreich (kein `UnboundLocalError`), `PACKAGE_ORDER` wird abgelegt, übrige env-Zeilen bleiben | PASS | `bin/vibe-web.py:1079-1081` (`ok, msg = True, …` im set-Zweig), Antwortaufbau `bin/vibe-web.py:1270` (`out = {"ok": ok, …}`) | `tests/unit/test_f29_priority_api.py:249` `test_post_set_returns_ok_and_writes_package_order`, `:317` `test_post_set_preserves_other_env_lines`; 6/6 OK (Ausgabe vom Coding-Agenten geliefert; Rotphase von mir analytisch bestätigt: am Ausgangsstand cd05345 bleibt `ok` ungesetzt → Zeile 1270 wirft `UnboundLocalError` → 500) |
+| F29 AK 2: Ungültige Eingaben (unbekannte Kennung/Aktion/Projekt) ohne Absturz, ohne Änderung | PASS | `bin/vibe-web.py:1085-1091` (alle Zweige setzen `ok`), `:1271-1274` | `tests/unit/test_f29_priority_api.py:341` `test_post_set_rejects_unknown_id_without_change`, `:361` `test_post_unknown_action_is_rejected_without_crash`, `:381` `test_post_unknown_project_is_rejected_without_crash` (6/6 OK, gelieferte Ausgabe) |
+| F29 AK 3/4: Priorisierung per Drag&Drop mit Handle je AP direkt in „Offene Arbeitspakete" (Maske Arbeit) statt in Einstellungen; Speichern/Leeren schreiben PACKAGE_ORDER bzw. setzen zurück | PASS | `bin/web/app.js:126` (itemsCard ersetzt), `:738-799` (`openPackagesCard`: Handle `:745-746`, Drag `:758-773`, Save/Clear `:782-789`), `bin/web/styles.css:94-99` | `tests/browser/test_ap11_priority_ui.py:379` `test_drag_and_drop_reorders_and_save_writes_package_order`, `:418` `test_clear_resets_to_the_standard_order`, `:345` `test_open_packages_card_offers_drag_handles_save_and_clear` (6/6 OK, gelieferte Ausgabe) |
+| F29 AK 5: Tastaturbedienung am Handle (Pfeiltasten) | PASS | `bin/web/app.js:751-757` (ArrowUp/Down, Refokus nach Neuaufbau) | `tests/browser/test_ap11_priority_ui.py:455` `test_handle_is_keyboard_operable_with_arrow_keys` (gelieferte Ausgabe) |
+| Einstellungs-Abschnitt „Priorisierung" samt Chip entfällt, keine toten Verweise | PASS | `bin/web/app.js:197-216` (Chips-Liste und sections ohne `priorisierung`), keine Restreferenzen (grep: nur Tests/Kommentare) | `tests/browser/test_ap11_priority_ui.py:325` `test_settings_tab_has_no_priorisierung_section_or_chip` (gelieferte Ausgabe) |
+| API unverändert (GET/POST `/api/priority`, Rückwärtskompatibilität `vibe priority`) | PASS | `bin/vibe-web.py:651-652` (GET), `:1069-1091` (POST), `bin/vibe_packages.py:967-1043` unverändert | `tests/browser/test_ap11_priority_ui.py:489` `test_priority_api_reports_configured_effective_and_status` (unverändert aus AP11 übernommen, 23/23 Fachlogik-Tests OK, gelieferte Ausgabe) |
+| Dokumentation Repo (docs/features/F29.md, Manifest) | PASS | `docs/features/F29.md` (vollständig: Verhalten, Entscheidung, Dateien, Prüfungen), `docs/import-manifest.json` (F29-Eintrag + aktualisierte Hashes; Prüfung `check-import-manifest.py` OK = gelieferte Ausgabe, Hashes von mir nicht unabhängig neu berechnet) | Datei gelesen, inhaltlich konsistent bis auf die unten beanstandete Aussage zur Anzeige |
+| Dokumentation Trilium | NOT VERIFIED | `docs/trilium-index.md` enthält keinen F29-Eintrag (grep: 0 Treffer); kein Trilium-MCP-Zugriff in dieser Review-Session | Fehlender Nachweis — s. Finding M2 |
+
+## Findings
+
+- [Medium] `bin/web/app.js:776-781` — Anzeige after Save widerspricht der gespeicherten Reihenfolge für gesperrte/abhängigkeitsgeblockte Pakete
+  - Evidence: `render()` baut die Liste ausschließlich aus `data.queue` plus den `d.items`, die nicht in der Queue sind (app.js:777-780). Die Queue aus `priority_view`/`select_package` enthält nur „bereite" Pakete; gesperrte (`is_blocked`) und abhängigkeitsgeblockte offene Pakete werden in `_ready` ausgeschlossen (`bin/vibe_packages.py:483-489`) — sie stehen aber in `d.items` („BLOCKIERT"-Pille, app.js:749) und werden nach dem Speichern ans Listenende zurückgestuft, obwohl `PACKAGE_ORDER` die gezogene Position korrekt enthält und der Läufer sie später berücksichtigt. Genau für diese Pakete ist Reihenfolge am wichtigsten (sie sollen vorn stehen, sobald sie frei sind). Zusätzlich fehlt diesen angehängten Zeilen die „priorisiert/Standardordnung"-Pille (`ordered===undefined`, app.js:750). Widerspruch zur eigenen Doku: `docs/features/F29.md:37-38` („die Ansicht zeigt die übernommene Reihenfolge") und `:48-50` („können mit sortiert werden"). Die Browser-Tests decken den Fall nicht ab (Fixture hat nur die bereiten T1/T2).
+  - Required fix: Beim Test-Agenten einen Fall anfordern, der ein BLOCKIERT-Paket vor ein bereites Paket zieht und nach „Speichern" die gespeicherte Position in der Anzeige prüft; fachlich klären (Coding-Seite umsetzen), ob die Anzeige die konfigurierte Reihenfolge (`data.order`) abbilden soll; `docs/features/F29.md:37-38,48-50` an das tatsächliche Verhalten anpassen, falls das Verhalten so bleibt.
+- [Medium] `docs/trilium-index.md` — Trilium-Dokumentation für F29 nicht nachweisbar
+  - Evidence: AGENTS.md (Arbeitsablauf Schritt 7, Definition of Done) verlangt die Trilium-Dokumentation je Arbeitspaket. `docs/trilium-index.md` listet AP11 (`KrGYItU1tR0u`, Zeile 58), aber keinen F29-Eintrag (grep: 0 Treffer); der Coding-Agent hat im Ticketkontext keinen Trilium-Nachweis geliefert. Ich habe in dieser Session keinen Trilium-MCP-Zugriff und kann die Synchronisation nicht lesen.
+  - Required fix: Trilium-Note für F29 anlegen (Ziel, Verhalten, Entscheidungen, Prüfungen, Branch/Commit), Eintrag in `docs/trilium-index.md` pflegen und den Nachweis (gelesene Note-ID) dem nächsten Review liefern; fehlt der Zugang, BLOCKIERT melden.
+- [Minor] `bin/web/app.js:760-773` — veralteter Einfügeindikator möglich
+  - Evidence: `dragend` (Zeile 760) entfernt nur `dragging` der gezogenen Zeile; `dropbefore` wird nur im `drop`-Handler des Zielrows entfernt. Endet der Ziehvorgang ohne Drop auf einer Zeile (Abbruch, Drop neben der Liste), bleibt der `dropbefore`-Indikator (inset box-shadow) an der zuletzt überflogenen Zeile stehen, bis zum nächsten `dragover`.
+  - Required fix: Vom Coding-Agenten prüfen lassen, ob `dragend` alle `dropbefore`-Markierungen in der Liste zurücksetzt; Kosmetik, kein Blocker.
+- [Minor] `bin/web/app.js:782-783` — „fehlt"-Einträge werden unsichtbar und beim nächsten Speichern stillschweigend entfernt
+  - Evidence: Die neue Karte zeigt nur Queue + `d.items`; unbekannte Kennungen in `PACKAGE_ORDER` (Status „fehlt") erscheinen nirgends mehr — die alte AP11-Anzeige zeigte sie mit Statuspille. „Speichern" sendet nur sichtbare Zeilen (`rows.map(x=>x.id)`), wodurch „fehlt"-Einträge beim nächsten Speichern ohne Hinweis aus `PACKAGE_ORDER` fallen. „Leeren" bleibt als Ausweg.
+  - Required fix: Entscheiden, ob die „fehlt"-Diagnostik zurückkommen soll (z. B. Hinweiszeile bei unbekannten Einträgen der gespeicherten Ordnung); sonst das Verhalten in `docs/features/F29.md` explizit festhalten.
+
+Keine Critical/High-Befunde. Insbesondere geprüft und nicht beanstandet: UnboundLocalError-Fix (alle Zweige von `/api/priority` setzen `ok`, `bin/vibe-web.py:1079-1091`), keine Abschwächungen beim Umschreiben der Browser-Tests (alter Dom-Vertrag existiert absichtlich nicht mehr; neue Datei deckt Speichern→PACKAGE_ORDER→Anzeige, Leeren, Tastatur und die unveränderte API ab und ist strenger als die alte), keine Testlücken bei leeren Listen/Speicherfehlern (`d.items.length?…:'Alles abgehakt'`, Fehlerbox bei fehlgeschlagener Priorisierungsabfrage app.js:792-793), keine Geheimnisse im Diff (nur `example.invalid`-Fixtures), sauberes Scope (7 Dateien, Arbeitsbaum sauber, kein paketfremder Inhalt im Commit).
+
+## Verification
+- Change set reviewed: `cd05345..df858c3` (HEAD, Working Tree sauber — `git status --short` leer), vollständiger Diff via `git diff cd05345..df858c3` sowie `git show cd05345:tests/browser/test_ap11_priority_ui.py` (Vergleich Alt/Neu der umgeschriebenen Tests).
+- Git commands run by me: `git status --short`, `git log --oneline -6`, `git log -1 -format='%h %d'` (Branch `vibe/vibe-F29-1794381560560178852-3583489-5585`, HEAD = df858c3), `git diff cd05345..df858c3` (full und je Datei), `git show cd05345:tests/browser/test_ap11_priority_ui.py`.
+- Checks with supplied output (vom Coding-Agenten, nicht von mir ausgeführt): unittest-Runs F29-API 6/6, AP11-Browser 6/6, AP11-Fachlogik 23/23; `verify.sh quick` Exit 0; `verify.sh full` 5 Fehlschläge identisch zur Baseline cd05345 (Baseline-Abgleich via Worktree behauptet, von mir nicht wiederholt); `node --check`, `check-syntax.py`, `check-import-manifest.py` OK.
+- Checks not independently run: alle Build-/Test-Läufe, Manifest-Hash-Berechnung, Rotphasen-Ausgaben, Trilium-Lesezugriff.
+- Wichtigste geprüfte Bereiche: `bin/vibe-web.py` (POST/GET `/api/priority`, Antwortaufbau), `bin/web/app.js` (`openPackagesCard`, `settingsPanel`, `detail`-Integration), `bin/vibe_packages.py` (`select_package`/`priority_view`/`normalize_order` als Grundlage des Anzeigeverhaltens), beide Testdateien (Testfallbeschreibungen, Assertions, Fixture-Isolation), `docs/features/F29.md`, `docs/import-manifest.json`, `docs/trilium-index.md`.
+- Remaining risks: Anzeige-/Speicherkonsistenz für gesperrte bzw. abhängigkeitsgeblockte Pakete (Finding M1) ist ungetestet; Trilium-Sync offen (M2); die 5 Baseline-Fehlschläge in `verify.sh full` und die Manifest-Hashes nur durch gelieferte Ausgabe belegt; Testherkunft (Test-Agent) nur durch die Aussage in `docs/features/F29.md:70-78` belegt, nicht unabhängig verifizierbar.

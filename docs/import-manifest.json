@@ -811,9 +811,9 @@
       "sha256": "7b6aa4118259dc3440b37eaeec5eaa96eac7d928e6e704b2310946490bd25fbb"
     },
     {
-      "bytes": 117786,
+      "bytes": 119012,
       "path": "bin/web/app.js",
-      "sha256": "c9515d5f92c492d2c94af9e1919f174ccd9a1ce787ed59036c61aa24a6d163ff"
+      "sha256": "dea4bb48b2e9b363960a140e0aeb2c2730efd6d8dbea1af5b7d7afb945a55013"
     },
     {
       "bytes": 588,

@@ -739,6 +739,7 @@ function openPackagesCard(d,name){
  const stateOf={};(d.items||[]).forEach(i=>{stateOf[i.id]=i.state});
  const list=el('div',{class:'itemlist','data-open-packages':''},el('span',{class:'mut'},'Lade Reihenfolge …'));
  const errBox=el('div',{});
+ const hintBox=el('div',{class:'mut'});
  const setErr=message=>{errBox.className=String(message||'').length?'bad':'';errBox.textContent=String(message||'')};
  let rows=[],dragId=null;
  const rowFor=r=>{
@@ -757,7 +758,9 @@ function openPackagesCard(d,name){
    const h=list.querySelector('[data-drag-handle="'+r.id+'"]');if(h)h.focus()});
   row.addEventListener('dragstart',e=>{dragId=r.id;row.classList.add('dragging');
    e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',r.id)});
-  row.addEventListener('dragend',()=>{dragId=null;row.classList.remove('dragging')});
+  row.addEventListener('dragend',()=>{dragId=null;row.classList.remove('dragging');
+   /* F29-Review: Indikator auch zurücksetzen, wenn ohne Ablage beendet wird. */
+   list.querySelectorAll('.dropbefore').forEach(x=>x.classList.remove('dropbefore'))});
   row.addEventListener('dragover',e=>{e.preventDefault();e.dataTransfer.dropEffect='move';
    const rect=row.getBoundingClientRect();
    row.classList.toggle('dropbefore',e.clientY<rect.top+rect.height/2)});
@@ -774,10 +777,27 @@ function openPackagesCard(d,name){
   return row};
  const draw=()=>{list.replaceChildren(...rows.map(rowFor))};
  const render=data=>{
-  const queue=data.queue||[];
-  const seen=new Set(queue.map(q=>q.id));
-  rows=[...queue.map(q=>({id:q.id,title:q.title,ordered:q.ordered,state:stateOf[q.id]})),
-   ...(d.items||[]).filter(i=>!seen.has(i.id)).map(i=>({id:i.id,title:i.title,state:i.state}))];
+  /* F29-Review M1: Die Anzeige folgt der gespeicherten Reihenfolge
+     (data.order), nicht der Auswahl-Queue — gesperrte und abhängigkeits-
+     geblockte Pakete fehlen in der Queue, gehören aber mit ihrer gezogenen
+     Position in die Karte, damit sie vorn stehen, sobald sie frei sind.
+     Offene Pakete ohne Eintrag in der Priorisierung folgen in der
+     Standardordnung (d.items). Erledigte und unbekannte Einträge (fehlt)
+     erscheinen nicht als Zeile; unbekannte werden im Hinweis genannt und
+     beim nächsten Speichern aus PACKAGE_ORDER entfernt. */
+  const order=data.order||[];
+  const visible=new Set((d.items||[]).map(i=>i.id));
+  const configured=new Set(),missing=[];
+  rows=order.filter(o=>{
+   if(!visible.has(o.id)){if(o.status==='fehlt')missing.push(o.id);return false}
+   return true})
+   .map(o=>({id:o.id,title:o.title,ordered:true,state:stateOf[o.id]}));
+  order.forEach(o=>configured.add(o.id));
+  rows.push(...(d.items||[]).filter(i=>!configured.has(i.id))
+   .map(i=>({id:i.id,title:i.title,state:i.state,ordered:false})));
+  hintBox.textContent=missing.length
+   ?('Unbekannte Kennungen in der gespeicherten Priorisierung (nicht in diesem Projekt): '+missing.join(', ')+'. Sie werden beim nächsten Speichern entfernt.')
+   :'';
   draw()};
  const save=el('button',{class:'b p',type:'button',on:{click:async()=>{
   setErr('');const r=await api('/api/priority',{name,action:'set',order:rows.map(x=>x.id).join(' ')});
@@ -795,7 +815,7 @@ function openPackagesCard(d,name){
   el('div',{class:'bar'},el('b',{},'Offene Arbeitspakete ('+d.items.length+')')),
   d.items.length?el('div',{},list,
    el('div',{class:'mut'},'Reihenfolge am Handle ändern — durch Ziehen oder mit den Pfeiltasten am Handle. „Speichern“ legt sie als PACKAGE_ORDER ab (für die Agentenläufe verbindlich); „Leeren“ stellt die Standardordnung wieder her.'),
-   el('div',{class:'bar'},save,clear),errBox)
+   el('div',{class:'bar'},save,clear),hintBox,errBox)
   :el('span',{class:'ok'},'Alles abgehakt'))}
 
 /* ---------- Kosten ---------- */

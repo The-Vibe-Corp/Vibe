@@ -56,6 +56,26 @@ Testfälle (AK aus FEEDBACK.md F29 / docs/features/AP11.md):
     project.env enthält PACKAGE_ORDER mit T2 vor T1.
  6. ``test_priority_api_reports_configured_effective_and_status`` (AK 3,
     API-Grundlage, unverändert aus AP11 übernommen)
+ 7. ``test_blocked_package_keeps_its_saved_position_after_save``
+    (Review M1) — ein BLOCKIERT-Paket behält die gezogene Position:
+    Fixture T1 offen, T0 BLOCKIERT; T0 wird per Tastatur an die erste
+    Position verschoben und „Speichern“ geklickt. Erwartet: PACKAGE_ORDER
+    enthält T0 vor T1; nach komplettem Neuöffnen zeigt die Karte T0 vor
+    T1, T0 mit BLOCKIERT- und „priorisiert“-Pille (T1 ist ebenfalls Teil
+    der abgelegten Reihenfolge und trägt „priorisiert“).
+ 8. ``test_unknown_saved_id_is_reported_and_removed_on_save``
+    (Review M2-Minor) — unbekannte Kennung sichtbar gemeldet:
+    PACKAGE_ORDER="XX9,T1". Erwartet: die Karte nennt XX9 im Hinweis
+    („Unbekannte Kennungen …“) und listet XX9 nicht als Zeile; nach
+    „Speichern“ ist XX9 aus PACKAGE_ORDER entfernt (env-Datei), die
+    bekannten Zeilen bleiben und der Hinweis verschwindet.
+
+Anzeigevertrag (nach Review Runde 1): Die Karte baut ihre Zeilen aus der
+gespeicherten Reihenfolge (``data.order``): sichtbare Einträge der
+Priorisierung zuerst (Pille „priorisiert“, auch wenn BLOCKIERT), offene
+Pakete ohne Eintrag folgen in Standardordnung (Pille „Standardordnung“);
+erledigte und unbekannte („fehlt“) Einträge erscheinen nie als Zeile,
+unbekannte werden im Hinweis genannt.
     Vor: PACKAGE_ORDER="T2,T0,X9,T1" abgelegt; T0 erledigt (mit
     Nachweis), T1/T2 offen, X9 unbekannt. Aktion: GET
     /api/priority?name=proj mit Token. Erwartet: HTTP 200; Status je
@@ -484,6 +504,137 @@ class Ap11PriorityBrowserTest(unittest.TestCase):
             text.index("T2"), text.index("T1"),
             "PACKAGE_ORDER wurde nicht in der tastaturgezogenen Reihenfolge "
             "abgelegt: " + text)
+
+    # --------------------------------------------- Review M1 (Anzeigeordnung)
+    def test_blocked_package_keeps_its_saved_position_after_save(self):
+        """Review M1 — BLOCKIERT-Paket behält die gezogene Position.
+
+        Vorbedingung: TICKETS.md mit offenem T1 (zuerst) und gesperrtem T0
+        (BLOCKIERT); kein PACKAGE_ORDER-Eintrag; Maske „Arbeit“ geöffnet.
+        Aktion: den Handle des BLOCKIERT-Pakets T0 fokussieren, „ArrowUp“
+        drücken (T0 rückt an die erste Position) und „Speichern“ klicken.
+        Erwartet: project.env enthält PACKAGE_ORDER mit T0 vor T1; nach
+        komplettem Neuöffnen der Projektseite zeigt die Karte weiterhin T0
+        vor T1; die T0-Zeile trägt die BLOCKIERT-Pille und die
+        „priorisiert“-Pille, die T1-Zeile die „Standardordnung“-Pille.
+        """
+        tickets = self.project / "TICKETS.md"
+        original = tickets.read_text(encoding="utf-8")
+        self.addCleanup(
+            lambda: tickets.write_text(original, encoding="utf-8"))
+        tickets.write_text(
+            "# TICKETS\n\n"
+            "- [ ] T1 Erste Aufgabe\n  Beschreibung: offen\n"
+            "- [ ] T0 Gesperrt\n  BLOCKIERT: fehlende Freigabe\n",
+            encoding="utf-8")
+
+        self.open_work()
+        self.assertEqual(
+            ["T1", "T0"], self.item_ids(),
+            "Standardordnung ohne BLOCKIERT-Paket: "
+            + ", ".join(self.item_ids()))
+
+        self.handle_of("T0").focus()
+        self.page.keyboard.press("ArrowUp")
+        self.wait_until(
+            lambda: self.item_ids() == ["T0", "T1"],
+            message="ArrowUp am Handle verschob das BLOCKIERT-Paket T0 "
+                    "nicht an die erste Position: "
+                    + ", ".join(self.item_ids()))
+        self.save_button().click()
+
+        self.wait_until(
+            lambda: "PACKAGE_ORDER" in self.env_path.read_text(
+                encoding="utf-8"),
+            message="Speichern schrieb kein PACKAGE_ORDER nach project.env")
+        text = self.env_path.read_text(encoding="utf-8")
+        self.assertLess(
+            text.index("T0"), text.index("T1"),
+            "PACKAGE_ORDER enthält die gezogene Position nicht: " + text)
+        self.assertIn("TYPE=generic", text,
+                      "Speichern beschädigte project.env")
+        self.assertIn("TESTER=test-agent", text,
+                      "Speichern beschädigte project.env")
+
+        self.open_project()
+        self.assertEqual(
+            ["T0", "T1"], self.item_ids(),
+            "die Karte verwarf die gezogene Position des BLOCKIERT-Pakets: "
+            + ", ".join(self.item_ids()))
+        blocked_text = self.items_card().locator(
+            ".item", has_text="T0").first.inner_text()
+        self.assertIn("BLOCKIERT", blocked_text,
+                      "T0-Zeile ohne BLOCKIERT-Pille: " + blocked_text)
+        self.assertIn("priorisiert", blocked_text,
+                      "T0-Zeile ohne „priorisiert“-Pille: " + blocked_text)
+        open_text = self.items_card().locator(
+            ".item", has_text="T1").first.inner_text()
+        # „Speichern“ legt die gesamte sichtbare Zeilenreihenfolge ab,
+        # daher ist T1 Teil von PACKAGE_ORDER und priorisiert.
+        self.assertIn("priorisiert", open_text,
+                      "T1-Zeile ist nicht als priorisiert gekennzeichnet: "
+                      + open_text)
+
+    # ---------------------------------------- Review M2-Minor (Hinweis fehlt)
+    def test_unknown_saved_id_is_reported_and_removed_on_save(self):
+        """Review M2-Minor — Unbekannte Kennung wird sichtbar gemeldet.
+
+        Vorbedingung: PACKAGE_ORDER="XX9,T1" abgelegt; XX9 existiert in
+        keiner Arbeitsnotiz; Maske „Arbeit“ geöffnet.
+        Aktion: die Karte inspizieren, danach „Speichern“ klicken.
+        Erwartet: die Karte nennt XX9 im Hinweis („Unbekannte Kennungen …“,
+        Entfernung beim nächsten Speichern angekündigt) und listet XX9
+        nicht als Zeile; nach dem Speichern ist XX9 aus PACKAGE_ORDER
+        entfernt (env-Datei), die bekannten Zeilen bleiben und der Hinweis
+        verschwindet.
+        """
+        self.env_path.write_text(
+            self.base_env + 'PACKAGE_ORDER="XX9,T1"\n', encoding="utf-8")
+
+        self.open_work()
+        card = self.items_card()
+        card_text = card.inner_text()
+        self.assertIn("XX9", card_text,
+                      "die Karte nennt die unbekannte Kennung nicht: "
+                      + card_text)
+        self.assertIn("Unbekannte Kennungen", card_text,
+                      "kein Hinweistext zur unbekannten Kennung: "
+                      + card_text)
+        self.assertIn("entfernt", card_text,
+                      "der Hinweis kündigt die Entfernung nicht an: "
+                      + card_text)
+        self.assertNotIn(
+            "XX9", self.item_ids(),
+            "die unbekannte Kennung erscheint als Zeile: "
+            + ", ".join(self.item_ids()))
+        self.assertIn("T1", self.item_ids(),
+                      "die bekannte Zeile T1 fehlt: "
+                      + ", ".join(self.item_ids()))
+
+        self.save_button().click()
+
+        self.wait_until(
+            lambda: "PACKAGE_ORDER" in self.env_path.read_text(
+                encoding="utf-8")
+            and "XX9" not in self.env_path.read_text(encoding="utf-8"),
+            message="Speichern entfernte XX9 nicht aus PACKAGE_ORDER: "
+                    + self.env_path.read_text(encoding="utf-8"))
+        env_text = self.env_path.read_text(encoding="utf-8")
+        self.assertIn("T1", env_text,
+                      "die bekannte Kennung ging beim Speichern verloren: "
+                      + env_text)
+        self.assertIn("TYPE=generic", env_text,
+                      "Speichern beschädigte project.env")
+        self.assertIn("TESTER=test-agent", env_text,
+                      "Speichern beschädigte project.env")
+
+        self.wait_until(
+            lambda: "XX9" not in self.items_card().inner_text(),
+            message="der Hinweis zur unbekannten Kennung verschwand nach "
+                    "dem Speichern nicht")
+        self.assertIn("T1", self.item_ids(),
+                      "die bekannte Zeile T1 verschwand nach dem Speichern: "
+                      + ", ".join(self.item_ids()))
 
     # ------------------------------------------------------------ AK 3 (API)
     def test_priority_api_reports_configured_effective_and_status(self):
