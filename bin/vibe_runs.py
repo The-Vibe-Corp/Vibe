@@ -40,6 +40,7 @@ import json
 import os
 import re
 import secrets
+import subprocess
 import sys
 import tempfile
 import time
@@ -605,23 +606,95 @@ class RunRegistry:
             self._write(runs)
         return dict(record)
 
-    def finish(self, run_id, exit_code=None, state="finished"):
-        """Beendet einen Lauf; ein unbekannter Lauf bleibt unbekannt (None)."""
+    def finish(self, run_id, exit_code=None, state="finished", note="",
+               only_live=False):
+        """Beendet einen Lauf; ein unbekannter Lauf bleibt unbekannt (None).
+
+        ``note`` wird nur gespeichert, wenn er nicht leer ist. ``only_live``
+        lässt bereits beendete Einträge unverändert (V-026): Ein Signal darf
+        einen abgeschlossenen Lauf nicht nachträglich umdeuten.
+        """
         if state not in STATES:
             raise ValueError(f"Unbekannter Laufzustand: {state!r}")
         with self._locked():
             runs = self._read()
             found = None
+            changed = False
             for record in runs:
                 if record.get("id") != run_id:
                     continue
+                if only_live and record.get("state") not in LIVE_STATES:
+                    return dict(record)
                 record["state"] = state
                 record["exit_code"] = exit_code
                 record["ended"] = time.strftime("%Y-%m-%dT%H:%M:%S%z")
+                if note:
+                    record["note"] = str(note)
+                else:
+                    record.pop("note", None)
                 found = dict(record)
-            if found is not None:
+                changed = True
+            if changed:
                 self._write(runs)
             return found
+
+
+def tmux_session_state(session):
+    """True, False oder None für eine Laufsitzung auf ihrem eigenen Server.
+
+    Agentenläufe liegen seit V-026 auf einem eigenen tmux-Server; der
+    Socket-Name ist der Sitzungsname. ``False`` gilt nur bei Exitcode 1
+    ("keine solche Sitzung"); alles andere ist nicht prüfbar.
+    """
+    if not session:
+        return None
+    try:
+        completed = subprocess.run(
+            ["tmux", "-L", session, "has-session", "-t", session],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if completed.returncode == 0:
+        return True
+    if completed.returncode == 1:
+        return False
+    return None
+
+
+def prune_orphans(runtime, project=None, note="extern beendet (Sitzung fehlt)"):
+    """Markiert verwaiste Live-Einträge als ``ended``.
+
+    Ohne ``project`` gilt das Register als Ganzes, mit ``project`` nur dessen
+    Einträge. Laufende Sitzungen, nicht prüfbare Sitzungen und bereits
+    beendete Einträge bleiben unverändert. Es wird nie eine Sitzung beendet.
+    Rückgabe: ``(ended, running, unknown)``.
+    """
+    registry = RunRegistry(runtime)
+    real = os.path.realpath(os.path.abspath(str(project))) if project else None
+    ended = running = unknown = 0
+    for record in registry.all():
+        if record.get("state") not in LIVE_STATES:
+            continue
+        if real is not None and os.path.realpath(
+            os.path.abspath(str(record.get("project") or ""))
+        ) != real:
+            continue
+        session = str(record.get("session") or "")
+        state = tmux_session_state(session)
+        if state is None:
+            unknown += 1
+            continue
+        if state:
+            running += 1
+            continue
+        registry.finish(record["id"], exit_code=None, state="ended",
+                        note=note, only_live=True)
+        ended += 1
+    return ended, running, unknown
 
 
 def choose_key(project, runtime, preferred=""):
@@ -683,6 +756,18 @@ def build_parser():
     finish.add_argument("--id", required=True)
     finish.add_argument("--exit-code", type=int, default=None)
     finish.add_argument("--state", type=_state, default="finished")
+    finish.add_argument("--note", default="")
+    finish.add_argument(
+        "--only-live", action="store_true",
+        help="bereits beendete Einträge unverändert lassen",
+    )
+
+    prune = sub.add_parser(
+        "prune", help="verwaiste Live-Einträge als ended markieren"
+    )
+    prune.add_argument("--runtime", required=True)
+    prune.add_argument("--project", default="")
+    prune.add_argument("--note", default="extern beendet (Sitzung fehlt)")
 
     rotate = sub.add_parser("rotate", help="Logdatei bei Bedarf rotieren")
     rotate.add_argument("path")
@@ -717,12 +802,20 @@ def main(argv=None):
         return 0
     if args.command == "finish":
         record = RunRegistry(args.runtime).finish(
-            args.id, exit_code=args.exit_code, state=args.state
+            args.id, exit_code=args.exit_code, state=args.state,
+            note=args.note, only_live=args.only_live,
         )
         if record is None:
             print(f"Unbekannter Lauf: {args.id}", file=sys.stderr)
             return 1
         print(record["id"])
+        return 0
+    if args.command == "prune":
+        ended, running, unknown = prune_orphans(
+            args.runtime, args.project or None, args.note
+        )
+        print(f"{ended} verwaiste Einträge beendet, {running} laufen weiter, "
+              f"{unknown} nicht prüfbar.")
         return 0
     if args.command == "rotate":
         rotate_log(args.path, max_bytes=args.max_bytes, keep=args.keep)

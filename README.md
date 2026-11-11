@@ -84,6 +84,25 @@ zeigt den offiziellen Bezug und den Installationsbefehl; Pi benötigt Node.js
 „Umgebung“. Grenzen und die geprüften Pi-Aufrufe beschreibt
 `docs/compatibility.md`.
 
+### Limitverhalten (global)
+
+Quota- und Anmeldefehler halten einen Agentenlauf standardmäßig sofort an.
+Das Verhalten gilt global für alle Projekte und lässt sich ausdrücklich
+ändern:
+
+```
+vibe limits status
+vibe limits continue
+vibe limits stop
+```
+
+`stop` ist die Voreinstellung (auch ohne Einstellungsdatei). `continue`
+behandelt Quota- und Anmeldefehler wie wiederholbare Fehler im Rahmen der
+vorhandenen Wiederholungslimits und protokolliert einen Hinweis; es werden
+keine Dienstlimits umgangen und keine unbegrenzten Wiederholungen gestartet.
+Die Einstellung liegt in `<Zustand>/limits.json`; eine defekte Datei wird
+gemeldet und wie `stop` ausgelegt.
+
 ### Vorschau, Update, Rollback und Uninstall
 
 Die Vorschau zeigt Ziel, Version und jede Datei mit Aktion (`+` neu,

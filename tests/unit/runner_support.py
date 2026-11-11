@@ -64,6 +64,10 @@ def install_runner(install):
         "vibe_storage.py",
     ):
         shutil.copy(BIN / name, bin_dir / name)
+    # V-027: Das Limitverhalten kann als eigenes Modul vorliegen. Ältere
+    # Stände ohne dieses Modul bleiben unverändert lauffähig.
+    for source in sorted(BIN.glob("vibe_limits*.py")):
+        shutil.copy(source, bin_dir / source.name)
     return bin_dir
 
 
@@ -204,6 +208,11 @@ if mode == "quota":
 if mode == "auth":
     sys.stderr.write("401 unauthorized\n")
     sys.exit(1)
+if mode == "hang":
+    # V-026: Der Läufer wird während eines laufenden Versuchs signalisiert.
+    import time
+    time.sleep(30)
+    sys.exit(0)
 if mode == "network":
     sys.stderr.write("ECONNRESET connection reset by peer\n")
     sys.exit(1)

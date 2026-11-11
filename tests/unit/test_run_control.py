@@ -578,6 +578,7 @@ class RunsCommandTest(CliFixture):
         tmux.write_text(
             "#!/bin/sh\n"
             'printf \'%s\\n\' "$*" >> "$FAKE_TMUX_CALLS"\n'
+            'if [ "$1" = "-L" ]; then shift 2; fi\n'
             'if [ "$1" = "has-session" ]; then\n'
             '  if [ -n "$FAKE_TMUX_HAS_SESSION_RC" ]; then\n'
             '    exit "$FAKE_TMUX_HAS_SESSION_RC"\n'

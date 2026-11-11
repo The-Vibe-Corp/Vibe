@@ -117,6 +117,19 @@ if [ -f "$HARNESS_CLI" ]; then
       ;;
   esac
 fi
+# V-027: Globales Limitverhalten. Ohne Datei und bei defekter Einstellung gilt
+# "stop"; "continue" behandelt Quota- und Anmeldefehler wie wiederholbare
+# Fehler im Rahmen der vorhandenen Wiederholungslimits. Die Meldung einer
+# defekten Datei landet im Laufprotokoll, nie still als "continue".
+LIMIT_MODE="stop"
+LIMITS_CLI="$BIN/vibe_limits.py"
+if [ -f "$LIMITS_CLI" ]; then
+  LIMIT_MODE="$(python3 "$LIMITS_CLI" mode --state "$STATE" 2>>"$LOG" || true)"
+fi
+case "$LIMIT_MODE" in
+  stop|continue) ;;
+  *) LIMIT_MODE="stop" ;;
+esac
 if [ "$HARNESS" = "pi" ] && [ ! -f "$HARNESS_CLI" ]; then
   echo "ABBRUCH: Harness pi gewählt, aber $HARNESS_CLI fehlt. Installation aktualisieren (Setup --update)." | tee -a "$LOG"
   exit 2
@@ -161,9 +174,13 @@ register_start() {
   return 0
 }
 register_finish() {
+  # $3 = optionale Notiz, $4 = "only-live" (bereits beendete Läufe bleiben).
   [ -f "$RUNS_PY" ] && [ -n "$RUN_ID" ] || return 0
+  local extra=()
+  [ -n "${3:-}" ] && extra+=(--note "$3")
+  [ "${4:-}" = "only-live" ] && extra+=(--only-live)
   python3 "$RUNS_PY" finish --runtime "$RUNTIME" --id "$RUN_ID" \
-    --exit-code "$1" --state "$2" >>"$LOG" 2>&1 || true
+    --exit-code "$1" --state "$2" "${extra[@]}" >>"$LOG" 2>&1 || true
   return 0
 }
 HASHFILE="$HOME/.config/schreibfuchs-verify.sha"
@@ -517,7 +534,31 @@ if [ "$PREFLIGHT_RC" != 0 ]; then
 fi
 BASE_BRANCH="$(git -C "$P" symbolic-ref --quiet --short HEAD)"
 git -C "$P" worktree prune >>"$LOG" 2>&1 || true
+# V-026: Verwaiste Einträge des eigenen Projekts vor dem Start als extern
+# beendet kennzeichnen. Fremde Projekte und nicht prüfbare Sitzungen bleiben
+# unverändert; es wird niemals eine Sitzung beendet.
+if [ -f "$RUNS_PY" ]; then
+  python3 "$RUNS_PY" prune --runtime "$RUNTIME" --project "$P" \
+    --note "extern beendet (Sitzung fehlt)" >>"$LOG" 2>&1 || true
+fi
 register_start
+# V-026: Ein äußeres Signal darf den Lauf nicht spurlos beenden. Solange der
+# Lauf nicht abgeschlossen ist, werden Signal, Protokollzeile und Register-
+# zustand nachvollziehbar festgehalten. Ein bereits beendeter Eintrag bleibt
+# unverändert (only-live).
+EXTERN_ENDED=0
+external_end() {
+  local sig="$1" code="$2"
+  [ "$EXTERN_ENDED" = 1 ] && return 0
+  EXTERN_ENDED=1
+  trap - HUP TERM INT
+  echo "ABBRUCH: Lauf extern beendet (Signal $sig)." | tee -a "$LOG"
+  register_finish "$code" ended "extern beendet (Signal $sig)" only-live
+  exit "$code"
+}
+trap 'external_end HUP 129' HUP
+trap 'external_end TERM 143' TERM
+trap 'external_end INT 130' INT
 if [ "$HARNESS" = "pi" ]; then RUN_MODE="Pi --print"; else RUN_MODE="$SERVER_ARGS"; fi
 echo "Lauf: ${RUN_ID:-ohne Register}, Harness: $HARNESS, Modus: $RUN_MODE, Agent: $AGENT, Sandbox: $SANDBOX_STATE, höchstens $MAXP Pakete, höchstens $MAXR Wiederholungen je Paket" | tee -a "$LOG"
 PAUSED=0; LAST_ID=""; STOP=0; PACKAGES=0; SKIP=""
@@ -710,33 +751,43 @@ $QUESTION_HINT"
     fi
     CLASS="$(python3 "$PACKAGES_PY" classify --exit-code "$RC" --log "$LOG" --since "$LOG_START_LINE" 2>>"$LOG")"
     case "$CLASS" in
-      quota)
-        BLOCK_REASON="Quota/Kontingent bei $ID; der Lauf hält sofort an."
-        record_block "$ID" "$BLOCK_REASON"
-        echo "BLOCKIERT: $BLOCK_REASON" | tee -a "$LOG"
-        STOP=1; break
-        ;;
-      auth)
-        BLOCK_REASON="Anmeldung/Autorisierung bei $ID fehlgeschlagen; der Lauf hält sofort an."
-        record_block "$ID" "$BLOCK_REASON"
-        echo "BLOCKIERT: $BLOCK_REASON" | tee -a "$LOG"
-        STOP=1; break
-        ;;
+      quota|auth)
+        # V-027: Das globale Limitverhalten entscheidet. "stop" ist die
+        # Voreinstellung und hält sofort an; "continue" behandelt den Fehler
+        # wie einen wiederholbaren Fehler im Rahmen der Wiederholungslimits.
+        if [ "$LIMIT_MODE" != "continue" ]; then
+          if [ "$CLASS" = "quota" ]; then
+            BLOCK_REASON="Quota/Kontingent bei $ID; der Lauf hält sofort an."
+          else
+            BLOCK_REASON="Anmeldung/Autorisierung bei $ID fehlgeschlagen; der Lauf hält sofort an."
+          fi
+          record_block "$ID" "$BLOCK_REASON"
+          echo "BLOCKIERT: $BLOCK_REASON" | tee -a "$LOG"
+          STOP=1; break
+        fi
+        echo "HINWEIS: Limitverhalten 'continue' — $CLASS bei $ID wird wie ein wiederholbarer Fehler behandelt." | tee -a "$LOG"
+        ;&
       *)
         printf '\a\a\a'; echo "Agent mit Fehler beendet (Fehlerklasse '$CLASS')." | tee -a "$LOG"
-        # Die Automatik ist standardmäßig aus; 'fritz auto' fordert nur bei
-        # ausdrücklich gespeicherter Automatik eine neue IP an. Ein Lauf wartet
-        # nicht auf eine Eingabe, wenn niemand an einem Terminal sitzt.
-        # F18: Der Projektname geht an die zentrale Steuerung; läuft bereits ein
-        # Reconnect eines anderen Projekts, wird dessen Ergebnis übernommen und
-        # dieser Lauf danach fortgesetzt.
-        FRITZ_OUT="$(VIBE_PROJECT="$P" python3 "$BIN/vibe" fritz auto 2>&1)"; FRITZ_RC=$?
-        if [ -n "$FRITZ_OUT" ]; then printf '%s\n' "$FRITZ_OUT" | tee -a "$LOG"; fi
-        if [ "$FRITZ_RC" = 0 ]; then
-          echo "Zentraler Reconnect abgeschlossen; der Lauf wird nach kurzer Wartezeit fortgesetzt." | tee -a "$LOG"
-          sleep 20
-        elif [ -t 0 ]; then read -r -p "Neue IP manuell anfordern, dann Enter (Strg+C = Abbruch): " _
-        else echo "Keine neue IP angefordert; der Lauf wird fortgesetzt." | tee -a "$LOG"; fi
+        # V-027: Quota- und Anmeldefehler werden im Modus "continue"
+        # ausschließlich im Rahmen der Wiederholungslimits erneut versucht.
+        # Sie lösen weder eine automatische Router-Neuverbindung noch eine
+        # manuelle IP-Abfrage aus.
+        if [ "$CLASS" != "quota" ] && [ "$CLASS" != "auth" ]; then
+          # Die Automatik ist standardmäßig aus; 'fritz auto' fordert nur bei
+          # ausdrücklich gespeicherter Automatik eine neue IP an. Ein Lauf wartet
+          # nicht auf eine Eingabe, wenn niemand an einem Terminal sitzt.
+          # F18: Der Projektname geht an die zentrale Steuerung; läuft bereits ein
+          # Reconnect eines anderen Projekts, wird dessen Ergebnis übernommen und
+          # dieser Lauf danach fortgesetzt.
+          FRITZ_OUT="$(VIBE_PROJECT="$P" python3 "$BIN/vibe" fritz auto 2>&1)"; FRITZ_RC=$?
+          if [ -n "$FRITZ_OUT" ]; then printf '%s\n' "$FRITZ_OUT" | tee -a "$LOG"; fi
+          if [ "$FRITZ_RC" = 0 ]; then
+            echo "Zentraler Reconnect abgeschlossen; der Lauf wird nach kurzer Wartezeit fortgesetzt." | tee -a "$LOG"
+            sleep 20
+          elif [ -t 0 ]; then read -r -p "Neue IP manuell anfordern, dann Enter (Strg+C = Abbruch): " _
+          else echo "Keine neue IP angefordert; der Lauf wird fortgesetzt." | tee -a "$LOG"; fi
+        fi
         if [ "$ATTEMPT" -ge "$TRIES_PER_ITEM" ]; then
           echo "Überspringe $ID nach $TRIES_PER_ITEM Versuchen ($MAXR Wiederholungen, Wiederholungslimit erreicht, von Hand prüfen)." | tee -a "$LOG"
           record_block "$ID" "Agentenfehler ($CLASS)"

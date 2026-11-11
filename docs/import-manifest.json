@@ -713,6 +713,27 @@
       ],
       "datum": "2026-11-11",
       "grund": "Feedback zu AP11: POST /api/priority antwortet beim Speichern mit ok (UnboundLocalError behoben); die Reihenfolge der offenen Arbeitspakete wird per Drag&Drop am Handle direkt in der Maske Arbeit geändert und gespeichert statt im Einstellungs-Tab; die Standardordnungs-Anzeige folgt der Läufer-Standardordnung (TICKETS vor FEEDBACK, innerhalb der TICKETS nach Priorität)."
+    },
+    {
+      "arbeitspaket": "V-027",
+      "dateien": [
+        "bin/vibe",
+        "bin/vibe-run.sh",
+        "bin/vibe_limits.py"
+      ],
+      "datum": "2026-11-11",
+      "grund": "Limitverhalten ist eine ausdrückliche globale Einstellung (vibe limits stop|continue, <Zustand>/limits.json) statt einer fest verdrahteten Annahme. Die Voreinstellung bleibt stop: Quote und Anmeldefehler halten den Lauf sofort an. continue ist nur auf ausdrückliche Entscheidung wirksam, wird innerhalb der vorhandenen Wiederholungslimits erneut versucht und im Laufprotokoll als Hinweis vermerkt; eine defekte Einstellung wird gemeldet und nie still als continue ausgelegt."
+    },
+    {
+      "arbeitspaket": "V-026",
+      "dateien": [
+        "bin/vibe",
+        "bin/vibe-run.sh",
+        "bin/vibe_runs.py",
+        "scripts/setup-vibe.py"
+      ],
+      "datum": "2026-11-11",
+      "grund": "Ein Agentenlauf lebt auf einem eigenen tmux-Server, dessen Socket wie die Laufsitzung heißt; ein fremdes kill-server auf dem Standard-Server beendet damit weder Dashboard noch laufende Läufe. Der Läufer fängt HUP, TERM und INT ab und protokolliert Signal, Protokollzeile und Registerzustand statt spurlos zu enden. Die Startprüfung kennzeichnet verwaiste running-Einträge des eigenen Projekts als extern beendet (Zustand ended mit Notiz); fremde Projekte, laufende und nicht prüfbare Sitzungen bleiben unverändert, und es wird nie eine Sitzung beendet."
     }
   ],
   "files": [
@@ -727,14 +748,14 @@
       "sha256": "e5ae3183efcb76dace1e0bcbde9993be7afe82d93d7877da9ee39846cf45330a"
     },
     {
-      "bytes": 244863,
+      "bytes": 247388,
       "path": "bin/vibe",
-      "sha256": "36f1922417a1f744e045ba34bc6b09d84b6edef012c116ff9d998bd4cb4fea00"
+      "sha256": "f8b6eeb410501295f0ba5b4ce7b98c08a1e099117f59f8007d91920e64b009fb"
     },
     {
-      "bytes": 36412,
+      "bytes": 38893,
       "path": "bin/vibe-run.sh",
-      "sha256": "0a7db28cc54fdf28ddd01de3237422a8a5fa5f211c278cb78de727d5b50138b6"
+      "sha256": "83531897f33fffce426e24d0ae025110c59b0d06b4837d62a43cc00633ac68fb"
     },
     {
       "bytes": 69372,
@@ -760,6 +781,11 @@
       "bytes": 21634,
       "path": "bin/vibe_harness.py",
       "sha256": "2e613abcb90a6eec6b21dfd4e963692f8b0bba39ce1ee53ab8cdcef729b7fc98"
+    },
+    {
+      "bytes": 4311,
+      "path": "bin/vibe_limits.py",
+      "sha256": "005359ac957b04c4af4efdd01539de40457029291512bf0fa6bc237f28990dc9"
     },
     {
       "bytes": 55440,
@@ -792,9 +818,9 @@
       "sha256": "9a4bb9a2a182977c276b04676b133d918c97ed4f0a957c4d6f0e72835848b5cd"
     },
     {
-      "bytes": 28799,
+      "bytes": 32223,
       "path": "bin/vibe_runs.py",
-      "sha256": "068d6cd87876c01f2169e480aac012f963517a58be41a8811e8fd6f952694b29"
+      "sha256": "20dfff99766ccd0e397f57c67ebf18214236ca4357615f06517af21bcb7da292"
     },
     {
       "bytes": 28218,
@@ -837,9 +863,9 @@
       "sha256": "1f1379cda496e6adc5a981adf7263916af72e2f2c29aa6c20c1f863aa4e66ad3"
     },
     {
-      "bytes": 63660,
+      "bytes": 64139,
       "path": "scripts/setup-vibe.py",
-      "sha256": "1c17c140b82adeb8efe209bf56fa6db840bb8e6fd7b3aca6de091e89d35a332f"
+      "sha256": "69a87952cdaef68f36c5057f2c171bf60f6d5b8fb9832aca6403cee1742b8716"
     },
     {
       "bytes": 377,

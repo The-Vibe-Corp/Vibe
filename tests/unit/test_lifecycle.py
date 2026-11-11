@@ -50,6 +50,10 @@ echo "unerwarteter Aufruf: $*" >&2
 exit 2
 """
 
+# Dashboard und opencode-Server bleiben auf dem Standard-Server. Agentenläufe
+# (V-026) liegen auf einem eigenen Server, dessen Socket wie die Sitzung heißt.
+DASHBOARD_SESSIONS = ("vibe-ui", "vibe-ui-dev", "vibe-server", "vibe-server-dev")
+
 
 
 
@@ -131,6 +135,8 @@ class LifecycleFixture(unittest.TestCase):
 
     def tearDown(self):
         self.tmux("kill-server")
+        # V-026: Die Laufsitzung liegt auf einem eigenen Server.
+        self.tmux("-L", "vibe-proj", "kill-server")
         for server in self.fake_servers:
             server.shutdown()
             server.server_close()
@@ -138,8 +144,16 @@ class LifecycleFixture(unittest.TestCase):
 
     # -- Prozesse und Sitzungen -------------------------------------------
     def tmux(self, *args):
+        """Ruft tmux auf; Run-Sitzungen auf ihrem eigenen Socket (V-026)."""
+        prefix = []
+        for flag in ("-t", "-s"):
+            if flag in args:
+                name = args[args.index(flag) + 1]
+                if name not in DASHBOARD_SESSIONS:
+                    prefix = ["-L", name]
+                break
         return subprocess.run(
-            ["tmux", *args],
+            ["tmux", *prefix, *args],
             env=self.env,
             capture_output=True,
             text=True,

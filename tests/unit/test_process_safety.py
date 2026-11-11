@@ -113,6 +113,11 @@ class CliFixture(unittest.TestCase):
         script = bin_dir / "tmux"
         script.write_text(
             "#!/bin/sh\n"
+            'if [ "$1" = "-L" ]; then\n'
+            '  if [ "$3" = "has-session" ]; then exit 1; fi\n'
+            '  printf \'%s\\n\' "$@" > "$FAKE_TMUX_ARGS"\n'
+            "  exit 0\n"
+            "fi\n"
             'if [ "$1" = "has-session" ]; then exit 1; fi\n'
             'printf \'%s\\n\' "$@" > "$FAKE_TMUX_ARGS"\n'
             "exit 0\n",

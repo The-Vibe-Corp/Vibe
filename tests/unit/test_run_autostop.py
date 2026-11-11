@@ -96,6 +96,8 @@ class RunnerSessionEndTest(unittest.TestCase):
 
     def tearDown(self):
         self.tmux("kill-server")
+        # V-026: Die Laufsitzung liegt auf einem eigenen Server.
+        self.tmux("-L", self.session, "kill-server")
         self.tmp.cleanup()
 
     def env(self):
@@ -134,6 +136,11 @@ class RunnerSessionEndTest(unittest.TestCase):
         return env
 
     def tmux(self, *args):
+        """Ruft tmux auf; die Laufsitzung liegt auf ihrem eigenen Server (V-026)."""
+        if "-L" not in args and ("-t" in args or "-s" in args):
+            name = args[args.index("-t") + 1] if "-t" in args else args[args.index("-s") + 1]
+            if name == self.session:
+                args = ("-L", self.session, *args)
         return subprocess.run(
             ["tmux", *args],
             env=self.env(),

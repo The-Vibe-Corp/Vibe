@@ -203,6 +203,23 @@ vorliegt.
 - Keine automatische Router-Neuverbindung oder Umgehung von Dienstlimits.
   Vorhandene entsprechende Altintegration nur nach ausdrücklicher Entscheidung
   weiterverwenden; standardmäßig deaktivieren.
+- Jeder Agentenlauf nutzt einen eigenen tmux-Server; Socket- und Sitzungsname
+  sind der Laufsitzungsname. Dashboard und opencode-Server bleiben auf dem
+  Standard-Server. Ein fremdes `tmux kill-server` auf dem Standard-Server
+  beendet damit weder Dashboard noch laufende Läufe.
+- Ein äußeres Signal (HUP, TERM, INT) beendet einen Lauf nicht spurlos:
+  Signal, Protokollzeile und Registerzustand werden festgehalten. Eine
+  Startprüfung kennzeichnet verwaiste `running`-Einträge des eigenen Projekts
+  als extern beendet; fremde Projekte, laufende und nicht prüfbare Sitzungen
+  bleiben unverändert, und es wird nie eine fremde Sitzung beendet.
+- Quota- und Anmeldefehler halten einen Lauf standardmäßig sofort an. Das
+  Verhalten ist eine ausdrückliche, globale Einstellung (`vibe limits
+  stop|continue`, `<Zustand>/limits.json`) für alle Projekte, nicht je
+  Projekt; `continue` behandelt den Fehler im Rahmen der vorhandenen
+  Wiederholungslimits und protokolliert einen Hinweis. Eine fehlende oder
+  defekte Einstellung gilt als `stop` und wird gemeldet, nie still als
+  `continue`. Quota- und Anmeldefehler lösen weder eine Router-Neuverbindung
+  noch eine manuelle IP-Abfrage aus.
 
 ### App und opencode beenden
 

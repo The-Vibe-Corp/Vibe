@@ -107,9 +107,11 @@ import unittest
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
+BIN = REPO / "bin"
 RUNS = REPO / "bin" / "vibe_runs.py"
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(BIN))
 import runner_support as support
 
 

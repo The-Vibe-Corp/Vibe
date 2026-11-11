@@ -770,6 +770,10 @@ import os
 import sys
 
 args = sys.argv[1:]
+# V-026: Laufsitzungen liegen auf einem eigenen tmux-Server; der optionale
+# Zusatz ``-L <socket>`` steht dann vor dem eigentlichen Befehl.
+if args[:1] == ["-L"] and len(args) > 1:
+    args = args[2:]
 path = os.environ.get("FAKE_TMUX_LOG")
 if path:
     with open(path, "a", encoding="utf-8") as handle:

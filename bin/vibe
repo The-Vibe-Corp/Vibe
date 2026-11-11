@@ -53,7 +53,7 @@ except ImportError:  # pragma: no cover - Windows ohne Paket-Läufer
 
 if __name__ == "__main__": sys.modules["vibe"] = sys.modules[__name__]
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
-import vibe_storage, vibe_paths, vibe_opencode, vibe_models, vibe_runs, vibe_questions, vibe_autonomous, vibe_harness, vibe_github, vibe_packages
+import vibe_storage, vibe_paths, vibe_opencode, vibe_models, vibe_runs, vibe_questions, vibe_autonomous, vibe_harness, vibe_github, vibe_packages, vibe_limits
 
 try:
     PATHS = vibe_paths.resolve()
@@ -250,18 +250,36 @@ def profile_session(base):
     """Eigene tmux-Sitzung je Profil, damit Dev und Prod parallel laufen."""
     return base if PATHS.profile == "prod" else base + "-" + PATHS.profile
 
-def tmux_session_state(session):
+def run_socket(session):
+    """Eigener tmux-Server je Agentenlauf (V-026).
+
+    Der Socket-Name ist der Sitzungsname. Ein fremdes ``tmux kill-server`` auf
+    dem Standard-Server beendet damit weder Dashboard noch laufende Läufe.
+    Dashboard und opencode-Server bleiben auf dem Standard-Server.
+    """
+    return session
+
+def tmux_argv(session, *arguments, own_socket=False):
+    """tmux-Aufruf als Argumentliste; Laufsitzungen auf ihrem eigenen Server."""
+    argv = ["tmux"]
+    if own_socket and session:
+        argv += ["-L", run_socket(session)]
+    return argv + list(arguments)
+
+def tmux_session_state(session, own_socket=False):
     """Prüft eine bereits aufgelöste Sitzung: True, False oder None.
 
     ``True`` bedeutet vorhanden, ``False`` sicher nicht vorhanden (tmux
     antwortet regulär mit Exit 1). Fehlt tmux oder endet die Abfrage anders
     (nicht ausführbar, Zeitüberschreitung, unerwarteter Fehlercode), ist das
     Ergebnis ``None``: nicht prüfbar. Aufrufer dürfen ``None`` nie als
-    "Sitzung fehlt" behandeln.
+    "Sitzung fehlt" behandeln. ``own_socket`` prüft eine Laufsitzung auf
+    ihrem eigenen tmux-Server.
     """
     if not session:
         return None
-    code = run(["tmux", "has-session", "-t", session])[0]
+    code = run(tmux_argv(session, "has-session", "-t", session,
+                         own_socket=own_socket))[0]
     if code == 0:
         return True
     if code == 1:
@@ -272,7 +290,7 @@ def tmux_session_exists(session):
     """Prüft eine bereits aufgelöste Sitzung (nicht den Projektnamen)."""
     return tmux_session_state(session) is True
 
-def session_marker(session):
+def session_marker(session, own_socket=False):
     """Markierung einer tmux-Sitzung: run, ui, server oder fremd.
 
     ``VIBE_MANAGED`` wird beim Anlegen der Sitzung gesetzt. Fehlt die
@@ -280,7 +298,8 @@ def session_marker(session):
     ohne Umgebungsauskunft) bleibt ``unbekannt`` und wird nie als Nachweis
     für eine fremde Sitzung verwendet.
     """
-    rc, out = run(["tmux", "show-environment", "-t", session, MANAGED_VAR])
+    rc, out = run(tmux_argv(session, "show-environment", "-t", session,
+                            MANAGED_VAR, own_socket=own_socket))
     if rc == 0:
         line = out.strip().splitlines()[-1] if out.strip() else ""
         prefix = MANAGED_VAR + "="
@@ -291,8 +310,8 @@ def session_marker(session):
         return "unmanaged"
     return "unbekannt"
 
-def session_owned(session, kind):
-    return session_marker(session) == kind
+def session_owned(session, kind, own_socket=False):
+    return session_marker(session, own_socket=own_socket) == kind
 
 def port_in_use(host, port):
     """Erkennt einen bereits lauschenden Dienst auf einem Loopback-Port."""
@@ -1266,7 +1285,11 @@ def github_cli(rest):
                confirm=options["confirm_on"])
 
 def sess(name): return profile_session("vibe-" + run_key(name))
-def tmux_has_session(name): return run(["tmux", "has-session", "-t", sess(name)])[0] == 0
+def tmux_has_session(name):
+    """Laufsitzung auf ihrem eigenen tmux-Server (V-026)."""
+    session = sess(name)
+    return run(tmux_argv(session, "has-session", "-t", session,
+                         own_socket=True))[0] == 0
 tmux_has = tmux_has_session
 
 # ---------- Laufregister und Laufzustand ----------
@@ -2020,10 +2043,12 @@ def cmd_run(name, agent=None, out=None, keep_changes=False):
     keep_export = " export VIBE_KEEP_CHANGES=1;" if keep_changes else ""
     inner = ("source ~/.bashrc; " + child_exports() + keep_export
              + ' export VIBE_PREFLIGHT_ASSIST=1 VIBE_LOGNAME="$1" VIBE_RUN_ID="$2" VIBE_SESSION="$3" VIBE_MODEL="$7"; bash "$4" "$5" "$6" "$7"')
-    rc, output = run(["tmux", "new-session", "-d", "-s", session,
+    rc, output = run(tmux_argv(
+                   session, "new-session", "-d", "-s", session,
                    "-e", MANAGED_VAR + "=run", "-c", p,
                    "bash", "-lc", inner, name, key, run_id, session,
-                   os.path.join(BIN, "vibe-run.sh"), p, agent, model])
+                   os.path.join(BIN, "vibe-run.sh"), p, agent, model,
+                   own_socket=True))
     if rc != 0:
         registry.finish(run_id, exit_code=None, state="failed")
         print(col("r", output, stream=out), file=out)
@@ -2060,7 +2085,8 @@ def cmd_run_cli(args):
 
 def cmd_attach(name):
     if not tmux_has(name): sys.exit("Keine laufende Sitzung für " + name)
-    subprocess.run(["tmux", "attach", "-t", sess(name)])
+    session = sess(name)
+    subprocess.run(tmux_argv(session, "attach", "-t", session, own_socket=True))
 
 def cmd_logs(name):
     lg = logpath(name)
@@ -2100,21 +2126,29 @@ def cmd_stop(name, run_id=None, out=None):
     # Nur eine von vibe markierte Sitzung ist ein verwalteter Lauf. Ein
     # Registereintrag allein genügt nicht, weil eine fremde Sitzung denselben
     # Namen tragen kann; "unbekannt" toleriert nur Attrappen ohne Auskunft.
-    marker = session_marker(session)
+    marker = session_marker(session, own_socket=True)
     if record is not None:
         if marker not in ("run", "unbekannt"):
             sys.exit(f"tmux-Sitzung {session} gehört nicht zu vibe; nichts beendet.")
     elif marker != "run":
         sys.exit(f"tmux-Sitzung {session} gehört nicht zu vibe; nichts beendet.")
-    rc, output = run(["tmux", "kill-session", "-t", session])
+    rc, output = run(tmux_argv(session, "kill-session", "-t", session,
+                               own_socket=True))
     if rc != 0:
         if record is not None and not tmux_has_session(name):
-            registry.finish(record["id"], exit_code=None, state="ended")
+            # V-026: Hat der Läufer das Ende bereits festgehalten (z. B. mit
+            # Signalnotiz), bleibt dieser Eintrag unverändert.
+            registry.finish(record["id"], exit_code=None, state="ended",
+                            only_live=True)
             print("Lauf", record["id"], "war bereits beendet.", file=out)
             return
         sys.exit("Lauf nicht beendbar: " + output)
     if record is not None:
-        registry.finish(record["id"], exit_code=None, state="stopped")
+        # V-026: Der Signalhandler des Läufers kann zuerst schreiben. Ein
+        # bereits beendeter Eintrag behält dann Zustand und Notiz; der Stopp
+        # überschreibt ihn nicht.
+        registry.finish(record["id"], exit_code=None, state="stopped",
+                        only_live=True)
         print("Beendet:", name, "Lauf", record["id"], file=out)
     else:
         print("Beendet:", name, file=out)
@@ -2143,7 +2177,7 @@ def cmd_runs(action="list"):
                 if not session:
                     line += "  Sitzung nicht prüfbar"
                 else:
-                    live = tmux_session_state(session)
+                    live = tmux_session_state(session, own_socket=True)
                     if live is True:
                         line += f"  Sitzung {session} läuft"
                     elif live is False:
@@ -2162,7 +2196,7 @@ def cmd_runs(action="list"):
             print(f"Unverändert: {run_id} (keine Sitzungsangabe, nicht prüfbar)")
             unknown += 1
             continue
-        live = tmux_session_state(session)
+        live = tmux_session_state(session, own_socket=True)
         if live is None:
             print(f"Unverändert: {run_id} (Sitzung {session} nicht prüfbar)")
             unknown += 1
@@ -4806,6 +4840,26 @@ def cmd_server(action="status", out=None):
     else:
         h = server_health(); print("opencode-Server:", col("g", "läuft " + OC_URL + " " + h, stream=out) if h else "aus", file=out)
 
+def cmd_limits(action="status"):
+    """Zeigt oder ändert das globale Limitverhalten (V-027).
+
+    Die Einstellung wirkt für alle Projekte. Ohne Datei und bei defekter
+    Datei gilt ``stop``; eine ungültige Angabe wird gemeldet und nie still
+    als ``continue`` ausgelegt.
+    """
+    action = (action or "status").lower()
+    if action not in ("status", *vibe_limits.MODES):
+        sys.exit("Aufruf: vibe limits [status|stop|continue]")
+    if action in vibe_limits.MODES:
+        try:
+            vibe_limits.save(PATHS.state, action)
+        except OSError as error:
+            sys.exit("Limitverhalten nicht gespeichert: " + str(error))
+    _mode, problem = vibe_limits.load(PATHS.state)
+    if problem:
+        print(problem, file=sys.stderr)
+    print(vibe_limits.describe(PATHS.state))
+
 def cmd_harness(action="status", name=None, out=None):
     """Zeigt, wechselt und erklärt den Harness; die Auswahl liegt im Zustandsordner."""
     out = out or sys.stdout
@@ -5251,6 +5305,7 @@ def main():
                  "emu": lambda: cmd_emu(r[0]), "paths": lambda: cmd_paths(*r),
                  "ui": lambda: cmd_ui(r[0] if r else "start"), "server": lambda: cmd_server(r[0] if r else "status"),
                  "harness": lambda: cmd_harness(r[0] if r else "status", r[1] if len(r) > 1 else None),
+                 "limits": lambda: cmd_limits(r[0] if r else "status"),
                  "github": lambda: github_cli(r),
                  "types": lambda: cmd_types(), "doctor": lambda: cmd_doctor()}
         table[c]()

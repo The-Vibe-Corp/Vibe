@@ -43,6 +43,7 @@ PROGRAM_FILES = (
     "vibe",
     "vibe-run.sh",
     "vibe_harness.py",
+    "vibe_limits.py",
     "vibe_runs.py",
     "vibe_packages.py",
     "vibe-web.py",
@@ -1015,20 +1016,34 @@ def running_installation(vibe_root, runner=None, which=None):
     tmux = which("tmux")
     runner = runner or subprocess.run
 
-    def session_state(session):
-        """True/False, wenn tmux die Sitzung prüfen kann; sonst None."""
+    def session_state(session, own_socket=False):
+        """True/False, wenn tmux die Sitzung prüfen kann; sonst None.
+
+        Agentenläufe liegen seit V-026 auf einem eigenen tmux-Server; der
+        Socket-Name ist dort der Sitzungsname. Dashboard und opencode-Server
+        bleiben auf dem Standard-Server.
+        """
         if not tmux or not session:
             return None
+        command = [tmux]
+        if own_socket:
+            command += ["-L", session]
+        command += ["has-session", "-t", session]
         try:
             completed = runner(
-                [tmux, "has-session", "-t", session],
+                command,
                 capture_output=True,
                 text=True,
                 timeout=5,
             )
         except (OSError, subprocess.SubprocessError):
             return None
-        return getattr(completed, "returncode", 1) == 0
+        code = getattr(completed, "returncode", None)
+        if code == 0:
+            return True
+        if code == 1:
+            return False
+        return None
 
     runs_path = Path(vibe_root) / "_logs" / "runs.json"
     if runs_path.exists():
@@ -1047,7 +1062,7 @@ def running_installation(vibe_root, runner=None, which=None):
                 continue
             run_id = record.get("id", "?")
             session = str(record.get("session") or "")
-            state = session_state(session)
+            state = session_state(session, own_socket=True)
             if state is False:
                 continue
             if state is None:

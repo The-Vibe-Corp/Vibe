@@ -97,6 +97,8 @@ class RunAutostopBrowserTest(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         cls.tmux("kill-server")
+        # V-026: Die Laufsitzung liegt auf einem eigenen Server.
+        cls.tmux("-L", "vibe-proj", "kill-server")
         cls.browser.close()
         cls.playwright.stop()
         if cls.proc.poll() is None:
@@ -122,12 +124,12 @@ class RunAutostopBrowserTest(unittest.TestCase):
 
     def setUp(self):
         self.session = "vibe-proj"
-        self.tmux("kill-session", "-t", self.session)
+        self.tmux("-L", self.session, "kill-session", "-t", self.session)
         self.page = self.browser.new_page(viewport={"width": 1400, "height": 1000})
 
     def tearDown(self):
         self.page.close()
-        self.tmux("kill-session", "-t", self.session)
+        self.tmux("-L", self.session, "kill-session", "-t", self.session)
 
     def wait_until(self, predicate, timeout=15, message="Bedingung nicht erfüllt"):
         deadline = time.time() + timeout
@@ -151,6 +153,7 @@ class RunAutostopBrowserTest(unittest.TestCase):
     def test_detail_switches_to_stopped_when_the_run_ends(self):
         self.assertEqual(
             self.tmux(
+                "-L", self.session,
                 "new-session", "-d", "-s", self.session, "-c", str(self.project),
                 "sleep 60",
             ).returncode,
@@ -166,7 +169,12 @@ class RunAutostopBrowserTest(unittest.TestCase):
         self.assertIn("aktiv", pill.get_attribute("title") or "")
         self.assertIn("run", pill.get_attribute("class") or "")
 
-        self.assertEqual(self.tmux("kill-session", "-t", self.session).returncode, 0)
+        self.assertEqual(
+            self.tmux(
+                "-L", self.session, "kill-session", "-t", self.session
+            ).returncode,
+            0,
+        )
         self.wait_until(
             lambda: pill.inner_text().strip() == "gestoppt",
             message="Projektdetail blieb nach dem Ende des Laufs auf aktiv",
