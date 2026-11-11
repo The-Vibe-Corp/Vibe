@@ -33,6 +33,7 @@ import vibe_questions  # pylint: disable=wrong-import-position
 import vibe_autonomous  # pylint: disable=wrong-import-position
 import vibe_harness  # pylint: disable=wrong-import-position
 import vibe_github  # pylint: disable=wrong-import-position
+import vibe_packages  # pylint: disable=wrong-import-position
 import vibe_services  # pylint: disable=wrong-import-position
 
 try:
@@ -645,6 +646,10 @@ class H(BaseHTTPRequestHandler):
                 return self._send(200, vibe.types())
             if u.path == "/api/guide":
                 return self._send(200, vibe_services.guide_info(vibe, known(q["name"][0])))
+            # AP11: Priorisierung je Projekt einsehen (konfigurierte Reihenfolge
+            # mit Status und effektive Abarbeitungsreihenfolge).
+            if u.path == "/api/priority":
+                return self._send(200, vibe_services.priority_info(vibe, known(q["name"][0])))
             if u.path == "/api/doctor":
                 return self._send(200, [{"label": a, "ok": b, "hint": c} for a, b, c in vibe.doctor_checks()])
             if u.path == "/api/fritz":
@@ -696,7 +701,7 @@ class H(BaseHTTPRequestHandler):
             return self._error(e.status, e.code, e.message)
         try:
             name = body.get("name", "")
-            if u.path in ("/api/run", "/api/stop", "/api/verify", "/api/feedback", "/api/ticket", "/api/init", "/api/rights", "/api/pause", "/api/sandbox", "/api/guide", "/api/costs", "/api/autonomous", "/api/steer", "/api/github"):
+            if u.path in ("/api/run", "/api/stop", "/api/verify", "/api/feedback", "/api/ticket", "/api/init", "/api/rights", "/api/pause", "/api/sandbox", "/api/guide", "/api/costs", "/api/autonomous", "/api/steer", "/api/github", "/api/priority"):
                 known(name)
             extra = {}
             if u.path == "/api/steer":
@@ -1059,6 +1064,28 @@ class H(BaseHTTPRequestHandler):
                         ok, msg = True, "Entwurf verworfen."
                     else:
                         ok, msg = False, "Unbekannte Aktion"
+                except ValueError as e:
+                    ok, msg = False, str(e)
+            elif u.path == "/api/priority":
+                # AP11: Priorisierung setzen oder leeren; die Antwort enthält
+                # die aktualisierte Ansicht, damit die Karte sofort stimmt.
+                act = body.get("action") or "set"
+                try:
+                    if act == "set":
+                        order = vibe_packages.normalize_order(
+                            vibe.ppath(name), str(body.get("order") or ""))
+                        vibe.set_env_values(
+                            name, {vibe_packages.ORDER_KEY: " ".join(order)})
+                        msg = ("Priorisierung gespeichert" if order
+                               else "Leere Priorisierung gespeichert (Standardordnung)")
+                    elif act == "clear":
+                        vibe.set_env_values(name, {vibe_packages.ORDER_KEY: ""})
+                        msg = "Priorisierung geleert (Standardordnung)"
+                    else:
+                        ok, msg = False, "Unbekannte Aktion"
+                    extra["priority"] = vibe_services.priority_info(vibe, name)
+                except vibe_storage.ConcurrentChangeError as e:
+                    return self._error(409, "conflict", str(e))
                 except ValueError as e:
                     ok, msg = False, str(e)
             elif u.path == "/api/project-agents":

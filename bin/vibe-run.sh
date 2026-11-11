@@ -203,6 +203,9 @@ data = json.load(open(sys.argv[1], encoding="utf-8"))
 print("ID=" + shlex.quote(data["id"]))
 print("BLOCK=" + shlex.quote(data["block"]))
 print("SOURCE=" + shlex.quote(data["source"]))
+# AP11: Die projektweise Priorisierung ist verbindlich; der Lauf meldet,
+# ob die Wahl aus PACKAGE_ORDER kam oder die Standardordnung galt.
+print("ORDERED=" + ("1" if data.get("ordered") else "0"))
 PY
 )"
   return 0
@@ -594,6 +597,9 @@ while [ "$PACKAGES" -lt "$MAXP" ] && [ "$STOP" = 0 ]; do
     STOP=1; break
   fi
   if ! select_item; then echo "Keine offenen Arbeitspakete mehr." | tee -a "$LOG"; break; fi
+  if [ "$ORDERED" = 1 ]; then
+    echo "Auswahl aus projektweiser Priorisierung (PACKAGE_ORDER, verbindlich)." | tee -a "$LOG"
+  fi
   # AP9: Vor jedem neuen Arbeitspaket den Haupt-Branch aktualisieren (nur
   # bei GitHub-Konfiguration; sonst bewusster Skip). Ein Fehlschlag erzeugt
   # nur einen Hinweis, blockiert das Paket aber nicht.

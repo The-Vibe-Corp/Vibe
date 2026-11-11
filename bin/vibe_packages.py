@@ -19,6 +19,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 if os.path.dirname(os.path.realpath(__file__)) not in sys.path:
@@ -399,6 +400,35 @@ def priority(block):
     return int(match.group(1)[1]) if match else 9
 
 
+ORDER_KEY = "PACKAGE_ORDER"
+ORDER_SPLIT = re.compile(r"[,;\s]+")
+
+
+def package_order(project):
+    """Je Projekt konfigurierte Priorisierung, Dubletten in Eintragsreihenfolge.
+
+    Gelesen wird ``PACKAGE_ORDER`` aus ``.vibe/project.env``. Trenner sind
+    Komma, Semikolon und Leerraum. Eine fehlende oder leere Einstellung
+    bedeutet: keine Priorisierung, der Läufer wählt nach Standardordnung.
+    Unbekannte Kennungen bleiben stehen; sie werden bei der Auswahl
+    übersprungen und beim Ablegen über die Oberfläche bzw. CLI abgelehnt.
+    """
+    values = read_env(Path(project) / ".vibe" / "project.env")
+    order, seen = [], set()
+    for token in ORDER_SPLIT.split(values.get(ORDER_KEY, "")):
+        if token and token not in seen:
+            seen.add(token)
+            order.append(token)
+    return order
+
+
+def block_title(block):
+    """Titelzeile eines Blocks ohne Checkbox und Kennung."""
+    head = block.splitlines()[0] if block else ""
+    match = re.match(r"- (?:\[[ xX]\]\s*)?\S+\s*(.*)$", head)
+    return match.group(1).strip() if match else ""
+
+
 def collect_blocks(project):
     """Liest TICKETS.md und FEEDBACK.md als Paare aus Quelle und Blöcken."""
     project = Path(project)
@@ -422,9 +452,16 @@ def done_ids(project):
 def select_package(project, skip=None, state_path=None):
     """Liefert das nächste offene Paket oder ``None``.
 
-    Reihenfolge: TICKETS vor FEEDBACK; innerhalb der TICKETS nach Priorität
-    (P0, P1, P2, ohne Angabe) und sonst nach Dateireihenfolge. Ein Paket wird
-    nur gewählt, wenn alle bekannten Abhängigkeiten nachweislich erledigt sind.
+    Steht in ``.vibe/project.env`` eine Priorisierung (``PACKAGE_ORDER``),
+    wählt der Läufer zuerst den ersten Eintrag dieser Liste, der offen, nicht
+    gesperrt, nicht übersprungen und bereit ist; er ist damit verbindlich
+    vor Quellen- und Prioritätsordnung. Erledigte, gesperrte, abhängigkeits-
+    geblockte oder unbekannte Einträge werden der Priorisierung entnommen,
+    ohne die Wahl aufzuhalten. Ohne geeigneten Eintrag gilt weiter die
+    Standardordnung: TICKETS vor FEEDBACK; innerhalb der TICKETS nach
+    Priorität (P0, P1, P2, ohne Angabe) und sonst nach Dateireihenfolge.
+    Ein Paket wird nur gewählt, wenn alle bekannten Abhängigkeiten
+    nachweislich erledigt sind.
     """
     project = Path(project)
     if isinstance(skip, str):
@@ -433,35 +470,60 @@ def select_package(project, skip=None, state_path=None):
         skip = set(skip or [])
     done = done_ids(project)
     known = set()
-    for _, blocks in collect_blocks(project):
-        known.update(block_id(block) for block in blocks if block_id(block))
-
+    located = {}
     for source, blocks in collect_blocks(project):
-        candidates = []
         for index, block in enumerate(blocks):
             pid = block_id(block)
-            if not pid or pid in skip:
+            if not pid:
                 continue
-            if is_blocked(block) or pid in done:
-                continue
-            if any(dep in known and dep not in done for dep in dependencies(block)):
-                continue
-            order = (priority(block), index) if source == "TICKETS.md" else (0, index)
-            candidates.append((order, pid, block))
-        if not candidates:
+            known.add(pid)
+            if pid not in located:
+                located[pid] = (source, block)
+
+    def _ready(pid):
+        _, block = located[pid]
+        if is_blocked(block) or pid in done:
+            return False
+        return not any(
+            dep in known and dep not in done for dep in dependencies(block)
+        )
+
+    chosen = None
+    for pid in package_order(project):
+        if pid in skip or pid not in located or not _ready(pid):
             continue
-        candidates.sort(key=lambda item: item[0])
-        _, pid, block = candidates[0]
-        selected = {
-            "id": pid,
-            "block": block,
-            "source": source,
-            "priority": f"P{priority(block)}" if priority(block) < 9 else "",
-        }
-        target = Path(state_path) if state_path else project / ".vibe" / "tmp" / "next-package.json"
-        write_text_atomic(target, json.dumps(selected, ensure_ascii=False, indent=1) + "\n")
-        return selected
-    return None
+        chosen = (pid, True)
+        break
+    if chosen is None:
+        for source, blocks in collect_blocks(project):
+            candidates = []
+            for index, block in enumerate(blocks):
+                pid = block_id(block)
+                if not pid or pid in skip:
+                    continue
+                if not _ready(pid):
+                    continue
+                order = (priority(block), index) if source == "TICKETS.md" else (0, index)
+                candidates.append((order, pid))
+            if not candidates:
+                continue
+            candidates.sort(key=lambda item: item[0])
+            chosen = (candidates[0][1], False)
+            break
+    if chosen is None:
+        return None
+    pid, ordered = chosen
+    source, block = located[pid]
+    selected = {
+        "id": pid,
+        "block": block,
+        "source": source,
+        "priority": f"P{priority(block)}" if priority(block) < 9 else "",
+        "ordered": ordered,
+    }
+    target = Path(state_path) if state_path else project / ".vibe" / "tmp" / "next-package.json"
+    write_text_atomic(target, json.dumps(selected, ensure_ascii=False, indent=1) + "\n")
+    return selected
 
 
 def agent_available(name, project, agents_dir):
@@ -900,6 +962,85 @@ def status_report(project):
             else:
                 report["open"].append(pid)
     return report
+
+
+def priority_view(project):
+    """Priorisierung je Projekt: konfigurierte Einträge und wirksame Ordnung.
+
+    Liefert ``order`` mit Status je konfiguriertem Eintrag (offen, erledigt,
+    gesperrt oder fehlt) und ``queue`` mit der effektiven Abarbeitungs-
+    reihenfolge aller offenen Pakete. Die Ansicht ändert nichts; sie nutzt
+    dieselbe Auswahllogik wie der Läufer.
+    """
+    project = Path(project)
+    located = {}
+    for source, blocks in collect_blocks(project):
+        for block in blocks:
+            pid = block_id(block)
+            if pid and pid not in located:
+                located[pid] = (source, block)
+    entries = []
+    for pid in package_order(project):
+        entry = {"id": pid}
+        if pid not in located:
+            entry["status"] = "fehlt"
+        else:
+            source, block = located[pid]
+            entry["source"] = source
+            entry["title"] = block_title(block)
+            if is_done(block) and proof_ok(project, block)[0]:
+                entry["status"] = "erledigt"
+            elif is_blocked(block):
+                entry["status"] = "gesperrt"
+            else:
+                entry["status"] = "offen"
+        entries.append(entry)
+    skip = set()
+    queue = []
+    with tempfile.TemporaryDirectory() as folder:
+        state = Path(folder) / "next-package.json"
+        while True:
+            selected = select_package(project, skip=skip, state_path=state)
+            if selected is None:
+                break
+            queue.append({
+                "id": selected["id"],
+                "ordered": selected["ordered"],
+                "source": selected["source"],
+                "title": block_title(selected["block"]),
+            })
+            skip.add(selected["id"])
+    return {"key": ORDER_KEY, "order": entries, "queue": queue}
+
+
+def normalize_order(project, text):
+    """Erzwingt eine gültige Priorisierung; Dubletten entfallen.
+
+    ``text`` ist eine Liste von Kennungen mit denselben Trennern wie
+    ``PACKAGE_ORDER``. Jede Kennung muss in TICKETS.md oder FEEDBACK.md
+    existieren; die Reihenfolge bleibt erhalten. Liefert die bereinigte
+    Liste oder wirft ``ValueError`` mit den unbekannten Kennungen.
+    """
+    located = set()
+    for _, blocks in collect_blocks(project):
+        for block in blocks:
+            pid = block_id(block)
+            if pid:
+                located.add(pid)
+    order, seen, unknown = [], set(), []
+    for token in ORDER_SPLIT.split(text or ""):
+        if not token:
+            continue
+        if token not in located and token not in unknown:
+            unknown.append(token)
+        if token not in seen:
+            seen.add(token)
+            order.append(token)
+    if unknown:
+        raise ValueError(
+            "Unbekannte Kennungen (in TICKETS.md/FEEDBACK.md nicht vorhanden): "
+            + ", ".join(unknown))
+    return order
 
 
 def command_select(args):

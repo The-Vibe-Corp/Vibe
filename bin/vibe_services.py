@@ -21,6 +21,7 @@ import subprocess
 import vibe_autonomous
 import vibe_github
 import vibe_guide
+import vibe_packages
 
 ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
 
@@ -157,6 +158,26 @@ def guide_info(vibe, name):
         "log_tail": status["log_tail"],
     }
     return data
+
+
+def priority_info(vibe, name):
+    """Priorisierung eines Projekts für die Oberfläche (AP11).
+
+    Liefert die konfigurierte Reihenfolge mit Status je Eintrag und die
+    effektive Abarbeitungsreihenfolge. Fehler beim Lesen des Projekts
+    bleiben eine Klartext-Meldung statt eines Abbruchs.
+    """
+    try:
+        view = {"ok": True, "project": name,
+                **vibe_packages.priority_view(vibe.ppath(name))}
+        view["message"] = (
+            "Priorisierung mit " + str(len(view["order"])) + " Einträgen konfiguriert"
+            if view["order"]
+            else "Keine Priorisierung konfiguriert — es gilt die Standardordnung.")
+        return view
+    except (OSError, ValueError) as error:
+        return {"ok": False, "project": name, "order": [], "queue": [],
+                "message": str(error)}
 
 
 def roots_info(vibe):

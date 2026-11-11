@@ -53,5 +53,8 @@ Zuordnung der Projekt-Dokumentation zu den Notizen in Trilium (Stand 2026-11-07)
 | vibe | Features | AP05 Saubere Paketabwicklung | `tBNmEWqnGmeI` |
 | vibe | Features | AP6 Vorbereitung für github Repo | `RTYec92LsBSL` |
 | vibe | Features | AP7 Einstellungs-UI neu aufgebaut | `vDzuhFgjY4PV` |
+| vibe | Features | AP8 Projekt aus GitHub auschecken | `RtG0XQF3SqMN` |
+| vibe | Features | AP9 GitHub Teil 3: Token, Branches, Merge-Request | `RZaerCNe9ngJ` |
+| vibe | Features | AP11 Priorisierung der Abarbeitungsreihenfolge | `KrGYItU1tR0u` |
 | vibe | Features | B1 Kostentabelle aktualisiert sich nach jedem AP | `V3AV2elZkQgo` |
 | vibe | Analyse | Arbeitspakete bleiben offen — Ursachen und Maßnahmen | `nLcQBDnwBXZW` |

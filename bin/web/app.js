@@ -189,14 +189,17 @@ function settingsPanel(d,name,isPi){
  const sandbox=sandboxStatus(d.sandbox);
  const zustand={agenten:'…',
   rechte:d.write_dirs_error?'Fehler':(d.write_dirs_custom?(d.write_dirs.length+' Verzeichnisse'):'Standardliste'),
-  sandbox:sandbox.state,github:g.enabled?'aktiv':'aus'};
+  sandbox:sandbox.state,github:g.enabled?'aktiv':'aus',priorisierung:'…'};
+ /* AP11: Zustand des Priorisierungschips; die Karte setzt ihn nach dem Laden. */
+ let priorisierungTone='mut';
  const tone=key=>{
   if(key==='agenten')return 'mut';
   if(key==='rechte')return zustand.rechte==='Fehler'?'bad':'mut';
   if(key==='sandbox')return sandbox.tone;
+  if(key==='priorisierung')return priorisierungTone;
   return g.enabled?'ok':'mut'};
  const chips={},sections={};
- for(const[key,label] of [['agenten','Agenten'],['rechte','Schreibrechte'],['sandbox','Sandbox'],['github','Git & GitHub']]){
+ for(const[key,label] of [['agenten','Agenten'],['rechte','Schreibrechte'],['sandbox','Sandbox'],['github','Git & GitHub'],['priorisierung','Priorisierung']]){
   chips[key]=el('button',{class:'b settingschip',type:'button','data-goto':key,
    on:{click:()=>to(key)},
    title:'Öffnet den Abschnitt „'+label+'“'},el('span',{},label),
@@ -206,13 +209,19 @@ function settingsPanel(d,name,isPi){
  const agentPill=chips.agenten.querySelector('.pill');
  const agentsSec=projectAgentsCard(name,(text,t)=>{agentPill.textContent=text;
   if(t)agentPill.className='pill '+t});
+ /* AP11: Der Priorisierungschip zeigt den Zustand der projektweiten
+    Reihenfolge; die Karte aktualisiert ihn nach dem Laden selbst. */
+ const priorPill=chips.priorisierung.querySelector('.pill');
+ const priorSec=settingsSection('settings-priorisierung','Priorisierung (optional)',false,priorityBody(name,(text,t)=>{
+  priorPill.textContent=text;
+  priorisierungTone=t||'mut';priorPill.className='pill '+priorisierungTone}));
  const rechteSec=settingsSection('settings-rechte','Schreibrechte (Agenten)',false,rightsBody(d,name));
  const sandboxSec=settingsSection('sandbox','Sandbox (optional)',false,sandboxBody(d,name,isPi));
  const githubSec=settingsSection('github','Git & GitHub (optional)',false,githubBody(d,name));
- sections.agenten=agentsSec;sections.rechte=rechteSec;sections.sandbox=sandboxSec;sections.github=githubSec;
+ sections.agenten=agentsSec;sections.rechte=rechteSec;sections.sandbox=sandboxSec;sections.github=githubSec;sections.priorisierung=priorSec;
  return el('div',{class:'settingsstack'},
   el('div',{class:'settings-nav','aria-label':'Einstellungsbereiche'},...Object.values(chips)),
-  agentsSec,rechteSec,sandboxSec,githubSec)}
+  agentsSec,rechteSec,sandboxSec,githubSec,priorSec)}
 function projectAgentsCard(name,onPill){
  const body=el('div',{},el('span',{class:'mut'},'Lade Agenten …'));
  let showUnconfigured=false;
@@ -726,6 +735,49 @@ function githubBody(d,name){
    el('div',{class:'bar'},loadBtn,importBtn),
    issuesBox):null;
  return el('div',{},conn,actions,errBox)}
+
+/* ---------- Priorisierung (AP11: Reihenfolge der Arbeitspakete/Feedback/
+   Bugs je Projekt einstellbar und für die Agentenläufe verbindlich; die
+   Karte lädt wie die Agentenliste selbst und bleibt im offenen Abschnitt
+   aktualisiert, ohne das Panel neu aufzubauen) ---------- */
+function priorityBody(name,onPill){
+ const body=el('div',{},el('span',{class:'mut'},'Lade Priorisierung …'));
+ const statusTone={offen:'mut',erledigt:'ok',gesperrt:'warn',fehlt:'bad'};
+ const statusLabel={offen:'offen',erledigt:'erledigt — der Priorisierung entnommen',gesperrt:'BLOCKIERT',fehlt:'unbekannt'};
+ const render=data=>{
+  const order=data.order||[],queue=data.queue||[];
+  const errBox=el('div',{});
+  const setErr=message=>{errBox.className=String(message||'').length?'bad':'';errBox.textContent=String(message||'')};
+  const inp=el('textarea',{rows:4,value:order.map(o=>o.id).join(' '),
+   'data-priority-input':'','aria-label':'Konfigurierte Reihenfolge der Arbeitspakete',
+   placeholder:'z. B. B2 AP12 F14 (leer = Standardordnung)'});
+  const save=el('button',{class:'b p',on:{click:async()=>{
+   setErr('');const r=await api('/api/priority',{name,action:'set',order:inp.value});
+   toast(r.message||'');if(!r.ok)setErr(r.message);
+   if(r.ok&&r.priority)render(r.priority)}}},'Priorisierung speichern');
+  const clear=el('button',{class:'b',on:{click:async()=>{
+   setErr('');const r=await api('/api/priority',{name,action:'clear'});
+   toast(r.message||'');if(!r.ok)setErr(r.message);
+   if(r.ok&&r.priority)render(r.priority)}}},'Leeren (Standardordnung)');
+  if(onPill)onPill(order.length?order.length+' Einträge':'Standard',order.length?'ok':'mut');
+  const queueRows=queue.map((q,i)=>el('div',{'data-queue-item':q.id},
+   (i+1)+'. ',el('b',{},q.id),q.title?el('span',{class:'mut'},' — '+q.title):null,' ',
+   el('span',{class:'pill '+(q.ordered?'ok':'mut')},q.ordered?'priorisiert':'Standardordnung')));
+  const orderRows=order.map(o=>el('div',{'data-order-item':o.id},
+   el('b',{},o.id),o.title?el('span',{class:'mut'},' — '+o.title):null,' ',
+   el('span',{class:'pill '+(statusTone[o.status]||'mut')},statusLabel[o.status]||o.status)));
+  body.replaceChildren(
+   el('div',{class:'mut'},'Die Reihenfolge der Arbeitspakete, Feedback- und Bug-Einträge ist hier je Projekt einstellbar und für die Agentenläufe verbindlich: Der Läufer wählt den ersten geeigneten Eintrag dieser Liste vor der Standardordnung (TICKETS vor FEEDBACK, innerhalb der TICKETS die Priorität). Erledigte Aufgaben werden der Priorisierung entnommen; gesperrte oder unbekannte Einträge halten die Auswahl nicht auf.'),
+   el('b',{},'Effektive Abarbeitungsreihenfolge ('+queue.length+' offene Pakete)'),
+   queueRows.length?el('div',{'data-queue':''},...queueRows):el('div',{class:'mut'},'Keine offenen Arbeitspakete.'),
+   el('label',{},'Konfigurierte Reihenfolge (Kennungen; Trenner: Komma, Semikolon oder Leerzeichen)'),inp,
+   orderRows.length?el('div',{'data-order':''},...orderRows):el('div',{class:'mut'},'Keine Priorisierung gespeichert — es gilt die Standardordnung.'),
+   el('div',{class:'bar'},save,clear),
+   errBox)};
+ const load=async()=>render(await api('/api/priority?name='+encodeURIComponent(name)));
+ load().catch(e=>{body.replaceChildren(el('div',{class:'bad'},'Priorisierung nicht verfügbar: '+String(e&&e.message||e)));
+  if(onPill)onPill('Fehler','bad')});
+ return el('div',{},body)}
 
 /* ---------- Kosten ---------- */
 const PRICE_SOURCE={user:'eigener Preis',system:'Systempreis',kostenlos:'kostenlos',unbekannt:'Preis unbekannt'};
