@@ -25,18 +25,18 @@
     },
     {
       "path": "bin/vibe",
-      "sha256": "a9df45a0a953a19a59491f11ab0701ead17673f856c674cff36c6496d2a3c925",
-      "bytes": 239965
+      "sha256": "1ed957c806332e286ee32f7341f142360b1b1b0f84784a5da99937e0682caa34",
+      "bytes": 242657
     },
     {
       "path": "bin/vibe-run.sh",
-      "sha256": "c956fe23d1a9aa3450a8a253a917eb21b04d8b44c079be675cb64a37ccd45bdd",
-      "bytes": 35109
+      "sha256": "17bacff260a44b687828c5369108e408eb0e3b836ee9d51125299ebbf117b742",
+      "bytes": 36082
     },
     {
       "path": "bin/vibe-web.py",
-      "sha256": "0f33e9bec7f0a1889a0f0fa81a191013f20bb86c35e854aabd724e504efea4be",
-      "bytes": 66019
+      "sha256": "ddacb3a99053fb223562de39f0942e3c42d20db8028f7649819412cb8901ab28",
+      "bytes": 67601
     },
     {
       "path": "bin/vibe_autonomous.py",
@@ -45,8 +45,8 @@
     },
     {
       "path": "bin/vibe_github.py",
-      "sha256": "2df0373e0e4dba07d43256e3adc51a7edcd5beb43aa6bf227c5212a5eb04e867",
-      "bytes": 32633
+      "sha256": "99df54eecffcc4bc2fbc9f26a8221eb6ed3a29d8ae9d70bfad6467e12be803e5",
+      "bytes": 51736
     },
     {
       "path": "bin/vibe_guide.py",
@@ -75,8 +75,8 @@
     },
     {
       "path": "bin/vibe_packages.py",
-      "sha256": "a585ef32d131f06fbf4e789b9260a1b7d718d553977e666ba44cc8c60f2e8bbd",
-      "bytes": 40115
+      "sha256": "cc776bb204fa14990139e0d9d7eaecff0e1d3ae8450e893205e5eeeceffddafe",
+      "bytes": 42911
     },
     {
       "path": "bin/vibe_paths.py",
@@ -110,8 +110,8 @@
     },
     {
       "path": "bin/web/app.js",
-      "sha256": "3e5332175cd0485d43a698c9bba8484d5da388827900ccd46d3629a6dab3a07a",
-      "bytes": 110946
+      "sha256": "9417958f0844dd6f6eefeca8aa0db211301b9af4892871531420c73380bc0f41",
+      "bytes": 112987
     },
     {
       "path": "bin/web/index.html",

@@ -24,6 +24,7 @@ Ausführen mit:
 
     python3 -m unittest discover -s tests/browser -p test_b7_github_auth_ui.py -v
 """
+import hashlib
 import importlib.machinery
 import importlib.util
 import json
@@ -115,27 +116,12 @@ def github_module_for_paths():
 _PATHS_MODULE = None
 
 
-def expected_token_path(state):
-    """Tokenpfad laut token_state_path() mit dem VIBE_STATE des Dashboards.
-
-    Tolerant zur Rotphase: Solange die Schnittstelle token_state_path()
-    fehlt, wird None geliefert; die Testfälle laufen weiter und scheitern
-    an der fehlenden Persistenz, nicht an der Fixture.
-    """
-    try:
-        module = github_module_for_paths()
-        getattr(module, "token_state_path")
-    except (AttributeError, ImportError):
-        return None
-    old = os.environ.get("VIBE_STATE")
-    os.environ["VIBE_STATE"] = str(state)
-    try:
-        return Path(module.token_state_path())
-    finally:
-        if old is None:
-            os.environ.pop("VIBE_STATE", None)
-        else:
-            os.environ["VIBE_STATE"] = old
+def expected_token_path(state, project_dir):
+    """Projekt-Token-Ablage (AP9-Vertrag, ersetzt die frühere globale
+    Datei): <VIBE_STATE>/github-tokens/<sha256(realpath)[:16]>.json."""
+    project = os.path.realpath(str(project_dir))
+    digest = hashlib.sha256(project.encode("utf-8")).hexdigest()[:16]
+    return Path(state) / "github-tokens" / (digest + ".json")
 
 
 class FakeGitHubHandler(BaseHTTPRequestHandler):
@@ -306,7 +292,7 @@ class GitHubAuthUiTest(unittest.TestCase):
         )
         git(cls.broken, "remote", "add", "aux", "http://127.0.0.1:1/x.git")
 
-        cls.token_file = expected_token_path(cls.state)
+        cls.token_file = expected_token_path(cls.state, cls.demo)
 
         cls.port = free_port()
         env = os.environ.copy()
@@ -459,9 +445,12 @@ class GitHubAuthUiTest(unittest.TestCase):
                 break
             time.sleep(0.2)
         self.assertTrue(self.token_file.exists(),
-                        "Der gespeicherte Token fehlt im VIBE_STATE")
+                        "Der gespeicherte Projekt-Token fehlt im VIBE_STATE "
+                        "(github-tokens/<hash>.json)")
         with open(self.token_file, encoding="utf-8") as handle:
-            self.assertEqual(UI_TOKEN, handle.read().strip())
+            stored = handle.read()
+        self.assertNotIn(UI_TOKEN, stored,
+                         "Die Ablage ist verschlüsselt: kein Klartext-Token")
 
         self.page.wait_for_timeout(500)
         card = self.git_card()
@@ -651,7 +640,7 @@ class GitHubAuthUiTest(unittest.TestCase):
         nicht durch ein Zeitrennen entgehen."""
         port, login_token, proc, state = self.start_token_dashboard(
             {"GITHUB_TOKEN": "b7-fake-env"})
-        token_path = expected_token_path(state)
+        token_path = expected_token_path(state, type(self).demo)
         self.assertIsNotNone(
             token_path, "token_state_path() liefert keinen Pfad")
         page = self.browser.new_page(viewport={"width": 1400, "height": 1000})
@@ -762,7 +751,7 @@ class GitHubAuthUiTest(unittest.TestCase):
                     proc.wait()
             if proc.stdout:
                 proc.stdout.close()
-            token_path_final = expected_token_path(state)
+            token_path_final = expected_token_path(state, type(self).demo)
             if token_path_final is not None and token_path_final.exists():
                 token_path_final.unlink()
 

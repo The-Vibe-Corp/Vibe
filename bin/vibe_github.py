@@ -18,19 +18,35 @@ zusammenzuführen.
 
 Der GitHub-Zugangstoken (B7): Standardmäßig kommt er aus der Umgebung
 (``GITHUB_TOKEN`` oder ``GH_TOKEN``). Zusätzlich kann er in der Oberfläche
-hinterlegt werden; die Datei liegt im Zustandsordner (``VIBE_STATE``, damit
-sie niemals in einem Git-Repository landet) und wird mit 0600 (best
-effort) gespeichert. Der Token taucht in keinem Log, keiner Konfiguration
-im Projekt und keiner Fehlermeldung auf. Gespeicherte Zugangsdaten werden
-ausdrücklich nur GitHub-Endpunkten übergeben: der offiziellen REST-API
+hinterlegt werden. Seit AP9 gilt der Token **je Projekt**: Er liegt
+verschlüsselt unter ``<VIBE_STATE>/github-tokens/<Projektkennung>.json``
+(Masterschlüssel ``<VIBE_STATE>/github-token.key``, beides 0600 best
+effort) und der Zustandsordner bleibt damit außerhalb jedes
+Git-Repositorys. Die Verschlüsselung nutzt ausschließlich die
+Standardbibliothek: scrypt (salt-abgeleiteter Schlüssel), ein
+HMAC-SHA256-Strom als Chiffre und Encrypt-then-MAC (HMAC über salt,
+nonce und Chiffrat). Ein manipulierter oder defekter Eintrag liefert beim
+Lesen den Leerwert statt einer Ausnahme. Grenze, die ehrlich benannt
+wird: Der Masterschlüssel liegt im selben Zustandsordner; die
+Verschlüsselung schützt vor beiläufigem Lesen (Backups, Screenshots,
+Git-Zuführungen), nicht vor einem Angreifer mit vollem Schreibzugriff auf
+den Datenträger. Der alte globale Token (B7) bleibt als Rückfall
+lesbar; beim Schreiben gewinnen Projekt-Tokens.
+
+Der Token taucht in keinem Log, keiner Konfiguration im Projekt und
+keiner Fehlermeldung auf. Gespeicherte Zugangsdaten werden ausdrücklich
+nur GitHub-Endpunkten übergeben: der offiziellen REST-API
 (api.github.com) und Git-URLs mit dem Host github.com. Gegenüber
 konfigurierbaren anderen Hosts wird niemals der hinterlegte Token
 versendet; der Umgebungstoken behält sein bisheriges REST-Verhalten.
 """
+import hashlib
+import hmac
 import json
 import os
 import re
 import shutil
+import struct
 import subprocess
 import sys
 import tempfile
@@ -77,6 +93,191 @@ CREDENTIAL_CONFIG_KEY = "credential.https://github.com.helper"
 CREDENTIAL_HELPER_VALUE = ("!f() { printf 'username=x-access-token\\n'; "
                            "printf 'password=%s\\n' "
                            "\"$VIBE_GITHUB_CREDENTIAL\"; }; f")
+
+# AP9: Projektbezogene, verschlüsselte Token-Ablage im Zustandsordner.
+TOKEN_DIR_NAME = "github-tokens"
+KEY_FILE = "github-token.key"
+ENC_VERSION = 1
+SCRYPT_N = 1 << 14
+SCRYPT_R = 8
+SCRYPT_P = 1
+MAC_INFO = b"vibe-github-token-mac"
+
+# Gültige Branch-Namen (Git-Refname-Teilmenge): kein führendes "-", keine
+# Punkte-Sequenz, kein ".lock"-Ende, keine Leer- oder Steuerzeichen.
+BRANCH_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]*$")
+
+
+def branch_name(value):
+    """Prüft und normalisiert einen Branch-Namen; ungültige Namen werfen."""
+    text = str(value or "").strip()
+    if (not text or not BRANCH_RE.match(text) or ".." in text
+            or text.endswith(".lock") or text.endswith("/")
+            or text.endswith(".")):
+        raise ValueError("Ungültiger Branch-Name: " + (text[:60] or "(leer)"))
+    return text
+
+
+def _project_digest(project_path):
+    """Kollisionsfreie Dateikennung je Projekt aus dem echten Pfad."""
+    return hashlib.sha256(
+        os.path.realpath(str(project_path)).encode("utf-8", "surrogateescape")
+    ).hexdigest()[:16]
+
+
+def _project_token_path(project_path, environ=None):
+    """Pfad des verschlüsselten Token-Eintrags des Projekts."""
+    name = _project_digest(project_path) + ".json"
+    return os.path.join(token_state_dir(environ), TOKEN_DIR_NAME, name)
+
+
+def _master_key(environ=None):
+    """Liest oder erzeugt den Masterschlüssel (32 Bytes, 0600 best effort).
+
+    Ein einmal erzeugter Schlüssel wird nie gedreht, sonst wären frühere
+    Einträge unwiderruflich verloren. Eine Datei falscher Länge gilt als
+    beschädigt: Lesen liefert dann den Leerwert, Schreiben wird mit einer
+    verständlichen Meldung abgelehnt."""
+    path = os.path.join(token_state_dir(environ), KEY_FILE)
+    try:
+        with open(path, "rb") as handle:
+            key = handle.read()
+        if len(key) == 32:
+            return key
+        raise ValueError("Masterschlüsseldatei ist beschädigt (falsche Länge): "
+                         + path + " — Datei entfernen und Token neu hinterlegen")
+    except FileNotFoundError:
+        pass
+    key = os.urandom(32)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    try:
+        os.chmod(os.path.dirname(path), 0o700)
+    except OSError:
+        pass  # nicht überall wirksame Rechte (FUSE/NTFS) - kein Fehler
+    try:
+        vibe_storage.write_bytes(path, key, mode=0o600)
+    except OSError as error:
+        raise ValueError("Masterschlüssel konnte nicht gespeichert werden: "
+                         + str(error)) from None
+    return key
+
+
+def _derive_key(master, salt):
+    """Schlüsselerzeugung: scrypt über den Masterschlüssel und das Salz."""
+    return hashlib.scrypt(master, salt=salt, n=SCRYPT_N, r=SCRYPT_R,
+                          p=SCRYPT_P, dklen=32)
+
+
+def _keystream(key, nonce, length):
+    """HMAC-SHA256-Strom über (nonce, Zähler) — die Chiffre dieses Moduls."""
+    blocks = bytearray()
+    counter = 0
+    while len(blocks) < length:
+        blocks.extend(hmac.new(key, nonce + struct.pack(">Q", counter),
+                               hashlib.sha256).digest())
+        counter += 1
+    return bytes(blocks[:length])
+
+
+def _mac_key(key):
+    return hmac.new(key, MAC_INFO, hashlib.sha256).digest()
+
+
+def _mac(key, salt, nonce, ciphertext):
+    return hmac.new(_mac_key(key), salt + nonce + ciphertext,
+                    hashlib.sha256).hexdigest()
+
+
+def _encrypt_token(master, plaintext):
+    """Verschlüsselt den Token (Stromchiffre + Encrypt-then-MAC)."""
+    salt = os.urandom(16)
+    nonce = os.urandom(16)
+    key = _derive_key(master, salt)
+    data = plaintext.encode("utf-8")
+    ciphertext = bytes(a ^ b for a, b in zip(data, _keystream(key, nonce,
+                                                             len(data))))
+    return {
+        "version": ENC_VERSION,
+        "salt": salt.hex(),
+        "nonce": nonce.hex(),
+        "chiffrat": ciphertext.hex(),
+        "mac": _mac(key, salt, nonce, ciphertext),
+    }
+
+
+def _decrypt_token(master, payload):
+    """Entschlüsselt nach MAC-Prüfung; jede Abweichung liefert None."""
+    try:
+        if not isinstance(payload, dict):
+            return None
+        salt = bytes.fromhex(str(payload["salt"]))
+        nonce = bytes.fromhex(str(payload["nonce"]))
+        ciphertext = bytes.fromhex(str(payload["chiffrat"]))
+        stored_mac = str(payload["mac"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    key = _derive_key(master, salt)
+    if not hmac.compare_digest(_mac(key, salt, nonce, ciphertext), stored_mac):
+        return None
+    data = bytes(a ^ b for a, b in
+                 zip(ciphertext, _keystream(key, nonce, len(ciphertext))))
+    try:
+        return data.decode("utf-8")
+    except UnicodeDecodeError:
+        return None
+
+
+def save_project_token(project_path, token):
+    """Hinterlegt einen GitHub-Token verschlüsselt für genau dieses Projekt.
+
+    Ungültige Eingaben werden abgelehnt, bevor irgendetwas geschrieben
+    wird; der Inhalt erscheint in keiner Meldung. Die Ablage liegt im
+    Zustandsordner außerhalb jedes Git-Repositorys; Datei- und Ordnerrechte
+    sind best effort (FUSE/NTFS, siehe SPEC)."""
+    value = str(token or "")
+    if "\x00" in value or any(ord(c) < 32 for c in value):
+        raise ValueError("Token enthält unerlaubte Steuerzeichen")
+    value = value.strip()
+    if not value:
+        raise ValueError("Kein GitHub-Token angegeben: In der Karte einfügen")
+    master = _master_key()
+    path = _project_token_path(project_path)
+    directory = os.path.dirname(path)
+    os.makedirs(directory, exist_ok=True)
+    try:
+        os.chmod(directory, 0o700)
+    except OSError:
+        pass
+    payload = json.dumps(_encrypt_token(master, value), ensure_ascii=False,
+                         indent=1) + "\n"
+    try:
+        vibe_storage.write_text(path, payload, mode=0o600)
+    except OSError as error:
+        raise ValueError("Token konnte nicht gespeichert werden: "
+                         + str(error)) from None
+
+
+def read_project_token(project_path, environ=None):
+    """Verschlüsselten Projekt-Token lesen; fehlend/defekt/manipuliert → ""."""
+    path = _project_token_path(project_path, environ)
+    try:
+        with open(path, encoding="utf-8") as handle:
+            payload = json.loads(handle.read())
+    except (OSError, ValueError):
+        return ""
+    try:
+        master = _master_key(environ)
+    except (ValueError, OSError):
+        return ""
+    return _decrypt_token(master, payload) or ""
+
+
+def delete_project_token(project_path, environ=None):
+    """Entfernt den Projekt-Token; eine fehlende Datei bleibt kein Fehler."""
+    try:
+        os.unlink(_project_token_path(project_path, environ))
+    except OSError:
+        pass
 
 
 def token_state_dir(environ=None):
@@ -152,23 +353,33 @@ def delete_token(environ=None):
         pass
 
 
-def token_status(environ=None):
-    """Token-Kennung ohne Inhalt: {set, source} (umgebung gewinnt)."""
+def token_status(project_path=None, environ=None):
+    """Token-Kennung ohne Inhalt: {set, source}.
+
+    Reihenfolge: Umgebung, dann verschlüsselter Projekt-Token, dann der
+    legacy global gespeicherte Token (B7)."""
     if token_from_env():
         return {"set": True, "source": "umgebung"}
+    if project_path is not None and read_project_token(project_path, environ):
+        return {"set": True, "source": "projekt"}
     if read_stored_token(environ):
         return {"set": True, "source": "gespeichert"}
     return {"set": False, "source": ""}
 
 
-def token_for_rest(api=None):
-    """Token für die REST-Ebene: Umgebung gewinnt; hinterlegter Token geht
-    ausdrücklich nur an die offizielle GitHub-API (github.com)."""
+def token_for_rest(api=None, project_path=None):
+    """Token für die REST-Ebene: Umgebung gewinnt; hinterlegte Token gehen
+    ausdrücklich nur an die offizielle GitHub-API (github.com). Der
+    Projekt-Token wird vor dem legacy globalen Token bevorzugt."""
     token = token_from_env()
     if token:
         return token
     api_value = str(api or "").strip().rstrip("/")
     if not api_value or api_value == OFFICIAL_API:
+        if project_path is not None:
+            token = read_project_token(project_path)
+            if token:
+                return token
         return read_stored_token()
     return ""
 
@@ -184,6 +395,8 @@ def read_config(env_path):
         "repo": str(values.get("GITHUB_REPO", "")).strip(),
         "label": label,
         "api": api,
+        # AP9: Basis-Branch für Merge-Requests (Leerwert = Standard der origin).
+        "base": str(values.get("GITHUB_BASE", "")).strip(),
     }
 
 
@@ -278,18 +491,28 @@ def git(project_path, *args, timeout=TIMEOUT_GIT):
     Serverumgebung bewusst übersteuern (z. B. Askpass-Setup); ausgeliefert
     wird ohne Übersteuerung stets die promptfreie Voreinstellung.
 
-    Mit verfügbarem GitHub-Token (B7, Umgebung oder hinterlegt) erhält der
-    Lauf eine URL-gültige Credential-Konfiguration für https://github.com
-    über die Umgebungs-Konfiguration (``GIT_CONFIG_*``). Der Tokeninhalt liegt
-    nur in der Prozessumgebung (``VIBE_GITHUB_CREDENTIAL``) und niemals in
-    argv, Logs oder der Konfiguration."""
-    argv = ["git", "--no-pager", "-c", "core.fsmonitor=false", *[str(a) for a in args]]
+    Mit verfügbarem GitHub-Token (B7, Umgebung oder je Projekt hinterlegt)
+    erhält der Lauf eine URL-gültige Credential-Konfiguration für
+    https://github.com. Die Konfiguration (ohne Geheimnis, nur ein
+    Verweis auf die Umgebungsvariable) liegt als ``-c``-Argument in argv —
+    vor dem festen ``core.fsmonitor=false``, damit fachliche Auswertungen
+    den Unterbefehl hinter dem festen Präfix lesen können; der Tokeninhalt
+    bleibt ausschließlich in der Prozessumgebung
+    (``VIBE_GITHUB_CREDENTIAL``) und niemals in argv, Logs oder der
+    Konfiguration."""
+    token = (token_from_env() or read_project_token(project_path)
+             or read_stored_token())
+    argv = ["git", "--no-pager",
+            *_credential_args(token),
+            "-c", "core.fsmonitor=false",
+            *[str(a) for a in args]]
     if not all(isinstance(a, str) for a in argv):
         raise ValueError("Argumentliste erwartet: nur Zeichenketten")
     env = os.environ.copy()
     env.setdefault("GIT_TERMINAL_PROMPT", "0")
     env.setdefault("GCM_INTERACTIVE", "never")
-    _apply_credential_env(env, token_from_env() or read_stored_token())
+    # AP9: Credential-Kette Umgebung > Projekt-Token > legacy globaler Token.
+    _apply_credential_env(env, token)
     try:
         result = subprocess.run(argv, cwd=str(project_path), capture_output=True,
                                 text=True, timeout=timeout, env=env, check=False)
@@ -302,17 +525,25 @@ def git(project_path, *args, timeout=TIMEOUT_GIT):
         return 126, f"Programm nicht ausführbar: git: {error}"
 
 
+def _credential_args(token):
+    """URL-gültige Credential-Konfiguration als -c-Argumente (ohne Geheimnis).
+
+    Der Helper selbst enthält nur einen Verweis auf die Umgebungsvariable;
+    der Tokeninhalt kommt über ``_apply_credential_env`` in die
+    Prozessumgebung und damit nie in argv."""
+    if not token:
+        return []
+    return ["-c", CREDENTIAL_CONFIG_KEY + "=" + CREDENTIAL_HELPER_VALUE]
+
+
 def _apply_credential_env(env, token):
-    """Injiziert die github.com-Zugangsdaten über GIT_CONFIG_* (keine argv)."""
+    """Injiziert den Tokeninhalt über die Prozessumgebung (keine argv).
+
+    Die Credential-Konfiguration selbst liegt als ``-c``-Argument in argv
+    (``_credential_args``); hier kommt nur der Tokeninhalt über
+    ``VIBE_GITHUB_CREDENTIAL`` in die Prozessumgebung."""
     if not token:
         return env  # Kein Token: Git verhält sich unverändert (kein Prompt)
-    try:
-        count = int(env.get("GIT_CONFIG_COUNT") or 0)
-    except ValueError:
-        count = 0
-    env[f"GIT_CONFIG_KEY_{count}"] = CREDENTIAL_CONFIG_KEY
-    env[f"GIT_CONFIG_VALUE_{count}"] = CREDENTIAL_HELPER_VALUE
-    env["GIT_CONFIG_COUNT"] = str(count + 1)
     env[CREDENTIAL_ENV_NAME] = token
     return env
 
@@ -478,12 +709,13 @@ def status(project_path, *, remote=True):
         "repo": config["repo"],
         "label": config["label"],
         "api": config["api"],
+        "base": config["base"],
         "remotes": remotes(project),
         "branch": branch or "-",
         "ahead": ahead,
         "behind": behind,
         "unpushed": ahead > 0,
-        "auth": token_status(),
+        "auth": token_status(project),
     }
 
 
@@ -561,20 +793,205 @@ def pull(project_path):
     return True, f"Branch {branch} aufgeholt ({out or 'aktuell'})"
 
 
-def push(project_path, branch=""):
-    """Überträgt einen Branch auf origin; setzt dabei den Upstream."""
+def checkout_branch(project_path, branch):
+    """Checkt einen Branch aus; erzeugt ihn bei Bedarf aus origin/<branch>.
+
+    Schutzregeln: Ein ungültiger Name wird vor jedem Git-Aufruf abgelehnt;
+    bei uncommitteten Änderungen wird der Wechsel verweigert, damit keine
+    fremden Arbeiten gemischt werden; ein bereits ausgecheckter Branch ist
+    Erfolg ohne Aktion. Git läuft mit Argumentlisten (ohne Shell)."""
+    project = str(project_path)
+    branch = branch_name(branch)
+    if current_branch(project) == branch:
+        return True, f"Branch {branch} ist bereits ausgecheckt"
+    rc, out = git(project, "status", "--porcelain", "--untracked-files=no")
+    if rc != 0:
+        return False, mask_embedded_credentials("Git-Status fehlgeschlagen: "
+                                                + (out or "unbekannter Fehler"))
+    if out.strip():
+        # Ungetrackte Dateien blockieren bewusst nicht: Sie gehören dem
+        # Arbeitsbaum und wandern bei einem Wechsel nicht mit.
+        raise ValueError("Es gibt uncommittete Änderungen: Erst committen "
+                         "oder verwerfen, dann den Branch wechseln.")
+    rc, _ = git(project, "rev-parse", "--verify", "--quiet",
+                "refs/heads/" + branch)
+    if rc == 0:
+        rc, out = git(project, "checkout", branch)
+    else:
+        rc_remote, _ = git(project, "rev-parse", "--verify", "--quiet",
+                           "refs/remotes/origin/" + branch)
+        if rc_remote != 0:
+            raise ValueError("Branch nicht gefunden (lokal oder als "
+                             "origin/<branch>): " + branch)
+        rc, out = git(project, "checkout", "-b", branch, "origin/" + branch)
+    if rc != 0:
+        return False, _auth_guidance(mask_embedded_credentials(
+            out or "unbekannter Fehler"))
+    return True, f"Branch {branch} ausgecheckt"
+
+
+def push(project_path, branch="", target=""):
+    """Überträgt einen Branch auf origin; setzt dabei den Upstream.
+
+    Mit ``target`` wird der Refspec ``<branch>:<target>`` verwendet: Der
+    lokale Branch landet unter dem gewählten Namen auf origin, ohne dass
+    ein gleichnamiger Fern-Branch berührt wird."""
     project = str(project_path)
     branch = (branch or current_branch(project)).strip()
     if not branch:
         return False, "Kein Branch ausgecheckt: Push verweigert"
-    rc, out = git(project, "push", "-u", "origin", branch)
+    branch = branch_name(branch)
+    refspec = branch
+    if str(target or "").strip():
+        refspec = branch + ":" + branch_name(target)
+    rc, out = git(project, "push", "-u", "origin", refspec)
     if rc != 0:
-        return False, _auth_guidance("Push fehlgeschlagen: " + (out or "unbekannter Fehler"))
-    return True, f"Branch {branch} nach origin übertragen"
+        return False, _auth_guidance(mask_embedded_credentials(
+            out or "unbekannter Fehler"))
+    message = f"Branch {branch} nach origin übertragen"
+    if refspec != branch:
+        message = f"Branch {branch} nach origin/{branch_name(target)} übertragen"
+    return True, message
 
 
-def clone(url, target_dir, timeout=TIMEOUT_GIT):
+def connection(project_path):
+    """Verbindungsprüfung für die Oberfläche (AP9): Fern- und REST-Zustand.
+
+    Die Fernseite wird mit ls-remote gelesen (kein Merge, kurzes Zeitlimit).
+    Die REST-Prüfung läuft nur, wenn irgendein Token verfügbar ist; der
+    gespeicherte Token geht dabei nur an die offizielle API, gegenüber
+    anderen API-Basen wird ohne Anmeldung geprüft und das ehrlich gemeldet.
+    Diese Funktion wirft niemals; alle Befunde stehen im Ergebnis."""
+    project = str(project_path)
+    config = read_config(os.path.join(project, ".vibe", "project.env"))
+    view = {"remote": None, "api": None, "ok": False, "message": ""}
+    parts = []
+    if not any(r["name"] == "origin" for r in remotes(project)):
+        view["remote"] = False
+        parts.append("Kein Remote origin konfiguriert")
+    else:
+        rc, out = git(project, "ls-remote", "--heads", "origin",
+                      timeout=TIMEOUT_REMOTE_READ)
+        view["remote"] = rc == 0
+        parts.append("Remote origin: " + ("erreichbar" if rc == 0 else
+                     "nicht erreichbar (" + mask_embedded_credentials(
+                         (out or "unbekannter Fehler")[:200]) + ")"))
+    if config["enabled"] and config["repo"]:
+        env_token = token_from_env()
+        stored = read_project_token(project) or read_stored_token()
+        if not (env_token or stored):
+            view["api"] = None
+            parts.append("GitHub-REST: nicht geprüft (kein Token hinterlegt — "
+                         "Token speichern oder GITHUB_TOKEN setzen)")
+        else:
+            api_value = (config["api"] or OFFICIAL_API).rstrip("/")
+            official = not str(config["api"] or "").strip() \
+                or api_value == OFFICIAL_API.rstrip("/")
+            # Gespeicherte Token gehören nur zur offiziellen API; der
+            # Umgebungstoken behält sein bisheriges REST-Verhalten.
+            token = env_token or (stored if official else "")
+            note = "" if (token or not stored) else \
+                " (ohne Anmeldung: der gespeicherte Token gilt nur für api.github.com)"
+            try:
+                _http_json("GET", api_value + "/repos/" + quote(config["repo"]),
+                           token=token)
+                view["api"] = True
+                parts.append("GitHub-REST: OK" + note)
+            except GitHubError as error:
+                view["api"] = False
+                parts.append("GitHub-REST: " + str(error) + note)
+    view["ok"] = view["remote"] is True and view["api"] is not False
+    view["message"] = "; ".join(parts)
+    return view
+
+
+def pull_integration(project_path):
+    """Aktualisiert den Integrationsbranch vor einem neuen Arbeitspaket.
+
+    Ohne aktivierte GitHub-Verknüpfung oder ohne origin wird bewusst
+    übersprungen (kein Verhalten ohne ausdrückliche Konfiguration). Sonst
+    fetch von origin und ff-only Zusammenführung mit ``origin/<branch>``:
+    Der Refspec ist ausdrücklich, damit keine Upstream-Konfiguration
+    Voraussetzung ist (verlinkte, nicht geklonte Projekte haben keine).
+    Es entstehen keine Merge-Commits. Liefert ``(ausgeführt, ok, Meldung)``
+    und wirft niemals."""
+    project = str(project_path)
+    try:
+        config = read_config(os.path.join(project, ".vibe", "project.env"))
+        if not config["enabled"]:
+            return False, True, ("GitHub ist für dieses Projekt nicht aktiv: "
+                                 "Aktualisierung übersprungen")
+        if not any(r["name"] == "origin" for r in remotes(project)):
+            return False, True, ("Kein Remote origin: Aktualisierung "
+                                 "übersprungen")
+        branch = current_branch(project)
+        if not branch:
+            return True, False, ("Kein Branch ausgecheckt (detached HEAD): "
+                                 "Aktualisierung verweigert")
+        rc, out = git(project, "fetch", "--quiet", "origin")
+        if rc != 0:
+            return True, False, _auth_guidance(mask_embedded_credentials(
+                "Abruf fehlgeschlagen: " + (out or "unbekannter Fehler")))
+        rc, out = git(project, "merge", "--ff-only", "origin/" + branch)
+        if rc != 0:
+            return True, False, _auth_guidance(mask_embedded_credentials(
+                "Zusammenführen nicht möglich: "
+                + (out or "unbekannter Fehler")))
+        return True, True, f"Branch {branch} aufgeholt ({out or 'aktuell'})"
+    except (OSError, ValueError) as error:
+        return True, False, "Aktualisierung fehlgeschlagen: " + str(error)
+
+
+def complete_package(project_path, branch, package_id=None, title=None):
+    """Überträgt einen abgeschlossenen Arbeitspaket-Branch und stellt den
+    Merge-Request (AP9): Push mit Upstream, dann Request auf die Basis
+    (explizit > GITHUB_BASE > Standard-Branch der origin).
+
+    Ohne aktivierte Verknüpfung oder ohne origin: bewusster Skip. Fehler
+    liefern ``(True, False, Meldung)``; diese Funktion wirft niemals, damit
+    der Läufer das abgeschlossene Paket nicht blockiert."""
+    project = str(project_path)
+    try:
+        config = read_config(os.path.join(project, ".vibe", "project.env"))
+        if not config["enabled"]:
+            return False, True, ("GitHub ist für dieses Projekt nicht aktiv: "
+                                 "Übertragung übersprungen")
+        if not any(r["name"] == "origin" for r in remotes(project)):
+            return False, True, "Kein Remote origin: Übertragung übersprungen"
+        branch = branch_name(branch or current_branch(project))
+        ok, message = push(project, branch)
+        if not ok:
+            return True, False, message
+        if not config["base"] and not default_base(project):
+            # Bewusster, begrenzter Nachversuch: origin/HEAD versorgen, damit
+            # der Merge-Request eine Basis kennt (kein weiterer Fernaufruf).
+            set_head_default(project)
+        label = f"{package_id}: {branch}" if package_id else f"Merge-Request: {branch}"
+        try:
+            request = create_pull_request(
+                project, config["repo"], branch,
+                base=config["base"] or None,
+                title=title or label,
+                body=("Automatischer Merge-Request des Arbeitspakets "
+                      + str(package_id or branch)),
+                api=config["api"] or None,
+                token=token_for_rest(config["api"], project),
+                token_required=False)
+        except (GitHubError, ValueError) as error:
+            return True, False, ("Branch " + branch + " übertragen; "
+                                 "Merge-Request fehlgeschlagen: " + str(error))
+        return True, True, ("Branch " + branch + " übertragen; Merge-Request #"
+                            + str(request.get("number")) + ": "
+                            + (request.get("url") or ""))
+    except (OSError, ValueError) as error:
+        return True, False, "Übertragung fehlgeschlagen: " + str(error)
+
+
+def clone(url, target_dir, timeout=TIMEOUT_GIT, branch=None):
     """Checkt ein Repository nach target_dir aus (git clone, Argumentliste).
+
+    Mit ``branch`` wird genau dieser Branch ausgecheckt (``git clone
+    --branch``); ein ungültiger Name wird vor dem Aufruf abgelehnt.
 
     Die URL wird als ein einziges Argument übergeben: Eine Shell gibt es
     nicht, versteckte Befehle in der Adresse werden nicht ausgeführt. Ohne
@@ -588,8 +1005,9 @@ def clone(url, target_dir, timeout=TIMEOUT_GIT):
     if not target or target in (".", ".."):
         raise ValueError("Zielordner fehlt")
     existed = os.path.lexists(target)
+    extra = ["--branch", branch_name(branch)] if branch else []
     rc, out = git(os.path.dirname(target) or ".",
-                  "clone", "--quiet", str(url), target, timeout=timeout)
+                  "clone", "--quiet", *extra, str(url), target, timeout=timeout)
     if rc != 0 and not existed:
         shutil.rmtree(target, ignore_errors=True)
     # Fehlermeldungen von git können die Remote-Adresse samt eingebetteter
@@ -648,16 +1066,17 @@ def _http_json(method, url, *, token="", payload=None, timeout=TIMEOUT_HTTP):
         raise GitHubError("GitHub-Antwort ist kein JSON.") from None
 
 
-def list_issues(repo, label=None, api=None, token=None):
+def list_issues(repo, label=None, api=None, token=None, project=None):
     """Offene GitHub-Issues; Label-Filter (Leerwert = alle Issues).
 
     Ohne ausdrücklich übergebenen Token: Umgebungs-Token, sonst der
-    gespeicherte Token (B7) — letzterer nur für die offizielle API."""
+    verschlüsselte Projekt-Token (AP9), sonst der legacy gespeicherte
+    Token (B7) — gespeicherte Token nur für die offizielle API."""
     repo = str(repo or "").strip()
     if not RE_REPO.match(repo):
         raise GitHubError("Repository in owner/name angeben")
     api_value = (api or OFFICIAL_API)
-    token = token if token is not None else token_for_rest(api_value)
+    token = token if token is not None else token_for_rest(api_value, project)
     api = api_value.rstrip("/")
     query = {"state": "open", "per_page": "100"}
     if label:
@@ -698,8 +1117,14 @@ def set_head_default(project_path):
 
 
 def create_pull_request(project_path, repo, head, base=None, title=None, body=None,
-                        api=None, token=None):
-    """Stellt einen Merge-Request über die REST-API; nur mit Token."""
+                        api=None, token=None, token_required=True):
+    """Stellt einen Merge-Request über die REST-API; nur mit Token.
+
+    ``token_required=False`` ist der Automatik-Weg des Läufers
+    (``complete_package``): Auch ohne Token wird der Versuch unternommen;
+    die Ablehnung der API wird dann als verständlicher Befund gemeldet.
+    Der Nutzerpfad (CLI/Oberfläche) bleibt bei der Voreinstellung und
+    verlangt weiterhin einen Token, bevor irgendetwas gesendet wird."""
     project = str(project_path)
     head = str(head or "").strip()
     if not head or "^" in head or "~" in head:
@@ -707,8 +1132,9 @@ def create_pull_request(project_path, repo, head, base=None, title=None, body=No
     title = str(title or "").strip()
     if not title:
         raise GitHubError("Titel für den Merge-Request fehlt")
-    token = token if token is not None else token_for_rest(api or OFFICIAL_API)
-    if not token:
+    token = token if token is not None else token_for_rest(api or OFFICIAL_API,
+                                                           project)
+    if not token and token_required:
         raise GitHubError("Kein GitHub-Zugangstoken in der Umgebung "
                           "(GITHUB_TOKEN oder GH_TOKEN) gesetzt oder in der "
                           "Karte hinterlegt.")

@@ -31,6 +31,7 @@ Ausführen mit:
     python3 -m unittest discover -s tests/unit -p test_b7_github_auth.py -v
 """
 import contextlib
+import hashlib
 import http.client
 import importlib.machinery
 import importlib.util
@@ -879,11 +880,14 @@ class TokenRoutesWebTest(unittest.TestCase):
             self.token_file.unlink()
 
     def expected_token_path(self):
-        """token_state_path() im Testprozess mit dem VIBE_STATE des Servers."""
+        """Projekt-Token-Ablage (AP9-Vertrag, ersetzt die frühere globale
+        Datei): <VIBE_STATE>/github-tokens/<sha256(realpath)[:16]>.json."""
         old = os.environ.get("VIBE_STATE")
         os.environ["VIBE_STATE"] = str(self.state)
         try:
-            return Path(self.gh.token_state_path())
+            project = os.path.realpath(str(self.root / "pgh"))
+            digest = hashlib.sha256(project.encode("utf-8")).hexdigest()[:16]
+            return Path(self.state) / "github-tokens" / (digest + ".json")
         finally:
             if old is None:
                 os.environ.pop("VIBE_STATE", None)
@@ -912,6 +916,8 @@ class TokenRoutesWebTest(unittest.TestCase):
         return self.request("POST", "/api/github", body=body, token=token)
 
     def test_token_save_persists_state_and_hides_secret(self):
+        """AP9-Vertrag: token.save legt den Token je Projekt verschlüsselt
+        ab (github-tokens/<hash>.json); der Klartext steht nie im Inhalt."""
         status, text = self.github_post(
             {"name": "pgh", "action": "token.save", "token": FAKE_TOKEN})
         data = json.loads(text) if text.startswith("{") else {}
@@ -921,13 +927,18 @@ class TokenRoutesWebTest(unittest.TestCase):
         self.assertNotIn(FAKE_TOKEN, text,
                          "Die Antwort darf den Tokeninhalt nie enthalten")
         self.assertTrue(self.token_file.exists(),
-                        "Der Token wird im Zustandsordner von VIBE_STATE "
-                        "gespeichert")
-        with open(self.token_file, encoding="utf-8") as handle:
-            self.assertEqual(FAKE_TOKEN, handle.read())
+                        "Der Token wird je Projekt unter VIBE_STATE/"
+                        "github-tokens gespeichert")
+        raw = self.token_file.read_text(encoding="utf-8")
+        self.assertNotIn(FAKE_TOKEN, raw,
+                         "Die Ablage ist verschlüsselt: kein Klartext-Token")
         auth = (data.get("github") or {}).get("auth")
-        self.assertEqual({"set": True, "source": "gespeichert"}, auth,
+        self.assertEqual({"set": True, "source": "projekt"}, auth,
                          "Die Antwort trägt den auth-Status ohne Geheimnis")
+        global_file = self.token_file.parent.parent / "github-token"
+        self.assertFalse(global_file.exists(),
+                         "token.save schreibt je Projekt; die frühere globale "
+                         "Datei wird nicht mehr erzeugt")
 
     def test_token_clear_removes_the_stored_token(self):
         self.github_post({"name": "pgh", "action": "token.save", "token": FAKE_TOKEN})
@@ -939,7 +950,7 @@ class TokenRoutesWebTest(unittest.TestCase):
         self.assertEqual(200, status, text)
         self.assertTrue(data.get("ok"), data)
         self.assertFalse(self.token_file.exists(),
-                         "token.clear löscht die gespeicherte Datei")
+                         "token.clear löscht den Projekt-Token-Eintrag")
         auth = (data.get("github") or {}).get("auth")
         self.assertEqual({"set": False, "source": ""}, auth,
                          "Nach dem Entfernen bleiben keine Reste")
@@ -963,7 +974,7 @@ class TokenRoutesWebTest(unittest.TestCase):
         status, text = self.request("GET", "/api/project?name=pgh")
         data = json.loads(text)
         auth = (data.get("github") or {}).get("auth")
-        self.assertEqual({"set": True, "source": "gespeichert"}, auth, text)
+        self.assertEqual({"set": True, "source": "projekt"}, auth, text)
         self.assertNotIn(FAKE_TOKEN, text)
 
         self.github_post({"name": "pgh", "action": "token.clear"})

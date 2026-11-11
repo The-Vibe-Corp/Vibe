@@ -609,7 +609,7 @@ function sandboxBody(d,name,isPi){const s=d.sandbox||{enabled:false,tools:[],wri
    B7: GitHub-Zugang (Token) direkt in der Karte hinterlegen und entfernen;
    fehlgeschlagene Aktionen bleiben dauerhaft in der Fehlerbox stehen) ---------- */
 function githubBody(d,name){
- const g=d.github||{enabled:false,repo:'',label:'vibe',api:'',branch:'-',remotes:[],branches:[],ahead:0,behind:0,unpushed:false};
+ const g=d.github||{enabled:false,repo:'',label:'vibe',api:'',base:'',branch:'-',remotes:[],branches:[],ahead:0,behind:0,unpushed:false};
  const active=!!g.enabled;
  const fact=(k,v)=>el('div',{class:'factrow'},el('span',{class:'mut'},k),el('span',{},String(v)));
  const errBox=el('div',{class:''});
@@ -621,14 +621,18 @@ function githubBody(d,name){
  const repo=el('input',{value:g.repo||'',placeholder:'owner/name','aria-label':'GitHub-Repository (owner/name)'});
  const label=el('input',{value:g.label||'vibe',placeholder:'vibe','aria-label':'GitHub-Label für vibe-Aufgaben'});
  const apiIn=el('input',{value:(g.api&&g.api!=='https://api.github.com')?g.api:'',placeholder:'https://api.github.com (Standard)','aria-label':'GitHub-API-Basis'});
- /* B7: GitHub-Zugang (Token) direkt in der Karte, ohne CLI oder Umgebungsvariable.
-    Der Zustand spiegelt g.auth (set/source ohne Geheimnis) und wird nach
-    speichern/entfernen unverzüglich in der Zeile aktualisiert (kein Refresh,
-    damit der aufgeklappte Abschnitt geöffnet bleibt). */
+ /* AP9: Basis-Branch für Merge-Requests (GITHUB_BASE); Leerwert = Standard-Branch der origin (meist main). */
+ const baseIn=el('input',{value:g.base||'',placeholder:'z. B. main (leer = Standard-Branch der origin)','aria-label':'Basis-Branch für Merge-Requests'});
+ /* B7/AP9: GitHub-Zugang (Token) direkt in der Karte, ohne CLI oder Umgebungsvariable.
+    Seit AP9 gilt der Token je Projekt und wird verschlüsselt im Zustandsordner
+    abgelegt. Der Zustand spiegelt g.auth (set/source ohne Geheimnis) und wird
+    nach speichern/entfernen unverzüglich in der Zeile aktualisiert (kein
+    Refresh, damit der aufgeklappte Abschnitt geöffnet bleibt). */
  const authLine=el('div',{class:'mut','data-auth':''});
  const setAuth=source=>{
   const text=source==='umgebung'?'Zugang über die Umgebung (GITHUB_TOKEN/GH_TOKEN).'
-    :source==='gespeichert'?'GitHub-Token gespeichert (im Zustandsordner, außerhalb jedes Projektordners).'
+    :source==='projekt'?'GitHub-Token für dieses Projekt gespeichert (verschlüsselt).'
+    :source==='gespeichert'?'Zugang über den früher global gespeicherten Token (Rückfall, nicht projektbezogen).'
     :'';
   authLine.textContent='GitHub-Zugang: '+(text
     ||'Kein Token hinterlegt — für Push, private Repositories und Merge-Requests ist ein Token nötig. GitHub empfiehlt einen Personal Access Token.');
@@ -645,7 +649,7 @@ function githubBody(d,name){
    const r=await api('/api/github',{name,action:'token.clear'});
    setErr(r.ok?'':r.message);toast(r.message||'');
    if(r.ok){tokenIn.value='';setAuth(r.auth&&r.auth.set?r.auth.source:'')}}}},'Token entfernen');
- const save=el('button',{class:'b p',on:{click:async()=>{const r=await api('/api/github',{name,action:'settings',enabled:enabled.checked,repo:repo.value.trim(),label:label.value.trim(),api:apiIn.value.trim()});
+ const save=el('button',{class:'b p',on:{click:async()=>{const r=await api('/api/github',{name,action:'settings',enabled:enabled.checked,repo:repo.value.trim(),label:label.value.trim(),api:apiIn.value.trim(),base:baseIn.value.trim()});
    if(!r.ok)setErr(r.message);toast(r.message);if(r.ok){setErr('');refresh()}}}},'Speichern');
  const linkBtn=el('button',{class:'b',on:{click:async()=>{
    const value=repo.value.trim();
@@ -655,8 +659,18 @@ function githubBody(d,name){
  const unlinkBtn=el('button',{class:'b',on:{click:async()=>{const r=await api('/api/github',{name,action:'unlink'});
    if(!r.ok)setErr(r.message);toast(r.message);if(r.ok){setErr('');refresh()}}}},'Verknüpfung lösen');
  const fetchBtn=el('button',{class:'b',on:{click:async()=>{const r=await post({name,action:'fetch'});if(r.ok)refresh()}}},'Abrufen (fetch, kein Merge)');
- const pushBtn=el('button',{class:'b',on:{click:async()=>{const r=await post({name,action:'push'});if(r.ok)refresh()}}},'Push (Branch nach origin)');
+ const pushTarget=el('input',{placeholder:'Ziel-Branch (leer = gleicher Name)','aria-label':'Ziel-Branch für Push (optional)'});
+ const pushBtn=el('button',{class:'b',on:{click:async()=>{const r=await post({name,action:'push',target:pushTarget.value.trim()});if(r.ok)refresh()}}},'Push (aktueller Branch)');
  const pullBtn=el('button',{class:'b',on:{click:async()=>{const r=await post({name,action:'pull'});if(r.ok)refresh()}}},'Pull (aufholen, --ff-only)');
+ /* AP9: Verbindungsprüfung in der Karte — Fernseite (origin) und GitHub-REST
+    werden geprüft; das Ergebnis bleibt als Zeile mit ok/fehler-Kennung stehen. */
+ const connLine=el('div',{class:'mut','data-connection':''});
+ const testBtn=el('button',{class:'b',on:{click:async()=>{
+   const r=await api('/api/github',{name,action:'connection'});
+   const c=r.connection||{};
+   connLine.className=c.ok?'ok':'bad';
+   connLine.textContent='Verbindung: '+(c.ok?'OK':'FEHLER')+' — '+String(r.message||c.message||'');
+   toast(r.message||'')}}},'Verbindung testen');
  const issueFilter=el('input',{value:g.label||'vibe',placeholder:'Label (leer = alle)','aria-label':'Issues nach Label filtern'});
  const loadBtn=el('button',{class:'b',on:{click:async()=>{const r=await api('/api/github',{name,action:'issues',label:issueFilter.value.trim()});
    if(!r.ok){setErr(r.message);toast(r.message);return}
@@ -672,7 +686,14 @@ function githubBody(d,name){
    fact('Ahead/Behind',(g.ahead||0)+' / '+(g.behind||0)+(g.unpushed?' (ungesendete Commits)':''))];
  if(g.error)facts.push(fact('Hinweis',String(g.error)));
  const remoteRows=(g.remotes||[]).map(r=>el('div',{class:'mut'},'Remote '+r.name+': '+r.url));
- const branchRows=(g.branches||[]).map(b=>el('div',{class:'mut'},(b.current?'* ':'  ')+b.name+' (Ahead/Behind '+b.ahead+'/'+b.behind+')'));
+ /* AP9: Branch-Kontrolle je Zeile — „Wechseln“ checkt den Branch aus
+    (erzeugt ihn bei Bedarf aus origin/<branch>), „Push“ überträgt ihn
+    nach origin. Meldungen landen im Toast, Fehler in der Fehlerbox. */
+ const branchRows=(g.branches||[]).map(b=>el('div',{class:'mut'},
+  (b.current?'* ':'  ')+b.name+' (Ahead/Behind '+b.ahead+'/'+b.behind+')',
+  el('div',{class:'bar'},
+   el('button',{class:'b',on:{click:async()=>{const r=await post({name,action:'checkout',branch:b.name});if(r.ok)refresh()}}},'Wechseln'),
+   el('button',{class:'b',on:{click:async()=>{const r=await post({name,action:'push',branch:b.name});if(r.ok)refresh()}}},'Push'))));
  const conn=el('div',{},
    el('div',{class:'mut'},'GitHub ist optional je Projekt. Die Einstellungen gelten nur für dieses Projekt; Updates und Branches bleiben bewusste Aktionen (kein automatischer Push oder Merge).'),
    authLine,
@@ -681,6 +702,8 @@ function githubBody(d,name){
    el('label',{},'Repository (owner/name)'),repo,
    el('label',{},'Label für vibe-Aufgaben'),label,
    el('label',{},'API-Basis (optional)'),apiIn,
+   /* AP9: Basis-Branch für Merge-Requests (GITHUB_BASE); leer = Standard-Branch der origin. */
+   el('label',{},'Basis-Branch für Merge-Requests (optional)'),baseIn,
    el('div',{class:'bar'},save,linkBtn,unlinkBtn));
  const actions=active?el('div',{class:'gh-actions'},
    ...facts,
@@ -688,6 +711,9 @@ function githubBody(d,name){
    el('div',{class:'bar'},fetchBtn,pushBtn,pullBtn),
    branchRows.length?el('details',{},el('summary',{},'Branches ('+branchRows.length+')'),el('div',{},...branchRows))
                     :el('div',{class:'mut'},'Keine lokalen Branches erkannt.'),
+   /* AP9: Verbindungsprüfung mit dauerhafter Ergebniszeile in der Karte. */
+   el('div',{class:'bar'},testBtn),
+   connLine,
    el('div',{class:'bar'},prBtn),
    el('hr'),
    el('b',{},'Issues als Arbeitspakete'),

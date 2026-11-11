@@ -3,7 +3,12 @@
 
 Der Läufer benutzt dieses Modul, damit Auswahl, Vorabprüfung, Bewertung des
 Agentenergebnisses und Abschlussbericht versioniert und testbar sind. Die
-Datei arbeitet ausschließlich lokal: keine Modellaufrufe, keine Netzverbindung.
+Datei arbeitet ansonsten ausschließlich lokal: keine Modellaufrufe, keine
+Netzverbindung. Ausnahme seit AP9: Die Unterbefehle ``github-pull``
+(Aktualisierung des Haupt-Branches vor einem Arbeitspaket) und
+``github-complete`` (Push und Merge-Request nach dem Abschluss) nutzen die
+GitHub-Ebene aus ``vibe_github`` — nur wenn das Projekt dies ausdrücklich
+konfiguriert hat (``GITHUB_ENABLED``), sonst überspringen sie bewusst.
 Sie schreibt nur den projektlokalen Auswahlstand unter ``.vibe/tmp/`` und den
 Paketnachweis in die Laufzeitnotiz ``FEEDBACK.md`` bzw. ``TICKETS.md``; die
 Arbeitskopie erhält eine Kopie dieser Notizen.
@@ -16,9 +21,28 @@ import subprocess
 import sys
 from pathlib import Path
 
+if os.path.dirname(os.path.realpath(__file__)) not in sys.path:
+    sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
 EXIT_OK = 0
 EXIT_NONE = 1
 EXIT_USAGE = 2
+
+
+def _github_module():
+    """Lädt die GitHub-Ebene träge (AP9).
+
+    Das Modul liegt im selben Verzeichnis wie dieses Skript. In Teil-
+    installationen (Prüfumgebungen, ältere Toolchains) kann ``vibe_github.py``
+    fehlen; dann dürfen die übrigen Subkommandos (gate, copy-notes, select)
+    nicht beeinträchtigt werden. Die GitHub-Befehle melden das als klar
+    benannten Fehlschlag statt das ganze Skript abbrechen zu lassen."""
+    try:
+        import vibe_github  # pylint: disable=import-outside-toplevel
+    except ImportError as error:
+        raise SystemExit(
+            "GitHub-Befehl nicht verfügbar: vibe_github.py fehlt in der "
+            "Installation (" + str(error) + ")") from error
+    return vibe_github
 
 # F22: Ein blockierter Preflight darf den Nutzer über F16 nach einer
 # Entscheidung fragen. Die Assistenz ist nur im Produktpfad ``vibe run``
@@ -974,6 +998,28 @@ def command_status(args):
     return EXIT_OK
 
 
+def command_github_pull(args):
+    """Befehl ``github-pull``: Haupt-Branch vor einem Arbeitspaket aktualisieren.
+
+    Ohne Konfiguration bewusster Skip (Exit 0); ein Fehlschlag meldet sich
+    verständlich und endet mit 1, wirft aber niemals."""
+    performed, ok, message = _github_module().pull_integration(args.project)
+    print(("GitHub: " if performed else "Skip: ") + message)
+    return EXIT_OK if ok else EXIT_NONE
+
+
+def command_github_complete(args):
+    """Befehl ``github-complete``: Branch pushen und Merge-Request stellen.
+
+    Der Läufer ruft dies nach der grünen Abschlussschranke auf; ein
+    Fehlschlag (Exit 1) blockiert das Paket nicht, der Läufer meldet ihn
+    nur als Hinweis."""
+    performed, ok, message = _github_module().complete_package(
+        args.project, args.branch, package_id=args.id)
+    print(("GitHub: " if performed else "Skip: ") + message)
+    return EXIT_OK if ok else EXIT_NONE
+
+
 def build_parser():
     """Baut die argparse-Befehlszeile aller Unterbefehle."""
     parser = argparse.ArgumentParser(
@@ -1060,6 +1106,22 @@ def build_parser():
     status = subparsers.add_parser("status", help="Paketstand ausgeben")
     status.add_argument("--project", required=True)
     status.set_defaults(handler=command_status)
+
+    github_pull = subparsers.add_parser(
+        "github-pull",
+        help="Haupt-Branch vor einem Arbeitspaket aktualisieren (AP9)",
+    )
+    github_pull.add_argument("--project", required=True)
+    github_pull.set_defaults(handler=command_github_pull)
+
+    github_complete = subparsers.add_parser(
+        "github-complete",
+        help="Paket-Branch pushen und Merge-Request stellen (AP9)",
+    )
+    github_complete.add_argument("--project", required=True)
+    github_complete.add_argument("--branch", required=True)
+    github_complete.add_argument("--id", default=None)
+    github_complete.set_defaults(handler=command_github_complete)
 
     return parser
 

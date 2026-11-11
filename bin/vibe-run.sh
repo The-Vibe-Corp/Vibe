@@ -594,6 +594,12 @@ while [ "$PACKAGES" -lt "$MAXP" ] && [ "$STOP" = 0 ]; do
     STOP=1; break
   fi
   if ! select_item; then echo "Keine offenen Arbeitspakete mehr." | tee -a "$LOG"; break; fi
+  # AP9: Vor jedem neuen Arbeitspaket den Haupt-Branch aktualisieren (nur
+  # bei GitHub-Konfiguration; sonst bewusster Skip). Ein Fehlschlag erzeugt
+  # nur einen Hinweis, blockiert das Paket aber nicht.
+  if ! python3 "$PACKAGES_PY" github-pull --project "$P" >>"$LOG" 2>&1; then
+    echo "HINWEIS: GitHub-Pull des Haupt-Branchs vor $ID fehlgeschlagen; es wird mit dem aktuellen Stand weitergearbeitet." | tee -a "$LOG"
+  fi
   PACKAGES=$((PACKAGES + 1))
   PACKAGE_BASE="$(git -C "$P" rev-parse HEAD)"
   echo "=== [$NAME] Arbeitspaket $ID, Durchgang $PACKAGES/$MAXP  $(date +%T) ===" | tee -a "$LOG"
@@ -667,6 +673,14 @@ $QUESTION_HINT"
         record_block "$ID" "$BLOCK_REASON"
         echo "BLOCKIERT: $BLOCK_REASON" | tee -a "$LOG"
         STOP=1; break
+      fi
+      # AP9: Nach grüner Schranke Push des Paket-Branchs nach origin und
+      # Merge-Request auf den Basis-Branch (sofern GitHub konfiguriert).
+      # Ein Fehlschlag erzeugt nur einen Hinweis; der lokale Merge läuft
+      # weiter, damit das Paket nicht an GitHub hängt.
+      if ! python3 "$PACKAGES_PY" github-complete --project "$P" \
+          --branch "$BRANCH" --id "$ID" >>"$LOG" 2>&1; then
+        echo "HINWEIS: GitHub-Abschluss für $ID (Push/Merge-Request) fehlgeschlagen; das Paket wird lokal gemergt." | tee -a "$LOG"
       fi
       if ! merge_package; then
         BLOCK_REASON="Merge für $ID fehlgeschlagen."

@@ -20,7 +20,7 @@ Aufruf:  vibe                 interaktives Menü
          vibe verify <p> [quick|full]
          vibe feedback <p>    neuen Punkt in FEEDBACK.md eintragen
          vibe new <name> <typ> [vorlage]   Typen: vibe types
-         vibe clone <url> [name]  Projekt aus Git/GitHub auschecken und mit den lokalen Einstellungen einrichten
+         vibe clone <url> [name] [--branch <b>]  Projekt aus Git/GitHub auschecken und mit den lokalen Einstellungen einrichten
          vibe init <p> [typ]  vorhandenes Projekt für vibe vorbereiten (ergänzt fehlende Dateien)
          vibe roots [add <pfad>|rm <pfad>]  Entwicklungsordner verwalten und Projekte einlesen
          vibe agents          alle Agenten (global und projektspezifisch)
@@ -38,7 +38,7 @@ Aufruf:  vibe                 interaktives Menü
          vibe ui [stop]       Dashboard im Browser (nur localhost)
          vibe server [start|stop|status]  gemeinsamer opencode-Server mit Weboberfläche
          vibe harness [status|list|use <name>|setup [name]]  Harness (opencode/Pi) wählen und einrichten
-         vibe github <p> [status|token [clear]|link <url>|unlink|branches|fetch|pull|push|issues|issues-import|pr]  GitHub-Verknüpfung (optional je Projekt); alle Aktionen bewusst, Merge-Request nur mit --confirm; token hinterlegt den GitHub-Zugang ohne Log/argv
+         vibe github <p> [status|token [clear]|link <url>|unlink|branches|fetch|pull|push [branch]|checkout <branch>|test|issues|issues-import|pr]  GitHub-Verknüpfung (optional je Projekt); alle Aktionen bewusst, Merge-Request nur mit --confirm; Token wird je Projekt verschlüsselt gespeichert (AP9), test prüft die Verbindungen
          vibe types           verfügbare Projekttypen
          vibe doctor          Umgebung prüfen
 """
@@ -1045,7 +1045,8 @@ def github_issues(name, label=None):
     if not config["repo"]:
         raise ValueError("Nicht verknüpft: GITHUB_REPO fehlt")
     wanted = config["label"] if label is None else label
-    issues = vibe_github.list_issues(config["repo"], wanted, api=config["api"])
+    issues = vibe_github.list_issues(config["repo"], wanted, api=config["api"],
+                                     project=ppath(name))
     for issue in issues:
         issue["label_requested"] = wanted
     return issues
@@ -1056,7 +1057,7 @@ def github_issues_import(name, label=None):
     added = vibe_github.import_issues_into_tickets(ppath(name), list_out)
     return added, len(list_out)
 
-def github_pr(name, title=None, base=None, confirm=False):
+def github_pr(name, title=None, base=None, branch=None, confirm=False):
     """Merge-Request stellen; Push und API nur mit ausdrücklicher Freigabe."""
     config = vibe_github.read_config(github_env_path(name))
     if not config["enabled"]:
@@ -1064,11 +1065,13 @@ def github_pr(name, title=None, base=None, confirm=False):
     if not config["repo"]:
         raise ValueError("Kein Repository verknüpft: GITHUB_REPO fehlt")
     project = ppath(name)
-    branch = vibe_github.current_branch(project)
+    branch = (branch or vibe_github.current_branch(project)).strip()
     if not branch:
         raise ValueError("Kein Branch ausgecheckt: Merge-Request verweigert")
     if not confirm:
-        planned_base = base or vibe_github.default_base(project) or "(unbekannt; --base angeben)"
+        planned_base = (base or config["base"]
+                        or vibe_github.default_base(project)
+                        or "(unbekannt; --base angeben)")
         return {"ok": False, "planned": branch + " -> " + planned_base,
                 "message": "Vorgesehener Merge-Request: "
                            + branch + " -> " + planned_base
@@ -1076,20 +1079,20 @@ def github_pr(name, title=None, base=None, confirm=False):
     ok, message = vibe_github.push(project, branch)
     if not ok:
         raise ValueError(message)
-    if not base and not vibe_github.default_base(project):
+    if not (base or config["base"]) and not vibe_github.default_base(project):
         # Bewusster, einmaliger Nachversuch in der bestätigten Aktion:
         # origin/HEAD nachziehen, statt mit unbekannter Basis zu scheitern.
         vibe_github.set_head_default(project)
     request = vibe_github.create_pull_request(
         project, config["repo"], branch,
-        base=base, title=title or ("Merge-Request: " + branch),
+        base=base or config["base"] or None, title=title or ("Merge-Request: " + branch),
         body=None, api=config["api"])
     return {"ok": True, "branch": branch, "base": request.get("base"),
             "number": request.get("number"), "url": request.get("url"),
             "message": "Merge-Request erstellt: " + (request.get("url") or branch)}
 
 def cmd_github(name=None, action="status", value=None, label=None, title=None,
-               base=None, confirm=False, out=None):
+               base=None, branch=None, confirm=False, out=None):
     """CLI-Zugang zu den GitHub-Funktionen (optional, pro Projekt)."""
     if name is None:
         print(__doc__)
@@ -1137,18 +1140,35 @@ def cmd_github(name=None, action="status", value=None, label=None, title=None,
             line(message)
             sys.exit(0 if ok else 1)
         elif action == "push":
-            ok, message = vibe_github.push(ppath(name))
+            ok, message = vibe_github.push(ppath(name), branch=value or "")
             line(message)
             sys.exit(0 if ok else 1)
-        elif action == "token":  # B7: Token hinterlegen/entfernen (nicht als Argument)
+        elif action == "checkout":  # AP9: bewusster Branch-Wechsel
+            if not value:
+                raise ValueError("Branch fehlt: vibe github <projekt> checkout <branch>")
+            ok, message = vibe_github.checkout_branch(ppath(name), value)
+            line(message)
+            sys.exit(0 if ok else 1)
+        elif action == "test":  # AP9: Verbindungsprüfung für den Nutzer
+            view = vibe_github.connection(ppath(name))
+            line("Verbindung: " + ("OK" if view["ok"] else "FEHLER"))
+            line(str(view["message"] or ""))
+            sys.exit(0 if view["ok"] else 1)
+        elif action == "token":  # B7/AP9: Token je Projekt (nicht als Argument)
             if value in ("clear", "--clear"):
-                vibe_github.delete_token()
-                line("GitHub-Token entfernt")
+                vibe_github.delete_project_token(ppath(name))
+                line("GitHub-Token für dieses Projekt entfernt")
             elif value in (None, ""):
-                import getpass
-                token = getpass.getpass("GitHub-Token (Eingabe bleibt unsichtbar): ")
-                vibe_github.save_token(token)
-                line("GitHub-Token gespeichert")
+                if sys.stdin.isatty():
+                    import getpass
+                    token = getpass.getpass(
+                        "GitHub-Token für dieses Projekt (Eingabe bleibt unsichtbar): ")
+                else:
+                    # Nicht-interaktive Nutzung (Skripte/Tests): Eine Zeile
+                    # aus der Standardeingabe; der Inhalt wird nie echoen.
+                    token = sys.stdin.readline().rstrip("\r\n")
+                vibe_github.save_project_token(ppath(name), token)
+                line("GitHub-Token für dieses Projekt gespeichert (verschlüsselt)")
             else:
                 raise ValueError('Token nie als Argument angeben. Befehle: '
                                  '"vibe github <projekt> token" (Eingabe, unsichtbar) '
@@ -1168,29 +1188,33 @@ def cmd_github(name=None, action="status", value=None, label=None, title=None,
             else:
                 line("Keine neuen Issues (%d gesehen); TICKETS.md unverändert." % seen)
         elif action == "pr":
-            result = github_pr(name, title=title, base=base, confirm=confirm)
+            result = github_pr(name, title=title, base=base, branch=branch,
+                               confirm=confirm)
             line(result["message"])
         else:
-            raise ValueError('Aktion unbekannt: "%s" (status|link|unlink|branches|fetch|'
-                             'pull|push|issues|issues-import|pr)' % action)
+            raise ValueError('Aktion unbekannt: "%s" (status|link|unlink|branches|'
+                             'fetch|pull|push|checkout|test|issues|issues-import|'
+                             'token|pr)' % action)
     except ValueError as e:
         sys.exit(str(e))
     except Exception as e:  # GitHubError u. a.: verständlich, ohne Token
         sys.exit(str(e))
 
 def _parse_github_cli(rest):
-    """CLI-Optionen (--confirm, --label/--title/--base Wert, Position und Action)."""
-    options = {"label": None, "title": None, "base": None, "confirm_on": False}
+    """CLI-Optionen (--confirm, --label/--title/--base/--branch Wert, Position)."""
+    options = {"label": None, "title": None, "base": None, "branch": None,
+               "confirm_on": False}
     positional = []
     index = 0
     while index < len(rest):
         token = rest[index]
         if token == "--confirm":
             options["confirm_on"] = True
-        elif token in ("--label", "--title", "--base"):
+        elif token in ("--label", "--title", "--base", "--branch"):
             if index + 1 >= len(rest):
                 raise ValueError("Option " + token + " erwartet einen Wert")
-            options[{"--label": "label", "--title": "title", "--base": "base"}[token]] = rest[index + 1]
+            options[{"--label": "label", "--title": "title", "--base": "base",
+                     "--branch": "branch"}[token]] = rest[index + 1]
             index += 1
         else:
             positional.append(token)
@@ -1207,7 +1231,8 @@ def github_cli(rest):
     except ValueError as e:
         sys.exit(str(e))
     cmd_github(name, action, value, label=options["label"], title=options["title"],
-               base=options["base"], confirm=options["confirm_on"])
+               base=options["base"], branch=options["branch"],
+               confirm=options["confirm_on"])
 
 def sess(name): return profile_session("vibe-" + run_key(name))
 def tmux_has_session(name): return run(["tmux", "has-session", "-t", sess(name)])[0] == 0
@@ -2481,8 +2506,11 @@ def _remap_project_agents(name, project):
         ("; entfernt: " + ", ".join(removed) if removed else "")
 
 
-def checkout_from_github(url, name=None):
+def checkout_from_github(url, name=None, branch=None):
     """Checkt ein Repository aus und richtet es als neues Projekt ein.
+
+    Mit ``branch`` wird genau dieser Branch ausgecheckt (AP9); ohne Angabe
+    gilt der Standard-Branch des Remotes.
 
     Liefert (Name, Zusammenfassung). Fehler werden als ValueError mit
     verständlicher Meldung geworfen; ein fehlgeschlagener Aufruf hinterlässt
@@ -2505,7 +2533,12 @@ def checkout_from_github(url, name=None):
                          + " — anderen Namen wählen")
     if name in project_map():
         raise ValueError("Projektname ist bereits vergeben: " + name)
-    rc, out = vibe_github.clone(url, target)
+    # AP9: Der optionale Branch wird nur weitergereicht, wenn er gesetzt ist;
+    # der AP8-Standardaufruf bleibt unverändert.
+    if branch:
+        rc, out = vibe_github.clone(url, target, branch=branch)
+    else:
+        rc, out = vibe_github.clone(url, target)
     if rc != 0:
         shutil.rmtree(target, ignore_errors=True)
         raise ValueError("Auschecken fehlgeschlagen: " + (out or "unbekannter Fehler"))
@@ -2557,11 +2590,32 @@ def _adopt_checked_out_project(project, name):
     return notes
 
 
-def cmd_clone(url, name=None, out=None):
-    """CLI für „vibe clone <url> [name]“: auschecken und lokal einrichten."""
+def _parse_clone_cli(rest):
+    """CLI-Optionen für „vibe clone <url> [name] --branch <branch>“."""
+    positional = []
+    branch = None
+    index = 0
+    while index < len(rest):
+        token = rest[index]
+        if token == "--branch":
+            if index + 1 >= len(rest):
+                raise ValueError("Option --branch erwartet einen Branch-Namen")
+            branch = rest[index + 1]
+            index += 1
+        else:
+            positional.append(token)
+        index += 1
+    if len(positional) < 1:
+        raise ValueError("Remote-Adresse fehlt: vibe clone <url> [name]")
+    url = positional[0]
+    name = positional[1] if len(positional) > 1 else None
+    return url, name, branch
+
+def cmd_clone(url, name=None, branch=None, out=None):
+    """CLI für „vibe clone <url> [name] [--branch <branch>]“."""
     out = out or sys.stdout
     try:
-        found, summary = checkout_from_github(url, name)
+        found, summary = checkout_from_github(url, name, branch=branch)
     except (ValueError, OSError, vibe_storage.StorageError) as error:
         sys.exit(str(error))
     print(col("g", "Projekt " + found + " ausgecheckt und eingerichtet."), file=out)
@@ -5151,7 +5205,7 @@ def main():
                  "fritz": lambda: cmd_fritz(r[0] if r else None),
                  "verify": lambda: cmd_verify(r[0], r[1] if len(r) > 1 else "quick"), "feedback": lambda: cmd_feedback(r[0]),
                  "new": lambda: cmd_new(r[0], r[1] if len(r) > 1 else "generic", r[2] if len(r) > 2 else None),
-                 "clone": lambda: cmd_clone(r[0], r[1] if len(r) > 1 else None),
+                 "clone": lambda: (lambda parsed: cmd_clone(parsed[0], parsed[1], branch=parsed[2]))(_parse_clone_cli(r)),
                  "init": lambda: cmd_init(r[0], r[1] if len(r) > 1 else None),
                  "roots": lambda: cmd_roots(r[0] if r else None, r[1] if len(r) > 1 else None), "scan": lambda: cmd_roots(),
                  "agents": lambda: cmd_agents(), "agent": lambda: cmd_agent(r[0], r[1], r[2] if len(r) > 2 else "global", r[3] if len(r) > 3 else None),

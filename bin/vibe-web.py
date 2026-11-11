@@ -866,6 +866,13 @@ class H(BaseHTTPRequestHandler):
                             if api:
                                 vibe_github.check_api(api)
                             values["GITHUB_API"] = api
+                        if "base" in body:
+                            base = str(body.get("base") or "").strip()
+                            if base:
+                                # AP9: Basis-Branch für Merge-Requests; die
+                                # Validierung teilt sich mit checkout/push.
+                                base = vibe_github.branch_name(base)
+                            values["GITHUB_BASE"] = base
                         if values:
                             vibe.set_env_values(name, values)
                         msg = "GitHub-Einstellungen gespeichert"
@@ -880,16 +887,18 @@ class H(BaseHTTPRequestHandler):
                         extra["github"] = vibe.github_unlink(name)
                         msg = "Verknüpfung gelöst"
                     elif act == "token.save":
-                        # B7: Token in der Oberfläche hinterlegen
-                        vibe_github.save_token(body.get("token") or "")
+                        # B7/AP9: Token in der Oberfläche hinterlegen — seit
+                        # AP9 je Projekt, verschlüsselt im Zustandsordner.
+                        vibe_github.save_project_token(vibe.ppath(name),
+                                                       body.get("token") or "")
                         extra["github"] = vibe.github_status(name)
                         extra["auth"] = (extra["github"] or {}).get("auth")
-                        msg = "GitHub-Token gespeichert"
+                        msg = "GitHub-Token für dieses Projekt gespeichert (verschlüsselt)"
                     elif act == "token.clear":
-                        vibe_github.delete_token()
+                        vibe_github.delete_project_token(vibe.ppath(name))
                         extra["github"] = vibe.github_status(name)
                         extra["auth"] = (extra["github"] or {}).get("auth")
-                        msg = "GitHub-Token entfernt"
+                        msg = "GitHub-Token für dieses Projekt entfernt"
                     elif act == "fetch":
                         ok, msg = vibe_github.fetch(vibe.ppath(name))
                         extra["github"] = vibe_github.status(name)
@@ -897,8 +906,22 @@ class H(BaseHTTPRequestHandler):
                         ok, msg = vibe_github.pull(vibe.ppath(name))
                         extra["github"] = vibe_github.status(name)
                     elif act == "push":
-                        ok, msg = vibe_github.push(vibe.ppath(name))
+                        ok, msg = vibe_github.push(
+                            vibe.ppath(name), branch=str(body.get("branch") or ""),
+                            target=str(body.get("target") or ""))
                         extra["github"] = vibe_github.status(name)
+                    elif act == "checkout":
+                        ok, msg = vibe_github.checkout_branch(
+                            vibe.ppath(name), body.get("branch") or "")
+                        extra["github"] = vibe_github.status(name)
+                    elif act == "connection":
+                        # AP9: Verbindungsprüfung für die Oberfläche; wirft
+                        # niemals, das Ergebnis wird direkt angezeigt.
+                        view = vibe_github.connection(vibe.ppath(name))
+                        ok = bool(view.get("ok"))
+                        msg = view.get("message") or ("Verbindung: "
+                                                      + ("OK" if ok else "FEHLER"))
+                        extra["connection"] = view
                     elif act == "issues":
                         label = body.get("label")
                         extra["issues"] = vibe.github_issues(name, None if label is None else str(label))
