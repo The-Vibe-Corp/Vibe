@@ -1076,11 +1076,12 @@ class H(BaseHTTPRequestHandler):
                             vibe.ppath(name), str(body.get("order") or ""))
                         vibe.set_env_values(
                             name, {vibe_packages.ORDER_KEY: " ".join(order)})
-                        msg = ("Priorisierung gespeichert" if order
-                               else "Leere Priorisierung gespeichert (Standardordnung)")
+                        # F29: ok gehört zur Antwort, sonst UnboundLocalError.
+                        ok, msg = True, ("Priorisierung gespeichert" if order
+                                         else "Leere Priorisierung gespeichert (Standardordnung)")
                     elif act == "clear":
                         vibe.set_env_values(name, {vibe_packages.ORDER_KEY: ""})
-                        msg = "Priorisierung geleert (Standardordnung)"
+                        ok, msg = True, "Priorisierung geleert (Standardordnung)"
                     else:
                         ok, msg = False, "Unbekannte Aktion"
                     extra["priority"] = vibe_services.priority_info(vibe, name)

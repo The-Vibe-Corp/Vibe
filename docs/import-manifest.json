@@ -702,6 +702,16 @@
       ],
       "datum": "2026-11-11",
       "grund": "Priorisierung der Abarbeitungsreihenfolge je Projekt (AP11): PACKAGE_ORDER in .vibe/project.env listet Kennungen in der gewünschten Reihenfolge; select_package wählt verbindlich den ersten offenen, bereiten Eintrag vor der Standardordnung (TICKETS vor FEEDBACK, Priorität), erledigte/gesperrte/abhängigkeitsgeblockte/unbekannte Einträge werden entnommen, die Skip-Liste bleibt wirksam, next-package.json vermerkt 'ordered'. CLI 'vibe priority <p> [list|set|clear]', Web-API GET/POST /api/priority und Einstellungsabschnitt 'Priorisierung' im Dashboard; der Läufer meldet die verbindliche Wahl im Protokoll. Geänderte Dateien liegen im Bereich bin, daher wurden Größe und SHA-256 aktualisiert."
+    },
+    {
+      "arbeitspaket": "F29",
+      "dateien": [
+        "bin/vibe-web.py",
+        "bin/web/app.js",
+        "bin/web/styles.css"
+      ],
+      "datum": "2026-11-11",
+      "grund": "Feedback zu AP11: POST /api/priority antwortet beim Speichern mit ok (UnboundLocalError behoben); die Reihenfolge der offenen Arbeitspakete wird per Drag&Drop am Handle direkt in der Maske Arbeit geändert und gespeichert statt im Einstellungs-Tab."
     }
   ],
   "files": [
@@ -726,9 +736,9 @@
       "sha256": "0a7db28cc54fdf28ddd01de3237422a8a5fa5f211c278cb78de727d5b50138b6"
     },
     {
-      "bytes": 69262,
+      "bytes": 69372,
       "path": "bin/vibe-web.py",
-      "sha256": "22e20235dfc132ed1aef849b0eed29c225544647fb02f007547506b8047eaab5"
+      "sha256": "331b2c5f227943298f66edcd86b04c596d0e6df6c3e346be898279bda018b168"
     },
     {
       "bytes": 5189,
@@ -801,9 +811,9 @@
       "sha256": "7b6aa4118259dc3440b37eaeec5eaa96eac7d928e6e704b2310946490bd25fbb"
     },
     {
-      "bytes": 117601,
+      "bytes": 117786,
       "path": "bin/web/app.js",
-      "sha256": "929af695cb13a2f3108ffd6ba256caf1bdfc13ae70c783b274e88037c8a86862"
+      "sha256": "c9515d5f92c492d2c94af9e1919f174ccd9a1ce787ed59036c61aa24a6d163ff"
     },
     {
       "bytes": 588,
@@ -811,9 +821,9 @@
       "sha256": "db45ba1dd9e5da380f5c05c24b2158eefce9b7e8f87faeb33a9e88910d0cd73d"
     },
     {
-      "bytes": 9414,
+      "bytes": 9843,
       "path": "bin/web/styles.css",
-      "sha256": "4f44d4e8be99c75ee6452d493308adaece5e3f5b0cc191f15734e0f128d9106f"
+      "sha256": "b2409683d6a29f203d4aa90193591b2062c7473f842c4c065c2295d85c173cfa"
     },
     {
       "bytes": 34162,

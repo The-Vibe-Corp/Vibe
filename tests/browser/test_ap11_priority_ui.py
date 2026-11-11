@@ -1,26 +1,73 @@
-"""Browserabnahme AP11 „Priorisierung der Abarbeitungsreihenfolge“.
+"""Browserabnahme AP11/F29 „Priorisierung der Abarbeitungsreihenfolge“.
 
-Das Dashboard erhält im Projekt-Einstellungs-Tab einen neuen optionalen
-Abschnitt „Priorisierung“ (TICKETS.md AP11, AK 9):
+F29 (FEEDBACK.md) verlegt die Bedienstelle der Priorisierung aus dem
+Einstellungs-Tab direkt in die Maske „Arbeit“: Die Karte „Offene
+Arbeitspakete“ erhält je Paket ein Drag-Handle, Reihenfolge per Drag&Drop
+(und ohne Maus per Tastatur) wird über „Speichern“ als ``PACKAGE_ORDER``
+abgelegt, „Leeren (Standardordnung)“ setzt zurück; der Abschnitt
+„Priorisierung“ samt Sprungchip entfällt im Einstellungs-Tab.
 
-* der Abschnitt erscheint in ``#panel-einstellungen`` als ``details``-Abschnitt
-  mit ``data-goto``-Sprungknopf in der Abschnittsleiste und lässt sich über
-  diesen aufklappen,
-* der Abschnitt zeigt die sich aus der Konfiguration ergebende effektive
-  Abarbeitungsreihenfolge der offenen Pakete,
-* „Speichern“ einer Reihenfolge schreibt ``PACKAGE_ORDER`` in
-  ``.vibe/project.env`` des Testprojekts (POST /api/priority, action set,
-  wie das /api/rights-Schreibmuster), „Löschen“ leert ihn (action clear);
-  andere Zeilen von project.env bleiben erhalten,
-* GET /api/priority?name= liefert die konfigurierte Reihenfolge mit Status je
-  Eintrag (offen/erledigt/gesperrt/fehlt), die effektive Reihenfolge und eine
-  Meldung.
+Dom-Vertrag (an die Implementierung gerichtet, aus den Akzeptanzkriterien
+abgeleitet):
 
-Die Tests starten das echte Dashboard auf einem eigenen Port mit vollständig
-isolierten VIBE_*-Pfaden (Muster tests/browser/test_ap7_settings_ui.py) und
-bedienen es mit Chromium über Playwright. Chromium wird nur aus dem Nutzer-
-Cache gelesen (~/.cache/ms-playwright), nie heruntergeladen. Keine echten
-externen Dienste, keine Modellaufrufe.
+* Maske „Arbeit“ (``#panel-arbeit``): die Karte „Offene Arbeitspakete“
+  (``.card`` mit dieser Kopfzeile) listet die offenen Pakete als
+  ``.item`` in der wirksamen Reihenfolge; das erledigte Paket T0 steht
+  nicht in der Karte.
+* Je Paket genau ein Handle: ein Element mit Attribut ``data-drag-handle``
+  und zugänglichem Namen (``aria-label``), der „verschieben“ enthält
+  (Groß-/Kleinschreibung egal). Das Handle ist der Zieh- und Fokuspunkt.
+* Die Karte enthält „Speichern“ (Rolle button, Name genau „Speichern“)
+  und „Leeren (Standardordnung)“ (Name enthält „Leeren“).
+* Drag&Drop: Ziehen des Handles und Ablegen an der OBEREN Kante eines
+  Zielpakets (Drop-Punkt nahe der Ziellokator-Oberkante) fügt das Paket
+  VOR dem Zielpaket ein. Geprüft mit Playwright ``drag_and_drop``.
+* Tastatur: Fokus auf dem Handle, ``ArrowUp``/``ArrowDown`` verschieben
+  das Paket eine Position (ohne zusätzlichen Moduswechsel).
+
+Testfälle (AK aus FEEDBACK.md F29 / docs/features/AP11.md):
+
+ 1. ``test_settings_tab_has_no_priorisierung_section_or_chip`` (AK 4)
+    Vor: Projekt geöffnet, Register „Einstellungen“. Aktion: Panel
+    inspizieren. Erwartet: kein details-Abschnitt „Priorisierung“ und
+    kein data-goto-Chip „Priorisierung“ (je 0 Treffer).
+ 2. ``test_open_packages_card_offers_drag_handles_save_and_clear`` (AK 3/5)
+    Vor: Projekt mit erledigter T0 und offenen T1/T2; kein
+    PACKAGE_ORDER; Maske „Arbeit“. Aktion: Karte inspizieren. Erwartet:
+    Karte listet T1 und T2 (nicht T0) in der Standardordnung T1 vor T2;
+    je Paket ein Handle mit data-drag-handle und aria-label
+    „verschieben…“; „Speichern“ und „Leeren (Standardordnung)“ sind in
+    der Karte vorhanden.
+ 3. ``test_drag_and_drop_reorders_and_save_writes_package_order`` (AK 3)
+    Vor: kein PACKAGE_ORDER; Maske „Arbeit“. Aktion: Handle von T2 per
+    Drag&Drop an die obere Kante von T1 ziehen, „Speichern“ klicken.
+    Erwartet: project.env enthält PACKAGE_ORDER mit T2 vor T1 und behält
+    TYPE/TESTER; nach erneutem Öffnen des Projekts zeigt die Karte die
+    übernommene Reihenfolge T2 vor T1.
+ 4. ``test_clear_resets_to_the_standard_order`` (AK 3)
+    Vor: PACKAGE_ORDER="T2,T1" abgelegt; Maske „Arbeit“ zeigt T2 vor T1.
+    Aktion: „Leeren (Standardordnung)“ klicken. Erwartet: PACKAGE_ORDER
+    ohne Kennung, TYPE/TESTER bleiben; nach erneutem Öffnen zeigt die
+    Karte wieder die Standardordnung T1 vor T2.
+ 5. ``test_handle_is_keyboard_operable_with_arrow_keys`` (AK 5)
+    Vor: kein PACKAGE_ORDER; Maske „Arbeit“. Aktion: Handle des T2-
+    Pakets fokussieren, ArrowUp drücken; danach „Speichern“ klicken.
+    Erwartet: die Karte zeigt T2 vor T1 (Verschieben ohne Maus);
+    project.env enthält PACKAGE_ORDER mit T2 vor T1.
+ 6. ``test_priority_api_reports_configured_effective_and_status`` (AK 3,
+    API-Grundlage, unverändert aus AP11 übernommen)
+    Vor: PACKAGE_ORDER="T2,T0,X9,T1" abgelegt; T0 erledigt (mit
+    Nachweis), T1/T2 offen, X9 unbekannt. Aktion: GET
+    /api/priority?name=proj mit Token. Erwartet: HTTP 200; Status je
+    Eintrag (T0 erledigt, X9 fehlt), effektive Reihenfolge T2 vor T1
+    ohne T0, Meldung vorhanden.
+
+Die Tests starten das echte Dashboard auf einem eigenen Port mit
+vollständig isolierten VIBE_*-Pfaden (Muster
+tests/browser/test_ap7_settings_ui.py) und bedienen es mit Chromium über
+Playwright. Chromium wird nur aus dem Nutzer-Cache gelesen
+(~/.cache/ms-playwright), nie heruntergeladen. Keine echten externen
+Dienste, keine Modellaufrufe, keine produktiven Pfade.
 
 Run:
 
@@ -120,6 +167,7 @@ class Ap11PriorityBrowserTest(unittest.TestCase):
         git(cls.project, "add", "-A")
         git(cls.project, "commit", "-q", "-m", "Nachweis T0")
         cls.env_path = cls.project / ".vibe" / "project.env"
+        cls.base_env = "TYPE=generic\nTESTER=test-agent\n"
 
         cls.home = cls.root / "home"
         (cls.home / ".config" / "opencode" / "agents").mkdir(parents=True)
@@ -191,6 +239,8 @@ class Ap11PriorityBrowserTest(unittest.TestCase):
         cls.tmp.cleanup()
 
     def setUp(self):
+        """Jeder Test startet mit der Grundkonfiguration ohne Priorisierung."""
+        self.env_path.write_text(self.base_env, encoding="utf-8")
         self.page = self.browser.new_page(viewport={"width": 1400, "height": 1000})
 
     def tearDown(self):
@@ -205,177 +255,239 @@ class Ap11PriorityBrowserTest(unittest.TestCase):
             time.sleep(0.05)
         self.fail(message)
 
-    def open_settings(self):
-        """Vorbedingung einstellen: Projekt öffnen, Register „Einstellungen“."""
+    def open_project(self, tab="Arbeit"):
+        """Vorbedingung einstellen: Projekt „proj“ öffnen, Register wählen."""
+        self.page.goto("about:blank")
         self.page.goto(self.base + "/#t=" + self.token)
         row = self.page.locator("tr.row", has_text="proj").first
         row.wait_for()
         row.click()
-        self.page.get_by_role("tab", name="Einstellungen", exact=True).click()
-        panel = self.page.locator("#panel-einstellungen")
+        if tab != "Arbeit":
+            self.page.get_by_role("tab", name=tab, exact=True).click()
+        panel = self.page.locator("#panel-" + tab.lower())
         panel.wait_for()
         self.assertTrue(panel.is_visible(),
-                        "Einstellungen-Panel ist nicht sichtbar")
+                        "Panel „%s“ ist nicht sichtbar" % tab)
+        return panel
 
-    def priority_chip(self):
-        """Der data-goto-Sprungknopf des Priorisierungs-Abschnitts."""
-        return self.page.locator(
-            '#panel-einstellungen [data-goto*="prioris" i]').first
+    def open_settings(self):
+        return self.open_project(tab="Einstellungen")
 
-    def priority_section(self):
-        """Der details-Abschnitt „Priorisierung“ im Einstellungs-Panel."""
-        return self.page.locator(
-            '#panel-einstellungen details', has_text="Priorisierung").first
+    def open_work(self):
+        return self.open_project(tab="Arbeit")
 
-    def open_priority_section(self):
-        """Klappt den Priorisierungs-Abschnitt über den Sprungknopf auf."""
-        self.open_settings()
-        chip = self.priority_chip()
-        chip.wait_for(timeout=10000)
-        section = self.priority_section()
-        section.wait_for(timeout=10000)
-        if not section.evaluate("el => !!el.open"):
-            chip.click(timeout=2000)
+    def items_card(self):
+        """Die Karte „Offene Arbeitspakete“ in der Maske „Arbeit“."""
+        card = self.page.locator("#panel-arbeit .card",
+                                 has_text="Offene Arbeitspakete").first
+        card.wait_for(timeout=10000)
+        return card
+
+    def item_ids(self):
+        """Die Kennungen der Karte in sichtbarer Reihenfolge.
+
+        Der Itemtext beginnt mit der Zustands-Pille (z. B. „offen“); die
+        Kennung (T1, F3, …) wird deshalb per Muster herausgelesen.
+        """
+        items = self.items_card().locator(".item")
+        ids = []
+        for item in items.all():
+            match = re.search(r"[TFB]\d+", item.inner_text())
+            self.assertIsNotNone(
+                match,
+                "Item nennt keine Kennung: %r" % item.inner_text())
+            ids.append(match.group(0))
+        return ids
+
+    def handles(self):
+        """Die Drag-Handles der Karte (Elemente mit data-drag-handle)."""
+        return self.items_card().locator("[data-drag-handle]")
+
+    def save_button(self):
+        return self.items_card().get_by_role("button", name="Speichern",
+                                             exact=True).first
+
+    def clear_button(self):
+        return self.items_card().get_by_role(
+            "button", name=re.compile("Leeren", re.I)).first
+
+    def handle_of(self, identifier):
+        """Der Handle des Pakets mit der Kennung ``identifier``."""
+        handle = self.items_card().locator(
+            f".item:has-text('{identifier}') [data-drag-handle]").first
         self.wait_until(
-            lambda: section.evaluate("el => !!el.open"),
-            message="Priorisierungs-Abschnitt ließ sich nicht aufklappen")
-        return section
+            lambda: handle.count() > 0, timeout=5,
+            message="Paket %s hat keinen Drag-Handle (data-drag-handle)"
+                    % identifier)
+        return handle
 
-    def priority_input(self, section):
-        """Die Kennungs-Eingabe des Priorisierungs-Abschnitts."""
-        field = section.locator("input[type='text'], input:not([type]), "
-                                "textarea").first
-        field.wait_for(timeout=10000)
-        return field
-
-    def save_button(self, section):
-        return section.get_by_role("button", name="Speichern").first
-
-    def clear_button(self, section):
-        return section.get_by_role(
-            "button", name=re.compile(r"Löschen|Leeren|Zurücksetzen|Clear",
-                                      re.I)).first
-
-    def reenter_settings(self):
-        """Baut das Register neu auf (Server liest Projektdateien neu ein)."""
-        self.page.get_by_role("tab", name="Arbeit", exact=True).click()
-        self.page.get_by_role("tab", name="Einstellungen", exact=True).click()
-        self.page.locator("#panel-einstellungen").wait_for()
-
-    # ------------------------------------------------------------ Testfälle
-    def test_priority_section_is_details_with_data_goto_chip(self):
-        """AK 9 (Struktur).
+    # ------------------------------------------------------------ AK 4
+    def test_settings_tab_has_no_priorisierung_section_or_chip(self):
+        """AK 4 — Der Einstellungs-Tab enthält keine Priorisierung mehr.
 
         Vorbedingung: Projekt „proj“ geöffnet, Register „Einstellungen“.
-        Aktion: Abschnittsleiste und Priorisierungs-Abschnitt inspizieren und
-        den data-goto-Sprungknopf betätigen.
-        Erwartet: ein data-goto-Sprungknopf für die Priorisierung existiert
-        in #panel-einstellungen; der Priorisierungs-Abschnitt ist ein
-        ``details``-Element; der Knopfklapp klappt den Abschnitt auf.
+        Aktion: das Einstellungs-Panel nach einem Abschnitt „Priorisierung“
+        und einem data-goto-Sprungchip „Priorisierung“ durchsuchen.
+        Erwartet: beides existiert nicht mehr (je 0 Treffer) — die
+        Bedienstelle ist in die Maske „Arbeit“ verlagert.
         """
         self.open_settings()
 
-        chip = self.priority_chip()
-        chip.wait_for(timeout=10000)
-        section = self.priority_section()
-        section.wait_for(timeout=10000)
+        panel = self.page.locator("#panel-einstellungen")
         self.assertEqual(
-            "details",
-            section.evaluate("el => el.tagName.toLowerCase()"),
-            "Der Priorisierungs-Abschnitt ist kein details-Element",
-        )
-        chip.click(timeout=2000)
-        self.wait_until(
-            lambda: section.evaluate("el => !!el.open"),
-            message="Der data-goto-Knopf klappte den Priorisierungs-Abschnitt "
-                    "nicht auf",
-        )
+            0, panel.locator("details", has_text="Priorisierung").count(),
+            "Einstellungs-Tab enthält noch einen Abschnitt „Priorisierung“")
+        self.assertEqual(
+            0, panel.locator('[data-goto*="prioris" i]').count(),
+            "Einstellungs-Tab enthält noch den Sprungchip „Priorisierung“")
 
-    def test_priority_section_shows_the_effective_order(self):
-        """AK 9 (Anzeige).
+    # ------------------------------------------------------------ AK 3/5
+    def test_open_packages_card_offers_drag_handles_save_and_clear(self):
+        """AK 3/5 — Karte „Offene Arbeitspakete“ mit Handle je Paket.
 
-        Vorbedingung: Projekt mit erledigter T0 und offenen Aufgaben T1, T2;
-        kein PACKAGE_ORDER-Eintrag; Priorisierungs-Abschnitt aufgeklappt.
-        Aktion: den Abschnittstext lesen.
-        Erwartet: der Abschnitt zeigt die effektive Abarbeitungsreihenfolge
-        der offenen Pakete — T1 erscheint vor T2; die erledigte T0 steht
-        nicht vor den offenen Aufgaben als nächste Wahl.
+        Vorbedingung: Projekt mit erledigter T0 und offenen T1/T2; kein
+        PACKAGE_ORDER-Eintrag; Maske „Arbeit“ geöffnet.
+        Aktion: die Karte inspizieren.
+        Erwartet: die Karte listet die offenen Pakete T1 und T2 (nicht die
+        erledigte T0) in der Standardordnung T1 vor T2; je Paket genau ein
+        Drag-Handle (Element mit data-drag-handle und aria-label, der
+        „verschieben“ enthält); „Speichern“ und „Leeren (Standardordnung)“
+        sind in der Karte vorhanden.
         """
-        section = self.open_priority_section()
+        self.open_work()
 
-        text = section.inner_text()
-        self.assertIn("T1", text, "effektive Reihenfolge nennt T1 nicht")
-        self.assertIn("T2", text, "effektive Reihenfolge nennt T2 nicht")
-        self.assertLess(text.index("T1"), text.index("T2"),
-                        "effektive Reihenfolge ist nicht T1 vor T2: " + text)
+        card = self.items_card()
+        self.assertEqual(["T1", "T2"], self.item_ids(),
+                         "Karte zeigt nicht die Standardordnung der offenen "
+                         "Pakete: " + ", ".join(self.item_ids()))
 
-    def test_save_writes_package_order_and_clear_empties_it(self):
-        """AK 9 (Speichern/Löschen).
+        handles = self.handles()
+        self.assertEqual(2, handles.count(),
+                         "nicht je Paket ein Drag-Handle (%d gefunden)"
+                         % handles.count())
+        for index in range(handles.count()):
+            label = handles.nth(index).get_attribute("aria-label") or ""
+            self.assertTrue(
+                "verschieben" in label.lower(),
+                "Handle %d ist nicht als solches erkennbar (aria-label=%r)"
+                % (index, label))
 
-        Vorbedingung: Priorisierungs-Abschnitt aufgeklappt; project.env ohne
-        PACKAGE_ORDER.
-        Aktion 1: „T2,T1“ eintragen und „Speichern“ drücken.
-        Erwartet 1: project.env enthält PACKAGE_ORDER mit T2 vor T1 und
-        behält TYPE=generic sowie TESTER.
-        Aktion 2: Register neu betreten, Abschnitt aufklappen, „Löschen“
-        drücken.
-        Erwartet 2: PACKAGE_ORDER ist geleert (keine Kennung mehr); die
-        übrigen Zeilen bleiben.
+        self.save_button()
+        self.clear_button()
+
+    # ------------------------------------------------------------ AK 3
+    def test_drag_and_drop_reorders_and_save_writes_package_order(self):
+        """AK 3 — Drag&Drop ändert die Reihenfolge, Speichern legt sie ab.
+
+        Vorbedingung: kein PACKAGE_ORDER-Eintrag; Maske „Arbeit“ geöffnet.
+        Aktion: den Handle des Pakets T2 per Drag&Drop an die obere Kante
+        des Pakets T1 ziehen (Vertrag: Ablegen an der Oberkante fügt vor
+        dem Zielpaket ein), danach „Speichern“ klicken.
+        Erwartet: project.env enthält PACKAGE_ORDER mit T2 vor T1 und
+        behält TYPE/TESTER; nach erneutem Öffnen des Projekts zeigt die
+        Karte die übernommene Reihenfolge T2 vor T1.
         """
-        section = self.open_priority_section()
-        field = self.priority_input(section)
-        field.fill("T2,T1")
-        self.save_button(section).click()
+        self.open_work()
+        self.assertEqual(["T1", "T2"], self.item_ids())
+
+        self.handle_of("T2").drag_to(
+            self.items_card().locator(".item", has_text="T1").first,
+            target_position={"x": 20, "y": 4})
+        self.save_button().click()
 
         self.wait_until(
             lambda: "PACKAGE_ORDER" in self.env_path.read_text(
                 encoding="utf-8"),
-            message="Speichern schrieb kein PACKAGE_ORDER nach project.env",
-        )
+            message="Speichern schrieb kein PACKAGE_ORDER nach project.env")
         text = self.env_path.read_text(encoding="utf-8")
-        self.assertIn("T2", text)
-        self.assertIn("T1", text)
         self.assertLess(
             text.index("T2"), text.index("T1"),
-            "PACKAGE_ORDER wurde nicht in der gewählten Reihenfolge "
-            "abgelegt: " + text,
-        )
+            "PACKAGE_ORDER wurde nicht in der gezogenen Reihenfolge "
+            "abgelegt: " + text)
         self.assertIn("TYPE=generic", text,
                       "Speichern beschädigte project.env")
         self.assertIn("TESTER=test-agent", text,
                       "Speichern beschädigte project.env")
 
-        self.reenter_settings()
-        # goto mit gleichem Hash-Anker lädt nicht neu; der Abschnitt wird
-        # deshalb direkt per data-goto-Chip aufgeklappt statt den
-        # Übersichts-Zyklus erneut zu durchlaufen.
-        section = self.priority_section()
-        section.wait_for(timeout=10000)
-        chip = self.priority_chip()
-        if not section.evaluate("el => !!el.open"):
-            chip.click(timeout=2000)
-        self.wait_until(
-            lambda: section.evaluate("el => !!el.open"),
-            message="Priorisierungs-Abschnitt ließ sich beim zweiten Eintritt "
-                    "nicht aufklappen")
-        self.clear_button(section).click()
-        self.wait_until(
-            lambda: re.search(
-                r'(?m)^\s*PACKAGE_ORDER\s*=\s*["\']?\s*["\']?\s*$',
-                self.env_path.read_text(encoding="utf-8"))
-            or "PACKAGE_ORDER" not in self.env_path.read_text(
-                encoding="utf-8"),
-            message="Löschen leerte PACKAGE_ORDER nicht",
-        )
-        text = self.env_path.read_text(encoding="utf-8")
-        self.assertNotIn("T2,", text.replace("TYPE=generic", ""),
-                         "Löschen hinterließ Kennungen in PACKAGE_ORDER")
-        self.assertIn("TYPE=generic", text, "Löschen beschädigte project.env")
-        self.assertIn("TESTER=test-agent", text,
-                      "Löschen beschädigte project.env")
+        self.open_project()
+        self.assertEqual(
+            ["T2", "T1"], self.item_ids(),
+            "die Karte zeigt nach dem Speichern nicht die übernommene "
+            "Reihenfolge: " + ", ".join(self.item_ids()))
 
+    def test_clear_resets_to_the_standard_order(self):
+        """AK 3 — „Leeren (Standardordnung)“ setzt die gespeicherte Ordnung zurück.
+
+        Vorbedingung: PACKAGE_ORDER="T2,T1" abgelegt; Maske „Arbeit“
+        geöffnet. Die Karte zeigt die übernommene Reihenfolge T2 vor T1.
+        Aktion: „Leeren (Standardordnung)“ klicken.
+        Erwartet: PACKAGE_ORDER enthält keine Kennung mehr; TYPE/TESTER
+        bleiben; nach erneutem Öffnen zeigt die Karte wieder die
+        Standardordnung T1 vor T2.
+        """
+        self.env_path.write_text(
+            self.base_env + 'PACKAGE_ORDER="T2,T1"\n', encoding="utf-8")
+        self.open_work()
+        self.assertEqual(
+            ["T2", "T1"], self.item_ids(),
+            "die Karte zeigt die abgelegte Reihenfolge nicht: "
+            + ", ".join(self.item_ids()))
+
+        self.clear_button().click()
+
+        self.wait_until(
+            lambda: not re.search(
+                r'(?m)^\s*PACKAGE_ORDER\s*=\s*["\']?\s*[^"\'\s]+',
+                self.env_path.read_text(encoding="utf-8")),
+            message="Leeren leerte PACKAGE_ORDER nicht")
+        text = self.env_path.read_text(encoding="utf-8")
+        self.assertIn("TYPE=generic", text, "Leeren beschädigte project.env")
+        self.assertIn("TESTER=test-agent", text,
+                      "Leeren beschädigte project.env")
+
+        self.open_project()
+        self.assertEqual(
+            ["T1", "T2"], self.item_ids(),
+            "die Karte zeigt nach dem Leeren nicht die Standardordnung: "
+            + ", ".join(self.item_ids()))
+
+    # ------------------------------------------------------------ AK 5
+    def test_handle_is_keyboard_operable_with_arrow_keys(self):
+        """AK 5 — Die Sortierung ist ohne Maus am Handle bedienbar.
+
+        Vorbedingung: kein PACKAGE_ORDER-Eintrag; Maske „Arbeit“ geöffnet.
+        Aktion: den Handle des Pakets T2 fokussieren und „ArrowUp“ drücken
+        (Vertrag: Pfeiltaste verschiebt das fokussierte Paket eine
+        Position, ohne Moduswechsel); danach „Speichern“ klicken.
+        Erwartet: die Karte zeigt T2 vor T1 (Verschieben ohne Maus);
+        project.env enthält PACKAGE_ORDER mit T2 vor T1.
+        """
+        self.open_work()
+        self.assertEqual(["T1", "T2"], self.item_ids())
+
+        handle = self.handle_of("T2")
+        handle.focus()
+        self.page.keyboard.press("ArrowUp")
+
+        self.wait_until(
+            lambda: self.item_ids() == ["T2", "T1"],
+            message="ArrowUp am fokussierten Handle verschob T2 nicht vor T1: "
+                    + ", ".join(self.item_ids()))
+        self.save_button().click()
+
+        self.wait_until(
+            lambda: "PACKAGE_ORDER" in self.env_path.read_text(
+                encoding="utf-8"),
+            message="Speichern schrieb kein PACKAGE_ORDER nach project.env")
+        text = self.env_path.read_text(encoding="utf-8")
+        self.assertLess(
+            text.index("T2"), text.index("T1"),
+            "PACKAGE_ORDER wurde nicht in der tastaturgezogenen Reihenfolge "
+            "abgelegt: " + text)
+
+    # ------------------------------------------------------------ AK 3 (API)
     def test_priority_api_reports_configured_effective_and_status(self):
-        """AK 9 (GET /api/priority).
+        """AK 3 (API-Grundlage) — GET /api/priority (unverändert aus AP11).
 
         Vorbedingung: PACKAGE_ORDER="T2,T0,X9,T1" abgelegt; T0 erledigt
         (mit Nachweis), T1/T2 offen, X9 unbekannt.
@@ -393,7 +505,7 @@ class Ap11PriorityBrowserTest(unittest.TestCase):
         # Standardkonfiguration, damit nachfolgende Tests unverändert laufen.
         self.addCleanup(
             lambda: self.env_path.write_text(
-                "TYPE=generic\nTESTER=test-agent\n", encoding="utf-8"))
+                self.base_env, encoding="utf-8"))
 
         request = urllib.request.Request(
             f"{self.base}/api/priority?name=proj", method="GET")
