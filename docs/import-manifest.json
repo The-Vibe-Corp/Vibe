@@ -702,19 +702,6 @@
       ],
       "datum": "2026-11-11",
       "grund": "Priorisierung der Abarbeitungsreihenfolge je Projekt (AP11): PACKAGE_ORDER in .vibe/project.env listet Kennungen in der gewünschten Reihenfolge; select_package wählt verbindlich den ersten offenen, bereiten Eintrag vor der Standardordnung (TICKETS vor FEEDBACK, Priorität), erledigte/gesperrte/abhängigkeitsgeblockte/unbekannte Einträge werden entnommen, die Skip-Liste bleibt wirksam, next-package.json vermerkt 'ordered'. CLI 'vibe priority <p> [list|set|clear]', Web-API GET/POST /api/priority und Einstellungsabschnitt 'Priorisierung' im Dashboard; der Läufer meldet die verbindliche Wahl im Protokoll. Geänderte Dateien liegen im Bereich bin, daher wurden Größe und SHA-256 aktualisiert."
-    },
-    {
-      "arbeitspaket": "AP11",
-      "datum": "2026-11-11",
-      "grund": "Priorisierung der Abarbeitungsreihenfolge je Projekt (AP11): PACKAGE_ORDER in .vibe/project.env listet Kennungen in der gewünschten Reihenfolge; select_package wählt verbindlich den ersten offenen, bereiten Eintrag vor der Standardordnung (TICKETS vor FEEDBACK, Priorität), erledigte/gesperrte/abhängigkeitsgeblockte/unbekannte Einträge werden entnommen, die Skip-Liste bleibt wirksam, next-package.json vermerkt 'ordered'. CLI 'vibe priority <p> [list|set|clear]', Web-API GET/POST /api/priority und Einstellungsabschnitt 'Priorisierung' im Dashboard; der Läufer meldet die verbindliche Wahl im Protokoll. Geänderte Dateien liegen im Bereich bin, daher wurden Größe und SHA-256 aktualisiert.",
-      "dateien": [
-        "bin/vibe",
-        "bin/vibe-run.sh",
-        "bin/vibe-web.py",
-        "bin/vibe_packages.py",
-        "bin/vibe_services.py",
-        "bin/web/app.js"
-      ]
     }
   ],
   "files": [
