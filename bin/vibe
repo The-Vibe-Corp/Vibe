@@ -4926,8 +4926,8 @@ def cmd_gates(rest=None):
 
     Ohne Argumente bzw. mit ``status`` werden die wirksamen Werte samt
     Herkunft gezeigt (Projekt aus dem aktuellen Ordner, falls registriert,
-    oder mit ``--project <name>``). ``<schranke> <wert>`` setzt global;
-    ``--project <name> <schranke> <wert>`` schreibt den Projektwert, ein
+    oder mit ``--project <name>``, an beliebiger Position). ``<schranke>
+    <wert>`` setzt global; ``--project <name> <schranke> <wert>`` schreibt den Projektwert, ein
     leerer Wert entfernt ihn. Unbekannte Schranken und ungültige Werte
     werden ohne Schreibvorgang mit Fehler abgewiesen.
     """
@@ -4936,9 +4936,15 @@ def cmd_gates(rest=None):
                  "bitte Setup --update ausführen.")
     args = list(rest or [])
     project_name = None
-    if args and args[0] == "--project":
-        if len(args) < 2: sys.exit(GATES_USAGE)
-        project_name, args = args[1], args[2:]
+    # --project <name> wird in jeder Position erkannt, auch nach "status",
+    # damit "vibe gates status --project proj" nicht still das falsche
+    # Projekt zeigt.
+    while "--project" in args:
+        index = args.index("--project")
+        if len(args) <= index + 1:
+            sys.exit(GATES_USAGE)
+        project_name = args[index + 1]
+        args = args[:index] + args[index + 2:]
     if not args or args[0] == "status":
         _gates_show(project_name)
         return

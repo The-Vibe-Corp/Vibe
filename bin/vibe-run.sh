@@ -445,7 +445,13 @@ merge_package() {
   # dürfen den ff-Merge nicht blockieren. Der Paketbranch enthält dieselben
   # Notizen bereits (sie werden beim Paketstart in die Arbeitskopie kopiert
   # und dort committet), deshalb liefert der Merge denselben Stand zurück.
-  # Manuelle Notizänderungen aus dieser Zeit sind vom Läufer nicht erzeugt.
+  # Manuelle Nutzeränderungen an diesen Dateien aus der Laufzeit gehen dabei
+  # ebenfalls verloren; der Verwurf wird deshalb sichtbar protokolliert.
+  local discarded_notes
+  discarded_notes="$(git -C "$P" diff --name-only -- TICKETS.md FEEDBACK.md 2>>"$LOG")"
+  if [ -n "$discarded_notes" ]; then
+    echo "WARNUNG: Uncommittete Änderungen an Arbeitsnotizen werden für den Merge verworfen: $(echo "$discarded_notes" | tr '\n' ' ')" | tee -a "$LOG"
+  fi
   git -C "$P" checkout -q -- TICKETS.md FEEDBACK.md 2>>"$LOG" || true
   if ! git -C "$P" merge --ff-only "$BRANCH" >>"$LOG" 2>&1; then
     echo "FEHLT: Merge von $BRANCH nach $BASE_BRANCH fehlgeschlagen." | tee -a "$LOG"

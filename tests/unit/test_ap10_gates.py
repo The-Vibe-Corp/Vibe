@@ -157,6 +157,31 @@ Testfälle
     (AP10-2) Vorbedingung: F16-Module fehlen in der Installation. Erwartung:
     bisheriges Verhalten, keine Rückfrage (Schutz).
 
+Nach Reviewrunde 1 (``docs/reviews/AP10-review-1.md``) ergänzte Fälle:
+
+``RunnerGateWiringTest.test_merge_package_logs_the_discarded_work_note_change``
+    (AP10, Befund 1) Vorbedingung: Projekt mit versionierten Arbeitsnotizen
+    und einem offenen Paket; ``TICKETS.md`` der Hauptkopie trägt eine
+    zusätzliche, uncommittete Zeile. Aktion: Lauf mit vollständig
+    abschließendem Agenten. Erwartung: Exit 0; im Laufprotokoll genau eine
+    Zeile „WARNUNG: Uncommittete Änderungen an Arbeitsnotizen …“ mit dem
+    Dateinamen ``TICKETS.md``; der Merge geht durch („Geschlossen: F1“,
+    ``impl-F1.txt`` am Integrationsbranch); der gemergte Stand
+    (``HEAD:TICKETS.md``) enthält die Notizänderung (Stand = Paketbranch);
+    die uncommittete Änderung ist danach aufgelöst.
+``RunnerGateWiringTest.test_merge_without_note_changes_logs_no_discard_warning``
+    (AP10, Befund 1, Regression) Vorbedingung: gleiches Fixture mit sauberen
+    Arbeitsnotizen und zwei Paketen. Erwartung: beide Pakete geschlossen,
+    keine WARN-Zeile über Arbeitsnotizen (kein Fehlalarm).
+``GatesCliTest.test_project_flag_after_status_shows_the_project_values``
+    (AP10-1, Befund 2) Vorbedingung: Projekt ``proj`` mit projektspezifischem
+    ``REPAIR_ROUNDS=5``; Aufrufe außerhalb des Projektordners. Aktion:
+    ``vibe gates status --project proj`` (``--project`` nach ``status``),
+    ``vibe gates --project proj status`` und ``vibe gates status`` ohne
+    ``--project``. Erwartung: mit ``--project`` erscheint „Projekt: proj“ und
+    ``repair_rounds 5 (projekt)`` in beiden Positionen; ohne ``--project``
+    bleibt die globale Anzeige unverändert (``repair_rounds 2``, "Standard").
+
 Charakterisierung mit sofort grünem Ergebnis (als Schutz gegen Regressionen
 der neuen Fragelogik, nicht als Neunachweis): ``test_vibe_max_packages_environment_still_wins_over_the_global_gate``,
 ``test_global_override_off_blocks_without_question``,
@@ -640,6 +665,40 @@ class GatesCliTest(unittest.TestCase):
         self.assertIn("off", output, output)
         self.assertIn("global", output, output)
 
+    def test_project_flag_after_status_shows_the_project_values(self):
+        """``--project`` nach ``status`` zeigt die Werte dieses Projekts.
+
+        Review-Befund 2: ``--project`` muss an beliebiger Argumentposition
+        erkannt sein, insbesondere bei ``vibe gates status --project <p>``.
+        """
+        self.make_project_env("TYPE=generic\nREPAIR_ROUNDS=5\n")
+
+        result = self.run_cli("gates", "status", "--project", "proj")
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        output = self.real_output(result, "status --project nach status")
+        self.assertIn("Projekt: proj", output, output)
+        self.assertRegex(output, r"repair_rounds\s+5\s+projekt")
+
+        # Auch die dokumentierte Position vor dem Unterbefehl bleibt gültig.
+        before = self.run_cli("gates", "--project", "proj", "status")
+        self.assertEqual(
+            before.returncode, 0, before.stdout + before.stderr)
+        self.assertRegex(
+            self.real_output(before, "--project vor status"),
+            r"repair_rounds\s+5\s+projekt",
+        )
+
+        # Ohne --project bleibt die globale Anzeige unverändert.
+        global_result = self.run_cli("gates", "status")
+        self.assertEqual(
+            global_result.returncode, 0,
+            global_result.stdout + global_result.stderr,
+        )
+        global_output = self.real_output(global_result, "globale Anzeige")
+        self.assertNotIn("Projekt: proj", global_output, global_output)
+        self.assertRegex(global_output, r"repair_rounds\s+2\s+Standard")
+
     def test_corrupt_gates_file_is_reported_with_defaults(self):
         (self.state / "gates.json").write_text("{ kaputt\n", encoding="utf-8")
 
@@ -1004,6 +1063,75 @@ class RunnerGateWiringTest(RunnerFixture):
         self.assertEqual(len(self.call_lines()), 3, self.call_lines())
         self.assertEqual(self.question_records(), [], self.question_records())
         self.assertIn("Blockiert: F1", combined, combined)
+
+    def test_merge_package_logs_the_discarded_work_note_change(self):
+        """Der Verwurf uncommitteter Arbeitsnotizen wird protokolliert.
+
+        Review-Befund 1: ``merge_package`` verwirft vor dem ff-Merge
+        uncommittete Änderungen an TICKETS.md/FEEDBACK.md. Das muss im
+        Laufprotokoll sichtbar sein, ohne dass der Merge scheitert.
+        """
+        project = self.make_project(
+            env_text=write_project_env_text(), feedback=FEEDBACK_ONE)
+        tickets = project / "TICKETS.md"
+        tickets.write_text(
+            tickets.read_text(encoding="utf-8")
+            + "Hinweis: manuelle Notizänderung während des Laufs\n",
+            encoding="utf-8")
+
+        result = self.run_runner(
+            project, FAKE_MODE="complete", VIBE_MAX_PACKAGES="1")
+
+        combined = self.combined(result, project)
+        log = self.log(project)
+        self.assertEqual(result.returncode, 0, combined)
+        self.assertIn("Geschlossen: F1", log, log)
+        warnings = [
+            line for line in log.splitlines()
+            if line.startswith(
+                "WARNUNG: Uncommittete Änderungen an Arbeitsnotizen")
+        ]
+        self.assertEqual(len(warnings), 1, log)
+        self.assertIn("TICKETS.md", warnings[0], warnings)
+        self.assertEqual(
+            support.git(
+                project, "cat-file", "-e", "HEAD:impl-F1.txt").returncode,
+            0,
+            "Der Merge ist trotz Verwurf nicht durchgegangen.",
+        )
+        merged = support.git(project, "show", "HEAD:TICKETS.md").stdout
+        self.assertIn(
+            "Hinweis: manuelle Notizänderung während des Laufs", merged,
+            merged,
+        )
+        proof = support.git(project, "show", "HEAD:FEEDBACK.md").stdout
+        self.assertIn(
+            "Commit:", proof,
+            "Der Paketnachweis fehlt im gemergten Notizenstand.",
+        )
+        self.assertEqual(
+            support.git(
+                project, "status", "--porcelain", "--",
+                "TICKETS.md", "FEEDBACK.md").stdout,
+            "",
+            "Die uncommittete Notizänderung ist nach dem Merge ungelöst.",
+        )
+
+    def test_merge_without_note_changes_logs_no_discard_warning(self):
+        """Regression: Sauberer Stand erzeugt keinen Fehlalarm."""
+        project = self.make_project(
+            env_text=write_project_env_text(), feedback=FEEDBACK_TWO)
+
+        result = self.run_runner(
+            project, FAKE_MODE="complete", VIBE_MAX_PACKAGES="2")
+
+        combined = self.combined(result, project)
+        log = self.log(project)
+        self.assertEqual(result.returncode, 0, combined)
+        self.assertIn("Geschlossen: F1", log, log)
+        self.assertIn("Geschlossen: F2", log, log)
+        self.assertNotIn(
+            "Uncommittete Änderungen an Arbeitsnotizen", log, log)
 
 
 class BarrierInterfaceTest(unittest.TestCase):

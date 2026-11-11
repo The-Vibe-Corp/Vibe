@@ -744,8 +744,8 @@
     "bin/vibe_gates.py",
     "scripts/setup-vibe.py"
    ],
-   "datum": "2026-11-11",
-   "grund": "Schranken des Paket-Läufers global (gates.json) und je Projekt (.vibe/project.env) konfigurierbar: neues Modul vibe_gates.py mit CLI vibe gates, wirksame Schranken samt Herkunft, defekte Werte als gemeldete Voreinstellung; der Läufer liest Reparatur-, Assistenz-, Wiederholungs- und Durchgangsschranken und fragt an blockierten Paketen mit override=ask über assist_barrier, wie weiter zu verfahren ist (überspringen, abbrechen, zusätzliche Reparaturrunde, Freitextanweisung, autonome Entscheidung)."
+   "datum": "2026-11-12",
+   "grund": "Schranken des Paket-Läufers global (gates.json) und je Projekt (.vibe/project.env) konfigurierbar: neues Modul vibe_gates.py mit CLI vibe gates, wirksame Schranken samt Herkunft, defekte Werte als gemeldete Voreinstellung; der Läufer liest Reparatur-, Assistenz-, Wiederholungs- und Durchgangsschranken und fragt an blockierten Paketen mit override=ask über assist_barrier, wie weiter zu verfahren ist (überspringen, abbrechen, zusätzliche Reparaturrunde, Freitextanweisung, autonome Entscheidung). Nach Reviewrunde 1 protokolliert der Paket-Merge den Verwurf uncommitteter Arbeitsnotiz-Änderungen mit einer WARN-Zeile und dokumentiert die Datenfolge; `vibe gates` erkennt `--project` an beliebiger Argumentposition."
   }
  ],
  "files": [
@@ -760,14 +760,14 @@
    "sha256": "e5ae3183efcb76dace1e0bcbde9993be7afe82d93d7877da9ee39846cf45330a"
   },
   {
-   "bytes": 252860,
+   "bytes": 253142,
    "path": "bin/vibe",
-   "sha256": "5b3b20a1e66f66c165ea4ce824613528331ceed0d3d3eae1a914f964b7caf655"
+   "sha256": "1c532464e505005b4d650b2d1d8a9c5fad77dc13c2436499b29258d68f3d45ab"
   },
   {
-   "bytes": 45614,
+   "bytes": 45994,
    "path": "bin/vibe-run.sh",
-   "sha256": "ae172d597cdb054043001710b0caacf28ca5516277c8902b4826b629f3c60b52"
+   "sha256": "72035a437cfdbb11c1ec17cbc98247c7d110c6684cdc60e805b12ced0c20d7cb"
   },
   {
    "bytes": 69372,
@@ -1056,6 +1056,6 @@
   "setup-vibe.cmd",
   "VERSION"
  ],
- "stand": "2026-11-11",
+ "stand": "2026-11-12",
  "version": 1
 }
