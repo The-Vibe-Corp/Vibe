@@ -45,8 +45,8 @@
     },
     {
       "path": "bin/vibe_github.py",
-      "sha256": "99df54eecffcc4bc2fbc9f26a8221eb6ed3a29d8ae9d70bfad6467e12be803e5",
-      "bytes": 51736
+      "sha256": "e7df313cb705195bcc1523eb326fe6668d104dd37ef956801153c3b6f1ed4990",
+      "bytes": 52172
     },
     {
       "path": "bin/vibe_guide.py",
@@ -110,8 +110,8 @@
     },
     {
       "path": "bin/web/app.js",
-      "sha256": "9417958f0844dd6f6eefeca8aa0db211301b9af4892871531420c73380bc0f41",
-      "bytes": 112987
+      "sha256": "00e4f8b2506321035e6c545953aadb0548a9afb7c0a8c366a35bcc209e472767",
+      "bytes": 113503
     },
     {
       "path": "bin/web/index.html",

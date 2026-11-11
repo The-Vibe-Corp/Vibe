@@ -607,7 +607,11 @@ function sandboxBody(d,name,isPi){const s=d.sandbox||{enabled:false,tools:[],wri
 /* ---------- Git & GitHub (AP6: optional je Projekt; AP7: Aktionen erscheinen
    nur bei aktiver Verknüpfung, damit der aus-Zustand übersichtlich bleibt;
    B7: GitHub-Zugang (Token) direkt in der Karte hinterlegen und entfernen;
-   fehlgeschlagene Aktionen bleiben dauerhaft in der Fehlerbox stehen) ---------- */
+   fehlgeschlagene Aktionen bleiben dauerhaft in der Fehlerbox stehen;
+   AP9: Token je Projekt verschlüsselt, Branch-Kontrolle, Verbindungsprüfung,
+   Basis-Branch; der Läufer zieht bei GITHUB_ENABLED vor jedem Arbeitspaket
+   den Haupt-Branch und pusht nach jedem abgeschlossenen Paket automatisch
+   den Paket-Branch samt Merge-Request — das Zusammenführen bleibt manuell) ---------- */
 function githubBody(d,name){
  const g=d.github||{enabled:false,repo:'',label:'vibe',api:'',base:'',branch:'-',remotes:[],branches:[],ahead:0,behind:0,unpushed:false};
  const active=!!g.enabled;
@@ -695,7 +699,7 @@ function githubBody(d,name){
    el('button',{class:'b',on:{click:async()=>{const r=await post({name,action:'checkout',branch:b.name});if(r.ok)refresh()}}},'Wechseln'),
    el('button',{class:'b',on:{click:async()=>{const r=await post({name,action:'push',branch:b.name});if(r.ok)refresh()}}},'Push'))));
  const conn=el('div',{},
-   el('div',{class:'mut'},'GitHub ist optional je Projekt. Die Einstellungen gelten nur für dieses Projekt; Updates und Branches bleiben bewusste Aktionen (kein automatischer Push oder Merge).'),
+   el('div',{class:'mut'},'GitHub ist optional je Projekt. Die Einstellungen gelten nur für dieses Projekt; die Knöpfe bleiben bewusste Aktionen. Bei aktiver Verknüpfung zieht der Läufer vor jedem Arbeitspaket den Haupt-Branch (pull) und überträgt nach jedem abgeschlossenen Paket den Paket-Branch automatisch nach origin und stellt einen Merge-Request — das Zusammenführen bleibt manuell.'),
    authLine,
    el('div',{class:'bar'},tokenIn,tokenSave,tokenClear),
    el('label',{class:'inline'},enabled,' GitHub-Verknüpfung aktiv'),

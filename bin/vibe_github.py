@@ -1,10 +1,16 @@
 #!/usr/bin/env python3
-"""vibe_github — optionale GitHub-Verknüpfung je Projekt (AP6).
+"""vibe_github — optionale GitHub-Verknüpfung je Projekt (AP6, seit AP9
+mit Läufer-Automatik).
 
 GitHub-Funktionen sind pro Projekt einzuschalten (``GITHUB_ENABLED`` in
-``.vibe/project.env``) und ändern nie automatisch etwas: Branches, Updates
-(fetch/pull) und Pushes/Merge-Requests sind bewusste Nutzerentscheidungen.
-Git läuft mit Argumentlisten (ohne Shell), GitHub-REST über die
+``.vibe/project.env``). Die Knöpfe in der Oberfläche bleiben bewusste
+Nutzerentscheidungen; die aktivierte Verknüpfung gilt seit AP9 als stehende
+Freigabe für die Läufer-Automatik: Vor jedem Arbeitspaket zieht der Läufer
+den Haupt-Branch (``pull_integration``, nur fetch + ff-only) und nach jedem
+abgeschlossenen Paket überträgt er den Paket-Branch automatisch nach origin
+und stellt einen Merge-Request (``complete_package``). Das Zusammenführen
+selbst bleibt manuell. Git läuft mit Argumentlisten (ohne Shell),
+GitHub-REST über die
 Standardbibliothek (urllib); die API-Basis ist konfigurierbar
 (``GITHUB_API``, Standard https://api.github.com), damit Prüfungen gegen
 einen lokalen Scheindienst laufen können. Der GitHub-Dienst selbst wird nur
@@ -964,7 +970,8 @@ def complete_package(project_path, branch, package_id=None, title=None):
             return True, False, message
         if not config["base"] and not default_base(project):
             # Bewusster, begrenzter Nachversuch: origin/HEAD versorgen, damit
-            # der Merge-Request eine Basis kennt (kein weiterer Fernaufruf).
+            # der Merge-Request eine Basis kennt. set_head_default fragt den
+            # Remote selbst ab (remote set-head --auto) — ein Fernaufruf.
             set_head_default(project)
         label = f"{package_id}: {branch}" if package_id else f"Merge-Request: {branch}"
         try:
