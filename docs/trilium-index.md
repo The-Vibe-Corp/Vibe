@@ -1,6 +1,6 @@
 # Trilium-Index
 
-Zuordnung der Projekt-Dokumentation zu den Notizen in Trilium (Stand 2026-11-07).
+Zuordnung der Projekt-Dokumentation zu den Notizen in Trilium (Stand 2026-11-12).
 
 | Projekt | Bereich | Notiz | Notiz-ID |
 | --- | --- | --- | --- |
@@ -55,6 +55,7 @@ Zuordnung der Projekt-Dokumentation zu den Notizen in Trilium (Stand 2026-11-07)
 | vibe | Features | AP7 Einstellungs-UI neu aufgebaut | `vDzuhFgjY4PV` |
 | vibe | Features | AP8 Projekt aus GitHub auschecken | `RtG0XQF3SqMN` |
 | vibe | Features | AP9 GitHub Teil 3: Token, Branches, Merge-Request | `RZaerCNe9ngJ` |
+| vibe | Features | AP10 Schrankeneinstellungen und bewusstes Fortsetzen | `LjeuWE7WkXs4` |
 | vibe | Features | AP11 Priorisierung der Abarbeitungsreihenfolge | `KrGYItU1tR0u` |
 | vibe | Features | F29 Feedback zu AP11: Priorisierung speichern und direkt bedienen | `7IOsrEg6dGdu` |
 | vibe | Features | B1 Kostentabelle aktualisiert sich nach jedem AP | `V3AV2elZkQgo` |
