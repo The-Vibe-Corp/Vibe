@@ -761,6 +761,18 @@ class H(BaseHTTPRequestHandler):
                     ok, msg = False, str(e)
             elif u.path == "/api/new":
                 ok, msg = vibe_services.capture(vibe.cmd_new, name, body.get("type", "generic"), body.get("tpl") or None)
+            elif u.path == "/api/clone":
+                # AP8: Projekt aus Git/GitHub auschecken und mit den lokalen
+                # vibe-Einstellungen einrichten; Fehler strukturiert melden.
+                try:
+                    url = str(body.get("url") or "").strip()
+                    if not url:
+                        raise ValueError("Remote-Adresse fehlt")
+                    found, msg = vibe.checkout_from_github(
+                        url, str(body.get("name") or "").strip() or None)
+                    ok, extra["project"] = True, found
+                except (ValueError, OSError, vibe_storage.StorageError) as e:
+                    ok, msg = False, str(e)
             elif u.path == "/api/roots":
                 act = body.get("action")
                 path = body.get("path", "")

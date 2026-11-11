@@ -30,6 +30,7 @@ versendet; der Umgebungstoken behält sein bisheriges REST-Verhalten.
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -369,6 +370,22 @@ def mask_url(url):
     return scheme + "://***@" + after
 
 
+def mask_embedded_credentials(text):
+    """Maskiert Zugangsdaten in allen .git-URLs eines Freitexts.
+
+    Git-Fehlerausgaben wiederholen die Remote-Adresse, einschließlich
+    eingebetteter Zugangsdaten (``https://user:token@host/...``). Meldungen
+    aus Git-Ausgaben dürfen diese Daten nicht weitergeben (SPEC: keine
+    Geheimnisse in Fehlermeldungen oder Logs); ``mask_url`` deckt nur eine
+    einzelne Adresse ab, hier geht es um mehrzeilige Ausgaben.
+    """
+    return re.sub(
+        r"([a-zA-Z][a-zA-Z0-9+.-]*)://[^\s/@<>]+@",
+        r"\1://***@",
+        str(text or ""),
+    )
+
+
 def _local_push_state(project_path, branch):
     """Ahead/Behind gegen die lokale Fern-Referenz, ohne Netzwerk."""
     rc, _ = git(project_path, "rev-parse", "--verify", "--quiet",
@@ -554,6 +571,30 @@ def push(project_path, branch=""):
     if rc != 0:
         return False, _auth_guidance("Push fehlgeschlagen: " + (out or "unbekannter Fehler"))
     return True, f"Branch {branch} nach origin übertragen"
+
+
+def clone(url, target_dir, timeout=TIMEOUT_GIT):
+    """Checkt ein Repository nach target_dir aus (git clone, Argumentliste).
+
+    Die URL wird als ein einziges Argument übergeben: Eine Shell gibt es
+    nicht, versteckte Befehle in der Adresse werden nicht ausgeführt. Ohne
+    Terminal-Prompt und mit dem bisherigen Credential-Umfeld (AP6); der
+    Tokeninhalt bleibt in der Prozessumgebung. Scheitert das Klonen, wird
+    ein vom Aufruf neu erzeugtes Zielverzeichnis vollständig entfernt, damit
+    kein halbes Projekt zurückbleibt; ein vorher vorhandener Ordner wird
+    niemals angetastet (der Aufrufer hat ihn zuvor abgelehnt).
+    """
+    target = os.fspath(target_dir)
+    if not target or target in (".", ".."):
+        raise ValueError("Zielordner fehlt")
+    existed = os.path.lexists(target)
+    rc, out = git(os.path.dirname(target) or ".",
+                  "clone", "--quiet", str(url), target, timeout=timeout)
+    if rc != 0 and not existed:
+        shutil.rmtree(target, ignore_errors=True)
+    # Fehlermeldungen von git können die Remote-Adresse samt eingebetteter
+    # Zugangsdaten wiederholen; Meldungen verlassen das Modul nur maskiert.
+    return rc, mask_embedded_credentials(_auth_guidance(out))
 
 
 def check_api(url):

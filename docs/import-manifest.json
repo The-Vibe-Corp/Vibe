@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "stand": "2026-11-10",
+  "stand": "2026-11-11",
   "quelle": "Übernommener Programmstand aus der lokalen Installation unter $VIBE/_toolchain; die aktive Installation enthält zusätzlich lokale Geheimnis-Hooks (siehe docs/baseline.md, Abschnitt 3).",
   "hinweis": "SHA-256 der übernommenen Programmdateien. Beabsichtigte Änderungen an diesen Dateien sind nur zulässig, wenn dieser Eintrag im selben Arbeitspaket aktualisiert und begründet wird. Laufzeitdaten, Sicherungen und Geheimnisse sind nicht Bestandteil des Imports.",
   "scopes": [
@@ -25,8 +25,8 @@
     },
     {
       "path": "bin/vibe",
-      "sha256": "d2c76a6e8ea6642003c2fd08fcd87872f25b95114359b03df815396729749765",
-      "bytes": 229213
+      "sha256": "a9df45a0a953a19a59491f11ab0701ead17673f856c674cff36c6496d2a3c925",
+      "bytes": 239965
     },
     {
       "path": "bin/vibe-run.sh",
@@ -35,8 +35,8 @@
     },
     {
       "path": "bin/vibe-web.py",
-      "sha256": "bf3c6b797a357545a6db52fa08493e31c3ad3d7f69e23bc0a3bdee9db151e0c5",
-      "bytes": 65334
+      "sha256": "0f33e9bec7f0a1889a0f0fa81a191013f20bb86c35e854aabd724e504efea4be",
+      "bytes": 66019
     },
     {
       "path": "bin/vibe_autonomous.py",
@@ -45,8 +45,8 @@
     },
     {
       "path": "bin/vibe_github.py",
-      "sha256": "fc73e22d80f1e9a04579e0c60a4f88de4a2ba200cf35a32f63d6a9f9d9a7d279",
-      "bytes": 30796
+      "sha256": "2df0373e0e4dba07d43256e3adc51a7edcd5beb43aa6bf227c5212a5eb04e867",
+      "bytes": 32633
     },
     {
       "path": "bin/vibe_guide.py",
@@ -110,8 +110,8 @@
     },
     {
       "path": "bin/web/app.js",
-      "sha256": "4913eda1ec796d1a9ee83f4a565e6a59a08d5ea67ba85818fb2d6b25e0202e8b",
-      "bytes": 110355
+      "sha256": "3e5332175cd0485d43a698c9bba8484d5da388827900ccd46d3629a6dab3a07a",
+      "bytes": 110946
     },
     {
       "path": "bin/web/index.html",
@@ -968,6 +968,26 @@
         "bin/vibe_sandbox.py",
         "bin/vibe_services.py",
         "bin/vibe_storage.py"
+      ]
+    },
+    {
+      "arbeitspaket": "AP8",
+      "datum": "2026-11-11",
+      "grund": "AP8 ermöglicht das Auschecken eines Projekts aus GitHub/Git und die Übernahme in den Projektordner mit lokalen vibe-Einstellungen: neue Funktion clone() in bin/vibe_github.py, checkout_from_github samt Helfern (_detect_project_type, _checkout_name, _ensure_local_test_agent, _adopt_project_env, _remap_project_agents, _adopt_checked_out_project) und CLI 'vibe clone' in bin/vibe, Webservice-Zweig /api/clone in bin/vibe-web.py, Auscheck-Karte im Dashboard in bin/web/app.js. Geänderte Dateien liegen im Bereich bin, daher wurden Größe und SHA-256 aktualisiert.",
+      "dateien": [
+        "bin/vibe",
+        "bin/vibe-web.py",
+        "bin/vibe_github.py",
+        "bin/web/app.js"
+      ]
+    },
+    {
+      "arbeitspaket": "AP8",
+      "datum": "2026-11-11",
+      "grund": "AP8 Review-Runde 1 (docs/reviews/AP8-review-1.md): Medium-Befund behoben — clone() maskiert Zugangsdaten in Git-Fehlermeldungen (neu: mask_embedded_credentials); Minor-Befunde behoben — verwaltete Schlüssel als MANAGED_ENV_KEYS-Konstante (_adopt_project_env überschreibt nur diese), Markerliste als TYPE_MARKERS/type_from_markers mit ptype geteilt, Übernahmefehler räumen den frisch erzeugten Zielordner auf; Docstring zur GitHub-Verknüpfung präzisiert (kein REST-/Tokenbedarf, set-head fragt den Remote). Regressionstests vom Test-Agenten (Fixlauf 3, 33 Tests). Geänderte Dateien liegen im Bereich bin, daher wurden Größe und SHA-256 aktualisiert.",
+      "dateien": [
+        "bin/vibe",
+        "bin/vibe_github.py"
       ]
     }
   ]

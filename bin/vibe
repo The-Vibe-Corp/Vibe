@@ -20,6 +20,7 @@ Aufruf:  vibe                 interaktives Menü
          vibe verify <p> [quick|full]
          vibe feedback <p>    neuen Punkt in FEEDBACK.md eintragen
          vibe new <name> <typ> [vorlage]   Typen: vibe types
+         vibe clone <url> [name]  Projekt aus Git/GitHub auschecken und mit den lokalen Einstellungen einrichten
          vibe init <p> [typ]  vorhandenes Projekt für vibe vorbereiten (ergänzt fehlende Dateien)
          vibe roots [add <pfad>|rm <pfad>]  Entwicklungsordner verwalten und Projekte einlesen
          vibe agents          alle Agenten (global und projektspezifisch)
@@ -454,12 +455,27 @@ def read_env(path):
 def penv(name): return read_env(os.path.join(ppath(name), ".vibe", "project.env"))
 def is_init(name): return os.path.exists(os.path.join(ppath(name), ".vibe", "project.env"))
 
+# Datei-Marker je Projekttyp; gemeinsam für die Typ-Erkennung registrierter
+# Projekte (ptype) und frisch ausgecheckter Projekte (AP8, _detect_project_type).
+TYPE_MARKERS = (
+    ("gradlew", "android"),
+    ("pubspec.yaml", "flutter"),
+    ("package.json", "web"),
+    ("pyproject.toml", "python"),
+    ("docker-compose.yml", "docker"),
+    ("compose.yaml", "docker"),
+)
+
 def ptype(name):
     p = ppath(name)
     t = penv(name).get("TYPE")
     if t: return t
-    for f, ty in (("gradlew", "android"), ("pubspec.yaml", "flutter"), ("package.json", "web"), ("pyproject.toml", "python"), ("docker-compose.yml", "docker"), ("compose.yaml", "docker")):
-        if os.path.exists(os.path.join(p, f)): return ty
+    return type_from_markers(p)
+
+def type_from_markers(project):
+    """Erkennt den Projekttyp anhand von Datei-Markern im Projektordner."""
+    for f, ty in TYPE_MARKERS:
+        if os.path.exists(os.path.join(project, f)): return ty
     return "generic"
 
 def cmd_roots(action=None, path=None):
@@ -2332,6 +2348,225 @@ def cmd_new(name, typ, tpl=None, out=None):
     _pm.clear()
     print(col("g", f"Projekt {name} ({typ}) angelegt: {p}", stream=out), file=out)
     print("Als Nächstes: SPEC.md und TICKETS.md füllen, dann vibe run", name, file=out)
+
+# ---------- Auschecken aus GitHub (AP8) ----------
+# Ein ausgechecktes Projekt bekommt die lokale vibe-Konfiguration: Vorlagen,
+# allgemeine Regeln, Test-Agent und die Agentenauswahl werden auf den lokalen
+# Stand gebracht. Mit dem Repository mitgelieferte vibe-Einstellungen
+# überschreiben die lokalen Einstellungen nie — jeder Nutzer passt die
+# Einstellungen je Projekt individuell an seine vibe-Instanz an (analog zu
+# einer IDE). Managed-Schlüssel in .vibe/project.env stammen deshalb aus der
+# lokalen Vorlage; fremde, nicht verwaltete Schlüssel bleiben erhalten.
+
+
+# Schlüssel in .vibe/project.env, die beim Auschecken konsequent auf den
+# lokalen Stand gebracht werden (Projektordination); alle anderen Schlüssel
+# eines mitgelieferten project.env bleiben unangetastet.
+MANAGED_ENV_KEYS = (
+    "TYPE", "REVIEWER", "TESTER", "SANDBOX", "SANDBOX_TOOLS",
+    "VERIFY_QUICK", "VERIFY_PACKAGE", "VERIFY_FULL",
+)
+
+
+def _detect_project_type(project):
+    """Erkennt den Projekttyp anhand von Markern (ohne project.env)."""
+    return type_from_markers(project)
+
+
+def _checkout_name(url, name):
+    """Prüft einen gegebenen Namen oder leitet ihn aus der Adresse ab."""
+    name = str(name or "").strip()
+    if name:
+        if not NAME_RE.match(name):
+            raise ValueError("Projektname: nur a-z, 0-9, _ und -, beginnend mit "
+                             "Buchstabe oder Ziffer (erhalten: " + repr(name) + ")")
+        return name
+    raw = str(url).split("?", 1)[0].split("#", 1)[0].rstrip("/")
+    part = re.split(r"[/\\:]", raw)[-1]
+    part = re.sub(r"\.git$", "", part, flags=re.IGNORECASE)
+    part = re.sub(r"[^a-z0-9_-]+", "-", part.lower())
+    part = re.sub(r"-{2,}", "-", part).strip("-_")[:64]
+    if not NAME_RE.match(part):
+        raise ValueError("Aus der Adresse lässt sich kein Projektname ableiten: "
+                         "Namen angeben (" + vibe_github.mask_url(url) + ")")
+    return part
+
+
+def _ensure_local_test_agent(project):
+    """Test-Agent aus der lokalen Vorlage; eine mitgelieferte Version weicht.
+
+    Der unabhängige Test-Agent ist ein verwaltetes vibebestandteil (AP02):
+    Nach dem Auschecken gilt die lokale Vorlage, nicht eine im Repository
+    mitgelieferte Datei. Symlinks und Verzeichnisse bleiben unangetastet.
+    Liefert eine Meldung oder den Leerwert, wenn nichts zu berichten ist.
+    """
+    result = ensure_test_agent(project)
+    path = os.path.join(project, *TEST_AGENT_REL)
+    if os.path.islink(path) or not os.path.isfile(path):
+        return "Unabhängiger Test-Agent ergänzt (lokale Vorlage)" if result["agent"] else ""
+    template_path = os.path.join(TPL, "common", *TEST_AGENT_REL)
+    if os.path.isfile(template_path):
+        with open(template_path, encoding="utf-8") as handle:
+            content = handle.read()
+    else:
+        content = TEST_AGENT_TEMPLATE
+    with open(path, encoding="utf-8") as handle:
+        current = handle.read()
+    if current == content:
+        return ""
+    vibe_storage.write_text(path, content)
+    return "Unabhängiger Test-Agent aus der lokalen Vorlage übernommen (mitgelieferte Version ersetzt)"
+
+
+def _adopt_project_env(project, name, typ):
+    """Vereinheitlicht .vibe/project.env auf die lokale Vorlage.
+
+    Fehlt die Datei, entsteht sie aus der Vorlage des erkannten Typs
+    (kopiert von copy_tree) oder minimal. Existiert sie (mit dem Repository
+    mitgeliefert), werden nur abweichende verwaltete Schlüssel auf die
+    lokalen Vorlagewerte gesetzt; identische Zeilen bleiben im bisherigen
+    Format, sonstige Schlüssel und Kommentare bleiben erhalten.
+    """
+    env_path = os.path.join(project, ".vibe", "project.env")
+    if not os.path.isfile(env_path):
+        os.makedirs(os.path.dirname(env_path), exist_ok=True)
+        vibe_storage.write_text(env_path, "TYPE=" + typ + "\n")
+        return "Projekteinstellungen angelegt (Typ " + typ + ")"
+    template_env = os.path.join(TPL, typ, ".vibe", "project.env")
+    values = read_env(template_env) if os.path.isfile(template_env) else {}
+    values["TYPE"] = typ
+    current = read_env(env_path)
+    # Nur verwaltete Schlüssel gewinnen: Mit dem Repository mitgelieferte
+    # Werte werden auf den lokalen Vorlagestand gebracht, fremde Schlüssel
+    # (z. B. projektspezifische Zusätze) bleiben erhalten.
+    diff = {key: value for key, value in values.items()
+            if key in MANAGED_ENV_KEYS and current.get(key) != value}
+    if diff:
+        set_env_values(name, diff)
+    return "Projekteinstellungen auf den lokalen Stand gebracht (Typ " + typ + ")"
+
+
+def _remap_project_agents(name, project):
+    """Bildet die aktiven Agenten des Projekts auf lokale Agenten ab.
+
+    Agenten, die es lokal nicht gibt, verlieren die Aktivierung und ihre
+    Modellüberschreibung; der Vibe-Agent bleibt immer aktiv. Eine unlesbare
+    Auswahl bleibt unverändert und wird gemeldet, statt sie still zu
+    überschreiben.
+    """
+    path = os.path.join(project, ".vibe", "agents.json")
+    if not os.path.isfile(path):
+        return ""
+    try:
+        config, snapshot = project_agents_load(name)
+    except ValueError as error:
+        return "Agentenauswahl unlesbar, bleibt unverändert (" + str(error) + ")"
+    inventory = project_agent_inventory(name)
+    vibe = vibe_agent_name()
+    active = [agent for agent in config["aktiv"] if agent in inventory]
+    if vibe and vibe not in active:
+        active.append(vibe)
+    models = {agent: model for agent, model in config["modelle"].items()
+              if agent in inventory}
+    removed = sorted(set(config["aktiv"]) - set(active)
+                     | set(config["modelle"]) - set(models))
+    clean = {"version": PROJECT_AGENTS_VERSION, "aktiv": sorted(set(active)),
+             "modelle": models}
+    if clean == config:
+        return "" if not removed else \
+            "Aktive Agenten: bereits auf die lokal konfigurierten Agenten begrenzt"
+    project_agents_save(name, clean,
+                        expected=snapshot.digest if snapshot.exists else vibe_storage.MISSING)
+    return "Aktive Agenten auf die lokal konfigurierten Agenten angepasst" + \
+        ("; entfernt: " + ", ".join(removed) if removed else "")
+
+
+def checkout_from_github(url, name=None):
+    """Checkt ein Repository aus und richtet es als neues Projekt ein.
+
+    Liefert (Name, Zusammenfassung). Fehler werden als ValueError mit
+    verständlicher Meldung geworfen; ein fehlgeschlagener Aufruf hinterlässt
+    kein halbes Projekt (Auschecken und Übernahme räumen den Zielordner auf,
+    wenn er vorher nicht existierte). github.com-Adressen werden zusätzlich
+    verknüpft (GITHUB_REPO/GITHUB_ENABLED wie bei „vibe github link“), ohne
+    einen GitHub-REST-API-Aufruf oder Token zu benötigen; das Setzen des
+    Remote-Standard-Branch fragt den Git-Remote selbst ab. Andere Remotes
+    bleiben ohne GitHub-Schlüssel.
+    """
+    url = str(url or "").strip()
+    if not url:
+        raise ValueError("Remote-Adresse fehlt")
+    slug = vibe_github.parse_remote_url(url)
+    name = _checkout_name(url, name)
+    target = os.path.join(VIBE, name)
+    _pm.clear()
+    if os.path.lexists(target):
+        raise ValueError("Zielordner existiert bereits: " + target
+                         + " — anderen Namen wählen")
+    if name in project_map():
+        raise ValueError("Projektname ist bereits vergeben: " + name)
+    rc, out = vibe_github.clone(url, target)
+    if rc != 0:
+        shutil.rmtree(target, ignore_errors=True)
+        raise ValueError("Auschecken fehlgeschlagen: " + (out or "unbekannter Fehler"))
+    _pm.clear()
+    try:
+        notes = _adopt_checked_out_project(target, name)
+        if slug:
+            set_env_values(name, {"GITHUB_ENABLED": "1", "GITHUB_REPO": slug})
+            vibe_github.set_head_default(target)
+            notes.append("GitHub verknüpft: " + slug)
+    except (OSError, vibe_storage.StorageError) as error:
+        # Das Projekt ist angelegt, aber nicht vollständig übernommen; ohne
+        # Aufräumen bliebe ein halbes Projekt zurück und ein erneuter Versuch
+        # scheiterte am Zielordner. Nur der frisch erzeugte Ordner wird
+        # entfernt — bestehende Ordner wurden oben abgelehnt.
+        shutil.rmtree(target, ignore_errors=True)
+        _pm.clear()
+        raise ValueError("Übernahme fehlgeschlagen, Zielordner entfernt: "
+                         + str(error)) from None
+    return name, "; ".join(notes) if notes else "Projekt übernommen (keine Anpassungen nötig)"
+
+
+def _adopt_checked_out_project(project, name):
+    """Bringt die vibe-Einstellungen des Projekts auf den lokalen Stand."""
+    notes = []
+    typ = _detect_project_type(project)
+    if typ not in types():
+        typ = "generic"
+    created = copy_tree(os.path.join(TPL, "common"), project, name) \
+        + copy_tree(os.path.join(TPL, typ), project, name)
+    if created:
+        notes.append("Fehlende Vorlagedateien ergänzt: " + ", ".join(created))
+    rules = ensure_general_rules(project)
+    if rules:
+        notes.append("Allgemeine Regeln in AGENTS.md "
+                     + ("aktualisiert" if rules == "updated" else "ergänzt"))
+    agent_note = _ensure_local_test_agent(project)
+    if agent_note:
+        notes.append(agent_note)
+    try:
+        env_note = _adopt_project_env(project, name, typ)
+        notes.append(env_note)
+        agents_note = _remap_project_agents(name, project)
+        if agents_note:
+            notes.append(agents_note)
+    except (OSError, vibe_storage.StorageError) as error:
+        raise ValueError("Lokale Einstellungen konnten nicht übernommen werden: "
+                         + str(error)) from None
+    return notes
+
+
+def cmd_clone(url, name=None, out=None):
+    """CLI für „vibe clone <url> [name]“: auschecken und lokal einrichten."""
+    out = out or sys.stdout
+    try:
+        found, summary = checkout_from_github(url, name)
+    except (ValueError, OSError, vibe_storage.StorageError) as error:
+        sys.exit(str(error))
+    print(col("g", "Projekt " + found + " ausgecheckt und eingerichtet."), file=out)
+    print(summary, file=out)
+    print("Änderungen am Arbeitsbaum liegen vor: bitte prüfen und selbst committen.", file=out)
 
 # ---------- Agenten (global und projektspezifisch) ----------
 PERMS = {
@@ -4916,6 +5151,7 @@ def main():
                  "fritz": lambda: cmd_fritz(r[0] if r else None),
                  "verify": lambda: cmd_verify(r[0], r[1] if len(r) > 1 else "quick"), "feedback": lambda: cmd_feedback(r[0]),
                  "new": lambda: cmd_new(r[0], r[1] if len(r) > 1 else "generic", r[2] if len(r) > 2 else None),
+                 "clone": lambda: cmd_clone(r[0], r[1] if len(r) > 1 else None),
                  "init": lambda: cmd_init(r[0], r[1] if len(r) > 1 else None),
                  "roots": lambda: cmd_roots(r[0] if r else None, r[1] if len(r) > 1 else None), "scan": lambda: cmd_roots(),
                  "agents": lambda: cmd_agents(), "agent": lambda: cmd_agent(r[0], r[1], r[2] if len(r) > 2 else "global", r[3] if len(r) > 3 else None),
