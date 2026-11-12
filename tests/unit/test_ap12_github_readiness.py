@@ -8,9 +8,17 @@ Git-Repositories, nicht Implementierungscode:
   (TICKETS.md, FEEDBACK.md, .vibe/, opencode.json, .opencode/) und
   beschädigt nicht die versionierten Vorlagen unter templates/.
 * AK2: systemspezifische OS- und Editor-Artefakte werden ausgeschlossen.
-* AK3: lokal vorhandene, bisher versionierte lokale Einstellungsdateien
-  (opencode.json, .opencode/agents/test-agent.md) sind aus dem Index
-  entfernt, existieren aber weiterhin lokal.
+* AK3: die lokalen Einstellungsdateien (opencode.json,
+  .opencode/agents/test-agent.md) sind aus dem Index entfernt und
+  werden von .gitignore erfasst — dieser Anteil ist auf jedem
+  frischen Klon prüfbar. Der lokale Bestand-Erhalt wird als bedingte
+  Vorbedingung geprüft (siehe UntrackedLocalSettingsTest): in einer
+  eingerichteten vibe-Umgebung (.vibe/project.env vorhanden, vom
+  lokalen Setup erzeugt und nie versioniert) muss die vom Setup aus
+  der Toolchain-Vorlage erstellte Test-Agent-Datei lokal erhalten
+  bleiben; ein Root-opencode.json legt kein Setup-Schritt an (es
+  entsteht erst bei MCP-Bedarf in vibe_mcp.py), sein lokaler Bestand
+  ist daher nicht repo-verifizierbar.
 * AK4: keine versionierte Datei enthält persönliche Home-Pfade oder
   Geheimnisse; die üblichen GitHub-Dokumente existieren und sind
   versioniert.
@@ -122,6 +130,19 @@ def is_ignored(relpath):
     return result.returncode == 0
 
 
+def vibe_environment_established():
+    """True, wenn eine eingerichtete lokale vibe-Umgebung vorliegt.
+
+    Stabiles Signal: ``.vibe/project.env`` wird ausschließlich durch das
+    lokale Setup der vibe-Toolchain erzeugt (``register_projects`` in
+    ``scripts/setup-vibe.py``, gemeinsam mit der Test-Agent-Datei aus
+    der Toolchain-Vorlage) und wird laut AK1 nie versioniert. Auf einem
+    frischen Klon fehlt es; dort ist der lokale Bestand-Erhalt-Anteil
+    von AK3 nicht prüfbar.
+    """
+    return (REPO / ".vibe" / "project.env").is_file()
+
+
 class GitignoreLocalSettingsTest(unittest.TestCase):
     """AK1: lokale Einstellungen werden ignoriert, Vorlagen bleiben drin."""
 
@@ -181,9 +202,17 @@ class SystemArtifactsTest(unittest.TestCase):
 
 
 class UntrackedLocalSettingsTest(unittest.TestCase):
-    """AK3: lokale Einstellungen unversioniert, aber lokal vorhanden."""
+    """AK3: lokale Einstellungen unversioniert; lokaler Bestand bedingt.
+
+    Der frisch-Klon-taugliche Anteil von AK3 wird vollständig
+    versionierungs- und ignorebasiert geprüft (keine dieser Dateien im
+    Index, Erfassung durch .gitignore). Der lokale Existenz-Anteil ist
+    nur in einer eingerichteten vibe-Umgebung prüfbar und wird als
+    bedingte Vorbedingung behandelt.
+    """
 
     def test_local_config_files_are_untracked_but_present(self):
+        """Frisch-Klon-tauglicher AK3-Anteil: nichts davon ist versioniert."""
         versioniert = set(tracked_files())
         verstoß = [
             path for path in ("opencode.json", ".opencode/agents/test-agent.md")
@@ -210,16 +239,47 @@ class UntrackedLocalSettingsTest(unittest.TestCase):
             + ", ".join(verstoß),
         )
 
-    def test_local_config_files_still_exist_locally(self):
-        fehlt = [
-            path for path in ("opencode.json", ".opencode/agents/test-agent.md")
-            if not (REPO / path).is_file()
-        ]
-        self.assertEqual(
-            fehlt,
-            [],
-            "Lokale Einstellungsdateien müssen trotz Entfernen aus dem "
-            "Index lokal erhalten bleiben: " + ", ".join(fehlt),
+    def test_local_test_agent_preserved_when_environment_established(self):
+        """Lokaler Bestand-Erhalt als bedingte Vorbedingung (AK3).
+
+        Portabel (frisch-Klon-tauglich) ist der Versionierungs- und
+        Ignore-Anteil von AK3; er wird in
+        ``test_local_config_files_are_untracked_but_present`` und in
+        ``GitignoreLocalSettingsTest.test_local_settings_are_ignored``
+        geprüft.
+
+        Der lokale Existenz-Anteil ist nur in einer eingerichteten
+        vibe-Umgebung prüfbar. Signal (siehe
+        ``vibe_environment_established``): ``.vibe/project.env`` ist als
+        lokale Einstellung vorhanden — es entsteht nur durch das lokale
+        Setup und fehlt auf jedem frischen Klon. In eingerichteter
+        Umgebung muss die vom Setup aus der Toolchain-Vorlage erstellte
+        Test-Agent-Datei lokal erhalten bleiben (kein versehentliches
+        Löschen, z. B. durch ``git rm --cached``). Fehlt die
+        Toolchain-Vorlage, meldet das Setup bereits eine Warnung; der
+        Test behandelt das als Umgebungsmangel.
+
+        ``opencode.json`` wird hier nicht geprüft: kein Setup-/init-
+        Schritt legt ein Root-opencode.json an (es entsteht erst bei
+        MCP-Bedarf in ``vibe_mcp.py``); ein frisch eingerichteter Klon
+        erhält es begründet nicht, sein lokaler Bestand ist damit nicht
+        repo-verifizierbar und wird im Testbericht als Limitation
+        geführt statt als Abnahme-Assertion.
+        """
+        if not vibe_environment_established():
+            self.skipTest(
+                "keine eingerichtete vibe-Umgebung (.vibe/project.env als "
+                "lokale Einstellung nicht vorhanden) — der lokale "
+                "Bestand-Erhalt von AK3 ist hier nicht prüfbar; der "
+                "frisch-Klon-taugliche Anteil (nicht versioniert, "
+                "ignoriert) wird in den übrigen AK3-Tests geprüft"
+            )
+        agent = REPO / ".opencode" / "agents" / "test-agent.md"
+        self.assertTrue(
+            agent.is_file(),
+            "Der vom lokalen Setup erstellte Test-Agent "
+            "(.opencode/agents/test-agent.md) muss trotz Entfernen aus "
+            "dem Index lokal erhalten bleiben",
         )
 
 
