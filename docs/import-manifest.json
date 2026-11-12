@@ -781,6 +781,15 @@
    ],
    "datum": "2026-11-12",
    "grund": "Ausgabe-Tab überarbeitet (AP14): Die Ausgabeansicht zeigt den Hauptagenten dauerhaft und laufende Subagenten als Agenten-Tabs mit vollständiger Ausgabe (bis 500 Nachrichten, Text, Reasoning und Werkzeugteile); beendete Subagenten werden aus der Agentenauswahl gefiltert (die Zustandsdatei behält die erfassten Einträge), das Abfrageintervall liegt bei 2 Sekunden. Zusatzanweisungen lassen sich über /api/steer mit optionalem Session-Feld gezielt an den Hauptagenten oder einen erfassten Subagenten des aktiven Laufs richten (fremde Sessions werden abgelehnt; Protokollmarker und Rückmeldung nennen das Ziel als <Agentenname> (<Session>) bzw. nur <Session>); der neue Endpunkt /api/continue setzt nur bei gestopptem Lauf mit erfasster Session und harnessfähigem Harness fort (vibe_harness.supports: opencode wahr für steer/continue, Pi und unbekannte Harnesses falsch). Der Startbefehl übergibt die geprüfte Fortsetzungskennung als VIBE_CONTINUE_SESSION an den Läufer, der RESUME_SESSION damit vorbesetzt, sodass auch der erste Versuch und Folgepakete desselben Laufs mit opencode --session in derselben Session laufen; der Pi-Zweig erhält nie --session. Geänderte Dateien liegen im Bereich bin (docs/compatibility.md liegt außerhalb des Manifests), daher wurden Größe und SHA-256 der betreffenden files-Einträge aktualisiert und dadurch begründet."
+  },
+  {
+   "arbeitspaket": "AP15",
+   "dateien": [
+    "bin/vibe_github.py",
+    "bin/vibe_services.py"
+   ],
+   "datum": "2026-11-12",
+   "grund": "Schnelles Öffnen der Projektansicht (AP15): Das Credential (scrypt-Key-Ableitung) wird je Dashboard-Anfrage genau einmal gelöst — neu credential_for_git() — und über einen eng begrenzten Durchgangskontext (thread-lokal, Lebensdauer nur innerhalb des Kontexts, kein Cache über Anfragen) an alle git()-Aufrufe von status() und branches() weitergereicht; remotes() wird je Durchgang einmal geprüft und für Ansichtsfeld und Fernprüfung (has_origin) wiederverwendet; token_status() prüft ein bereits gelöstes Credential (project_token), ohne den Projekt-Token erneut zu entschlüsseln. Die Credential-Kette (Umgebung > Projekt-Token > legacy globaler Token), die URL-Maskierung und der remote=True-Pfad bleiben unverändert. Die Weiterreichung läuft über den Kontext statt über ein Schlüsselwort an jedem git()-Aufruf, damit bestehende Läufer, die git durch einen Stub mit enger Signatur ersetzen, weiter funktionieren. Beide geänderten Dateien liegen im Bereich bin; Größe und SHA-256 der files-Einträge wurden aktualisiert und dadurch begründet."
   }
  ],
  "files": [
@@ -820,9 +829,9 @@
    "sha256": "0f6d9c2c9d72ff1400ba0c2e8173217102ac9f163a41191c34367dd5f81f5778"
   },
   {
-   "bytes": 52172,
+   "bytes": 56538,
    "path": "bin/vibe_github.py",
-   "sha256": "e7df313cb705195bcc1523eb326fe6668d104dd37ef956801153c3b6f1ed4990"
+   "sha256": "0a9058f16d4e7aaf683e1196fb5910120c3c0399eb3401529b0f9ded2ec0357e"
   },
   {
    "bytes": 27530,
@@ -880,9 +889,9 @@
    "sha256": "3edb8046ad3dd29bc65a3c3d4c0cc743d79648d8b09938b7057447972ca1fdfd"
   },
   {
-   "bytes": 10903,
+   "bytes": 11226,
    "path": "bin/vibe_services.py",
-   "sha256": "80f24a15d5676e9f4a6959c8437fc1184ea60e86bc7f174f9f76a98ffd93eb6d"
+   "sha256": "aa1cb3bb7e89f80d6f0aabee19f714d4f32bc9b39f7553c6c4708c6cb01fb96a"
   },
   {
    "bytes": 21156,

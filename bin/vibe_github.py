@@ -46,6 +46,7 @@ nur GitHub-Endpunkten übergeben: der offiziellen REST-API
 konfigurierbaren anderen Hosts wird niemals der hinterlegte Token
 versendet; der Umgebungstoken behält sein bisheriges REST-Verhalten.
 """
+import contextlib
 import hashlib
 import hmac
 import json
@@ -56,6 +57,7 @@ import struct
 import subprocess
 import sys
 import tempfile
+import threading
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -359,18 +361,63 @@ def delete_token(environ=None):
         pass
 
 
-def token_status(project_path=None, environ=None):
+def token_status(project_path=None, environ=None, project_token=None):
     """Token-Kennung ohne Inhalt: {set, source}.
 
     Reihenfolge: Umgebung, dann verschlüsselter Projekt-Token, dann der
-    legacy global gespeicherte Token (B7)."""
+    legacy global gespeicherte Token (B7). Mit ``project_token`` (AP15)
+    wird ein bereits gelöstes Credential des Durchgangs geprüft, statt
+    den Projekt-Token erneut zu entschlüsseln. Entspricht es dem legacy
+    globalen Token, stammt das Credential von dort (der Projekt-Token
+    hätte in der Kette Vorrang) und wird als „gespeichert" gemeldet."""
     if token_from_env():
         return {"set": True, "source": "umgebung"}
-    if project_path is not None and read_project_token(project_path, environ):
-        return {"set": True, "source": "projekt"}
-    if read_stored_token(environ):
+    stored_global = read_stored_token(environ)
+    if project_path is not None:
+        if project_token is None:
+            project_token = read_project_token(project_path, environ)
+        if project_token and project_token != stored_global:
+            return {"set": True, "source": "projekt"}
+    if stored_global:
         return {"set": True, "source": "gespeichert"}
     return {"set": False, "source": ""}
+
+
+def credential_for_git(project_path, environ=None):
+    """Credential-Kette für Git-Aufrufe: Umgebung > verschlüsselter
+    Projekt-Token > legacy globaler Token (dieselbe Reihenfolge wie in
+    ``git()``).
+
+    Je Durchgang (z. B. eine Dashboard-Anfrage) einmal aufrufen und das
+    Ergebnis an alle ``git()``-Aufrufe des Durchgangs weiterreichen
+    (AP15); bewusst kein Cache über Anfragen hinweg — jeder Durchgang
+    liest und entschlüsselt die Ablage erneut."""
+    return (token_from_env() or read_project_token(project_path, environ)
+            or read_stored_token(environ))
+
+
+# AP15: Durchgangskontext für das einmal gelöste Credential. Kein Cache:
+# Er existiert ausschließlich innerhalb des ``_credential_passdown``-
+# Kontexts eines Durchgangs (Zustand je Thread, damit parallele
+# Dashboard-Anfragen sich nicht vermischen) und wird beim Verlassen auf
+# den vorherigen Stand zurückgesetzt; es gibt keine Wiederverwendung über
+# Anfragen hinweg. Über einen Kontext statt über ein Schlüsselwort an
+# jedem ``git()``-Aufruf wird weitergereicht, damit bestehende Läufer,
+# die ``git`` durch einen Stub mit enger Signatur ersetzen (Muster
+# test_b8_project_open_without_remote), unverändert funktionieren.
+_CREDENTIAL_PASSDOWN = threading.local()
+
+
+@contextlib.contextmanager
+def _credential_passdown(credential):
+    """Stellt das Credential des Durchgangs für alle ``git()``-Aufrufe
+    bereit und räumt beim Verlassen wieder auf."""
+    previous = getattr(_CREDENTIAL_PASSDOWN, "credential", None)
+    _CREDENTIAL_PASSDOWN.credential = credential
+    try:
+        yield
+    finally:
+        _CREDENTIAL_PASSDOWN.credential = previous
 
 
 def token_for_rest(api=None, project_path=None):
@@ -487,7 +534,7 @@ def _require_github_slug(parts):
     return slug
 
 
-def git(project_path, *args, timeout=TIMEOUT_GIT):
+def git(project_path, *args, timeout=TIMEOUT_GIT, token=None):
     """Führt Git mit Argumentlisten aus (ohne Shell, mit Zeitlimit).
 
     Ohne Terminal-Prompt: Eine nicht erreichbare oder nach Zugangsdaten
@@ -505,9 +552,14 @@ def git(project_path, *args, timeout=TIMEOUT_GIT):
     den Unterbefehl hinter dem festen Präfix lesen können; der Tokeninhalt
     bleibt ausschließlich in der Prozessumgebung
     (``VIBE_GITHUB_CREDENTIAL``) und niemals in argv, Logs oder der
-    Konfiguration."""
-    token = (token_from_env() or read_project_token(project_path)
-             or read_stored_token())
+    Konfiguration. Mit ``token`` (AP15) wird ein bereits gelöstes
+    Credential des Durchgangs ungeprüft verwendet; ``None`` löst die
+    Kette selbst — zunächst über einen aktiven Durchgangskontext
+    (``_credential_passdown``), sonst über ``credential_for_git``."""
+    if token is None:
+        token = getattr(_CREDENTIAL_PASSDOWN, "credential", None)
+    if token is None:
+        token = credential_for_git(project_path)
     argv = ["git", "--no-pager",
             *_credential_args(token),
             "-c", "core.fsmonitor=false",
@@ -632,7 +684,8 @@ def _local_push_state(project_path, branch):
     return _revision_compare_local(project_path, branch, "origin/" + branch)
 
 
-def _push_state(project_path, branch, remote_sha=None, *, remote=True):
+def _push_state(project_path, branch, remote_sha=None, *, remote=True,
+                has_origin=None):
     """Ahead/Behind des Branches gegen origin.
 
     Mit ``remote=False`` wird ausschließlich die lokale
@@ -647,11 +700,15 @@ def _push_state(project_path, branch, remote_sha=None, *, remote=True):
     Fern-Referenzen). Ohne Remote-Eintrag oder bei Fehler bleibt der Stand
     bei 0/0 (keine veralteten Referenzen). ``remote_sha`` darf eine bereits
     ermittelte Fern-SHA sein, damit Branchlisten mit einem einzigen
-    ls-remote auskommen.
-    """
+    ls-remote auskommen. ``has_origin`` (AP15) ist das bereits ermittelte
+    Ergebnis der Remote-Prüfung des Durchgangs; ``None`` prüft wie bisher
+    selbst. Das Credential kommt über den Durchgangskontext
+    (``_credential_passdown``), nicht über Aufrufargumente."""
     if not branch:
         return 0, 0
-    if not any(r["name"] == "origin" for r in remotes(project_path)):
+    if has_origin is None:
+        has_origin = any(r["name"] == "origin" for r in remotes(project_path))
+    if not has_origin:
         return 0, 0
     if not remote:
         return _local_push_state(project_path, branch)
@@ -698,65 +755,92 @@ def _revision_compare_local(project_path, left, right):
     return int(fields[0]), int(fields[1])
 
 
-def status(project_path, *, remote=True):
+def status(project_path, *, remote=True, token=None):
     """Leseansicht: konfigurierte Verknüpfung und Git-Zustand.
 
     ``remote=False`` liest Ahead/Behind nur aus lokalen Referenzen und
     vermeidet jede Netzwerkabfrage. Ohne aktivierte GitHub-Verknüpfung
-    wird ebenfalls nie eine Fernabfrage ausgelöst.
+    wird ebenfalls nie eine Fernabfrage ausgelöst. Mit ``token`` (AP15)
+    wird das bereits gelöste Credential des Durchgangs über den
+    Durchgangskontext an alle ``git()``-Aufrufe weitergereicht; ohne
+    ``token`` wird es hier einmal gelöst. ``remotes()`` wird einmal
+    geprüft und für Ansichtsfeld und Fernprüfung wiederverwendet.
     """
     project = str(project_path)
     config = read_config(os.path.join(project, ".vibe", "project.env"))
-    branch = current_branch(project)
-    ahead, behind = _push_state(project, branch,
-                                remote=remote and config["enabled"])
+    credential = credential_for_git(project) if token is None else token
+    with _credential_passdown(credential):
+        remote_rows = remotes(project)
+        branch = current_branch(project)
+        ahead, behind = _push_state(
+            project, branch, remote=remote and config["enabled"],
+            has_origin=any(r["name"] == "origin" for r in remote_rows))
+        auth = token_status(project, project_token=credential)
     return {
         "enabled": config["enabled"],
         "repo": config["repo"],
         "label": config["label"],
         "api": config["api"],
         "base": config["base"],
-        "remotes": remotes(project),
+        "remotes": remote_rows,
         "branch": branch or "-",
         "ahead": ahead,
         "behind": behind,
         "unpushed": ahead > 0,
-        "auth": token_status(project),
+        "auth": auth,
     }
 
 
-def branches(project_path, *, remote=True):
+def _branch_row(project, name, fields, head, remote_sha, *, use_remote,
+                has_origin):
+    """Eine Branchzeile: aktuell-Flag und Abstand zum Upstream."""
+    ahead, behind = _push_state(project, name, remote_sha, remote=use_remote,
+                                has_origin=has_origin)
+    return {
+        "name": name,
+        "current": name == head,
+        "last": (fields[1] + " "
+                 + (fields[2].strip() if len(fields) > 2 else "")).strip(),
+        "ahead": ahead,
+        "behind": behind,
+    }
+
+
+def branches(project_path, *, remote=True, token=None):
     """Lokale Branches mit aktuell-Flag und Abstand zum Upstream.
 
     Ein einziger ls-remote liefert alle Fern-SHA-Werte; der Abstand wird
     je Branch lokal gerechnet. Mit ``remote=False`` oder ohne aktivierte
     GitHub-Verknüpfung bleiben lokale Referenzen die Grundlage und es
-    findet keine Netzwerkabfrage statt."""
+    findet keine Netzwerkabfrage statt. Mit ``token`` (AP15) wird das
+    bereits gelöste Credential des Durchgangs über den Durchgangskontext
+    an alle ``git()``-Aufrufe weitergereicht; ohne ``token`` wird es hier
+    einmal gelöst. ``remotes()`` wird einmal geprüft und für alle
+    Branches als ``has_origin`` wiederverwendet."""
     project = str(project_path)
     config = read_config(os.path.join(project, ".vibe", "project.env"))
     use_remote = remote and config["enabled"]
-    head = current_branch(project)
-    rc, out = git(project, "for-each-ref", "refs/heads",
-                  "--format=%(refname:short)\t%(objectname:short)\t%(contents:subject)")
-    rows = []
-    if rc != 0:
+    credential = credential_for_git(project) if token is None else token
+    with _credential_passdown(credential):
+        has_origin = any(r["name"] == "origin" for r in remotes(project))
+        head = current_branch(project)
+        rc, out = git(
+            project, "for-each-ref", "refs/heads",
+            "--format=%(refname:short)\t%(objectname:short)"
+            "\t%(contents:subject)")
+        rows = []
+        if rc != 0:
+            return rows
+        remote_shas = _remote_shas(project) if use_remote else {}
+        for line in out.splitlines():
+            fields = line.split("\t")
+            if not fields or not fields[0]:
+                continue
+            rows.append(_branch_row(project, fields[0], fields, head,
+                                    remote_shas.get(fields[0]),
+                                    use_remote=use_remote,
+                                    has_origin=has_origin))
         return rows
-    remote_shas = _remote_shas(project) if use_remote else {}
-    for line in out.splitlines():
-        fields = line.split("\t")
-        if not fields or not fields[0]:
-            continue
-        name = fields[0]
-        ahead, behind = _push_state(project, name, remote_shas.get(name),
-                                    remote=use_remote)
-        rows.append({
-            "name": name,
-            "current": name == head,
-            "last": (fields[1] + " " + (fields[2].strip() if len(fields) > 2 else "")).strip(),
-            "ahead": ahead,
-            "behind": behind,
-        })
-    return rows
 
 
 def _remote_shas(project):

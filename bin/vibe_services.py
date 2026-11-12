@@ -131,9 +131,15 @@ def project_detail(vibe, paths, name):
         # Die Projektansicht darf nie auf ein Git-Remote warten. Fernstatus
         # (ahead/behind) kommt hier ausschließlich aus lokalen Referenzen;
         # bewusste Netzaktionen laufen über die GitHub-Aktionen.
-        data["github"] = vibe_github.status(vibe.ppath(name), remote=False)
-        data["github"]["branches"] = vibe_github.branches(vibe.ppath(name),
-                                                          remote=False)
+        # AP15: Das Credential (scrypt-Ableitung) wird je Anfrage genau
+        # einmal gelöst und an beide Durchgänge weitergereicht; bewusst
+        # kein Cache über Anfragen hinweg.
+        project_path = vibe.ppath(name)
+        credential = vibe_github.credential_for_git(project_path)
+        data["github"] = vibe_github.status(project_path, remote=False,
+                                            token=credential)
+        data["github"]["branches"] = vibe_github.branches(
+            project_path, remote=False, token=credential)
     except Exception as error:  # noqa: BLE001; pylint: disable=broad-exception-caught
         # Bewusste Entschärfung: Die Ansicht degradiert, das Dashboard bleibt
         # nutzbar; Git-Fehler tragen den Klartext im Feld "error".
