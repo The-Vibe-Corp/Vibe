@@ -55,7 +55,9 @@ import unittest
 WERKZEUGWURZEL = pathlib.Path(__file__).resolve().parents[2]
 BIN = WERKZEUGWURZEL / "bin"
 
-# Exakt die Modulliste aus docs/reviews/F28-pylint-baseline_2026_11_10.txt:
+# Baselisten aus docs/reviews/F28-pylint-baseline_2026_11_10.txt, ergänzt um
+# das AP13-Modul vibe_ui_config.py, damit auch es in der Baseline gelintet
+# wird (die Ausnahmeliste wird dafür nicht erweitert).
 MODULE = [
     "fritz-reconnect.py",
     "vibe-web.py",
@@ -68,6 +70,7 @@ MODULE = [
     "vibe_opencode.py",
     "vibe_packages.py",
     "vibe_paths.py",
+    "vibe_ui_config.py",
     "vibe_questions.py",
     "vibe_runs.py",
     "vibe_sandbox.py",

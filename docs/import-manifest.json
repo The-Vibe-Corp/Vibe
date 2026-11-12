@@ -755,13 +755,26 @@
    ],
    "datum": "2026-11-12",
    "grund": "Autonome Preflight-Reparatur: Ist der autonome Modus aktiv, entsteht keine F16-Rückfrage mehr; die Assistenz liefert sofort einen aus den Befunden abgeleiteten Agentenauftrag (Herkunft 'autonomous', Protokoll: 'einer autonomen Entscheidung') und lässt ihn genau einmal ausführen, danach wird der Preflight erneut geprüft. Bleibt der Befund, blockiert der Lauf mit dem letzten Befund, statt erneut zu beauftragen. Wird der Modus erst während des Wartens eingeschaltet, endet das Warten sofort mit demselben Auftrag. Ohne nutzbare F16-Module bleibt der Zustand 'unavailable'. Da beide importierten Dateien geändert wurden, wurden Größe und SHA-256 der betreffenden files-Einträge aktualisiert und dadurch begründet."
+  },
+  {
+   "arbeitspaket": "AP13",
+   "dateien": [
+    "bin/vibe",
+    "bin/vibe-web.py",
+    "bin/vibe_paths.py",
+    "bin/web/app.js",
+    "bin/vibe_ui_config.py",
+    "scripts/setup-vibe.py"
+   ],
+   "datum": "2026-11-12",
+   "grund": "vibe über das lokale Netzwerk erreichbar machen: Port und Bind-Adresse über UI-Karte 'Zugriffssicherheit' und CLI (CLI überschreibt immer die Konfiguration), IP-Allowlist gegen nicht zugelassene Clients (Loopback bleibt immer zugelassen), Token-Anmeldung ergänzt durch Kennwort mit Session-Cookie statt dauerhaftem Token im Browser; DNS-Hostnamen werden als Bind-Adresse abgelehnt."
   }
  ],
  "files": [
   {
-   "bytes": 7,
-   "path": "VERSION",
-   "sha256": "f5e9382967c9833066a55808829f3750fc8e1181b170cafd222c37048bb49a77"
+   "bytes": 370,
+   "path": "install-vibe.sh",
+   "sha256": "1f1379cda496e6adc5a981adf7263916af72e2f2c29aa6c20c1f863aa4e66ad3"
   },
   {
    "bytes": 4194,
@@ -769,9 +782,9 @@
    "sha256": "e5ae3183efcb76dace1e0bcbde9993be7afe82d93d7877da9ee39846cf45330a"
   },
   {
-   "bytes": 253142,
+   "bytes": 256816,
    "path": "bin/vibe",
-   "sha256": "1c532464e505005b4d650b2d1d8a9c5fad77dc13c2436499b29258d68f3d45ab"
+   "sha256": "b8c2938435695edf3295d8d27fdc1c59f9fab9cc78b72cfa31120c7cab5ce5e1"
   },
   {
    "bytes": 46103,
@@ -779,9 +792,9 @@
    "sha256": "ddf4668a79c5728ba12de932f8299697344e32da8c7c3adbcb5a04a44f1bf051"
   },
   {
-   "bytes": 69372,
+   "bytes": 79227,
    "path": "bin/vibe-web.py",
-   "sha256": "331b2c5f227943298f66edcd86b04c596d0e6df6c3e346be898279bda018b168"
+   "sha256": "46d8f08f9a0fd2f41baf5da14bcbc5de187f4954148a77529f00b8fe35aec6ef"
   },
   {
    "bytes": 5189,
@@ -789,8 +802,8 @@
    "sha256": "51ad254cfb7b3268b28b92c11101118128d77b10d97adc33eb73c82b83b43acc"
   },
   {
-   "path": "bin/vibe_gates.py",
    "bytes": 10891,
+   "path": "bin/vibe_gates.py",
    "sha256": "0f6d9c2c9d72ff1400ba0c2e8173217102ac9f163a41191c34367dd5f81f5778"
   },
   {
@@ -834,9 +847,9 @@
    "sha256": "d05293613d6955c875c45be57d1cd7aee85b90c66093c401fb70f6af455e3677"
   },
   {
-   "bytes": 18748,
+   "bytes": 20464,
    "path": "bin/vibe_paths.py",
-   "sha256": "f988fcb1991c776cf2ba3f2dbbb645272d83b7c31d9a870f08659066647ab674"
+   "sha256": "c8f84952949bfd76489472ede61e5d4066f3645be7a757acc9f8973e3f1dcd75"
   },
   {
    "bytes": 11677,
@@ -864,9 +877,14 @@
    "sha256": "7b6aa4118259dc3440b37eaeec5eaa96eac7d928e6e704b2310946490bd25fbb"
   },
   {
-   "bytes": 119585,
+   "bytes": 9695,
+   "path": "bin/vibe_ui_config.py",
+   "sha256": "643031546e555ba987f3d52446991c897093fb43f016f8b1997d4c85b71bb1a4"
+  },
+  {
+   "bytes": 126633,
    "path": "bin/web/app.js",
-   "sha256": "569631b4e1c5d22c40d2da9b4b6997920fc4606579371d0039a4e197f3f2847f"
+   "sha256": "dd8e74b41d364738acbee2455387e22277580b0f2240a2f686b196958f0718ac"
   },
   {
    "bytes": 588,
@@ -882,21 +900,6 @@
    "bytes": 34162,
    "path": "data/models.json",
    "sha256": "abdbe9d9b2c0896d6a632a5a8140c38bf7b61e9bf9b64a7cca03bd33a5ea6751"
-  },
-  {
-   "bytes": 370,
-   "path": "install-vibe.sh",
-   "sha256": "1f1379cda496e6adc5a981adf7263916af72e2f2c29aa6c20c1f863aa4e66ad3"
-  },
-  {
-   "bytes": 64160,
-   "path": "scripts/setup-vibe.py",
-   "sha256": "3d51a378a2127bc56fc438f9f2e348bb3af6fb26d6cf1b4ab95c706b5d52a33d"
-  },
-  {
-   "bytes": 377,
-   "path": "setup-vibe.cmd",
-   "sha256": "eba97b935ea1d943c402c41cac96872d782a0f62e724f0e96f29e9e16a500c52"
   },
   {
    "bytes": 285,
@@ -1052,6 +1055,21 @@
    "bytes": 4331,
    "path": "templates/web/AGENTS.md",
    "sha256": "01ac956108575bf53ef7c891635bc169b902cf14d444d3ab63d6ceca919804cf"
+  },
+  {
+   "bytes": 64185,
+   "path": "scripts/setup-vibe.py",
+   "sha256": "8665fb5b607071f672ef269185a1982e4cea674cfbe6158a25fbbf71e4062c3d"
+  },
+  {
+   "bytes": 377,
+   "path": "setup-vibe.cmd",
+   "sha256": "eba97b935ea1d943c402c41cac96872d782a0f62e724f0e96f29e9e16a500c52"
+  },
+  {
+   "bytes": 7,
+   "path": "VERSION",
+   "sha256": "f5e9382967c9833066a55808829f3750fc8e1181b170cafd222c37048bb49a77"
   }
  ],
  "hinweis": "SHA-256 der übernommenen Programmdateien. Beabsichtigte Änderungen an diesen Dateien sind nur zulässig, wenn dieser Eintrag im selben Arbeitspaket aktualisiert und begründet wird. Laufzeitdaten, Sicherungen und Geheimnisse sind nicht Bestandteil des Imports.",

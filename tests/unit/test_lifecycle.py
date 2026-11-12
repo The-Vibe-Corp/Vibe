@@ -486,7 +486,8 @@ class SessionMarkerUnitTest(LifecycleFixture):
         with mock.patch.multiple(
             module,
             run=self.fake_run(calls),
-            dashboard_health=lambda: None,
+            # AP13: Produktion ruft dashboard_health(bind, port).
+            dashboard_health=lambda *args, **kwargs: None,
             port_in_use=lambda host, port: False,
         ), mock.patch.object(module.time, "sleep", lambda seconds: None):
             module.cmd_ui("start")

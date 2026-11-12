@@ -1,6 +1,11 @@
 
 const OC_URL=(document.querySelector('meta[name="vibe-opencode-url"]')||{}).content||'';
-const T=(()=>{const m=location.hash.match(/t=([^&]+)/);if(m){sessionStorage.t=m[1];history.replaceState(null,'',location.pathname)}return sessionStorage.t||''})();
+/* AP13: Der Token kommt nur aus dem #t=-Hash und wird ausschließlich im
+   Speicher gehalten. Beim ersten Laden tauscht boot() ihn gegen einen
+   Session-Cookie ein (POST /api/login), damit ein Neuladen ohne Hash
+   angemeldet bleibt. Der frühere Weg über sessionStorage entfällt bewusst:
+   Er hielt das Geheimnis dauerhaft im Browser-Speicher. */
+const T=(()=>{const m=location.hash.match(/t=([^&]+)/);if(m)history.replaceState(null,'',location.pathname);return m?m[1]:''})();
 function errText(j,status){const e=j&&j.error;return (e&&(e.message||e))||(j&&j.message)||('HTTP '+status)}
 async function api(p,body){const o=body?{method:'POST',headers:{'X-Token':T,'Content-Type':'application/json'},body:JSON.stringify(body)}:{headers:{'X-Token':T}};
  const r=await fetch(p,o);const j=await r.json().catch(()=>({}));if(!r.ok&&!body)throw new Error(errText(j,r.status));return j}
@@ -8,8 +13,8 @@ function el(t,a={},...c){const e=document.createElement(t);for(const[k,v]of Obje
  for(const x of c.flat())if(x!==null&&x!==undefined&&x!==false)e.append(x.nodeType?x:document.createTextNode(String(x)));return e}
 const main=document.getElementById('main'),nav=document.getElementById('nav'),srvbox=document.getElementById('srv');let tab='projects',es=null,timer=null,LOG=null;
 function showErr(e){main.replaceChildren(el('div',{class:'card err'},el('b',{class:'bad'},'Fehler: '),String(e&&e.message||e)),el('button',{class:'b',on:{click:()=>setTab('projects')}},'← zur Projektliste'))}
-function setTab(t){exitLogFull();LOG=null;DTAB='arbeit';tab=t;if(es){es.close();es=null}clearInterval(timer);[...nav.children].forEach(b=>b.classList.toggle('on',b.dataset.t===t));Promise.resolve(({projects,agents,mcp,env,costs}[t])()).catch(showErr);header()}
-[['projects','Projekte'],['agents','Agenten & Modelle'],['mcp','MCP-Tools'],['env','Umgebung'],['costs','Kosten']].forEach(([k,l])=>nav.append(el('button',{'data-t':k,on:{click:()=>setTab(k)}},l)));
+function setTab(t){exitLogFull();LOG=null;DTAB='arbeit';tab=t;if(es){es.close();es=null}clearInterval(timer);[...nav.children].forEach(b=>b.classList.toggle('on',b.dataset.t===t));Promise.resolve(({projects,agents,mcp,env,costs,security}[t])()).catch(showErr);header()}
+[['projects','Projekte'],['agents','Agenten & Modelle'],['mcp','MCP-Tools'],['env','Umgebung'],['costs','Kosten'],['security','Zugriffssicherheit']].forEach(([k,l])=>nav.append(el('button',{'data-t':k,on:{click:()=>setTab(k)}},l)));
 const toastBox=el('div',{id:'toasts',class:'toasts',role:'status','aria-live':'polite','aria-atomic':'false'});
 document.body.append(toastBox);
 function toast(m){const t=el('div',{class:'toast'},el('span',{class:'toasttext'},String(m)),el('button',{class:'b x',type:'button','aria-label':'Meldung schließen',title:'Meldung schließen',on:{click:()=>t.remove()}},'×'));
@@ -81,7 +86,9 @@ async function rootsCard(){const rs=await api('/api/roots');const inp=el('input'
   el('div',{class:'bar'},inp,el('button',{class:'b p',on:{click:async()=>{const r=await api('/api/roots',{action:'add',path:inp.value});toast(r.message);setTab('projects')}}},'Einlesen'),
    el('button',{class:'b',on:{click:async()=>{await api('/api/roots',{action:'scan'});setTab('projects')}}},'Neu einlesen')))}
 async function projects(){
- if(!T){main.replaceChildren(el('div',{class:'card'},'Token fehlt. Dashboard mit "vibe ui" öffnen (der Link enthält das Token).'));return}
+ // AP13: Kein clientseitiger Token-Zwang mehr. Die Berechtigung prüft der
+ // Server (Session-Cookie oder Token); ohne Berechtigung entscheidet boot()
+ // über die Anmeldekarte, und die Anfrage scheitert strukturiert.
  const render=async()=>{const ps=await api('/api/projects');
   const tb=el('table',{},el('tr',{},...['Projekt','Typ','Branch','Offen','Änd.','Lauf','Letzter Commit'].map(h=>el('th',{},h))));
   ps.forEach(p=>tb.append(el('tr',{class:'row',on:{click:()=>detail(p.name).catch(showErr)}},el('td',{},p.name,p.init?null:el('span',{class:'warn'},' ●')),el('td',{},p.type),el('td',{},p.branch),
@@ -1330,4 +1337,103 @@ function fritzCard(f){
    el('button',{class:'b',on:{click:async()=>{const r=await api('/api/fritz',{action:'automation',enabled:cb.checked});toast(r.message);if(r.ok)env().catch(showErr)}}},'Automatik übernehmen')),
   resultBox)}
 window.addEventListener('unhandledrejection',e=>showErr(e.reason));
-setTab('projects');
+/* ---------- AP13: Anmeldung und Karte „Zugriffssicherheit“ ---------- */
+/* AP13: Ohne Token prüft der Start die Berechtigung direkt am Server und
+   zeigt andernfalls die Anmeldekarte. Ein Token aus dem #t=-Hash wird beim
+   ersten Laden gegen einen Session-Cookie eingetauscht (POST /api/login),
+   damit ein Neuladen ohne Hash angemeldet bleibt. Die Prüfung läuft bewusst
+   über eine echte Anfrage statt über clientseitige Annahmen: Nur der Server
+   kennt den wirklichen Berechtigungszustand. */
+async function boot(){
+ try{
+  // Token → Session-Cookie tauschen; ohne Token bleibt der Aufruf weg.
+  if(T)await api('/api/login',{token:T});
+  await api('/api/projects');
+  setTab('projects');
+ }catch(e){showLogin()}}
+function showLogin(){
+ const inp=el('input',{type:'password',placeholder:'Kennwort oder Token','aria-label':'Kennwort oder Token'});
+ const go=()=>doLogin(inp);
+ const btn=el('button',{class:'b p',type:'button',on:{click:go}},'Anmelden');
+ inp.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();go()}});
+ main.replaceChildren(el('div',{class:'card',id:'login'},el('b',{},'Anmeldung'),
+  el('div',{class:'mut'},'Diese Oberfläche ist geschützt. Bitte Kennwort oder Token eingeben.'),
+  el('label',{},'Kennwort oder Token'),inp,el('div',{class:'bar'},btn)));
+ inp.focus()}
+async function doLogin(inp){
+ const v=String(inp.value||'').trim();
+ if(!v){inp.focus();return}
+ // Der Wert wird als Token und als Kennwort angeboten; der Server prüft
+ // zuerst das Token und fällt sonst auf das Kennwort zurück. So genügt eine
+ // Eingabe für beide Anmeldearten, ohne dass die Oberfläche den Unterschied
+ // raten muss. Kennwort und Token erscheinen in keiner Meldung.
+ try{const r=await api('/api/login',{token:v,password:v});
+  if(r.ok){toast(r.message||'Angemeldet.');setTab('projects')}
+  else toast(r.message||'Anmeldung fehlgeschlagen.')}
+ catch(e){toast('Anmeldung fehlgeschlagen: '+String(e&&e.message||e))}}
+/* AP13: Karte „Zugriffssicherheit“. Sie zeigt den laufenden Zustand (Port,
+   Bind-Adresse, Allowlist, Passwortstatus) und speichert Änderungen in
+   ui.json; sie wirken erst nach einem Neustart des Dashboards, deshalb der
+   dauerhafte Hinweis und die Zusatzwarnung, wenn gespeicherte Werte vom
+   laufenden Server abweichen. Der Tab ist bewusst nicht Teil des
+   periodischen Pollings: Nach jeder Aktion wird die Ansicht einmalig neu
+   geladen. Die Ansicht enthält keine Kennwort- oder Hash-Auskunft. */
+async function security(){
+ let s=await api('/api/security');
+ const fact=(k,v)=>el('div',{class:'factrow'},el('span',{class:'mut'},k),el('span',{},String(v)));
+ const facts=el('div',{});
+ const warn=el('div',{class:'warn',hidden:''},'Wirksame Änderung steht aus: Der gespeicherte Port oder die Bind-Adresse weicht vom laufenden Server ab. Damit die Änderung greift, das Dashboard neu starten („vibe ui“ beenden und erneut starten).');
+ const portInp=el('input',{inputmode:'numeric',placeholder:'neuer Port (leer = unverändert)','aria-label':'Port'});
+ const bindInp=el('input',{placeholder:'neue Bind-Adresse, z. B. 0.0.0.0 (leer = unverändert)','aria-label':'Bind-Adresse'});
+ // „Leer = unverändert": Ein leeres Eingabefeld ändert die gespeicherte
+ // Allowlist nicht; sie lässt sich nur über den Knopf „Alle Clients
+ // zulassen" leeren.
+ const allowInp=el('input',{placeholder:'IPs oder Netze, getrennt durch Leerzeichen oder Komma (leer = unverändert)','aria-label':'IP-Allowlist'});
+ const passInp=el('input',{type:'password',placeholder:'neues Passwort (mind. 8 Zeichen)','aria-label':'Neues Passwort'});
+ const draw=()=>{
+  facts.replaceChildren(
+   fact('Port',s.port),fact('Bind-Adresse',s.bind),
+   fact('Allowlist',(s.allowlist&&s.allowlist.length)?s.allowlist.join(', '):'alle Clients erlaubt'),
+   fact('Passwort',s.password_set?'gesetzt':'nicht gesetzt'));
+  warn.hidden=!s.restart_required;
+  removeBtn.hidden=!s.password_set};
+ const refresh=async()=>{try{s=await api('/api/security')}catch(e){/* Ansicht bleibt beim letzten Stand */}draw()};
+ const saveBtn=el('button',{class:'b p',type:'button',on:{click:async()=>{
+  const port=portInp.value.trim();
+  if(port&&!/^\d+$/.test(port)){toast('Bitte eine gültige Portnummer eingeben.');portInp.focus();return}
+  const bind=bindInp.value.trim();
+  const allow=allowInp.value.trim()?allowInp.value.split(/[\s,]+/).filter(Boolean):[];
+  const pw=passInp.value;
+  saveBtn.disabled=true;
+  try{
+   // Leere Felder werden nicht gesendet: Der Server ändert dann nichts.
+   // So setzt ein reines Kennwort-Speichern weder Port noch Bind-Adresse
+   // noch Allowlist nebenbei zurück.
+   const update={action:'save'};
+   if(port)update.port=Number(port);
+   if(bind)update.bind=bind;
+   if(allow.length)update.allowlist=allow;
+   const r=await api('/api/security',update);toast(r.message||'');
+   if(r.ok&&pw){const rp=await api('/api/security',{action:'password',password:pw});toast(rp.message||'')}
+  }catch(e){toast('Speichern fehlgeschlagen: '+String(e&&e.message||e))}
+  finally{saveBtn.disabled=false}
+  portInp.value='';bindInp.value='';allowInp.value='';passInp.value='';
+  await refresh()}}},'Speichern');
+ const removeBtn=el('button',{class:'b',type:'button',on:{click:()=>askInline(removeBtn,'Passwort entfernen? Die Anmeldung mit Token bleibt möglich.','Ja, entfernen',async()=>{
+  try{const r=await api('/api/security',{action:'password',clear:true});toast(r.message||'')}
+  catch(e){toast('Entfernen fehlgeschlagen: '+String(e&&e.message||e))}
+  await refresh()})}},'Passwort entfernen');
+ const clearBtn=el('button',{class:'b',type:'button',on:{click:()=>askInline(clearBtn,'Allowlist entfernen? Danach dürfen alle Clients im Netz zugreifen; der lokale Rechner (Loopback) bleibt immer zugelassen.','Ja, zulassen',async()=>{
+  try{const r=await api('/api/security',{action:'save',allowlist:[]});toast(r.message||'')}
+  catch(e){toast('Zulassen fehlgeschlagen: '+String(e&&e.message||e))}
+  await refresh()})}},'Alle Clients zulassen');
+ draw();
+ main.replaceChildren(el('div',{class:'card',id:'security'},el('b',{},'Zugriffssicherheit'),facts,
+  el('div',{class:'mut'},'Änderungen an Port, Bind-Adresse und Allowlist werden in ui.json im Zustandsordner gespeichert und wirken erst nach einem Neustart des Dashboards. Ohne Allowlist sind alle Clients zugelassen; der lokale Rechner (Loopback) bleibt immer zugelassen.'),
+  warn,
+  el('label',{},'Port'),portInp,
+  el('label',{},'Bind-Adresse'),bindInp,
+  el('label',{},'IP-Allowlist'),allowInp,
+  el('label',{},'Neues Passwort'),passInp,
+  el('div',{class:'bar'},saveBtn,clearBtn,removeBtn)))}
+boot();

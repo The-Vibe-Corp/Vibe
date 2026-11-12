@@ -12,6 +12,8 @@ import base64
 import http.client
 import importlib.util
 import importlib.machinery
+import ipaddress
+from http.cookies import SimpleCookie, CookieError
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs, quote
 
@@ -22,6 +24,7 @@ sys.path.insert(0, HERE)
 import vibe_storage  # pylint: disable=wrong-import-position
 import vibe_paths  # pylint: disable=wrong-import-position
 import vibe_runs  # pylint: disable=wrong-import-position
+import vibe_ui_config  # pylint: disable=wrong-import-position
 _loader = importlib.machinery.SourceFileLoader("vibe", os.path.join(HERE, "vibe"))
 _spec = importlib.util.spec_from_loader("vibe", _loader)
 vibe = importlib.util.module_from_spec(_spec)
@@ -58,6 +61,15 @@ ANSI = vibe_services.ANSI
 # SRV als Attribut des importierten Moduls; ein Umbenennen würde die
 # beobachtbare Oberfläche und die Annahmetests brechen.
 SRV = None  # pylint: disable=invalid-name
+# AP13: ui.json wird erst im __main__ geladen (Import bleibt nebenwirkungsfrei);
+# das leere Objekt ist der Zustand "nichts konfiguriert".
+UI_DATA = {}
+# AP13: In-Memory-Sessions. Sie sterben mit dem Dashboard-Prozess, werden
+# nirgends geschrieben (kein zweites Geheimnis auf der Platte) und sind
+# gegen gleichzeitige Anfragen mit einer Sperre geschützt.
+SESSIONS = {}
+SESSIONS_LOCK = threading.Lock()
+SESSION_COOKIE = "vibe_session"
 # Wird beim Beenden gesetzt. Aktive SSE-Streams prüfen das Ereignis und senden
 # eine letzte Zeile, statt bis zum Verbindungsabbruch weiterzulaufen.
 STOP = threading.Event()
@@ -102,12 +114,34 @@ def split_host(value):
         return text.split(":", 1)[0]
     return text
 
+def _is_ip_literal(text):
+    """Nur echte IP-Adressliterale (IPv4/IPv6), keine DNS-Namen."""
+    try:
+        ipaddress.ip_address(text)
+    except ValueError:
+        return False
+    return True
+
 def host_allowed(value):
-    """Prüft, ob der angegebene Host zur Loopback-Liste gehört."""
-    return split_host(value) in LOOPBACK_HOSTS
+    """Prüft, ob der Host-Header zu dieser Instanz passt (AP13).
+
+    Loopback-Namen und reine IP-Literale sind erlaubt — beim Netzwerkbetrieb
+    sendet der Browser die Zieladresse als Host. DNS-Hostnamen bleiben
+    abgelehnt (DNS-Rebinding-Schutz): Ein Angreifer darf seine Domain nicht
+    auf dieses Dashboard zeigen lassen können.
+    """
+    host = split_host(value)
+    if host in LOOPBACK_HOSTS:
+        return True
+    return _is_ip_literal(host)
 
 def origin_allowed(value):
-    """Origin muss auf diese Loopback-Instanz zeigen (Port inklusive)."""
+    """Origin muss auf diese Instanz zeigen (Port inklusive).
+
+    Loopback-Namen und IP-Literale sind zulässig (AP13); der Port muss zum
+    laufenden Dashboard passen, damit eine Instanz nicht für eine andere
+    missbraucht werden kann.
+    """
     if not value:
         return True
     try:
@@ -117,7 +151,8 @@ def origin_allowed(value):
         return False
     if parsed.scheme != "http":
         return False
-    if (parsed.hostname or "").lower() not in LOOPBACK_HOSTS:
+    hostname = (parsed.hostname or "").lower()
+    if hostname not in LOOPBACK_HOSTS and not _is_ip_literal(hostname):
         return False
     effective_port = port if port is not None else 80
     return effective_port == PORT
@@ -380,6 +415,45 @@ def steer_project(name, text):
     return True, "Zusatzanweisung an den Agenten übermittelt."
 
 
+def reload_ui_data():
+    """Lädt ui.json nach einer security-Aktion neu; Erfolg als boolescher Wert.
+
+    Eine dann defekte Datei ist praktisch ausgeschlossen (save schreibt
+    atomar und validiert vorher); sie wird gemeldet statt still als leer
+    behandelt zu werden — Allowlist/Kennwort würden sonst unbemerkt weichen.
+    """
+    try:
+        data = vibe_ui_config.load(PATHS.state)
+    except vibe_ui_config.ConfigError:
+        return False
+    UI_DATA.clear()
+    UI_DATA.update(data)
+    return True
+
+
+def restart_required():
+    """Markiert geplante Port-/Bind-Änderungen, die erst nach Neustart wirken.
+
+    ui.json kann jederzeit Port und Bind verschieben; der laufende Server
+    hält die Werte seines Starts. weicht der geplante Zustand vom laufenden
+    ab, zeigt die Oberfläche den Neustart-Hinweis.
+    """
+    planned_port = UI_DATA.get("ui_port") if UI_DATA.get("ui_port") is not None else PORT
+    planned_bind = UI_DATA.get("ui_bind") if UI_DATA.get("ui_bind") is not None else BIND
+    return planned_port != PORT or planned_bind != BIND
+
+
+def security_data():
+    """Zugriffssicherheit als Ansichtsobjekt, ohne Kennwort- oder Hash-Auskunft."""
+    return {
+        "port": PORT,
+        "bind": BIND,
+        "allowlist": list(UI_DATA.get("allowlist") or []),
+        "password_set": bool(UI_DATA.get("password_hash")),
+        "restart_required": restart_required(),
+    }
+
+
 class RequestError(Exception):
     """Fehlerbearbeitung bei ungültiger Anfrage: HTTP-Status und Fehlercode."""
 
@@ -445,7 +519,7 @@ class H(BaseHTTPRequestHandler):
         except (OSError, ValueError):
             pass
 
-    def _send(self, code, body, ctype="application/json"):
+    def _send(self, code, body, ctype="application/json", headers=None):
         b = body if isinstance(body, bytes) else (json.dumps(body, ensure_ascii=False).encode() if ctype == "application/json" else body.encode())
         self.send_response(code)
         self.send_header("Content-Type", ctype + "; charset=utf-8")
@@ -453,6 +527,8 @@ class H(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Referrer-Policy", "no-referrer")
+        for key, value in (headers or []):
+            self.send_header(key, value)
         self.end_headers()
         self.wfile.write(b)
 
@@ -461,7 +537,39 @@ class H(BaseHTTPRequestHandler):
         message = redact(message)
         self._send(code, {"ok": False, "error": {"code": slug, "message": message}, "message": message})
 
+    def _security_view(self):
+        """GET /api/security: Ansicht der Zugriffssicherheit (AP13)."""
+        return self._send(200, {"ok": True, **security_data()})
+
+    def _client_allowed(self):
+        """Allowlist-Prüfung anhand der Verbindungs-Client-IP (AP13).
+
+        Die Logik liegt in vibe_ui_config.client_allowed; Loopback bleibt
+        immer erlaubt (Aussperrschutz). Die Ablehnung erfolgt vor allen
+        anderen Prüfungen, damit ein nicht zugelassener Client überhaupt
+        keine Antwortinhalte sieht.
+        """
+        address = self.client_address[0] if self.client_address else ""
+        return vibe_ui_config.client_allowed(UI_DATA, address)
+
+    def _session(self):
+        """Session-Kennung aus dem Cookie oder ""; defekte Cookies sind leer."""
+        cookie = SimpleCookie()
+        try:
+            cookie.load(self.headers.get("Cookie") or "")
+        except CookieError:
+            return ""
+        morsel = cookie.get(SESSION_COOKIE)
+        return morsel.value if morsel else ""
+
     def _authorized(self, allow_query=False):
+        # AP13: Erst die Session prüfen, dann X-Token; ?t= bleibt dem Stream
+        # vorbehalten.
+        session = self._session()
+        if session:
+            with SESSIONS_LOCK:
+                if session in SESSIONS:
+                    return True
         value = self.headers.get("X-Token") or ""
         if not value and allow_query:
             value = parse_qs(urlparse(self.path).query).get("t", [""])[0]
@@ -546,6 +654,9 @@ class H(BaseHTTPRequestHandler):
         """Verarbeitet GET-Anfragen des Dashboards (Status, Streams, Daten)."""
         u = urlparse(self.path)
         q = parse_qs(u.query)
+        # AP13: Allowlist vor allen anderen Prüfungen.
+        if not self._client_allowed():
+            return self._error(403, "forbidden_ip", "Client-IP ist nicht zugelassen")
         if not self._guard(False):
             return None
         if u.path == "/":
@@ -560,6 +671,10 @@ class H(BaseHTTPRequestHandler):
         if not self._authorized(allow_query=u.path == "/api/stream"):
             return self._error(403, "unauthorized", "Token fehlt oder falsch")
         try:
+            # AP13: Ansicht der Zugriffssicherheit (Port, Bind, Allowlist,
+            # Kennwortstatus, Neustart-Markierung) — bewusst ohne Geheimnisse.
+            if u.path == "/api/security":
+                return self._security_view()
             if u.path == "/api/projects":
                 return self._send(200, [vibe_services.project_row(vibe, n) for n in vibe.projects()])
             if u.path == "/api/run-state":
@@ -691,10 +806,51 @@ class H(BaseHTTPRequestHandler):
     def do_POST(self):  # pylint: disable=invalid-name
         """Verarbeitet die POST-Anfragen des Dashboards (steuernde Befehle)."""
         u = urlparse(self.path)
+        # AP13: Allowlist vor allen anderen Prüfungen.
+        if not self._client_allowed():
+            return self._error(403, "forbidden_ip", "Client-IP ist nicht zugelassen")
         if not self._guard(True):
             return None
+        # AP13: Die Anmeldung ist bewusst ohne Berechtigung erreichbar — sie
+        # ist der einzige Weg, eine zu erhalten. Misserfolg bleibt
+        # strukturiert, ohne Token oder Kennwort zu verraten.
+        if u.path == "/api/login":
+            try:
+                body = self._read_json()
+            except RequestError as e:
+                return self._error(e.status, e.code, e.message)
+            token_value = str(body.get("token") or "")
+            password_value = str(body.get("password") or "")
+            token_ok = bool(token_value) and secrets.compare_digest(
+                token_value.encode("utf-8"), (TOKEN or "").encode("utf-8")
+            )
+            password_ok = bool(password_value) and vibe_ui_config.verify_password(
+                UI_DATA, password_value
+            )
+            if not (token_ok or password_ok):
+                return self._error(403, "unauthorized", "Anmeldung fehlgeschlagen")
+            session = secrets.token_urlsafe(24)
+            with SESSIONS_LOCK:
+                SESSIONS[session] = time.time()
+            # In-Memory-Session ohne Ablaufdatum: Sie endet mit dem
+            # Dashboard-Prozess oder durch Logout; eine Session-Datei wäre
+            # ein zweites Geheimnis auf der Platte.
+            cookie = f"{SESSION_COOKIE}={session}; Path=/; HttpOnly; SameSite=Strict"
+            return self._send(
+                200, {"ok": True, "message": "Angemeldet"},
+                headers=[("Set-Cookie", cookie)])
         if not self._authorized():
             return self._error(403, "unauthorized", "Token fehlt oder falsch")
+        # AP13: Logout vor _read_json — der Aufruf kommt ohne Body.
+        if u.path == "/api/logout":
+            session = self._session()
+            if session:
+                with SESSIONS_LOCK:
+                    SESSIONS.pop(session, None)
+            return self._send(
+                200, {"ok": True, "message": "Abgemeldet"},
+                headers=[("Set-Cookie",
+                          f"{SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0")])
         try:
             body = self._read_json()
         except RequestError as e:
@@ -704,7 +860,43 @@ class H(BaseHTTPRequestHandler):
             if u.path in ("/api/run", "/api/stop", "/api/verify", "/api/feedback", "/api/ticket", "/api/init", "/api/rights", "/api/pause", "/api/sandbox", "/api/guide", "/api/costs", "/api/autonomous", "/api/steer", "/api/github", "/api/priority"):
                 known(name)
             extra = {}
-            if u.path == "/api/steer":
+            if u.path == "/api/security":
+                # AP13: Zugriffssicherheit je Aktion ändern. Validierung
+                # geschieht im Modul vor dem Schreiben; ungültige Eingaben
+                # verändern ui.json nicht (→ 400 "rejected").
+                act = body.get("action")
+                ok, msg = True, ""
+                try:
+                    if act == "save":
+                        update = {}
+                        if body.get("port") is not None:
+                            update["ui_port"] = body.get("port")
+                        if body.get("bind") is not None:
+                            update["ui_bind"] = body.get("bind")
+                        if body.get("allowlist") is not None:
+                            update["allowlist"] = body.get("allowlist")
+                        vibe_ui_config.save(PATHS.state, {**UI_DATA, **update})
+                        msg = "Zugriffssicherheit gespeichert"
+                    elif act == "password":
+                        if body.get("clear"):
+                            vibe_ui_config.clear_password(PATHS.state)
+                            msg = "Kennwort entfernt"
+                        else:
+                            vibe_ui_config.set_password(PATHS.state, body.get("password"))
+                            msg = "Kennwort gesetzt"
+                    else:
+                        ok, msg = False, "Unbekannte Aktion"
+                except ValueError as e:
+                    ok, msg = False, str(e)
+                if ok:
+                    # Nach jeder Aktion neu laden: Allowlist und Kennwort-
+                    # status müssen die laufende Prüfung sofort berücksichtigen.
+                    if not reload_ui_data():
+                        return self._error(
+                            500, "internal_error",
+                            "ui.json ist nach dem Speichern nicht lesbar")
+                    extra["security"] = security_data()
+            elif u.path == "/api/steer":
                 ok, msg = steer_project(name, body.get("text", ""))
             elif u.path == "/api/run":
                 ok, msg = vibe_services.capture(vibe.cmd_run, name, body.get("agent") or None, keep_changes=bool(body.get("keep_changes")))
@@ -1349,10 +1541,35 @@ def static_asset(path):
     except OSError:
         return None, None
 
+def _startup_config():
+    """Lädt ui.json und löst die Startpfade für den Serverprozess auf.
+
+    ui.json (Port/Bind) wird hier geladen, nicht beim Import — der Import
+    bleibt damit frei von Dateisystem-Nebenwirkungen. Priorität: Defaults
+    < ui.json < Umgebung < CLI-Übergabe (vibe_paths.resolve). Eine defekte
+    ui.json beendet den Start mit einer klaren Meldung.
+    """
+    try:
+        data = vibe_ui_config.load(PATHS.state)
+        resolved = vibe_paths.resolve(
+            extra_config=vibe_ui_config.config_extra(PATHS.state) or None)
+    except (vibe_ui_config.ConfigError, vibe_paths.ConfigError) as error:
+        raise SystemExit("Pfadkonfiguration: " + str(error)) from error
+    return data, resolved
+
+
 if __name__ == "__main__":
     # Kein erneuter Container-Eintritt: vibe ui startet dieses Skript bereits
     # mit den aufgelösten Pfaden im richtigen Kontext.
     os.environ["VIBE_NO_CONTAINER"] = "1"
+    # AP13: ui.json (Port/Bind) wird hier geladen, nicht beim Import — der
+    # Import bleibt damit frei von Dateisystem-Nebenwirkungen. Priorität:
+    # Defaults < ui.json < Umgebung < CLI-Übergabe (vibe_paths.resolve).
+    UI_DATA, RESOLVED = _startup_config()
+    PORT = RESOLVED.ui_port
+    BIND = RESOLVED.ui_bind
+    TOKFILE = os.path.join(RESOLVED.runtime, "web.token")
+    INSTFILE = os.path.join(RESOLVED.runtime, "web.instance")
     TOKEN, INSTANCE = prepare_runtime()
     # Selber Testpin wie oben: SRV bleibt Modulattribut (tests/unit).
     SRV = ThreadingHTTPServer((BIND, PORT), H)  # pylint: disable=invalid-name
