@@ -36,7 +36,7 @@ Aufruf:  vibe                 interaktives Menü
          vibe mcp list|show|test|on|off|rm|backups|restore [name] [global|<projekt>] [sicherung]   MCP-Tools verwalten
          vibe emu start|stop  Emulator (Android)
          vibe paths [prod|dev] [--json]   Profil, Pfade und Ports anzeigen
-         vibe ui [stop]       Dashboard im Browser (nur localhost)
+         vibe ui [start|stop] [--port <n>] [--bind <ip>]   Dashboard starten/beenden; Standard Loopback, Netz-Bindung nur als IP-Literal (Allowlist/Kennwort in der Karte „Zugriffssicherheit")
          vibe server [start|stop|status]  gemeinsamer opencode-Server mit Weboberfläche
          vibe harness [status|list|use <name>|setup [name]]  Harness (opencode/Pi) wählen und einrichten
          vibe gates [status] [<schranke> <wert>]  Schranken des Läufers zeigen oder setzen (global oder mit --project <p> je Projekt)
@@ -59,6 +59,11 @@ try:  # AP10: Ältere Installationen ohne vibe_gates.py dürfen weiterhin starte
     import vibe_gates
 except ImportError:  # pragma: no cover - unvollständige Installation
     vibe_gates = None
+
+try:  # AP13: Ältere Installationen ohne vibe_ui_config.py dürfen weiterhin starten.
+    import vibe_ui_config
+except ImportError:  # pragma: no cover - unvollständige Installation
+    vibe_ui_config = None
 
 try:
     PATHS = vibe_paths.resolve()
@@ -240,15 +245,19 @@ def run_key(name):
 
 def logpath(name, kind="run"): return os.path.join(LOGS, run_key(name) + (".verify.log" if kind == "verify" else ".log"))
 
-def child_exports():
+def child_exports(paths=None):
     """Exportiert die aufgelösten Pfade für tmux-Kindprozesse.
 
-    Schlüssel sind feste Konstanten, Werte werden mit ``shlex.quote`` als ein
-    Argument geschützt. Pfade mit Leerzeichen bleiben dadurch unverändert.
+    ``paths`` erlaubt ein erneut aufgelöstes Paths-Objekt (AP13: Der
+    Dashboard-Start berücksichtigt ui.json im Zustandsordner; die effektiv
+    geltenden Werte werden dem Kind übergeben). Ohne Übergabe gelten die
+    beim Import aufgelösten Pfade. Schlüssel sind feste Konstanten, Werte
+    werden mit ``shlex.quote`` als ein Argument geschützt. Pfade mit
+    Leerzeichen bleiben dadurch unverändert.
     """
     return " ".join(
         f"export {key}={shlex.quote(value)};"
-        for key, value in PATHS.child_env().items()
+        for key, value in (paths or PATHS).child_env().items()
     )
 
 def profile_session(base):
@@ -326,15 +335,18 @@ def port_in_use(host, port):
     except OSError:
         return False
 
-def dashboard_health():
+def dashboard_health(bind=None, port=None):
     """Health-Antwort des eigenen Dashboards; fremde Dienste zählen nicht.
 
-    Der Health-Endpunkt ist absichtlich ohne Token lesbar. Zusätzlich zur
-    App-Kennung muss die Instanzkennung der laufenden Laufzeit entsprechen;
+    Der Health-Endpunkt ist absichtlich ohne Token lesbar. ``bind``/``port``
+    erlauben die Abfrage gegen erneut aufgelöste Werte (AP13: ui.json). Zusätzlich
+    zur App-Kennung muss die Instanzkennung der laufenden Laufzeit entsprechen;
     ein fremder Dienst auf dem Port wird dadurch nicht für vibe gehalten.
     """
+    bind = UI_BIND if bind is None else bind
+    port = UI_PORT if port is None else port
     rc, out = run(["curl", "-sf", "--max-time", "2",
-                   f"http://{UI_BIND}:{UI_PORT}/api/health"])
+                   f"http://{bind}:{port}/api/health"])
     if rc != 0:
         return None
     try:
@@ -5022,8 +5034,51 @@ def cmd_harness(action="status", name=None, out=None):
 def ui_session():
     return profile_session("vibe-ui")
 
-def cmd_ui(action="start"):
+def _ui_arguments(arguments):
+    """Zerlegt ``vibe ui``-Argumente in Aktion und Port-/Bind-Übergaben.
+
+    ``start``/``stop`` werden nur an Position 0 als Aktion gelesen, damit
+    sie nicht mit Werten verwechselt werden; ``--port``/``--bind`` sind
+    anywhere erlaubt. Rückgabe (aktion, overrides-dict).
+    """
+    args = list(arguments or [])
+    action = None
+    if args and args[0] in ("start", "stop"):
+        action = args.pop(0)
+    overrides = {}
+    while args:
+        flag = args[0]
+        if flag == "--port" and len(args) >= 2:
+            overrides["ui_port"] = args[1]
+        elif flag == "--bind" and len(args) >= 2:
+            overrides["ui_bind"] = args[1]
+        else:
+            sys.exit("Aufruf: vibe ui [start|stop] [--port <n>] [--bind <ip>]")
+        args = args[2:]
+    return action or "start", overrides
+
+def cmd_ui(arguments=None):
+    """Startet oder beendet das Dashboard (AP13: Port/Bind je Aufruf).
+
+    Priorität: Defaults < ui.json (Zustandsordner) < Umgebung < CLI-Übergabe
+    — „CLI überschreibt immer Konfiguration". CLI-Werte werden vorab
+    validiert: Eine ungültige Übergabe beendet den Aufruf, bevor etwas
+    gestartet oder geändert wird.
+    """
     session = ui_session()
+    # Rückwärtskompatibel: Ältere Aufrufer (Tests, Menü) übergeben die Aktion
+    # als einzelnen String statt als Argumentliste.
+    if isinstance(arguments, str):
+        arguments = [arguments]
+    action, overrides = _ui_arguments(arguments)
+    try:
+        for key in ("ui_port", "ui_bind"):
+            if key in overrides:
+                validator = (vibe_paths.validate_port if key == "ui_port"
+                             else vibe_paths.validate_bind)
+                overrides[key] = validator(overrides[key])
+    except vibe_paths.ConfigError as error:
+        sys.exit(str(error))
     if action == "stop":
         if not tmux_session_exists(session):
             print("Dashboard läuft nicht.")
@@ -5031,24 +5086,35 @@ def cmd_ui(action="start"):
         if not session_owned(session, "ui"):
             sys.exit(f"tmux-Sitzung {session} gehört nicht zu vibe; nichts beendet.")
         run(["tmux", "kill-session", "-t", session]); print("Dashboard beendet."); return
+    extra_config = {}
+    if vibe_ui_config is not None:
+        try:
+            extra_config = vibe_ui_config.config_extra(PATHS.state)
+        except (vibe_ui_config.ConfigError, vibe_paths.ConfigError) as error:
+            sys.exit("Dashboard-Konfiguration: " + str(error))
+    try:
+        paths = PATHS if not (overrides or extra_config) else vibe_paths.resolve(
+            overrides=overrides or None, extra_config=extra_config or None)
+    except vibe_paths.ConfigError as error:
+        sys.exit("Pfadkonfiguration: " + str(error))
     try:
         vibe_paths.ensure(PATHS, "runtime")
     except vibe_paths.ConfigError as error:
         sys.exit("Pfadkonfiguration: " + str(error))
-    if dashboard_health():
-        print("Dashboard läuft bereits:", f"http://{UI_BIND}:{UI_PORT}/")
+    if dashboard_health(paths.ui_bind, paths.ui_port):
+        print("Dashboard läuft bereits:", f"http://{paths.ui_bind}:{paths.ui_port}/")
         return
-    if port_in_use(UI_BIND, UI_PORT):
-        sys.exit(f"Port {UI_PORT} ist belegt, aber kein eigenes Dashboard erkannt; nichts gestartet.")
+    if port_in_use(paths.ui_bind, paths.ui_port):
+        sys.exit(f"Port {paths.ui_port} ist belegt, aber kein eigenes Dashboard erkannt; nichts gestartet.")
     if tmux_session_exists(session):
         if not session_owned(session, "ui"):
             sys.exit(f"tmux-Sitzung {session} gehört nicht zu vibe; nichts gestartet.")
-        print("Dashboard-Sitzung läuft bereits, antwortet aber noch nicht:", f"http://{UI_BIND}:{UI_PORT}/")
+        print("Dashboard-Sitzung läuft bereits, antwortet aber noch nicht:", f"http://{paths.ui_bind}:{paths.ui_port}/")
         return
     # Aufgelöste Pfade und Ports ausdrücklich übergeben, damit der
     # Kindprozess dieselbe Konfiguration verwendet; shlex.quote schützt
     # Pfade mit Leerzeichen und Sonderzeichen.
-    inner = "source ~/.bashrc; " + child_exports() + ' exec python3 "$1"'
+    inner = "source ~/.bashrc; " + child_exports(paths) + ' exec python3 "$1"'
     rc, out = run(["tmux", "new-session", "-d", "-s", session,
                    "-e", MANAGED_VAR + "=ui", "bash", "-lc",
                    inner, "vibe-ui", os.path.join(BIN, "vibe-web.py")])
@@ -5057,8 +5123,20 @@ def cmd_ui(action="start"):
     time.sleep(2)
     tokf = os.path.join(LOGS, "web.token")
     tok = open(tokf).read().strip() if os.path.exists(tokf) else "?"
-    print(col("g", f"Dashboard ({PATHS.profile}): http://{UI_BIND}:{UI_PORT}/#t={tok}"))
-    print("(nur lokal erreichbar; Beenden: Knopf im Dashboard oder vibe ui stop)")
+    print(col("g", f"Dashboard ({PATHS.profile}): http://{paths.ui_bind}:{paths.ui_port}/#t={tok}"))
+    if paths.ui_bind == "127.0.0.1":
+        print("(nur lokal erreichbar; Beenden: Knopf im Dashboard oder vibe ui stop)")
+    else:
+        # AP13: Netzexposition nicht verschweigen. Die gedruckte URL trägt
+        # die Bind-Adresse (z. B. 0.0.0.0), die auf fremden Rechnern nicht
+        # adressierbar ist; andere Rechner erreichen das Dashboard über die
+        # IP-Adresse dieses Rechners. Die Gegenmaßnahmen (IP-Allowlist,
+        # Kennwort) werden an ihrer Stelle in der Karte „Zugriffssicherheit"
+        # des Dashboards gepflegt.
+        print("(Achtung: über das Netzwerk erreichbar. Vom anderen Rechner "
+              "aus erreichst du das Dashboard über die IP-Adresse dieses "
+              "Rechners. Allowlist und Kennwort stellst du im Dashboard in "
+              "der Karte „Zugriffssicherheit“ ein; Beenden: vibe ui stop)")
 
 def cmd_paths(*arguments):
     """Zeigt Profil, Pfade und Ports; ändert nichts und startet nichts."""
@@ -5387,7 +5465,7 @@ def menu():
         elif i == 8: cmd_mcp("list")
         elif i == 9: cmd_emu("start")
         elif i == 10: cmd_emu("stop")
-        elif i == 11: cmd_ui("start")
+        elif i == 11: cmd_ui(["start"])
         elif i == 12: cmd_server("start")
         elif i == 13: cmd_types()
         elif i == 14: cmd_doctor()
@@ -5426,7 +5504,7 @@ def main():
                  "costs": lambda: cmd_costs(r[0] if r else None),
                  "mcp": lambda: cmd_mcp(r[0] if r else "list", r[1] if len(r) > 1 else None, r[2] if len(r) > 2 else "global", r[3] if len(r) > 3 else None),
                  "emu": lambda: cmd_emu(r[0]), "paths": lambda: cmd_paths(*r),
-                 "ui": lambda: cmd_ui(r[0] if r else "start"), "server": lambda: cmd_server(r[0] if r else "status"),
+                 "ui": lambda: cmd_ui(r), "server": lambda: cmd_server(r[0] if r else "status"),
                  "harness": lambda: cmd_harness(r[0] if r else "status", r[1] if len(r) > 1 else None),
                  "limits": lambda: cmd_limits(r[0] if r else "status"),
                  "gates": lambda: cmd_gates(r),

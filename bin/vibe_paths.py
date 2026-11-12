@@ -22,11 +22,13 @@ Konfigurationspriorität (niedrig nach hoch):
 2. persönliche Datei ``~/.config/vibe/config.json``
    (oder ``$XDG_CONFIG_HOME/vibe/config.json``, ``$VIBE_CONFIG_DIR``,
    ``$VIBE_CONFIG_FILE``)
-3. Umgebungsvariablen (``VIBE``, ``VIBE_PROFILE``, ``VIBE_INSTALL``,
+3. ``<state>/ui.json`` — Dashboard-Einstellungen des Zustandsordners
+   (AP13, nur ``ui_port``/``ui_bind``)
+4. Umgebungsvariablen (``VIBE``, ``VIBE_PROFILE``, ``VIBE_INSTALL``,
    ``VIBE_RUNTIME``, ``VIBE_STATE``, ``VIBE_UI_PORT``,
    ``VIBE_OPENCODE_PORT``, ``VIBE_UI_BIND``, ``VIBE_CONTAINER``,
    ``VIBE_AGENTS_DIR``)
-4. ausdrückliche Übergaben an :func:`resolve`
+5. ausdrückliche Übergaben an :func:`resolve`
 
 Das Dev-Profil (``VIBE_PROFILE=dev``) nutzt standardmäßig ``~/VibeCode-dev``,
 Port 8788 für das Dashboard und 4097 für den opencode-Server. Es verweigert
@@ -109,7 +111,18 @@ def validate_port(value):
 
 
 def validate_bind(value):
-    """Akzeptiert ausschließlich IPv4-Loopback (``localhost`` eingeschlossen)."""
+    """Akzeptiert IPv4-Adressliterale sowie ``localhost``.
+
+    Der Standard bleibt Loopback. Seit AP13 ist eine ausdrücklich
+    konfigurierte Netz-Bindung als IPv4-Adressliteral zulässig
+    (``0.0.0.0`` eingeschlossen); IPv6-Bind-Adressen sind ausdrücklich
+    ausgeschlossen (Nutzerentscheidung: Heimnetz-Betrieb ist IPv4, der
+    Server könnte sie ohnehin nicht annehmen). DNS-Hostnamen außer
+    ``localhost`` bleiben abgelehnt. Das ist ein DNS-Rebinding-Schutz:
+    Eine Bindung soll an eine konkrete Adresse gehen, nicht an einen
+    Namen, dessen Auflösung ein Angreifer beeinflussen kann. Der
+    Rückgabewert ist die normalisierte Adresse.
+    """
     text = str(value or "").strip()
     if text == "localhost":
         return "127.0.0.1"
@@ -117,13 +130,14 @@ def validate_bind(value):
         address = ipaddress.ip_address(text)
     except ValueError as exc:
         raise ConfigError(
-            "vibe bindet nur an Loopback (z. B. 127.0.0.1); "
-            f"{text!r} ist keine IP-Adresse"
+            "Bind-Adresse muss ein IPv4-Adressliteral sein (Standard "
+            "127.0.0.1, 0.0.0.0 für Netzwerkbetrieb); DNS-Hostnamen werden "
+            f"abgelehnt: {text!r} ist keine IP-Adresse"
         ) from exc
-    if address.version != 4 or not address.is_loopback:
+    if address.version != 4:
         raise ConfigError(
-            "vibe bindet nur an IPv4-Loopback; "
-            f"{text!r} ist nicht erlaubt"
+            "IPv6-Bind-Adressen werden nicht unterstützt; der Heimnetz-"
+            f"Betrieb ist IPv4: {text!r}"
         )
     return str(address)
 
@@ -160,6 +174,22 @@ def default_config_path(environ=None):
     return os.path.join(base, "vibe", "config.json")
 
 
+def read_config_text(target):
+    """Liest den Inhalt einer Konfigurationsdatei; fehlt sie, kommt None.
+
+    Eine vorhandene, aber unlesbare Datei wird gemeldet, nicht still
+    ignoriert — sonst würden persönliche Einstellungen unbemerkt durch
+    Defaults ersetzt (Muster V-006).
+    """
+    try:
+        with open(target, encoding="utf-8") as handle:
+            return handle.read()
+    except FileNotFoundError:
+        return None
+    except OSError as error:
+        raise ConfigError(f"Konfiguration {target} ist nicht lesbar: {error}") from error
+
+
 def load_config(path=None, environ=None):
     """Liest die persönliche Konfiguration; eine fehlende Datei ist leer.
 
@@ -169,13 +199,9 @@ def load_config(path=None, environ=None):
     """
     environ = dict(os.environ if environ is None else environ)
     target = path or default_config_path(environ)
-    try:
-        with open(target, encoding="utf-8") as handle:
-            raw = handle.read()
-    except FileNotFoundError:
+    raw = read_config_text(target)
+    if raw is None:
         return {}
-    except OSError as error:
-        raise ConfigError(f"Konfiguration {target} ist nicht lesbar: {error}") from error
     try:
         data = json.loads(raw)
     except json.JSONDecodeError as error:
@@ -346,12 +372,21 @@ def _productive_reference(base_config, environ, config_file):
     return workspace, install, runtime, state
 
 
-def resolve(profile=None, overrides=None, environ=None, source=None):
-    """Löst Defaults, persönliche Datei, Umgebung und Übergaben auf.
+def resolve(profile=None, overrides=None, environ=None, source=None, extra_config=None):
+    """Löst Defaults, persönliche Datei, ui.json, Umgebung und Übergaben auf.
 
     ``profile`` ist eine Kurzform für ``overrides={"profile": ...}``. Es werden
     keine Verzeichnisse angelegt und keine Programme gestartet.
+
+    ``extra_config`` sind die Felder aus ``<state>/ui.json`` (AP13, nur
+    ``ui_port``/``ui_bind``). Sie liegen in der Priorität über der
+    persönlichen Datei und unter den Umgebungsvariablen; ungültige Werte
+    werden über die übliche Validierung abgelehnt. Die Dev-Profil-Konflikt-
+    prüfung sieht extra_config bewusst nicht — sie vergleicht nur die
+    Pfadquellen Defaults und persönliche Datei.
     """
+    if extra_config is not None and not isinstance(extra_config, dict):
+        raise ConfigError("extra_config muss ein Objekt mit ui_port/ui_bind sein")
     environ = dict(os.environ if environ is None else environ)
     home = _home(environ)
     overrides = dict(overrides or {})
@@ -366,6 +401,11 @@ def resolve(profile=None, overrides=None, environ=None, source=None):
     base_config = load_config(config_file, environ)
     selected = _resolve_profile(overrides, environ, base_config)
     config = _profile_config(base_config, selected, config_file)
+    if extra_config:
+        # AP13: ui.json liegt zwischen persönlicher Datei und Umgebung. Der
+        # Merge berührt nur die Arbeitskopie; base_config (Referenz für die
+        # Dev-Profil-Konfliktprüfung) bleibt unverändert.
+        config = {**config, **extra_config}
 
     workspace_default = (
         default_dev_workspace(environ) if selected == "dev" else default_workspace(environ)

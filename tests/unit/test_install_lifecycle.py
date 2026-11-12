@@ -26,6 +26,7 @@ PROGRAM_FILES = (
     "vibe_models.py",
     "vibe_sandbox.py",
     "vibe_paths.py",
+    "vibe_ui_config.py",
     "vibe_storage.py",
     "vibe_guide.py",
     "vibe_questions.py",

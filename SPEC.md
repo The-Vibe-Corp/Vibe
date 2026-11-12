@@ -259,7 +259,11 @@ vorliegt.
 
 ## Sicherheit und Datenintegrität
 
-- Webserver nur an Loopback binden.
+- Webserver bindet standardmäßig nur an Loopback; eine ausdrückliche
+  Netz-Bindung erfolgt nur als IP-Adressliteral (DNS-Hostnamen werden
+  abgelehnt, gegen DNS-Rebinding). Eine IP-Allowlist kann Clients je IP/CIDR
+  einschränken; Loopback bleibt immer zugelassen. Die Anmeldung erfolgt per
+  Token oder Kennwort mit Session-Cookie statt dauerhaftem Token im Browser.
 - Schreibende API-Aufrufe verlangen gültige Authentisierung.
 - Host-/Origin-Prüfung und CSRF-Schutz.
 - Keine Tokens in Zugriffslogs oder Fehlermeldungen.
