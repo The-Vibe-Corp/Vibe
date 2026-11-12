@@ -53,6 +53,10 @@ ASSIST_OPTIONS = ["Erneut prüfen", "Lauf abbrechen", "Agent behebt die Befunde"
 ASSIST_AGENT_OPTION = 2
 ASSIST_DEFAULT_TIMEOUT = 600.0
 ASSIST_MAX_ROUNDS = 10
+# Im autonomen Modus gibt es keine Rückfrage. Der Preflight beauftragt den
+# Agenten deshalb genau einmal mit den Befunden; bleibt der Befund bestehen,
+# blockiert der Lauf mit dem letzten Stand.
+ASSIST_AUTONOMOUS_REPAIR_ROUNDS = 1
 # AP10: Feste Optionen der Schranken-Rückfrage an blockierten Paketen. Die
 # Nummerierung ist nullbasiert (wie in vibe_questions.answer): 0 überspringt
 # das Paket, 1 bricht den Lauf ab, 2 beauftragt den Agenten; Freitext hat
@@ -717,8 +721,9 @@ def _assist_result(errors, action, instruction="", source=""):
     """Ergebnis der Assistenz für den Aufrufer und die Aktionsdatei.
 
     ``source`` unterscheidet die Nutzeranweisung (``user``) von der aus den
-    Befunden abgeleiteten Anweisung (``findings``), damit das Protokoll die
-    Herkunft korrekt benennt.
+    Befunden abgeleiteten Anweisung (``findings``) und der autonomen
+    Entscheidung (``autonomous``), damit das Protokoll die Herkunft korrekt
+    benennt.
     """
     return {
         "errors": errors,
@@ -726,6 +731,34 @@ def _assist_result(errors, action, instruction="", source=""):
         "instruction": instruction,
         "source": source,
     }
+
+
+def _autonomous_result(errors, rounds):
+    """Entscheidet im autonomen Modus ohne Rückfrage über die Reparatur.
+
+    Vor der ersten Runde entsteht ein Auftrag aus den Befunden. Danach ist
+    genau eine autonome Reparatur versucht; ein weiterer identischer Auftrag
+    würde nur Kosten verursachen. Der Lauf blockiert dann mit dem letzten
+    Befund.
+    """
+    if rounds >= ASSIST_AUTONOMOUS_REPAIR_ROUNDS:
+        print(
+            "PREFLIGHT: Autonome Reparatur nach "
+            + str(ASSIST_AUTONOMOUS_REPAIR_ROUNDS)
+            + " Runde beendet; der Befund besteht weiter."
+        )
+        return _assist_result(errors + [
+            "Autonome Reparatur nach "
+            + str(ASSIST_AUTONOMOUS_REPAIR_ROUNDS)
+            + " Runde beendet; der Befund besteht weiter."
+        ], "max")
+    print(
+        "PREFLIGHT: Autonomer Modus aktiv; Agent wird ohne Rückfrage mit der "
+        "Behebung der Befunde beauftragt."
+    )
+    return _assist_result(
+        errors, "agent", _agent_instruction(errors), "autonomous"
+    )
 
 
 def assist_preflight(project, agents_dir, tester, reviewer, state_dir=None,
@@ -738,8 +771,11 @@ def assist_preflight(project, agents_dir, tester, reviewer, state_dir=None,
     Eine freie Antwort ist eine Anweisung an den Agenten; der Aufrufer führt
     sie im Projektordner aus und ruft diese Funktion danach erneut auf. Die
     Option ``Agent behebt die Befunde`` erzeugt denselben Agentenauftrag aus
-    den aktuellen Befunden. Ohne nutzbare F16-Module, bei aktivem autonomem
-    Modus oder nach einem Abbruch/Zeitlimit bleiben die Befunde bestehen.
+    den aktuellen Befunden. Ist der autonome Modus aktiv, entsteht keine
+    Rückfrage: Die Assistenz liefert einen Auftrag aus den Befunden
+    (``source="autonomous"``) und lässt ihn genau eine Runde ausführen. Ohne
+    nutzbare F16-Module oder nach einem Abbruch/Zeitlimit bleiben die Befunde
+    bestehen.
     ``intro`` ersetzt den Einleitungssatz, wenn die Assistenz nicht am
     Laufstart, sondern an der Abschlussprüfung eingesetzt wird. ``max_rounds``
     begrenzt die Agentenrunden ausdrücklich (AP10: ``assist_rounds``); ohne
@@ -757,7 +793,7 @@ def assist_preflight(project, agents_dir, tester, reviewer, state_dir=None,
     limit = ASSIST_MAX_ROUNDS if max_rounds is None else max_rounds
     name = project_name or os.path.basename(os.path.normpath(str(project)))
     if autonomous.is_enabled(runtime, name):
-        return _assist_result(errors, "autonomous")
+        return _autonomous_result(errors, rounds)
     if rounds >= limit:
         return _assist_result(errors + [
             "Rückfrage-Assistenz nach " + str(limit)
@@ -795,8 +831,7 @@ def assist_preflight(project, agents_dir, tester, reviewer, state_dir=None,
                 "Rückfrage " + qid + " nicht lesbar; Lauf abgebrochen."
             ], "invalid")
         if mode == "stop":
-            print("PREFLIGHT: Autonomer Modus aktiv; keine Rückfrage mehr.")
-            return _assist_result(errors, "autonomous")
+            return _autonomous_result(errors, rounds)
         if mode != "answer":
             print(
                 "PREFLIGHT: Keine Antwort auf Rückfrage " + qid
@@ -842,7 +877,7 @@ def assist_preflight(project, agents_dir, tester, reviewer, state_dir=None,
         if not errors:
             return _assist_result([], "pass")
         if autonomous.is_enabled(runtime, name):
-            return _assist_result(errors, "autonomous")
+            return _autonomous_result(errors, rounds)
     return _assist_result(errors + [
         "Rückfrage-Assistenz nach " + str(limit) + " Runden beendet."
     ], "max")

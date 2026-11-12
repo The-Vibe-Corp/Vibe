@@ -746,6 +746,15 @@
    ],
    "datum": "2026-11-12",
    "grund": "Schranken des Paket-Läufers global (gates.json) und je Projekt (.vibe/project.env) konfigurierbar: neues Modul vibe_gates.py mit CLI vibe gates, wirksame Schranken samt Herkunft, defekte Werte als gemeldete Voreinstellung; der Läufer liest Reparatur-, Assistenz-, Wiederholungs- und Durchgangsschranken und fragt an blockierten Paketen mit override=ask über assist_barrier, wie weiter zu verfahren ist (überspringen, abbrechen, zusätzliche Reparaturrunde, Freitextanweisung, autonome Entscheidung). Nach Reviewrunde 1 protokolliert der Paket-Merge den Verwurf uncommitteter Arbeitsnotiz-Änderungen mit einer WARN-Zeile und dokumentiert die Datenfolge; `vibe gates` erkennt `--project` an beliebiger Argumentposition."
+  },
+  {
+   "arbeitspaket": "B9",
+   "dateien": [
+    "bin/vibe-run.sh",
+    "bin/vibe_packages.py"
+   ],
+   "datum": "2026-11-12",
+   "grund": "Autonome Preflight-Reparatur: Ist der autonome Modus aktiv, entsteht keine F16-Rückfrage mehr; die Assistenz liefert sofort einen aus den Befunden abgeleiteten Agentenauftrag (Herkunft 'autonomous', Protokoll: 'einer autonomen Entscheidung') und lässt ihn genau einmal ausführen, danach wird der Preflight erneut geprüft. Bleibt der Befund, blockiert der Lauf mit dem letzten Befund, statt erneut zu beauftragen. Wird der Modus erst während des Wartens eingeschaltet, endet das Warten sofort mit demselben Auftrag. Ohne nutzbare F16-Module bleibt der Zustand 'unavailable'. Da beide importierten Dateien geändert wurden, wurden Größe und SHA-256 der betreffenden files-Einträge aktualisiert und dadurch begründet."
   }
  ],
  "files": [
@@ -765,9 +774,9 @@
    "sha256": "1c532464e505005b4d650b2d1d8a9c5fad77dc13c2436499b29258d68f3d45ab"
   },
   {
-   "bytes": 45994,
+   "bytes": 46103,
    "path": "bin/vibe-run.sh",
-   "sha256": "72035a437cfdbb11c1ec17cbc98247c7d110c6684cdc60e805b12ced0c20d7cb"
+   "sha256": "ddf4668a79c5728ba12de932f8299697344e32da8c7c3adbcb5a04a44f1bf051"
   },
   {
    "bytes": 69372,
@@ -820,9 +829,9 @@
    "sha256": "ac3b26da4208a087a09c67c389238c82802d7c1bd50b10d9bcd9492a07050462"
   },
   {
-   "bytes": 59415,
+   "bytes": 60826,
    "path": "bin/vibe_packages.py",
-   "sha256": "2804f4f5b9592aaf58f4bbc1f968df2354a880989fccb6ee6332ddfcb5ee5ab7"
+   "sha256": "d05293613d6955c875c45be57d1cd7aee85b90c66093c401fb70f6af455e3677"
   },
   {
    "bytes": 18748,

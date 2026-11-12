@@ -627,6 +627,8 @@ PY
       ASSIST_ROUNDS=$((ASSIST_ROUNDS + 1))
       if [ "$PREFLIGHT_SOURCE" = "findings" ]; then
         ASSIST_ORIGIN="einer aus den Befunden abgeleiteten Anweisung"
+      elif [ "$PREFLIGHT_SOURCE" = "autonomous" ]; then
+        ASSIST_ORIGIN="einer autonomen Entscheidung"
       else
         ASSIST_ORIGIN="der Anweisung des Nutzers"
       fi

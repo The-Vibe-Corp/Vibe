@@ -22,7 +22,10 @@ aus dem Implementierungsdiff. Geprüft werden:
 * Ohne Antwort endet der Lauf nach ``VIBE_PREFLIGHT_QUESTION_TIMEOUT`` mit
   Exit-Code 2; die Rückfrage bleibt offen und der Abbruchgrund nennt ihre ID.
 * Der autonome Modus (F16) verhindert die Rückfrage bzw. beendet laufendes
-  Warten sofort; der Lauf endet mit Exit-Code 2.
+  Warten sofort. Statt abzubrechen, beauftragt der Läufer den Agenten einmal
+  mit einer aus den Befunden abgeleiteten Anweisung. Ist der Befund danach
+  behoben, startet das erste Arbeitspaket; andernfalls blockiert der Lauf mit
+  den verbleibenden Befunden.
 * Ein erfolgreicher Preflight erzeugt keine Rückfrage.
 * Bei mehreren Befunden wird zuerst der erste gefragt, danach der nächste
   noch bestehende Befund als eigene Rückfrage.
@@ -215,6 +218,21 @@ class PreflightAssistFixture(unittest.TestCase):
 
     def combined_output(self):
         return self.output() + "\n" + self.log()
+
+    def assert_autonomous_agent_assignment(self, output):
+        """Die Beauftragung nennt die autonome Herkunft, nicht den Nutzer."""
+        lines = [
+            line
+            for line in output.splitlines()
+            if "Agent" in line and "beauftragt" in line
+        ]
+        self.assertTrue(
+            lines,
+            "Keine Protokollzeile zur Agentenbeauftragung:\n" + output,
+        )
+        assignment = "\n".join(lines)
+        self.assertRegex(assignment, r"(?i)autonom")
+        self.assertNotIn("Anweisung des Nutzers", assignment)
 
     def wait_exit(self, timeout=90):
         try:
@@ -723,49 +741,98 @@ class TimeoutTest(PreflightAssistFixture):
 
 
 class AutonomousTest(PreflightAssistFixture):
-    """Verhalten 6: Der autonome Modus ersetzt die Rückfrage."""
+    """Verhalten 6: Der autonome Modus repariert, statt zu fragen."""
 
-    def test_autonomous_mode_prevents_a_question(self):
-        """Erst belegt eine Rückfrage die Assistenz, dann verhindert sie der Modus."""
-        self.make_dirty()
-
-        # Positivkontrolle: Ohne autonomen Modus entsteht eine Rückfrage.
-        self.start(VIBE_PREFLIGHT_ASSIST="1",
-                   VIBE_PREFLIGHT_QUESTION_TIMEOUT="30")
-        first = self.wait_for_question()
-        self.answer(first, 1)
-        self.assertEqual(self.wait_exit(timeout=60), 2)
-        questions_before = len(self.question_files())
-
-        # Mit autonomen Modus: kein neuer Lauf über die Rückfrage.
+    def test_autonomous_mode_repairs_without_a_question(self):
+        """Aktiver Modus: keine Rückfrage, Agent im Projekt, danach F1."""
         self.enable_autonomous("proj")
-        self.start(VIBE_PREFLIGHT_ASSIST="1",
-                   VIBE_PREFLIGHT_QUESTION_TIMEOUT="30")
-        rc = self.wait_exit(timeout=60)
-
-        self.assertEqual(rc, 2, self.output())
-        self.assertEqual(len(self.question_files()), questions_before)
-        self.assertEqual(self.agent_calls(), [])
-
-    def test_enabling_autonomous_during_wait_ends_immediately(self):
-        """Während des Wartens eingeschaltet: Ende sofort, Frage bleibt offen."""
         self.make_dirty()
 
-        self.start(VIBE_PREFLIGHT_ASSIST="1",
-                   VIBE_PREFLIGHT_QUESTION_TIMEOUT="120")
+        self.start(
+            VIBE_PREFLIGHT_ASSIST="1",
+            VIBE_PREFLIGHT_QUESTION_TIMEOUT="30",
+            FAKE_PREFLIGHT_MODE="fix",
+        )
+        rc = self.wait_exit(timeout=120)
+        output = self.combined_output()
+
+        self.assertEqual(rc, 0, output)
+        self.assertEqual(self.question_files(), [])
+        calls = self.preflight_calls()
+        self.assertEqual(len(calls), 1, calls)
+        self.assertEqual(
+            os.path.realpath(calls[0]["cwd"]),
+            os.path.realpath(str(self.project)),
+            "Der autonome Reparatur-Agent lief nicht im Projektordner.",
+        )
+        self.assertIn("Arbeitsbaum", calls[0]["prompt"])
+        self.assertIn("unfertig.txt", calls[0]["prompt"])
+        self.assertEqual(len(self.package_calls()), 1)
+        self.assertIn("Arbeitspaket F1", self.log())
+        self.assertIn("Geschlossen: F1", output)
+        self.assert_autonomous_agent_assignment(output)
+
+    def test_enabling_autonomous_during_wait_repairs_instead_of_aborting(self):
+        """Während des Wartens eingeschaltet: Agent repariert, dann F1."""
+        self.make_dirty()
+
+        self.start(
+            VIBE_PREFLIGHT_ASSIST="1",
+            VIBE_PREFLIGHT_QUESTION_TIMEOUT="120",
+            FAKE_PREFLIGHT_MODE="fix",
+        )
         record = self.wait_for_question()
+        self.assertEqual(
+            record.get("options"),
+            ["Erneut prüfen", "Lauf abbrechen", "Agent behebt die Befunde"],
+        )
 
         started = time.monotonic()
         self.enable_autonomous("proj")
-        rc = self.wait_exit(timeout=20)
+        rc = self.wait_exit(timeout=120)
         elapsed = time.monotonic() - started
+        output = self.combined_output()
 
-        self.assertEqual(rc, 2, self.output())
+        self.assertEqual(rc, 0, output)
         self.assertLess(elapsed, 15, "Warten endete nicht sofort")
-        self.assertEqual(self.agent_calls(), [])
-        self.assertFalse(self.answer_file(record).exists())
-        open_ids = {entry["id"] for entry in self.open_questions()}
-        self.assertIn(record["id"], open_ids)
+        calls = self.preflight_calls()
+        self.assertEqual(len(calls), 1, calls)
+        self.assertIn("Arbeitsbaum", calls[0]["prompt"])
+        self.assertEqual(len(self.package_calls()), 1)
+        self.assertIn("Geschlossen: F1", output)
+        self.assert_autonomous_agent_assignment(output)
+
+
+class AutonomousRepairLimitTest(PreflightAssistFixture):
+    """Verhalten 6: Genau eine autonome Reparaturrunde, danach Blockade."""
+
+    def test_failed_autonomous_repair_blocks_after_exactly_one_round(self):
+        """Bleibt der Befund, endet der Lauf nach einer Runde ohne Paket."""
+        self.enable_autonomous("proj")
+        self.make_dirty()
+
+        self.start(
+            VIBE_PREFLIGHT_ASSIST="1",
+            VIBE_PREFLIGHT_QUESTION_TIMEOUT="30",
+            FAKE_PREFLIGHT_MODE="noop",
+        )
+        rc = self.wait_exit(timeout=120)
+        output = self.combined_output()
+        calls = self.preflight_calls()
+
+        self.assertEqual(rc, 2, output)
+        self.assertEqual(
+            len(calls),
+            1,
+            "Es wurde nicht genau eine autonome Reparaturrunde versucht: %r"
+            % (calls,),
+        )
+        self.assertEqual(self.package_calls(), [])
+        self.assertEqual(self.question_files(), [])
+        self.assertTrue((self.project / "unfertig.txt").exists())
+        self.assertIn("BLOCKIERT", output)
+        self.assertIn("Arbeitsbaum", output)
+        self.assert_autonomous_agent_assignment(output)
 
 
 class SuccessfulPreflightTest(PreflightAssistFixture):

@@ -15,6 +15,10 @@ aus dem Implementierungsdiff. Geprüft werden:
   Runden repariert. Eine erfolgreiche Reparatur führt zum Merge; ein
   dauerhafter Befund blockiert nach genau zwei Reparaturrunden ohne Merge und
   ohne neues Paket.
+* Ist der autonome Modus aktiv, entsteht keine Rückfrage und es wird nicht
+  gewartet: Die Assistenz liefert sofort eine aus den Befunden abgeleitete
+  Anweisung (``action="agent"``, ``source="autonomous"``). Dasselbe gilt,
+  wenn der Modus erst während des Wartens eingeschaltet wird.
 * Ein unsauberer Integrationsstand am Laufende ist mit aktiver Assistenz über
   dieselben drei Optionen behebbar. Ohne Assistenz oder nach Abbruch bleibt
   der bisherige Blockadeabbruch.
@@ -35,6 +39,7 @@ import threading
 import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import runner_support as support
@@ -510,6 +515,33 @@ class AssistUnitFixture(unittest.TestCase):
         thread.join(10)
         self.assertFalse(thread.is_alive(), "Assistenz wartete weiter")
 
+    def enable_autonomous(self, name="proj"):
+        """Schaltet den autonomen Modus für den Projektnamen ein (F16)."""
+        payload = {
+            "version": 1,
+            "projects": {
+                name: {
+                    "enabled": True,
+                    "changed": "2026-01-01T00:00:00Z",
+                }
+            },
+        }
+        self.runtime.mkdir(parents=True, exist_ok=True)
+        temporary = self.runtime / ".autonomous.json.tmp"
+        temporary.write_text(json.dumps(payload), encoding="utf-8")
+        os.replace(temporary, self.runtime / "autonomous.json")
+
+    def question_files(self):
+        folder = self.runtime / "questions"
+        if not folder.is_dir():
+            return []
+        return sorted(
+            path
+            for path in folder.iterdir()
+            if path.name.endswith(".json")
+            and not path.name.endswith(".answer.json")
+        )
+
 
 class PreflightAssistOptionsTest(AssistUnitFixture):
     """Verhalten 1-3: feste Reihenfolge, Aktion ``agent`` und Vorrang."""
@@ -557,6 +589,68 @@ class PreflightAssistOptionsTest(AssistUnitFixture):
         self.join(thread)
 
         self.assertEqual(result.get("action"), "abort", result)
+
+
+class PreflightAutonomousRepairTest(AssistUnitFixture):
+    """Verhalten 1 und 4: Autonomer Modus liefert einen Reparaturauftrag.
+
+    Ist der autonome Modus aktiv, entsteht keine F16-Rückfrage und es wird
+    nicht gewartet. Die Assistenz liefert stattdessen die Aktion ``agent`` mit
+    einer aus den Befunden abgeleiteten Anweisung und der Herkunft
+    ``autonomous``. Dasselbe gilt, wenn der Modus erst während des Wartens
+    eingeschaltet wird.
+    """
+
+    def test_autonomous_active_returns_agent_instruction_without_question(self):
+        """Aktiver Modus vor dem Start: kein Warten, Auftrag aus Befunden."""
+        self.enable_autonomous()
+
+        result, thread = self.start()
+        self.join(thread)
+
+        self.assertEqual(self.question_files(), [])
+        self.assertEqual(result.get("action"), "agent", result)
+        self.assertEqual(result.get("source"), "autonomous", result)
+        instruction = result.get("instruction", "")
+        self.assertTrue(instruction, result)
+        self.assertIn("Arbeitsbaum", instruction)
+        self.assertIn("unfertig.txt", instruction)
+
+    def test_switching_autonomous_during_wait_returns_agent_instruction(self):
+        """Während des Wartens eingeschaltet: Warten endet, Auftrag entsteht."""
+        result, thread = self.start()
+        record = self.wait_question()
+        self.assertEqual(record.get("options"), OPTIONS)
+
+        self.enable_autonomous()
+        self.join(thread)
+
+        self.assertEqual(result.get("action"), "agent", result)
+        self.assertEqual(result.get("source"), "autonomous", result)
+        instruction = result.get("instruction", "")
+        self.assertTrue(instruction, result)
+        self.assertIn("Arbeitsbaum", instruction)
+        self.assertIn("unfertig.txt", instruction)
+
+    def test_missing_f16_modules_returns_unavailable(self):
+        """Ohne nutzbare F16-Module bleibt der bisherige Zustand ``unavailable``."""
+        with mock.patch.object(
+            self.packages, "_question_modules", return_value=(None, None)
+        ):
+            result = self.packages.assist_preflight(
+                str(self.project),
+                str(self.agents),
+                "test-agent",
+                "code-reviewer",
+                state_dir=str(self.state),
+                runtime=str(self.runtime),
+                project_name="proj",
+                timeout=5,
+            )
+
+        self.assertEqual(result.get("action"), "unavailable", result)
+        self.assertTrue(result.get("errors"), result)
+        self.assertEqual(self.question_files(), [])
 
 
 # ---------------------------------------------------------------------------
