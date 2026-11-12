@@ -1958,9 +1958,14 @@ def changed_file(project, name):
     return result.returncode == 0 and bool(result.stdout.strip())
 
 
-def cmd_run(name, agent=None, out=None, keep_changes=False):
+def cmd_run(name, agent=None, out=None, keep_changes=False, continue_session=None):
     out = out or sys.stdout
     p = ppath(name)
+    # AP14: Fortsetzung in derselben Modell-Session. Die Kennung reist als
+    # Umgebungsvariable zum Läufer und wird vor der Übergabe rigoros
+    # geprüft, damit sie nie als zusätzliches Kommando ausgewertet wird.
+    if continue_session is not None and not re.fullmatch(r"[A-Za-z0-9_-]+", continue_session):
+        sys.exit("Ungültige Session-Kennung für die Fortsetzung: " + continue_session)
     if agent is not None: require_agent(agent)
     if tmux_has(name): print("Läuft bereits. vibe attach", name, file=out); return
     if not is_init(name): sys.exit("Projekt ist nicht für vibe vorbereitet: vibe init " + name)
@@ -2072,7 +2077,11 @@ def cmd_run(name, agent=None, out=None, keep_changes=False):
     # F27: Die ausdrückliche Neustart-Absicht reist als Umgebungsvariable zum
     # Läufer; sie wird nie als Positionsargument ausgewertet.
     keep_export = " export VIBE_KEEP_CHANGES=1;" if keep_changes else ""
-    inner = ("source ~/.bashrc; " + child_exports() + keep_export
+    # AP14: Fortsetzung in derselben Session nur als geprüfte Umgebungs-
+    # variable übergeben; sie wird im Läufer nie als Kommando ausgewertet.
+    continue_export = (" export VIBE_CONTINUE_SESSION=" + continue_session + ";"
+                       if continue_session else "")
+    inner = ("source ~/.bashrc; " + child_exports() + keep_export + continue_export
              + ' export VIBE_PREFLIGHT_ASSIST=1 VIBE_LOGNAME="$1" VIBE_RUN_ID="$2" VIBE_SESSION="$3" VIBE_MODEL="$7"; bash "$4" "$5" "$6" "$7"')
     rc, output = run(tmux_argv(
                    session, "new-session", "-d", "-s", session,

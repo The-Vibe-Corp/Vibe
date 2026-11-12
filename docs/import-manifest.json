@@ -768,6 +768,19 @@
    ],
    "datum": "2026-11-12",
    "grund": "vibe über das lokale Netzwerk erreichbar machen: Port und Bind-Adresse über UI-Karte 'Zugriffssicherheit' und CLI (CLI überschreibt immer die Konfiguration), IP-Allowlist gegen nicht zugelassene Clients (Loopback bleibt immer zugelassen), Token-Anmeldung ergänzt durch Kennwort mit Session-Cookie statt dauerhaftem Token im Browser; DNS-Hostnamen werden als Bind-Adresse abgelehnt."
+  },
+  {
+   "arbeitspaket": "AP14",
+   "dateien": [
+    "bin/vibe",
+    "bin/vibe-run.sh",
+    "bin/vibe-web.py",
+    "bin/vibe_harness.py",
+    "bin/web/app.js",
+    "bin/web/styles.css"
+   ],
+   "datum": "2026-11-12",
+   "grund": "Ausgabe-Tab überarbeitet (AP14): Die Ausgabeansicht zeigt den Hauptagenten dauerhaft und laufende Subagenten als Agenten-Tabs mit vollständiger Ausgabe (bis 500 Nachrichten, Text, Reasoning und Werkzeugteile); beendete Subagenten werden aus der Agentenauswahl gefiltert (die Zustandsdatei behält die erfassten Einträge), das Abfrageintervall liegt bei 2 Sekunden. Zusatzanweisungen lassen sich über /api/steer mit optionalem Session-Feld gezielt an den Hauptagenten oder einen erfassten Subagenten des aktiven Laufs richten (fremde Sessions werden abgelehnt; Protokollmarker und Rückmeldung nennen das Ziel als <Agentenname> (<Session>) bzw. nur <Session>); der neue Endpunkt /api/continue setzt nur bei gestopptem Lauf mit erfasster Session und harnessfähigem Harness fort (vibe_harness.supports: opencode wahr für steer/continue, Pi und unbekannte Harnesses falsch). Der Startbefehl übergibt die geprüfte Fortsetzungskennung als VIBE_CONTINUE_SESSION an den Läufer, der RESUME_SESSION damit vorbesetzt, sodass auch der erste Versuch und Folgepakete desselben Laufs mit opencode --session in derselben Session laufen; der Pi-Zweig erhält nie --session. Geänderte Dateien liegen im Bereich bin (docs/compatibility.md liegt außerhalb des Manifests), daher wurden Größe und SHA-256 der betreffenden files-Einträge aktualisiert und dadurch begründet."
   }
  ],
  "files": [
@@ -782,19 +795,19 @@
    "sha256": "e5ae3183efcb76dace1e0bcbde9993be7afe82d93d7877da9ee39846cf45330a"
   },
   {
-   "bytes": 257128,
+   "bytes": 257858,
    "path": "bin/vibe",
-   "sha256": "21c0d7aca972d85941f3cb9d3ffe98c4ccb7da6f96311b5d1cfc8f88b32909c4"
+   "sha256": "a0e1df53ba5bb8730b727d5868bc183e96d6509b88cb4c4721994e96f7e06b62"
   },
   {
-   "bytes": 46103,
+   "bytes": 46962,
    "path": "bin/vibe-run.sh",
-   "sha256": "ddf4668a79c5728ba12de932f8299697344e32da8c7c3adbcb5a04a44f1bf051"
+   "sha256": "c57a5901ca8afd621fb577689f2159b6cd93469a07f2ed40ebd0b96e671b67c7"
   },
   {
-   "bytes": 79227,
+   "bytes": 84645,
    "path": "bin/vibe-web.py",
-   "sha256": "46d8f08f9a0fd2f41baf5da14bcbc5de187f4954148a77529f00b8fe35aec6ef"
+   "sha256": "f2ca26c000c3b0398e6415b10d15b900f138c02a9c94adf2652feb7c420e7804"
   },
   {
    "bytes": 5189,
@@ -817,9 +830,9 @@
    "sha256": "5f3960c199534fe83685b6572f5bdf6c85c940bb6c6ee3cb54313733f2642f4a"
   },
   {
-   "bytes": 21634,
+   "bytes": 22482,
    "path": "bin/vibe_harness.py",
-   "sha256": "2e613abcb90a6eec6b21dfd4e963692f8b0bba39ce1ee53ab8cdcef729b7fc98"
+   "sha256": "5447d366dcd31cf71a5856079a49d89b16a8e7d028ac62d01f4675fc0ff24581"
   },
   {
    "bytes": 4311,
@@ -882,9 +895,9 @@
    "sha256": "d49b2406f2c9837c63ed3c3dcb265938fe5702e78c5aeb0df07b9f349fd65594"
   },
   {
-   "bytes": 126633,
+   "bytes": 128181,
    "path": "bin/web/app.js",
-   "sha256": "dd8e74b41d364738acbee2455387e22277580b0f2240a2f686b196958f0718ac"
+   "sha256": "1cf3699a3ca77cffd20dfde8b6220bf53dd429d366c3c2d8962548e57d75eb34"
   },
   {
    "bytes": 588,
@@ -892,9 +905,9 @@
    "sha256": "db45ba1dd9e5da380f5c05c24b2158eefce9b7e8f87faeb33a9e88910d0cd73d"
   },
   {
-   "bytes": 9843,
+   "bytes": 9769,
    "path": "bin/web/styles.css",
-   "sha256": "b2409683d6a29f203d4aa90193591b2062c7473f842c4c065c2295d85c173cfa"
+   "sha256": "d325d106d68f39494564ec96b447bbd789e941292d40b1504901630690dbaa29"
   },
   {
    "bytes": 34162,

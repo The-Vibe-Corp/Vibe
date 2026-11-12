@@ -258,26 +258,86 @@ def live_subagents(main_session):
     return entries
 
 
+def _message_parts(message):
+    """Teile und Sprecherinformation einer Nachricht in beiden Projektionen.
+
+    opencode v2 liefert ``{"info":{"role":…},"parts":[…]}``; die ältere Form
+    trägt ``type``/``content`` direkt am Nachrichtenobjekt. Unbekannte Formen
+    liefern keine Teile, statt Inhalte zu erfinden.
+    """
+    info = message.get("info")
+    if not isinstance(info, dict):
+        info = {}
+    parts = message.get("parts")
+    if isinstance(parts, list):
+        return info, parts
+    content = message.get("content")
+    if isinstance(content, list):
+        return info, content
+    return info, []
+
+
+def _message_role(message, info):
+    """Rolle der Nachricht (v2 unter info, Alt-Form direkt am Objekt)."""
+    for source in (info, message):
+        if isinstance(source, dict):
+            for key in ("role", "type"):
+                value = source.get(key)
+                if isinstance(value, str) and value:
+                    return value
+    return ""
+
+
 def live_subagent_output(session):
-    """Liest die Textausgabe einer Kind-Session aus den projizierten Nachrichten."""
-    data = opencode_request("/api/session/" + quote(session, safe="") + "/message?limit=200")
+    """Liest die vollständige Agentenausgabe einer Kind-Session (AP14).
+
+    Bis zu 500 Nachrichten werden angefragt. Textteile erscheinen unverändert,
+    Reasoning-Teile mit dem Präfix „[Denken] “ und Werkzeugteile je Teil als
+    „[Werkzeug] <tool> — <status>: <detail>“ mit Detail aus ``state.input``
+    (description/command/filePath). Nutzer-Nachrichten werden übersprungen.
+    """
+    data = opencode_request("/api/session/" + quote(session, safe="") + "/message?limit=500")
     messages = data.get("data") if isinstance(data, dict) else None
     if not isinstance(messages, list):
         return ""
-    texts = []
+    lines = []
     for message in messages:
-        if not isinstance(message, dict) or message.get("type") == "user":
+        if not isinstance(message, dict):
             continue
-        content = message.get("content")
-        if not isinstance(content, list):
+        info, parts = _message_parts(message)
+        if _message_role(message, info) == "user":
             continue
-        for part in content:
-            if not isinstance(part, dict) or part.get("type") != "text":
+        for part in parts:
+            if not isinstance(part, dict):
                 continue
-            text = part.get("text")
-            if isinstance(text, str) and text.strip():
-                texts.append(text)
-    return "\n".join(texts)
+            kind = part.get("type")
+            if kind == "text":
+                text = part.get("text")
+                if isinstance(text, str) and text.strip():
+                    lines.append(text)
+            elif kind == "reasoning":
+                text = part.get("text")
+                if isinstance(text, str) and text.strip():
+                    lines.extend(
+                        "[Denken] " + line
+                        for line in text.splitlines()
+                        if line.strip()
+                    )
+            elif kind == "tool":
+                tool = part.get("tool") or part.get("name") or ""
+                state = part.get("state") if isinstance(part.get("state"), dict) else {}
+                detail = ""
+                input_data = state.get("input") if isinstance(state.get("input"), dict) else {}
+                for key in ("description", "command", "filePath"):
+                    value = input_data.get(key)
+                    if isinstance(value, str) and value.strip():
+                        detail = " ".join(value.split())
+                        break
+                line = "[Werkzeug] " + str(tool) + " — " + str(state.get("status") or "")
+                if detail:
+                    line += ": " + detail
+                lines.append(line)
+    return "\n".join(lines)
 
 
 def subagents_of(name):
@@ -372,8 +432,15 @@ def deliver_steer(session, text, password):
         connection.close()
 
 
-def steer_project(name, text):
-    """Prüft und übermittelt eine Zusatzanweisung an den laufenden Agenten."""
+def steer_project(name, text, session=None):
+    """Prüft und übermittelt eine Zusatzanweisung an den laufenden Agenten.
+
+    AP14: Ohne ``session`` geht die Anweisung an die Hauptsession des aktiven
+    Laufs (F19-Verhalten). Mit ``session`` wird genau diese Session beliefert,
+    wenn sie die Hauptsession des Laufs oder die Session eines erfassten oder
+    live bekannten Subagenten des aktiven Laufs ist; fremde Sessions werden
+    ohne Zustellung mit verständlicher Meldung abgelehnt.
+    """
     text = str(text or "").strip()
     if not text:
         return False, "Bitte eine Zusatzanweisung eingeben."
@@ -386,7 +453,7 @@ def steer_project(name, text):
         selected = vibe_harness.read_selection(PATHS.state)
     except vibe_harness.HarnessError:
         selected = "opencode"
-    if selected == "pi":
+    if not vibe_harness.supports(selected, "steer"):
         return False, (
             "Zusatzanweisungen sind bei Pi nicht möglich: Pi läuft im "
             "Print-Modus (--no-session) ohne fortsetzbare Session; die "
@@ -395,24 +462,80 @@ def steer_project(name, text):
     if not run_is_active(name):
         return False, "Kein aktiver Lauf: Eine Zusatzanweisung ist nur während der Ausführung möglich."
     state = subagents_of(name)
-    session = state.get("session") or ""
-    if not session:
+    target = state.get("session") or ""
+    if session:
+        # AP14: Zielgenaue Zustellung an Haupt- oder Subagentensession des
+        # aktiven Laufs. Fremde Sessions werden nie beliefert.
+        session = str(session).strip()
+        tracked_sessions = {
+            entry.get("session") for entry in state.get("subagents") or []
+            if entry.get("session")
+        }
+        if session == target or session in tracked_sessions:
+            target = session
+        else:
+            return False, (
+                "Die angegebene Session gehört weder zur Hauptsession des "
+                "Laufs noch zu einem erfassten Subagenten; die Anweisung "
+                "wurde nicht gesendet."
+            )
+    if not target:
         return False, "Die Session des laufenden Agenten ist nicht erfasst; die Anweisung wurde nicht gesendet."
     password = opencode_password()
     if not password:
         return False, "Der opencode-Server ist nicht für Zusatzanweisungen angemeldet (Kennwortdatei fehlt)."
-    delivered, detail = deliver_steer(session, text, password)
+    delivered, detail = deliver_steer(target, text, password)
     if not delivered:
         return False, detail
     marker = " ".join(text.split())
+    # Protokollmarker und Rückmeldung nennen das Ziel (Reviewrunde 1).
+    agent = next(
+        (entry.get("agent") for entry in state.get("subagents") or []
+         if entry.get("session") == target),
+        "",
+    )
+    label = f"{agent} ({target})" if agent else target
     try:
         with open(vibe.logpath(name), "a", encoding="utf-8") as handle:
-            handle.write("\n[Dashboard] Zusatzanweisung an den Agenten übermittelt: " + marker + "\n")
+            handle.write("\n[Dashboard] Zusatzanweisung an " + label + " übermittelt: " + marker + "\n")
     except OSError:
         # Die Zustellung ist erfolgt; ein nicht schreibbares Protokoll ändert
         # daran nichts und wird nicht als Fehlschlag vorgetäuscht.
         pass
-    return True, "Zusatzanweisung an den Agenten übermittelt."
+    return True, f"Zusatzanweisung an {label} übermittelt."
+
+
+def start_continue(name):
+    """AP14: Startet den Lauf erneut und setzt die erfasste Session fort.
+
+    Fortsetzen ist nur bei gestopptem Lauf und nur mit einer in der
+    Zustandsdatei erfassten Hauptsession möglich; der Harness muss die
+    Fähigkeit unterstützen (Pi im Print-Modus kann das nicht).
+    """
+    if run_is_active(name):
+        return False, (
+            "Fortsetzen ist nur bei gestopptem Lauf möglich; für dieses "
+            "Projekt läuft bereits ein Lauf."
+        )
+    state = vibe_runs.load_subagent_state(
+        vibe_runs.subagent_state_path(vibe.logpath(name)))
+    session = str(state.get("session") or "").strip()
+    if not session:
+        return False, (
+            "Keine erfasste Session zum Fortsetzen: Der letzte Lauf hat "
+            "keine Session hinterlassen."
+        )
+    try:
+        selected = vibe_harness.read_selection(PATHS.state)
+    except vibe_harness.HarnessError:
+        selected = "opencode"
+    if not vibe_harness.supports(selected, "continue"):
+        return False, (
+            "Fortsetzen ist bei Pi nicht möglich: Pi läuft im Print-Modus "
+            "(--no-session) ohne fortsetzbare Session; es wurde nichts "
+            "gestartet."
+        )
+    return vibe_services.capture(vibe.cmd_run, name, continue_session=session)
 
 
 def reload_ui_data():
@@ -857,7 +980,7 @@ class H(BaseHTTPRequestHandler):
             return self._error(e.status, e.code, e.message)
         try:
             name = body.get("name", "")
-            if u.path in ("/api/run", "/api/stop", "/api/verify", "/api/feedback", "/api/ticket", "/api/init", "/api/rights", "/api/pause", "/api/sandbox", "/api/guide", "/api/costs", "/api/autonomous", "/api/steer", "/api/github", "/api/priority"):
+            if u.path in ("/api/run", "/api/stop", "/api/verify", "/api/feedback", "/api/ticket", "/api/init", "/api/rights", "/api/pause", "/api/sandbox", "/api/guide", "/api/costs", "/api/autonomous", "/api/steer", "/api/continue", "/api/github", "/api/priority"):
                 known(name)
             extra = {}
             if u.path == "/api/security":
@@ -897,7 +1020,12 @@ class H(BaseHTTPRequestHandler):
                             "ui.json ist nach dem Speichern nicht lesbar")
                     extra["security"] = security_data()
             elif u.path == "/api/steer":
-                ok, msg = steer_project(name, body.get("text", ""))
+                # AP14: Mit session-Adresse den Subagenten ansteuern.
+                ok, msg = steer_project(
+                    name, body.get("text", ""), body.get("session") or None)
+            elif u.path == "/api/continue":
+                # AP14: Letzten Lauf desselben Projekts fortsetzen.
+                ok, msg = start_continue(name)
             elif u.path == "/api/run":
                 ok, msg = vibe_services.capture(vibe.cmd_run, name, body.get("agent") or None, keep_changes=bool(body.get("keep_changes")))
             elif u.path == "/api/stop":

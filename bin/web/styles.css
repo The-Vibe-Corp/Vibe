@@ -41,8 +41,10 @@ pre#log .hl-num{color:#f0a66a}
 .subagent{border-top:1px solid var(--line);padding:8px 0}
 .subagent:first-child{border-top:0}
 .subagent .bar{margin:0 0 6px}
-pre.subagent-out{background:#0d0f12;border:1px solid var(--line);border-radius:6px;padding:8px;max-height:280px;overflow:auto;white-space:pre-wrap;font:12px/1.4 ui-monospace,monospace;margin:0}
-pre.subagent-out.empty{color:var(--mut)}
+/* AP14: Fortsetzen-Leiste außerhalb der Protokollkarte. */
+.continuebar{margin:0 0 10px}
+.continuebar b{white-space:nowrap}
+.continuebar[hidden]{display:none}
 .fbentry{border-top:1px solid var(--line);padding:8px 0}.fbentry:first-child{border-top:0}.fbdesc{white-space:pre-wrap;margin:2px 0 6px}.fbentry .bar{margin:4px 0 0}
 .toasts{position:fixed;right:16px;bottom:16px;z-index:200;display:flex;flex-direction:column;gap:8px;width:min(460px,calc(100vw - 32px))}
 .toast{display:flex;gap:10px;align-items:flex-start;background:#232830;border:1px solid var(--line);border-left:3px solid var(--ac);border-radius:8px;padding:10px 12px;box-shadow:0 8px 24px #0008}

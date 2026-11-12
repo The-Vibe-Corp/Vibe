@@ -66,6 +66,24 @@ HARNESSES = {
     },
 }
 
+# AP14: Fähigkeitsschicht je Harness. opencode kann Zusatzanweisungen
+# entgegennehmen (steer) und eine Session fortsetzen (continue). Pi läuft im
+# Print-Modus (--no-session): keine fortsetzbare Session, also keine der
+# beiden Fähigkeiten. Die Abfrage ist eine reine Funktion; Harnesses ohne
+# Eintrag melden jede Fähigkeit als nicht unterstützt.
+CAPABILITIES = {"opencode": ("steer", "continue")}
+
+
+def supports(name, capability):
+    """Meldet, ob ein Harness die Fähigkeit unterstützt (reine Funktion).
+
+    Unbekannte oder ungültige Harness-Namen und unbekannte oder ungültige
+    Fähigkeiten ergeben ``False`` statt eines Fehlers, damit Aufrufer (Web-API
+    und Oberfläche) ohne Ausnahmebehandlung entscheiden können.
+    """
+    harness = str(name or "").strip().lower()
+    return capability in CAPABILITIES.get(harness, ())
+
 
 class HarnessError(ValueError):
     """Die Harness-Auswahl oder ihre Konfiguration ist ungültig."""

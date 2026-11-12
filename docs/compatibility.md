@@ -78,11 +78,17 @@ Bekannte Grenzen von Pi in vibe:
 - Zusatzanweisungen während des Laufs sind opencode-bezogen. Bei gewähltem
   Pi lehnt die API `/api/steer` die Anweisung ab (Print-Modus, keine
   fortsetzbare Session) und versucht keine Zustellung; die Steuerkarte
-  nennt die Grenze vorab (F20).
+  nennt die Grenze vorab und sendet bei Pi nicht (F20, AP14).
+- Das Steuern und Fortsetzen sind Fähigkeiten des Harness: nur opencode
+  unterstützt beide (`steer`, `continue`); Pi läuft im Print-Modus
+  (`--no-session`) ohne fortsetzbare Session. Die Ausgabeansicht bietet bei
+  Pi weiterhin die Live-Verfolgung über den Ereignisstrom; Steuern und
+  Fortsetzen bleiben mit klarer Nichtverfügbarkeitsmeldung gesperrt (AP14).
 - Die Kostenerfassung liest weiterhin die opencode-Sitzungsdatenbank; für
   Pi-Läufe gibt es noch keine Kostenzuordnung.
 - Pi-Sitzungen werden nicht fortgesetzt (`--no-session`); jeder Agentenlauf
-  ist eigenständig.
+  ist eigenständig, und der Läufer übergibt dem Pi-Zweig nie `--session`
+  (AP14).
 
 ## Geprüfte Version und Verfahren
 

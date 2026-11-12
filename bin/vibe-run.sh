@@ -97,6 +97,14 @@ if [ -n "$MODEL" ]; then
   fi
   MODEL_ARGS=(--model "$MODEL")
 fi
+# AP14: Fortsetzung in derselben Session. Die Kennung kommt ausschließlich
+# über die Umgebung vom Startbefehl (vibe.cmd_run) und wird hier mit derselben
+# Zeichenklasse geprüft wie im Lauf sonst üblich; ein ungültiger Wert wird
+# verworfen, statt den Lauf abzubrechen. Der Pi-Zweig ignoriert die Kennung.
+CONTINUE_SESSION="${VIBE_CONTINUE_SESSION:-}"
+case "$CONTINUE_SESSION" in
+  *[!A-Za-z0-9_-]*) CONTINUE_SESSION="" ;;
+esac
 # Harness-Auswahl (AP04): Ohne vibe_harness.py bleibt der bisherige direkte
 # opencode-Pfad erhalten (ältere Installationen und Prüf-Attrappen). Der
 # Zustandsordner enthält harness.json; VIBE_HARNESS überschreibt ihn für
@@ -810,7 +818,14 @@ $QUESTION_HINT"
   PACKAGE_DONE=0
   # F25: Je Paket neu; die Sessions des Vorgängerpakets werden nicht
   # weitergeführt.
-  RESUME_SESSION=""
+  # AP14: Mit angeforderter Fortsetzung (VIBE_CONTINUE_SESSION vom Start-
+  # befehl) beginnt auch jedes folgende Paket desselben Laufs in derselben
+  # Session (Fortsetzungskette); der erste Versuch erhält --session. Ohne
+  # diese Anforderung bleibt es beim F25-Verhalten.
+  RESUME_SESSION="$CONTINUE_SESSION"
+  if [ -n "$RESUME_SESSION" ] && [ "$HARNESS" != "pi" ]; then
+    echo "Fortsetzung in Session $RESUME_SESSION" | tee -a "$LOG"
+  fi
   while [ "$ATTEMPT" -lt "$TRIES_PER_ITEM" ]; do
     ATTEMPT=$((ATTEMPT + 1))
     echo "--- Versuch $ATTEMPT/$TRIES_PER_ITEM für $ID in $WT ---" | tee -a "$LOG"
