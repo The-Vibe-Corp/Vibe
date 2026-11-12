@@ -346,11 +346,13 @@ class PathResolutionTest(unittest.TestCase):
                         )
 
     def test_bind_accepts_ip_literals_and_still_rejects_hostnames(self):
-        # AP13 (Nutzerentscheidung): Standard bleibt Loopback, aber eine
-        # ausdrücklich konfigurierte Netz-Bindung (IPv4-/IPv6-Adressliteral
-        # inklusive 0.0.0.0) ist zulässig. Hostnamen außer "localhost"
-        # bleiben abgelehnt (DNS-Rebinding-Schutz).
-        for value in ("0.0.0.0", "192.0.2.5", "::1"):
+        # AP13 (Nutzerentscheidung, Reviewrunde 1): Standard bleibt Loopback,
+        # eine ausdrücklich konfigurierte Netz-Bindung ist nur noch als
+        # IPv4-Adressliteral (inklusive 0.0.0.0) zulässig; IPv6 wird für die
+        # Bind-Adresse ausdrücklich ausgeschlossen (Heimnetz — IPv4 genügt).
+        # Hostnamen außer "localhost" bleiben abgelehnt
+        # (DNS-Rebinding-Schutz).
+        for value in ("0.0.0.0", "192.0.2.5"):
             with self.subTest(value=value):
                 try:
                     result = self.resolve(
@@ -359,6 +361,12 @@ class PathResolutionTest(unittest.TestCase):
                 except self.paths.ConfigError as error:
                     self.fail(f"Adressliteral {value!r} wurde abgelehnt: {error}")
                 self.assertEqual(result.ui_bind, value)
+        for value in ("::", "::1", "2001:db8::1"):
+            with self.subTest(value=value):
+                with self.assertRaises(ValueError):
+                    self.resolve(
+                        environ={"VIBE": str(self.workspace), "VIBE_UI_BIND": value}
+                    )
         for value in ("example.test", "vibe", "192.0.2.something"):
             with self.subTest(value=value):
                 with self.assertRaises(self.paths.ConfigError):

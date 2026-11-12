@@ -5124,15 +5124,19 @@ def cmd_ui(arguments=None):
     tokf = os.path.join(LOGS, "web.token")
     tok = open(tokf).read().strip() if os.path.exists(tokf) else "?"
     print(col("g", f"Dashboard ({PATHS.profile}): http://{paths.ui_bind}:{paths.ui_port}/#t={tok}"))
-    if paths.ui_bind in ("127.0.0.1", "::1"):
+    if paths.ui_bind == "127.0.0.1":
         print("(nur lokal erreichbar; Beenden: Knopf im Dashboard oder vibe ui stop)")
     else:
-        # AP13: Netzexposition nicht verschweigen. Die Gegenmaßnahmen
-        # (IP-Allowlist, Kennwort) werden an ihrer Stelle in der Karte
-        # „Zugriffssicherheit" des Dashboards gepflegt.
-        print("(Achtung: über das Netzwerk erreichbar. Allowlist und Kennwort "
-              "stellst du im Dashboard in der Karte „Zugriffssicherheit“ ein; "
-              "Beenden: vibe ui stop)")
+        # AP13: Netzexposition nicht verschweigen. Die gedruckte URL trägt
+        # die Bind-Adresse (z. B. 0.0.0.0), die auf fremden Rechnern nicht
+        # adressierbar ist; andere Rechner erreichen das Dashboard über die
+        # IP-Adresse dieses Rechners. Die Gegenmaßnahmen (IP-Allowlist,
+        # Kennwort) werden an ihrer Stelle in der Karte „Zugriffssicherheit"
+        # des Dashboards gepflegt.
+        print("(Achtung: über das Netzwerk erreichbar. Vom anderen Rechner "
+              "aus erreichst du das Dashboard über die IP-Adresse dieses "
+              "Rechners. Allowlist und Kennwort stellst du im Dashboard in "
+              "der Karte „Zugriffssicherheit“ ein; Beenden: vibe ui stop)")
 
 def cmd_paths(*arguments):
     """Zeigt Profil, Pfade und Ports; ändert nichts und startet nichts."""

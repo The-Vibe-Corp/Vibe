@@ -782,9 +782,9 @@
    "sha256": "e5ae3183efcb76dace1e0bcbde9993be7afe82d93d7877da9ee39846cf45330a"
   },
   {
-   "bytes": 256816,
+   "bytes": 257128,
    "path": "bin/vibe",
-   "sha256": "b8c2938435695edf3295d8d27fdc1c59f9fab9cc78b72cfa31120c7cab5ce5e1"
+   "sha256": "21c0d7aca972d85941f3cb9d3ffe98c4ccb7da6f96311b5d1cfc8f88b32909c4"
   },
   {
    "bytes": 46103,
@@ -847,9 +847,9 @@
    "sha256": "d05293613d6955c875c45be57d1cd7aee85b90c66093c401fb70f6af455e3677"
   },
   {
-   "bytes": 20464,
+   "bytes": 20789,
    "path": "bin/vibe_paths.py",
-   "sha256": "c8f84952949bfd76489472ede61e5d4066f3645be7a757acc9f8973e3f1dcd75"
+   "sha256": "b7d91c518581dda720e513522f710995c31e0a8eebc7a1132201aa8b7df05cbd"
   },
   {
    "bytes": 11677,
@@ -877,9 +877,9 @@
    "sha256": "7b6aa4118259dc3440b37eaeec5eaa96eac7d928e6e704b2310946490bd25fbb"
   },
   {
-   "bytes": 9695,
+   "bytes": 10156,
    "path": "bin/vibe_ui_config.py",
-   "sha256": "643031546e555ba987f3d52446991c897093fb43f016f8b1997d4c85b71bb1a4"
+   "sha256": "d49b2406f2c9837c63ed3c3dcb265938fe5702e78c5aeb0df07b9f349fd65594"
   },
   {
    "bytes": 126633,

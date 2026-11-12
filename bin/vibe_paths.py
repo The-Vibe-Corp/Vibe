@@ -111,15 +111,17 @@ def validate_port(value):
 
 
 def validate_bind(value):
-    """Akzeptiert IP-Adressliterale (IPv4/IPv6) sowie ``localhost``.
+    """Akzeptiert IPv4-Adressliterale sowie ``localhost``.
 
     Der Standard bleibt Loopback. Seit AP13 ist eine ausdrücklich
-    konfigurierte Netz-Bindung als Adressliteral zulässig (``0.0.0.0`` und
-    ``::`` eingeschlossen); DNS-Hostnamen außer ``localhost`` bleiben
-    abgelehnt. Das ist ein DNS-Rebinding-Schutz: Eine Bindung soll an eine
-    konkrete Adresse gehen, nicht an einen Namen, dessen Auflösung ein
-    Angreifer beeinflussen kann. Der Rückgabewert ist die normalisierte
-    Adresse.
+    konfigurierte Netz-Bindung als IPv4-Adressliteral zulässig
+    (``0.0.0.0`` eingeschlossen); IPv6-Bind-Adressen sind ausdrücklich
+    ausgeschlossen (Nutzerentscheidung: Heimnetz-Betrieb ist IPv4, der
+    Server könnte sie ohnehin nicht annehmen). DNS-Hostnamen außer
+    ``localhost`` bleiben abgelehnt. Das ist ein DNS-Rebinding-Schutz:
+    Eine Bindung soll an eine konkrete Adresse gehen, nicht an einen
+    Namen, dessen Auflösung ein Angreifer beeinflussen kann. Der
+    Rückgabewert ist die normalisierte Adresse.
     """
     text = str(value or "").strip()
     if text == "localhost":
@@ -128,10 +130,15 @@ def validate_bind(value):
         address = ipaddress.ip_address(text)
     except ValueError as exc:
         raise ConfigError(
-            "Bind-Adresse muss ein IP-Adressliteral sein (Standard 127.0.0.1, "
-            "0.0.0.0 für Netzwerkbetrieb); DNS-Hostnamen werden abgelehnt: "
-            f"{text!r} ist keine IP-Adresse"
+            "Bind-Adresse muss ein IPv4-Adressliteral sein (Standard "
+            "127.0.0.1, 0.0.0.0 für Netzwerkbetrieb); DNS-Hostnamen werden "
+            f"abgelehnt: {text!r} ist keine IP-Adresse"
         ) from exc
+    if address.version != 4:
+        raise ConfigError(
+            "IPv6-Bind-Adressen werden nicht unterstützt; der Heimnetz-"
+            f"Betrieb ist IPv4: {text!r}"
+        )
     return str(address)
 
 
