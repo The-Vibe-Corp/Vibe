@@ -393,3 +393,189 @@ der dritten Runde: der `duplicate-code`-Pylint-Befund in
 `vibe_ui_config.py` ↔ `vibe_paths.py` (Implementierungsbefund, F28-Suite
 rot) — nicht Teil dieser vier Befehle, vom Koordinator im
 Produktionscode zu beheben.
+
+---
+
+# 8. Reviewrunde 1 — Testanpassungen (IPv4-only-Bind, IPv6-Ablehnung in validate, CLI-Hinweis, Browser-Warte-Fixes)
+
+Datum: 2026-11-12. Anlass: `docs/reviews/AP13-review-1.md` (Medium 1:
+IPv6-Bind ist im Vertrag zulässig, aber zur Laufzeit nicht bindbar;
+Minor 5/6: wirkungslose Browser-Wartebedingungen; Minor 7:
+Startmeldung bei Netz-Bindung). Nutzerentscheidung: **IPv6 wird
+ausdrücklich ausgeschlossen (Heimnetz — IPv4 genügt)** — Bind-Adresse und
+Allowlist-Einträge sind IPv4-only.
+
+## Vertragsänderungen (vom Koordinator übergeben; Rotphase zuerst)
+
+1. **`vibe_paths.validate_bind` ist IPv4-only**: `localhost` → `127.0.0.1`
+   und IPv4-Literale (`0.0.0.0`, `127.0.0.1`, `192.0.2.5`) bleiben
+   akzeptiert; IPv6-Literale (`::`, `::1`, `2001:db8::1`) werden künftig
+   mit `ConfigError` abgelehnt; DNS-Hostnamen bleiben abgelehnt.
+2. **`vibe_ui_config.validate` lehnt IPv6-Allowlist-Einträge ab**
+   (Einzel-IP `2001:db8::7` und Netz `2001:db8::/32`) mit `ConfigError`:
+   Bei IPv4-only-Bindung können keine IPv6-Clients ankommen; ein
+   akzeptierter IPv6-Eintrag wäre toter, nie wirksamer Zustand in ui.json.
+   Das UI gibt die klare 400-/Ablehnungsmeldung aus statt einen still
+   wirkungslosen Eintrag zu speichern.
+3. **CLI-Startmeldung bei Netz-Bindung (Review-Minor 7)**: Bei `vibe ui
+   start --bind 0.0.0.0` (jede nicht-Loopback-IPv4-Bindung) nennt die
+   CLI-Ausgabe, dass andere Rechner das Dashboard über die IP-Adresse
+   dieses Rechners erreichen; beim Loopback-Start bleibt die Meldung ohne
+   diesen Hinweis.
+4. **Browser-Warte-Fixes (Review-Minor 5+6)** — **keine Vertragsänderung,
+   keine Rotphase möglich**: Die Korrekturen machen bestehende
+   Prüfschritte wirksam (siehe unten); die Suite bleibt grün.
+
+## Entscheidung zu den `AllowlistTest`-IPv6-Fällen (`client_allowed`)
+
+Die IPv6-Match-Fälle (`test_empty_or_missing_allowlist_allows_every_client`,
+`test_loopback_is_always_allowed_lockout_protection`,
+`test_ipv6_entries_match_ipv6_clients`, `test_mixed_entries_match_each_rule`)
+bleiben **bestehen** (Nutzerentscheidung: nicht löschen). Begründung:
+`client_allowed` ist eine reine Match-Hilfsfunktion ohne erreichbaren
+Verkehr; die Fälle belegen ihren internen Vertrag (robustes, fail-closed
+Verhalten auch bei IPv6-Daten statt Absturz). Produktion erreicht diese
+Pfade nicht — dokumentiert im Klassen-Docstring und im Modul-Docstring:
+`validate` lehnt IPv6-Allowlist-Einträge ab und `validate_bind` ist
+IPv4-only, sodass weder IPv6-Einträge in ui.json noch IPv6-Clients
+ankommen können. Kein Produktionspfad ändert sich dadurch; die Ablehnung
+erfolgt bereits in `validate()`.
+
+## Zusätzliche Testanpassung (Provenanz Test-Agent)
+
+- `tests/unit/test_vibe_paths.py::PathResolutionTest.
+  test_bind_accepts_ip_literals_and_still_rejects_hostnames`: Der
+  IPv6-Literalwert `::1` stand aus der früheren AP13-Nutzerentscheidung in
+  der Bind-**Akzeptanzliste**; mit dem neuen Vertrag (IPv6-Bind abgelehnt)
+  wäre die Grünphase dort rot geblieben. Angepasst: Akzeptanz nur noch
+  IPv4-Literale (`0.0.0.0`, `192.0.2.5`); `::`, `::1`, `2001:db8::1` in
+  eine `ValueError`-Ablehnungsprüfung verschoben; Kommentar auf die neue
+  Nutzerentscheidung aktualisiert. (`ValueError` statt
+  `self.paths.ConfigError`, weil `resolve()` das Modul je Aufruf neu lädt
+  — konsistent mit `ResolvePriorityTest.test_invalid_extra_config_is_rejected`.)
+
+## Modul-Dokumentation aktualisiert (Vertrag, keine Assertionsänderung)
+
+- `tests/unit/test_ap13_network_config.py`, Modul-Docstring:
+  `validate_bind`-Abschnitt (IPv4-Literale, IPv6 ausdrücklich
+  ausgeschlossen, Meldung nennt IPv6), neuer `validate`-Abschnitt
+  (IPv6-Allowlist-Ablehnung, toter-Zustand-Begründung),
+  `client_allowed`-Abschnitt (reine Hilfsfunktion, IPv6-Pfade in
+  Produktion nicht erreichbar), Testfallliste für die drei neuen Fälle
+  und den CLI-Hinweisfall ergänzt; Klassen-Docstrings von
+  `ValidateBindExtensionTest` und `AllowlistTest` aktualisiert.
+
+## Tatsächlich ausgeführte Rote Phase (Arbeitsbaum-Wurzel, Python 3.14.8)
+
+| Befehl | Ergebnis |
+|---|---|
+| `python3 -m unittest tests.unit.test_ap13_network_config -v` | Exit 1 — **Ran 46 tests, FAILED (failures=6)**; 43 bestehende Fälle grün |
+| `python3 -m unittest tests.unit.test_vibe_paths tests.unit.test_web_api_security -v` | Exit 1 — **Ran 54 tests, FAILED (failures=3)**; 51 bestehende Fälle grün |
+| `python3 -m unittest tests.browser.test_ap13_security_ui -v` | Exit 0 — **Ran 7 tests in 2.399s, OK** (Warte-Fixes, keine Vertragsänderung) |
+
+### Rot-Status nach Ursache (alle Fehlschläge betreffen die noch nicht
+umgesetzten Vertragsänderungen 1–3)
+
+1. `ValidateBindExtensionTest.test_ipv6_literals_are_rejected`
+   (neu, 3 Subtests `::` / `::1` / `2001:db8::1`):
+   `AssertionError: ConfigError not raised` — das heutige `validate_bind`
+   akzeptiert IPv6-Literale noch.
+2. `ValidateTest.test_validate_rejects_ipv6_allowlist_entries`
+   (neu, 2 Subtests `2001:db8::7` / `2001:db8::/32`):
+   `AssertionError: ValueError not raised` — das heutige `validate`
+   akzeptiert IPv6-Allowlist-Einträge noch.
+3. `UiCliOverrideTest.
+   test_network_bind_start_hints_other_machines_use_this_machines_ip`
+   (neu, Subtest bind=`0.0.0.0`):
+   `AssertionError: 'anderen Rechner' not found in 'Dashboard (prod):
+   http://0.0.0.0:40909/#t=?\n(Achtung: über das Netzwerk erreichbar.
+   Allowlist und Kennwort stellst du im Dashboard in der Karte
+   „Zugriffssicherheit" ein; Beenden: vibe ui stop)\n'` — die heutige
+   Netz-Startmeldung nennt weder „anderen Rechner" noch „IP-Adresse".
+   Der Loopback-Subtest (`127.0.0.1`) blieb in der Rotphase grün (Erwartung
+   „ohne Hinweis" ist auch im Ist-Zustand erfüllt) — korrekt.
+4. `test_vibe_paths …test_bind_accepts_ip_literals_and_still_rejects_hostnames`
+   (angepasst, 3 Subtests `::` / `::1` / `2001:db8::1`):
+   `AssertionError: ValueError not raised` — gleiche Ursache wie 1.
+
+Alle übrigen Fälle (43 + 51) blieben grün, darunter die
+`client_allowed`-IPv6-Match-Fälle und die unveränderten
+Host/Origin-IPv6-Fälle in `test_ap13_web_access.py` (Z. 639, 683) und
+`test_web_api_security.py` (Z. 229) — die Header-Prüfung ist **nicht**
+Teil dieses Vertragspakets und wurde nicht angetastet.
+
+## Hinweise für die Implementierung (Soll-Formulierungen)
+
+- `validate_bind` bei IPv6-Literal (`::`, `::1`, `2001:db8::1`):
+  `ConfigError` mit „IPv6" in der Meldung, z. B.
+  „IPv6-Bind-Adressen werden nicht unterstützt; der Heimnetz-Betrieb ist
+  IPv4". Der Test verlangt hart nur das Wort „IPv6".
+- `validate` bei IPv6-Allowlist-Eintrag: `ConfigError`, dessen Meldung
+  **„IPv6" und „IPv4"** enthält (beides hart geprüft), z. B.
+  „IPv6-Allowlist-Einträge werden nicht unterstützt; der Heimnetz-Betrieb
+  ist IPv4". Gilt für Einzel-IP und CIDR (Version-6-Prüfung bei
+  `ip_address`/`ip_network`).
+- CLI-Startmeldung bei nicht-Loopback-IPv4-Bindung: Hinweistext muss
+  **„anderen Rechner"** und **„IP-Adresse"** enthalten (hart geprüft),
+  z. B. „vom anderen Rechner erreichst du das Dashboard über die
+  IP-Adresse dieses Rechners". Die bestehende Expositionswarnung
+  (Allowlist/Kennwort-Karte) bleibt unangetastet; beim Loopback-Start
+  dürfen beide Wörter nicht erscheinen.
+- Browser-Warte-Fixes erfordern **keine** Implementierungsänderung; sie
+  nutzen die bestehende Toast-Meldung „Kennwort gesetzt" und das
+  Karten-Element `div#security`.
+
+## Nach der Implementierung auszuführende Grünphase
+
+- `python3 -m unittest tests.unit.test_ap13_network_config -v` (46 Fälle)
+- `python3 -m unittest tests.unit.test_vibe_paths tests.unit.test_web_api_security -v` (54 Fälle)
+- `python3 -m unittest tests.unit.test_ap13_web_access -v` (26 Fälle; unverändert, sollte grün bleiben)
+- `python3 -m unittest tests.browser.test_ap13_security_ui -v` (7 Fälle; bereits grün, Absicherung der Warte-Fixes)
+
+## Geänderte Dateien dieser Runde (ausschließlich Tests + Bericht; keine Commits)
+
+- `tests/unit/test_ap13_network_config.py` (3 neue Fälle, IPv6 aus der
+  Bind-Akzeptanzliste in den Ablehnungsfall, Docstrings aktualisiert)
+- `tests/unit/test_vibe_paths.py` (Bind-Fall auf IPv4-only angepasst)
+- `tests/browser/test_ap13_security_ui.py` (2 Warte-Fixes, kein Vertragswechsel)
+- `docs/reviews/AP13-test-agent-report.md` (dieser Abschnitt)
+
+Fremde Arbeitsbaumeintragung, nicht vom Test-Agenten verursacht und nicht
+berührt: `docs/features/AP13.md` erscheint in `git status` als geändert
+(vermutlich parallele Dokumentationsaktualisierung des Coding-Agenten).
+Keine Commits erstellt.
+
+### Grünphase nach Implementierung (diese Runde)
+
+Datum: 2026-11-12. Alle vier Befehle wurden nach der Implementierung
+tatsächlich im Arbeitsbaum-Wurzel (Python 3.14.8) ausgeführt:
+
+| Befehl | Ergebnis |
+|---|---|
+| `python3 -m unittest tests.unit.test_ap13_network_config -v` | Exit 0 — **Ran 46 tests in 10.981s, OK** |
+| `python3 -m unittest tests.unit.test_vibe_paths tests.unit.test_web_api_security -v` | Exit 0 — **Ran 54 tests in 6.891s, OK** |
+| `python3 -m unittest tests.unit.test_ap13_web_access -v` | Exit 0 — **Ran 26 tests in 5.081s, OK** |
+| `python3 -m unittest tests.browser.test_ap13_security_ui -v` | Exit 0 — **Ran 7 tests in 2.429s, OK** |
+
+Damit grün: die drei neuen Vertragsfälle
+(`test_ipv6_literals_are_rejected` mit 3 Subtests `::`/`::1`/`2001:db8::1`,
+`test_validate_rejects_ipv6_allowlist_entries` mit 2 Subtests
+Einzel-IP/CIDR,
+`test_network_bind_start_hints_other_machines_use_this_machines_ip`
+mit 2 Subtests Netz-/Loopback-Bind) sowie der angepasste Bind-Fall in
+`test_vibe_paths` (`test_bind_accepts_ip_literals_and_still_rejects_hostnames`:
+IPv4-Literale akzeptiert, IPv6-Literale per `ValueError` abgelehnt).
+
+Der CLI-Hinweisfall ging der finalen Grünphase mit zwei Fehlversuch-Zyklen
+voraus: Implementierung 1 nannte „Andere Rechner" statt „anderen Rechner"
+(die harte Wortlautprüfung verlangt Kleinschreibung) — der Wortlaut wurde
+im Produktionscode korrigiert, nicht im Test abgeschwächt. Die endgültige
+Netz-Startmeldung
+„(Achtung: über das Netzwerk erreichbar. Vom anderen Rechner aus
+erreichst du das Dashboard über die IP-Adresse dieses Rechners.
+Allowlist und Kennwort stellst du im Dashboard in der Karte
+„Zugriffssicherheit“ ein; Beenden: vibe ui stop)"
+enthält „anderen Rechner" und „IP-Adresse" und erfüllt den Vertrag; der
+Loopback-Subtest bestätigt das Ausbleiben beider Hinweise. Keine
+Assertionsabschwächung, kein gelöschter Test, keine Commits; außer diesem
+Bericht wurden in dieser Grünphase keine Dateien geändert.

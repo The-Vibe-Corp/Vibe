@@ -83,7 +83,12 @@ def load(state_dir):
 
 
 def _allowlist_entry(entry):
-    """Einzel-IP oder CIDR normalisiert; alles andere wird abgelehnt."""
+    """IPv4-Einzel-IP oder IPv4-CIDR normalisiert; alles andere wird abgelehnt.
+
+    IPv6-Einträge sind ausdrücklich ausgeschlossen (Nutzerentscheidung:
+    Heimnetz-Betrieb ist IPv4; bei reiner IPv4-Bindung könnten sie nie
+    wirksam werden und wären toter, nie passender Zustand in ui.json).
+    """
     if not isinstance(entry, str):
         raise ConfigError("Allowlist-Einträge müssen Zeichenketten sein")
     text = entry.strip()
@@ -91,12 +96,19 @@ def _allowlist_entry(entry):
         raise ConfigError("Allowlist-Eintrag ist leer")
     try:
         if "/" in text:
-            return str(ipaddress.ip_network(text, strict=False))
-        return str(ipaddress.ip_address(text))
+            network = ipaddress.ip_network(text, strict=False)
+        else:
+            network = ipaddress.ip_address(text)
     except ValueError as error:
         raise ConfigError(
             f"Allowlist-Eintrag {entry!r} ist weder IP-Adresse noch CIDR-Netz"
         ) from error
+    if network.version != 4:
+        raise ConfigError(
+            "IPv6-Allowlist-Einträge werden nicht unterstützt; der "
+            f"Heimnetz-Betrieb ist IPv4: {entry!r}"
+        )
+    return str(network)
 
 
 def validate(data):

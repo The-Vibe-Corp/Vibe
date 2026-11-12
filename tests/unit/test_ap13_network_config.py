@@ -9,14 +9,24 @@ der vereinbarte Vertrag:
   defekte Datei wird gemeldet statt still ignoriert (Muster V-006).
 * ``client_allowed``: fehlende/leere Allowlist erlaubt alles; Loopback-IPs
   sind immer erlaubt (Aussperrschutz); sonst gilt nur der Allowlist-Eintrag
-  (Einzel-IP oder CIDR, IPv4 und IPv6).
+  (Einzel-IP oder CIDR, IPv4). Die Funktion ist eine reine Match-Hilfe ohne
+  erreichbaren Verkehr: In Produktion sind ihre IPv6-Pfade nicht erreichbar
+  (``validate`` lehnt IPv6-Allowlist-Einträge ab, ``validate_bind`` ist
+  IPv4-only); die IPv6-Testfälle belegen nur den internen
+  Hilfsfunktion-Vertrag.
 * Passwörter werden gesalzen gespeichert (kein Klartext, keine doppelten
   Hashes bei gleichem Kennwort), Mindestlänge 8, Löschen entfernt den Hash.
 * Priorität: Defaults < ui.json < Umgebung (VIBE_UI_PORT/VIBE_UI_BIND) <
   CLI-Übergabe. „CLI überschreibt immer Konfig."
-* ``validate_bind`` erlaubt zusätzlich IPv4-/IPv6-Adressliterale inklusive
-  ``0.0.0.0`` und ``::``; Hostnamen außer ``localhost`` bleiben abgelehnt;
-  der Standard ``127.0.0.1`` bleibt Loopback-Vorgabe.
+* ``validate`` lehnt IPv6-Allowlist-Einträge (Einzel-IP und CIDR) ab:
+  Bei IPv4-only-Bindung könnten keine IPv6-Clients ankommen; ein
+  akzeptierter IPv6-Eintrag wäre toter, nie wirksamer Zustand in ui.json.
+  Die Ablehnungsmeldung nennt IPv6 und den IPv4-Heimnetzstand.
+* ``validate_bind`` erlaubt zusätzlich IPv4-Adressliterale inklusive
+  ``0.0.0.0``; IPv6-Literale (``::``, ``::1``, ``2001:db8::1``) werden
+  ausdrücklich abgelehnt (Nutzerentscheidung Reviewrunde 1: Heimnetz —
+  IPv4 genügt), die Meldung nennt IPv6; Hostnamen außer ``localhost``
+  bleiben abgelehnt; der Standard ``127.0.0.1`` bleibt Loopback-Vorgabe.
 * ``config_extra`` liefert nur die gesetzten Felder ``ui_port``/``ui_bind``
   zur Übergabe an ``vibe_paths.resolve(extra_config=...)``.
 
@@ -49,6 +59,10 @@ Testfälle
 ``ValidateTest.test_validate_rejects_non_ip_allowlist_entries``
     Vorbedingung: Allowlist mit „nicht-ip" und „10.0.0.0/99". Aktion:
     ``validate``. Erwartung: ``ConfigError``.
+``ValidateTest.test_validate_rejects_ipv6_allowlist_entries``
+    Vorbedingung: Allowlist mit IPv6-Einzel-IP (``2001:db8::7``) und
+    IPv6-Netz (``2001:db8::/32``). Aktion: ``validate``. Erwartung:
+    ``ConfigError``; die Meldung nennt IPv6 und den IPv4-Heimnetzstand.
 ``AllowlistTest.test_empty_or_missing_allowlist_allows_every_client`` /
 ``test_loopback_is_always_allowed_lockout_protection`` /
 ``test_single_ip_entry_matches_exactly`` / ``test_cidr_entry_matches_a_network``
@@ -58,7 +72,10 @@ Testfälle
     Vorbedingung: ``ui.json``-Objekte wie im jeweiligen Fall. Aktion:
     ``client_allowed``. Erwartung: genau die dokumentierten Ergebnisse; eine
     nicht parsende Client-IP wird abgelehnt, ohne den Server abstürzen zu
-    lassen.
+    lassen. Die IPv6-Match-Fälle prüfen den reinen Hilfsfunktion-Vertrag;
+    Produktion erreicht diese Pfade nicht (``validate`` lehnt IPv6-Einträge
+    ab, ``validate_bind`` ist IPv4-only — weder IPv6-Einträge in ui.json
+    noch IPv6-Clients können ankommen).
 ``PasswordTest`` (siehe Methodendokumentation)
     Vorbedingung: Zustandsordner in temporärem Verzeichnis. Aktion:
     ``set_password``/``verify_password``/``clear_password``. Erwartung:
@@ -77,22 +94,27 @@ Testfälle
     nur über ``extra_config``. Aktion: ``vibe_paths.resolve(extra_config=...)``.
     Erwartung: Priorität Default < ui.json < Umgebung < CLI-Übergabe.
 ``ValidateBindExtensionTest.test_address_literals_are_now_allowed`` /
-``test_hostnames_stay_rejected`` / ``test_localhost_maps_to_loopback`` /
-``test_invalid_values_stay_rejected`` /
+``test_ipv6_literals_are_rejected`` / ``test_hostnames_stay_rejected`` /
+``test_localhost_maps_to_loopback`` / ``test_invalid_values_stay_rejected`` /
 ``test_default_resolution_keeps_loopback``
     Vorbedingung: keine besondere Datei. Aktion: ``vibe_paths.validate_bind``
-    bzw. ``resolve``. Erwartung: Adressliterale erlaubt, DNS-Namen abgelehnt,
-    Standard bleibt ``127.0.0.1``.
+    bzw. ``resolve``. Erwartung: IPv4-Adressliterale erlaubt, IPv6-Literale
+    abgelehnt (Heimnetz-Betrieb ist IPv4; die Meldung nennt IPv6),
+    DNS-Namen abgelehnt, Standard bleibt ``127.0.0.1``.
 ``UiCliOverrideTest.test_cli_port_and_bind_win_over_ui_json`` /
 ``test_ui_json_is_applied_when_no_cli_argument_is_given`` /
 ``test_cli_rejects_an_invalid_bind_without_starting`` /
 ``test_cli_rejects_an_invalid_port_without_starting`` /
-``test_ui_stop_stays_unchanged`` / ``test_ui_without_subcommand_still_starts``
+``test_ui_stop_stays_unchanged`` / ``test_ui_without_subcommand_still_starts`` /
+``test_network_bind_start_hints_other_machines_use_this_machines_ip``
     Vorbedingung: isolierte VIBE_*/HOME-Pfade, tmux-Attrappe auf PATH, freier
     Port. Aktion: ``vibe ui start [--port N] [--bind A]`` als echter Prozess.
     Erwartung: die tmux-Attrappe sieht die effektiv aufgelösten Werte im
-    Kind-Export; CLI schlägt ui.json; ungültige Werte starten nichts; ``stop``
-    verhält sich unverändert.
+    Kind-Export; CLI schlägt ui.json; ungültige Werte starten nichts;
+    ``stop`` verhält sich unverändert; bei Netz-Bindung nennt die
+    Startmeldung, dass andere Rechner das Dashboard über die IP-Adresse
+    dieses Rechners erreichen („anderen Rechner" und „IP-Adresse"), beim
+    Loopback-Start fehlt dieser Hinweis.
 
 Keine produktiven Konfigurationen, keine echten externen Dienste, keine
 tmux-Server von vibe; tmux ist eine Attrappe. Standardbibliothek only.
@@ -273,6 +295,19 @@ class ValidateTest(StateDirFixture):
                 with self.assertRaises(ValueError):
                     ui_config.validate({"allowlist": [entry]})
 
+    def test_validate_rejects_ipv6_allowlist_entries(self):
+        # IPv6-Allowlist-Einträge wären bei IPv4-only-Bindung toter, nie
+        # wirksamer Zustand in ui.json; sie werden abgelehnt statt still
+        # akzeptiert. Die Meldung nennt IPv6 und den IPv4-Heimnetzstand.
+        ui_config = load_ui_config()
+
+        for entry in ("2001:db8::7", "2001:db8::/32"):
+            with self.subTest(entry=entry):
+                with self.assertRaises(ValueError) as raised:
+                    ui_config.validate({"allowlist": [entry]})
+                self.assertIn("IPv6", str(raised.exception))
+                self.assertIn("IPv4", str(raised.exception))
+
     def test_config_error_is_a_value_error(self):
         ui_config = load_ui_config()
 
@@ -281,6 +316,16 @@ class ValidateTest(StateDirFixture):
 
 
 class AllowlistTest(StateDirFixture):
+    """``client_allowed``: reine Match-Funktion ohne erreichbaren Verkehr.
+
+    Die IPv6-Fälle prüfen den internen Hilfsfunktion-Vertrag. Produktion
+    erreicht diese Pfade nicht: ``validate`` lehnt IPv6-Allowlist-Einträge
+    ab und ``validate_bind`` ist IPv4-only, sodass weder IPv6-Einträge in
+    ui.json noch IPv6-Clients ankommen können. Die Fälle bleiben als
+    Robustheitsnachweis der Match-Logik (fail-closed statt Absturz)
+    bestehen; kein Produktionspfad ändert sich dadurch.
+    """
+
     def test_empty_or_missing_allowlist_allows_every_client(self):
         ui_config = load_ui_config()
 
@@ -513,15 +558,30 @@ class ResolvePriorityTest(unittest.TestCase):
 
 
 class ValidateBindExtensionTest(unittest.TestCase):
-    """validate_bind erlaubt jetzt Adressliterale, weiterhin keine Hostnamen."""
+    """``validate_bind``: IPv4-Literale erlaubt, IPv6 ausdrücklich abgelehnt.
+
+    Nutzerentscheidung Reviewrunde 1: Der Heimnetz-Betrieb ist IPv4;
+    IPv6-Bind-Adressen werden abgelehnt, damit keine validierte, aber
+    nicht bindbare Konfiguration entsteht. DNS-Hostnamen außer
+    ``localhost`` bleiben abgelehnt (DNS-Rebinding-Schutz).
+    """
 
     def setUp(self):
         self.paths = load_paths()
 
     def test_address_literals_are_now_allowed(self):
-        for value in ("0.0.0.0", "::", "::1", "192.0.2.5", "127.0.0.1"):
+        for value in ("0.0.0.0", "192.0.2.5", "127.0.0.1"):
             with self.subTest(value=value):
                 self.assertEqual(self.paths.validate_bind(value), value)
+
+    def test_ipv6_literals_are_rejected(self):
+        # IPv6 ist für die Bind-Adresse ausdrücklich ausgeschlossen
+        # (Heimnetz-Betrieb ist IPv4); die Ablehnungsmeldung nennt IPv6.
+        for value in ("::", "::1", "2001:db8::1"):
+            with self.subTest(value=value):
+                with self.assertRaises(self.paths.ConfigError) as raised:
+                    self.paths.validate_bind(value)
+                self.assertIn("IPv6", str(raised.exception))
 
     def test_hostnames_stay_rejected(self):
         for value in ("example.test", "vibe", "localhost.local", "192.0.2.something"):
@@ -635,6 +695,53 @@ class UiCliOverrideTest(unittest.TestCase):
         self.assertIn("new-session", log)
         self.assertIn("VIBE_UI_PORT=9152", log)
         self.assertIn("VIBE_UI_BIND=0.0.0.0", log)
+
+    def test_network_bind_start_hints_other_machines_use_this_machines_ip(self):
+        """AK Startmeldung bei Netz-Bindung (Review-Minor 7).
+
+        Vorbedingung: isolierte Umgebung, tmux-Attrappe. Aktion:
+        ``vibe ui start --bind 0.0.0.0`` und ``vibe ui start --bind
+        127.0.0.1``. Erwartet: Bei Netz-Bindung nennt die Startmeldung,
+        dass andere Rechner das Dashboard über die IP-Adresse dieses
+        Rechners erreichen — die gedruckte 0.0.0.0-URL ist vom fremden
+        Rechner aus nicht adressierbar. Beim Loopback-Start fehlt dieser
+        Hinweis (wie bisher).
+        """
+        with self.subTest(bind="0.0.0.0"):
+            port = free_port()
+            network = self.run_cli(
+                "start", "--port", str(port), "--bind", "0.0.0.0"
+            )
+            self.assertEqual(
+                network.returncode, 0, network.stdout + network.stderr
+            )
+            self.assertIn(
+                "new-session", self.tmux_log(), "Dashboard-Start fehlt im tmux-Log"
+            )
+            self.assertIn(
+                "anderen Rechner", network.stdout,
+                "Netz-Bindung ohne Hinweis auf fremde Rechner",
+            )
+            self.assertIn(
+                "IP-Adresse", network.stdout,
+                "Netz-Bindung ohne Hinweis auf die IP-Adresse dieses Rechners",
+            )
+        with self.subTest(bind="127.0.0.1"):
+            port = free_port()
+            loopback = self.run_cli(
+                "start", "--port", str(port), "--bind", "127.0.0.1"
+            )
+            self.assertEqual(
+                loopback.returncode, 0, loopback.stdout + loopback.stderr
+            )
+            self.assertNotIn(
+                "anderen Rechner", loopback.stdout,
+                "Loopback-Start nennt fälschlich fremde Rechner",
+            )
+            self.assertNotIn(
+                "IP-Adresse", loopback.stdout,
+                "Loopback-Start nennt fälschlich eine IP-Adresse",
+            )
 
     def test_cli_rejects_an_invalid_bind_without_starting(self):
         completed = self.run_cli("start", "--bind", "example.test")

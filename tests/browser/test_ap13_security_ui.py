@@ -259,9 +259,13 @@ class Ap13SecurityBrowserTest(unittest.TestCase):
 
     def open_security_card(self):
         self.page.get_by_text("Zugriffssicherheit", exact=False).first.click()
+        # Warten auf das konkrete Karten-Merkmal (Review-Minor 6): Der
+        # Nav-Knopf trägt denselben Text wie die Karte und wäre schon vor
+        # dem Karten-Render sichtbar; div#security existiert erst mit der
+        # gerenderten Karte.
         self.wait_until(
-            lambda: self.page.get_by_text("Zugriffssicherheit").count() > 0,
-            message="Karte „Zugriffssicherheit“ nicht gefunden",
+            lambda: self.page.locator("div#security").count() > 0,
+            message="Karte „Zugriffssicherheit“ (div#security) nicht gefunden",
         )
 
     def security_card(self):
@@ -384,10 +388,15 @@ class Ap13SecurityBrowserTest(unittest.TestCase):
         card.get_by_role(
             "button", name=re.compile("passwort|speichern|setzen", re.I)
         ).first.click()
+        # Wirksamer Sync-Punkt (Review-Minor 5): Die frühere Bedingung
+        # („ap13-ui-paswort-42 nicht in inner_text") konnte nie fehlschlagen,
+        # weil Eingabewerte von type=password nie im Klartext-Text stehen.
+        # Der Server bestätigt das Setzen mit der Toast-Meldung
+        # „Kennwort gesetzt“; darauf warten wir.
         self.wait_until(
-            lambda: "ap13-ui-paswort-42" not in self.page.inner_text("body"),
+            lambda: "kennwort gesetzt" in self.page.inner_text("body").lower(),
             timeout=10,
-            message="Das Klartext-Passwort blieb sichtbar",
+            message="Keine Bestätigung „Kennwort gesetzt“ nach dem Speichern",
         )
 
         # Frischer Kontext ohne Cookies: Anmeldung mit dem Passwort.
