@@ -669,7 +669,8 @@ class DefaultSocketTest(CliModuleFixture):
         with mock.patch.multiple(
             self.cli,
             run=fake_run,
-            dashboard_health=lambda: None,
+            # AP13: Produktion ruft dashboard_health(bind, port).
+            dashboard_health=lambda *args, **kwargs: None,
             port_in_use=lambda host, port: False,
             tmux_session_exists=lambda session: False,
             session_owned=lambda session, kind: True,

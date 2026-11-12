@@ -214,7 +214,10 @@ class HealthTest(WebApiFixture):
         )
 
     def test_health_rejects_a_foreign_host_header(self):
-        for host in ("vibe.example", "127.0.0.1.evil.example", "192.0.2.10"):
+        # AP13 (Nutzerentscheidung): Reine IP-Literale (IPv4/IPv6) sind als
+        # Host erlaubt (Netzwerkbetrieb); DNS-Hostnamen bleiben wegen des
+        # DNS-Rebinding-Schutzes abgelehnt.
+        for host in ("vibe.example", "127.0.0.1.evil.example"):
             with self.subTest(host=host):
                 status, body, _ = self.request(
                     "GET", "/api/health", token=False, host=host
@@ -223,6 +226,13 @@ class HealthTest(WebApiFixture):
                 error = json.loads(body)["error"]
                 self.assertEqual(error["code"], "forbidden_host")
                 self.assertTrue(error["message"])
+        for host in ("192.0.2.10", f"[::1]"):
+            with self.subTest(host=host):
+                status, body, _ = self.request(
+                    "GET", "/api/health", token=False, host=host
+                )
+                self.assertEqual(status, 200, body)
+                self.assertEqual(json.loads(body)["app"], "vibe")
 
 
 class AuthorizationTest(WebApiFixture):
@@ -476,6 +486,10 @@ class LoggingTest(WebApiFixture):
 
 class LoopbackBindTest(unittest.TestCase):
     def test_a_non_loopback_bind_address_is_refused(self):
+        # AP13 (Nutzerentscheidung): Standard bleibt Loopback, aber eine
+        # ausdrücklich konfigurierte Netz-Bindung (0.0.0.0) startet das
+        # Dashboard und Health bleibt ohne Token lesbar. Der Testprozess
+        # wird am Ende sauber beendet.
         tmp = tempfile.TemporaryDirectory()
         try:
             root = Path(tmp.name)
@@ -487,20 +501,59 @@ class LoopbackBindTest(unittest.TestCase):
                     "VIBE_NO_CONTAINER": "1",
                     "VIBE_UI_PORT": str(port),
                     "VIBE_UI_BIND": "0.0.0.0",
+                    "VIBE_INSTALL": str(root / "_toolchain"),
+                    "VIBE_RUNTIME": str(root / "_logs"),
+                    "VIBE_STATE": str(root / "_toolchain"),
                     "HOME": str(root / "home"),
                 }
             )
-            result = subprocess.run(
-                [sys.executable, str(WEB)],
-                env=env,
-                capture_output=True,
-                text=True,
-                timeout=20,
-            )
-            output = result.stdout + result.stderr
-            self.assertNotEqual(result.returncode, 0, output)
-            self.assertIn("Loopback", output)
-            self.assertFalse((root / "_logs" / "web.token").exists())
+            log_path = root / "server.log"
+            with open(log_path, "w", encoding="utf-8") as log_file:
+                proc = subprocess.Popen(
+                    [sys.executable, str(WEB)],
+                    env=env,
+                    stdout=log_file,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                )
+                try:
+                    deadline = time.time() + 25
+                    while time.time() < deadline:
+                        if proc.poll() is not None:
+                            output = log_path.read_text(encoding="utf-8")
+                            self.fail(
+                                "vibe-web beendete sich bei Bindung an 0.0.0.0: "
+                                + output
+                            )
+                        try:
+                            connection = http.client.HTTPConnection(
+                                "127.0.0.1", port, timeout=1
+                            )
+                            connection.request("GET", "/api/health")
+                            response = connection.getresponse()
+                            body = response.read().decode("utf-8", "replace")
+                            connection.close()
+                            if response.status == 200:
+                                data = json.loads(body)
+                                self.assertEqual(data["app"], "vibe", body)
+                                self.assertEqual(data["bind"], "0.0.0.0", body)
+                                break
+                        except (OSError, ValueError):
+                            pass
+                        time.sleep(0.05)
+                    else:
+                        self.fail(
+                            "Health bei Bindung an 0.0.0.0 nicht erreichbar: "
+                            + log_path.read_text(encoding="utf-8")
+                        )
+                finally:
+                    if proc.poll() is None:
+                        proc.terminate()
+                        try:
+                            proc.wait(timeout=5)
+                        except subprocess.TimeoutExpired:
+                            proc.kill()
+                            proc.wait()
         finally:
             tmp.cleanup()
 
