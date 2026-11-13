@@ -110,7 +110,7 @@ function tile(k,v,tone){return el('div',{class:'tile'},el('div',{class:'k'},k),e
 function tabPanel(key,...c){return el('section',{class:'tabpanel',role:'tabpanel',id:'panel-'+key,'data-panel':key,'aria-labelledby':'tab-'+key,hidden:''},...c)}
 function showDetailTab(key,panels,btns,focus){DTAB=key;
  DTABS.forEach(([k])=>{const on=k===key;btns[k].setAttribute('aria-selected',on?'true':'false');btns[k].tabIndex=on?0:-1;panels[k].hidden=!on});
- if(key!=='ausgabe')exitLogFull();if(key==='ausgabe'&&LOG)LOG.fit();if(focus&&btns[key])btns[key].focus()}
+ if(key!=='ausgabe')exitLogFull();if(key==='ausgabe'&&LOG&&LOG.card.isConnected)LOG.fit();if(focus&&btns[key])btns[key].focus()}
 function detailTabs(panels){const btns={},list=el('div',{class:'tabs',role:'tablist','aria-label':'Projektbereiche'});
  DTABS.forEach(([k,label])=>{const b=el('button',{type:'button',role:'tab',id:'tab-'+k,'aria-controls':'panel-'+k},label);
   b.addEventListener('click',()=>showDetailTab(k,panels,btns));btns[k]=b;list.append(b)});
@@ -150,42 +150,43 @@ async function detail(name){
    el('button',{class:'b p',type:'button',on:{click:act('/api/run',{name})}},'Agentenlauf starten'),el('button',{class:'b',type:'button',on:{click:act('/api/stop',{name})}},'Stoppen')));
  const tiles=el('div',{class:'tiles'},tile('Offene Arbeitspakete',d.items.length,d.items.length?'warn':'ok'),tile('Änderungen',d.dirty,d.dirty?'warn':'ok'),tile('Branch',d.branch,'small'),tile('Letzter Commit',d.last||'—','small'));
  const L=logView(d,()=>stream('run'));
- const steer=steerCard(name,isPi),S=subagentCard(name,isPi),tabsOut=agentTabs(name,L,steer.setTarget);
- /* AP14: Fortsetzen eines gestoppten Laufs in derselben Modell-Session.
-    Der Knopf liegt bewusst außerhalb der Protokollkarte (dort liegt der
-    Protokoll-Pause-Knopf mit wechselnder Beschriftung) und erscheint nur,
-    wenn kein Lauf aktiv ist und die Hauptsession bekannt ist. Pi läuft
-    ohne fortsetzbare Session; andere Nicht-Fähigkeits-Harnesses weist
-    die API (/api/continue) mit klarer Meldung ab.
-    Der Auftrag wird wie beim Startknopf asynchron gesendet; die Ansicht
-    lädt nach der Antwort neu. */
- const continueBtn=el('button',{class:'b p',type:'button',id:'continue-btn',on:{click:async()=>{
-  let r={};
-  try{r=await api('/api/continue',{name})}catch(e){toast('Fortsetzen nicht gesendet: '+String(e&&e.message||e));return}
-  toast(r.message||(r.ok?'Der Lauf wird fortgesetzt.':'Fortsetzen abgelehnt.'));
-  if(r.ok)detail(name).catch(showErr)}}},'Fortsetzen');
- const continueBar=el('div',{class:'bar continuebar',id:'continue-bar',hidden:''},el('b',{},'Fortsetzen'),continueBtn,el('span',{class:'mut'},'Setzt den letzten Lauf in derselben Session fort.'));
+ /* B11: Die Ausgabeansicht wird von Grund auf neu aufgebaut. Sie zeigt den
+    Hauptagenten und jeden laufenden Subagenten gleichzeitig; beendete
+    Subagenten verschwinden. Die frühere Protokollkarte bleibt nur als
+    Rückfall für Projekte ohne Agentenlauf (und für Prüfungsläufe) bestehen. */
+ const O=outputView(name,d,isPi);
+ const ausgabePanel=tabPanel('ausgabe');
+ let outputMode='';
+ let outputPinned='';
+ function setOutputMode(mode){
+  if(mode===outputMode)return;
+  outputMode=mode;
+  ausgabePanel.classList.toggle('bv-agent',mode==='agent');
+  if(mode==='agent')ausgabePanel.replaceChildren(O.card);else ausgabePanel.replaceChildren(L.card);
+  if(mode==='legacy')L.fit();else O.fit()}
  const panels={arbeit:tabPanel('arbeit',tiles,el('div',{class:'grid'},
    el('div',{},itemsCard,ticketCard(d,name),ticketFormCard(d,name),feedbackCard(d,name),bugFormCard(d,name),feedbackFormCard(d,name)),
    el('div',{},pauseCard(d,name),autonomousCard(d,name),checksCard,factsCard))),
-  ausgabe:tabPanel('ausgabe',continueBar,el('div',{class:'output-layout'},L.card,el('div',{class:'output-side',id:'f19-controls'},steer.card,S.card))),
+  ausgabe:ausgabePanel,
   assistent:tabPanel('assistent',guideCard(name)),
   einstellungen:tabPanel('einstellungen',settingsPanel(d,name,isPi))};
  const tabs=detailTabs(panels);
  openTab=k=>showDetailTab(k,panels,tabs.btns);
  main.replaceChildren(...[head,initCard,tabs.list,panels.arbeit,panels.ausgabe,panels.assistent,panels.einstellungen].filter(Boolean));
- L.fit();
+ setOutputMode('legacy');
  let streamKind='run';
- function stream(kind){if(es)es.close();streamKind=kind;L.clear();es=new EventSource('/api/stream?name='+encodeURIComponent(name)+'&kind='+kind+'&t='+encodeURIComponent(T));
-  es.onmessage=ev=>L.feed(JSON.parse(ev.data).join('\n')+'\n')}
- const afterPoll=data=>{tabsOut.sync(data,streamKind);
-  /* AP14: Der Fortsetzen-Knopf folgt dem Laufzustand: nur gestoppt, mit
-     bekannter Session und nicht bei Pi. */
-  const showContinue=!!(data&&!isPi&&!data.running&&data.session);
-  continueBar.hidden=!showContinue};
- function syncRun(){refreshRun().then(s=>steer.setState(!!(s&&s.running))).catch(()=>{})}
- stream('run');syncRun();S.poll().then(afterPoll).catch(()=>{});
- timer=setInterval(()=>{syncRun();S.poll().then(afterPoll).catch(()=>{})},2000)}
+ function stream(kind){if(es)es.close();streamKind=kind;L.clear();O.clearMain();
+  if(kind==='verify'){outputPinned='verify';setOutputMode('legacy')}else{outputPinned='';}
+  es=new EventSource('/api/stream?name='+encodeURIComponent(name)+'&kind='+kind+'&t='+encodeURIComponent(T));
+  es.onmessage=ev=>{const text=JSON.parse(ev.data).join('\n')+'\n';L.feed(text);O.feedMain(text)}}
+ function applyAgents(data){
+  if(outputPinned==='verify'){setOutputMode('legacy');return}
+  const running=!!(data&&data.running),session=String((data&&data.session)||'');
+  setOutputMode(running||session?'agent':'legacy');
+  O.sync(data)}
+ async function pollAgents(){try{applyAgents(await api('/api/subagents?name='+encodeURIComponent(name)))}catch(e){}}
+ stream('run');refreshRun().catch(()=>{});pollAgents();
+ timer=setInterval(()=>{refreshRun().catch(()=>{});pollAgents()},2000)}
 function pauseCard(d,name){
  const active=!!d.pause_after;
  const btn=el('button',{class:'b'+(active?' p':''),on:{click:async()=>{const r=await api('/api/pause',{name,action:active?'off':'on'});toast(r.message);if(r.ok)detail(name).catch(showErr)}}},active?'Pause aufheben':'Nach aktuellem Paket anhalten');
@@ -406,8 +407,7 @@ function renderLogChunk(text){
  return frag}
 function logView(d,onRun){
  const pre=el('pre',{id:'log'});
- let logPaused=false,logBuf='',totalChars=0,hold=false,activePane=null;
- const panes=new Map();
+ let logPaused=false,logBuf='',totalChars=0;
  function append(text){if(!text)return;const near=pre.scrollHeight-pre.scrollTop-pre.clientHeight<60;
   pre.append(renderLogChunk(text));totalChars+=String(text).length;
   if(totalChars>80000){while(totalChars>60000&&pre.firstChild){const n=pre.firstChild;totalChars-=(n.textContent||'').length;pre.removeChild(n)}}
@@ -417,191 +417,125 @@ function logView(d,onRun){
  const pauseBtn=el('button',{class:'b',type:'button'},'Pause'),fullBtn=el('button',{class:'b',type:'button'},'Vergrößern');
  const runBtn=el('button',{class:'b',type:'button',title:'Verbindet die Ausgabe wieder mit dem Agentenlauf',on:{click:onRun}},'Lauf-Log');
  const card=el('div',{class:'card logcard'});
- const fit=()=>{if(card.classList.contains('full'))return;const view=activePane||pre;
-  const h=Math.max(240,window.innerHeight-view.getBoundingClientRect().top-18);pre.style.height=h+'px';
-  if(activePane)activePane.style.height=h+'px'};
+ const fit=()=>{if(card.classList.contains('full'))return;
+  pre.style.height=Math.max(240,window.innerHeight-pre.getBoundingClientRect().top-18)+'px'};
  pauseBtn.addEventListener('click',()=>{logPaused=!logPaused;pauseBtn.textContent=logPaused?'Fortsetzen':'Pause';pauseBtn.classList.toggle('p',logPaused);
   if(!logPaused&&logBuf){append(logBuf);logBuf='';pre.scrollTop=pre.scrollHeight}});
  fullBtn.addEventListener('click',()=>setLogFull(!card.classList.contains('full')));
- /* F24: Der aktive Agent wird in der Ausgabekarte gezeigt. Ohne aktiven
-    Lauf erscheint kein Agentenname. Der Name kommt ausschließlich aus der
-    Subagenten-API (Laufregister) und wird vom Dashboard nie erfunden. */
- const agent=el('span',{class:'pill mut',id:'agent-active',title:'Der Agent, der in diesem Lauf arbeitet'},'—');
- const setAgent=(name,running)=>{agent.textContent=running?(String(name||'').trim()||'Hauptagent'):'—';
-  agent.className='pill '+(running?'run':'mut');
-  agent.title=running?'Der Agent, der in diesem Lauf arbeitet.':'Kein aktiver Lauf.'};
- card.append(el('div',{class:'bar'},el('b',{},'Live-Ausgabe'),agent,el('span',{class:'mut'},'Lauf-Ausgabe des aktuellen Projekts'),runBtn,pauseBtn,fullBtn),pre);
+ card.append(el('div',{class:'bar'},el('b',{},'Live-Ausgabe'),el('span',{class:'mut'},'Lauf-Ausgabe des aktuellen Projekts'),runBtn,pauseBtn,fullBtn),pre);
  LOG={card,pre,button:fullBtn,fit};
- /* F24: Nur der aktive Tab zeigt seine Ausgabe aktiv. Solange ein anderer
-    Agent angezeigt wird, läuft der Lauf-Stream in den Nachlade-Puffer; der
-    Rückwechsel zum Hauptagenten lädt ihn nach. */
- function flush(){if(!logPaused&&logBuf){append(logBuf);logBuf='';pre.scrollTop=pre.scrollHeight}}
- function showMain(){if(activePane){activePane.hidden=true;activePane=null}
-  pre.hidden=false;hold=false;flush();fit()}
- function closePane(session){const pane=panes.get(session);if(!pane)return;
-  panes.delete(session);if(activePane===pane){activePane=null;hold=false;pre.hidden=false}
-  pane.remove()}
- function openPane(session,id){
-  let pane=panes.get(session);
-  if(!pane){pane=el('pre',{class:'outpane','data-session':session,id:id||'outpane-'+session.replace(/[^A-Za-z0-9_-]/g,'_')});
-   panes.set(session,pane);card.append(pane)}
-  if(activePane&&activePane!==pane){activePane.hidden=true}
-  activePane=pane;pane.hidden=false;pre.hidden=true;hold=true;
-  if(!pane.dataset.text)pane.replaceChildren(renderLogChunk('Lade Ausgabe …'));
-  return pane}
  return {card,pre,fit,
   clear:()=>{pre.replaceChildren();totalChars=0;logBuf=''},
-  feed:text=>{if(logPaused||hold){logBuf=(logBuf+text).slice(-80000);return}append(text)},
-  setAgent,showMain,openPane,closePane}}
-/* F24: Agent-Tabs in der Ausgabekarte. Die Tabliste erscheint nur, solange
-   mehrere Agenten parallel arbeiten (Hauptagent plus laufende Subagenten).
-   Ein beendeter Subagent verliert damit automatisch seinen Tab; arbeitet nur
-   ein Agent, gibt es keine Tabliste und die Ausgabe zeigt ihn direkt. Nur der
-   aktive Tab wird aktiv gespeist; ein Tabwechsel lädt die Ausgabe nach. */
-function agentTabs(name,L,onTarget){
- // Die Tabliste ist nur im DOM, solange mehrere Agenten parallel arbeiten.
- // So bleibt die Registerleiste des Projektdetails (F13) eindeutig.
- // AP14: Die Auswahl steuert zugleich das Ziel der Anweisungseingabe
- // (steerCard.setTarget); onTarget(kind, session, agentname) meldet das
- // gewählte Panel, auch wenn keine Tabliste nötig ist (dann Hauptagent).
- const bar=el('div',{class:'tabs outtabs',role:'tablist','aria-label':'Aktive Agenten'});
- const tabs=new Map();let active='main',order='',manual=false,dataSession='';
- function mount(){if(!bar.isConnected&&L.pre)L.card.insertBefore(bar,L.pre)}
- function unmount(){if(bar.isConnected)bar.remove()}
- function pickTarget(key){const t=tabs.get(key);
-  if(t&&key!=='main'){onTarget&&onTarget('sub',t.session||'',t.agentName||'Subagent')}
-  else{const m=tabs.get('main');onTarget&&onTarget('main',(m&&m.session)||dataSession,'Hauptagent')}}
- function createTab(key,label){const paneId=key==='main'?'':'outpane-'+String(key.slice(4)).replace(/[^A-Za-z0-9_-]/g,'_');
-  const b=el('button',{type:'button',role:'tab',id:'agenttab-'+key,...(paneId?{'aria-controls':paneId}:{})},label);
-  b.addEventListener('click',()=>choose(key));
-  b.addEventListener('keydown',e=>{const keys=[...tabs.keys()];const i=keys.indexOf(active);let n=-1;
-   if(e.key==='ArrowRight')n=(i+1)%keys.length;else if(e.key==='ArrowLeft')n=(i-1+keys.length)%keys.length;
-   else if(e.key==='Home')n=0;else if(e.key==='End')n=keys.length-1;else return;
-   e.preventDefault();choose(keys[n])});
-  return b}
- function choose(key,byUser=true){const t=tabs.get(key);if(!t)return;
-  if(byUser)manual=true;
-  tabs.forEach((n,k)=>{const on=k===key;n.btn.setAttribute('aria-selected',on?'true':'false');n.btn.tabIndex=on?0:-1});
-  if(key==='main'){manual=true;L.showMain()}
-  else{const pane=L.openPane(t.session,t.paneId);t.pane=pane;loadOutput(t,pane)}
-  active=key;pickTarget(key);L.fit()}
- async function loadOutput(t,pane){
-  try{const r=await api('/api/subagent-output?name='+encodeURIComponent(name)+'&session='+encodeURIComponent(t.session||''));
-   const text=r.ok?String(r.text||''):String(r.message||'Keine Ausgabe verfügbar.');
-   if(pane.dataset.text!==text){pane.dataset.text=text;pane.replaceChildren(renderLogChunk(text))}
-   pane.classList.toggle('empty',!r.ok)}
-  catch(e){const text='Ausgabe nicht abrufbar: '+String(e&&e.message||e);
-   if(pane.dataset.text!==text){pane.dataset.text=text;pane.replaceChildren(renderLogChunk(text))}}}
- function fallbackToMain(){active='main';manual=false;L.showMain();pickTarget('main')}
- function reset(){
-  unmount();tabs.forEach(n=>{n.btn.remove();L.closePane(n.session)});tabs.clear();order='';manual=false;
-  fallbackToMain();L.setAgent('',false)}
- function sync(data,kind){
-  if(kind!=='run'){reset();return}
-  if(!data)return;
-  const running=!!data.running;
-  dataSession=String(data.session||'');
-  L.setAgent(String(data.agent||''),running);
-  const subs=(data.subagents||[]).filter(s=>s&&s.session&&s.status==='running');
-  const multiple=running&&subs.length>0;
-  if(!multiple){ // Ein Agent oder kein Lauf: keine Tabs, direkte Anzeige.
-   if(tabs.size){reset();return}
-   unmount();
-   if(active!=='main')fallbackToMain();
-   pickTarget('main');
-   return}
-  const want=[['main','Hauptagent']].concat(subs.map(s=>['sub:'+s.session,s]));
-  const next=want.map(p=>p[0]).join('|'),fresh=next!==order;order=next;
-  mount();
-  want.forEach(pair=>{const[key,s]=pair;let t=tabs.get(key);
-   if(!t){t={key,session:s.session||'',paneId:'outpane-'+String(s.session||'').replace(/[^A-Za-z0-9_-]/g,'_'),label:''};
-    t.btn=createTab(key,'');tabs.set(key,t);bar.append(t.btn)}
-   if(key==='main')t.session=dataSession;else t.agentName=String(s.agent||'Subagent');
-   const label=key==='main'?'Hauptagent':(String(s.agent||'Subagent')+(s.description?' — '+s.description:''));
-   if(t.label!==label){t.label=label;t.btn.textContent=label}});
-  for(const[key,t]of[...tabs]){if(!want.some(p=>p[0]===key)){t.btn.remove();tabs.delete(key);L.closePane(t.session)}}
-  if(!tabs.has(active))fallbackToMain();
-  const t=tabs.get(active);if(t){t.btn.setAttribute('aria-selected','true');t.btn.tabIndex=0}
-  if(!manual&&fresh&&active==='main'){const firstNY=subs[0];if(firstNY)choose('sub:'+firstNY.session,false)}
-  if(active!=='main'){const t2=tabs.get(active);if(t2)loadOutput(t2,t2.pane)}
-  pickTarget(active);
-  L.fit()}
- return {bar,sync,reset}}
-/* F19: Zusatzanweisung an den laufenden Agenten. Der Erfolg wird ausschließlich
-   aus der Antwort der API abgeleitet; ohne aktiven Lauf ist der Knopf gesperrt.
-   AP14: Die Eingabe zielt auf das in der Ausgabe gewählte Panel (Hauptagent
-   oder erfasster Subagent); das Ziel erscheint als Beschriftung und reist als
-   Session im POST. Bei Pi wird nie gesendet: Pi läuft im Print-Modus
-   (--no-session) ohne fortsetzbare Session. */
-function steerCard(name,isPi){
- const ta=el('textarea',{rows:2,maxlength:'4000',id:'steer-text','aria-label':'Zusatzanweisung für den gewählten Agenten',placeholder:'Zusatzanweisung für den gewählten Agenten …'});
- const target=el('span',{class:'mut',id:'steer-target'},'Anweisung an Hauptagent');
- const btn=el('button',{class:'b p',type:'button',id:'steer-send'},'Anweisung senden');
- const state=el('span',{class:'pill mut',id:'steer-state'},'Lauf unbekannt');
- let aim={session:''};
- const setTarget=(kind,session,label)=>{aim.session=String(session||'');
-  target.textContent='Anweisung an '+(label||(kind==='main'?'Hauptagent':'Subagent'))};
- const send=async()=>{
+  feed:text=>{if(logPaused){logBuf=(logBuf+text).slice(-80000);return}append(text)}}
+}
+/* B11: Die Ausgabeansicht ist vollständig neu gebaut. Hauptagent und jeder
+   laufende Subagent haben eine eigene, gleichzeitig sichtbare Live-Fläche;
+   beendete Subagenten verschwinden. Die Anweisungseingabe nennt ihr Ziel
+   sichtbar und sendet die gewählte Session; Fortsetzen erscheint nur bei
+   einem gestoppten Lauf mit bekannter Session. */
+function outputView(name,d,isPi){
+ const mainPre=el('pre',{class:'bv-log','aria-label':'Ausgabe des Hauptagenten'});
+ const mainState=el('span',{class:'pill mut'},'gestoppt');
+ const mainView=el('section',{class:'bv-view bv-main','data-agent-view':'','data-role':'main','data-session':'',role:'log','aria-label':'Hauptagent'},
+  el('div',{class:'bv-head'},el('b',{},'Hauptagent'),mainState),mainPre);
+ const subsBox=el('div',{class:'bv-subs','aria-label':'Laufende Subagenten'});
+ const select=el('select',{'aria-label':'Ziel'});
+ const ta=el('textarea',{rows:'2',maxlength:'4000','aria-label':'Zusatzanweisung für den gewählten Agenten',placeholder:'Zusatzanweisung …'});
+ const send=el('button',{class:'b p',type:'button'},'Anweisung senden');
+ const cont=el('button',{class:'b p',type:'button',hidden:''},'Fortsetzen');
+ const hint=el('span',{class:'mut'},isPi
+  ?'Bei Pi ist das Steuern nicht möglich: Pi läuft im Print-Modus (--no-session) ohne fortsetzbare Session.'
+  :'Die Anweisung geht an das in „Ziel“ gewählte Ziel und ist nur während eines Laufs möglich.');
+ const controls=el('section',{class:'card bv-controls'},
+  el('div',{class:'bv-bar'},el('span',{class:'bv-label'},'Ziel'),select),
+  el('div',{class:'bv-bar'},ta),
+  el('div',{class:'bv-bar'},send,cont,hint));
+ const card=el('div',{class:'bv-root'},controls,mainView,subsBox);
+ let mainText=(d.tail||[]).join('\n')||'(noch keine Ausgabe)';
+ let lastRunning=false,optionKey='';
+ const children=new Map();
+ mainPre.textContent=mainText;
+ function nameOf(entry){return String(entry.agent||'Subagent')+(entry.description?' — '+entry.description:'')}
+ function setText(node,text){
+  if(node.text===text)return;
+  node.text=text;
+  const near=node.pre.scrollHeight-node.pre.scrollTop-node.pre.clientHeight<70;
+  node.pre.textContent=text||'(noch keine Ausgabe)';
+  if(near)node.pre.scrollTop=node.pre.scrollHeight}
+ function makeChild(entry){
+  const pre=el('pre',{class:'bv-log'});
+  const state=el('span',{class:'pill run'},'läuft');
+  const view=el('section',{class:'bv-view bv-sub','data-agent-view':'','data-role':'subagent','data-session':String(entry.session||''),role:'log','aria-label':nameOf(entry)},
+   el('div',{class:'bv-head'},el('b',{},nameOf(entry)),state),pre);
+  const node={view,pre,state,text:'',loading:false};
+  setText(node,String(entry.output||''));
+  return node}
+ async function loadChild(node,entry){
+  if(node.loading)return;
+  node.loading=true;
+  try{const r=await api('/api/subagent-output?name='+encodeURIComponent(name)+'&session='+encodeURIComponent(entry.session||''));
+   if(r&&r.ok)setText(node,String(r.text||''));
+   else if(!node.text&&entry.output)setText(node,String(entry.output))}
+  catch(e){}
+  finally{node.loading=false}}
+ function sync(data){
+  const running=!!(data&&data.running),session=String((data&&data.session)||'');
+  lastRunning=running;
+  mainView.setAttribute('data-session',session);
+  mainView.setAttribute('aria-label','Hauptagent'+(session?' '+session:''));
+  mainState.textContent=running?'läuft':'gestoppt';
+  mainState.className='pill '+(running?'run':'mut');
+  const subs=((data&&data.subagents)||[]).filter(s=>s&&s.session&&s.status==='running');
+  const entries=[{session,label:'Hauptagent'}].concat(subs.map(s=>({session:String(s.session),label:nameOf(s)}))).filter(e=>e.session);
+  const key=entries.map(e=>e.session).join('|');
+  if(key!==optionKey){optionKey=key;select.replaceChildren(...entries.map(e=>el('option',{value:e.session},e.label)))}
+  const values=new Set([...select.options].map(o=>o.value));
+  select.value=values.has(select.value)?select.value:(values.has(session)?session:(entries[0]?entries[0].session:''));
+  const wanted=new Set(subs.map(s=>String(s.session)));
+  for(const[id,node]of [...children]){if(!wanted.has(id)){node.view.remove();children.delete(id)}}
+  subs.forEach(s=>{const id=String(s.session);let node=children.get(id);
+   if(!node){node=makeChild(s);children.set(id,node)}
+   node.view.setAttribute('data-session',id);
+   node.view.setAttribute('aria-label',nameOf(s));
+   node.state.textContent=s.status||'läuft';
+   if(!node.text&&s.output)setText(node,String(s.output));
+   subsBox.append(node.view);
+   loadChild(node,s)});
+  subsBox.hidden=!subs.length;
+  cont.hidden=!(session&&!running);
+  send.disabled=isPi||!running;
+  ta.disabled=isPi||!running}
+ async function sendNow(){
   if(isPi){toast('Bei Pi ist das Steuern nicht möglich: Pi läuft im Print-Modus (--no-session) ohne fortsetzbare Session.');return}
   const text=ta.value.trim();
   if(!text){ta.focus();toast('Bitte eine Zusatzanweisung eingeben.');return}
-  btn.disabled=true;
-  try{const body={name,text};if(aim.session)body.session=aim.session;
+  /* Sofort leeren: Eine zweite Anweisung darf nicht durch die verspätete
+     Antwort der ersten gelöscht werden. */
+  ta.value='';
+  try{const body={name,text};const session=select.value;if(session)body.session=session;
    const r=await api('/api/steer',body);
-   toast(r.message||(r.ok?'Zusatzanweisung übermittelt.':'Zusatzanweisung abgelehnt.'));
-   if(r.ok)ta.value=''}
-  catch(e){toast('Zusatzanweisung nicht gesendet: '+String(e&&e.message||e))}
-  finally{btn.disabled=false}};
- btn.addEventListener('click',send);
- ta.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key==='Enter'){e.preventDefault();send()}});
- const card=el('div',{class:'card',id:'steer-card'},
-  el('div',{class:'bar'},el('b',{},'Agent steuern'),state),target,
-  el('div',{class:'mut'},isPi
-   ? 'Bei Pi ist das Steuern nicht möglich: Pi läuft im Print-Modus (--no-session) ohne fortsetzbare Session; eine Zusatzanweisung kann nicht an den Agenten übermittelt werden.'
-   : 'Die Anweisung wird direkt an die aktive opencode-Session übermittelt und im Laufprotokoll vermerkt. Sie ist nur während eines Laufs möglich.'),
-  ta,el('div',{class:'bar'},btn,el('span',{class:'mut'},'Strg/⌘ + Enter sendet')));
- return {card,setState:running=>{state.textContent=running?'Lauf aktiv':'Kein aktiver Lauf';state.className='pill '+(running?'run':'mut');if(!isPi)btn.disabled=!running},setTarget}}
-/* F19: Übersicht der erfassten Subagenten. Die Liste wird aus der Zustands-
-   datei des Laufs gespeist; ohne Erfassung werden keine Einträge erfunden.
-   AP14: Die Karte ist eine kompakte Übersicht (Status, Agent, Beschreibung,
-   Zeiten); die Ausgabe selbst folgt über die Agent-Tabs der Ausgabekarte. */
-function subagentCard(name,isPi){
- const count=el('span',{class:'pill mut',id:'subagent-count'},'–');
- const list=el('div',{class:'subagents',id:'subagent-list'});
- const card=el('div',{class:'card',id:'subagents-card'},
-  el('div',{class:'bar'},el('b',{},'Subagenten'),count),
-  el('div',{class:'mut'},isPi
-   ? 'Bei Pi erfasst der Lauf Subagenten aus seinem Ereignisstrom; eine Live-Prüfung am opencode-Server gibt es nicht. Die Liste zeigt Einträge, sobald der Lauf sie setzt.'
-   : 'Erfasste Subagenten des aktuellen Projekts. Die Ausgabe eines Subagenten folgt in der Ausgabekarte über seine Agententabs.'),
-  list);
- const nodes=new Map();let order='';
- const fmt=ts=>{if(!ts)return '—';try{return new Date(ts*1000).toLocaleTimeString()}catch(e){return '—'}};
- const keyOf=entry=>String(entry.session||('~'+(entry.agent||'')+'|'+(entry.description||'')));
- function build(entry){
-  const n={};
-  n.title=el('b',{},'');n.status=el('span',{class:'pill mut'},entry.status||'?');n.meta=el('span',{class:'mut'});
-  n.card=el('div',{class:'subagent','data-session':entry.session||''},
-   el('div',{class:'bar'},n.title,n.status,n.meta));
-  return n}
- function showEmpty(message){nodes.clear();order='';list.replaceChildren(el('span',{class:'mut'},message))}
- async function poll(){
-  // F24: Die Polling-Daten speisen zusätzlich die Agent-Tabs der Ausgabe;
-  // die Methode gibt sie daher an den Aufrufer zurück.
-  let data;try{data=await api('/api/subagents?name='+encodeURIComponent(name))}catch(e){return null}
-  const subs=(data&&data.subagents)||[];
-  const running=subs.filter(s=>s.status==='running').length;
-  count.textContent=running+' aktiv / '+subs.length;count.className='pill '+(running?'run':'mut');
-  if(!subs.length){showEmpty(data&&data.running?'Der Lauf ist aktiv, aber es wurden noch keine Subagenten gestartet.':'Keine Subagenten erfasst.');return data}
-  const next=subs.map(keyOf).join('|');
-  if(next!==order){order=next;nodes.clear();const frag=document.createDocumentFragment();
-   subs.forEach(s=>{const n=build(s);nodes.set(keyOf(s),n);frag.append(n.card)});list.replaceChildren(frag)}
-  subs.forEach(s=>{const n=nodes.get(keyOf(s));if(!n)return;
-   n.title.textContent=(s.agent||'Subagent')+(s.description?' — '+s.description:'');
-   n.status.textContent=s.status||'?';
-   n.status.className='pill '+(s.status==='running'?'run':/error|fail|cancel/.test(String(s.status||''))?'bad':'mut');
-   n.meta.textContent=(s.session||'ohne Session')+' · Start '+fmt(s.started)+(s.ended?' · Ende '+fmt(s.ended):'')});
-  return data}
- return {card,poll}}
+   toast(r.message||(r.ok?'Zusatzanweisung übermittelt.':'Zusatzanweisung abgelehnt.'))}
+  catch(e){toast('Zusatzanweisung nicht gesendet: '+String(e&&e.message||e));if(!ta.value)ta.value=text}
+  finally{send.disabled=isPi||!lastRunning}}
+ function feedMain(text){
+  if(!text)return;
+  const near=mainPre.scrollHeight-mainPre.scrollTop-mainPre.clientHeight<70;
+  mainText=(mainText+text).slice(-120000);
+  mainPre.textContent=mainText;
+  if(near)mainPre.scrollTop=mainPre.scrollHeight}
+ function clearMain(){mainText='';mainPre.textContent=''}
+ function fit(){mainPre.scrollTop=mainPre.scrollHeight}
+ cont.addEventListener('click',async()=>{
+  cont.disabled=true;
+  try{const r=await api('/api/continue',{name});
+   toast(r.message||(r.ok?'Der Lauf wird fortgesetzt.':'Fortsetzen abgelehnt.'));
+   if(r.ok)detail(name).catch(showErr)}
+  catch(e){toast('Fortsetzen nicht gesendet: '+String(e&&e.message||e))}
+  finally{cont.disabled=false}});
+ send.addEventListener('click',sendNow);
+ ta.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key==='Enter'){e.preventDefault();sendNow()}});
+ return {card,sync,feedMain,clearMain,fit}
+}
 function rightsBody(d,name){const inp=el('input',{placeholder:'/absoluter/pfad','aria-label':'Schreibverzeichnis'});
  const reset=el('button',{class:'b',on:{click:()=>askInline(reset,'Standardverzeichnisse wiederherstellen?','Ja, zurücksetzen',async()=>{const r=await api('/api/rights',{name,action:'reset'});toast(r.message);if(r.ok)detail(name).catch(showErr)})}},'Standard wiederherstellen');
  const rows=el('div',{},...(d.write_dirs.length?d.write_dirs.map(p=>el('div',{class:'bar'},el('span',{class:'mut'},p),

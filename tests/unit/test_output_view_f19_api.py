@@ -49,6 +49,7 @@ RUNS_PY = REPO / "bin" / "vibe_runs.py"
 
 MAIN_SESSION = "ses_main"
 CHILD_SESSION = "ses_child"
+CHILD_RUNNING = "ses_child2"
 STEER_TEXT = "Prüfe zuerst die Borderstellung"
 SERVER_CREDENTIAL = "geheim-PASSWORT-4711"
 
@@ -470,7 +471,21 @@ class SubagentsEndpointTest(ApiFixture):
         self.assertIn("subagents", data, raw)
 
     def test_subagents_reports_state_file_entries(self):
-        self.write_state()
+        """B11-Anpassung: /api/subagents liefert nur Einträge des aktuellen
+        Laufs. Der Test registriert deshalb einen laufenden Lauf und setzt
+        die Startzeiten der erfassten Einträge hinter den Laufbeginn; die
+        Feldsemantik (Session, Agent, Beschreibung, Status, Ausgabe) bleibt
+        die der F19-Regression."""
+        self.start_active_run()
+        base_started = int(time.time()) + 5
+        state = {
+            "session": MAIN_SESSION,
+            "subagents": [
+                {**STATE_FILE["subagents"][0], "started": base_started + 5},
+                {**STATE_FILE["subagents"][1], "started": base_started},
+            ],
+        }
+        self.write_state(state)
         status, data, raw = self.request("GET", "/api/subagents?name=proj")
         self.assertEqual(status, 200, raw)
         self.assertTrue(data.get("ok"), raw)
@@ -479,8 +494,11 @@ class SubagentsEndpointTest(ApiFixture):
         entries = data.get("subagents")
         self.assertIsInstance(entries, list, raw)
         self.assertEqual(len(entries), 2, f"beide erfassten Subagenten fehlen: {raw}")
-        completed, running = entries[0], entries[-1]
-        self.assertEqual(completed.get("session"), CHILD_SESSION, raw)
+        by_session = {entry.get("session"): entry for entry in entries}
+        completed = by_session.get(CHILD_SESSION)
+        running = by_session.get(CHILD_RUNNING)
+        self.assertIsNotNone(completed, f"erfasster abgeschlossener Eintrag fehlt: {raw}")
+        self.assertIsNotNone(running, f"erfasster laufender Eintrag fehlt: {raw}")
         self.assertEqual(completed.get("agent"), "general", raw)
         self.assertEqual(completed.get("description"), "Testzusammenfassung", raw)
         self.assertEqual(completed.get("status"), "completed", raw)
@@ -504,7 +522,14 @@ class SubagentOutputTest(ApiFixture):
     verständliche Meldung statt eines HTTP-Fehlers."""
 
     def test_output_of_a_captured_subagent(self):
-        self.write_state()
+        """B11-Anpassung: Auch die Ausgabeabfrage gilt für Einträge des
+        aktuellen Laufs; der Test registriert deshalb einen laufenden Lauf
+        und setzt die Startzeit des erfassten Eintrags hinter den
+        Laufbeginn."""
+        self.start_active_run()
+        state = json.loads(json.dumps(STATE_FILE))
+        state["subagents"][0]["started"] = int(time.time()) + 5
+        self.write_state(state)
         status, data, raw = self.request(
             "GET", f"/api/subagent-output?name=proj&session={CHILD_SESSION}"
         )

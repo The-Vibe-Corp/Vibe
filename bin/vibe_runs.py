@@ -103,6 +103,28 @@ SUBAGENT_FINISHED = ("completed", "error", "failed", "cancelled", "canceled")
 # opencode nennt das Werkzeug intern "task"; ältere Stände und die Anzeige
 # verwenden "subagent". Beide Formen werden erkannt.
 SUBAGENT_TOOLS = ("task", "subagent")
+# B11: Die Zustandsdatei darf durch viele abgeschlossene Subagenten nicht
+# unbegrenzt wachsen. Laufende Einträge werden bevorzugt erhalten; bei mehr
+# als MAX_SUBAGENTS gleichzeitig laufenden Einträgen können die ältesten
+# laufenden verdrängt werden.
+MAX_SUBAGENTS = 50
+# B11: Auch die Ausgabe je Eintrag braucht ein Budget. Gespeichert wird nur
+# der jüngste Tail; das begrenzt Zustandsdatei, Schreib-/fsync-Kosten und die
+# Listenantwort. Die volle Live-Ausgabe liefert /api/subagent-output.
+MAX_SUBAGENT_OUTPUT_BYTES = 64 * 1024
+
+
+def output_tail(text, budget):
+    """Liefert die letzten ``budget`` UTF-8-Bytes von ``text``.
+
+    Ein Mehrbyte-Zeichen, das durch den Schnitt zerteilt würde, wird am
+    Anfang des Tails verworfen.
+    """
+    value = str(text or "")
+    raw = value.encode("utf-8")
+    if len(raw) <= budget:
+        return value
+    return raw[-budget:].decode("utf-8", "ignore")
 
 # Pi 1.5.0 liefert im JSON-Modus (--mode json) genau diese Ereignistypen
 # (Pi-Dokumentation docs/json.md). Der Erfassungsfilter erkennt die Form
@@ -148,8 +170,24 @@ def load_subagent_state(path):
 
 def save_subagent_state(path, state):
     """Schreibt den Subagenten-Zustand atomar; nur der Läufer schreibt hier."""
+    entries = state.get("subagents")
+    if isinstance(entries, list):
+        _trim_subagent_entries(entries)
     text = json.dumps(state, ensure_ascii=False, indent=1) + "\n"
     _atomic_write(path, text)
+
+
+def _trim_subagent_entries(entries):
+    """Begrenzt die Einträge auf MAX_SUBAGENTS; laufende bleiben bevorzugt."""
+    if len(entries) <= MAX_SUBAGENTS:
+        return
+    running = [item for item in entries
+               if item.get("status") not in SUBAGENT_FINISHED]
+    finished = [item for item in entries
+                if item.get("status") in SUBAGENT_FINISHED]
+    room = max(0, MAX_SUBAGENTS - len(running))
+    kept = running + (finished[-room:] if room else [])
+    entries[:] = kept[-MAX_SUBAGENTS:]
 
 
 def _subagent_session(part, tool_state=None):
@@ -189,21 +227,107 @@ def _subagent_entry(state, session, agent, description):
     return None
 
 
-def translate_event(event, state):
+def _child_event_lines(event):
+    """Klartextzeilen eines Ereignisses aus einer Kind-Session (B11).
+
+    Nur Text, Denken und Werkzeuge tragen zur Live-Ausgabe eines Subagenten
+    bei; andere Ereignisse erfinden keinen Eintrag. Die Schreibweise folgt der
+    bestehenden opencode-Übersetzung („[Denken] “, „[Werkzeug] “).
+    """
+    kind = event.get("type")
+    part = event.get("part") if isinstance(event.get("part"), dict) else {}
+    if kind == "text":
+        text = part.get("text")
+        return text.splitlines() if isinstance(text, str) and text else []
+    if kind == "reasoning":
+        text = part.get("text")
+        if not isinstance(text, str) or not text.strip():
+            return []
+        return ["[Denken] " + line for line in text.splitlines()]
+    if kind != "tool_use":
+        return []
+    tool = part.get("tool") or part.get("name") or "?"
+    tool_state = part.get("state") if isinstance(part.get("state"), dict) else {}
+    status = str(tool_state.get("status") or "unbekannt")
+    inputs = tool_state.get("input") if isinstance(tool_state.get("input"), dict) else {}
+    detail = inputs.get("description") or inputs.get("command") or inputs.get("filePath") or ""
+    detail = " ".join(str(detail).split())
+    return [f"[Werkzeug] {tool} — {status}" + (": " + detail if detail else "")]
+
+
+def _capture_child_event(event, state, session):
+    """Erfasst ein Ereignis einer fremden Session als laufenden Subagenten.
+
+    B11: Sandbox-Läufe teilen keinen Dashboard-Server mit dem Läufer. Damit
+    die Subagenten-Ausgabe trotzdem live sichtbar wird, legt der Filter für
+    jede unbekannte Kind-Session einen laufenden Eintrag an und sammelt deren
+    Ausgabe. Der Abschluss kommt weiterhin über das ``task``-Ereignis der
+    Hauptsession.
+    """
+    lines = _child_event_lines(event)
+    if not lines:
+        return [], False
+    entry = _subagent_entry(state, session, "", "")
+    if entry is None:
+        entry = {
+            "session": session,
+            "agent": "",
+            "description": "",
+            "prompt": "",
+            "status": "running",
+            "started": int(time.time()),
+            "ended": 0,
+            "output": "",
+        }
+        state["subagents"].append(entry)
+    text = "\n".join(lines)
+    previous = str(entry.get("output") or "")
+    entry["output"] = output_tail(
+        previous + "\n" + text if previous else text,
+        MAX_SUBAGENT_OUTPUT_BYTES,
+    )
+    return lines, True
+
+
+def translate_event(event, state, run=None):
     """Übersetzt ein opencode-JSON-Ereignis in Protokollzeilen und Zustand.
 
     Rückgabe: (Zeilen, Zustand geändert). Roh-JSON wird nie zurückgegeben.
-    F25: Eine Hauptsession, die von der bisher erfassten abweicht, wird
-    übernommen (zuletzt gewinnt) und einmalig als ``[Session]``-Zeile
-    mitgeloggt; der Paket-Läufer nutzt die Zeile, um dieselbe Session bei
-    einer Wiederholung fortzusetzen.
+
+    B11: Ereignisse einer fremden Session (Subagent) legen einen laufenden
+    Eintrag an bzw. verlängern dessen Ausgabe; die Hauptsession bleibt
+    unverändert.
+
+    ``run`` ist der Kontext eines Agentenlaufs aus :func:`stream_events`:
+
+    * ``run["attempt"]`` (Aufruf durch den Paket-Läufer): Genau ein
+      Agentenlauf je Aufruf. Die erste gesehene Session ist die Hauptsession
+      dieses Laufs und ersetzt am Ende die gespeicherte; abweichende Sessions
+      sind Kind-Sessions. Das trägt F25 (Wiederholung als neue Hauptsession).
+    * Ohne ``attempt`` bleibt die gespeicherte Session die Hauptsession;
+      abweichende Sessions werden als Kinder erfasst (B11).
+    * Ohne ``run`` (direkter Aufruf) gilt F25 „zuletzt gewinnt“: Eine
+      abweichende Session wird als neue Hauptsession übernommen.
     """
     if not isinstance(event, dict):
         return [], False
     changed = False
     session_lines = []
     session = event.get("sessionID")
-    if isinstance(session, str) and session and session != state.get("session"):
+    known_session = state.get("session") or ""
+    run_main = ""
+    if isinstance(run, dict):
+        if run.get("attempt"):
+            run_main = run.get("main") or ""
+            if not run_main and isinstance(session, str) and session:
+                run["main"] = run_main = session
+            if isinstance(session, str) and session and run_main \
+                    and session != run_main:
+                return _capture_child_event(event, state, session)
+        elif isinstance(session, str) and session and known_session \
+                and session != known_session:
+            return _capture_child_event(event, state, session)
+    if isinstance(session, str) and session and session != known_session:
         state["session"] = session
         changed = True
         session_lines.append("[Session] " + session)
@@ -276,7 +400,7 @@ def translate_event(event, state):
         entry["status"] = status
         changed = True
     if output and entry.get("output") != output:
-        entry["output"] = output
+        entry["output"] = output_tail(output, MAX_SUBAGENT_OUTPUT_BYTES)
         changed = True
     ended = now if status in SUBAGENT_FINISHED else 0
     if entry.get("ended") != ended:
@@ -385,7 +509,7 @@ def _pi_tool_lines(event, state, mode):
             state["subagents"].append(entry)
         text = _pi_result_text(event.get("partialResult"))
         if text and entry.get("output") != text:
-            entry["output"] = text
+            entry["output"] = output_tail(text, MAX_SUBAGENT_OUTPUT_BYTES)
         return [], True
     # mode == "end"
     failed = bool(event.get("isError"))
@@ -401,7 +525,7 @@ def _pi_tool_lines(event, state, mode):
         entry["status"] = ending
     text = _pi_result_text(event.get("result"))
     if text and entry.get("output") != text:
-        entry["output"] = text
+        entry["output"] = output_tail(text, MAX_SUBAGENT_OUTPUT_BYTES)
     if isinstance(entry.get("ended"), int) and entry.get("ended") != now:
         entry["ended"] = now
     if not isinstance(entry.get("started"), int):
@@ -467,7 +591,7 @@ def translate_pi_event(event, state):
     return _pi_tool_lines(event, state, mode)
 
 
-def stream_events(stdin, emit, state_path):
+def stream_events(stdin, emit, state_path, attempt=False):
     """Liest JSON-Zeilen von stdin, schreibt Klartext und pflegt den Zustand.
 
     Nicht-JSON-Zeilen (z. B. stderr des Agenten) werden unverändert
@@ -477,8 +601,18 @@ def stream_events(stdin, emit, state_path):
     B6: Die Ereignisform wird automatisch erkannt — opencode-Ereignisse
     behalten ihr Verhalten, Ereignisse vom Pi-JSON-Modus gehen durch die
     Pi-Übersetzung. Beide Formen teilen sich dieselbe Zustandsdatei.
+
+    ``attempt`` kennzeichnet den Aufruf als genau einen Agentenlauf des
+    Paket-Läufers (F25/B11): Die erste Session dieses Stroms ist die
+    Hauptsession, abweichende Sessions sind Kind-Sessions. Ohne diese Angabe
+    bleibt die gespeicherte Session die Hauptsession; ein Strom, der nur
+    Text-Ereignisse einer einzelnen fremden Session enthält, wird am Ende
+    dennoch als neuer Hauptversuch übernommen (Rückwärtskompatibilität der
+    direkten Einbettung).
     """
     state = load_subagent_state(state_path)
+    run = {"attempt": bool(attempt), "main": "", "saw_main": False,
+           "unknown": {}}
     for raw in stdin:
         line = raw.rstrip("\r\n")
         if not line.strip():
@@ -494,11 +628,55 @@ def stream_events(stdin, emit, state_path):
         if isinstance(event, dict) and event.get("type") in PI_EVENT_TYPES:
             lines, changed = translate_pi_event(event, state)
         else:
-            lines, changed = translate_event(event, state)
+            if not run["attempt"]:
+                _track_unknown_session(event, state, run)
+            lines, changed = translate_event(event, state, run)
         for output_line in lines:
             emit(output_line)
         if changed:
             save_subagent_state(state_path, state)
+    if _promote_text_only_attempt(state, run):
+        emit("[Session] " + state["session"])
+        save_subagent_state(state_path, state)
+
+
+def _track_unknown_session(event, state, run):
+    """Merkt sich fremde Sessions für die Versuchserkennung ohne ``attempt``.
+
+    ``saw_main`` wird gesetzt, sobald ein Ereignis der gespeicherten
+    Hauptsession (oder die erste Session eines leeren Zustands) erscheint.
+    ``unknown`` hält je fremder Session fest, ob sie ausschließlich
+    Text-Ereignisse geliefert hat.
+    """
+    if not isinstance(event, dict):
+        return
+    session = event.get("sessionID")
+    known = state.get("session") or ""
+    if not isinstance(session, str) or not session:
+        return
+    if not known or session == known:
+        run["saw_main"] = True
+        return
+    text_only = event.get("type") == "text"
+    run["unknown"][session] = run["unknown"].get(session, True) and text_only
+
+
+def _promote_text_only_attempt(state, run):
+    """Übernimmt eine text-only Einzelsession als neuen Hauptversuch.
+
+    B11 erfasst fremde Sessions live als Subagenten. Ein Aufruf, der keine
+    Hauptsession-Ereignisse enthält und ausschließlich Text einer einzigen
+    fremden Session liefert, ist jedoch der Zweitversuch aus F25: Seine
+    Session ersetzt die gespeicherte („zuletzt gewinnt“). Die erfasste
+    Ausgabe bleibt erhalten, damit kein Subagenten-Text verloren geht.
+    """
+    if run.get("attempt") or run.get("saw_main") or len(run.get("unknown") or {}) != 1:
+        return False
+    promoted, text_only = next(iter(run["unknown"].items()))
+    if not text_only or state.get("session") == promoted:
+        return False
+    state["session"] = promoted
+    return True
 
 
 def _atomic_write(path, text):
@@ -779,6 +957,10 @@ def build_parser():
         help="opencode-JSON-Ereignisse in Klartext und Subagenten-Zustand übersetzen",
     )
     stream.add_argument("--state", required=True, help="Zustandsdatei <log>.state.json")
+    stream.add_argument(
+        "--attempt", action="store_true",
+        help="Strom ist genau ein Agentenlauf; erste Session ist die Hauptsession",
+    )
     return parser
 
 
@@ -824,7 +1006,7 @@ def main(argv=None):
         def emit(line):
             sys.stdout.write(str(line) + "\n")
             sys.stdout.flush()
-        stream_events(sys.stdin, emit, args.state)
+        stream_events(sys.stdin, emit, args.state, attempt=args.attempt)
         return 0
     parser.print_help(sys.stderr)
     return 2

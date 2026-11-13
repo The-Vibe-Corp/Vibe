@@ -641,6 +641,26 @@ class PiSubagentApiFixture(unittest.TestCase):
         if state.exists():
             state.unlink()
 
+    def register_run(self, state="running"):
+        """B11-Anpassung: /api/subagents liefert nur Einträge des aktuellen
+        Laufs. Die Pi-erfassten Einträge gehören zum aktuellen Lauf, wenn
+        der Lauf registriert ist, bevor der Übersetzungsfilter sie erfasst;
+        der Filter setzt ``started`` auf die Erfassungszeit."""
+        project = str((self.root / "proj").resolve())
+        result = subprocess.run(
+            [sys.executable, str(RUNS_PY), "start",
+             "--runtime", str(self.log_dir),
+             "--project", project,
+             "--name", "proj", "--key", "proj", "--agent", "vibe-agent",
+             "--state", state],
+            env=self.env,
+            capture_output=True, text=True, timeout=30,
+        )
+        self.assertEqual(
+            result.returncode, 0,
+            "Vorbedingung Laufregister fehlgeschlagen: "
+            + result.stdout + result.stderr)
+
     def stream_pi_events(self):
         """Vorbedingung: der echte Übersetzungsfilter verarbeitet das
         Pi-Szenario (denselben Weg wie der echte Läufer)."""
@@ -662,6 +682,7 @@ class PiSubagentApiFixture(unittest.TestCase):
 
     def call_pi_run(self):
         """Aktion: das Pi-Fixtur-Szenario durch den echten Läufer-Filter."""
+        self.register_run()
         return self.stream_pi_events()
 
     def state_path(self):

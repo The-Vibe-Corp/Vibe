@@ -292,12 +292,43 @@ create_worktree() {
   fi
   return 0
 }
+# B11: Der Agentenauftrag läuft in einer eigenen Prozessgruppe. Nur so beendet
+# ein Stopp die ganze Kette (Harness, Wrapper, Enkel), statt einen
+# signalignorierenden Harness als Waise weiterarbeiten zu lassen. AGENT_PID ist
+# die Prozessgruppe; ein leerer Wert heißt, dass kein Auftrag läuft.
+AGENT_PID=""
+stop_agent_group() {
+  local pgid="$AGENT_PID"
+  if [ -z "$pgid" ]; then
+    # B11: Feuert ein Signal-Trap im Spawnfenster zwischen dem Start des
+    # Auftrags und der Zuweisung von AGENT_PID, ist die Kennung noch leer.
+    # Unter set -m ist der Auftrag seine eigene Prozessgruppe; jobs -p nennt
+    # deren PID (= PGID). Der Agentenauftrag ist der einzige
+    # Hintergrundauftrag dieses Skripts.
+    pgid="$(jobs -p)"
+  fi
+  [ -n "$pgid" ] || return 0
+  AGENT_PID=""
+  kill -0 -- "-$pgid" 2>/dev/null || return 0
+  kill -TERM -- "-$pgid" 2>/dev/null || true
+  sleep 1
+  kill -KILL -- "-$pgid" 2>/dev/null || true
+  return 0
+}
+# Beendet sich der Läufer auf einem Weg ohne Signal-Trap (etwa nach einem
+# Fehler oder einem regulären Ende), beendet auch das den Auftrag; sonst
+# bliebe eine laufende Agentengruppe als Waise zurück.
+trap 'stop_agent_group' EXIT
 run_agent_in() {
   local dir="$1" prompt="$2" title="${3:-$NAME $ID}"
-  local wrap=()
+  local wrap=() rc
   if [ "$SANDBOX_STATE" = "on" ]; then
     wrap=(python3 "$BIN/vibe_sandbox.py" "$dir" --)
   fi
+  # B11: Die Jobkontrolle stellt den Auftrag in eine eigene Prozessgruppe und
+  # lässt den Signal-Trap schon während wait feuern. stdin bleibt wie bisher
+  # /dev/null, weil die Jobkontrolle es nicht mehr selbst ersetzt.
+  set -m
   (
     cd "$dir" || exit 1
     if [ "$HARNESS" = "pi" ]; then
@@ -320,7 +351,13 @@ run_agent_in() {
     args+=(--agent "$AGENT" "${MODEL_ARGS[@]}" --title "$title" "$prompt")
     "${wrap[@]}" "${args[@]}" 2>&1 | "${STREAM_FILTER[@]}" | tee -a "$LOG"
     exit "${PIPESTATUS[0]}"
-  )
+  ) </dev/null &
+  AGENT_PID=$!
+  set +m
+  wait "$AGENT_PID"
+  rc=$?
+  AGENT_PID=""
+  return "$rc"
 }
 run_agent() {
   run_agent_in "$WT" "$PROMPT" "$NAME $ID"
@@ -521,7 +558,7 @@ elif server_is_up; then SERVER_ARGS="--server http://127.0.0.1:$OPENCODE_PORT"; 
 # für den Preflight-Agenten (F22) gebraucht und deshalb vorher eingerichtet.
 STREAM_FILTER=(cat)
 if [ -f "$RUNS_PY" ]; then
-  STREAM_FILTER=(python3 "$RUNS_PY" stream --state "$LOG.state.json")
+  STREAM_FILTER=(python3 "$RUNS_PY" stream --state "$LOG.state.json" --attempt)
 fi
 # Preflight: sauberer Git-Integrationsstand, verfügbare Test-/Review-Agenten
 # und ein echter Paketprüfbefehl. Ohne diese Bedingungen startet kein Paket.
@@ -661,6 +698,26 @@ Behebe ausschließlich diese Befunde im Projektordner. Verwirf keine fremden Än
     return 1
   done
 }
+# V-026/B11: Ein äußeres Signal darf den Lauf nicht spurlos beenden — auch
+# nicht während der Start-Preflight-Assistenz, die selbst eine Agentengruppe
+# startet. Die Signal-Traps stehen deshalb vor dem ersten Preflight-Aufruf.
+# Ein bereits beendeter Registereintrag bleibt unverändert (only-live).
+EXTERN_ENDED=0
+external_end() {
+  local sig="$1" code="$2"
+  [ "$EXTERN_ENDED" = 1 ] && return 0
+  EXTERN_ENDED=1
+  trap - HUP TERM INT
+  echo "ABBRUCH: Lauf extern beendet (Signal $sig)." | tee -a "$LOG"
+  register_finish "$code" ended "extern beendet (Signal $sig)" only-live
+  # B11: Erst nach der Protokollierung die Agentengruppe beenden; der Läufer
+  # selbst endet mit dem bisherigen Signal-Exit-Code.
+  stop_agent_group
+  exit "$code"
+}
+trap 'external_end HUP 129' HUP
+trap 'external_end TERM 143' TERM
+trap 'external_end INT 130' INT
 preflight_with_assist start ""
 PREFLIGHT_RC=$?
 if [ "$PREFLIGHT_RC" != 0 ]; then
@@ -678,23 +735,6 @@ if [ -f "$RUNS_PY" ]; then
     --note "extern beendet (Sitzung fehlt)" >>"$LOG" 2>&1 || true
 fi
 register_start
-# V-026: Ein äußeres Signal darf den Lauf nicht spurlos beenden. Solange der
-# Lauf nicht abgeschlossen ist, werden Signal, Protokollzeile und Register-
-# zustand nachvollziehbar festgehalten. Ein bereits beendeter Eintrag bleibt
-# unverändert (only-live).
-EXTERN_ENDED=0
-external_end() {
-  local sig="$1" code="$2"
-  [ "$EXTERN_ENDED" = 1 ] && return 0
-  EXTERN_ENDED=1
-  trap - HUP TERM INT
-  echo "ABBRUCH: Lauf extern beendet (Signal $sig)." | tee -a "$LOG"
-  register_finish "$code" ended "extern beendet (Signal $sig)" only-live
-  exit "$code"
-}
-trap 'external_end HUP 129' HUP
-trap 'external_end TERM 143' TERM
-trap 'external_end INT 130' INT
 if [ "$HARNESS" = "pi" ]; then RUN_MODE="Pi --print"; else RUN_MODE="$SERVER_ARGS"; fi
 echo "Lauf: ${RUN_ID:-ohne Register}, Harness: $HARNESS, Modus: $RUN_MODE, Agent: $AGENT, Sandbox: $SANDBOX_STATE, höchstens $MAXP Pakete, höchstens $MAXR Wiederholungen je Paket" | tee -a "$LOG"
 PAUSED=0; LAST_ID=""; STOP=0; PACKAGES=0; SKIP=""

@@ -33,18 +33,26 @@ pre#log .hl-str{color:#a5d6a7}
 pre#log .hl-path{color:#9ecbff}
 pre#log .hl-sha{color:#c3a6ff}
 pre#log .hl-num{color:#f0a66a}
-/* F19: Steuerung des laufenden Agenten und Subagenten-Übersicht */
-.output-layout{display:grid;grid-template-columns:minmax(0,1fr) minmax(300px,360px);gap:14px;align-items:start}
-.output-side{min-width:0;max-height:calc(100vh - 190px);overflow:auto}
-@media(max-width:1000px){.output-layout{grid-template-columns:1fr}.output-side{max-height:none}}
-#steer-card textarea{font:12px/1.4 ui-monospace,monospace}
-.subagent{border-top:1px solid var(--line);padding:8px 0}
-.subagent:first-child{border-top:0}
-.subagent .bar{margin:0 0 6px}
-/* AP14: Fortsetzen-Leiste außerhalb der Protokollkarte. */
-.continuebar{margin:0 0 10px}
-.continuebar b{white-space:nowrap}
-.continuebar[hidden]{display:none}
+/* B11: Ausgabeansicht — Hauptagent und alle laufenden Subagenten gleichzeitig.
+   Das Panel nutzt die verfügbare Höhe; die Hauptfläche bleibt mindestens 40 %
+   des Viewports hoch und endet im sichtbaren Bereich. */
+[role=tabpanel][data-panel=ausgabe].bv-agent:not([hidden]){display:flex;flex-direction:column;height:calc(100vh - 210px);min-height:65vh;overflow:hidden;padding:0}
+.bv-root{display:flex;flex-direction:column;gap:8px;height:100%;min-height:0}
+.bv-controls{flex:0 0 auto;margin:0;padding:10px 12px}
+.bv-bar{display:flex;gap:8px;align-items:center;margin:4px 0}
+.bv-label{color:var(--mut);font-size:12px;flex:0 0 auto}
+.bv-bar select{flex:1 1 auto}
+.bv-bar textarea{margin:0;font:12px/1.4 ui-monospace,monospace;resize:vertical}
+.bv-view{display:flex;flex-direction:column;min-height:0;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:#0d0f12}
+.bv-root .bv-main{flex:1 1 auto;min-height:40vh}
+.bv-head{display:flex;gap:10px;align-items:center;justify-content:space-between;padding:6px 10px;border-bottom:1px solid var(--line);background:#181b20;flex:0 0 auto}
+.bv-head b{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bv-log{margin:0;padding:10px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.4 ui-monospace,monospace;flex:1 1 auto;min-height:0;background:#0d0f12}
+.bv-subs{display:flex;gap:8px;overflow-x:auto;max-height:160px;flex:0 0 auto}
+.bv-subs[hidden]{display:none}
+.bv-sub{flex:0 0 min(420px,45%);height:150px}
+.bv-sub .bv-log{height:100%}
+@media(max-width:900px){.bv-sub{flex-basis:80%}}
 .fbentry{border-top:1px solid var(--line);padding:8px 0}.fbentry:first-child{border-top:0}.fbdesc{white-space:pre-wrap;margin:2px 0 6px}.fbentry .bar{margin:4px 0 0}
 .toasts{position:fixed;right:16px;bottom:16px;z-index:200;display:flex;flex-direction:column;gap:8px;width:min(460px,calc(100vw - 32px))}
 .toast{display:flex;gap:10px;align-items:flex-start;background:#232830;border:1px solid var(--line);border-left:3px solid var(--ac);border-radius:8px;padding:10px 12px;box-shadow:0 8px 24px #0008}
@@ -105,11 +113,4 @@ pre#log .hl-num{color:#f0a66a}
 button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible,[role=tab]:focus-visible{outline:2px solid var(--ac);outline-offset:2px}
 [role=tabpanel][hidden]{display:none}
 @media(max-width:640px){.detailbar{position:static}.dactions{margin-left:0;flex-wrap:wrap}.dmeta{display:none}}
-/* F24: Agent-Tabs und Ausgabeflächen der aktiven Agenten in der Ausgabekarte.
-   Die Tabliste erscheint nur bei parallelen Agenten; die aktive Fläche füllt
-   dieselbe Höhe wie die Hauptausgabe. */
-.outtabs{border-bottom:0;margin:2px 0 6px;padding:0 4px;gap:2px}
-.outtabs [role=tab]{font-size:13px;padding:6px 12px}
-pre.outpane{background:#0d0f12;border:1px solid var(--line);border-radius:6px;padding:10px;height:320px;overflow:auto;white-space:pre-wrap;font:12px/1.4 ui-monospace,monospace;margin:0}
-.logcard.full pre.outpane{flex:1 1 auto;height:auto;min-height:0}
-pre.outpane.empty{color:var(--mut)}
+

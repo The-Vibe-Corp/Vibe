@@ -9,6 +9,7 @@ import threading
 import contextlib
 import signal
 import base64
+import datetime
 import http.client
 import importlib.util
 import importlib.machinery
@@ -161,12 +162,46 @@ PUBLIC_SUBAGENT_FIELDS = (
     "session", "agent", "description", "prompt", "status",
     "started", "ended", "output",
 )
+# B11: Die Listenantwort trägt bewusst keinen Prompt; er kann sehr groß sein
+# und wird für die Ausgabeansicht nicht gebraucht.
+LIST_SUBAGENT_FIELDS = (
+    "session", "agent", "description", "status", "started", "ended", "output",
+)
+# B11: Die Liste wird alle zwei Sekunden abgerufen. ``output`` reist deshalb
+# nur als kleiner Tail mit; die volle Ausgabe liefert /api/subagent-output.
+MAX_LIST_OUTPUT_BYTES = 4 * 1024
 STEER_MAX_CHARS = 4000
 
 
 def public_subagent(entry):
     """Nur die vereinbarten Felder verlassen die API, nie beliebte Zusatzdaten."""
     return {key: entry.get(key) for key in PUBLIC_SUBAGENT_FIELDS if key in entry}
+
+
+def listed_subagent(entry):
+    """Kompakte Listenform für /api/subagents (ohne prompt, Output als Tail)."""
+    listed = {key: entry.get(key) for key in LIST_SUBAGENT_FIELDS if key in entry}
+    if "output" in listed:
+        listed["output"] = vibe_runs.output_tail(
+            listed["output"], MAX_LIST_OUTPUT_BYTES)
+    return listed
+
+
+def run_start_epoch(record):
+    """Beginn eines Registereintrags als Unix-Zeit; unlesbar ergibt ``None``."""
+    try:
+        return datetime.datetime.strptime(
+            str(record.get("started") or ""), "%Y-%m-%dT%H:%M:%S%z").timestamp()
+    except (AttributeError, TypeError, ValueError):
+        return None
+
+
+def entry_started(entry):
+    """Startzeit eines Subagenteneintrags als Zahl; Defektes zählt als 0."""
+    try:
+        return int(entry.get("started") or 0)
+    except (TypeError, ValueError):
+        return 0
 
 
 def opencode_request(path, timeout=3):
@@ -291,12 +326,15 @@ def _message_role(message, info):
 def live_subagent_output(session):
     """Liest die vollständige Agentenausgabe einer Kind-Session (AP14).
 
-    Bis zu 500 Nachrichten werden angefragt. Textteile erscheinen unverändert,
-    Reasoning-Teile mit dem Präfix „[Denken] “ und Werkzeugteile je Teil als
+    Bis zu 500 Nachrichten werden angefragt. opencode v2 liefert Nachrichten
+    standardmäßig neueste zuerst; ``order=asc`` erzwingt die chronologische
+    Reihenfolge. Textteile erscheinen unverändert, Reasoning-Teile mit dem
+    Präfix „[Denken] “ und Werkzeugteile je Teil als
     „[Werkzeug] <tool> — <status>: <detail>“ mit Detail aus ``state.input``
     (description/command/filePath). Nutzer-Nachrichten werden übersprungen.
     """
-    data = opencode_request("/api/session/" + quote(session, safe="") + "/message?limit=500")
+    data = opencode_request(
+        "/api/session/" + quote(session, safe="") + "/message?limit=500&order=asc")
     messages = data.get("data") if isinstance(data, dict) else None
     if not isinstance(messages, list):
         return ""
@@ -806,17 +844,34 @@ class H(BaseHTTPRequestHandler):
             if u.path == "/api/subagents":
                 n = known(q["name"][0])
                 state = subagents_of(n)
-                answer = {"ok": True, "running": run_is_active(n),
-                          "subagents": state["subagents"]}
-                # F24: Der Name des aktuell arbeitenden Agenten kommt aus dem
-                # Laufregister; ohne aktiven Lauf erscheint kein Name
-                # (fehlendes Feld statt erfundener Angabe).
                 record = vibe.run_registry().latest(
                     # Wie in run_is_active: interne Pfadauflösung des
                     # Schwestermoduls, ohne öffentliche Entsprechung.
                     project=vibe._real(vibe.ppath(n))  # pylint: disable=protected-access
                 )
-                if record and record.get("state") in vibe_runs.LIVE_STATES:
+                live = bool(record and record.get("state") in vibe_runs.LIVE_STATES)
+                # B11: Nur Einträge des aktuellen Laufs. Ohne laufenden
+                # Registereintrag liefert die Liste bewusst nichts — sonst
+                # würden Überbleibsel früherer Läufe wieder auftauchen.
+                entries = []
+                if live:
+                    started = run_start_epoch(record)
+                    # Fail-open: Ohne lesbare Laufzeit erscheinen alle
+                    # Einträge; ein Eintrag ohne bekannte Startzeit (0/None)
+                    # bleibt sichtbar, statt still am Vergleich zu scheitern.
+                    entries = [
+                        listed_subagent(item) for item in state["subagents"]
+                        if started is None
+                        or entry_started(item) == 0
+                        or entry_started(item) >= started
+                    ]
+                    entries.sort(key=entry_started, reverse=True)
+                answer = {"ok": True, "running": run_is_active(n),
+                          "subagents": entries}
+                # F24: Der Name des aktuell arbeitenden Agenten kommt aus dem
+                # Laufregister; ohne aktiven Lauf erscheint kein Name
+                # (fehlendes Feld statt erfundener Angabe).
+                if live:
                     answer["agent"] = str(record.get("agent") or "")
                 if state["session"]:
                     answer["session"] = state["session"]

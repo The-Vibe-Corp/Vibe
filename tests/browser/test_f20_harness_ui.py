@@ -330,46 +330,6 @@ class PiHarnessUiTest(HarnessUiBase):
         body = self.page.locator("main").inner_text()
         self.assertNotIn("opencode-Weboberfläche", body)
 
-    def test_steer_card_names_pi_print_limit(self):
-        # AK B3. Vorbedingung: Pi gewählt; Aktion: Projekt → Register „Ausgabe“,
-        # Steuerkarte lesen; Erwartung: keine „opencode-Session“-Formulierung,
-        # Print-Modus-Grenzwert von Pi erkennbar.
-        self.open_detail()
-        self.open_detail_tab("Ausgabe")
-        card = self.page.locator("#steer-card")
-        card.wait_for()
-        self.page.wait_for_function(
-            "document.querySelector('#steer-card') && document.querySelector('#steer-card').innerText.length > 0"
-        )
-        text = card.inner_text()
-        self.assertNotIn("opencode-Session", text,
-                         "Bei Pi bleibt die opencode-Session-Formulierung?")
-        import re
-        self.assertTrue(re.search(r"(?i)\bpi\b", text),
-                        "Steuerkarte nennt Pi nicht: " + text)
-        self.assertTrue(
-            re.search(r"(?i)print|--no-session|ohne session|ohne sitzung", text),
-            "Steuerkarte nennt den Print-Modus-Grenzwert nicht: " + text,
-        )
-
-    def test_subagent_card_notes_pi_limit(self):
-        # AK B4. Vorbedingung: Pi gewählt; Aktion: Register „Ausgabe“,
-        # Subagenten-Karte lesen; Erwartung: Hinweis auf Pi-Limit statt nur
-        # neutraler Text.
-        self.open_detail()
-        self.open_detail_tab("Ausgabe")
-        card = self.page.locator("#subagents-card")
-        card.wait_for()
-        self.page.wait_for_function(
-            "document.querySelector('#subagents-card') && document.querySelector('#subagents-card').innerText.length > 0"
-        )
-        text = card.inner_text()
-        import re
-        self.assertTrue(re.search(r"(?i)\bpi\b", text),
-                        "Subagenten-Karte nennt Pi nicht: " + text)
-        self.assertTrue(mentions_pi_limit(text, r"subagent\w*"),
-                        "Subagenten-Karte benennt das Pi-Limit nicht: " + text)
-
     def test_models_detail_points_to_pi_list_models(self):
         # AK B5a. Vorbedingung: Pi gewählt, Modellkatalog vorhanden, Katalog-
         # modell fehlt in der Pi-Modellliste; Aktion: Register „Agenten &
@@ -466,25 +426,20 @@ class OpencodeRegressionUiTest(HarnessUiBase):
         self.assertIn("Dashboard beenden", text)
 
     def test_detail_link_and_cards_keep_opencode_wording(self):
-        # AK Regression B2/B3/B4/B6. Vorbedingung: keine Auswahl; Aktion:
-        # Projekt öffnen, Register lesen; Erwartung: Link „opencode-Weboberflä-
-        # che“, „opencode-Session“ in der Steuerkarte, Subagenten-Karte ohne
-        # Pi-Hinweis, Sandbox-Text „mit eigenem opencode-Server in bubblewrap“.
+        # AK Regression B2/B6 (B11: Ausgabe-Karten entfallen aus der Prüfung).
+        # Vorbedingung: keine Auswahl; Aktion: Projekt öffnen, Register
+        # lesen; Erwartung: Link „opencode-Weboberfläche“ und Sandbox-Text
+        # „mit eigenem opencode-Server in bubblewrap“.
+        # B11: Der Ausgabebereich wird komplett neu gebaut (Vertrag
+        # tests/browser/test_b11_output_ui.py); die alten Karten #steer-card
+        # und #subagents-card sind dort nicht mehr Teil der Oberfläche. Die
+        # opencode-Wortwahl dieser Karten wird deshalb nicht mehr geprüft;
+        # die fachliche Pi-Sperre bleibt an der API geprüft
+        # (tests/unit/test_ap14_output_view_api.py). Weblink- und Sandbox-
+        # Regression bleiben unverändert.
         self.open_detail()
         self.assertEqual(
             self.page.locator('a:has-text("opencode-Weboberfläche")').count(), 1)
-        self.open_detail_tab("Ausgabe")
-        steer = self.page.locator("#steer-card")
-        steer.wait_for()
-        self.page.wait_for_function(
-            "document.querySelector('#steer-card') && document.querySelector('#steer-card').innerText.length > 0"
-        )
-        self.assertIn("opencode-Session", steer.inner_text())
-        subs = self.page.locator("#subagents-card")
-        self.assertNotIn("Pi", subs.inner_text(),
-                         "Subagenten-Karte hat bisher keinen Pi-Hinweis")
-        self.assertIn(
-            "Erfasste Subagenten des aktuellen Projekts", subs.inner_text())
         self.open_detail_tab("Einstellungen")
         sandbox = self.page.locator("#sandbox")
         sandbox.wait_for()
