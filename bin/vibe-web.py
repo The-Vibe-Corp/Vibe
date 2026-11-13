@@ -900,9 +900,16 @@ class H(BaseHTTPRequestHandler):
                         "message": "Kein erfasster Subagent mit dieser Session. "
                                    "Die Ausgabe ist erst nach dem Start des Subagenten verfügbar.",
                     })
-                output = str(entry.get("output") or "")
+                # F30: Die Live-Ausgabe ist die Wahrheit, solange der Server
+                # sie liefert; die erfasste Ausgabe der Zustandsdatei bleibt
+                # Fallback (Sandbox ohne Server, fehlendes Kennwort, Störung,
+                # noch keine Agentennachricht). Der Tail hält den Kartenkörper
+                # im selben Budget wie gespeicherte Ausgaben.
+                output = live_subagent_output(entry.get("session") or "")
                 if not output.strip():
-                    output = live_subagent_output(entry.get("session") or "")
+                    output = str(entry.get("output") or "")
+                output = vibe_runs.output_tail(
+                    output, vibe_runs.MAX_SUBAGENT_OUTPUT_BYTES)
                 if not output.strip():
                     status = entry.get("status") or "unbekannt"
                     return self._send(200, {

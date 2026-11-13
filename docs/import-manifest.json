@@ -820,6 +820,16 @@
       ],
       "datum": "2026-11-13",
       "grund": "Syntaxhervorhebung in der Agentenausgabe (AP16): Die seit B11/AP14 neu gebaute Ausgabeansicht (Hauptagent und laufende Subagenten) nutzt den bestehenden F19-Highlighter renderLogChunk() statt reinem textContent; die hl-*-Farben aus bin/web/styles.css gelten über gruppierte Selektoren unverändert auch in .bv-log. Es entsteht kein zweiter Highlighter, keine neue Bibliothek und kein HTML-Inhaltspfad (DOM-only). Zeilen mit Markup-Zeichen bleiben als ein Textknoten unangetastet, damit Protokollinhalt wörtlich sichtbar und nie als HTML interpretiert wird. Live-Pfad, Steuern/Fortsetzen und die Puffergrenze von 120000 Zeichen bleiben unverändert. Beide Dateien liegen im Bereich bin; Größe und SHA-256 der files-Einträge wurden aktualisiert."
+    },
+    {
+      "arbeitspaket": "F30",
+      "dateien": [
+        "bin/vibe-web.py",
+        "bin/web/app.js",
+        "bin/web/styles.css"
+      ],
+      "datum": "2026-11-13",
+      "grund": "Sub-Agent-Ansicht (Feedback F30): GET /api/subagent-output bevorzugt die Live-Ausgabe der Kind-Session (order=asc) und nutzt die erfasste Ausgabe der Zustandsdatei nur noch als Fallback, begrenzt auf den bestehenden 64-KiB-Tail. Die Subagenten-Karten starten bei 300 px Höhe, lassen sich per Knopf im Kartenkopf nahezu ansichtsfüllend vergrößern und wieder herstellen; das Ausgabepanel scrollt bei Bedarf. Die doppelte Anzeige war kein Fehler: zwei reale Kind-Sessions (test-agent und dokumentierter Fallback tester) werden unverändert als Realität gezeigt. Drei geänderte Dateien liegen im Bereich bin, daher wurden Größe und SHA-256 der files-Einträge aktualisiert."
     }
   ],
   "files": [
@@ -844,9 +854,9 @@
       "sha256": "6561cacb459804ba5c0feb18bea03073c96baadb249eca31970b34a809644a08"
     },
     {
-      "bytes": 87623,
+      "bytes": 88112,
       "path": "bin/vibe-web.py",
-      "sha256": "23be14c9abc6a95db4fd1cef153056a7eac12d3d74b5007f884e4cfb06b710ce"
+      "sha256": "52d0fb368773a0920b4b2197c4feba9d60e117f859d6b058951e90cc88eb4cf7"
     },
     {
       "bytes": 5189,
@@ -934,9 +944,9 @@
       "sha256": "d49b2406f2c9837c63ed3c3dcb265938fe5702e78c5aeb0df07b9f349fd65594"
     },
     {
-      "bytes": 122439,
+      "bytes": 123253,
       "path": "bin/web/app.js",
-      "sha256": "45ada3be0b4ab0a8190b298e5d0bab9ab019f8fe37ced7397fa493706a87d66d"
+      "sha256": "67e4854aa13cba055d757f3df13beffca89a3732f10022166501b5ef512733ba"
     },
     {
       "bytes": 588,
@@ -944,9 +954,9 @@
       "sha256": "db45ba1dd9e5da380f5c05c24b2158eefce9b7e8f87faeb33a9e88910d0cd73d"
     },
     {
-      "bytes": 10378,
+      "bytes": 10850,
       "path": "bin/web/styles.css",
-      "sha256": "c66d2044b95262f2e8d9cc812589bdf47955c931fae23bf778fd0e8c813ea7b7"
+      "sha256": "b62401e59606f1026e16ab3d691f161670f3f968e3c44204e9893d5b3b14b5cd"
     },
     {
       "bytes": 34162,

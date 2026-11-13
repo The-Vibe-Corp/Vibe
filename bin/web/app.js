@@ -473,8 +473,20 @@ function outputView(name,d,isPi){
  function makeChild(entry){
   const pre=el('pre',{class:'bv-log'});
   const state=el('span',{class:'pill run'},'läuft');
+  /* F30: Jede laufende Karte lässt sich per Knopf nahezu ansichtsfüllend
+     vergrößern und mit demselben Knopf wieder herstellen. Der Zustand lebt
+     nur am Kartenelement; beim Entfernen des Subagenten verschwindet er mit. */
+  const toggle=el('button',{class:'b',type:'button','aria-label':'Subagent vergrößern','aria-expanded':'false'},'Vergrößern');
   const view=el('section',{class:'bv-view bv-sub','data-agent-view':'','data-role':'subagent','data-session':String(entry.session||''),role:'log','aria-label':nameOf(entry)},
-   el('div',{class:'bv-head'},el('b',{},nameOf(entry)),state),pre);
+   el('div',{class:'bv-head'},el('b',{},nameOf(entry)),el('div',{class:'bv-head-actions'},state,toggle)),pre);
+  let enlarged=false;
+  const setEnlarged=on=>{
+   enlarged=on;
+   view.classList.toggle('enlarged',on);
+   toggle.textContent=on?'Verkleinern':'Vergrößern';
+   toggle.setAttribute('aria-label',on?'Subagent verkleinern':'Subagent vergrößern');
+   toggle.setAttribute('aria-expanded',on?'true':'false')};
+  toggle.addEventListener('click',()=>setEnlarged(!enlarged));
   const node={view,pre,state,text:'',loading:false};
   setText(node,String(entry.output||''));
   return node}
@@ -507,7 +519,7 @@ function outputView(name,d,isPi){
    node.view.setAttribute('aria-label',nameOf(s));
    node.state.textContent=s.status||'läuft';
    if(!node.text&&s.output)setText(node,String(s.output));
-   subsBox.append(node.view);
+   if(node.view.parentNode!==subsBox)subsBox.append(node.view);
    loadChild(node,s)});
   subsBox.hidden=!subs.length;
   cont.hidden=!(session&&!running);
