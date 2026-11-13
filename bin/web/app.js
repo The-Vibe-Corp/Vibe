@@ -388,6 +388,10 @@ function hlLineClass(line){
  return ''}
 function hlLine(line){
  const cls=hlLineClass(line),span=cls?el('span',{class:cls}):el('span');
+ /* AP16/AK4: Zeilen mit Markup-Zeichen bleiben als ein Textknoten
+    unangetastet. So ist der Protokolltext wörtlich und unteilbar sichtbar
+    und eine HTML-Interpretation bleibt ausgeschlossen. */
+ if(/[<>]/.test(line)){span.append(document.createTextNode(line));return span}
  let last=0,m;HL_INLINE.lastIndex=0;
  while((m=HL_INLINE.exec(line))){
   if(m.index>last)span.append(document.createTextNode(line.slice(last,m.index)));
@@ -454,13 +458,17 @@ function outputView(name,d,isPi){
  let mainText=(d.tail||[]).join('\n')||'(noch keine Ausgabe)';
  let lastRunning=false,optionKey='';
  const children=new Map();
- mainPre.textContent=mainText;
+ /* AP16: Die Ausgabeansicht nutzt denselben F19-Highlighter wie das
+    Lauf-Log (renderLogChunk, DOM-only). Der Text bleibt unverändert; die
+    Hervorhebung ist reine Darstellung. */
+ function renderMain(){mainPre.replaceChildren(renderLogChunk(mainText))}
+ renderMain();
  function nameOf(entry){return String(entry.agent||'Subagent')+(entry.description?' — '+entry.description:'')}
  function setText(node,text){
   if(node.text===text)return;
   node.text=text;
   const near=node.pre.scrollHeight-node.pre.scrollTop-node.pre.clientHeight<70;
-  node.pre.textContent=text||'(noch keine Ausgabe)';
+  node.pre.replaceChildren(renderLogChunk(text||'(noch keine Ausgabe)'));
   if(near)node.pre.scrollTop=node.pre.scrollHeight}
  function makeChild(entry){
   const pre=el('pre',{class:'bv-log'});
@@ -521,9 +529,9 @@ function outputView(name,d,isPi){
   if(!text)return;
   const near=mainPre.scrollHeight-mainPre.scrollTop-mainPre.clientHeight<70;
   mainText=(mainText+text).slice(-120000);
-  mainPre.textContent=mainText;
+  renderMain();
   if(near)mainPre.scrollTop=mainPre.scrollHeight}
- function clearMain(){mainText='';mainPre.textContent=''}
+ function clearMain(){mainText='';renderMain()}
  function fit(){mainPre.scrollTop=mainPre.scrollHeight}
  cont.addEventListener('click',async()=>{
   cont.disabled=true;

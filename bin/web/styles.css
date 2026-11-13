@@ -19,20 +19,21 @@ input[type=checkbox]{width:auto}textarea.raw{font:12px/1.4 ui-monospace,monospac
 .err{border-color:var(--bad)}.detail td{background:#181b20}ul.l{margin:4px 0 8px 18px;padding:0}.sep{width:1px;height:22px;background:var(--line)}@media(max-width:900px){.grid,.grid3{grid-template-columns:1fr}}
 .logcard{display:flex;flex-direction:column;min-height:0}.logcard.full{position:fixed;inset:8px;z-index:100;margin:0;box-shadow:0 0 0 1px var(--line),0 12px 40px #000a}
 .logcard.full pre#log{flex:1 1 auto;height:auto;min-height:0}body.logfull{overflow:hidden}
-/* F19: Syntaxhervorhebung der Live-Ausgabe */
-pre#log .hl-head{color:#8ab4f8;font-weight:600}
-pre#log .hl-err{color:var(--bad)}
-pre#log .hl-tool{color:#c9a7ff}
-pre#log .hl-sub{color:#7fd1c1}
-pre#log .hl-think{color:#8a94a6;font-style:italic}
-pre#log .hl-cmd{color:var(--warn)}
-pre#log .hl-add{color:var(--ok)}
-pre#log .hl-del{color:var(--bad)}
-pre#log .hl-code{color:#e8c07d;background:#232830;border-radius:3px}
-pre#log .hl-str{color:#a5d6a7}
-pre#log .hl-path{color:#9ecbff}
-pre#log .hl-sha{color:#c3a6ff}
-pre#log .hl-num{color:#f0a66a}
+/* F19: Syntaxhervorhebung der Live-Ausgabe. AP16: Dieselben Farben gelten
+   unverändert in der Agentenausgabe (.bv-log) der B11-Ausgabeansicht. */
+pre#log .hl-head,.bv-log .hl-head{color:#8ab4f8;font-weight:600}
+pre#log .hl-err,.bv-log .hl-err{color:var(--bad)}
+pre#log .hl-tool,.bv-log .hl-tool{color:#c9a7ff}
+pre#log .hl-sub,.bv-log .hl-sub{color:#7fd1c1}
+pre#log .hl-think,.bv-log .hl-think{color:#8a94a6;font-style:italic}
+pre#log .hl-cmd,.bv-log .hl-cmd{color:var(--warn)}
+pre#log .hl-add,.bv-log .hl-add{color:var(--ok)}
+pre#log .hl-del,.bv-log .hl-del{color:var(--bad)}
+pre#log .hl-code,.bv-log .hl-code{color:#e8c07d;background:#232830;border-radius:3px}
+pre#log .hl-str,.bv-log .hl-str{color:#a5d6a7}
+pre#log .hl-path,.bv-log .hl-path{color:#9ecbff}
+pre#log .hl-sha,.bv-log .hl-sha{color:#c3a6ff}
+pre#log .hl-num,.bv-log .hl-num{color:#f0a66a}
 /* B11: Ausgabeansicht — Hauptagent und alle laufenden Subagenten gleichzeitig.
    Das Panel nutzt die verfügbare Höhe; die Hauptfläche bleibt mindestens 40 %
    des Viewports hoch und endet im sichtbaren Bereich. */

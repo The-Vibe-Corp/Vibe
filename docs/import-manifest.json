@@ -811,6 +811,15 @@
       ],
       "datum": "2026-11-13",
       "grund": "Subagenten in Ausgabe nicht sichtbar (Bug): opencode ≥ 2.3 liefert Hintergrund-Subagenten; das task-Werkzeug der Hauptsession ist sofort \"completed\", während die Werkzeug-Metadaten den tatsächlichen Zustand nennen. vibe_runs.py nutzt daher den Metadaten-Status als Authorität (Eintrag \"running\", ended=0), belebt abgeschlossene Einträge durch spätere Kind-Ereignisse wieder und behandelt bereits erfasste Kind-Sessions beim direkten Aufruf weiterhin als Kind. vibe-web.py stuft im Live-Abgleich laufend markierte Einträge auf \"completed\" herab, wenn der Server die Kind-Session kennt und sie nicht aktiv führt; ohne Server bleibt der Eintrag \"running\"."
+    },
+    {
+      "arbeitspaket": "AP16",
+      "dateien": [
+        "bin/web/app.js",
+        "bin/web/styles.css"
+      ],
+      "datum": "2026-11-13",
+      "grund": "Syntaxhervorhebung in der Agentenausgabe (AP16): Die seit B11/AP14 neu gebaute Ausgabeansicht (Hauptagent und laufende Subagenten) nutzt den bestehenden F19-Highlighter renderLogChunk() statt reinem textContent; die hl-*-Farben aus bin/web/styles.css gelten über gruppierte Selektoren unverändert auch in .bv-log. Es entsteht kein zweiter Highlighter, keine neue Bibliothek und kein HTML-Inhaltspfad (DOM-only). Zeilen mit Markup-Zeichen bleiben als ein Textknoten unangetastet, damit Protokollinhalt wörtlich sichtbar und nie als HTML interpretiert wird. Live-Pfad, Steuern/Fortsetzen und die Puffergrenze von 120000 Zeichen bleiben unverändert. Beide Dateien liegen im Bereich bin; Größe und SHA-256 der files-Einträge wurden aktualisiert."
     }
   ],
   "files": [
@@ -925,9 +934,9 @@
       "sha256": "d49b2406f2c9837c63ed3c3dcb265938fe5702e78c5aeb0df07b9f349fd65594"
     },
     {
-      "bytes": 121918,
+      "bytes": 122439,
       "path": "bin/web/app.js",
-      "sha256": "33420a9c03e79f1913c17b06fe2aba4c30b257012883c545a203755be99ed5ee"
+      "sha256": "45ada3be0b4ab0a8190b298e5d0bab9ab019f8fe37ced7397fa493706a87d66d"
     },
     {
       "bytes": 588,
@@ -935,9 +944,9 @@
       "sha256": "db45ba1dd9e5da380f5c05c24b2158eefce9b7e8f87faeb33a9e88910d0cd73d"
     },
     {
-      "bytes": 10061,
+      "bytes": 10378,
       "path": "bin/web/styles.css",
-      "sha256": "1ca9e0484244a1b82c75d49f26c4f2389232bb05461117f8a90d5bc26b0a6b28"
+      "sha256": "c66d2044b95262f2e8d9cc812589bdf47955c931fae23bf778fd0e8c813ea7b7"
     },
     {
       "bytes": 34162,
