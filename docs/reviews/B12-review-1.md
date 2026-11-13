@@ -11,7 +11,7 @@ Umfang: `git diff 6959136 -- bin/vibe_runs.py bin/vibe-web.py docs/import-manife
 - Medium: 0
 - Low: 1
 - Info: 3
-- **Verdict: PASS**
+- Verdict: PASS
 
 Der Fix ist minimal, korrekt im Ansatz und an den belegten Ursachestellen. Der Metadaten-Status wird nur bei bekannten Werten als Authorität verwendet (Pi/alt-opencode unverändert), die Wiederbelebung und die Dashboard-Herabstufung erfinden keinen Abschluss (ohne Kennwort/ohne Server kein Statuswechsel, kein HTTP-Aufruf). F25 „zuletzt gewinnt" bleibt für unbekannte Sessions erhalten. Die vom Test-Agenten vor der Implementierung geschriebene Suite deckt AK1–AK5 mit echten Verhaltensassertionen ab; Rot- und Grünphase sind im Test-Agenten-Bericht mit konkreter Ausgabe belegt. Der Reviewer konnte auf Grund der Berechtigung dieser Sitzung **keinerlei Shell-Kommandos außer Git-Lesebefehlen ausführen** — Green-Phase, Regressionen und verify.sh blieben Lieferanten-Nachweise (wörtlich unten zitiert) und wurden nicht unabhängig wiederholt.
 
