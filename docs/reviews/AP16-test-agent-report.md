@@ -161,7 +161,7 @@ reproduziert:
 Fehlgeschlagene Testmethoden am Basisstand (exakt):
 
 - `test_main_agent_log_lines_are_visually_distinguished` (AK1) —
-  `FEHLERZEILE_ROT`/`PROTOKOLLKOPF_APX`/`bin/web app.js` trugen dieselbe
+  `FEHLERZEILE_ROT`/`PROTOKOLLKOPF_APX`/`bin/web/app.js` trugen dieselbe
   berechnete Farbe wie die schlichte Zeile: keine Hervorhebung.
 - `test_subagent_log_is_highlighted_like_the_main_log` (AK2) —
   `SUBFEHLER_ROT` farblich nicht von der schlichten Zeile unterschieden.
