@@ -45,4 +45,4 @@ Keine Critical-, High- oder Medium-Befunde. Insbesondere: keine abgeschwächten 
 
 - Unsicherheit über das opencode-`limit`-Verhalten (Low-Fund 2) und die angenommene Änderungsliste (Diff nicht aus Git gegenprüft). Beide sind dokumentiert und blockieren das Paket nicht.
 
-**Verdict: PASS**
+Verdict: PASS
