@@ -1,6 +1,6 @@
 # Trilium-Index
 
-Zuordnung der Projekt-Dokumentation zu den Notizen in Trilium (Stand 2026-11-12).
+Zuordnung der Projekt-Dokumentation zu den Notizen in Trilium (Stand 2026-11-13).
 
 | Projekt | Bereich | Notiz | Notiz-ID |
 | --- | --- | --- | --- |
@@ -61,3 +61,4 @@ Zuordnung der Projekt-Dokumentation zu den Notizen in Trilium (Stand 2026-11-12)
 | vibe | Features | B1 Kostentabelle aktualisiert sich nach jedem AP | `V3AV2elZkQgo` |
 | vibe | Analyse | Arbeitspakete bleiben offen — Ursachen und Maßnahmen | `nLcQBDnwBXZW` |
 | vibe | Features | AP13 Vibe lokal über das Netzwerk erreichbar machen | `cppXft8LmYCx` |
+| vibe | Features | B12 Subagenten in Ausgabe nicht sichtbar | `cKuhcXZA0O3A` |

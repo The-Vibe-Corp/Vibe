@@ -802,6 +802,15 @@
       ],
       "datum": "2026-11-13",
       "grund": "Ausgabeansicht von Grund auf neu und Agentenstopp wirklich beenden: Der Stopp beendet die Agentenprozessgruppe (TERM, KILL-Eskalation) und hält den Registerzustand fest. Der Stream-Filter erfasst Subagenten live aus fremden Session-Ereignissen und begrenzt die Zustandsdatei auf 50 Einträge. Jeder Läuferaufruf übergibt dem Filter den Versuchskontext (--attempt); die erste Session des Laufs ist die Hauptsession, damit F25-Wiederholungen als neue Hauptsession fortgesetzt werden, ohne die B11-Kinderfassung zu verlieren. Die API liefert nur Einträge des aktuellen Laufs, neueste zuerst und ohne Prompt; die Subagenten-Ausgabe wird chronologisch mit order=asc abgerufen. Die neue Ausgabeansicht zeigt Hauptagent und alle laufenden Subagenten gleichzeitig, wählt das Steuerziel per Session und bietet Fortsetzen nur bei gestopptem Lauf. Geänderte Dateien liegen im Manifestbereich bin; Größe und SHA-256 der files-Einträge wurden aktualisiert und dadurch begründet. Review Runde 2 (Medium): stop_agent_group greift bei leerer AGENT_PID im Spawnfenster auf jobs -p zurueck, damit auch in diesem Fenster kein Waise zurueckbleibt; Groesse und SHA-256 des vibe-run.sh-Eintrags wurden erneut aktualisiert und dadurch begruendet. Review Runde 3 (Minor, rein kosmetisch): Die Datei liegt seither mit 2-Leerzeichen-Einrückung vor (aus dem fortgeführten Stand des abgebrochenen Laufs); der JSON-Inhalt ist unverändert, die Einrückung ist hiermit begründet und wird fuer zukuenftige Manifest-Diffs beibehalten."
+    },
+    {
+      "arbeitspaket": "B12",
+      "dateien": [
+        "bin/vibe-web.py",
+        "bin/vibe_runs.py"
+      ],
+      "datum": "2026-11-13",
+      "grund": "Subagenten in Ausgabe nicht sichtbar (Bug): opencode ≥ 2.3 liefert Hintergrund-Subagenten; das task-Werkzeug der Hauptsession ist sofort \"completed\", während die Werkzeug-Metadaten den tatsächlichen Zustand nennen. vibe_runs.py nutzt daher den Metadaten-Status als Authorität (Eintrag \"running\", ended=0), belebt abgeschlossene Einträge durch spätere Kind-Ereignisse wieder und behandelt bereits erfasste Kind-Sessions beim direkten Aufruf weiterhin als Kind. vibe-web.py stuft im Live-Abgleich laufend markierte Einträge auf \"completed\" herab, wenn der Server die Kind-Session kennt und sie nicht aktiv führt; ohne Server bleibt der Eintrag \"running\"."
     }
   ],
   "files": [
@@ -826,9 +835,9 @@
       "sha256": "6561cacb459804ba5c0feb18bea03073c96baadb249eca31970b34a809644a08"
     },
     {
-      "bytes": 87038,
+      "bytes": 87623,
       "path": "bin/vibe-web.py",
-      "sha256": "bdce58e109bf234f1a4861b52783becca482c51fb6c69df1c8fcacac4f5bb10c"
+      "sha256": "23be14c9abc6a95db4fd1cef153056a7eac12d3d74b5007f884e4cfb06b710ce"
     },
     {
       "bytes": 5189,
@@ -891,9 +900,9 @@
       "sha256": "9a4bb9a2a182977c276b04676b133d918c97ed4f0a957c4d6f0e72835848b5cd"
     },
     {
-      "bytes": 40162,
+      "bytes": 42660,
       "path": "bin/vibe_runs.py",
-      "sha256": "289342240c001ae83360e5f8c05d1785c76698e32afc21f2ba518772027704be"
+      "sha256": "d3b2534ec7b00dc1e191b97c432cade05b4cc36d172af71972c66f9078d54e75"
     },
     {
       "bytes": 28218,
@@ -1117,6 +1126,6 @@
     "setup-vibe.cmd",
     "VERSION"
   ],
-  "stand": "2026-11-12",
+  "stand": "2026-11-13",
   "version": 1
 }

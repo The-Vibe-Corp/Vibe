@@ -100,6 +100,11 @@ def rotate_log(path, max_bytes=DEFAULT_MAX_BYTES, keep=DEFAULT_KEEP):
 
 
 SUBAGENT_FINISHED = ("completed", "error", "failed", "cancelled", "canceled")
+# B12: opencode ≥ 2.3 führt Subagenten standardmäßig im Hintergrund; das
+# task-Werkzeug der Hauptsession ist sofort "completed", während die
+# Metadaten den tatsächlichen Zustand (u. a. "running") nennen. Nur bekannte
+# Werte werden übernommen, fremde Formen bleiben unverändert.
+SUBAGENT_STATUSES = ("running",) + SUBAGENT_FINISHED
 # opencode nennt das Werkzeug intern "task"; ältere Stände und die Anzeige
 # verwenden "subagent". Beide Formen werden erkannt.
 SUBAGENT_TOOLS = ("task", "subagent")
@@ -212,6 +217,28 @@ def _subagent_session(part, tool_state=None):
     return ""
 
 
+def _subagent_metadata_status(part, tool_state=None):
+    """Liest den Subagenten-Status aus den Werkzeug-Metadaten.
+
+    B12: Die Metadaten haben dieselben beiden Formen wie bei
+    :func:`_subagent_session` (``tool_state.metadata`` bzw. ``part.metadata``,
+    teils verschachtelt). Nur bekannte Statuswerte zählen; ohne Statusfeld
+    oder mit unbekanntem Wert bleibt der Werkzeugzustand maßgeblich.
+    """
+    candidates = []
+    if isinstance(tool_state, dict):
+        candidates.append(tool_state.get("metadata"))
+    candidates.append(part.get("metadata"))
+    for metadata in candidates:
+        if not isinstance(metadata, dict):
+            continue
+        inner = metadata.get("metadata") if isinstance(metadata.get("metadata"), dict) else metadata
+        value = inner.get("status")
+        if isinstance(value, str) and value in SUBAGENT_STATUSES:
+            return value
+    return ""
+
+
 def _subagent_entry(state, session, agent, description):
     """Findet den bestehenden Eintrag; ohne Session über Agent und Beschreibung."""
     if session:
@@ -280,6 +307,12 @@ def _capture_child_event(event, state, session):
             "output": "",
         }
         state["subagents"].append(entry)
+    if entry.get("status") in SUBAGENT_FINISHED:
+        # B12: Lebende Kind-Ereignisse beweisen, dass der Eintrag weiterläuft;
+        # ein früher gemeldeter Abschluss war voreilig. Das ist die
+        # Rückfalllinie für Harnesses, die Kind-Ereignisse doch liefern.
+        entry["status"] = "running"
+        entry["ended"] = 0
     text = "\n".join(lines)
     previous = str(entry.get("output") or "")
     entry["output"] = output_tail(
@@ -327,6 +360,15 @@ def translate_event(event, state, run=None):
         elif isinstance(session, str) and session and known_session \
                 and session != known_session:
             return _capture_child_event(event, state, session)
+    if (not isinstance(run, dict) and isinstance(session, str) and session
+            and known_session and session != known_session
+            and any(item.get("session") == session
+                    for item in state["subagents"])):
+        # B12: Eine bereits erfasste Kind-Session bleibt ein Subagent; ihre
+        # späteren Ereignisse beleben den Eintrag wieder, statt die
+        # Hauptsession zu ersetzen. F25 „zuletzt gewinnt“ gilt nur für
+        # unbekannte Sessions.
+        return _capture_child_event(event, state, session)
     if isinstance(session, str) and session and session != known_session:
         state["session"] = session
         changed = True
@@ -374,6 +416,11 @@ def translate_event(event, state, run=None):
     prompt = inputs.get("prompt") if isinstance(inputs.get("prompt"), str) else ""
     output = tool_state.get("output") if isinstance(tool_state.get("output"), str) else ""
     child_session = _subagent_session(part, tool_state)
+    # B12: Die Metadaten sind Authorität. opencode ≥ 2.3 kehrt beim
+    # task-Werkzeug sofort mit state.status="completed" zurück, meldet in den
+    # Metadaten aber "running", solange die Kind-Session weiterläuft. Ohne
+    # bekannten Metadatenstatus gilt wie bisher der Werkzeugzustand.
+    status = _subagent_metadata_status(part, tool_state) or status
     now = int(time.time())
     entry = _subagent_entry(state, child_session, agent, description)
     if entry is None:

@@ -403,6 +403,15 @@ def subagents_of(name):
             if live.get("status") == "running":
                 existing["status"] = "running"
                 existing["ended"] = 0
+            elif existing.get("status") == "running":
+                # B12: Der Server kennt die Kind-Session, führt sie aber nicht
+                # als aktiv — ein festgehaltenes "running" ist damit beendet.
+                # In der Sandbox liefert der Läufer keine Kind-Ereignisse; dort
+                # beendet erst die B11-Regel „kein aktiver Lauf → leere Liste“
+                # den Eintrag, nicht eine erfundene Serverlage.
+                existing["status"] = "completed"
+                if live.get("ended"):
+                    existing["ended"] = live["ended"]
     return {"session": session, "subagents": entries}
 
 
