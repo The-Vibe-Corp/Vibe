@@ -18,16 +18,7 @@ Kein vollständiger Rewrite ohne ausdrücklich beschlossenes Migrationsticket.
 
 ## Zielumgebung
 
-- Host: Bazzite Linux.
-- Steuerungscontainer: Distrobox, standardmäßig android-dev.
-- Backend und CLI: Python 3, zunächst Standardbibliothek.
-- Frontend: HTML, CSS und JavaScript, zunächst ohne verpflichtenden Build.
-- Prozessverwaltung: bestehende tmux-Integration.
-- Versionsverwaltung: Git.
-- Projektdateien können auf einem FUSE-/NTFS-Dateisystem liegen.
-- Shellskripte müssen mit bash datei.sh funktionieren.
-- Keine Systeminstallation auf dem Host als Standardvoraussetzung.
-- Zusätzliche Entwicklungsabhängigkeiten werden isoliert im Container installiert.
+Das system ist sowohl auf Linux/Win/Mac in einer python umgebung lauffähig. Vibe selbst startet agenten wahlweise in einer sandbox, um den zugriff auf das system zu schützen.
 
 ## Begriffe und Trennung
 
@@ -231,7 +222,7 @@ vorliegt.
 - Die Oberfläche erläutert diese Unterschiede.
 - Tests prüfen ausdrücklich, dass kein unbeabsichtigtes Stoppen erfolgt.
 
-### Bazzite-Startmenü
+### Startmenü
 
 - Benutzerbezogenen Menüeintrag installieren und entfernen.
 - Läuft vibe nicht: nötigen Container starten, vibe starten, Bereitschaft
@@ -324,10 +315,8 @@ docs/
 - Integrationstests für API, Storage und Prozessadapter.
 - Browsertests für zentrale Workflows.
 - Attrappen allein ersetzen keine Browser- oder Systemabnahme.
-- Manuelle Bazzite-/Distrobox-Abnahme mit dokumentierter Version.
-- Tests verwenden temporäre HOME-/VIBE-Verzeichnisse und eigene Ports.
+- Tests verwenden temporäre Verzeichnisse und eigene Ports.
 - Keine Tests gegen persönliche Projekte oder produktive Konfigurationen.
-- Keine echten kostenpflichtigen Modellaufrufe in Standardtests.
 - Testprotokolle nennen Befehl, Ergebnis und Grenzen des Nachweises.
 - Jedes Ticket benötigt Tests, fachliche und technische Dokumentation sowie
   unabhängigen Review vor dem Abschluss.
@@ -337,7 +326,7 @@ docs/
 - Eigener Modellhost oder eigene Zahlungsabwicklung.
 - Öffentlicher Remotezugriff auf das Dashboard.
 - Mehrbenutzerbetrieb oder Cloud-Synchronisation.
-- Vollständiger Ersatz für opencode.
+- Vollständiger Ersatz für coding harniss.
 - Automatische Veröffentlichung, Push, Merge oder Release ohne Freigabe.
 - Vollständiger Frameworkwechsel als Voraussetzung für weitere Entwicklung.
 
@@ -350,3 +339,7 @@ docs/
 - Laufzeitdaten und Geheimnisse nicht ins Repository aufnehmen.
 - Ungeprüfte Modellinformationen als unbekannt behandeln.
 - Sicherheits- und Datenintegritätsfehler vor neuen Komfortfunktionen beheben.
+
+## Zielgruppe und Nutzung
+
+Die zielgruppe von vibe sind berater, product ower oder projektmanager. alle, welche schnell eine solide software erstellen wollen, aber keine tiefen entwicklungskenntnisse haben. vibe dient im unternehmen dazu interne, solide anwendungen schnell und einfach, durch fachliche steuerung zu entwickeln.
