@@ -38,6 +38,7 @@ MIN_PYTHON = (3, 8)
 if str(KIT / "bin") not in sys.path:
     sys.path.insert(0, str(KIT / "bin"))
 import vibe_harness
+import vibe_paths
 
 PROGRAM_FILES = (
     "vibe",
@@ -381,6 +382,104 @@ def default_target(info, home):
     return Path(home) / "VibeCode"
 
 
+def _prod_config(environ=None):
+    """Liest die persönliche Konfiguration (Profil prod); fehlerhafte Datei -> SetupError."""
+    try:
+        config = vibe_paths.load_config(environ=environ)
+        return vibe_paths._profile_config(config, "prod", vibe_paths.default_config_path(environ))
+    except vibe_paths.ConfigError as error:
+        raise SetupError(str(error)) from error
+
+
+def default_workspace(info, home, environ=None):
+    """Standard-Workspace: VIBE, dann Konfiguration, sonst ~/VibeCode."""
+    environ = os.environ if environ is None else environ
+    if environ.get("VIBE"):
+        return Path(os.path.expanduser(environ["VIBE"]))
+    configured = _prod_config(environ).get("workspace")
+    if isinstance(configured, str) and configured.strip():
+        return Path(os.path.abspath(os.path.expanduser(configured.strip())))
+    return Path(home) / "VibeCode"
+
+
+def default_install(workspace, environ=None):
+    """Standard-Installationsort: VIBE_INSTALL, Konfiguration, sonst <workspace>/_toolchain."""
+    environ = os.environ if environ is None else environ
+    if environ.get("VIBE_INSTALL"):
+        return Path(os.path.expanduser(environ["VIBE_INSTALL"]))
+    configured = _prod_config(environ).get("install")
+    if isinstance(configured, str) and configured.strip():
+        return Path(os.path.abspath(os.path.expanduser(configured.strip())))
+    return Path(workspace) / "_toolchain"
+
+
+def runtime_dir(workspace, environ=None):
+    """Laufzeitordner (Logs, runs.json): VIBE_RUNTIME, Konfiguration, sonst <workspace>/_logs."""
+    environ = os.environ if environ is None else environ
+    if environ.get("VIBE_RUNTIME"):
+        return Path(os.path.expanduser(environ["VIBE_RUNTIME"]))
+    configured = _prod_config(environ).get("runtime")
+    if isinstance(configured, str) and configured.strip():
+        return Path(os.path.abspath(os.path.expanduser(configured.strip())))
+    return Path(workspace) / "_logs"
+
+
+def validate_install(value, workspace, kit, home):
+    """Wie validate_target; zusätzlich getrennt vom Workspace (Workspace nicht im Installationsort)."""
+    install = Path(validate_target(value, kit, home))
+    workspace = Path(workspace).resolve(strict=False)
+    if install == workspace:
+        raise SetupError(
+            "Installationsort und Workspace dürfen nicht identisch sein "
+            "(Vorschlag: <Workspace>/_toolchain oder ein eigener Ordner)."
+        )
+    if install in workspace.parents:
+        raise SetupError("Der Workspace darf nicht innerhalb des Installationsorts liegen.")
+    return str(install)
+
+
+def save_paths_config(workspace, install, timestamp=None, environ=None):
+    """Trägt Workspace und Installationsort unter profiles.prod der persönlichen Konfiguration ein.
+
+    Andere Einstellungen bleiben erhalten; eine vorhandene Datei wird vorher
+    gesichert. Eine ungültige Datei wird nicht überschrieben.
+    """
+    environ = os.environ if environ is None else environ
+    timestamp = timestamp or time.strftime("%Y%m%d-%H%M%S")
+    path = Path(vibe_paths.default_config_path(environ))
+    try:
+        data = vibe_paths.load_config(str(path), environ)
+    except vibe_paths.ConfigError as error:
+        raise SetupError(f"Konfiguration nicht geändert: {error}") from error
+    profiles = data.get("profiles")
+    if profiles is None:
+        profiles = {}
+    if not isinstance(profiles, dict):
+        raise SetupError(f"Konfiguration {path}: 'profiles' muss ein Objekt sein; nicht geändert.")
+    prod = profiles.get("prod")
+    if prod is None:
+        prod = {}
+    if not isinstance(prod, dict):
+        raise SetupError(f"Konfiguration {path}: 'profiles.prod' muss ein Objekt sein; nicht geändert.")
+    if prod.get("workspace") == str(workspace) and prod.get("install") == str(install):
+        return {"path": str(path), "changed": False, "backup": None}
+    prod["workspace"] = str(workspace)
+    prod["install"] = str(install)
+    profiles["prod"] = prod
+    data["profiles"] = profiles
+    backup = None
+    if path.is_file():
+        backup_path = path.with_name(path.name + f".bak-{timestamp}")
+        counter = 1
+        while backup_path.exists():
+            backup_path = path.with_name(path.name + f".bak-{timestamp}-{counter}")
+            counter += 1
+        shutil.copy2(str(path), str(backup_path))
+        backup = str(backup_path)
+    _write_text_atomic(path, json.dumps(data, indent=2, ensure_ascii=False) + "\n")
+    return {"path": str(path), "changed": True, "backup": backup}
+
+
 def validate_target(value, kit, home):
     """Lehnt allgemeine, gefährliche und mit dem Quellcode identische Ziele ab."""
     if value is None or not str(value).strip():
@@ -404,7 +503,7 @@ def validate_target(value, kit, home):
 
 def detect_existing(vibe_root):
     """Erfasst eine vorhandene Installation, ohne etwas zu verändern."""
-    toolchain = Path(vibe_root) / "_toolchain"
+    toolchain = Path(vibe_root)
     programs = [name for name in PROGRAM_FILES if (toolchain / "bin" / name).is_file()]
     web = [name for name in WEB_FILES if (toolchain / "bin" / "web" / name).is_file()]
     runtime = [name for name in RUNTIME_FILES if (toolchain / name).is_file()]
@@ -450,7 +549,7 @@ def read_kit_version(kit=None, runner=None):
 
 def read_installed_version(vibe_root):
     """Liest die Versionskennung einer Installation; None heißt nicht installiert."""
-    path = Path(vibe_root) / "_toolchain" / VERSION_META
+    path = Path(vibe_root) / VERSION_META
     if not path.is_file():
         return None
     try:
@@ -501,7 +600,7 @@ def build_install_plan(kit, vibe_root, mode="update", timestamp=None, runner=Non
     source_program = kit / "bin" / "vibe"
     if not source_program.is_file():
         raise SetupError(f"Unvollständiges Quellverzeichnis: {source_program} fehlt")
-    toolchain = vibe_root / "_toolchain"
+    toolchain = vibe_root
     plan = {
         "target": str(toolchain),
         "mode": mode,
@@ -741,7 +840,7 @@ def _undo_install(vibe_root, result, launcher=None):
     Gibt ``restored`` zurück, wenn eine Sicherung eingespielt wurde, sonst
     ``removed``, wenn die neu angelegten Dateien entfernt wurden.
     """
-    toolchain = Path(vibe_root) / "_toolchain"
+    toolchain = Path(vibe_root)
     if launcher:
         path = Path(launcher["path"])
         if launcher.get("backed_up"):
@@ -783,7 +882,7 @@ def install_program_files(kit, vibe_root, mode="update", timestamp=None, runner=
     plan = build_install_plan(kit, vibe_root, mode=mode, timestamp=timestamp, runner=runner)
     kit = Path(kit)
     vibe_root = Path(vibe_root)
-    toolchain = vibe_root / "_toolchain"
+    toolchain = vibe_root
     changed = [entry for entry in plan["files"] if entry["action"] in ("copy", "backup")]
     existing_before = toolchain.is_dir()
     result = {
@@ -889,7 +988,7 @@ def _backup_sort_key(path):
 
 def select_backup(vibe_root, backup=None):
     """Wählt die jüngste oder eine ausdrücklich benannte Sicherung."""
-    toolchain = Path(vibe_root) / "_toolchain"
+    toolchain = Path(vibe_root)
     if not toolchain.is_dir():
         raise SetupError(f"Keine Installation unter {toolchain} gefunden.")
     candidates = sorted(
@@ -924,7 +1023,7 @@ def select_backup(vibe_root, backup=None):
 
 def rollback(vibe_root, backup=None):
     """Stellt die jüngste oder eine benannte Sicherung wieder her."""
-    toolchain = Path(vibe_root) / "_toolchain"
+    toolchain = Path(vibe_root)
     chosen = select_backup(vibe_root, backup)
     report = _restore_backup(toolchain, chosen)
     report["backup"] = chosen.name
@@ -935,11 +1034,11 @@ def uninstall(vibe_root, home=None, remove_launcher=False, timestamp=None):
     """Entfernt Programmdateien und Vorlagen; Laufzeitdaten und Projekte bleiben.
 
     Vorlagen werden vor dem Entfernen unter
-    ``_toolchain/backup-uninstall-<Zeitstempel>/`` gesichert, damit auch
+    ``<Installationsort>/backup-uninstall-<Zeitstempel>/`` gesichert, damit auch
     persönlich angepasste Vorlagen erhalten bleiben.
     """
     vibe_root = Path(vibe_root)
-    toolchain = vibe_root / "_toolchain"
+    toolchain = vibe_root
     report = {"removed": [], "kept": [], "missing": False, "launchers": [], "backup": None}
     if not toolchain.is_dir():
         report["missing"] = True
@@ -1005,7 +1104,7 @@ def uninstall(vibe_root, home=None, remove_launcher=False, timestamp=None):
     return report
 
 
-def running_installation(vibe_root, runner=None, which=None):
+def running_installation(logs_dir, runner=None, which=None):
     """Nennt laufende Agentenläufe und Dashboard-/Server-Sitzungen dieser Installation.
 
     Ein Registereintrag in ``starting``/``running`` gilt nur dann als laufend,
@@ -1047,7 +1146,7 @@ def running_installation(vibe_root, runner=None, which=None):
             return False
         return None
 
-    runs_path = Path(vibe_root) / "_logs" / "runs.json"
+    runs_path = Path(logs_dir) / "runs.json"
     if runs_path.exists():
         try:
             data = json.loads(runs_path.read_text(encoding="utf-8"))
@@ -1090,7 +1189,7 @@ def install_launcher(vibe_root, home, info, timestamp=None):
         content = (
             "@echo off\r\n"
             "setlocal\r\n"
-            "py -3 \"%~dp0_toolchain\\bin\\vibe\" %*\r\n"
+            "py -3 \"%~dp0bin\\vibe\" %*\r\n"
         )
         backed_up = None
         existed = launcher.exists()
@@ -1107,7 +1206,7 @@ def install_launcher(vibe_root, home, info, timestamp=None):
         _write_text_atomic(launcher, content)
         return {"path": str(launcher), "backed_up": backed_up, "created": not existed}
 
-    target = vibe_root / "_toolchain" / "bin" / "vibe"
+    target = vibe_root / "bin" / "vibe"
     launcher = home / ".local" / "bin" / "vibe"
     launcher.parent.mkdir(parents=True, exist_ok=True)
     backed_up = None
@@ -1153,10 +1252,10 @@ def ensure_project_test_agent(project, toolchain):
     return result
 
 
-def register_projects(vibe_root):
-    """Ergänzt fehlende .vibe/project.env; vorhandene Konfigurationen bleiben."""
-    vibe_root = Path(vibe_root)
-    toolchain = vibe_root / "_toolchain"
+def register_projects(workspace, install):
+    """Ergänzt fehlende .vibe/project.env im Workspace; Vorlagen kommen aus dem Installationsort."""
+    vibe_root = Path(workspace)
+    toolchain = Path(install)
     result = {"projects": [], "created": [], "test_agent_created": [], "warnings": []}
     if not vibe_root.is_dir():
         return result
@@ -1196,7 +1295,7 @@ def register_projects(vibe_root):
 
 def verify_installation(vibe_root):
     """Prüft die installierten Dateien und die Python-Version."""
-    toolchain = Path(vibe_root) / "_toolchain"
+    toolchain = Path(vibe_root)
     checks = []
     for name in PROGRAM_FILES:
         path = toolchain / "bin" / name
@@ -1223,7 +1322,7 @@ def verify_installation(vibe_root):
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(
         prog="setup-vibe.py",
-        description="Interaktiver Setup für vibe (Linux, Container und Windows).",
+        description="Interaktiver Setup für vibe (Linux, Container und Windows); Workspace und Installationsort sind getrennt.",
     )
     try:
         version_text = (KIT / VERSION_FILE).read_text(encoding="utf-8").strip() or UNKNOWN_VERSION
@@ -1235,7 +1334,10 @@ def parse_args(argv=None):
         version=f"vibe-Setup {version_text}",
         help="Version des Quellstands anzeigen",
     )
-    parser.add_argument("--vibe", metavar="PFAD", help="Zielordner für die Installation")
+    parser.add_argument("--vibe", "--workspace", dest="vibe", metavar="PFAD",
+                        help="Workspace (Projektordner, entspricht VIBE)")
+    parser.add_argument("--install", metavar="PFAD",
+                        help="Installationsort (Programme, Vorlagen, Einstellungen; Standard: <Workspace>/_toolchain)")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--reuse", action="store_true", help="bestehende Installation wiederverwenden")
     mode.add_argument("--update", action="store_true", help="Programmdateien aktualisieren (mit Sicherung)")
@@ -1292,20 +1394,37 @@ def main(argv=None, input_fn=None, output=print, which=None, runner=None,
     if info.get("immutable") and not info.get("container"):
         output("Hinweis: Unveränderliches System; Systempakete werden nicht auf dem Host installiert.")
 
-    if options.vibe:
-        raw_target = options.vibe
-    else:
-        default = default_target(info, home)
-        if interactive:
-            answer = input_fn(f"Zielordner für vibe [{default}]: ").strip()
-            raw_target = answer or str(default)
-        else:
-            raw_target = str(default)
     try:
-        target = Path(validate_target(raw_target, kit, home))
+        if options.vibe:
+            raw_workspace = options.vibe
+        else:
+            default_ws = default_workspace(info, home)
+            if interactive:
+                answer = input_fn(f"Workspace (Projektordner) [{default_ws}]: ").strip()
+                raw_workspace = answer or str(default_ws)
+            else:
+                raw_workspace = str(default_ws)
+        workspace = Path(validate_target(raw_workspace, kit, home))
+
+        if options.install:
+            raw_install = options.install
+        else:
+            default_inst = default_install(workspace)
+            if interactive:
+                answer = input_fn(
+                    f"Installationsort (Programme, Vorlagen, Einstellungen) [{default_inst}]: "
+                ).strip()
+                raw_install = answer or str(default_inst)
+            else:
+                raw_install = str(default_inst)
+        target = Path(validate_install(raw_install, workspace, kit, home))
+        logs_dir = runtime_dir(workspace)
     except SetupError as error:
         output("FEHLER: " + str(error))
         return 1
+    output(f"Workspace:        {workspace}")
+    output(f"Installationsort: {target}")
+    output(f"Laufzeitdaten:    {logs_dir}")
 
     if options.backup and not options.rollback:
         output("FEHLER: --backup ist nur zusammen mit --rollback zulässig.")
@@ -1320,7 +1439,7 @@ def main(argv=None, input_fn=None, output=print, which=None, runner=None,
             output(f"(dry-run) Rollback aus {chosen.name}; es wird nichts geändert.")
             return 0
         if not options.force:
-            reasons = running_installation(target, runner=runner, which=which)
+            reasons = running_installation(logs_dir, runner=runner, which=which)
             if reasons:
                 output("FEHLER: Die Installation wird gerade verwendet; nichts zurückgerollt.")
                 for reason in reasons:
@@ -1339,7 +1458,7 @@ def main(argv=None, input_fn=None, output=print, which=None, runner=None,
         return 0
     if options.uninstall:
         if options.dry_run:
-            toolchain = target / "_toolchain"
+            toolchain = target
             removable = [f"bin/{name}" for name in PROGRAM_FILES if (toolchain / "bin" / name).exists()]
             if (toolchain / "templates").is_dir():
                 removable.append("templates")
@@ -1363,7 +1482,7 @@ def main(argv=None, input_fn=None, output=print, which=None, runner=None,
                 output("Uninstall abgebrochen; nichts geändert.")
                 return 1
         if not options.force:
-            reasons = running_installation(target, runner=runner, which=which)
+            reasons = running_installation(logs_dir, runner=runner, which=which)
             if reasons:
                 output("FEHLER: Die Installation wird gerade verwendet; nichts entfernt.")
                 for reason in reasons:
@@ -1392,7 +1511,7 @@ def main(argv=None, input_fn=None, output=print, which=None, runner=None,
     # erhalten; --harness setzt sie bewusst neu. Ohne Datei und ohne Angabe
     # bleibt opencode der Standard, damit bestehende Installationen ihr
     # Verhalten nicht ändern.
-    state_dir = target / "_toolchain"
+    state_dir = target
     selection_file = Path(vibe_harness.selection_path(state_dir))
     stored_harness = None
     if selection_file.exists():
@@ -1476,11 +1595,12 @@ def main(argv=None, input_fn=None, output=print, which=None, runner=None,
         prefix = privilege_prefix(info, is_root, has_sudo)
         for command in install_commands(info, installable, prefix):
             output("(dry-run) " + " ".join(command))
-        output(f"(dry-run) Ziel: {target}; Modus: {mode}; es wird nichts geändert.")
+        output(f"(dry-run) Konfiguration {vibe_paths.default_config_path()}: profiles.prod.workspace={workspace}, install={target}")
+        output(f"(dry-run) Ziel: {target}; Workspace: {workspace}; Modus: {mode}; es wird nichts geändert.")
         return 0
 
     if mode == "update" and existing["toolchain"] and not options.force:
-        reasons = running_installation(target, runner=runner, which=which)
+        reasons = running_installation(logs_dir, runner=runner, which=which)
         if reasons:
             output("FEHLER: Die Installation wird gerade verwendet; nichts geändert.")
             for reason in reasons:
@@ -1530,9 +1650,9 @@ def main(argv=None, input_fn=None, output=print, which=None, runner=None,
             if interactive and not options.yes:
                 answer = input_fn("Vorhandene Projektordner registrieren? [J/n]: ").strip().lower()
                 if not answer.startswith("n"):
-                    registration = register_projects(target)
+                    registration = register_projects(workspace, target)
             else:
-                registration = register_projects(target)
+                registration = register_projects(workspace, target)
     except (SetupError, OSError) as error:
         if files is not None:
             try:
@@ -1561,6 +1681,20 @@ def main(argv=None, input_fn=None, output=print, which=None, runner=None,
             output("FEHLER: Harness-Auswahl konnte nicht gespeichert werden: " + str(error))
             return 1
 
+    try:
+        saved = save_paths_config(workspace, target, timestamp=timestamp)
+    except (SetupError, OSError) as error:
+        output("FEHLER: " + str(error))
+        output(f"Setze stattdessen VIBE={workspace} und VIBE_INSTALL={target} in deiner Shell-Umgebung.")
+        return 2
+    if saved["changed"]:
+        output(f"Konfiguration: {saved['path']} (profiles.prod.workspace/install)")
+        if saved["backup"]:
+            output("Vorherige Konfiguration gesichert: " + saved["backup"])
+    for variable, chosen in (("VIBE", workspace), ("VIBE_INSTALL", target)):
+        value = os.environ.get(variable)
+        if value and os.path.abspath(os.path.expanduser(value)) != str(chosen):
+            output(f"Hinweis: {variable}={value} überschreibt die Konfiguration; Variable anpassen oder entfernen.")
     for warning in files["warnings"]:
         output("Hinweis: " + warning)
     output(f"Installation: {len(files['copied'])} Datei(en) kopiert, {len(files['skipped'])} unverändert.")
