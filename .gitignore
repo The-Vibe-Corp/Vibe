@@ -20,6 +20,7 @@ _secrets.env
 /.opencode/
 /TICKETS.md
 /FEEDBACK.md
+/AGENTS.md
 vibe-storage-locks-*/
 
 # Systemspezifische OS- und Editor-Artefakte
