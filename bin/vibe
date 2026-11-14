@@ -4866,7 +4866,7 @@ def cmd_server(action="status", out=None):
                        "-e", MANAGED_VAR + "=server",
                        "-e", "OPENCODE_SERVER_PASSWORD_FILE=" + password_file,
                        "bash", "-lc",
-                       'source ~/.bashrc; export OPENCODE_SERVER_PASSWORD="$(cat "$OPENCODE_SERVER_PASSWORD_FILE")"; exec ' + shlex.join(command)])
+                       'source ~/.bashrc; unset OPENCODE_PASSWORD; export OPENCODE_SERVER_PASSWORD="$(cat "$OPENCODE_SERVER_PASSWORD_FILE")"; exec ' + shlex.join(command)])
         if rc != 0:
             sys.exit("opencode-Server nicht gestartet: " + output)
         time.sleep(4); print("Gestartet:" if server_health() else "Start angestoßen, Server antwortet noch nicht (tmux attach -t " + session + "):", OC_URL, file=out)

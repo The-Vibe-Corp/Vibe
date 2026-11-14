@@ -861,14 +861,14 @@
       "sha256": "e5ae3183efcb76dace1e0bcbde9993be7afe82d93d7877da9ee39846cf45330a"
     },
     {
-      "bytes": 257858,
+      "bytes": 257883,
       "path": "bin/vibe",
-      "sha256": "a0e1df53ba5bb8730b727d5868bc183e96d6509b88cb4c4721994e96f7e06b62"
+      "sha256": "3564e653a010df9fe393383b94d33c0490cc7f4c7cbc0184652b5d212c636bf6"
     },
     {
-      "bytes": 55882,
+      "bytes": 56236,
       "path": "bin/vibe-run.sh",
-      "sha256": "e095362f99b2283595abd4380771d3e320b08b997555479a3bcda1d364508ef4"
+      "sha256": "731f07db8470e7b65a85fb120364e72a222e24eff01db3030968aa8e7316c01e"
     },
     {
       "bytes": 91367,

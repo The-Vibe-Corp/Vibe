@@ -38,6 +38,12 @@ mkdir -p "$RUNTIME"
 # Kennwort steht in der Laufzeitdatei und wird nur als Umgebungsvariable an
 # opencode und als curl-Anmeldedaten verwendet, nie als sichtbares Argument.
 PASSWORD_FILE="$RUNTIME/opencode.password"
+# F31: opencode v2.3 steuert den Basic-Auth des Servers auch über
+# OPENCODE_PASSWORD, und ein geerbter Wert schlägt OPENCODE_SERVER_PASSWORD.
+# Eine Alt-Belegung aus der Startumgebung (Dashboard/tmux) ließ den privaten
+# Server deshalb dauerhaft 401 antworten. Das Kennwort kommt hier ausschließlich
+# aus der Laufzeitdatei.
+unset OPENCODE_PASSWORD
 CURL_AUTH=()
 HAS_SERVER_PASSWORD=0
 if [ -r "$PASSWORD_FILE" ] && [ -s "$PASSWORD_FILE" ]; then
