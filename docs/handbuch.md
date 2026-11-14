@@ -159,6 +159,31 @@ Prüfumgebung: `docs/betrieb.md`, Abschnitt „Prüfungen und Nachweise“.
   vollständiger Vorvalidierung und Rollback ist noch nicht abgeschlossen
   (V-012); siehe `docs/grenzen.md`.
 
+### AGENTS.md (Regeln für Agenten)
+
+Jedes Projekt hat eine `AGENTS.md`. Sie entsteht beim Anlegen aus der Vorlage
+des Projekttyps (`templates/<typ>/AGENTS.md`, bei unbekannten Typen
+`templates/generic`). Darin stehen projektspezifische Hinweise und ein von vibe
+verwalteter Block mit den gemeinsamen Regeln für Projektordner, Git-Ordnung,
+Coding-Leitlinien und den unabhängigen Test-Agenten.
+
+Den verwalteten Block bringt vibe bei jedem Agentenlauf auf den aktuellen
+Stand. Inhalte außerhalb des Blocks bleiben dabei erhalten; nicht committete
+Änderungen werden vor einem Lauf gemäß F27 geschützt.
+
+Im Projektdetail unter „Assistent“ zeigt die Karte „AGENTS.md — Regeln für
+Agenten“ den Inhalt:
+
+- Die beiden Textfelder enthalten die freien Teile vor und nach dem
+  verwalteten Block. Sie lassen sich bearbeiten; „Speichern“ schreibt die
+  Datei.
+- Der verwaltete Block steht schreibgeschützt zwischen den Textfeldern. Er
+  wird nicht über die Oberfläche geändert, weil der nächste Agentenlauf ihn
+  ohnehin ersetzt.
+- Fehlt die Datei, legt „Aus Vorlage anlegen“ sie aus der Typvorlage an.
+- Eine obere Textarea bleibt leer und ist deaktiviert, solange die Datei keinen
+  verwalteten Block enthält.
+
 ## MCP-Server
 
 ```
