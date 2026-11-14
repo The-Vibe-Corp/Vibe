@@ -39,10 +39,16 @@ mkdir -p "$RUNTIME"
 # opencode und als curl-Anmeldedaten verwendet, nie als sichtbares Argument.
 PASSWORD_FILE="$RUNTIME/opencode.password"
 CURL_AUTH=()
+HAS_SERVER_PASSWORD=0
 if [ -r "$PASSWORD_FILE" ] && [ -s "$PASSWORD_FILE" ]; then
   OPENCODE_SERVER_PASSWORD="$(cat "$PASSWORD_FILE")"
   export OPENCODE_SERVER_PASSWORD
   CURL_AUTH=(-u "opencode:$OPENCODE_SERVER_PASSWORD")
+  # B13: Eine Datei aus Leerzeichen/Nennzeichen gilt wie eine fehlende; nur
+  # ein tatsächlich nichtleeres Kennwort erlaubt den privaten Server.
+  if [ -n "${OPENCODE_SERVER_PASSWORD//[[:space:]]/}" ]; then
+    HAS_SERVER_PASSWORD=1
+  fi
 fi
 # opencode v2 meldet sich unter /api/info; /global/health bleibt nur als
 # Rückfall für ältere Installationen ohne Kennwort. Mit Kennwort wird der alte
@@ -69,6 +75,151 @@ LOG="$RUNTIME/$NAME.log"
 VLOG="$RUNTIME/$NAME.verify.log"
 PAUSE_FLAG="$RUNTIME/$NAME.pause-after"
 REPORT="$RUNTIME/$NAME.report.txt"
+# B13: Der private opencode-Server eines Laufs. Die Serverdatei ist die
+# Übergabe an das Dashboard (Ziel und Kennwortdatei), das Protokoll hält die
+# Serverausgabe getrennt vom Laufprotokoll, die PID-Datei dient dem Aufräumen.
+SERVER_JSON="$LOG.server.json"
+SERVER_LOG="$LOG.server.log"
+SERVER_PID_FILE="$LOG.server.pid"
+SERVER_FAILED_FILE="$LOG.server.failed"
+rm -f -- "$SERVER_FAILED_FILE"
+# B13: Endpunkt des zuletzt gestarteten privaten Servers aus der Serverdatei.
+# Nur der vom Läufer selbst geschriebene Loopback-Endpunkt wird akzeptiert.
+private_server_url() {
+  python3 - "$SERVER_JSON" <<'PY' 2>/dev/null
+import json
+import sys
+
+try:
+    with open(sys.argv[1], encoding="utf-8") as handle:
+        data = json.load(handle)
+except (OSError, ValueError):
+    raise SystemExit(1)
+url = data.get("url") if isinstance(data, dict) else None
+if not isinstance(url, str) or not url.startswith("http://127.0.0.1:"):
+    raise SystemExit(1)
+print(url.rstrip("/"))
+PY
+}
+# B13: Ein bereits laufender privater Server wird wiederverwendet; nur ein
+# fehlender oder nicht mehr gesunder Server führt zu einem Neustart.
+private_server_healthy() {
+  local url
+  url="$(private_server_url)" || return 1
+  [ -n "$url" ] || return 1
+  curl -sf --max-time 2 -u "opencode:$OPENCODE_SERVER_PASSWORD" \
+    "$url/api/info" > /dev/null 2>&1
+}
+private_free_port() {
+  python3 - <<'PY'
+import socket
+
+with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+    sock.bind(("127.0.0.1", 0))
+    print(sock.getsockname()[1])
+PY
+}
+private_server_file_write() {
+  local url="$1" port="$2"
+  python3 - "$SERVER_JSON" "$url" "$port" "$PASSWORD_FILE" <<'PY'
+import json
+import sys
+
+path, url, port, password_file = sys.argv[1:5]
+data = {"url": url, "port": int(port), "password_file": password_file}
+with open(path, "w", encoding="utf-8") as handle:
+    json.dump(data, handle, ensure_ascii=False)
+    handle.write("\n")
+PY
+}
+# B13: Beendet den privaten Server samt Prozessgruppe und entfernt die
+# Übergabedateien. Mehrfache Aufrufe sind unschädlich.
+stop_private_server() {
+  local pid=""
+  if [ -r "$SERVER_PID_FILE" ]; then
+    pid="$(cat "$SERVER_PID_FILE" 2>/dev/null || true)"
+  fi
+  case "$pid" in
+    ''|*[!0-9]*) ;;
+    *)
+      kill -TERM -- "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
+      sleep 1
+      kill -KILL -- "-$pid" 2>/dev/null || true
+      ;;
+  esac
+  rm -f -- "$SERVER_JSON" "$SERVER_PID_FILE"
+}
+# B13: Startet einen privaten opencode-Server auf einem freien Loopback-Port.
+# Das Kennwort kommt ausschließlich über die bereits exportierte
+# Umgebungsvariable; es erscheint weder in der Argumentliste noch im Protokoll.
+start_private_server() {
+  local dir="$1" port url wrap=()
+  port="$(private_free_port)" || return 1
+  url="http://127.0.0.1:$port"
+  if [ "$SANDBOX_STATE" = "on" ]; then
+    wrap=(python3 "$BIN/vibe_sandbox.py" "$dir" --)
+  fi
+  rm -f -- "$SERVER_JSON" "$SERVER_PID_FILE"
+  : > "$SERVER_LOG"
+  # Der Server läuft in einer eigenen Sitzung und überlebt damit das Ende des
+  # Agenten-Subshells. Seine Ausgabe geht in die eigene Serverdatei.
+  if command -v setsid > /dev/null 2>&1; then
+    setsid --fork bash -c 'echo "$$" > "$1"; shift; exec "$@"' \
+      _ "$SERVER_PID_FILE" "${wrap[@]}" \
+      opencode serve --hostname 127.0.0.1 --port "$port" \
+      >> "$SERVER_LOG" 2>&1 < /dev/null
+  else
+    # Ohne setsid bleibt der Server Kind dieses Subshells; das ist nur für
+    # nicht sandboxierte Läufe dauerhaft. Die PID-Datei ermöglicht dennoch
+    # ein sauberes Beenden.
+    bash -c 'echo "$$" > "$1"; shift; exec "$@"' \
+      _ "$SERVER_PID_FILE" "${wrap[@]}" \
+      opencode serve --hostname 127.0.0.1 --port "$port" \
+      >> "$SERVER_LOG" 2>&1 < /dev/null &
+  fi
+  local deadline=$((SECONDS + 15))
+  while [ "$SECONDS" -lt "$deadline" ]; do
+    if curl -sf --max-time 2 -u "opencode:$OPENCODE_SERVER_PASSWORD" \
+        "$url/api/info" > /dev/null 2>&1; then
+      if private_server_file_write "$url" "$port"; then
+        return 0
+      fi
+      echo "ABBRUCH: Serverdatei $SERVER_JSON konnte nicht geschrieben werden." | tee -a "$LOG"
+      stop_private_server
+      return 1
+    fi
+    sleep 0.2
+  done
+  echo "ABBRUCH: Der private opencode-Server wurde unter $url nicht gesund; ohne erreichbaren Server startet kein Agent." | tee -a "$LOG"
+  stop_private_server
+  return 1
+}
+# B13: Stellt den privaten Server vor jedem opencode-Agentenaufruf sicher. Der
+# erste Aufruf startet ihn, spätere Aufrufe verwenden den gesunden Server
+# wieder. Ein Fehlschlag wird als Laufabbruch markiert, nie still durch
+# --standalone ersetzt.
+ensure_private_server() {
+  local dir="$1" url
+  [ "$PRIVATE_SERVER" = 1 ] || return 0
+  if private_server_healthy; then
+    SERVER_ARGS="--server $(private_server_url)"
+    return 0
+  fi
+  stop_private_server
+  if ! start_private_server "$dir"; then
+    printf '%s\n' "Der private opencode-Server konnte nicht gestartet werden." \
+      > "$SERVER_FAILED_FILE"
+    return 1
+  fi
+  url="$(private_server_url)" || {
+    printf '%s\n' "Der private opencode-Server hat keine gültige Serverdatei geschrieben." \
+      > "$SERVER_FAILED_FILE"
+    stop_private_server
+    return 1
+  }
+  SERVER_ARGS="--server $url"
+  return 0
+}
 RUN_ID="${VIBE_RUN_ID:-}"
 RUN_SESSION="${VIBE_SESSION:-vibe-$NAME}"
 cd "$P" || exit 1
@@ -307,12 +458,17 @@ stop_agent_group() {
     # Hintergrundauftrag dieses Skripts.
     pgid="$(jobs -p)"
   fi
-  [ -n "$pgid" ] || return 0
-  AGENT_PID=""
-  kill -0 -- "-$pgid" 2>/dev/null || return 0
-  kill -TERM -- "-$pgid" 2>/dev/null || true
-  sleep 1
-  kill -KILL -- "-$pgid" 2>/dev/null || true
+  if [ -n "$pgid" ]; then
+    AGENT_PID=""
+    if kill -0 -- "-$pgid" 2>/dev/null; then
+      kill -TERM -- "-$pgid" 2>/dev/null || true
+      sleep 1
+      kill -KILL -- "-$pgid" 2>/dev/null || true
+    fi
+  fi
+  # B13: Der private Server gehört zum Lauf, nicht zur Agentengruppe; er wird
+  # beim Laufende beendet und seine Übergabedateien werden entfernt.
+  stop_private_server
   return 0
 }
 # Beendet sich der Läufer auf einem Weg ohne Signal-Trap (etwa nach einem
@@ -331,6 +487,14 @@ run_agent_in() {
   set -m
   (
     cd "$dir" || exit 1
+    # B13: Der private Server wird beim ersten Agentenaufruf in diesem
+    # Subshell gestartet (set +m hält ihn in dessen Prozessgruppe für den
+    # Start; die eigentliche Abkopplung übernimmt setsid). Ein Fehlschlag
+    # bricht den Auftrag ab, statt ohne erreichbaren Server zu starten.
+    if [ "$PRIVATE_SERVER" = 1 ]; then
+      set +m
+      ensure_private_server "$dir" || exit 2
+    fi
     if [ "$HARNESS" = "pi" ]; then
       # B6: Pi gibt mit --mode json strukturierte Ereignisse aus. Derselbe
       # Erfassungsfilter wie beim opencode-Zweig macht daraus menschenlesbare
@@ -521,6 +685,10 @@ cleanup_worktree() {
 }
 SERVER_ARGS="--standalone"
 SANDBOX_STATE=off
+# B13: Ohne erreichbaren gemeinsamen Server startet der Lauf einen eigenen
+# privaten opencode-Server, damit Zusatzanweisungen aus dem Dashboard ein
+# Ziel haben. Kennwortdatei und Harness müssen das zulassen.
+PRIVATE_SERVER=0
 # Eine einzige Quelle für die Auswertung von SANDBOX: das Sandbox-Modul.
 # Dadurch startet kein Lauf ungeschützt, nur weil der Wert anders geschrieben
 # ist (z. B. TRUE, yes, 1).
@@ -551,6 +719,15 @@ if [ "$SANDBOX_STATE" = "on" ]; then
     exit 2
   fi
 elif server_is_up; then SERVER_ARGS="--server http://127.0.0.1:$OPENCODE_PORT"; fi
+# B13: In der Sandbox führt ein gemeinsamer Server die Werkzeuge außerhalb der
+# Sandbox aus; dort gilt deshalb immer der private Server. Außerhalb der
+# Sandbox nur, wenn kein gemeinsamer Server erreichbar ist. Pi kennt keinen
+# privaten opencode-Server und bleibt unverändert.
+if [ "$HARNESS" = "opencode" ] && [ "$HAS_SERVER_PASSWORD" = 1 ]; then
+  if [ "$SANDBOX_STATE" = "on" ] || [ "$SERVER_ARGS" = "--standalone" ]; then
+    PRIVATE_SERVER=1
+  fi
+fi
 # F19: opencode liefert mit --format json Ereignisse. Der Filter macht daraus
 # menschenlesbare Zeilen (Grundlage für Syntax-Highlighting) und erfasst
 # Subagenten samt Ausgabe in <log>.state.json. Fehlt das Modul, bleibt die
@@ -735,7 +912,9 @@ if [ -f "$RUNS_PY" ]; then
     --note "extern beendet (Sitzung fehlt)" >>"$LOG" 2>&1 || true
 fi
 register_start
-if [ "$HARNESS" = "pi" ]; then RUN_MODE="Pi --print"; else RUN_MODE="$SERVER_ARGS"; fi
+if [ "$HARNESS" = "pi" ]; then RUN_MODE="Pi --print"
+elif [ "$PRIVATE_SERVER" = 1 ]; then RUN_MODE="privater opencode-Server"
+else RUN_MODE="$SERVER_ARGS"; fi
 echo "Lauf: ${RUN_ID:-ohne Register}, Harness: $HARNESS, Modus: $RUN_MODE, Agent: $AGENT, Sandbox: $SANDBOX_STATE, höchstens $MAXP Pakete, höchstens $MAXR Wiederholungen je Paket" | tee -a "$LOG"
 PAUSED=0; LAST_ID=""; STOP=0; PACKAGES=0; SKIP=""
 CLOSED=(); BLOCKED_IDS=(); BLOCKED_REPORT=(); BLOCK_REASON=""
@@ -881,6 +1060,15 @@ $QUESTION_HINT"
     run_agent
     RC=$?
     echo "=== Agent beendet, Exit-Code $RC ===" | tee -a "$LOG"
+    # B13: Ein nicht startbarer privater Server ist ein Laufabbruch, kein
+    # wiederholbarer Agentenfehler; ohne Server gäbe es kein Dashboard-Ziel.
+    if [ -f "$SERVER_FAILED_FILE" ]; then
+      BLOCK_REASON="$(cat "$SERVER_FAILED_FILE")"
+      record_block "$ID" "$BLOCK_REASON"
+      echo "ABBRUCH: $BLOCK_REASON" | tee -a "$LOG"
+      STOP=1
+      break
+    fi
     if [ "$RC" = 0 ]; then
       REPAIR_ROUNDS=0
       REPAIR_ERROR=""

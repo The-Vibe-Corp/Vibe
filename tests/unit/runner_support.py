@@ -110,6 +110,99 @@ import re
 import subprocess
 import sys
 
+def _b13_serve(argv):
+    """B13: Attrappe eines privaten opencode-Servers des Paket-Läufers.
+
+    Sie beantwortet GET /api/info mit 200, wenn die Basic-Auth-Anmeldung
+    ``opencode:<OPENCODE_SERVER_PASSWORD>`` stimmt, sonst mit 401; POST auf
+    ``/prompt`` wird ebenso geschützt entgegengenommen. Jede Beobachtung
+    landet als JSON-Zeile in ``FAKE_SERVE_RECORD``. Mit FAKE_SERVE_NEVER=1
+    lauscht die Attrappe nie (der Läufer darf den Agenten dann nicht
+    starten); mit FAKE_SERVE_DELAY startet sie verzögert.
+    """
+    import base64
+    import signal
+    import time
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    port = 0
+    if "--port" in argv:
+        try:
+            port = int(argv[argv.index("--port") + 1])
+        except (ValueError, IndexError):
+            port = 0
+    password = os.environ.get("OPENCODE_SERVER_PASSWORD", "")
+    record = os.environ.get("FAKE_SERVE_RECORD")
+    delay = float(os.environ.get("FAKE_SERVE_DELAY", "0") or 0)
+    never = os.environ.get("FAKE_SERVE_NEVER", "") == "1"
+
+    def note(entry):
+        if not record:
+            return
+        with open(record, "a", encoding="utf-8") as handle:
+            handle.write(json.dumps(entry, ensure_ascii=False) + "\n")
+
+    print("SERVE_FAKE_START", flush=True)
+
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, *args):
+            return
+
+        def _auth_ok(self):
+            expected = base64.b64encode(
+                ("opencode:" + password).encode("utf-8")).decode("ascii")
+            return self.headers.get("Authorization", "") == "Basic " + expected
+
+        def _reply(self, ok):
+            body = json.dumps({"ok": ok}, ensure_ascii=False).encode("utf-8")
+            self.send_response(200 if ok else 401)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def do_GET(self):
+            ok = self._auth_ok()
+            note({"method": "GET", "path": self.path, "auth_ok": ok})
+            self._reply(ok)
+
+        def do_POST(self):
+            length = int(self.headers.get("Content-Length") or 0)
+            raw = self.rfile.read(length) if length else b""
+            ok = self._auth_ok()
+            note({
+                "method": "POST",
+                "path": self.path,
+                "auth_ok": ok,
+                "body": raw.decode("utf-8", "replace"),
+                "tmpdir": os.environ.get("TMPDIR", ""),
+            })
+            self._reply(ok)
+
+    if never:
+        note({"event": "never-listen", "tmpdir": os.environ.get("TMPDIR", "")})
+        time.sleep(120)
+        return
+    if delay:
+        time.sleep(delay)
+    httpd = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+    bound = httpd.server_address[1]
+    note({"event": "listening", "port_bound": bound, "pid": os.getpid(),
+          "tmpdir": os.environ.get("TMPDIR", "")})
+    print("SERVE_FAKE_PORT=" + str(bound), flush=True)
+
+    def terminate(signum, frame):
+        note({"event": "term", "signal": signum})
+        print("SERVE_FAKE_TERM", flush=True)
+        raise SystemExit(0)
+
+    signal.signal(signal.SIGTERM, terminate)
+    signal.signal(signal.SIGINT, terminate)
+    try:
+        httpd.serve_forever()
+    finally:
+        note({"event": "exit"})
+
 args = sys.argv[1:]
 prompt = args[-1] if args else ""
 match = re.search(r"Arbeitspaket\s+([A-Za-z0-9_-]+)", prompt)
@@ -125,6 +218,12 @@ if args_path:
         for argument in args:
             handle.write(argument.encode("utf-8") + b"\0")
         handle.write("ARGS_RECORD_END".encode("utf-8") + b"\0")
+
+# B13: Der private Server-Aufruf (``opencode serve``) wird vor der
+# Agentenlogik behandelt; die Argumentliste ist bereits protokolliert.
+if args and args[0] == "serve":
+    _b13_serve(args)
+    sys.exit(0)
 
 output = os.environ.get("FAKE_OUTPUT")
 if output:
@@ -308,6 +407,51 @@ FAKE_CURL = '''#!/usr/bin/env bash
 exit 7
 '''
 
+# B13: Echte HTTP-Attrappe für curl. Der Läufer prüft die Servergesundheit
+# mit curl; diese Attrappe führt die Anfrage wirklich aus (Basic-Auth über
+# -u) und meldet Erfolg nur bei einer 2xx-Antwort. Ist niemand am Port,
+# schlägt sie genau wie curl fehl (Exit 7). Für Tests, deren Lauf über den
+# privaten opencode-Server gehen soll (B13), statt der toten FAKE_CURL
+# über ``install_real_curl`` einsetzen.
+REAL_CURL = r'''#!/usr/bin/env python3
+import base64
+import http.client
+import sys
+from urllib.parse import urlparse
+
+args = sys.argv[1:]
+url = ""
+userpass = ""
+index = 0
+while index < len(args):
+    item = args[index]
+    if item == "-u" and index + 1 < len(args):
+        userpass = args[index + 1]
+        index += 2
+        continue
+    if item.startswith("http"):
+        url = item
+    index += 1
+if not url:
+    sys.exit(7)
+target = urlparse(url)
+headers = {}
+if userpass:
+    headers["Authorization"] = "Basic " + base64.b64encode(
+        userpass.encode("utf-8")).decode("ascii")
+try:
+    connection = http.client.HTTPConnection(
+        target.hostname, target.port or 80, timeout=3)
+    connection.request("GET", target.path or "/", headers=headers)
+    response = connection.getresponse()
+    response.read()
+    healthy = 200 <= response.status < 300
+    connection.close()
+except OSError:
+    healthy = False
+sys.exit(0 if healthy else 7)
+'''
+
 
 def opencode_arg_records(args_path):
     """Zerlegt die per Aufruf angehängten Argumentlisten des opencode-Fakes.
@@ -329,6 +473,20 @@ def opencode_arg_records(args_path):
         elif token:
             current.append(token)
     return records
+
+
+def install_real_curl(fakebin):
+    """Ersetzt die curl-Attrappe durch die echte HTTP-Attrappe (B13).
+
+    Für Läufer-Tests, die den privaten opencode-Server verwenden: Die
+    Gesundheitsprüfung des Läufers muss ein lauschendes Server-Fake wirklich
+    erreichen können; die toten ``FAKE_CURL``-Attrappe würde jede Prüfung
+    scheitern lassen und den Lauf abbrechen.
+    """
+    curl = fakebin / "curl"
+    curl.write_text(REAL_CURL, encoding="utf-8")
+    curl.chmod(0o755)
+    return curl
 
 
 def install_fake_tools(root):

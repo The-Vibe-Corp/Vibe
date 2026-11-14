@@ -10,6 +10,7 @@ import importlib.machinery
 import importlib.util
 import os
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
@@ -84,6 +85,20 @@ class RunnerSessionEndTest(unittest.TestCase):
         self.verify.mkdir(parents=True)
         support.install_runner(self.root / "_toolchain")
         self.fakebin = support.install_fake_tools(self.root)
+        # B13: Der Lauf ohne erreichbaren gemeinsamen Server startet einen
+        # privaten opencode-Server, wenn die Kennwortdatei nichtleer ist
+        # (B3 legt sie an). Die Gesundheitsprüfung braucht eine curl-
+        # Attrappe, die den Aufruf wirklich ausführt; die tote Attrappe
+        # würde jeden Lauf abbrechen.
+        support.install_real_curl(self.fakebin)
+        # Deterministisch toter „gemeinsamer“ Server: gebundener Socket
+        # ohne listen(); Verbindungen werden zuverlässig abgewiesen. Der
+        # gemeinsame Port darf nie vom Nutzerzustand (etwa einem produktiv
+        # laufenden Server) abhängen.
+        self.dead_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.dead_socket.bind(("127.0.0.1", 0))
+        self.dead_port = self.dead_socket.getsockname()[1]
+        self.addCleanup(self.dead_socket.close)
         support.init_repo(self.project)
         support.commit_all(self.project)
         self.tmux_dir = self.root / "tmux"
@@ -125,6 +140,7 @@ class RunnerSessionEndTest(unittest.TestCase):
                 "VIBE_INSTALL": str(self.root / "_toolchain"),
                 "VIBE_RUNTIME": str(self.root / "_logs"),
                 "VIBE_AGENTS_DIR": str(self.project / ".opencode" / "agents"),
+                "VIBE_OPENCODE_PORT": str(self.dead_port),
                 "HOME": str(self.root / "home"),
                 "PATH": str(self.fakebin) + os.pathsep + env.get("PATH", ""),
                 "TMUX_TMPDIR": str(self.tmux_dir),

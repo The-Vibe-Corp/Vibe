@@ -442,13 +442,61 @@ def opencode_password():
         return ""
 
 
-def deliver_steer(session, text, password):
+def steer_server_url(value):
+    """Prüft eine Server-URL aus der Serverdatei eines Laufs (B13).
+
+    Akzeptiert werden ausschließlich Loopback-Ziele über HTTP mit gültigem
+    Port. Alles andere liefert ``None``; der Aufrufer fällt dann auf den
+    bisherigen gemeinsamen Server zurück.
+    """
+    try:
+        target = urlparse(str(value or ""))
+        port = target.port
+    except ValueError:
+        return None
+    if target.scheme != "http":
+        return None
+    if (target.hostname or "").lower() not in LOOPBACK_HOSTS:
+        return None
+    if not port or not 1 <= port <= 65535:
+        return None
+    return target
+
+
+def steer_endpoint(name):
+    """Ziel-URL und Kennwort für eine Zusatzanweisung an den aktiven Lauf.
+
+    B13: Ein Lauf ohne erreichbaren gemeinsamen Server schreibt seinen privaten
+    Server nach ``<Laufprotokoll>.server.json``. Nur deren Loopback-URL wird
+    angenommen; das Kennwort stammt aus der dort genannten Datei. Fehlt eine
+    gültige Serverdatei, bleibt der bisherige Pfad unverändert.
+    """
+    path = str(vibe.logpath(name)) + ".server.json"
+    try:
+        with open(path, encoding="utf-8") as handle:
+            data = json.load(handle)
+    except (OSError, ValueError):
+        data = None
+    if isinstance(data, dict) and steer_server_url(data.get("url")) is not None:
+        password = ""
+        password_file = data.get("password_file")
+        if isinstance(password_file, str) and password_file:
+            try:
+                with open(password_file, encoding="utf-8") as handle:
+                    password = handle.read().strip()
+            except OSError:
+                password = ""
+        return data.get("url"), password or opencode_password()
+    return vibe.OC_URL, opencode_password()
+
+
+def deliver_steer(target_url, session, text, password):
     """Übergibt eine Zusatzanweisung per HTTP an den opencode-Server.
 
     Erfolg nur bei einer 2xx-Antwort mit gültiger Basic-Auth. Der Rückgabewert
     enthält nie das Kennwort.
     """
-    target = urlparse(vibe.OC_URL)
+    target = urlparse(target_url)
     host = target.hostname or "127.0.0.1"
     port = target.port or 80
     if not session or any(char not in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-" for char in session):
@@ -528,10 +576,12 @@ def steer_project(name, text, session=None):
             )
     if not target:
         return False, "Die Session des laufenden Agenten ist nicht erfasst; die Anweisung wurde nicht gesendet."
-    password = opencode_password()
+    # B13: Ziel und Kennwort kommen zuerst aus der Serverdatei des aktiven
+    # Laufs; ohne gültige Datei bleibt der bisherige gemeinsame Server.
+    target_url, password = steer_endpoint(name)
     if not password:
         return False, "Der opencode-Server ist nicht für Zusatzanweisungen angemeldet (Kennwortdatei fehlt)."
-    delivered, detail = deliver_steer(target, text, password)
+    delivered, detail = deliver_steer(target_url, target, text, password)
     if not delivered:
         return False, detail
     marker = " ".join(text.split())
