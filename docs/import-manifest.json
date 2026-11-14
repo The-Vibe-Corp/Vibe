@@ -866,6 +866,26 @@
       ],
       "datum": "2026-11-14",
       "grund": "Geerbtes OPENCODE_PASSWORD blockierte den privaten opencode-Server (Defekt-Fix, Anlass Lauf vibe-20261114-192106-c11f59): opencode v2.3 steuert den Basic-Auth des Servers auch über OPENCODE_PASSWORD, und ein gesetzter Wert schlägt OPENCODE_SERVER_PASSWORD. Der Lauf erbte über Dashboard/tmux einen veralteten 16-Zeichen-Wert, während die Gesundheitsprüfung das Kennwort aus der Laufzeitdatei (32 Zeichen) sendete — dauerhaft 401, „nicht gesund“, Laufabbruch. Der Läufer entfernt OPENCODE_PASSWORD jetzt vor der Kennwortbehandlung des privaten Servers und erneut nach dem Einlesen von .vibe/project.env (set -a würde dort definierte Werte erneut exportieren); derselbe Schutz gilt im tmux-Innenbefehl des gemeinsamen Servers. Das Kennwort kommt weiterhin ausschließlich aus der Laufzeitdatei. Beide geänderten Dateien liegen im Bereich bin; Größe und SHA-256 der files-Einträge wurden aktualisiert und dadurch begründet."
+    },
+    {
+      "arbeitspaket": "F31",
+      "dateien": [
+        "templates/android/.vibe/project.env",
+        "templates/android/AGENTS.md",
+        "templates/common/.opencode/agents/test-agent.md",
+        "templates/docker/.vibe/project.env",
+        "templates/docker/AGENTS.md",
+        "templates/generic/.vibe/project.env",
+        "templates/generic/AGENTS.md",
+        "templates/openwrt/.vibe/project.env",
+        "templates/openwrt/AGENTS.md",
+        "templates/rebuild/.vibe/project.env",
+        "templates/rebuild/AGENTS.md",
+        "templates/web/.vibe/project.env",
+        "templates/web/AGENTS.md"
+      ],
+      "datum": "2026-11-14",
+      "grund": "Manifestsync nach der Vorlagenüberarbeitung (ddd1d4d): die Projektvorlagen enthalten keine Umgebungsspezifika mehr (REVIEWER- und TESTER-Zeilen entfernt, VERIFY_QUICK/VERIFY_PACKAGE/VERIFY_FULL je Projekt zu befüllen); die Vorlage templates/common/.opencode/agents/test-agent.md und der Projekttyp openwrt sind nicht mehr Teil des Bestands. Größe und SHA-256 der zehn geänderten Einträge aktualisiert, die drei gelöschten Einträge entfernt, dadurch begründet."
     }
   ],
   "files": [
