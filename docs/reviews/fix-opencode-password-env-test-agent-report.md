@@ -90,7 +90,7 @@ Ursache und Vorfall in der Feature-Doku, Bekannte Grenzen):
   gleiche `project.env`): **Ran 1770 tests — FAILED (failures=8,
   errors=2)**, Prüf-Exit 5.
   Rohausgabe (Auszug):
-  `docs/reviews/fix-opencode-password-env-evidence-full-baseline-10dca46-auszug.txt`.
+  `docs/reviews/fix-opencode-password-env-evidence-full-base-10dca46-auszug.txt`.
 
 **Fail-Mengenvergleich:** Die Mengen sind identisch bis auf die drei
 F31-Fälle. Die Baseline scheitert zusätzlich an

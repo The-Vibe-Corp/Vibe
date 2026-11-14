@@ -147,7 +147,7 @@ Ergebnisse auf dem Fix-Stand (tatsächlich ausgeführt):
   (Home-Pfad-Scan über bereits committete Doku-Inhalte) und
   `test_sandbox` (echtes bwrap). Rohausgaben (Auszüge) im Repository:
   `docs/reviews/fix-opencode-password-env-evidence-full-fix-auszug.txt`
-  und `…evidence-full-baseline-10dca46-auszug.txt`. Diese Grenzen sind
+  und `…evidence-full-base-10dca46-auszug.txt`. Diese Grenzen sind
   Umgebungssache, nicht Bestandteil des F31-Fixes.
 
 ## Nachweise
@@ -157,6 +157,6 @@ Ergebnisse auf dem Fix-Stand (tatsächlich ausgeführt):
 | Funktionsnachweis des Fix | Kennwortblock aus der geänderten `vibe-run.sh` mit „infizierter“ Elternumgebung (Alt-`OPENCODE_PASSWORD`) ausgeführt → Serverstart über die originale setsid-Kette → Gesundheitscheck **200**. Ohne Fix war derselbe Aufbau **401**. |
 | `bash scripts/verify.sh quick` | Exit 0 (Importmanifest, Syntax 164 Python-/8 Bash-/6 JSON-Dateien, keine Geheimnisse) nach Manifestaktualisierung. |
 | Unit-Tests | 4/4 OK (`test_f31_inherited_opencode_password`, inkl. AK1b-Restpfad `.vibe/project.env`); Rotphase am `10dca46` konserviert; Regression 30/31 OK, 1 vorbestehender umgebungsabhängiger Sandbox-Fehlschlag (identisch am Fix-vorher-Stand, Details oben) |
-| `bash scripts/verify.sh full` | Fix-Stand: 1770 Tests, 5 Failures + 2 Errors (Prüf-Exit 5); Baseline `10dca46`: identische Fail-Menge **plus** die 3 F31-Fälle rot. ⇒ alle Fehlschläge vorbestehend/umgebungsbedingt, keine Regression; F31-Fälle am Fix-Stand grün. Rohausgaben-Auszüge: `docs/reviews/fix-opencode-password-env-evidence-full-fix-auszug.txt`, `…-full-baseline-10dca46-auszug.txt`. Details: Bekannte Grenzen |
-| Unabhängiger Review | Runde 1: `docs/reviews/fix-opencode-password-env-review-1.md` (CHANGES REQUIRED — Restpfad `.vibe/project.env`, Nachweislücken, 2 Low; behoben). Runde 2: `docs/reviews/fix-opencode-password-env-review-2.md` (CHANGES REQUIRED — fehlender Full-Lauf, 2 Minor; behoben). Runde 3: ausstehend |
+| `bash scripts/verify.sh full` | Fix-Stand: 1770 Tests, 5 Failures + 2 Errors (Prüf-Exit 5); Baseline `10dca46`: identische Fail-Menge **plus** die 3 F31-Fälle rot. ⇒ alle Fehlschläge vorbestehend/umgebungsbedingt, keine Regression; F31-Fälle am Fix-Stand grün. Rohausgaben-Auszüge: `docs/reviews/fix-opencode-password-env-evidence-full-fix-auszug.txt`, `…-full-base-10dca46-auszug.txt`. Details: Bekannte Grenzen |
+| Unabhängiger Review | Runde 1: `docs/reviews/fix-opencode-password-env-review-1.md` (CHANGES REQUIRED — Restpfad `.vibe/project.env`, Nachweislücken, 2 Low; behoben). Runde 2: `docs/reviews/fix-opencode-password-env-review-2.md` (CHANGES REQUIRED — fehlender Full-Lauf, 2 Minor; behoben). Runde 3: `docs/reviews/fix-opencode-password-env-review-3.md` (**PASS**, 1 Minor — falsch zitierter Evidence-Dateiname, korrigiert) |
 | Trilium-Dokumentation | Notiz `PgaZqt2vEwBQ` („Fix: Geerbtes OPENCODE_PASSWORD blockierte den privaten opencode-Server"), Ordner Features, lesend verifiziert. |
