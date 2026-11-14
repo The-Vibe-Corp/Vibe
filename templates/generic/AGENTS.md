@@ -1,7 +1,6 @@
 # Projekt: {{NAME}}
 - SPEC.md ist maßgeblich (anlegen und füllen). Keine Rückfragen: Lücken nach "Decisions Locked" entscheiden.
-- Umgebung: Distrobox android-dev (Steuer-Container). $VIBE ist gesetzt. Nichts in ~ ablegen.
-- Prüfbefehle stehen in .vibe/project.env (VERIFY_QUICK, VERIFY_FULL). Shell-Befehle laufen höchstens etwa 2 Minuten; Längeres im Hintergrund mit Log starten und das Log abfragen.
+- Prüfbefehle stehen in .vibe/project.env (VERIFY_QUICK, VERIFY_FULL).
 - Nach jedem Arbeitspaket: Tests grün, git commit.
 
 <!-- vibe:general-rules -->
@@ -30,10 +29,9 @@
 
 ## Unabhängiger Test-Agent (verbindlich)
 
-- Tests werden ausschließlich vom Test-Agenten geschrieben, geändert und gelöscht. Der Test-Agent ist in `.vibe/project.env` als `TESTER` konfiguriert (Vorlage: `test-agent`, Datei `.opencode/agents/test-agent.md`).
+- Tests werden ausschließlich vom Test-Agenten geschrieben, geändert und gelöscht.
 - Coding- und Review-Agent dürfen keine Testdateien anlegen, ändern, löschen oder abschwächen. Sie dürfen die vom Test-Agenten geschriebenen Tests ausführen und deren Ergebnisse melden.
 - Vor der Implementierung fordert der Coding-Agent die Tests beim Test-Agenten an und übergibt Arbeitspaket, Akzeptanzkriterien und den vorgesehenen Testbefehl. Der Test-Agent leitet die Fälle unabhängig aus Arbeitspaket und `SPEC.md` ab, nicht aus dem Implementierungsdiff.
 - Der Test-Agent beschreibt jeden Testfall (Name, Vorbedingung, Aktion, erwartetes Ergebnis), schreibt ihn vor der Implementierung und führt ihn tatsächlich aus. Ein nicht ausgeführter Test ist kein Nachweis.
 - Nur Tests, die nachweislich vom Test-Agenten stammen, zählen für die Abnahme. Vom Coding-Agenten geschriebene oder nachträglich abgeschwächte Tests sind kein Nachweis; der Reviewer weist sie zurück.
-- Fehlt der Test-Agent oder `TESTER` in `.vibe/project.env`, ist das Arbeitspaket blockiert.
 <!-- /vibe:general-rules -->

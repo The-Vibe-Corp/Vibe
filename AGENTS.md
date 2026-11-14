@@ -37,8 +37,7 @@ Keine vollständige Neuimplementierung und kein ungefragter Frameworkwechsel.
 7. Diese Dokumentation zusätzlich über den vorhandenen Trilium-MCP-Zugang
    dokumentieren. Fehlt der Zugang, BLOCKIERT melden; keine lokale Datei als
    angeblich erfolgte Trilium-Dokumentation ausgeben.
-8. Unabhängigen Reviewer über Task aufrufen. Reviewername wird aus der
-   Projektkonfiguration ermittelt, nicht geraten.
+8. Unabhängigen Reviewer über Task aufrufen.
 9. Reviewer erhält Ticket, Ausgangscommit, vollständigen relevanten Diff,
    neue Dateien und tatsächliche Prüfergebnisse.
 10. Reviewantwort unverändert unter docs/reviews/<ticket>-review-<runde>.md speichern.
@@ -117,8 +116,7 @@ Keine vollständige Neuimplementierung und kein ungefragter Frameworkwechsel.
 ## Unabhängiger Test-Agent (verbindlich)
 
 - Tests werden ausschließlich vom Test-Agenten geschrieben, geändert und
-  gelöscht. Der Test-Agent ist in `.vibe/project.env` als `TESTER`
-  konfiguriert (Vorlage: `test-agent`, Datei `.opencode/agents/test-agent.md`).
+  gelöscht.
 - Coding- und Review-Agent dürfen keine Testdateien anlegen, ändern, löschen
   oder abschwächen. Sie dürfen die vom Test-Agenten geschriebenen Tests
   ausführen und deren Ergebnisse melden.
@@ -132,12 +130,10 @@ Keine vollständige Neuimplementierung und kein ungefragter Frameworkwechsel.
 - Nur Tests, die nachweislich vom Test-Agenten stammen, zählen für die
   Abnahme. Vom Coding-Agenten geschriebene oder nachträglich abgeschwächte
   Tests sind kein Nachweis; der Reviewer weist sie zurück.
-- Fehlt der Test-Agent oder `TESTER` in `.vibe/project.env`, ist das
-  Arbeitspaket blockiert.
 
 ## Prüfungen
 
-Zuerst V-002 implementieren.
+Zuerst Arbeitspaket implementieren.
 Danach verbindlich:
 - bash scripts/verify.sh quick
 - bash scripts/verify.sh full

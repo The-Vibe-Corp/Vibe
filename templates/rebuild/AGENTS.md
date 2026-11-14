@@ -4,12 +4,12 @@
 - Ziel: eine bestehende Anwendung analysieren und plattformübergreifend neu erstellen.
   Die fachliche Funktionsweise wird **1:1** übernommen. Technische Abweichungen sind
   erlaubt, müssen aber begründet und in `docs/parity.md` nachgewiesen werden.
-- Speicherstände sind ein Vertrag: Originalformate müssen gelesen **und** geschrieben
+- Speicherstände sind ein kompromisslos: Originalformate müssen gelesen **und** geschrieben
   werden. Unbekannte Felder bleiben erhalten. Keine Migration ohne Sicherung und
   Roundtrip-Test mit echten Beispieldateien. Ein Test mit Attrappen genügt nicht.
 - Rechte klären: Nur Anwendungen analysieren und neu erstellen, für die eine
   Berechtigung vorliegt. Fremde Kopierschutz- oder Lizenzmechanismen nicht umgehen.
-- Umgebung: Distrobox `android-dev`. Werkzeuge prüfen mit
+- Umgebung: Werkzeuge prüfen mit
   `python3 scripts/rebuild-env.py --check`; Installationsplan mit
   `python3 scripts/rebuild-env.py --plan`; Einrichtung nur nach ausdrücklicher
   Bestätigung mit `python3 scripts/rebuild-env.py --setup --yes`.
@@ -51,6 +51,11 @@
   Hintergrund mit Log starten und das Log abfragen.
 - Nach jedem Arbeitspaket: Tests grün, `git commit`.
 
+# Projekt: {{NAME}}
+- SPEC.md ist maßgeblich (anlegen und füllen). Keine Rückfragen: Lücken nach "Decisions Locked" entscheiden.
+- Prüfbefehle stehen in .vibe/project.env (VERIFY_QUICK, VERIFY_FULL).
+- Nach jedem Arbeitspaket: Tests grün, git commit.
+
 <!-- vibe:general-rules -->
 ## Projektordner sauber halten
 
@@ -77,10 +82,9 @@
 
 ## Unabhängiger Test-Agent (verbindlich)
 
-- Tests werden ausschließlich vom Test-Agenten geschrieben, geändert und gelöscht. Der Test-Agent ist in `.vibe/project.env` als `TESTER` konfiguriert (Vorlage: `test-agent`, Datei `.opencode/agents/test-agent.md`).
+- Tests werden ausschließlich vom Test-Agenten geschrieben, geändert und gelöscht.
 - Coding- und Review-Agent dürfen keine Testdateien anlegen, ändern, löschen oder abschwächen. Sie dürfen die vom Test-Agenten geschriebenen Tests ausführen und deren Ergebnisse melden.
 - Vor der Implementierung fordert der Coding-Agent die Tests beim Test-Agenten an und übergibt Arbeitspaket, Akzeptanzkriterien und den vorgesehenen Testbefehl. Der Test-Agent leitet die Fälle unabhängig aus Arbeitspaket und `SPEC.md` ab, nicht aus dem Implementierungsdiff.
 - Der Test-Agent beschreibt jeden Testfall (Name, Vorbedingung, Aktion, erwartetes Ergebnis), schreibt ihn vor der Implementierung und führt ihn tatsächlich aus. Ein nicht ausgeführter Test ist kein Nachweis.
 - Nur Tests, die nachweislich vom Test-Agenten stammen, zählen für die Abnahme. Vom Coding-Agenten geschriebene oder nachträglich abgeschwächte Tests sind kein Nachweis; der Reviewer weist sie zurück.
-- Fehlt der Test-Agent oder `TESTER` in `.vibe/project.env`, ist das Arbeitspaket blockiert.
 <!-- /vibe:general-rules -->
