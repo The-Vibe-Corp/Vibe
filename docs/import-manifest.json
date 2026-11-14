@@ -847,6 +847,26 @@
       ],
       "datum": "2026-11-14",
       "grund": "Subagenten-Ausgabe bleibt statisch (Bug B14): Das Dashboard fragte die Live-Ausgabe der Subagenten weiterhin am gemeinsamen opencode-Server (OC_URL) ab, während der Lauf seit B13 an seinem privaten Loopback-Server arbeitet, der nur über <Laufprotokoll>.server.json bekannt ist. Dadurch lieferte /api/subagent-output nur den einmal erfassten Ersttext und die Karte fror ein. GET /api/subagent-output, /api/subagents und die Live-Erkennung nutzen jetzt steer_endpoint(name): mit Projektkontext gehen Session- und Nachrichtenabfragen authentifiziert an den privaten Laufserver, ohne gültige Serverdatei bleibt der bisherige gemeinsame Server und die erfasste Ausgabe als Rückfall. Kennwörter erscheinen nicht in Antworten oder Protokollen. Eine geänderte Datei liegt im Bereich bin; Größe und SHA-256 des files-Eintrags wurden aktualisiert."
+    },
+    {
+      "arbeitspaket": "F31",
+      "dateien": [
+        "templates/android/.vibe/project.env",
+        "templates/android/AGENTS.md",
+        "templates/common/.opencode/agents/test-agent.md",
+        "templates/docker/.vibe/project.env",
+        "templates/docker/AGENTS.md",
+        "templates/generic/.vibe/project.env",
+        "templates/generic/AGENTS.md",
+        "templates/openwrt/.vibe/project.env",
+        "templates/openwrt/AGENTS.md",
+        "templates/rebuild/.vibe/project.env",
+        "templates/rebuild/AGENTS.md",
+        "templates/web/.vibe/project.env",
+        "templates/web/AGENTS.md"
+      ],
+      "datum": "2026-11-14",
+      "grund": "Manifestsync nach der Vorlagenüberarbeitung (ddd1d4d): die Projektvorlagen enthalten keine Umgebungsspezifika mehr (REVIEWER- und TESTER-Zeilen entfernt, VERIFY_QUICK/VERIFY_PACKAGE/VERIFY_FULL je Projekt zu befüllen); die Vorlage templates/common/.opencode/agents/test-agent.md und der Projekttyp openwrt sind nicht mehr Teil des Bestands. Größe und SHA-256 der zehn geänderten Einträge aktualisiert, die drei gelöschten Einträge entfernt, dadurch begründet."
     }
   ],
   "files": [
@@ -981,14 +1001,14 @@
       "sha256": "abdbe9d9b2c0896d6a632a5a8140c38bf7b61e9bf9b64a7cca03bd33a5ea6751"
     },
     {
-      "bytes": 285,
+      "bytes": 359,
       "path": "templates/android/.vibe/project.env",
-      "sha256": "7a6bca9668a5878f87111fb689f1fd849b82cbb53b88be87feaebfd36489ef7a"
+      "sha256": "b45ed5e95c842e67dbecf165bb6096ec9c513cc431ede7442cd4bbad9ed0e806"
     },
     {
-      "bytes": 4584,
+      "bytes": 4728,
       "path": "templates/android/AGENTS.md",
-      "sha256": "cf3883ec03a1d6b6263150ea5c12cf309891921c4c250417b96f55020b14837b"
+      "sha256": "0ae7668589a3732c602e1a3be758f71c1e43044d82d9de2326b64774696cb83a"
     },
     {
       "bytes": 522,
@@ -1006,11 +1026,6 @@
       "sha256": "d9972b72b48d370baf15a0e495c7bc3bf5b44e53bc63332da7d31e7eb69287c5"
     },
     {
-      "bytes": 2032,
-      "path": "templates/common/.opencode/agents/test-agent.md",
-      "sha256": "339a884bda0ce261334a3ac2662f5b6582b88bcaa3601fc92b008fff16561912"
-    },
-    {
       "bytes": 424,
       "path": "templates/common/FEEDBACK.md",
       "sha256": "e843730d69d4f02f4bb9158a3a88826cb5074654c9c3077a5d2868cbf9343f35"
@@ -1026,34 +1041,24 @@
       "sha256": "2cf66ebdb7c6cacd36ad8a2f069738ef2e65632776c4fc16f09247f2abb2be70"
     },
     {
-      "bytes": 245,
+      "bytes": 353,
       "path": "templates/docker/.vibe/project.env",
-      "sha256": "57a2fe326ad639997e7ce6e2a3d1a94d109b1582ffa94b9324b78c152d3d0053"
+      "sha256": "722919bbc27d3ec4bf3ccadaff4be18ff5cf6c9cb1e4666e6f080c467e48f1b7"
     },
     {
-      "bytes": 4479,
+      "bytes": 4342,
       "path": "templates/docker/AGENTS.md",
-      "sha256": "c10401b2693f57b2e50f47d321c0954b0820adcc9a276ba72919bed74f035a37"
+      "sha256": "4885999cd63a0825542aac9307871fc6a6cc3122dcbaf59d1031adbfcfc33cbd"
     },
     {
-      "bytes": 247,
+      "bytes": 354,
       "path": "templates/generic/.vibe/project.env",
-      "sha256": "e7a35f3d5fbb0b0db25090fa1f9ea9157df674daa4d058fa1d334fa9b67524e9"
+      "sha256": "63c0ebab49aa870ae5e5f731890cce3f0ce2859364152c00b64cb89e3e6d9ae5"
     },
     {
-      "bytes": 3967,
+      "bytes": 3536,
       "path": "templates/generic/AGENTS.md",
-      "sha256": "b0031a0f2478557560580fd1835732aec5b8deec15e8c5d512eb78f042a7ee30"
-    },
-    {
-      "bytes": 248,
-      "path": "templates/openwrt/.vibe/project.env",
-      "sha256": "6f52a2a3219a330107edb9c8321ea061b343fb14f128dcad3213c6a3019b653f"
-    },
-    {
-      "bytes": 4600,
-      "path": "templates/openwrt/AGENTS.md",
-      "sha256": "fa333287c74e2aa6f197e72291852e198dfa5a70f2723c390bd022d598bd1026"
+      "sha256": "8e56e300248ad0cee72e482e2417dd81be7e7904afda216349ddf8e75c8c547b"
     },
     {
       "bytes": 670,
@@ -1101,14 +1106,14 @@
       "sha256": "0cce4ad3d5c047efc2cc070fa1808d8c940ba8b229a1de25623d14d83a59211c"
     },
     {
-      "bytes": 865,
+      "bytes": 498,
       "path": "templates/rebuild/.vibe/project.env",
-      "sha256": "7fee4f92442ce7c4190df7319de83e25d8e93cb5f2b9ffc15caf730d2d030d0a"
+      "sha256": "db8026a75dd2f358a771be9e2fc2fd4ba88c6180f026078552c3259e5156360f"
     },
     {
-      "bytes": 7168,
+      "bytes": 7181,
       "path": "templates/rebuild/AGENTS.md",
-      "sha256": "cbb74b6656756ccd549d82bf6406f0e73d18f0454ed31e5c20286c5daacf7e66"
+      "sha256": "fd8431c1c74fc198790b4127cf34de47396d5546d4dc235120e0bf51930e7524"
     },
     {
       "bytes": 1675,
@@ -1126,14 +1131,14 @@
       "sha256": "d3ee44c1f74e2885b2e2700c57fc246269505ee272abe3fe3bcfec07db399b03"
     },
     {
-      "bytes": 317,
+      "bytes": 354,
       "path": "templates/web/.vibe/project.env",
-      "sha256": "414dac5b0e208a6cd1e7e2a91cc2ef139f8d7eee454c3e2a13a1b27f67e96894"
+      "sha256": "54b4975a06030dc63f299d0a0e2ef8249857b08d62e3e35e61bacb2205c8e1c4"
     },
     {
-      "bytes": 4331,
+      "bytes": 3901,
       "path": "templates/web/AGENTS.md",
-      "sha256": "01ac956108575bf53ef7c891635bc169b902cf14d444d3ab63d6ceca919804cf"
+      "sha256": "51c075f3a684b9f7d101e708eb77f6a3d4b96c40d990ffee51d6b170a180b8ac"
     },
     {
       "bytes": 64185,
