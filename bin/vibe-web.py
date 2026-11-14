@@ -1031,6 +1031,8 @@ class H(BaseHTTPRequestHandler):
                 return self._send(200, vibe.types())
             if u.path == "/api/guide":
                 return self._send(200, vibe_services.guide_info(vibe, known(q["name"][0])))
+            if u.path == "/api/agents_file":
+                return self._send(200, vibe.agents_file_view(known(q["name"][0])))
             # AP11: Priorisierung je Projekt einsehen (konfigurierte Reihenfolge
             # mit Status und effektive Abarbeitungsreihenfolge).
             if u.path == "/api/priority":
@@ -1127,7 +1129,7 @@ class H(BaseHTTPRequestHandler):
             return self._error(e.status, e.code, e.message)
         try:
             name = body.get("name", "")
-            if u.path in ("/api/run", "/api/stop", "/api/verify", "/api/feedback", "/api/ticket", "/api/init", "/api/rights", "/api/pause", "/api/sandbox", "/api/guide", "/api/costs", "/api/autonomous", "/api/steer", "/api/continue", "/api/github", "/api/priority"):
+            if u.path in ("/api/run", "/api/stop", "/api/verify", "/api/feedback", "/api/ticket", "/api/init", "/api/rights", "/api/pause", "/api/sandbox", "/api/guide", "/api/agents_file", "/api/costs", "/api/autonomous", "/api/steer", "/api/continue", "/api/github", "/api/priority"):
                 known(name)
             extra = {}
             if u.path == "/api/security":
@@ -1533,6 +1535,31 @@ class H(BaseHTTPRequestHandler):
                         ok, msg = False, "Unbekannte Aktion"
                 except ValueError as e:
                     ok, msg = False, str(e)
+            elif u.path == "/api/agents_file":
+                act = body.get("action") or "save"
+                if act == "save":
+                    try:
+                        vibe.agents_file_save(
+                            name, body.get("before", ""), body.get("after", ""),
+                            body.get("digest"))
+                        ok, msg = True, "AGENTS.md gespeichert"
+                    except ValueError as e:
+                        ok, msg = False, str(e)
+                    extra["agents_file"] = vibe.agents_file_view(name)
+                elif act == "create":
+                    try:
+                        created = vibe.agents_file_create(name)
+                        ok, msg = True, (
+                            "AGENTS.md aus der Vorlage angelegt"
+                            if created != "kept"
+                            else "AGENTS.md war bereits vorhanden")
+                    except ValueError as e:
+                        ok, msg = False, str(e)
+                    extra["agents_file"] = vibe.agents_file_view(name)
+                else:
+                    # Der Test-Agent erwartet für unbekannte Aktionen einen
+                    # Clientfehler; bekannte Fehler bleiben als ok:false.
+                    return self._error(400, "rejected", "Unbekannte Aktion")
             elif u.path == "/api/priority":
                 # AP11: Priorisierung setzen oder leeren; die Antwort enthält
                 # die aktualisierte Ansicht, damit die Karte sofort stimmt.
