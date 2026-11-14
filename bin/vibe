@@ -2394,6 +2394,118 @@ def ensure_general_rules(project):
     _write_text_atomic(path, updated, expected=expected)
     return "added"
 
+def _agents_file_split(text):
+    """Trennt eine AGENTS.md in freie Teile und den verwalteten Block.
+
+    Liefert ``(before, managed, after)``. Ohne paarigen Block ist ``managed``
+    ``None`` und der gesamte Text steht in ``after``. Ein unpaariger Marker
+    wird nicht als Block gewertet; er bleibt im freien Text sichtbar.
+    """
+    start = text.find(GENERAL_RULES_MARK)
+    if start < 0:
+        return "", None, text
+    end = text.find(GENERAL_RULES_END, start + len(GENERAL_RULES_MARK))
+    if end < 0:
+        # Endmarker fehlt oder steht nur vor dem Startmarker: unpaarig.
+        return "", None, text
+    end += len(GENERAL_RULES_END)
+    return text[:start], text[start:end], text[end:]
+
+def agents_file_view(name):
+    """Ansicht der AGENTS.md eines Projekts (F31).
+
+    Liefert die freien Teile vor und nach dem verwalteten Block, den Block
+    selbst und die Prüfsumme für das spätere Speichern. Eine fehlende Datei
+    oder ein Symlink ergibt ``exists=False``; es wird nichts gelesen, was
+    außerhalb des Projekts liegen könnte.
+    """
+    path = os.path.join(ppath(name), "AGENTS.md")
+    if os.path.islink(path) or not os.path.isfile(path):
+        return {"exists": False, "digest": "", "before": "",
+                "managed": None, "after": ""}
+    digest = vibe_storage.file_digest(path)
+    try:
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read()
+    except UnicodeDecodeError as error:
+        raise ValueError("AGENTS.md ist nicht UTF-8 kodiert: " + str(error)) from error
+    before, managed, after = _agents_file_split(text)
+    return {"exists": True, "digest": digest, "before": before,
+            "managed": managed, "after": after}
+
+def agents_file_save(name, before, after, digest):
+    """Schreibt die freien Teile der AGENTS.md und behält den Block byte-identisch.
+
+    Der vorhandene Block wird durch den aktuellen ``GENERAL_RULES``-Block
+    ersetzt; ohne vorhandenen Block wird kein Block eingefügt, sondern nur der
+    freie Text geschrieben. Marker in den freien Teilen und unpaarige Marker in
+    der bestehenden Datei werden abgelehnt. Der Digest-Schutz der
+    Speicherschicht verhindert, dass eine zwischenzeitliche fremde Änderung
+    überschrieben wird; bei jeder Ablehnung bleibt die Datei unverändert.
+    """
+    project = ppath(name)
+    if not isinstance(before, str) or not isinstance(after, str):
+        raise ValueError("Vorheriger und nachfolgender Teil müssen Text sein.")
+    if not isinstance(digest, str) or not digest:
+        raise ValueError("Prüfsumme fehlt. Bitte die Ansicht neu laden.")
+    path = os.path.join(project, "AGENTS.md")
+    if os.path.islink(path) or not os.path.isfile(path):
+        raise ValueError(
+            "AGENTS.md fehlt oder ist ein Symlink; bitte zuerst aus der "
+            "Vorlage anlegen.")
+    try:
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read()
+    except UnicodeDecodeError as error:
+        raise ValueError("AGENTS.md ist nicht UTF-8 kodiert: " + str(error)) from error
+    _before, managed, _after = _agents_file_split(text)
+    if managed is None and (GENERAL_RULES_MARK in text or GENERAL_RULES_END in text):
+        raise ValueError(
+            "AGENTS.md enthält einen unpaarigen Marker. Bitte den Marker "
+            "zuerst von Hand bereinigen; die Datei bleibt unverändert.")
+    if any(marker in before or marker in after
+           for marker in (GENERAL_RULES_MARK, GENERAL_RULES_END)):
+        raise ValueError(
+            "Die Marker des verwalteten Blocks dürfen nicht in den freien "
+            "Teilen stehen.")
+    if managed is not None:
+        content = before + GENERAL_RULES + after
+    else:
+        if before:
+            raise ValueError(
+                "AGENTS.md enthält keinen verwalteten Block; der obere freie "
+                "Teil kann nicht gespeichert werden. Bitte den Text in den "
+                "unteren Teil eintragen.")
+        content = after
+    vibe_storage.write_text(path, content, expected=digest)
+
+def agents_file_create(name):
+    """Legt eine fehlende AGENTS.md aus der Typ-Vorlage an (F31).
+
+    Vorhandene Dateien bleiben unverändert (Rückgabe ``"kept"``); Symlinks
+    werden abgelehnt. Ein unbekannter Projekttyp verwendet wie ``cmd_init``
+    die Vorlage ``generic``. Geschrieben wird atomar; eine zwischenzeitlich
+    angelegte Datei wird nicht überschrieben.
+    """
+    project = ppath(name)
+    path = os.path.join(project, "AGENTS.md")
+    if os.path.islink(path):
+        raise ValueError(
+            "AGENTS.md ist ein Symlink und wird nicht verändert.")
+    if os.path.lexists(path):
+        return "kept"
+    typ = ptype(name)
+    if typ not in types():
+        typ = "generic"
+    template = os.path.join(TPL, typ, "AGENTS.md")
+    try:
+        with open(template, encoding="utf-8") as handle:
+            content = handle.read().replace("{{NAME}}", name)
+    except OSError as error:
+        raise ValueError("Vorlage für AGENTS.md fehlt: " + template) from error
+    vibe_storage.write_text(path, content, expected=vibe_storage.MISSING)
+    return "created"
+
 def ensure_test_agent(project):
     """Legt den unabhängigen Test-Agenten an und ergänzt ``TESTER``.
 

@@ -310,6 +310,36 @@ function drawGuide(g,name){
    g.steps.forEach(s=>{const v=(ask[s.id].value||'').trim();if(!v)return;answers[s.id]=v;if(s.value&&v!==s.value.trim())replace.push(s.id)});
    if(!Object.keys(answers).length){toast('Noch keine Antworten eingetragen.');return}
    const r=await api('/api/guide',{name,action:'save',answers,replace});toast(r.message);if(r.ok)detail(name).catch(showErr)}}},'Antworten speichern und Dateien anlegen')));
+ out.push(agentsFileCard(name));
+ return out}
+/* F31: AGENTS.md ansehen und in den freien Teilen bearbeiten. Der von vibe
+   verwaltete Block wird schreibgeschützt dargestellt; die Karte lädt nach
+   dem Speichern bzw. Anlegen ihren Inhalt neu. */
+function agentsFileCard(name){
+ const body=el('div',{},el('span',{class:'mut'},'Lade AGENTS.md …'));
+ const load=async()=>{const v=await api('/api/agents_file?name='+encodeURIComponent(name));body.replaceChildren(...drawAgentsFile(v,name,load))};
+ load().catch(e=>body.replaceChildren(el('div',{class:'bad'},'AGENTS.md nicht verfügbar: '+String(e&&e.message||e))));
+ return el('div',{class:'card'},body)}
+function drawAgentsFile(v,name,reload){
+ const before=el('textarea',{rows:5,'aria-label':'AGENTS.md: freier Teil vor dem verwalteten Block',placeholder:'Freier Text vor dem verwalteten Block'});
+ before.value=v.before||'';
+ if(v.managed===null){before.disabled=true;before.placeholder='Kein verwalteter Block vorhanden; dieser Teil bleibt leer.'}
+ const after=el('textarea',{rows:5,'aria-label':'AGENTS.md: freier Teil nach dem verwalteten Block',placeholder:'Freier Text nach dem verwalteten Block'});
+ after.value=v.after||'';
+ const save=el('button',{class:'b p',type:'button',on:{click:async()=>{
+  try{const r=await api('/api/agents_file',{name,action:'save',before:before.value,after:after.value,digest:v.digest});toast(r.message);if(r.ok)await reload()}
+  catch(e){toast('AGENTS.md nicht gespeichert: '+String(e&&e.message||e))}}}},'Speichern');
+ const create=el('button',{class:'b',type:'button',on:{click:async()=>{
+  try{const r=await api('/api/agents_file',{name,action:'create'});toast(r.message);if(r.ok)await reload()}
+  catch(e){toast('AGENTS.md nicht angelegt: '+String(e&&e.message||e))}}}},'Aus Vorlage anlegen');
+ const out=[el('b',{},'AGENTS.md — Regeln für Agenten'),
+  el('div',{class:'mut'},'Die Datei entsteht aus der Vorlage des Projekttyps. Den folgenden verwalteten Block aktualisiert vibe bei jedem Agentenlauf; er wird dabei auf den aktuellen Stand gebracht und ist in der Bearbeitung geschützt. Nicht committete Änderungen bleiben beim Aktualisieren erhalten.'),
+  el('div',{class:'mut'},v.exists?'Freier Teil vor dem verwalteten Block:':'Die Datei fehlt noch. „Aus Vorlage anlegen“ erzeugt sie aus der Typvorlage.'),
+  before,
+  v.managed!==null?el('pre',{},v.managed):el('div',{class:'mut'},'Kein verwalteter Block vorhanden.'),
+  el('div',{class:'mut'},'Freier Teil nach dem verwalteten Block:'),
+  after,
+  el('div',{class:'bar'},v.exists?save:null,v.exists?null:create)];
  return out}
 function feedbackCard(d,name){const list=el('div',{});const cls=s=>s==='erledigt'?'ok':s==='BLOCKIERT'?'bad':'warn';
  const done=d.feedback.filter(i=>i.completed),pending=d.feedback.filter(i=>!i.completed);let showDone=false;

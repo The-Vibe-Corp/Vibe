@@ -847,6 +847,16 @@
       ],
       "datum": "2026-11-14",
       "grund": "Subagenten-Ausgabe bleibt statisch (Bug B14): Das Dashboard fragte die Live-Ausgabe der Subagenten weiterhin am gemeinsamen opencode-Server (OC_URL) ab, während der Lauf seit B13 an seinem privaten Loopback-Server arbeitet, der nur über <Laufprotokoll>.server.json bekannt ist. Dadurch lieferte /api/subagent-output nur den einmal erfassten Ersttext und die Karte fror ein. GET /api/subagent-output, /api/subagents und die Live-Erkennung nutzen jetzt steer_endpoint(name): mit Projektkontext gehen Session- und Nachrichtenabfragen authentifiziert an den privaten Laufserver, ohne gültige Serverdatei bleibt der bisherige gemeinsame Server und die erfasste Ausgabe als Rückfall. Kennwörter erscheinen nicht in Antworten oder Protokollen. Eine geänderte Datei liegt im Bereich bin; Größe und SHA-256 des files-Eintrags wurden aktualisiert."
+    },
+    {
+      "arbeitspaket": "F31",
+      "dateien": [
+        "bin/vibe",
+        "bin/vibe-web.py",
+        "bin/web/app.js"
+      ],
+      "datum": "2026-11-14",
+      "grund": "AGENTS.md je Projekt in der Assistenten-Ansicht ansehen und in den freien Teilen bearbeiten: Ansicht/Anlegen/Speichern in bin/vibe mit Digest-Schutz, GET/POST /api/agents_file und eine Karte in der bestehenden Assistenten-Ansicht; der von vibe verwaltete Regelblock bleibt schreibgeschützt. Größe und SHA-256 der geänderten files-Einträge wurden aktualisiert."
     }
   ],
   "files": [
@@ -861,9 +871,9 @@
       "sha256": "e5ae3183efcb76dace1e0bcbde9993be7afe82d93d7877da9ee39846cf45330a"
     },
     {
-      "bytes": 257883,
+      "bytes": 263019,
       "path": "bin/vibe",
-      "sha256": "3564e653a010df9fe393383b94d33c0490cc7f4c7cbc0184652b5d212c636bf6"
+      "sha256": "7f9982fbc228a565ec72b9c3712745469d4fad4e5adc73ec0dcb229a1f3f3871"
     },
     {
       "bytes": 56236,
@@ -871,9 +881,9 @@
       "sha256": "731f07db8470e7b65a85fb120364e72a222e24eff01db3030968aa8e7316c01e"
     },
     {
-      "bytes": 91367,
+      "bytes": 92839,
       "path": "bin/vibe-web.py",
-      "sha256": "2f081d19a01f942573dbbf9f8247a0c5eb30ef44ed8450921d7236d1c9182595"
+      "sha256": "274cdc13ada49105f1becba2d5650e88864e804916b6dd747d29dfaa0900104c"
     },
     {
       "bytes": 5189,
@@ -961,9 +971,9 @@
       "sha256": "d49b2406f2c9837c63ed3c3dcb265938fe5702e78c5aeb0df07b9f349fd65594"
     },
     {
-      "bytes": 123253,
+      "bytes": 125827,
       "path": "bin/web/app.js",
-      "sha256": "67e4854aa13cba055d757f3df13beffca89a3732f10022166501b5ef512733ba"
+      "sha256": "3789866d01ca14f471fd1d13049d4e9c29f09385261dbb28d2667d4743b5de0f"
     },
     {
       "bytes": 588,
