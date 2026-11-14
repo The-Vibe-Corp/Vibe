@@ -9,6 +9,7 @@ import importlib.machinery
 import importlib.util
 import json
 import os
+import re
 import socket
 import subprocess
 import sys
@@ -118,6 +119,17 @@ def free_port():
 
 def non_empty_lines(text):
     return [line for line in text.splitlines() if line.strip()]
+
+
+def numbered_id_parts(ident):
+    """Zerlegt eine fortlaufende ID in Präfix und Nummer, ohne ein konkretes
+    Präfix festzulegen. Der Präfix ist ein Implementierungsbeschluss."""
+    match = re.fullmatch(r"([A-Za-z0-9][A-Za-z0-9_.:-]*?)(\d+)", ident)
+    if not match:
+        raise AssertionError(
+            "Erwartete fortlaufende Auto-ID, erhalten: " + repr(ident)
+        )
+    return match.group(1), int(match.group(2))
 
 
 class WorkPackageFixture(unittest.TestCase):
@@ -240,12 +252,13 @@ class WorkPackageModelTest(WorkPackageFixture):
 
         self.assertEqual(self.ticket_text(), before)
 
-    def test_add_work_package_rejects_invalid_or_missing_id(self):
+    def test_add_work_package_rejects_invalid_id(self):
+        """F23/AK7: Eine leere ID wird jetzt automatisch vergeben, deshalb
+        erwartet dieser Test für Blanks kein Fehler mehr. Manuell angegebene
+        ungültige IDs müssen unverändert ablehnen."""
         self.write_tickets(TICKETS)
         before = self.ticket_text()
 
-        with self.assertRaisesRegex(ValueError, "ID fehlt"):
-            self.cli.add_ticket("proj", "  ", "Titel", "Text")
         with self.assertRaisesRegex(ValueError, "Ungültige ID"):
             self.cli.add_ticket("proj", "- [ ] F99", "Titel", "Text")
         with self.assertRaisesRegex(ValueError, "Titel fehlt"):
@@ -254,6 +267,81 @@ class WorkPackageModelTest(WorkPackageFixture):
             self.cli.add_ticket("proj", "F18", "Titel\n- [ ] F99", "Text")
 
         self.assertEqual(self.ticket_text(), before)
+
+    def test_add_work_package_with_blank_id_gets_an_auto_assigned_id(self):
+        """F23/AK1+AK2: Ohne ID (leer oder leerzeichen) wird das Paket
+        trotzdem angelegt und erhält eine nicht-leere Auto-ID."""
+        self.write_tickets(TICKETS)
+
+        for blank in ("", "  "):
+            assigned = self.cli.add_ticket(
+                "proj", blank, "Paket ohne verwaltete ID", "Zeile eins"
+            )
+            self.assertTrue(assigned)
+            text = self.ticket_text()
+            self.assertIn("- [ ] %s Paket ohne verwaltete ID" % assigned, text)
+            self.assertIn("  Beschreibung: Zeile eins", text)
+            # Bestehende Einträge bleiben unverändert erhalten (AK1).
+            self.assertIn("- [ ] F15 Arbeitspakete", text)
+            self.assertIn("- [x] V-001 Erledigtes Paket", text)
+            self.assertIn("- [ ] V-099 Blockiertes Paket", text)
+            self.assertNotIn(assigned, ("F15", "V-001", "V-099"))
+
+    def test_repeated_blank_ids_produce_distinct_sequential_ids(self):
+        """F23/AK2: Jeder Aufruf ohne ID verbraucht die nächste freie Nummer
+        desselben Auto-Präfixes. IDs wiederholen sich nicht."""
+        self.write_tickets(TICKETS)
+
+        first = self.cli.add_ticket("proj", "", "Erstes Auto-Paket")
+        prefix, first_number = numbered_id_parts(first)
+        second = self.cli.add_ticket("proj", "", "Zweites Auto-Paket")
+        suffix, second_number = numbered_id_parts(second)
+
+        self.assertEqual(suffix, prefix)
+        self.assertGreater(second_number, first_number)
+        text = self.ticket_text()
+        self.assertIn("- [ ] %s Erstes Auto-Paket" % first, text)
+        self.assertIn("- [ ] %s Zweites Auto-Paket" % second, text)
+        self.assertNotEqual(first, second)
+
+    def test_auto_assigned_id_skips_numbers_already_taken(self):
+        """F23/AK3: Bestehende Auto-Präfix-Einträge und nutzereingetragene IDs
+        desselben Musters erhalten die nächste freie Nummer."""
+        self.write_tickets(TICKETS)
+        observed = self.cli.add_ticket("proj", "", "Beobachtung")
+        prefix, _ = numbered_id_parts(observed)
+
+        # Bestandsnummern mit dem Auto-Präfix und eine Nutzer-ID desselben
+        # Musters. Wird der Nutzer-ID-Konflikt nicht beachtet, ergibt der
+        # nächste Aufruf eine schon vorhandene ID.
+        neighbors = ("2", "40")
+        seeds = TICKETS + "\n\n".join(
+            "- [ ] %s%s Nachbarnummer %s\n  Beschreibung: Seed %s"
+            % (prefix, n, n, n)
+            for n in (2, 40)
+        ) + "\n\n- [ ] %s1 Ältester Nachbar\n  Beschreibung: Seed 1\n" % prefix
+        self.write_tickets(seeds)
+        manual = "30"
+        self.cli.add_ticket("proj", prefix + "30", "Nutzer-ID", "Manuell")
+
+        assigned = self.cli.add_ticket("proj", "", "Danach", "Auto")
+        prefix2, number = numbered_id_parts(assigned)
+
+        self.assertEqual(prefix2, prefix)
+        self.assertGreater(number, max(x for x in [int(n) for n in neighbors] + [30]))
+        self.assertNotIn(assigned, {"F15", "V-001", "V-099", prefix + "2",
+                                     prefix + "1", prefix + "30",
+                                     prefix + "40"})
+        text = self.ticket_text()
+        self.assertIn("- [ ] %s Danach" % assigned, text)
+
+    def test_auto_assignment_without_a_tickets_file_fails_and_creates_nothing(self):
+        """F23/AK5: Wiederholungssicherer Fallback — derselbe Fehler wie bei
+        manueller ID, keine Datei entsteht."""
+        for blank in ("", "  "):
+            with self.assertRaisesRegex(ValueError, "Keine TICKETS.md"):
+                self.cli.add_ticket("proj", blank, "Titel", "Text")
+        self.assertFalse(self.tickets.exists())
 
     def test_add_work_package_requires_an_existing_tickets_file(self):
         with self.assertRaisesRegex(ValueError, "Keine TICKETS.md"):
@@ -469,6 +557,29 @@ class WorkPackageApiTest(WorkPackageApiFixture):
         text = self.ticket_text()
         self.assertNotIn("F18 Geändertes Paket", text)
         self.assertIn("- [ ] F15 Arbeitspakete", text)
+
+    def test_api_adds_work_package_without_an_id_and_names_the_assigned_id(self):
+        """F23/AK6: POST /api/ticket action=add ohne id liefert 200 und nennt
+        die tatsächlich in TICKETS.md vergebene ID ('<ID> angelegt'); kein
+        hartes Präfix im Test."""
+        status, body = self.request(
+            "/api/ticket",
+            {"name": "proj", "action": "add", "title": "Auto Paket",
+             "description": "Ohne ID"},
+        )
+        self.assertEqual(status, 200, body)
+        detail = json.loads(
+            self.request("/api/project?name=proj")[1]
+        )
+        assigned_ids = {
+            entry["id"] for entry in detail["tickets"]
+        } - {"F15", "V-001", "V-099"}
+        self.assertEqual(len(assigned_ids), 1)
+        assigned = assigned_ids.pop()
+        self.assertTrue(assigned)
+        self.assertIn("%s angelegt" % assigned, body)
+        self.assertIn("- [ ] %s Auto Paket" % assigned, self.ticket_text())
+        self.assertIn("  Beschreibung: Ohne ID", self.ticket_text())
 
     def test_api_rejects_duplicate_invalid_and_unknown_work_packages(self):
         before = self.ticket_text()

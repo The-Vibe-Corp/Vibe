@@ -247,6 +247,48 @@ class VerifyQuickTest(unittest.TestCase):
         self.assertIn("project.env", result.stdout + result.stderr)
 
 
+class VerifyTmuxIsolationTest(unittest.TestCase):
+    """Ein geerbtes TMUX darf die Prüfung nicht auf den Server des Aufrufers lenken."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.base = Path(self.tmp.name)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_caller_tmux_is_not_handed_to_the_check(self):
+        project = make_project(
+            self.base,
+            ["TYPE=generic", 'VERIFY_QUICK="python3 beobachten.py"'],
+        )
+        write_script(
+            project,
+            "beobachten.py",
+            "import json, os\n"
+            "keys = ('TMUX', 'TMUX_PANE', 'TMUX_TMPDIR')\n"
+            "print('OBSERVED=' + json.dumps({key: os.environ.get(key) for key in keys}))\n",
+        )
+
+        result = run_verify(
+            "quick",
+            "--keep",
+            project=project,
+            env={"TMUX": "/tmp/tmux-1000/default,1,0", "TMUX_PANE": "%0"},
+        )
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        observed = observed_environment(result.stdout)
+        self.assertIsNone(observed["TMUX"])
+        self.assertIsNone(observed["TMUX_PANE"])
+        match = re.search(r"Prüfverzeichnis: (\S+)", result.stdout)
+        self.assertIsNotNone(match, result.stdout)
+        self.assertTrue(
+            observed["TMUX_TMPDIR"].startswith(match.group(1)),
+            observed["TMUX_TMPDIR"],
+        )
+
+
 class VerifyMissingToolsTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()

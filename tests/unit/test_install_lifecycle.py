@@ -26,12 +26,16 @@ PROGRAM_FILES = (
     "vibe_models.py",
     "vibe_sandbox.py",
     "vibe_paths.py",
+    "vibe_ui_config.py",
     "vibe_storage.py",
     "vibe_guide.py",
     "vibe_questions.py",
     "vibe_autonomous.py",
     "vibe_harness.py",
+    "vibe_limits.py",
+    "vibe_gates.py",
     "vibe_services.py",
+    "vibe_github.py",
     "fritz-reconnect.py",
 )
 WEB_FILES = ("index.html", "styles.css", "app.js")
@@ -645,20 +649,158 @@ class UninstallTest(InstallLifecycleBase):
 
 
 class RunningGuardTest(InstallLifecycleBase):
-    def test_update_refuses_while_a_run_is_live(self):
-        self.install(timestamp="20261101-100000")
-        (self.toolchain / "bin" / "vibe").write_text("ALT\n", encoding="utf-8")
+    def write_runs(self, records):
         runtime = self.vibe / "_logs"
         runtime.mkdir(exist_ok=True)
         (runtime / "runs.json").write_text(
-            json.dumps({"runs": [{"id": "lauf-1", "state": "running"}]}), encoding="utf-8"
+            json.dumps({"runs": records}), encoding="utf-8"
         )
 
-        code, output = self.run_main(["--yes", "--update", "--vibe", str(self.vibe)])
+    def tmux_check(self, live_sessions=()):
+        """Fake-tmux: nur die genannten Sitzungen gelten als vorhanden.
 
-        self.assertEqual(code, 1)
+        Alle Werkzeuge gelten als vorhanden, damit die Werkzeugprüfung des
+        Setups nicht vor der Installationssperre abbricht. Die eigentliche
+        Sitzungsprüfung steuert ausschließlich ``runner``.
+        """
+        live = set(live_sessions)
+
+        def which(name):
+            return "/fake/" + name
+
+        def runner(command, **kwargs):
+            exists = "has-session" in command and command[-1] in live
+            return subprocess.CompletedProcess(command, 0 if exists else 1, "", "")
+
+        return which, runner
+
+    def test_update_refuses_while_a_run_is_live(self):
+        self.install(timestamp="20261101-100000")
+        (self.toolchain / "bin" / "vibe").write_text("ALT\n", encoding="utf-8")
+        self.write_runs(
+            [
+                {
+                    "id": "lauf-1",
+                    "state": "running",
+                    "session": "vibe-lauf-1",
+                    "project": str(self.root / "proj"),
+                }
+            ]
+        )
+        which, runner = self.tmux_check({"vibe-lauf-1"})
+
+        code, output = self.run_main(
+            ["--yes", "--update", "--vibe", str(self.vibe)],
+            which=which,
+            runner=runner,
+        )
+
+        self.assertEqual(code, 1, output)
         self.assertIn("wird gerade verwendet", output)
         self.assertIn("lauf-1", output)
+        self.assertEqual((self.toolchain / "bin" / "vibe").read_text(encoding="utf-8"), "ALT\n")
+
+    def test_update_refuses_while_a_starting_run_is_live(self):
+        self.install(timestamp="20261101-100000")
+        (self.toolchain / "bin" / "vibe").write_text("ALT\n", encoding="utf-8")
+        self.write_runs(
+            [
+                {
+                    "id": "lauf-start",
+                    "state": "starting",
+                    "session": "vibe-lauf-start",
+                    "project": str(self.root / "proj"),
+                }
+            ]
+        )
+        which, runner = self.tmux_check({"vibe-lauf-start"})
+
+        code, output = self.run_main(
+            ["--yes", "--update", "--vibe", str(self.vibe)],
+            which=which,
+            runner=runner,
+        )
+
+        self.assertEqual(code, 1, output)
+        self.assertIn("wird gerade verwendet", output)
+        self.assertIn("lauf-start", output)
+        self.assertEqual((self.toolchain / "bin" / "vibe").read_text(encoding="utf-8"), "ALT\n")
+
+    def test_update_proceeds_when_a_running_record_has_no_session(self):
+        self.install(timestamp="20261101-100000")
+        (self.toolchain / "bin" / "vibe").write_text("ALT\n", encoding="utf-8")
+        self.write_runs(
+            [
+                {
+                    "id": "lauf-weg",
+                    "state": "running",
+                    "session": "vibe-lauf-weg",
+                    "project": str(self.root / "proj"),
+                }
+            ]
+        )
+        which, runner = self.tmux_check()
+
+        code, output = self.run_main(
+            ["--yes", "--update", "--vibe", str(self.vibe)],
+            which=which,
+            runner=runner,
+        )
+
+        self.assertEqual(code, 0, output)
+        self.assertNotIn("wird gerade verwendet", output)
+        self.assertNotEqual(
+            (self.toolchain / "bin" / "vibe").read_text(encoding="utf-8"), "ALT\n"
+        )
+
+    def test_update_proceeds_when_a_starting_record_has_no_session(self):
+        self.install(timestamp="20261101-100000")
+        (self.toolchain / "bin" / "vibe").write_text("ALT\n", encoding="utf-8")
+        self.write_runs(
+            [
+                {
+                    "id": "lauf-start-weg",
+                    "state": "starting",
+                    "session": "vibe-lauf-start-weg",
+                    "project": str(self.root / "proj"),
+                }
+            ]
+        )
+        which, runner = self.tmux_check()
+
+        code, output = self.run_main(
+            ["--yes", "--update", "--vibe", str(self.vibe)],
+            which=which,
+            runner=runner,
+        )
+
+        self.assertEqual(code, 0, output)
+        self.assertNotIn("wird gerade verwendet", output)
+        self.assertNotEqual(
+            (self.toolchain / "bin" / "vibe").read_text(encoding="utf-8"), "ALT\n"
+        )
+
+    def test_update_refuses_conservatively_when_tmux_is_unavailable(self):
+        self.install(timestamp="20261101-100000")
+        (self.toolchain / "bin" / "vibe").write_text("ALT\n", encoding="utf-8")
+        self.write_runs(
+            [
+                {
+                    "id": "lauf-1",
+                    "state": "running",
+                    "session": "vibe-lauf-1",
+                    "project": str(self.root / "proj"),
+                }
+            ]
+        )
+
+        code, output = self.run_main(
+            ["--yes", "--update", "--vibe", str(self.vibe)],
+            which=lambda name: None,
+        )
+
+        self.assertEqual(code, 1, output)
+        self.assertIn("wird gerade verwendet", output)
         self.assertEqual((self.toolchain / "bin" / "vibe").read_text(encoding="utf-8"), "ALT\n")
 
     def test_update_refuses_when_the_run_state_is_unreadable(self):
@@ -690,6 +832,44 @@ class RunningGuardTest(InstallLifecycleBase):
 
         self.assertEqual(code, 0)
         self.assertNotEqual((self.toolchain / "bin" / "vibe").read_text(encoding="utf-8"), "ALT\n")
+
+    def test_force_bypasses_the_guard_of_a_live_session(self):
+        self.install(timestamp="20261101-100000")
+        (self.toolchain / "bin" / "vibe").write_text("ALT\n", encoding="utf-8")
+        self.write_runs(
+            [
+                {
+                    "id": "lauf-live",
+                    "state": "running",
+                    "session": "vibe-lauf-live",
+                    "project": str(self.root / "proj"),
+                }
+            ]
+        )
+        which, runner = self.tmux_check({"vibe-lauf-live"})
+
+        blocked, blocked_output = self.run_main(
+            ["--yes", "--update", "--vibe", str(self.vibe)],
+            which=which,
+            runner=runner,
+        )
+
+        self.assertEqual(blocked, 1, blocked_output)
+        self.assertIn("wird gerade verwendet", blocked_output)
+        self.assertEqual(
+            (self.toolchain / "bin" / "vibe").read_text(encoding="utf-8"), "ALT\n"
+        )
+
+        forced, forced_output = self.run_main(
+            ["--yes", "--update", "--force", "--vibe", str(self.vibe)],
+            which=which,
+            runner=runner,
+        )
+
+        self.assertEqual(forced, 0, forced_output)
+        self.assertNotEqual(
+            (self.toolchain / "bin" / "vibe").read_text(encoding="utf-8"), "ALT\n"
+        )
 
 
 if __name__ == "__main__":

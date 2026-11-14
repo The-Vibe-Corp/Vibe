@@ -97,8 +97,12 @@ python3 scripts/setup-vibe.py --yes --uninstall --vibe /pfad/zu/VibeCode
 | Uninstall | entfernt Programme, Vorlagen und `version.json` | Projekte, Laufzeitdaten, Sicherungen, persönliche Konfiguration |
 
 Ein Update ist gesperrt, solange ein Agentenlauf oder eine Dashboard-Sitzung
-dieser Installation läuft. `--force` hebt die Sperre nur nach ausdrücklicher
-Entscheidung auf. Die Versionskennung steht in `_toolchain/version.json`
+dieser Installation läuft. Ein Registereintrag zählt dabei nur, wenn seine
+tmux-Sitzung tatsächlich existiert; verwaiste Einträge ohne Sitzung blockieren
+nicht. `vibe runs prune` markiert solche Einträge als beendet, auch wenn das
+Projektverzeichnis fehlt, und beendet niemals eine Sitzung. Ist tmux nicht
+prüfbar, bleiben die Einträge unverändert und werden als „nicht prüfbar“
+gemeldet. `--force` hebt die Sperre nur nach ausdrücklicher Entscheidung auf. Die Versionskennung steht in `_toolchain/version.json`
 (Version, Commit, Zeitpunkt, Modus, Quelle); fehlt `VERSION`, lautet die Angabe
 ausdrücklich `unbekannt`.
 
@@ -159,6 +163,7 @@ Reihenfolge bei Problemen:
 | Prüfung meldet fehlenden Befehl | `.vibe/project.env` ohne `VERIFY_QUICK`/`VERIFY_FULL` | Projekt vorbereiten oder Werte ergänzen |
 | Schreibfehler auf FUSE/NTFS | Unix-Rechte und Atomarität nicht zusicherbar | lokale Platte für Laufzeitdaten verwenden; Grenzen beachten |
 | Dashboard beendet, Lauf läuft weiter | beabsichtigtes Verhalten | Lauf separat mit `vibe stop` beenden |
+| Update meldet laufende Agenten, obwohl keiner läuft | verwaister Registereintrag ohne tmux-Sitzung oder laufendes Dashboard | `vibe runs` prüfen, `vibe runs prune`, bei Bedarf `vibe ui stop`, dann Update erneut |
 
 ## Sicherungen
 

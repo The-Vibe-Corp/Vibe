@@ -1,7 +1,21 @@
 """vibe_mcp — MCP-Server aus opencode-Konfigurationen anzeigen, anlegen, bearbeiten, testen (nur Standardbibliothek)."""
-import os, re, json, sys, time, queue, threading, subprocess, shutil, signal, socket, ssl
-import urllib.request, urllib.error
-import vibe
+import os
+import re
+import json
+import sys
+import time
+import queue
+import threading
+import subprocess
+import signal
+import socket
+import ssl
+import urllib.request
+import urllib.error
+# `vibe` ist das CLI-Skript bin/vibe. Es existiert ohne .py-Erweiterung und
+# trägt sich beim Start selbst unter dem Namen "vibe" in sys.modules ein
+# (bin/vibe), bevor es vibe_mcp importiert. Statisch nicht auflösbar.
+import vibe  # pylint: disable=import-error
 import vibe_storage
 import vibe_opencode
 
@@ -12,44 +26,62 @@ NAME_OK = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
 def _skip_ws(t, i):
     n = len(t)
     while i < n:
-        if t[i] in " \t\r\n": i += 1
+        if t[i] in " \t\r\n":
+            i += 1
         elif t.startswith("//", i):
-            j = t.find("\n", i); i = n if j < 0 else j + 1
+            j = t.find("\n", i)
+            i = n if j < 0 else j + 1
         elif t.startswith("/*", i):
-            j = t.find("*/", i + 2); i = n if j < 0 else j + 2
-        else: break
+            j = t.find("*/", i + 2)
+            i = n if j < 0 else j + 2
+        else:
+            break
     return i
 
 def _string_end(t, i):
     i += 1
     while i < len(t):
-        if t[i] == "\\": i += 2; continue
-        if t[i] == '"': return i + 1
+        if t[i] == "\\":
+            i += 2
+            continue
+        if t[i] == '"':
+            return i + 1
         i += 1
     raise ValueError("Nicht beendeter String in der Konfiguration")
 
 def _skip_value(t, i):
     n = len(t)
-    if i >= n: raise ValueError("Unerwartetes Ende der Konfiguration")
+    if i >= n:
+        raise ValueError("Unerwartetes Ende der Konfiguration")
     c = t[i]
-    if c == '"': return _string_end(t, i)
+    if c == '"':
+        return _string_end(t, i)
     if c in "{[":
-        close = "}" if c == "{" else "]"; i += 1
+        close = "}" if c == "{" else "]"
+        i += 1
         while True:
             i = _skip_ws(t, i)
-            if i >= n: raise ValueError("Klammer nicht geschlossen")
-            if t[i] == close: return i + 1
-            if t[i] == ",": i += 1; continue
+            if i >= n:
+                raise ValueError("Klammer nicht geschlossen")
+            if t[i] == close:
+                return i + 1
+            if t[i] == ",":
+                i += 1
+                continue
             if c == "{":
-                i = _string_end(t, i); i = _skip_ws(t, i)
-                if t[i] != ":": raise ValueError("':' erwartet")
+                i = _string_end(t, i)
+                i = _skip_ws(t, i)
+                if t[i] != ":":
+                    raise ValueError("':' erwartet")
                 i = _skip_ws(t, i + 1)
             i = _skip_value(t, i)
     j = i
-    while j < n and t[j] not in ",}] \t\r\n" and not t.startswith(("//", "/*"), j): j += 1
+    while j < n and t[j] not in ",}] \t\r\n" and not t.startswith(("//", "/*"), j):
+        j += 1
     return j
 
 def jsonc_loads(text):
+    """JSONC-Text (JSON mit Kommentaren) als Python-Wert einlesen."""
     out, i, n = [], 0, len(text)
     def strip_trailing(i):
         j = _skip_ws(text, i)
@@ -57,13 +89,18 @@ def jsonc_loads(text):
     while i < n:
         c = text[i]
         if c == '"':
-            j = _string_end(text, i); out.append(text[i:j]); i = j
+            j = _string_end(text, i)
+            out.append(text[i:j])
+            i = j
         elif text.startswith("//", i) or text.startswith("/*", i):
             i = _skip_ws(text, i)
         elif c == ",":
-            if not strip_trailing(i + 1): out.append(c)
+            if not strip_trailing(i + 1):
+                out.append(c)
             i += 1
-        else: out.append(c); i += 1
+        else:
+            out.append(c)
+            i += 1
     s = "".join(out)
     return json.loads(s) if s.strip() else {}
 
@@ -75,18 +112,30 @@ def _object_members(t, start):
     werden dabei nur übersprungen, nicht verändert.
     """
     i = _skip_ws(t, start)
-    if i >= len(t) or t[i] != "{": raise ValueError("Objekt erwartet.")
-    i += 1; members, last_end = {}, None
+    if i >= len(t) or t[i] != "{":
+        raise ValueError("Objekt erwartet.")
+    i += 1
+    members, last_end = {}, None
     while True:
         i = _skip_ws(t, i)
-        if i >= len(t): raise ValueError("Objekt nicht geschlossen")
-        if t[i] == "}": return members, i, last_end
-        if t[i] == ",": i += 1; continue
+        if i >= len(t):
+            raise ValueError("Objekt nicht geschlossen")
+        if t[i] == "}":
+            return members, i, last_end
+        if t[i] == ",":
+            i += 1
+            continue
         key_start = i
-        ke = _string_end(t, i); key = json.loads(t[i:ke]); i = _skip_ws(t, ke)
-        if i >= len(t) or t[i] != ":": raise ValueError("':' erwartet")
-        vs = _skip_ws(t, i + 1); ve = _skip_value(t, vs)
-        members[key] = (key_start, vs, ve); last_end = ve; i = ve
+        ke = _string_end(t, i)
+        key = json.loads(t[i:ke])
+        i = _skip_ws(t, ke)
+        if i >= len(t) or t[i] != ":":
+            raise ValueError("':' erwartet")
+        vs = _skip_ws(t, i + 1)
+        ve = _skip_value(t, vs)
+        members[key] = (key_start, vs, ve)
+        last_end = ve
+        i = ve
 
 def _root_members(t):
     return _object_members(t, 0)
@@ -121,9 +170,10 @@ def jsonc_set_member(text, obj_start, key, value):
 
 def jsonc_delete_member(text, obj_start, key):
     """Entfernt ein Mitglied eines JSONC-Objekts samt einem Trennkomma."""
-    members, close, last_end = _object_members(text, obj_start)
-    if key not in members: return text
-    key_start, vs, ve = members[key]
+    members, _close, _last_end = _object_members(text, obj_start)
+    if key not in members:
+        return text
+    key_start, _vs, ve = members[key]
     after = _skip_ws(text, ve)
     if after < len(text) and text[after] == ",":
         return text[:key_start] + text[after + 1:]
@@ -162,7 +212,8 @@ def jsonc_sync_object(text, obj_start, old, new):
 
 def jsonc_set_top(text, key, value):
     """Setzt/ersetzt den Wert eines Schlüssels der obersten Ebene; alles andere (auch Kommentare) bleibt unverändert."""
-    if not text.strip(): return "{\n  " + json.dumps(key) + ": " + _dump(value) + "\n}\n"
+    if not text.strip():
+        return "{\n  " + json.dumps(key) + ": " + _dump(value) + "\n}\n"
     return jsonc_set_member(text, 0, key, value)
 
 # ---------- Konfigurationsdateien ----------
@@ -181,20 +232,24 @@ def cfg_candidates(scope):
             + [os.path.join(base, ".opencode", name) for name in CONFIG_NAMES])
 
 def cfg_path(scope):
+    """Arbeitskonfiguration wählen: erste vorhandene Datei, sonst der erste Kandidat (beim Schreiben angelegt)."""
     candidates = cfg_candidates(scope)
     for path in candidates:
-        if os.path.exists(path): return path
+        if os.path.exists(path):
+            return path
     return candidates[0]
 
 def load(scope):
+    """Frischen Stand der Konfiguration lesen: Pfad, Text, Inhalt, MCP-Schema, Server und Prüfsumme."""
     p = cfg_path(scope)
     snapshot = vibe_storage.read_snapshot(p)
     text = snapshot.text if snapshot.exists else ""
     data = jsonc_loads(text)
-    # Das Schema wird aus der vorhandenen Konfiguration erkannt. Nur für eine
-    # geprüfte opencode-Version darf eine leere Datei das geprüfte Schema
-    # verwenden; sonst bleibt das Schema unbekannt und Schreibvorgänge werden
-    # abgelehnt (V-007).
+    # Das Schema wird aus der vorhandenen Konfiguration erkannt. Eine leere
+    # Datei bekommt das Schema aus dem Profil der geprüften Version; seit F26
+    # auch über das Fallback-Profil einer lesbaren, nicht exakt geprüften
+    # Version (version_notice in der Erfolgsmeldung). Unlesbare Versionen
+    # bleiben unbekannt und Schreibvorgänge werden abgelehnt (V-007, F26).
     layout_info = vibe_opencode.detect_mcp_layout(data)
     layout, servers = layout_info["layout"], layout_info["servers"]
     digest = snapshot.digest if snapshot.exists else vibe_storage.MISSING
@@ -207,10 +262,22 @@ def _require_known_layout(layout):
             f"Geprüft ist opencode {vibe_opencode.TESTED_VERSION}. Die Konfiguration wird nicht verändert."
         )
 
+def version_notice(info=None):
+    """Meldung, wenn die erkannte opencode-Version nicht exakt geprüft ist (F26).
+
+    Schreibvorgänge laufen über das Fallback-Profil weiter; die ungeprüfte
+    Version wird aber nicht stillschweigend behandelt, sondern der
+    Erfolgsmeldung beigefügt. Jeder Aufruf erkennt die Version frisch.
+    """
+    info = info or vibe_opencode.probe()
+    return "" if info.checked else info.message
+
 def backup_dir():
+    """Ordner, in dem vibe Sicherungen der Konfigurationen ablegt."""
     return os.path.join(vibe.PATHS.state, "config-backups")
 
 def backup_label(scope, p):
+    """Label einer Konfigurationssicherung: Geltungsbereich plus Dateiname relativ zum Basisordner."""
     base = os.path.expanduser("~/.config/opencode") if scope == "global" else vibe.ppath(scope)
     relative = os.path.relpath(p, base)
     name = os.path.basename(p) if os.path.dirname(relative) in ("", ".") else relative.replace(os.sep, "_")
@@ -237,11 +304,14 @@ def restore(scope, backup=None):
 
 def _mcp_object_start(text):
     """Index des ``mcp``-Objekts oder ``None``, wenn kein ``mcp``-Block existiert."""
-    if not text.strip(): return None
+    if not text.strip():
+        return None
     members, _close, _last_end = _root_members(text)
-    if "mcp" not in members: return None
+    if "mcp" not in members:
+        return None
     start = _skip_ws(text, members["mcp"][1])
-    if text.startswith("null", start): return None
+    if text.startswith("null", start):
+        return None
     if start >= len(text) or text[start] != "{":
         raise ValueError("Der 'mcp'-Block ist kein Objekt; die Konfiguration wird nicht verändert.")
     return start
@@ -295,11 +365,15 @@ def _mask_url(url):
     return URL_SECRET.sub(repl, url)
 
 def mask_entry(e):
+    """Geheimnisse eines Eintrags maskieren (Umgebung, Header, URL, OAuth); der Eingabewert bleibt unverändert."""
     e = json.loads(json.dumps(e))
     for k in ("environment", "headers"):
-        if isinstance(e.get(k), dict): e[k] = {a: (SECRET_MASK if _is_secret(a, b) else b) for a, b in e[k].items()}
-    if isinstance(e.get("url"), str): e["url"] = _mask_url(e["url"])
-    if isinstance(e.get("oauth"), dict): e["oauth"] = {a: (SECRET_MASK if a.lower() in ("clientsecret",) else b) for a, b in e["oauth"].items()}
+        if isinstance(e.get(k), dict):
+            e[k] = {a: (SECRET_MASK if _is_secret(a, b) else b) for a, b in e[k].items()}
+    if isinstance(e.get("url"), str):
+        e["url"] = _mask_url(e["url"])
+    if isinstance(e.get("oauth"), dict):
+        e["oauth"] = {a: (SECRET_MASK if a.lower() in ("clientsecret",) else b) for a, b in e["oauth"].items()}
     return e
 
 def _restore_url(new, old):
@@ -311,7 +385,8 @@ def _restore_url(new, old):
         ]
 
     names = masked_names(new)
-    if not names: return new
+    if not names:
+        return new
     if not isinstance(old, str):
         raise ValueError("Maskiertes Geheimnis in der URL kann nicht wiederhergestellt werden: der bisherige Eintrag fehlt.")
     # Ein maskierter Parameter lässt sich nur eindeutig zuordnen, wenn er in
@@ -338,7 +413,8 @@ def _restore_url(new, old):
     def repl(match):
         prefix = match.group(1)
         value = match.group(0)[len(prefix):]
-        if value != SECRET_MASK: return match.group(0)
+        if value != SECRET_MASK:
+            return match.group(0)
         name = prefix[:-1].lstrip("?&")
         found = re.search(r"(?i)(?:[?&]|^)" + re.escape(name) + r"=([^&#\s]*)", old)
         if not found:
@@ -356,7 +432,9 @@ def _restore_url(new, old):
     return restored
 
 def merge_masked(new, old):
-    new = json.loads(json.dumps(new)); old = old or {}
+    """Maskierte Geheimnisse des neuen Eintrags aus dem bisherigen Eintrag wiederherstellen; fehlt der bisherige Wert, wird abgelehnt."""
+    new = json.loads(json.dumps(new))
+    old = old or {}
     for k in ("environment", "headers"):
         if isinstance(new.get(k), dict):
             previous = old.get(k) if isinstance(old.get(k), dict) else {}
@@ -382,11 +460,14 @@ def merge_masked(new, old):
 
 # ---------- Anzeigen, anlegen, bearbeiten ----------
 def list_all():
+    """Alle MCP-Server aller Geltungsbereiche mit maskierten Geheimnissen; unlesbare Konfigurationen erscheinen mit Fehlermeldung."""
     out = []
     for scope in ["global"] + vibe.projects():
-        try: p, _, _, layout, servers, _digest = load(scope)
-        except Exception as ex:
-            out.append({"scope": scope, "name": "(Konfiguration nicht lesbar)", "error": str(ex), "path": cfg_path(scope)}); continue
+        try:
+            p, _, _, layout, servers, _digest = load(scope)
+        except Exception as ex:  # pylint: disable=broad-exception-caught; einzelne unlesbare Konfigurationen erscheinen als Zeile mit Fehler, statt die Gesamtliste abzubrechen
+            out.append({"scope": scope, "name": "(Konfiguration nicht lesbar)", "error": str(ex), "path": cfg_path(scope)})
+            continue
         for name, e in servers.items():
             me = mask_entry(e)
             target = " ".join(me.get("command", [])) if me.get("type") == "local" else me.get("url", "")
@@ -394,13 +475,16 @@ def list_all():
     return out
 
 def get_entry(scope, name):
+    """Einen MCP-Eintrag mit maskierten Geheimnissen samt Schema und Prüfsumme liefern."""
     _, _, _, layout, servers, digest = load(scope)
-    if name not in servers: raise ValueError("MCP-Server nicht gefunden: " + name)
+    if name not in servers:
+        raise ValueError("MCP-Server nicht gefunden: " + name)
     return {"entry": mask_entry(servers[name]), "layout": layout, "path": cfg_path(scope),
             "digest": None if digest is vibe_storage.MISSING else digest}
 
 def _check_oauth(oauth):
-    if oauth is False: return
+    if oauth is False:
+        return
     if not isinstance(oauth, dict):
         raise ValueError("'oauth' muss false oder ein Objekt sein.")
     allowed = set(vibe_opencode.mcp_oauth_fields())
@@ -419,9 +503,12 @@ def _check_oauth(oauth):
             raise ValueError("'oauth.callbackPort' muss eine Portnummer zwischen 1 und 65535 sein.")
 
 def validate(entry, extra_keys=()):
-    if not isinstance(entry, dict): raise ValueError("Eintrag ungültig")
+    """Eintrag gegen die vom geprüften opencode-Schema erlaubten Felder und Werttypen prüfen."""
+    if not isinstance(entry, dict):
+        raise ValueError("Eintrag ungültig")
     t = entry.get("type")
-    if t not in ("local", "remote"): raise ValueError("type muss 'local' oder 'remote' sein.")
+    if t not in ("local", "remote"):
+        raise ValueError("type muss 'local' oder 'remote' sein.")
     allowed = set(vibe_opencode.mcp_entry_fields(t))
     unknown = sorted(set(entry) - allowed - set(extra_keys))
     if unknown:
@@ -432,33 +519,47 @@ def validate(entry, extra_keys=()):
         )
     if t == "local":
         c = entry.get("command")
-        if not (isinstance(c, list) and c and all(isinstance(x, str) and x for x in c)): raise ValueError("Lokal: 'command' braucht mindestens ein Element (Programm, dann Argumente).")
-        if "cwd" in entry and not isinstance(entry["cwd"], str): raise ValueError("'cwd' muss Text sein.")
+        if not (isinstance(c, list) and c and all(isinstance(x, str) and x for x in c)):
+            raise ValueError("Lokal: 'command' braucht mindestens ein Element (Programm, dann Argumente).")
+        if "cwd" in entry and not isinstance(entry["cwd"], str):
+            raise ValueError("'cwd' muss Text sein.")
     else:
         u = entry.get("url")
-        if not (isinstance(u, str) and re.match(r"^https?://\S+$", u)): raise ValueError("Remote: 'url' muss mit http:// oder https:// beginnen.")
-        if "oauth" in entry: _check_oauth(entry["oauth"])
+        if not (isinstance(u, str) and re.match(r"^https?://\S+$", u)):
+            raise ValueError("Remote: 'url' muss mit http:// oder https:// beginnen.")
+        if "oauth" in entry:
+            _check_oauth(entry["oauth"])
     for k in ("environment", "headers"):
-        if k in entry and not (isinstance(entry[k], dict) and all(isinstance(a, str) and isinstance(b, str) for a, b in entry[k].items())): raise ValueError(f"'{k}' muss ein Objekt aus Text-Paaren sein.")
-    if "enabled" in entry and not isinstance(entry["enabled"], bool): raise ValueError("'enabled' muss true oder false sein.")
-    if "timeout" in entry and (isinstance(entry["timeout"], bool) or not isinstance(entry["timeout"], int) or entry["timeout"] < 1): raise ValueError("'timeout' muss eine positive Zahl (Millisekunden) sein.")
+        if k in entry and not (isinstance(entry[k], dict) and all(isinstance(a, str) and isinstance(b, str) for a, b in entry[k].items())):
+            raise ValueError(f"'{k}' muss ein Objekt aus Text-Paaren sein.")
+    if "enabled" in entry and not isinstance(entry["enabled"], bool):
+        raise ValueError("'enabled' muss true oder false sein.")
+    if "timeout" in entry and (isinstance(entry["timeout"], bool) or not isinstance(entry["timeout"], int) or entry["timeout"] < 1):
+        raise ValueError("'timeout' muss eine positive Zahl (Millisekunden) sein.")
     return entry
 
 def _unknown_old_fields(old):
-    if not isinstance(old, dict): return set()
+    if not isinstance(old, dict):
+        return set()
     return set(old) - set(vibe_opencode.mcp_entry_fields(old.get("type")))
 
 def save(scope, name, entry, old_name=None, create=False, expected=None):
-    if not NAME_OK.match(name or ""): raise ValueError("Name: Buchstaben, Ziffern, _ und - (Werkzeuge werden mit dem Namen als Präfix angeboten).")
-    if not isinstance(entry, dict): raise ValueError("Eintrag ungültig")
+    """Eintrag anlegen, ändern oder umbenennen; Geheimnisse bleiben erhalten, das Schreiben legt eine Sicherung an."""
+    if not NAME_OK.match(name or ""):
+        raise ValueError("Name: Buchstaben, Ziffern, _ und - (Werkzeuge werden mit dem Namen als Präfix angeboten).")
+    if not isinstance(entry, dict):
+        raise ValueError("Eintrag ungültig")
     p, text, data, layout, servers, digest = load(scope)
     _require_known_layout(layout)
     old_servers = json.loads(json.dumps(servers))
     old = servers.get(old_name or name)
     if old_name and old_name != name:
-        if old_name not in servers: raise ValueError("MCP-Server nicht gefunden: " + old_name)
-        if name in servers: raise ValueError(f"'{name}' existiert schon.")
-    elif create and name in servers: raise ValueError(f"'{name}' existiert schon. Zum Ändern bearbeiten statt neu anlegen.")
+        if old_name not in servers:
+            raise ValueError("MCP-Server nicht gefunden: " + old_name)
+        if name in servers:
+            raise ValueError(f"'{name}' existiert schon.")
+    elif create and name in servers:
+        raise ValueError(f"'{name}' existiert schon. Zum Ändern bearbeiten statt neu anlegen.")
     entry = merge_masked(entry, old)
     # Unbekannte Felder eines bestehenden Eintrags sind Teil der Datei und
     # werden beim Bearbeiten erhalten. Neue, vom Schema nicht unterstützte
@@ -484,9 +585,11 @@ def save(scope, name, entry, old_name=None, create=False, expected=None):
     return p
 
 def delete(scope, name, expected=None):
+    """MCP-Eintrag entfernen; der Stand davor wird als Sicherung bewahrt."""
     p, text, data, layout, servers, digest = load(scope)
     _require_known_layout(layout)
-    if name not in servers: raise ValueError("MCP-Server nicht gefunden: " + name)
+    if name not in servers:
+        raise ValueError("MCP-Server nicht gefunden: " + name)
     old_servers = json.loads(json.dumps(servers))
     servers.pop(name)
     _store(scope, p, text, data, layout, servers,
@@ -494,11 +597,14 @@ def delete(scope, name, expected=None):
            old_servers=old_servers)
 
 def toggle(scope, name, enabled=None, expected=None):
+    """Aktiv-Zustand eines Servers ohne Angabe umschalten, sonst setzen."""
     p, text, data, layout, servers, digest = load(scope)
     _require_known_layout(layout)
-    if name not in servers: raise ValueError("MCP-Server nicht gefunden: " + name)
+    if name not in servers:
+        raise ValueError("MCP-Server nicht gefunden: " + name)
     old_servers = json.loads(json.dumps(servers))
-    e = servers[name]; e["enabled"] = (not (e.get("enabled", True) is not False)) if enabled is None else bool(enabled)
+    e = servers[name]
+    e["enabled"] = (e.get("enabled", True) is False) if enabled is None else bool(enabled)
     _store(scope, p, text, data, layout, servers,
            expected=expected if expected is not None else digest,
            old_servers=old_servers)
@@ -527,10 +633,13 @@ TEST_WARNING = (
 )
 
 def _resolve(v):
-    def env(m): return os.environ.get(m.group(1), "")
+    def env(m):
+        return os.environ.get(m.group(1), "")
     def fil(m):
-        try: return open(os.path.expanduser(m.group(1)), encoding="utf-8").read().strip()
-        except Exception: return ""
+        try:
+            return open(os.path.expanduser(m.group(1)), encoding="utf-8").read().strip()
+        except (OSError, UnicodeDecodeError):
+            return ""
     return re.sub(r"\{file:([^}]+)\}", fil, re.sub(r"\{env:([^}]+)\}", env, v))
 
 INIT = {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": PROTO, "capabilities": {}, "clientInfo": {"name": "vibe", "version": "1.0"}}}
@@ -659,48 +768,53 @@ def _close_process(proc, pgid):
     elif proc.poll() is None:
         try:
             proc.kill()
-        except Exception:
+        except OSError:
             pass
     try:
         proc.wait(timeout=5)
-    except Exception:
+    except subprocess.SubprocessError:
         try:
             proc.kill()
-        except Exception:
+        except OSError:
             pass
         try:
             proc.wait(timeout=5)
-        except Exception:
+        except subprocess.SubprocessError:
             pass
     for stream in (proc.stdin, proc.stdout, proc.stderr):
         try:
             stream.close()
-        except Exception:
+        except (OSError, ValueError):
             pass
 
 def test_local(entry, cwd):
+    """Verbindungstest für lokale Server: Prozess starten und MCP-Handshake über stdio führen."""
     res = _result(SUPPORTED_TRANSPORTS["local"])
     secrets = _secret_values(entry)
     timeout = _timeout_for(entry, MAX_TIMEOUT_LOCAL)
     res["limits"]["timeout_s"] = timeout
     cmd = [_resolve(x) for x in entry["command"]]
-    env = dict(os.environ); env.update({k: _resolve(v) for k, v in (entry.get("environment") or {}).items()})
+    env = dict(os.environ)
+    env.update({k: _resolve(v) for k, v in (entry.get("environment") or {}).items()})
     wd = entry.get("cwd") or cwd
-    if wd and not os.path.isabs(wd): wd = os.path.join(cwd, wd)
+    if wd and not os.path.isabs(wd):
+        wd = os.path.join(cwd, wd)
     if wd and not os.path.isdir(wd):
         _fail(res, "config", f"Arbeitsordner nicht gefunden: {wd}",
               "Der Arbeitsordner muss existieren; 'cwd' prüfen oder leer lassen.")
         return _finish(res, secrets)
     kwargs = {"start_new_session": True} if os.name == "posix" else {}
+    # Der Prozess lebt über den Handshake hinaus; das Aufräumen übernimmt
+    # _close_process im finally-Block. Ein with-Block würde ihn zu früh schließen.
     try:
-        proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+        proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,  # pylint: disable=consider-using-with; Prozess läuft über mehrere Handshake-Schritte, Beenden im finally
                                 stderr=subprocess.PIPE, cwd=wd or None, env=env,
                                 text=True, bufsize=1, **kwargs)
     except FileNotFoundError:
         _fail(res, "program", f"Programm nicht gefunden: {cmd[0]}",
               "Ist es im Container installiert (z. B. npx über nodejs/npm)? Pfad oder Installation prüfen.")
         return _finish(res, secrets)
-    except Exception as ex:
+    except Exception as ex:  # pylint: disable=broad-exception-caught; der Programmstart kann grundsätzlich vielfältig scheitern; die Fehlerursache landet in der Meldung
         _fail(res, "program", f"Start fehlgeschlagen: {ex}")
         return _finish(res, secrets)
     try:
@@ -733,7 +847,8 @@ def test_local(entry, cwd):
     threading.Thread(target=read_stdout, daemon=True).start()
     threading.Thread(target=read_stderr, daemon=True).start()
     def send(o):
-        proc.stdin.write(json.dumps(o) + "\n"); proc.stdin.flush()
+        proc.stdin.write(json.dumps(o) + "\n")
+        proc.stdin.flush()
     def wait(id_):
         end = time.time() + timeout
         while True:
@@ -753,14 +868,15 @@ def test_local(entry, cwd):
                     continue
             try:
                 message = json.loads(line)
-            except Exception:
+            except (ValueError, RecursionError):
                 continue
             if message.get("id") == id_:
                 return message
     try:
         res["steps"].append("Transport: " + SUPPORTED_TRANSPORTS["local"])
         res["steps"].append("Prozess gestartet: " + " ".join(cmd)[:120])
-        send(INIT); message = wait(1)
+        send(INIT)
+        message = wait(1)
         if not message:
             tail = _stderr_tail(errbuf)
             if proc.poll() is not None:
@@ -790,7 +906,8 @@ def test_local(entry, cwd):
         res["server"] = _server_info(payload)
         res["steps"].append("initialize ok")
         send(INITIALIZED)
-        send(TOOLS_LIST); message = wait(2)
+        send(TOOLS_LIST)
+        message = wait(2)
         if not message:
             tail = _stderr_tail(errbuf)
             if proc.poll() is not None:
@@ -840,7 +957,7 @@ def test_local(entry, cwd):
 def _parse_json_message(text, wanted_id):
     try:
         data = json.loads(text)
-    except Exception:
+    except (ValueError, RecursionError):
         return None
     if isinstance(data, list):
         data = next((item for item in data
@@ -882,18 +999,21 @@ def _read_http(resp, wanted_id, deadline):
     return _parse_json_message(text, wanted_id), text, False
 
 def test_remote(entry, name):
+    """Verbindungstest für entfernte Server: Streamable HTTP mit initialize und tools/list."""
     res = _result(SUPPORTED_TRANSPORTS["remote"])
     secrets = _secret_values(entry)
     timeout = _timeout_for(entry, MAX_TIMEOUT_REMOTE)
     res["limits"]["timeout_s"] = timeout
-    url = _resolve(entry["url"]); headers = {"Content-Type": "application/json", "Accept": "application/json, text/event-stream"}
+    url = _resolve(entry["url"])
+    headers = {"Content-Type": "application/json", "Accept": "application/json, text/event-stream"}
     headers.update({k: _resolve(v) for k, v in (entry.get("headers") or {}).items()})
     if entry.get("oauth") is not False:
         res["notes"].append(
             "OAuth: vibe führt keine Anmeldung durch und liest keine Tokens. "
             f"Für OAuth-Server zuerst 'opencode mcp auth {name or '<name>'}' ausführen.")
     def post(body, h2=None, wanted_id=None, max_wait=None):
-        h = dict(headers); h.update(h2 or {})
+        h = dict(headers)
+        h.update(h2 or {})
         rq = urllib.request.Request(url, data=json.dumps(body).encode(), headers=h, method="POST")
         wait = min(timeout, max_wait) if max_wait else timeout
         deadline = time.time() + wait
@@ -944,12 +1064,12 @@ def test_remote(entry, name):
         detail = ""
         try:
             detail = ex.read(2048).decode("utf-8", "replace")
-        except Exception:
+        except OSError:
             pass
         finally:
             try:
                 ex.close()
-            except Exception:
+            except OSError:
                 pass
         _fail(res, "auth" if ex.code in (401, 403) else "http",
               f"HTTP {ex.code} {ex.reason}",
@@ -978,16 +1098,20 @@ def test_remote(entry, name):
         else:
             _fail(res, "network", f"{type(reason).__name__}: {reason}",
                   "Erreichbarkeit, Proxy und URL prüfen.")
-    except Exception as ex:
+    except Exception as ex:  # pylint: disable=broad-exception-caught; bewusster Auffang-Fang: jede übrig gebliebene Störung der Antwort wird diagnostiziert und dem Nutzer als Kategorie 'protocol' gemeldet
         _fail(res, "protocol", f"{type(ex).__name__}: {ex}",
               "Antwort des Servers prüfen; erwartet wird MCP über Streamable HTTP.")
     return _finish(res, secrets)
 
 def test(scope, name=None, entry=None):
+    """Verbindungstest anstoßen: Eintrag laden, Konfiguration prüfen und den passenden Transport ausführen."""
     old = load(scope)[4].get(name) if name else None
-    if entry is None: entry = old
-    else: entry = merge_masked(entry, old)
-    if not entry: raise ValueError("MCP-Server nicht gefunden")
+    if entry is None:
+        entry = old
+    else:
+        entry = merge_masked(entry, old)
+    if not entry:
+        raise ValueError("MCP-Server nicht gefunden")
     transport = entry.get("type")
     if transport not in SUPPORTED_TRANSPORTS:
         res = _result(str(transport) if transport else "?")
@@ -1018,13 +1142,18 @@ def test(scope, name=None, entry=None):
 
 # ---------- Terminal ----------
 def cli(action="list", name=None, scope="global", backup=None):
+    """Terminal-Ausgabe der mcp-Aktionen list, show, restore und test."""
     try:
         if action == "list":
             rows = list_all()
-            if not rows: print("Keine MCP-Server konfiguriert."); return
+            if not rows:
+                print("Keine MCP-Server konfiguriert.")
+                return
             print(vibe.col("b", f"{'Name':22}{'Geltung':16}{'Typ':8}{'aktiv':7}Ziel"))
             for r in rows:
-                if r.get("error"): print(vibe.col("r", f"{r['scope']}: Konfiguration nicht lesbar: {r['error']}")); continue
+                if r.get("error"):
+                    print(vibe.col("r", f"{r['scope']}: Konfiguration nicht lesbar: {r['error']}"))
+                    continue
                 print(f"{r['name'][:21]:22}{('global' if r['scope'] == 'global' else r['scope'])[:15]:16}{r['type']:8}{('ja' if r['enabled'] else 'nein'):7}{r['target'][:60]}")
             print(vibe.col("d", "Echten Status je nach opencode-Version: 'opencode mcp list'. Geheimnisse werden hier maskiert."))
         elif action == "show":
@@ -1034,32 +1163,46 @@ def cli(action="list", name=None, scope="global", backup=None):
             # Aufruf: vibe mcp restore <global|projekt> <sicherung>. Der Bereich
             # steht schon in `name`; das nächste Argument ist die Sicherung.
             chosen = backup if backup is not None else (scope if scope not in (None, "", "global") else None)
-            if target_scope != "global": vibe.ppath(target_scope)
+            if target_scope != "global":
+                vibe.ppath(target_scope)
             rows = backups(target_scope)
             if action == "backups":
-                if not rows: print("Keine Sicherung für Konfiguration von", target_scope); return
+                if not rows:
+                    print("Keine Sicherung für Konfiguration von", target_scope)
+                    return
                 print(vibe.col("b", f"Sicherungen für {cfg_path(target_scope)}:"))
-                for row in reversed(rows): print("  " + row)
+                for row in reversed(rows):
+                    print("  " + row)
                 print(vibe.col("d", "Wiederherstellen: vibe mcp restore " + target_scope + " <sicherung>"))
                 return
             result = restore(target_scope, chosen)
             print(vibe.col("g", "Wiederhergestellt: " + cfg_path(target_scope) + " aus " + result["backup"]))
-            if result["safety"]: print("Vorheriger Stand gesichert:", result["safety"])
+            if result["safety"]:
+                print("Vorheriger Stand gesichert:", result["safety"])
         elif action == "test":
             print(vibe.col("y", "Hinweis: " + TEST_WARNING))
             r = test(scope, name)
             print((vibe.col("g", "OK") if r["ok"] else vibe.col("r", "FEHLER")), name, r.get("server") or "")
             print("  Transport:", r.get("transport", "?"))
-            if r.get("category"): print("  Kategorie:", r["category"])
-            for s in r["steps"]: print("  ", s)
-            for n in r.get("notes", []): print("  ", n)
-            for t in r["tools"]: print(f"   - {t['name']}: {t['description']}")
-            if r["error"]: print(vibe.col("r", "  " + r["error"]))
-            if r["hint"]: print(vibe.col("y", "  Hinweis: " + r["hint"]))
+            if r.get("category"):
+                print("  Kategorie:", r["category"])
+            for s in r["steps"]:
+                print("  ", s)
+            for n in r.get("notes", []):
+                print("  ", n)
+            for t in r["tools"]:
+                print(f"   - {t['name']}: {t['description']}")
+            if r["error"]:
+                print(vibe.col("r", "  " + r["error"]))
+            if r["hint"]:
+                print(vibe.col("y", "  Hinweis: " + r["hint"]))
         elif action in ("on", "off"):
-            toggle(scope, name, action == "on"); print(name, "aktiviert" if action == "on" else "deaktiviert")
+            toggle(scope, name, action == "on")
+            print(name, "aktiviert" if action == "on" else "deaktiviert")
         elif action == "rm":
-            delete(scope, name); print("Gelöscht (Sicherung in config-backups):", name)
-        else: sys.exit("vibe mcp list|show|test|on|off|rm [name] [global|<projekt>] | vibe mcp backups|restore <global|projekt> [sicherung]")
+            delete(scope, name)
+            print("Gelöscht (Sicherung in config-backups):", name)
+        else:
+            sys.exit("vibe mcp list|show|test|on|off|rm [name] [global|<projekt>] | vibe mcp backups|restore <global|projekt> [sicherung]")
     except ValueError as e:
         sys.exit(str(e))

@@ -1,6 +1,6 @@
 # Harness- und opencode-Kompatibilität
 
-Stand: 2026-11-07
+Stand: 2026-11-10 (F26)
 Geprüfte Version: **opencode 2.1.4**; **Pi 1.5.0** (CLI-Dokumentation und
 Quelltext, kein echter Modellaufruf)
 Adapter: `bin/vibe_opencode.py` (opencode), `bin/vibe_harness.py` (Auswahl und
@@ -42,24 +42,53 @@ pi --print --no-session [--model <provider/modell>] [--name <titel>] -- <prompt>
 ```
 
 Der Prompt-Text der gewählten opencode-Agentendatei wird der Aufgabe
-vorangestellt; Frontmatter wird nicht mitgesendet. `--no-session` verhindert
-Sitzungsdateien in `~/.pi/agent` und macht den Lauf mit der Schreib-Sandbox
-vereinbar, deren Wurzeldateisystem nur lesend eingebunden ist.
+vorangestellt; Frontmatter wird nicht mitgesendet. `--no-session` allein
+machte den Lauf **nicht** Sandbox-verträglich: Pi liest und schreibt sein
+Agentenverzeichnis `~/.pi/agent` unabhängig von `XDG_*` — auch ohne
+Sitzungsdateien, zum Beispiel die Sperrdatei `trust.json.lock` beim Lesen
+der Vertrauensliste (Bug B4). Die Scratch-Sandbox (F7) legt deshalb vor
+jedem Lauf den eigenen, beschreibbaren Agentenordner
+`<Sandbox-Zustandsort>/pi/agent` an, legt ihn über die von Pi
+ausgewertete Umgebungsvariable `PI_CODING_AGENT_DIR` als Agentenverzeichnis
+fest und bindet die reale `~/.pi/agent/auth.json` in diesen Ordner
+ausschließlich lesend ein, damit Pi beim Lauf auf die angemeldeten
+Modellprovider zugreifen kann. Ohne Sandbox (`SANDBOX=off`) läuft Pi
+unverändert mit dem normalen `~/.pi/agent`.
 
 Bekannte Grenzen von Pi in vibe:
 
 - Pi liest keine opencode-Agentendateien und keine Subagenten-/Rechteprüfung;
   vibe übergibt deshalb nur den Prompt-Text.
+- Mit Sandbox enthält der Pi-Agentenordner nur `auth.json` (lesend
+  gebunden) und die vom Lauf erzeugten Dateien. Nutzerbezogene
+  Konfigurationen wie `settings.json` und `models-store.json` werden
+  bewusst nicht gebunden: Schreibzugriffe von Pi innerhalb der Sandbox
+  sollen im Sandbox-Zustandsort landen, nicht in `~/.pi/agent`. Pi im
+  Lauf kennt deshalb keine davon abgeleiteten Voreinstellungen
+  (Standardmodell, benutzerdefinierte Anbieter); vibe setzt `--model`
+  ausdrücklich, und die Anmeldung kommt allein aus `auth.json`.
 - Die Oberfläche zur Agentenverwaltung bleibt auf das opencode-Dateiformat
   ausgelegt. Pi nutzt dieselben Dateien als Prompt-Quelle.
 - Pi-Projektkonfiguration unter `.pi` wird im Print-Modus ohne
   Vertrauensentscheidung nicht geladen; `AGENTS.md` wird weiterhin gelesen.
 - MCP-Konfiguration und opencode-Server bleiben opencode-spezifisch. Bei
-  gewähltem Pi meldet `/api/server` `server_supported: false`.
+  gewähltem Pi meldet `/api/server` `server_supported:false` und die
+  Oberfläche blendet die opencode-Server-Steuerung sowie den
+  opencode-Weboberflächen-Link aus (F20).
+- Zusatzanweisungen während des Laufs sind opencode-bezogen. Bei gewähltem
+  Pi lehnt die API `/api/steer` die Anweisung ab (Print-Modus, keine
+  fortsetzbare Session) und versucht keine Zustellung; die Steuerkarte
+  nennt die Grenze vorab und sendet bei Pi nicht (F20, AP14).
+- Das Steuern und Fortsetzen sind Fähigkeiten des Harness: nur opencode
+  unterstützt beide (`steer`, `continue`); Pi läuft im Print-Modus
+  (`--no-session`) ohne fortsetzbare Session. Die Ausgabeansicht bietet bei
+  Pi weiterhin die Live-Verfolgung über den Ereignisstrom; Steuern und
+  Fortsetzen bleiben mit klarer Nichtverfügbarkeitsmeldung gesperrt (AP14).
 - Die Kostenerfassung liest weiterhin die opencode-Sitzungsdatenbank; für
   Pi-Läufe gibt es noch keine Kostenzuordnung.
 - Pi-Sitzungen werden nicht fortgesetzt (`--no-session`); jeder Agentenlauf
-  ist eigenständig.
+  ist eigenständig, und der Läufer übergibt dem Pi-Zweig nie `--session`
+  (AP14).
 
 ## Geprüfte Version und Verfahren
 
@@ -72,9 +101,16 @@ opencode v2.1.4
 ```
 
 Der Adapter liest dieselbe Ausgabe, erkennt die Version mit einem festen
-Muster und vergleicht sie mit dem geprüften Profil. Geprüft ist ausschließlich
-die exakte Version `2.1.4`. Andere Versionen gelten als **ungeprüft**, auch
-wenn sie nur eine Patch-Version abweichen.
+Muster und vergleicht sie mit den geprüften Profilen. Geprüft ist
+ausschließlich die exakte Version `2.1.4`. Seit F26 gilt für jede lesbare,
+aber nicht exakt geprüfte Version (z. B. 2.2.6 nach einem Update): Sie wird
+als Status **assumed** geführt und mit dem am besten passenden geprüften
+Profil behandelt — höchste geprüfte Version bis einschließlich der erkannten,
+sonst das älteste Profil. Die Annahme wird nie stillschweigend getroffen:
+Doctor, Modelllisting, MCP-Verwaltung, Serverstart und Agentenschreibvorgänge
+melden die ungeprüfte Version und die geprüfte Version. Ohne lesbare Version
+(fehlendes Programm, Fehlercode, Zeitüberschreitung, unlesbare Ausgabe)
+bleibt alles fail-closed.
 
 Verfahren für eine neue Version:
 
@@ -94,10 +130,10 @@ Verfahren für eine neue Version:
 
 | Bereich | Umsetzung | Geprüft |
 | --- | --- | --- |
-| Version | `opencode --version`, Muster `v?X.Y.Z`, exakter Profilvergleich | 2.1.4 |
+| Version | `opencode --version`, Muster `v?X.Y.Z`; exakter Profilvergleich, sonst Fallback-Profil (assumed, F26) | 2.1.4 |
 | Modelllisting | `opencode models --standalone`, Zeilen `anbieter/modell` | Ausgabe in dieser Umgebung geprüft; Parser mit Fixtures getestet |
 | Agenten | Verzeichnisregel und Frontmatter-Prüfung (`description`, `mode`, nichtleerer Prompt) aus dem Profil | Regeln aus vorhandenen Agentendateien abgeleitet |
-| MCP-Schema | Erkennung aus der vorhandenen Konfiguration; Profil nur für leere Dateien der geprüften Version | 2.1.4 schreibt `mcp.servers` |
+| MCP-Schema | Erkennung aus der vorhandenen Konfiguration; Profil für leere Dateien der geprüften oder als assumed erkannten Version (Fallback, F26) | 2.1.4 schreibt `mcp.servers` |
 | Serverstart | `opencode serve --hostname <host> --port <port>` als Argumentliste | `opencode serve --help` |
 
 ### Modelllisting
@@ -125,8 +161,11 @@ Reihenfolge ist:
    geschrieben. Das gilt auch für gemischte Blöcke mit Serverobjekten und
    weiteren Objekten, damit kein unbekannter Eintrag verloren geht.
 4. Leere Konfiguration und geprüfte Version → geprüftes Schema aus dem Profil.
-5. Leere Konfiguration und ungeprüfte Version → Schema unbekannt; es wird
-   nichts geschrieben.
+5. Leere Konfiguration und lesbare, nicht exakt geprüfte Version → Schema des
+   Fallback-Profils; die Erfolgsmeldung der Speicherung nennt die ungeprüfte
+   Version (F26).
+6. Leere Konfiguration und unlesbare oder fehlende Version → Schema unbekannt;
+   es wird nichts geschrieben.
 
 Für 2.1.4 wurde das Schema mit einer isolierten Probe bestätigt:
 
@@ -270,24 +309,27 @@ zentral im Adapter hinterlegt.
 Für 2.1.4 ist der Unterbefehl `serve` geprüft (`opencode serve --help` nennt
 `--hostname` und `--port`). Der Adapter baut eine Argumentliste; der
 tmux-Aufruf quotet sie mit `shlex.join`. Der frühere, ungeprüfte Aufruf
-`opencode web` entfällt.
+`opencode web` entfällt. Bei einer als assumed erkannten Version startet der
+Server mit dem Fallback-Profil; vibe gibt vor dem Start einen Hinweis mit der
+ungeprüften und der geprüften Version aus (F26).
 
-## Unbekannte Versionen
+## Ungeprüfte und unbekannte Versionen (F26)
 
-Unbekannt bedeutet in diesem Adapter:
+Die Version wird über `opencode --version` gelesen. Es gibt drei Arten von
+Ergebnissen:
 
-- Ausgabe nicht lesbar (kein `X.Y.Z`),
-- Version nicht im geprüften Profil,
-- opencode fehlt, endet mit Fehlercode oder antwortet nicht rechtzeitig.
-
-Verhalten:
-
-- `vibe doctor` zeigt die erkannte Version und den Status als Prüfung an.
-- Modelllisting wird bei einer lesbaren, aber ungeprüften Version weiterhin
-  versucht; das Ergebnis trägt eine Warnung.
-- Serverstart und versionabhängige MCP-Schreibvorgänge werden mit einer
+- **Geprüft** (`supported`): exakter Treffer im geprüften Profil.
+- **Vermutlich kompatibel** (`assumed`): lesbare Version ohne exakten Treffer.
+  Der Adapter wählt das am besten passende geprüfte Profil (höchste geprüfte
+  Version bis einschließlich der erkannten, sonst das älteste Profil). Ein
+  opencode-Update blockiert vibe nicht mehr; die Annahme bleibt sichtbar:
+  `vibe doctor` und die Agentenverwaltung warnen, das Modelllisting trägt
+  eine Warnung, die MCP-Speicherung nennt die ungeprüfte Version in der
+  Erfolgsmeldung und der Serverstart meldet den Hinweis vor dem Start.
+- **Unlesbar** (`unknown`, `missing`, `timeout`, `error`): keine Annahme.
+  Serverstart und versionabhängige MCP-Schreibvorgänge werden mit einer
   verständlichen Meldung abgelehnt, die die geprüfte Version nennt.
-- Vorhandene MCP-Konfigurationen werden weiterhin gelesen, wenn ihr Schema
+  Vorhandene MCP-Konfigurationen werden weiterhin gelesen, wenn ihr Schema
   eindeutig erkennbar ist.
 
 ## Grenzen
@@ -296,10 +338,13 @@ Verhalten:
   Weboberfläche oder API-Version.
 - `opencode models` kann je nach Anbieter-Anmeldung unvollständig sein; die
   Liste ist keine Nutzungsberechtigung.
-- Neue opencode-Versionen werden nicht automatisch als kompatibel behandelt.
-- Agentenregeln und das Projektverzeichnis `.opencode/agents` gelten derzeit
-  unabhängig von der erkannten Version. Eine unbekannte Version wird dort
-  nicht geprüft; diese Versionsprüfung gehört zu V-010.
+- Neue opencode-Versionen werden als vermutlich kompatibel (assumed) mit dem
+  nächstliegenden geprüften Profil behandelt und in allen Meldungen als
+  ungeprüft ausgewiesen; die Annahme ersetzt keine manuelle Prüfung nach dem
+  obigen Verfahren (F26).
+- Agentenregeln und das Projektverzeichnis `.opencode/agents` gelten
+  unabhängig von der erkannten Version. Die Agentenverwaltung warnt bei einer
+  nicht exakt geprüften Version, sperrt das Schreiben aber nicht (V-007, F26).
 - `vibe models` zeigt nur die Liste. Fehler- und Warnmeldungen des Adapters
   (fehlendes Programm, ungeprüfte Version) erscheinen über `vibe doctor`;
   die Modellansicht bleibt bei einem Fehler leer.

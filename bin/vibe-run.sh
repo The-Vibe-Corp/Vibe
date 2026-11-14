@@ -38,11 +38,23 @@ mkdir -p "$RUNTIME"
 # Kennwort steht in der Laufzeitdatei und wird nur als Umgebungsvariable an
 # opencode und als curl-Anmeldedaten verwendet, nie als sichtbares Argument.
 PASSWORD_FILE="$RUNTIME/opencode.password"
+# F31: opencode v2.3 steuert den Basic-Auth des Servers auch über
+# OPENCODE_PASSWORD, und ein geerbter Wert schlägt OPENCODE_SERVER_PASSWORD.
+# Eine Alt-Belegung aus der Startumgebung (Dashboard/tmux) ließ den privaten
+# Server deshalb dauerhaft 401 antworten. Das Kennwort kommt hier ausschließlich
+# aus der Laufzeitdatei.
+unset OPENCODE_PASSWORD
 CURL_AUTH=()
+HAS_SERVER_PASSWORD=0
 if [ -r "$PASSWORD_FILE" ] && [ -s "$PASSWORD_FILE" ]; then
   OPENCODE_SERVER_PASSWORD="$(cat "$PASSWORD_FILE")"
   export OPENCODE_SERVER_PASSWORD
   CURL_AUTH=(-u "opencode:$OPENCODE_SERVER_PASSWORD")
+  # B13: Eine Datei aus Leerzeichen/Nennzeichen gilt wie eine fehlende; nur
+  # ein tatsächlich nichtleeres Kennwort erlaubt den privaten Server.
+  if [ -n "${OPENCODE_SERVER_PASSWORD//[[:space:]]/}" ]; then
+    HAS_SERVER_PASSWORD=1
+  fi
 fi
 # opencode v2 meldet sich unter /api/info; /global/health bleibt nur als
 # Rückfall für ältere Installationen ohne Kennwort. Mit Kennwort wird der alte
@@ -69,6 +81,151 @@ LOG="$RUNTIME/$NAME.log"
 VLOG="$RUNTIME/$NAME.verify.log"
 PAUSE_FLAG="$RUNTIME/$NAME.pause-after"
 REPORT="$RUNTIME/$NAME.report.txt"
+# B13: Der private opencode-Server eines Laufs. Die Serverdatei ist die
+# Übergabe an das Dashboard (Ziel und Kennwortdatei), das Protokoll hält die
+# Serverausgabe getrennt vom Laufprotokoll, die PID-Datei dient dem Aufräumen.
+SERVER_JSON="$LOG.server.json"
+SERVER_LOG="$LOG.server.log"
+SERVER_PID_FILE="$LOG.server.pid"
+SERVER_FAILED_FILE="$LOG.server.failed"
+rm -f -- "$SERVER_FAILED_FILE"
+# B13: Endpunkt des zuletzt gestarteten privaten Servers aus der Serverdatei.
+# Nur der vom Läufer selbst geschriebene Loopback-Endpunkt wird akzeptiert.
+private_server_url() {
+  python3 - "$SERVER_JSON" <<'PY' 2>/dev/null
+import json
+import sys
+
+try:
+    with open(sys.argv[1], encoding="utf-8") as handle:
+        data = json.load(handle)
+except (OSError, ValueError):
+    raise SystemExit(1)
+url = data.get("url") if isinstance(data, dict) else None
+if not isinstance(url, str) or not url.startswith("http://127.0.0.1:"):
+    raise SystemExit(1)
+print(url.rstrip("/"))
+PY
+}
+# B13: Ein bereits laufender privater Server wird wiederverwendet; nur ein
+# fehlender oder nicht mehr gesunder Server führt zu einem Neustart.
+private_server_healthy() {
+  local url
+  url="$(private_server_url)" || return 1
+  [ -n "$url" ] || return 1
+  curl -sf --max-time 2 -u "opencode:$OPENCODE_SERVER_PASSWORD" \
+    "$url/api/info" > /dev/null 2>&1
+}
+private_free_port() {
+  python3 - <<'PY'
+import socket
+
+with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+    sock.bind(("127.0.0.1", 0))
+    print(sock.getsockname()[1])
+PY
+}
+private_server_file_write() {
+  local url="$1" port="$2"
+  python3 - "$SERVER_JSON" "$url" "$port" "$PASSWORD_FILE" <<'PY'
+import json
+import sys
+
+path, url, port, password_file = sys.argv[1:5]
+data = {"url": url, "port": int(port), "password_file": password_file}
+with open(path, "w", encoding="utf-8") as handle:
+    json.dump(data, handle, ensure_ascii=False)
+    handle.write("\n")
+PY
+}
+# B13: Beendet den privaten Server samt Prozessgruppe und entfernt die
+# Übergabedateien. Mehrfache Aufrufe sind unschädlich.
+stop_private_server() {
+  local pid=""
+  if [ -r "$SERVER_PID_FILE" ]; then
+    pid="$(cat "$SERVER_PID_FILE" 2>/dev/null || true)"
+  fi
+  case "$pid" in
+    ''|*[!0-9]*) ;;
+    *)
+      kill -TERM -- "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
+      sleep 1
+      kill -KILL -- "-$pid" 2>/dev/null || true
+      ;;
+  esac
+  rm -f -- "$SERVER_JSON" "$SERVER_PID_FILE"
+}
+# B13: Startet einen privaten opencode-Server auf einem freien Loopback-Port.
+# Das Kennwort kommt ausschließlich über die bereits exportierte
+# Umgebungsvariable; es erscheint weder in der Argumentliste noch im Protokoll.
+start_private_server() {
+  local dir="$1" port url wrap=()
+  port="$(private_free_port)" || return 1
+  url="http://127.0.0.1:$port"
+  if [ "$SANDBOX_STATE" = "on" ]; then
+    wrap=(python3 "$BIN/vibe_sandbox.py" "$dir" --)
+  fi
+  rm -f -- "$SERVER_JSON" "$SERVER_PID_FILE"
+  : > "$SERVER_LOG"
+  # Der Server läuft in einer eigenen Sitzung und überlebt damit das Ende des
+  # Agenten-Subshells. Seine Ausgabe geht in die eigene Serverdatei.
+  if command -v setsid > /dev/null 2>&1; then
+    setsid --fork bash -c 'echo "$$" > "$1"; shift; exec "$@"' \
+      _ "$SERVER_PID_FILE" "${wrap[@]}" \
+      opencode serve --hostname 127.0.0.1 --port "$port" \
+      >> "$SERVER_LOG" 2>&1 < /dev/null
+  else
+    # Ohne setsid bleibt der Server Kind dieses Subshells; das ist nur für
+    # nicht sandboxierte Läufe dauerhaft. Die PID-Datei ermöglicht dennoch
+    # ein sauberes Beenden.
+    bash -c 'echo "$$" > "$1"; shift; exec "$@"' \
+      _ "$SERVER_PID_FILE" "${wrap[@]}" \
+      opencode serve --hostname 127.0.0.1 --port "$port" \
+      >> "$SERVER_LOG" 2>&1 < /dev/null &
+  fi
+  local deadline=$((SECONDS + 15))
+  while [ "$SECONDS" -lt "$deadline" ]; do
+    if curl -sf --max-time 2 -u "opencode:$OPENCODE_SERVER_PASSWORD" \
+        "$url/api/info" > /dev/null 2>&1; then
+      if private_server_file_write "$url" "$port"; then
+        return 0
+      fi
+      echo "ABBRUCH: Serverdatei $SERVER_JSON konnte nicht geschrieben werden." | tee -a "$LOG"
+      stop_private_server
+      return 1
+    fi
+    sleep 0.2
+  done
+  echo "ABBRUCH: Der private opencode-Server wurde unter $url nicht gesund; ohne erreichbaren Server startet kein Agent." | tee -a "$LOG"
+  stop_private_server
+  return 1
+}
+# B13: Stellt den privaten Server vor jedem opencode-Agentenaufruf sicher. Der
+# erste Aufruf startet ihn, spätere Aufrufe verwenden den gesunden Server
+# wieder. Ein Fehlschlag wird als Laufabbruch markiert, nie still durch
+# --standalone ersetzt.
+ensure_private_server() {
+  local dir="$1" url
+  [ "$PRIVATE_SERVER" = 1 ] || return 0
+  if private_server_healthy; then
+    SERVER_ARGS="--server $(private_server_url)"
+    return 0
+  fi
+  stop_private_server
+  if ! start_private_server "$dir"; then
+    printf '%s\n' "Der private opencode-Server konnte nicht gestartet werden." \
+      > "$SERVER_FAILED_FILE"
+    return 1
+  fi
+  url="$(private_server_url)" || {
+    printf '%s\n' "Der private opencode-Server hat keine gültige Serverdatei geschrieben." \
+      > "$SERVER_FAILED_FILE"
+    stop_private_server
+    return 1
+  }
+  SERVER_ARGS="--server $url"
+  return 0
+}
 RUN_ID="${VIBE_RUN_ID:-}"
 RUN_SESSION="${VIBE_SESSION:-vibe-$NAME}"
 cd "$P" || exit 1
@@ -97,6 +254,14 @@ if [ -n "$MODEL" ]; then
   fi
   MODEL_ARGS=(--model "$MODEL")
 fi
+# AP14: Fortsetzung in derselben Session. Die Kennung kommt ausschließlich
+# über die Umgebung vom Startbefehl (vibe.cmd_run) und wird hier mit derselben
+# Zeichenklasse geprüft wie im Lauf sonst üblich; ein ungültiger Wert wird
+# verworfen, statt den Lauf abzubrechen. Der Pi-Zweig ignoriert die Kennung.
+CONTINUE_SESSION="${VIBE_CONTINUE_SESSION:-}"
+case "$CONTINUE_SESSION" in
+  *[!A-Za-z0-9_-]*) CONTINUE_SESSION="" ;;
+esac
 # Harness-Auswahl (AP04): Ohne vibe_harness.py bleibt der bisherige direkte
 # opencode-Pfad erhalten (ältere Installationen und Prüf-Attrappen). Der
 # Zustandsordner enthält harness.json; VIBE_HARNESS überschreibt ihn für
@@ -117,16 +282,68 @@ if [ -f "$HARNESS_CLI" ]; then
       ;;
   esac
 fi
+# V-027: Globales Limitverhalten. Ohne Datei und bei defekter Einstellung gilt
+# "stop"; "continue" behandelt Quota- und Anmeldefehler wie wiederholbare
+# Fehler im Rahmen der vorhandenen Wiederholungslimits. Die Meldung einer
+# defekten Datei landet im Laufprotokoll, nie still als "continue".
+LIMIT_MODE="stop"
+LIMITS_CLI="$BIN/vibe_limits.py"
+if [ -f "$LIMITS_CLI" ]; then
+  LIMIT_MODE="$(python3 "$LIMITS_CLI" mode --state "$STATE" 2>>"$LOG" || true)"
+fi
+case "$LIMIT_MODE" in
+  stop|continue) ;;
+  *) LIMIT_MODE="stop" ;;
+esac
+# AP10: Wirksame Schrankeneinstellungen. Ohne Modul bleiben alle Werte leer
+# und der Läufer nutzt die bisherigen Voreinstellungen. Meldungen zu defekten
+# Werten gehen ins Laufprotokoll; defekte Schranken gelten konservativ als
+# Voreinstellung. Die Projektwerte aus .vibe/project.env sind bereits in der
+# Umgebung (set -a) und schlagen die globalen Einstellungen; die Umgebungs-
+# variable VIBE_MAX_PACKAGES behält für die Durchgangsschranke den Vorrang.
+GATES_CLI="$BIN/vibe_gates.py"
+GATE_PACKAGES=""
+GATE_RETRIES=""
+GATE_REPAIR_ROUNDS=""
+GATE_ASSIST_ROUNDS=""
+GATE_OVERRIDE_EFF=""
+if [ -f "$GATES_CLI" ]; then
+  eval "$(python3 "$GATES_CLI" json --state "$STATE" --project "$P" 2>>"$LOG" | python3 -c '
+import json
+import shlex
+import sys
+
+data = json.load(sys.stdin)
+gates = data.get("gates") if isinstance(data, dict) else None
+if not isinstance(gates, dict):
+    raise SystemExit(1)
+for key, name in (
+    ("packages", "GATE_PACKAGES"),
+    ("retries", "GATE_RETRIES"),
+    ("repair_rounds", "GATE_REPAIR_ROUNDS"),
+    ("assist_rounds", "GATE_ASSIST_ROUNDS"),
+    ("override", "GATE_OVERRIDE_EFF"),
+):
+    entry = gates.get(key)
+    value = entry.get("value") if isinstance(entry, dict) else entry
+    print(name + "=" + shlex.quote("" if value is None else str(value)))
+' 2>>"$LOG")" || true
+fi
+# Ohne Gates-Modul gilt der Projektwert (bereits in der Umgebung) oder "ask";
+# ein defekter Wert blockiert konservativ (kein "ask", keine Rückfrage).
+if [ -z "$GATE_OVERRIDE_EFF" ]; then
+  GATE_OVERRIDE_EFF="${GATE_OVERRIDE:-ask}"
+fi
 if [ "$HARNESS" = "pi" ] && [ ! -f "$HARNESS_CLI" ]; then
   echo "ABBRUCH: Harness pi gewählt, aber $HARNESS_CLI fehlt. Installation aktualisieren (Setup --update)." | tee -a "$LOG"
   exit 2
 fi
-MAXP="${VIBE_MAX_PACKAGES:-${MAX_PACKAGES:-80}}"
+MAXP="${VIBE_MAX_PACKAGES:-${MAX_PACKAGES:-${GATE_PACKAGES:-80}}}"
 if ! [[ "$MAXP" =~ ^[0-9]+$ ]]; then
   echo "ABBRUCH: MAX_PACKAGES muss eine Zahl sein." | tee -a "$LOG"
   exit 2
 fi
-MAXR="${MAX_RETRIES:-2}"
+MAXR="${MAX_RETRIES:-${GATE_RETRIES:-2}}"
 if ! [[ "$MAXR" =~ ^[0-9]+$ ]]; then
   echo "ABBRUCH: MAX_RETRIES muss eine Zahl sein." | tee -a "$LOG"
   exit 2
@@ -161,9 +378,13 @@ register_start() {
   return 0
 }
 register_finish() {
+  # $3 = optionale Notiz, $4 = "only-live" (bereits beendete Läufe bleiben).
   [ -f "$RUNS_PY" ] && [ -n "$RUN_ID" ] || return 0
+  local extra=()
+  [ -n "${3:-}" ] && extra+=(--note "$3")
+  [ "${4:-}" = "only-live" ] && extra+=(--only-live)
   python3 "$RUNS_PY" finish --runtime "$RUNTIME" --id "$RUN_ID" \
-    --exit-code "$1" --state "$2" >>"$LOG" 2>&1 || true
+    --exit-code "$1" --state "$2" "${extra[@]}" >>"$LOG" 2>&1 || true
   return 0
 }
 HASHFILE="$HOME/.config/schreibfuchs-verify.sha"
@@ -203,6 +424,9 @@ data = json.load(open(sys.argv[1], encoding="utf-8"))
 print("ID=" + shlex.quote(data["id"]))
 print("BLOCK=" + shlex.quote(data["block"]))
 print("SOURCE=" + shlex.quote(data["source"]))
+# AP11: Die projektweise Priorisierung ist verbindlich; der Lauf meldet,
+# ob die Wahl aus PACKAGE_ORDER kam oder die Standardordnung galt.
+print("ORDERED=" + ("1" if data.get("ordered") else "0"))
 PY
 )"
   return 0
@@ -225,41 +449,236 @@ create_worktree() {
   fi
   return 0
 }
-run_agent() {
-  local wrap=()
-  if [ "$SANDBOX_STATE" = "on" ]; then
-    wrap=(python3 "$BIN/vibe_sandbox.py" "$WT" --)
+# B11: Der Agentenauftrag läuft in einer eigenen Prozessgruppe. Nur so beendet
+# ein Stopp die ganze Kette (Harness, Wrapper, Enkel), statt einen
+# signalignorierenden Harness als Waise weiterarbeiten zu lassen. AGENT_PID ist
+# die Prozessgruppe; ein leerer Wert heißt, dass kein Auftrag läuft.
+AGENT_PID=""
+stop_agent_group() {
+  local pgid="$AGENT_PID"
+  if [ -z "$pgid" ]; then
+    # B11: Feuert ein Signal-Trap im Spawnfenster zwischen dem Start des
+    # Auftrags und der Zuweisung von AGENT_PID, ist die Kennung noch leer.
+    # Unter set -m ist der Auftrag seine eigene Prozessgruppe; jobs -p nennt
+    # deren PID (= PGID). Der Agentenauftrag ist der einzige
+    # Hintergrundauftrag dieses Skripts.
+    pgid="$(jobs -p)"
   fi
+  if [ -n "$pgid" ]; then
+    AGENT_PID=""
+    if kill -0 -- "-$pgid" 2>/dev/null; then
+      kill -TERM -- "-$pgid" 2>/dev/null || true
+      sleep 1
+      kill -KILL -- "-$pgid" 2>/dev/null || true
+    fi
+  fi
+  # B13: Der private Server gehört zum Lauf, nicht zur Agentengruppe; er wird
+  # beim Laufende beendet und seine Übergabedateien werden entfernt.
+  stop_private_server
+  return 0
+}
+# Beendet sich der Läufer auf einem Weg ohne Signal-Trap (etwa nach einem
+# Fehler oder einem regulären Ende), beendet auch das den Auftrag; sonst
+# bliebe eine laufende Agentengruppe als Waise zurück.
+trap 'stop_agent_group' EXIT
+run_agent_in() {
+  local dir="$1" prompt="$2" title="${3:-$NAME $ID}"
+  local wrap=() rc
+  if [ "$SANDBOX_STATE" = "on" ]; then
+    wrap=(python3 "$BIN/vibe_sandbox.py" "$dir" --)
+  fi
+  # B11: Die Jobkontrolle stellt den Auftrag in eine eigene Prozessgruppe und
+  # lässt den Signal-Trap schon während wait feuern. stdin bleibt wie bisher
+  # /dev/null, weil die Jobkontrolle es nicht mehr selbst ersetzt.
+  set -m
   (
-    cd "$WT" || exit 1
+    cd "$dir" || exit 1
+    # B13: Der private Server wird beim ersten Agentenaufruf in diesem
+    # Subshell gestartet (set +m hält ihn in dessen Prozessgruppe für den
+    # Start; die eigentliche Abkopplung übernimmt setsid). Ein Fehlschlag
+    # bricht den Auftrag ab, statt ohne erreichbaren Server zu starten.
+    if [ "$PRIVATE_SERVER" = 1 ]; then
+      set +m
+      ensure_private_server "$dir" || exit 2
+    fi
     if [ "$HARNESS" = "pi" ]; then
-      local args=(python3 "$HARNESS_CLI" run --harness pi --project "$WT" --agent "$AGENT" --title "$NAME $ID" --prompt "$PROMPT")
+      # B6: Pi gibt mit --mode json strukturierte Ereignisse aus. Derselbe
+      # Erfassungsfilter wie beim opencode-Zweig macht daraus menschenlesbare
+      # Protokollzeilen und die Zustandsdatei für die Ausgabeansicht (F24);
+      # maßgeblich bleibt der Exit-Code des Agentenprozesses.
+      local args=(python3 "$HARNESS_CLI" run --harness pi --json --project "$dir" --agent "$AGENT" --title "$title" --prompt "$prompt")
       [ -n "$MODEL" ] && args+=(--model "$MODEL")
       [ -n "${VIBE_AGENTS_DIR:-}" ] && args+=(--agents-dir "$VIBE_AGENTS_DIR")
-      "${wrap[@]}" "${args[@]}" 2>&1 | tee -a "$LOG"
+      "${wrap[@]}" "${args[@]}" 2>&1 | "${STREAM_FILTER[@]}" | tee -a "$LOG"
       exit "${PIPESTATUS[0]}"
     fi
-    "${wrap[@]}" opencode run $SERVER_ARGS --format json --auto --thinking --agent "$AGENT" "${MODEL_ARGS[@]}" --title "$NAME $ID" "$PROMPT" 2>&1 | "${STREAM_FILTER[@]}" | tee -a "$LOG"
+    # F25: Ist eine Session aus einem unterbrochenen Versuch erfasst, wird
+    # derselbe Auftrag in derselben Session mit --session fortgesetzt statt
+    # neu zu beginnen. Ohne erfasste Session verhält sich der Aufruf wie
+    # bisher (eine leere Kennung wird nie übergeben).
+    local args=(opencode run $SERVER_ARGS --format json --auto --thinking)
+    [ -n "${RESUME_SESSION:-}" ] && args+=(--session "$RESUME_SESSION")
+    args+=(--agent "$AGENT" "${MODEL_ARGS[@]}" --title "$title" "$prompt")
+    "${wrap[@]}" "${args[@]}" 2>&1 | "${STREAM_FILTER[@]}" | tee -a "$LOG"
     exit "${PIPESTATUS[0]}"
-  )
+  ) </dev/null &
+  AGENT_PID=$!
+  set +m
+  wait "$AGENT_PID"
+  rc=$?
+  AGENT_PID=""
+  return "$rc"
+}
+run_agent() {
+  run_agent_in "$WT" "$PROMPT" "$NAME $ID"
 }
 run_package_tests() {
   local cmd="${VERIFY_PACKAGE:-${VERIFY_FULL:-}}"
   echo "=== Paketprüfung für $ID ===" | tee -a "$LOG"
-  ( cd "$WT" && bash -lc "$cmd" ) >>"$LOG" 2>&1
+  local output
+  output="$( cd "$WT" && bash -lc "$cmd" 2>&1 )"
+  local rc=$?
+  printf '%s\n' "$output" >>"$LOG"
+  PACKAGE_TEST_OUT="$output"
+  return "$rc"
 }
 gate_ok() {
   local out rc
   out="$(python3 "$PACKAGES_PY" gate --project "$WT" --id "$ID" --base "$PACKAGE_BASE" 2>&1)"
   rc=$?
   printf '%s\n' "$out" | tee -a "$LOG"
+  GATE_OUT="$out"
   return $rc
 }
-merge_and_cleanup() {
+# B9: Ein Pakettest- oder Schrankenbefund geht mit den konkreten Befunden an
+# den Agenten zurück in denselben Arbeitsbaum. Die Zahl der Runden ist
+# begrenzt; danach entscheidet die Schranken-Rückfrage (AP10) oder das Paket
+# blockiert mit den letzten Befunden.
+repair_round() {
+  # $1 = Befund, $2 = Details, $3 = Rundenanzeige, $4 = optionale Anweisung
+  local finding="$1" details="$2" round="$3" instruction="${4:-}"
+  echo "REPARATUR: $finding (Runde $round/$REPAIR_MAX_ROUNDS) im Arbeitsbaum $WT." | tee -a "$LOG"
+  REPAIR_LOG_START="$(wc -l < "$LOG" 2>/dev/null || echo 0)"
+  local prompt="Die Abschlussprüfung für Arbeitspaket $ID ist nicht bestanden.
+Befund: $finding
+Details:
+$details
+"
+  if [ -n "$instruction" ]; then
+    prompt+="Anweisung:
+$instruction
+"
+  fi
+  prompt+="
+Behebe ausschließlich diesen Befund in der Arbeitskopie $WT. Verwirf keine fremden Änderungen. Bearbeite keine anderen Arbeitspakete, starte keinen neuen Lauf, merge oder pushe nicht und schwäche die Abnahme nicht ab. Committe mit dem Präfix '$ID:'. Beende danach deine Arbeit; Paketprüfung und Abschlussschranke werden erneut ausgeführt."
+  run_agent_in "$WT" "$prompt" "$NAME $ID Reparatur"
+  local rc=$?
+  if [ "$rc" != 0 ]; then
+    local repair_class
+    repair_class="$(python3 "$PACKAGES_PY" classify --exit-code "$rc" --log "$LOG" --since "$REPAIR_LOG_START" 2>>"$LOG")"
+    case "$repair_class" in
+      quota)
+        REPAIR_ERROR="Quota/Kontingent beim Reparaturauftrag für $ID; der Lauf hält sofort an." ;;
+      auth)
+        REPAIR_ERROR="Anmeldung/Autorisierung beim Reparaturauftrag für $ID fehlgeschlagen; der Lauf hält sofort an." ;;
+      *)
+        REPAIR_ERROR="Reparatur für $ID fehlgeschlagen (Exit-Code $rc)." ;;
+    esac
+    return 1
+  fi
+  return 0
+}
+# AP10: Schranken-Rückfrage (F16) am erreichtem Reparaturlimit. Rückgabe:
+# 0 = eine zusätzliche Reparaturrunde lief; die Prüfung wird erneut
+# ausgeführt und jede weitere Runde erfordert eine neue Entscheidung;
+# 2 = Paket überspringen (Nutzer- oder autonome Entscheidung); 1 = blockieren
+# (override=off, ohne Module, ohne Antwort, ungültige Antwort oder
+# fehlgeschlagene zusätzliche Runde). Die Abschlussschranke selbst bleibt
+# unangetastet; ein übersprungenes Paket wird nie gemergt.
+barrier_repair_round() {
+  local finding="$1" details="$2"
+  if [ "$GATE_OVERRIDE_EFF" != "ask" ]; then
+    REPAIR_ERROR="Reparaturlimit für $ID nach $REPAIR_MAX_ROUNDS Runden erreicht."
+    return 1
+  fi
+  local out
+  # AP10: Wartezeit der Schranken-Rückfrage. Ein Lauf kann unbeaufsichtigt
+  # starten; dann soll er nicht zehn Minuten auf eine Antwort warten. Das
+  # Preflight-Zeitlimit gilt weiterhin, wenn es gesetzt ist; sonst 60 s.
+  # VIBE_BARRIER_QUESTION_TIMEOUT setzt beides für die Schranke außer Kraft.
+  if ! out="$(python3 "$PACKAGES_PY" barrier --project "$P" --id "$ID" \
+      --reason "Reparaturlimit für $ID nach $REPAIR_MAX_ROUNDS Runden erreicht. $finding" \
+      --runtime "$RUNTIME" --project-name "$NAME" \
+      --timeout "${VIBE_BARRIER_QUESTION_TIMEOUT:-${VIBE_PREFLIGHT_QUESTION_TIMEOUT:-60}}" 2>>"$LOG")" \
+      || [ -z "$out" ]; then
+    REPAIR_ERROR="Reparaturlimit für $ID nach $REPAIR_MAX_ROUNDS Runden erreicht. (Rückfrage nicht möglich.)"
+    return 1
+  fi
+  BARRIER_ACTION=""
+  BARRIER_INSTRUCTION=""
+  eval "$(printf '%s' "$out" | python3 -c '
+import json
+import shlex
+import sys
+
+data = json.load(sys.stdin)
+action = data.get("action")
+instruction = data.get("instruction")
+print("BARRIER_ACTION=" + shlex.quote(action if isinstance(action, str) else ""))
+print("BARRIER_INSTRUCTION=" + shlex.quote(instruction if isinstance(instruction, str) else ""))
+' 2>>"$LOG")" || true
+  case "$BARRIER_ACTION" in
+    skip)
+      BARRIER_NOTE="auf Nutzerentscheidung übersprungen (Reparaturlimit für $ID nach $REPAIR_MAX_ROUNDS Runden erreicht)"
+      return 2 ;;
+    autonomous)
+      BARRIER_NOTE="autonome Entscheidung: übersprungen (Reparaturlimit für $ID nach $REPAIR_MAX_ROUNDS Runden erreicht)"
+      return 2 ;;
+    agent)
+      echo "SCHRANKE: Nutzerentscheidung — zusätzliche Reparaturrunde läuft." | tee -a "$LOG"
+      REPAIR_ROUNDS=$((REPAIR_ROUNDS + 1))
+      repair_round "$finding" "$details" "$REPAIR_ROUNDS" "$BARRIER_INSTRUCTION"
+      return $?
+      ;;
+    *)
+      REPAIR_ERROR="Reparaturlimit für $ID nach $REPAIR_MAX_ROUNDS Runden erreicht."
+      return 1 ;;
+  esac
+}
+repair_package_finding() {
+  local finding="$1" details="$2"
+  if [ "$REPAIR_ROUNDS" -ge "$REPAIR_MAX_ROUNDS" ]; then
+    barrier_repair_round "$finding" "$details"
+    return $?
+  fi
+  REPAIR_ROUNDS=$((REPAIR_ROUNDS + 1))
+  repair_round "$finding" "$details" "$REPAIR_ROUNDS"
+}
+merge_package() {
+  # Arbeitsnotizen sind Laufzeitstand (wie dirty_report): lokale, uncommittete
+  # Änderungen an ihnen — zurückgeschriebener Nachweis, Blockievermerk (AP10) —
+  # dürfen den ff-Merge nicht blockieren. Der Paketbranch enthält dieselben
+  # Notizen bereits (sie werden beim Paketstart in die Arbeitskopie kopiert
+  # und dort committet), deshalb liefert der Merge denselben Stand zurück.
+  # Manuelle Nutzeränderungen an diesen Dateien aus der Laufzeit gehen dabei
+  # ebenfalls verloren; der Verwurf wird deshalb sichtbar protokolliert.
+  local discarded_notes
+  discarded_notes="$(git -C "$P" diff --name-only -- TICKETS.md FEEDBACK.md 2>>"$LOG")"
+  if [ -n "$discarded_notes" ]; then
+    echo "WARNUNG: Uncommittete Änderungen an Arbeitsnotizen werden für den Merge verworfen: $(echo "$discarded_notes" | tr '\n' ' ')" | tee -a "$LOG"
+  fi
+  git -C "$P" checkout -q -- TICKETS.md FEEDBACK.md 2>>"$LOG" || true
   if ! git -C "$P" merge --ff-only "$BRANCH" >>"$LOG" 2>&1; then
     echo "FEHLT: Merge von $BRANCH nach $BASE_BRANCH fehlgeschlagen." | tee -a "$LOG"
     return 1
   fi
+  return 0
+}
+sync_work_notes() {
+  python3 "$PACKAGES_PY" sync-proof \
+    --project "$P" --worktree "$WT" --id "$ID" >>"$LOG" 2>&1
+}
+cleanup_worktree() {
   # Nur gemergte Arbeitskopien und Branches werden entfernt. Blockierte
   # Arbeitskopien bleiben zur Diagnose liegen.
   if ! git -C "$P" worktree remove --force "$WT" >>"$LOG" 2>&1; then
@@ -272,6 +691,10 @@ merge_and_cleanup() {
 }
 SERVER_ARGS="--standalone"
 SANDBOX_STATE=off
+# B13: Ohne erreichbaren gemeinsamen Server startet der Lauf einen eigenen
+# privaten opencode-Server, damit Zusatzanweisungen aus dem Dashboard ein
+# Ziel haben. Kennwortdatei und Harness müssen das zulassen.
+PRIVATE_SERVER=0
 # Eine einzige Quelle für die Auswertung von SANDBOX: das Sandbox-Modul.
 # Dadurch startet kein Lauf ungeschützt, nur weil der Wert anders geschrieben
 # ist (z. B. TRUE, yes, 1).
@@ -302,36 +725,215 @@ if [ "$SANDBOX_STATE" = "on" ]; then
     exit 2
   fi
 elif server_is_up; then SERVER_ARGS="--server http://127.0.0.1:$OPENCODE_PORT"; fi
+# B13: In der Sandbox führt ein gemeinsamer Server die Werkzeuge außerhalb der
+# Sandbox aus; dort gilt deshalb immer der private Server. Außerhalb der
+# Sandbox nur, wenn kein gemeinsamer Server erreichbar ist. Pi kennt keinen
+# privaten opencode-Server und bleibt unverändert.
+if [ "$HARNESS" = "opencode" ] && [ "$HAS_SERVER_PASSWORD" = 1 ]; then
+  if [ "$SANDBOX_STATE" = "on" ] || [ "$SERVER_ARGS" = "--standalone" ]; then
+    PRIVATE_SERVER=1
+  fi
+fi
+# F19: opencode liefert mit --format json Ereignisse. Der Filter macht daraus
+# menschenlesbare Zeilen (Grundlage für Syntax-Highlighting) und erfasst
+# Subagenten samt Ausgabe in <log>.state.json. Fehlt das Modul, bleibt die
+# Ausgabe unverändert (kein stiller Abbruch des Laufs). Der Filter wird auch
+# für den Preflight-Agenten (F22) gebraucht und deshalb vorher eingerichtet.
+STREAM_FILTER=(cat)
+if [ -f "$RUNS_PY" ]; then
+  STREAM_FILTER=(python3 "$RUNS_PY" stream --state "$LOG.state.json" --attempt)
+fi
 # Preflight: sauberer Git-Integrationsstand, verfügbare Test-/Review-Agenten
 # und ein echter Paketprüfbefehl. Ohne diese Bedingungen startet kein Paket.
-PREFLIGHT_OUT="$(python3 "$PACKAGES_PY" preflight --project "$P" \
-  --agents-dir "${VIBE_AGENTS_DIR:-$HOME/.config/opencode/agents}" \
-  --tester "${TESTER:-}" --reviewer "${REVIEWER:-}" 2>&1)"
+# F22: Der Produktpfad ``vibe run`` setzt VIBE_PREFLIGHT_ASSIST=1. Dann fragt
+# der Preflight bei einem Befund über F16 nach, statt sofort abzubrechen.
+# B9: Die Rückfrage bietet zusätzlich "Agent behebt die Befunde"; eine freie
+# Antwort ist eine Anweisung an den Agenten. Nach jedem Agentenlauf wird der
+# Preflight erneut geprüft. Derselbe Weg behebt am Laufende einen unsauberen
+# Integrationsstand.
+# F27: Ein ausdrücklich angeforderter Neustart darf einen unsauberen
+# Integrationsstand zulassen. Die Änderungen bleiben dabei unangetastet; der
+# Preflight überspringt ausschließlich diesen einen Befund. Die Abschluss-
+# prüfung verlangt weiterhin einen sauberen Stand.
+PREFLIGHT_ACTION_FILE="$RUNTIME/$NAME.preflight-action.json"
+# AP10: Reparatur- und Assistenzrunden sind Schrankeneinstellungen; ohne
+# Gates-Modul gelten die bisherigen Voreinstellungen. Die Projektsumgebung
+# kann REPAIR_ROUNDS als Zähler nicht dienen, weil der Projekt-Schlüssel
+# denselben Namen trägt; gelesen wird ausschließlich GATE_REPAIR_ROUNDS.
+REPAIR_MAX_ROUNDS="${GATE_REPAIR_ROUNDS:-2}"
+ASSIST_MAX_ROUNDS="${GATE_ASSIST_ROUNDS:-10}"
+# F25: Kennung der Session, die bei der nächsten Wiederholung fortgesetzt
+# wird. Sie bleibt leer, solange kein Versuch eine Session hinterlassen hat.
+RESUME_SESSION=""
+# F25: Liest die zuletzt erfasste Hauptsession aus der Zustandsdatei, die der
+# Protokollierungsfilter pflegt. Fehlt die Datei (ohne Filter) oder ist sie
+# defekt, ist das Ergebnis leer; der Läufer startet dann wie bisher neu.
+read_state_session() {
+  python3 - "$LOG.state.json" <<'PY'
+import json
+import sys
+try:
+    with open(sys.argv[1], encoding="utf-8") as handle:
+        data = json.load(handle)
+except (OSError, ValueError):
+    raise SystemExit(0)
+session = data.get("session")
+if isinstance(session, str) and session:
+    print(session)
+PY
+}
+# B9/F22: Führt den Preflight bis zum Bestehen oder Abbruch aus. ``phase``
+# unterscheidet den Laufstart (F27: --allow-dirty) vom Laufende (nie
+# --allow-dirty). ``intro`` benennt die Prüfung in der Rückfrage.
+preflight_with_assist() {
+  local phase="$1" intro="$2"
+  local heading="$intro"
+  [ -n "$heading" ] || heading="Der Preflight für '$NAME' ist nicht bestanden."
+  local args=(preflight --project "$P"
+    --agents-dir "${VIBE_AGENTS_DIR:-$HOME/.config/opencode/agents}"
+    --tester "${TESTER:-}" --reviewer "${REVIEWER:-}"
+    --state "$STATE")
+  if [ "$phase" = "start" ] && [ "${VIBE_KEEP_CHANGES:-0}" = "1" ]; then
+    args+=(--allow-dirty)
+  fi
+  if [ "${VIBE_PREFLIGHT_ASSIST:-0}" = "1" ] \
+      && [ -f "$BIN/vibe_questions.py" ] \
+      && [ -f "$BIN/vibe_autonomous.py" ] \
+      && [ -f "$BIN/vibe_storage.py" ]; then
+    args+=(--assist --runtime "$RUNTIME" --project-name "$NAME"
+      --timeout "${VIBE_PREFLIGHT_QUESTION_TIMEOUT:-600}"
+      --action-file "$PREFLIGHT_ACTION_FILE" --assist-reason "$heading"
+      --assist-max "$ASSIST_MAX_ROUNDS")
+  fi
+  ASSIST_ROUNDS=0
+  while :; do
+    rm -f -- "$PREFLIGHT_ACTION_FILE"
+    PREFLIGHT_OUT="$(python3 "$PACKAGES_PY" "${args[@]}" \
+      --assist-rounds "$ASSIST_ROUNDS" 2>&1)"
+    PREFLIGHT_RC=$?
+    if [ "$PREFLIGHT_RC" = 0 ]; then
+      rm -f -- "$PREFLIGHT_ACTION_FILE"
+      return 0
+    fi
+    PREFLIGHT_ACTION="$(python3 - "$PREFLIGHT_ACTION_FILE" <<'PY'
+import json
+import sys
+try:
+    with open(sys.argv[1], encoding="utf-8") as handle:
+        data = json.load(handle)
+except (OSError, ValueError):
+    data = {}
+print(data.get("action") or "abort")
+PY
+)"
+    PREFLIGHT_INSTRUCTION="$(python3 - "$PREFLIGHT_ACTION_FILE" <<'PY'
+import json
+import sys
+try:
+    with open(sys.argv[1], encoding="utf-8") as handle:
+        data = json.load(handle)
+except (OSError, ValueError):
+    data = {}
+value = data.get("instruction")
+print(value if isinstance(value, str) else "")
+PY
+)"
+    PREFLIGHT_SOURCE="$(python3 - "$PREFLIGHT_ACTION_FILE" <<'PY'
+import json
+import sys
+try:
+    with open(sys.argv[1], encoding="utf-8") as handle:
+        data = json.load(handle)
+except (OSError, ValueError):
+    data = {}
+value = data.get("source")
+print(value if isinstance(value, str) else "")
+PY
+)"
+    rm -f -- "$PREFLIGHT_ACTION_FILE"
+    if [ "$PREFLIGHT_ACTION" = "agent" ]; then
+      ASSIST_ROUNDS=$((ASSIST_ROUNDS + 1))
+      if [ "$PREFLIGHT_SOURCE" = "findings" ]; then
+        ASSIST_ORIGIN="einer aus den Befunden abgeleiteten Anweisung"
+      elif [ "$PREFLIGHT_SOURCE" = "autonomous" ]; then
+        ASSIST_ORIGIN="einer autonomen Entscheidung"
+      else
+        ASSIST_ORIGIN="der Anweisung des Nutzers"
+      fi
+      echo "PREFLIGHT: Agent wird mit $ASSIST_ORIGIN beauftragt (Runde $ASSIST_ROUNDS/$ASSIST_MAX_ROUNDS)." | tee -a "$LOG"
+      ASSIST_PROMPT="$heading
+Befunde:
+$PREFLIGHT_OUT
+
+Anweisung:
+$PREFLIGHT_INSTRUCTION
+
+Behebe ausschließlich diese Befunde im Projektordner. Verwirf keine fremden Änderungen. Committe nur, wenn die Anweisung es verlangt. Ändere keine Arbeitspakete und starte keinen neuen Lauf. Beende danach deine Arbeit; der Preflight wird erneut geprüft."
+      run_agent_in "$P" "$ASSIST_PROMPT" "$NAME Preflight"
+      ASSIST_RC=$?
+      if [ "$ASSIST_RC" != 0 ]; then
+        echo "ABBRUCH: Preflight-Agent fehlgeschlagen (Exit-Code $ASSIST_RC); die Befunde sind nicht behoben." | tee -a "$LOG"
+        return 2
+      fi
+      continue
+    fi
+    printf '%s\n' "$PREFLIGHT_OUT" | tee -a "$LOG"
+    return 1
+  done
+}
+# V-026/B11: Ein äußeres Signal darf den Lauf nicht spurlos beenden — auch
+# nicht während der Start-Preflight-Assistenz, die selbst eine Agentengruppe
+# startet. Die Signal-Traps stehen deshalb vor dem ersten Preflight-Aufruf.
+# Ein bereits beendeter Registereintrag bleibt unverändert (only-live).
+EXTERN_ENDED=0
+external_end() {
+  local sig="$1" code="$2"
+  [ "$EXTERN_ENDED" = 1 ] && return 0
+  EXTERN_ENDED=1
+  trap - HUP TERM INT
+  echo "ABBRUCH: Lauf extern beendet (Signal $sig)." | tee -a "$LOG"
+  register_finish "$code" ended "extern beendet (Signal $sig)" only-live
+  # B11: Erst nach der Protokollierung die Agentengruppe beenden; der Läufer
+  # selbst endet mit dem bisherigen Signal-Exit-Code.
+  stop_agent_group
+  exit "$code"
+}
+trap 'external_end HUP 129' HUP
+trap 'external_end TERM 143' TERM
+trap 'external_end INT 130' INT
+preflight_with_assist start ""
 PREFLIGHT_RC=$?
 if [ "$PREFLIGHT_RC" != 0 ]; then
-  printf '%s\n' "$PREFLIGHT_OUT" | tee -a "$LOG"
   echo "ABBRUCH: Preflight nicht bestanden. Es wurde kein Arbeitspaket gestartet." | tee -a "$LOG"
   register_finish 2 blocked
   exit 2
 fi
 BASE_BRANCH="$(git -C "$P" symbolic-ref --quiet --short HEAD)"
 git -C "$P" worktree prune >>"$LOG" 2>&1 || true
-register_start
-if [ "$HARNESS" = "pi" ]; then RUN_MODE="Pi --print"; else RUN_MODE="$SERVER_ARGS"; fi
-echo "Lauf: ${RUN_ID:-ohne Register}, Harness: $HARNESS, Modus: $RUN_MODE, Agent: $AGENT, Sandbox: $SANDBOX_STATE, höchstens $MAXP Pakete, höchstens $MAXR Wiederholungen je Paket" | tee -a "$LOG"
-# F19: opencode liefert mit --format json Ereignisse. Der Filter macht daraus
-# menschenlesbare Zeilen (Grundlage für Syntax-Highlighting) und erfasst
-# Subagenten samt Ausgabe in <log>.state.json. Fehlt das Modul, bleibt die
-# Ausgabe unverändert (kein stiller Abbruch des Laufs).
-STREAM_FILTER=(cat)
+# V-026: Verwaiste Einträge des eigenen Projekts vor dem Start als extern
+# beendet kennzeichnen. Fremde Projekte und nicht prüfbare Sitzungen bleiben
+# unverändert; es wird niemals eine Sitzung beendet.
 if [ -f "$RUNS_PY" ]; then
-  STREAM_FILTER=(python3 "$RUNS_PY" stream --state "$LOG.state.json")
+  python3 "$RUNS_PY" prune --runtime "$RUNTIME" --project "$P" \
+    --note "extern beendet (Sitzung fehlt)" >>"$LOG" 2>&1 || true
 fi
+register_start
+if [ "$HARNESS" = "pi" ]; then RUN_MODE="Pi --print"
+elif [ "$PRIVATE_SERVER" = 1 ]; then RUN_MODE="privater opencode-Server"
+else RUN_MODE="$SERVER_ARGS"; fi
+echo "Lauf: ${RUN_ID:-ohne Register}, Harness: $HARNESS, Modus: $RUN_MODE, Agent: $AGENT, Sandbox: $SANDBOX_STATE, höchstens $MAXP Pakete, höchstens $MAXR Wiederholungen je Paket" | tee -a "$LOG"
 PAUSED=0; LAST_ID=""; STOP=0; PACKAGES=0; SKIP=""
 CLOSED=(); BLOCKED_IDS=(); BLOCKED_REPORT=(); BLOCK_REASON=""
 record_block() {
   BLOCKED_IDS+=("$1")
   BLOCKED_REPORT+=("$1 ($2)")
+}
+# Arbeitsnotizen (TICKETS.md/FEEDBACK.md am Projektstamm) sind Laufzeitstand
+# wie in dirty_report (bin/vibe_packages.py). Ihre uncommitteten Änderungen —
+# Blockievermerk (AP10), zurückgeschriebener Paketnachweis — blockieren die
+# Integrationsprüfungen des Läufers nicht; andere Änderungen bleiben sichtbar.
+work_note_noise() {
+  grep -vE '^.. (TICKETS\.md|FEEDBACK\.md)$' || true
 }
 report() {
   local status_json
@@ -389,7 +991,14 @@ while [ "$PACKAGES" -lt "$MAXP" ] && [ "$STOP" = 0 ]; do
   fi
   # Zwischen zwei Paketen muss der Integrationsstand sauber bleiben. Sonst
   # würde das nächste Paket auf einem fremden, ungeprüften Stand aufsetzen.
-  DIRTY_NOW="$(git -C "$P" status --porcelain)"
+  # F27: Ein ausdrücklich angeforderter Neustart lässt vorhandene Änderungen
+  # bis zur Gesamtprüfung zu; sie bleiben unverändert und werden nicht Teil
+  # der Paketbranches. Die abschließende Prüfung bleibt streng.
+  DIRTY_NOW="$(git -C "$P" status --porcelain | work_note_noise)"
+  if [ -n "$DIRTY_NOW" ] && [ "${VIBE_KEEP_CHANGES:-0}" = "1" ]; then
+    echo "HINWEIS: Nicht committete Änderungen bleiben unverändert; die Gesamtprüfung verlangt weiterhin einen sauberen Integrationsstand." | tee -a "$LOG"
+    DIRTY_NOW=""
+  fi
   if [ -n "$DIRTY_NOW" ]; then
     BLOCK_REASON="Integrationsstand ist nicht sauber: $DIRTY_NOW"
     record_block "INTEGRATION" "$BLOCK_REASON"
@@ -397,11 +1006,30 @@ while [ "$PACKAGES" -lt "$MAXP" ] && [ "$STOP" = 0 ]; do
     STOP=1; break
   fi
   if ! select_item; then echo "Keine offenen Arbeitspakete mehr." | tee -a "$LOG"; break; fi
+  if [ "$ORDERED" = 1 ]; then
+    echo "Auswahl aus projektweiser Priorisierung (PACKAGE_ORDER, verbindlich)." | tee -a "$LOG"
+  fi
+  # AP9: Vor jedem neuen Arbeitspaket den Haupt-Branch aktualisieren (nur
+  # bei GitHub-Konfiguration; sonst bewusster Skip). Ein Fehlschlag erzeugt
+  # nur einen Hinweis, blockiert das Paket aber nicht.
+  if ! python3 "$PACKAGES_PY" github-pull --project "$P" >>"$LOG" 2>&1; then
+    echo "HINWEIS: GitHub-Pull des Haupt-Branchs vor $ID fehlgeschlagen; es wird mit dem aktuellen Stand weitergearbeitet." | tee -a "$LOG"
+  fi
   PACKAGES=$((PACKAGES + 1))
   PACKAGE_BASE="$(git -C "$P" rev-parse HEAD)"
   echo "=== [$NAME] Arbeitspaket $ID, Durchgang $PACKAGES/$MAXP  $(date +%T) ===" | tee -a "$LOG"
   if ! create_worktree; then
     BLOCK_REASON="Arbeitskopie für $ID konnte nicht angelegt werden."
+    record_block "$ID" "$BLOCK_REASON"
+    echo "BLOCKIERT: $BLOCK_REASON" | tee -a "$LOG"
+    STOP=1; break
+  fi
+  # Die Arbeitsnotizen sind Laufzeitstand und nicht versioniert; die
+  # Arbeitskopie enthält sie daher nicht. Sie werden hineinkopiert, damit
+  # Agent und Abschlussschranke den aktuellen Ticketstand sehen.
+  if ! python3 "$PACKAGES_PY" copy-notes \
+      --project "$P" --worktree "$WT" >>"$LOG" 2>&1; then
+    BLOCK_REASON="Arbeitsnotizen konnten nicht in die Arbeitskopie übernommen werden."
     record_block "$ID" "$BLOCK_REASON"
     echo "BLOCKIERT: $BLOCK_REASON" | tee -a "$LOG"
     STOP=1; break
@@ -413,71 +1041,178 @@ Vor dem Abschluss müssen im Paketbranch vorliegen: ein Commit mit Präfix '$ID:
 $QUESTION_HINT"
   ATTEMPT=0
   PACKAGE_DONE=0
+  # F25: Je Paket neu; die Sessions des Vorgängerpakets werden nicht
+  # weitergeführt.
+  # AP14: Mit angeforderter Fortsetzung (VIBE_CONTINUE_SESSION vom Start-
+  # befehl) beginnt auch jedes folgende Paket desselben Laufs in derselben
+  # Session (Fortsetzungskette); der erste Versuch erhält --session. Ohne
+  # diese Anforderung bleibt es beim F25-Verhalten.
+  RESUME_SESSION="$CONTINUE_SESSION"
+  if [ -n "$RESUME_SESSION" ] && [ "$HARNESS" != "pi" ]; then
+    echo "Fortsetzung in Session $RESUME_SESSION" | tee -a "$LOG"
+  fi
   while [ "$ATTEMPT" -lt "$TRIES_PER_ITEM" ]; do
     ATTEMPT=$((ATTEMPT + 1))
     echo "--- Versuch $ATTEMPT/$TRIES_PER_ITEM für $ID in $WT ---" | tee -a "$LOG"
     LOG_START_LINE="$(wc -l < "$LOG" 2>/dev/null || echo 0)"
+    # F25: Stand der erfassten Hauptsession vor dem Versuch. Die Kennung des
+    # Versuchs selbst wird gegen diesen Stand abgeglichen, damit Kennungen aus
+    # früheren Versuchen oder Vorläufen (z. B. Preflight-Agent) nicht als
+    # Fortsetzung gelten, obwohl der Versuch selbst keine Session erfasst hat.
+    BASE_SESSION="$(read_state_session)"
+    case "$BASE_SESSION" in
+      *[!A-Za-z0-9_-]*) BASE_SESSION="" ;;
+    esac
     run_agent
     RC=$?
     echo "=== Agent beendet, Exit-Code $RC ===" | tee -a "$LOG"
+    # B13: Ein nicht startbarer privater Server ist ein Laufabbruch, kein
+    # wiederholbarer Agentenfehler; ohne Server gäbe es kein Dashboard-Ziel.
+    if [ -f "$SERVER_FAILED_FILE" ]; then
+      BLOCK_REASON="$(cat "$SERVER_FAILED_FILE")"
+      record_block "$ID" "$BLOCK_REASON"
+      echo "ABBRUCH: $BLOCK_REASON" | tee -a "$LOG"
+      STOP=1
+      break
+    fi
     if [ "$RC" = 0 ]; then
-      if ! run_package_tests; then
-        BLOCK_REASON="Pakettests für $ID sind nicht grün."
+      REPAIR_ROUNDS=0
+      REPAIR_ERROR=""
+      REPAIR_FINDING=""
+      PACKAGE_OK=0
+      REPAIR_RC=0
+      while :; do
+        if ! run_package_tests; then
+          REPAIR_FINDING="Pakettests für $ID sind nicht grün."
+          REPAIR_DETAILS="$PACKAGE_TEST_OUT"
+        elif ! gate_ok; then
+          REPAIR_FINDING="Abschlussschranke für $ID nicht erfüllt."
+          REPAIR_DETAILS="$GATE_OUT"
+        else
+          PACKAGE_OK=1
+          break
+        fi
+        repair_package_finding "$REPAIR_FINDING" "$REPAIR_DETAILS"
+        REPAIR_RC=$?
+        [ "$REPAIR_RC" != 0 ] && break
+      done
+      if [ "$REPAIR_RC" = 2 ]; then
+        # AP10: Bewusstes Fortsetzen — das Paket wird auf Nutzer- oder
+        # autonome Entscheidung übersprungen. Der Blockievermerk verhindert
+        # die erneute Auswahl; Merge, Abschlussschranke und STOP bleiben
+        # unangetastet, der Lauf fährt mit dem nächsten Paket fort.
+        if ! python3 "$PACKAGES_PY" mark-blocked --project "$P" --id "$ID" \
+            --note "$BARRIER_NOTE" >>"$LOG" 2>&1; then
+          echo "WARNUNG: Blockievermerk für $ID konnte nicht geschrieben werden; das Paket wird nur in diesem Lauf übersprungen." | tee -a "$LOG"
+        fi
+        SKIP="$SKIP,$ID"
+        record_block "$ID" "$BARRIER_NOTE"
+        echo "BLOCKIERT: $ID $BARRIER_NOTE." | tee -a "$LOG"
+        break
+      fi
+      if [ "$PACKAGE_OK" != 1 ]; then
+        if [ -n "$REPAIR_ERROR" ]; then
+          BLOCK_REASON="$REPAIR_ERROR $REPAIR_FINDING"
+        else
+          BLOCK_REASON="$REPAIR_FINDING"
+        fi
         record_block "$ID" "$BLOCK_REASON"
         echo "BLOCKIERT: $BLOCK_REASON" | tee -a "$LOG"
         STOP=1; break
       fi
-      if ! gate_ok; then
-        BLOCK_REASON="Abschlussschranke für $ID nicht erfüllt."
-        record_block "$ID" "$BLOCK_REASON"
-        STOP=1; break
+      # AP9: Nach grüner Schranke Push des Paket-Branchs nach origin und
+      # Merge-Request auf den Basis-Branch (sofern GitHub konfiguriert).
+      # Ein Fehlschlag erzeugt nur einen Hinweis; der lokale Merge läuft
+      # weiter, damit das Paket nicht an GitHub hängt.
+      if ! python3 "$PACKAGES_PY" github-complete --project "$P" \
+          --branch "$BRANCH" --id "$ID" >>"$LOG" 2>&1; then
+        echo "HINWEIS: GitHub-Abschluss für $ID (Push/Merge-Request) fehlgeschlagen; das Paket wird lokal gemergt." | tee -a "$LOG"
       fi
-      if ! merge_and_cleanup; then
+      if ! merge_package; then
         BLOCK_REASON="Merge für $ID fehlgeschlagen."
         record_block "$ID" "$BLOCK_REASON"
         echo "BLOCKIERT: $BLOCK_REASON" | tee -a "$LOG"
         STOP=1; break
       fi
+      # Der Nachweis wird aus der Arbeitskopie in den Projektordner
+      # zurückgeschrieben; erst danach wird die Arbeitskopie entfernt, damit
+      # das Paket im nächsten Lauf nicht erneut gewählt wird.
+      if ! sync_work_notes; then
+        BLOCK_REASON="Ticket-Nachweis für $ID konnte nicht in den Projektordner geschrieben werden."
+        record_block "$ID" "$BLOCK_REASON"
+        echo "BLOCKIERT: $BLOCK_REASON" | tee -a "$LOG"
+        STOP=1; break
+      fi
+      cleanup_worktree
       CLOSED+=("$ID")
       PACKAGE_DONE=1
       break
     fi
     CLASS="$(python3 "$PACKAGES_PY" classify --exit-code "$RC" --log "$LOG" --since "$LOG_START_LINE" 2>>"$LOG")"
     case "$CLASS" in
-      quota)
-        BLOCK_REASON="Quota/Kontingent bei $ID; der Lauf hält sofort an."
-        record_block "$ID" "$BLOCK_REASON"
-        echo "BLOCKIERT: $BLOCK_REASON" | tee -a "$LOG"
-        STOP=1; break
-        ;;
-      auth)
-        BLOCK_REASON="Anmeldung/Autorisierung bei $ID fehlgeschlagen; der Lauf hält sofort an."
-        record_block "$ID" "$BLOCK_REASON"
-        echo "BLOCKIERT: $BLOCK_REASON" | tee -a "$LOG"
-        STOP=1; break
-        ;;
+      quota|auth)
+        # V-027: Das globale Limitverhalten entscheidet. "stop" ist die
+        # Voreinstellung und hält sofort an; "continue" behandelt den Fehler
+        # wie einen wiederholbaren Fehler im Rahmen der Wiederholungslimits.
+        if [ "$LIMIT_MODE" != "continue" ]; then
+          if [ "$CLASS" = "quota" ]; then
+            BLOCK_REASON="Quota/Kontingent bei $ID; der Lauf hält sofort an."
+          else
+            BLOCK_REASON="Anmeldung/Autorisierung bei $ID fehlgeschlagen; der Lauf hält sofort an."
+          fi
+          record_block "$ID" "$BLOCK_REASON"
+          echo "BLOCKIERT: $BLOCK_REASON" | tee -a "$LOG"
+          STOP=1; break
+        fi
+        echo "HINWEIS: Limitverhalten 'continue' — $CLASS bei $ID wird wie ein wiederholbarer Fehler behandelt." | tee -a "$LOG"
+        ;&
       *)
         printf '\a\a\a'; echo "Agent mit Fehler beendet (Fehlerklasse '$CLASS')." | tee -a "$LOG"
-        # Die Automatik ist standardmäßig aus; 'fritz auto' fordert nur bei
-        # ausdrücklich gespeicherter Automatik eine neue IP an. Ein Lauf wartet
-        # nicht auf eine Eingabe, wenn niemand an einem Terminal sitzt.
-        # F18: Der Projektname geht an die zentrale Steuerung; läuft bereits ein
-        # Reconnect eines anderen Projekts, wird dessen Ergebnis übernommen und
-        # dieser Lauf danach fortgesetzt.
-        FRITZ_OUT="$(VIBE_PROJECT="$P" python3 "$BIN/vibe" fritz auto 2>&1)"; FRITZ_RC=$?
-        if [ -n "$FRITZ_OUT" ]; then printf '%s\n' "$FRITZ_OUT" | tee -a "$LOG"; fi
-        if [ "$FRITZ_RC" = 0 ]; then
-          echo "Zentraler Reconnect abgeschlossen; der Lauf wird nach kurzer Wartezeit fortgesetzt." | tee -a "$LOG"
-          sleep 20
-        elif [ -t 0 ]; then read -r -p "Neue IP manuell anfordern, dann Enter (Strg+C = Abbruch): " _
-        else echo "Keine neue IP angefordert; der Lauf wird fortgesetzt." | tee -a "$LOG"; fi
+        # V-027: Quota- und Anmeldefehler werden im Modus "continue"
+        # ausschließlich im Rahmen der Wiederholungslimits erneut versucht.
+        # Sie lösen weder eine automatische Router-Neuverbindung noch eine
+        # manuelle IP-Abfrage aus.
+        if [ "$CLASS" != "quota" ] && [ "$CLASS" != "auth" ]; then
+          # Die Automatik ist standardmäßig aus; 'fritz auto' fordert nur bei
+          # ausdrücklich gespeicherter Automatik eine neue IP an. Ein Lauf wartet
+          # nicht auf eine Eingabe, wenn niemand an einem Terminal sitzt.
+          # F18: Der Projektname geht an die zentrale Steuerung; läuft bereits ein
+          # Reconnect eines anderen Projekts, wird dessen Ergebnis übernommen und
+          # dieser Lauf danach fortgesetzt.
+          FRITZ_OUT="$(VIBE_PROJECT="$P" python3 "$BIN/vibe" fritz auto 2>&1)"; FRITZ_RC=$?
+          if [ -n "$FRITZ_OUT" ]; then printf '%s\n' "$FRITZ_OUT" | tee -a "$LOG"; fi
+          if [ "$FRITZ_RC" = 0 ]; then
+            echo "Zentraler Reconnect abgeschlossen; der Lauf wird nach kurzer Wartezeit fortgesetzt." | tee -a "$LOG"
+            sleep 20
+          elif [ -t 0 ]; then read -r -p "Neue IP manuell anfordern, dann Enter (Strg+C = Abbruch): " _
+          else echo "Keine neue IP angefordert; der Lauf wird fortgesetzt." | tee -a "$LOG"; fi
+        fi
         if [ "$ATTEMPT" -ge "$TRIES_PER_ITEM" ]; then
           echo "Überspringe $ID nach $TRIES_PER_ITEM Versuchen ($MAXR Wiederholungen, Wiederholungslimit erreicht, von Hand prüfen)." | tee -a "$LOG"
           record_block "$ID" "Agentenfehler ($CLASS)"
           SKIP="$SKIP,$ID"
           break
         fi
-        echo "Wiederhole $ID nach Fehlerklasse '$CLASS' (Versuch $ATTEMPT/$TRIES_PER_ITEM)." | tee -a "$LOG"
+        # F25: Die im gescheiterten Versuch erfasste Session wird bei der
+        # Wiederholung fortgesetzt (einfaches Continue), statt das Paket von
+        # neuem zu beginnen. Quelle ist die Zustandsdatei des
+        # Protokollierungsfilters (Maschinenquelle; Agenten-Klartext kann sie
+        # nicht verfälschen). Ein Versuch, der selbst keine Session erfasst
+        # hat (Stand unverändert), löst keine Fortsetzung aus; in einer
+        # laufenden Fortsetzungskette zählt der zuletzt erfasste Stand. Die
+        # [Session]-Zeile dient der Anzeige im Laufprotokoll.
+        ATTEMPT_SESSION="$(read_state_session)"
+        case "$ATTEMPT_SESSION" in
+          *[!A-Za-z0-9_-]*) ATTEMPT_SESSION="" ;;
+        esac
+        if [ -n "$ATTEMPT_SESSION" ] && [ "$ATTEMPT_SESSION" != "$BASE_SESSION" ]; then
+          RESUME_SESSION="$ATTEMPT_SESSION"
+        fi
+        if [ -n "$RESUME_SESSION" ]; then
+          echo "Wiederhole $ID nach Fehlerklasse '$CLASS' (Versuch $ATTEMPT/$TRIES_PER_ITEM); die Session $RESUME_SESSION wird fortgesetzt." | tee -a "$LOG"
+        else
+          echo "Wiederhole $ID nach Fehlerklasse '$CLASS' (Versuch $ATTEMPT/$TRIES_PER_ITEM)." | tee -a "$LOG"
+        fi
         if [ "$RETRY_DELAY" -gt 0 ]; then sleep "$RETRY_DELAY"; fi
         ;;
     esac
@@ -500,14 +1235,21 @@ if [ "$PAUSED" = 1 ]; then
   printf '\a'; echo "Angehalten auf Wunsch. Die Abschlussprüfung wurde nicht ausgeführt. Nächster Start: vibe run $NAME" | tee -a "$LOG"; exit 0
 fi
 # Die Gesamtprüfung läuft ausschließlich auf einem sauberen Integrationsstand.
-INTEGRATION_DIRTY="$(git -C "$P" status --porcelain)"
+# B9: Mit aktiver Assistenz darf der Agent den Stand zuvor bereinigen; ohne
+# Assistenz oder nach Abbruch bleibt es beim bisherigen Blockieren.
+INTEGRATION_DIRTY="$(git -C "$P" status --porcelain | work_note_noise)"
 if [ -n "$INTEGRATION_DIRTY" ]; then
-  BLOCK_REASON="Integrationsstand ist nicht sauber: $INTEGRATION_DIRTY"
-  record_block "INTEGRATION" "$BLOCK_REASON"
-  report
-  register_finish 1 blocked
-  echo "ABBRUCH: $BLOCK_REASON" | tee -a "$LOG"
-  exit 1
+  preflight_with_assist end "Der Abschluss für '$NAME' ist nicht möglich: Der Integrationsstand ist nicht sauber."
+  INTEGRATION_RC=$?
+  INTEGRATION_DIRTY="$(git -C "$P" status --porcelain | work_note_noise)"
+  if [ "$INTEGRATION_RC" != 0 ] || [ -n "$INTEGRATION_DIRTY" ]; then
+    BLOCK_REASON="Integrationsstand ist nicht sauber: $INTEGRATION_DIRTY"
+    record_block "INTEGRATION" "$BLOCK_REASON"
+    report
+    register_finish 1 blocked
+    echo "ABBRUCH: $BLOCK_REASON" | tee -a "$LOG"
+    exit 1
+  fi
 fi
 echo "=== Abschlussprüfung ===" | tee -a "$LOG" "$VLOG"
 VOUT=$(final_verify 2>&1); VRC=$?

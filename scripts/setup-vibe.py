@@ -43,6 +43,8 @@ PROGRAM_FILES = (
     "vibe",
     "vibe-run.sh",
     "vibe_harness.py",
+    "vibe_limits.py",
+    "vibe_gates.py",
     "vibe_runs.py",
     "vibe_packages.py",
     "vibe-web.py",
@@ -51,11 +53,13 @@ PROGRAM_FILES = (
     "vibe_models.py",
     "vibe_sandbox.py",
     "vibe_paths.py",
+    "vibe_ui_config.py",
     "vibe_storage.py",
     "vibe_guide.py",
     "vibe_questions.py",
     "vibe_autonomous.py",
     "vibe_services.py",
+    "vibe_github.py",
     "fritz-reconnect.py",
 )
 WEB_FILES = ("index.html", "styles.css", "app.js")
@@ -1002,8 +1006,47 @@ def uninstall(vibe_root, home=None, remove_launcher=False, timestamp=None):
 
 
 def running_installation(vibe_root, runner=None, which=None):
-    """Nennt laufende Agentenläufe und Dashboard-/Server-Sitzungen dieser Installation."""
+    """Nennt laufende Agentenläufe und Dashboard-/Server-Sitzungen dieser Installation.
+
+    Ein Registereintrag in ``starting``/``running`` gilt nur dann als laufend,
+    wenn seine tmux-Sitzung tatsächlich existiert. Sonst ist der Lauf verwaist
+    und darf eine Aktualisierung nicht blockieren. Ohne prüfbare Sitzung
+    (tmux fehlt oder Eintrag ohne Sitzungsangabe) bleibt die Sperre konservativ.
+    """
     reasons = []
+    which = which or shutil.which
+    tmux = which("tmux")
+    runner = runner or subprocess.run
+
+    def session_state(session, own_socket=False):
+        """True/False, wenn tmux die Sitzung prüfen kann; sonst None.
+
+        Agentenläufe liegen seit V-026 auf einem eigenen tmux-Server; der
+        Socket-Name ist dort der Sitzungsname. Dashboard und opencode-Server
+        bleiben auf dem Standard-Server.
+        """
+        if not tmux or not session:
+            return None
+        command = [tmux]
+        if own_socket:
+            command += ["-L", session]
+        command += ["has-session", "-t", session]
+        try:
+            completed = runner(
+                command,
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return None
+        code = getattr(completed, "returncode", None)
+        if code == 0:
+            return True
+        if code == 1:
+            return False
+        return None
+
     runs_path = Path(vibe_root) / "_logs" / "runs.json"
     if runs_path.exists():
         try:
@@ -1017,24 +1060,23 @@ def running_installation(vibe_root, runner=None, which=None):
         for record in data.get("runs", []):
             if not isinstance(record, dict):
                 continue
-            if record.get("state") in LIVE_RUN_STATES:
-                reasons.append(f"Agentenlauf {record.get('id', '?')} ist {record.get('state')}")
-    which = which or shutil.which
-    tmux = which("tmux")
-    if tmux:
-        runner = runner or subprocess.run
-        for session in ("vibe-ui", "vibe-ui-dev", "vibe-server", "vibe-server-dev"):
-            try:
-                completed = runner(
-                    [tmux, "has-session", "-t", session],
-                    capture_output=True,
-                    text=True,
-                    timeout=5,
-                )
-            except (OSError, subprocess.SubprocessError):
+            if record.get("state") not in LIVE_RUN_STATES:
                 continue
-            if getattr(completed, "returncode", 1) == 0:
-                reasons.append(f"tmux-Sitzung {session} läuft")
+            run_id = record.get("id", "?")
+            session = str(record.get("session") or "")
+            state = session_state(session, own_socket=True)
+            if state is False:
+                continue
+            if state is None:
+                reasons.append(
+                    f"Agentenlauf {run_id} ist {record.get('state')}; "
+                    f"tmux-Sitzung {session or '(ohne Angabe)'} nicht prüfbar"
+                )
+            else:
+                reasons.append(f"Agentenlauf {run_id} ist {record.get('state')}")
+    for session in ("vibe-ui", "vibe-ui-dev", "vibe-server", "vibe-server-dev"):
+        if session_state(session):
+            reasons.append(f"tmux-Sitzung {session} läuft")
     return reasons
 
 

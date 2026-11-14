@@ -32,6 +32,14 @@ import stat
 import tempfile
 import time
 
+# flock ist nicht überall verfügbar (Import auf Nicht-POSIX, Fehlen auf manchen
+# Dateisystemen). Fehlt es, bleibt die Prüfsummenkontrolle bestehen, aber ohne
+# gegenseitige Ausschließung; deshalb wird der Import bewusst abgefangen.
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - Umgebung ohne flock (z. B. Windows)
+    fcntl = None
+
 TMP_PREFIX = ".vibe-"
 TMP_SUFFIX = ".tmp"
 LOCK_DIR_ENV = "VIBE_STORAGE_LOCK_DIR"
@@ -133,6 +141,7 @@ class Snapshot:
                 f"digest={self.digest!r}, size={self.size!r})")
 
     def as_dict(self):
+        """Kennungen für Protokolle und Oberfläche: Pfad, Existenz, Prüfsumme."""
         return {"path": self.path, "exists": self.exists,
                 "digest": self.digest, "size": self.size}
 
@@ -195,16 +204,14 @@ def locked(path):
     except OSError:
         yield False
         return
-    fcntl = None
     held = False
     try:
-        try:
-            import fcntl as _fcntl
-            fcntl = _fcntl
+        if fcntl is not None:
             fcntl.flock(fd, fcntl.LOCK_EX)
             held = True
-        except (ImportError, OSError):
-            held = False
+    except OSError:
+        held = False
+    try:
         yield held
     finally:
         if held and fcntl is not None:
@@ -218,7 +225,13 @@ def locked(path):
             pass
 
 
-def _fsync_dir(directory):
+def fsync_dir(directory):
+    """Sichert den Verzeichniseintrag nach ``os.replace`` (best effort).
+
+    Auf Dateisystemen ohne verlässliche Atomarität (FUSE/NTFS) ist die
+    Wirkung nicht garantiert; ein unlesbarer oder fehlender Ordner kehrt
+    still zurück, statt den Schreibvorgang zu verwerfen.
+    """
     try:
         fd = os.open(directory, os.O_RDONLY)
     except OSError:
@@ -240,12 +253,22 @@ def _stage_bytes(directory, data, mode):
             os.fsync(handle.fileno())
         os.chmod(tmp, mode)
         return tmp
-    except BaseException:
-        try:
-            os.unlink(tmp)
-        except OSError:
-            pass
+    except BaseException:  # Bewusst auch bei Abbrüchen aufräumen.
+        discard_quiet(tmp)
         raise
+
+
+def discard_quiet(target):
+    """Entfernt eine temporäre Datei; Dateisystemfehler bleiben unbeachtet.
+
+    Bewusster Fallback-Aufräumhelfer für Fehlerpfade: Auch wenn das Löschen
+    der temporären Datei scheitert (Rechte, FUSE), zählt die Ausnahme, zu
+    der er letztlich aufgerufen wurde, und wird nicht verdeckt.
+    """
+    try:
+        os.unlink(target)
+    except OSError:
+        pass
 
 
 def stage_bytes(path, data, mode=None):
@@ -264,6 +287,12 @@ def stage_bytes(path, data, mode=None):
 
 
 def stage_text(path, text, encoding="utf-8", mode=None):
+    """Schreibt Text mit dem Encoding ``encoding`` in eine temporäre Datei.
+
+    Codiert ``text`` und legt die temporäre Datei über :func:`stage_bytes`
+    an; die Zieldatei ändert sich nicht, bis ``commit_staged`` aufgerufen
+    wird.
+    """
     return stage_bytes(path, text.encode(encoding), mode=mode)
 
 
@@ -288,7 +317,7 @@ def commit_staged(staged, path, expected=None, fsync=True):
             discard_staged(staged)
             raise
         if fsync:
-            _fsync_dir(directory)
+            fsync_dir(directory)
     return read_snapshot(path)
 
 
@@ -307,7 +336,7 @@ def _commit_locked(path, data, expected, mode):
     except BaseException:
         discard_staged(staged)
         raise
-    _fsync_dir(directory)
+    fsync_dir(directory)
     return read_snapshot(path), current
 
 
@@ -406,7 +435,7 @@ def backup_bytes(target, data, backup_dir, label=None, now=None, mode=0o600):
         except BaseException:
             discard_staged(candidate)
             raise
-        _fsync_dir(backup_dir)
+        fsync_dir(backup_dir)
         return candidate
     raise BackupError(
         "Keine freie Sicherungsdatei nach 100 Versuchen in " + backup_dir)
@@ -526,13 +555,15 @@ def filesystem_notes(path, mountinfo=None):
         fstype = None
         mount = None
     else:
-        best = None
+        best_base = None
+        best_kind = None
         for candidate, kind in table:
             base = candidate.rstrip("/") or "/"
             if target == base or target.startswith(base + "/") or base == "/":
-                if best is None or len(base) > len(best[0]):
-                    best = (base, kind)
-        mount, fstype = best if best else (None, None)
+                if best_base is None or len(base) > len(best_base):
+                    best_base = base
+                    best_kind = kind
+        mount, fstype = best_base, best_kind
     atomic, permissions = _classify(fstype)
     if atomic is True and permissions is True:
         warning = ""

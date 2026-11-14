@@ -18,16 +18,7 @@ Kein vollständiger Rewrite ohne ausdrücklich beschlossenes Migrationsticket.
 
 ## Zielumgebung
 
-- Host: Bazzite Linux.
-- Steuerungscontainer: Distrobox, standardmäßig android-dev.
-- Backend und CLI: Python 3, zunächst Standardbibliothek.
-- Frontend: HTML, CSS und JavaScript, zunächst ohne verpflichtenden Build.
-- Prozessverwaltung: bestehende tmux-Integration.
-- Versionsverwaltung: Git.
-- Projektdateien können auf einem FUSE-/NTFS-Dateisystem liegen.
-- Shellskripte müssen mit bash datei.sh funktionieren.
-- Keine Systeminstallation auf dem Host als Standardvoraussetzung.
-- Zusätzliche Entwicklungsabhängigkeiten werden isoliert im Container installiert.
+Das system ist sowohl auf Linux/Win/Mac in einer python umgebung lauffähig. Vibe selbst startet agenten wahlweise in einer sandbox, um den zugriff auf das system zu schützen.
 
 ## Begriffe und Trennung
 
@@ -95,7 +86,8 @@ vorliegt.
 - Offene, blockierte und erledigte Einträge werden unterschieden.
 - Feedback kann über die Oberfläche ergänzt werden.
 - Arbeitspakete können über die Oberfläche definiert, bearbeitet und gelöscht
-  werden; die ID vergibt der Nutzer.
+  werden; bei neuen Arbeitspaketen wird die ID automatisch vergeben, eine
+  eigene ID bleibt möglich.
 - Bugs können über die Oberfläche als Feedback mit ``Art: Bug`` gemeldet
   werden.
 - IDs sind eindeutig; parallele Schreibvorgänge erzeugen keine Doppelungen.
@@ -202,6 +194,23 @@ vorliegt.
 - Keine automatische Router-Neuverbindung oder Umgehung von Dienstlimits.
   Vorhandene entsprechende Altintegration nur nach ausdrücklicher Entscheidung
   weiterverwenden; standardmäßig deaktivieren.
+- Jeder Agentenlauf nutzt einen eigenen tmux-Server; Socket- und Sitzungsname
+  sind der Laufsitzungsname. Dashboard und opencode-Server bleiben auf dem
+  Standard-Server. Ein fremdes `tmux kill-server` auf dem Standard-Server
+  beendet damit weder Dashboard noch laufende Läufe.
+- Ein äußeres Signal (HUP, TERM, INT) beendet einen Lauf nicht spurlos:
+  Signal, Protokollzeile und Registerzustand werden festgehalten. Eine
+  Startprüfung kennzeichnet verwaiste `running`-Einträge des eigenen Projekts
+  als extern beendet; fremde Projekte, laufende und nicht prüfbare Sitzungen
+  bleiben unverändert, und es wird nie eine fremde Sitzung beendet.
+- Quota- und Anmeldefehler halten einen Lauf standardmäßig sofort an. Das
+  Verhalten ist eine ausdrückliche, globale Einstellung (`vibe limits
+  stop|continue`, `<Zustand>/limits.json`) für alle Projekte, nicht je
+  Projekt; `continue` behandelt den Fehler im Rahmen der vorhandenen
+  Wiederholungslimits und protokolliert einen Hinweis. Eine fehlende oder
+  defekte Einstellung gilt als `stop` und wird gemeldet, nie still als
+  `continue`. Quota- und Anmeldefehler lösen weder eine Router-Neuverbindung
+  noch eine manuelle IP-Abfrage aus.
 
 ### App und opencode beenden
 
@@ -213,7 +222,7 @@ vorliegt.
 - Die Oberfläche erläutert diese Unterschiede.
 - Tests prüfen ausdrücklich, dass kein unbeabsichtigtes Stoppen erfolgt.
 
-### Bazzite-Startmenü
+### Startmenü
 
 - Benutzerbezogenen Menüeintrag installieren und entfernen.
 - Läuft vibe nicht: nötigen Container starten, vibe starten, Bereitschaft
@@ -241,7 +250,11 @@ vorliegt.
 
 ## Sicherheit und Datenintegrität
 
-- Webserver nur an Loopback binden.
+- Webserver bindet standardmäßig nur an Loopback; eine ausdrückliche
+  Netz-Bindung erfolgt nur als IP-Adressliteral (DNS-Hostnamen werden
+  abgelehnt, gegen DNS-Rebinding). Eine IP-Allowlist kann Clients je IP/CIDR
+  einschränken; Loopback bleibt immer zugelassen. Die Anmeldung erfolgt per
+  Token oder Kennwort mit Session-Cookie statt dauerhaftem Token im Browser.
 - Schreibende API-Aufrufe verlangen gültige Authentisierung.
 - Host-/Origin-Prüfung und CSRF-Schutz.
 - Keine Tokens in Zugriffslogs oder Fehlermeldungen.
@@ -302,10 +315,8 @@ docs/
 - Integrationstests für API, Storage und Prozessadapter.
 - Browsertests für zentrale Workflows.
 - Attrappen allein ersetzen keine Browser- oder Systemabnahme.
-- Manuelle Bazzite-/Distrobox-Abnahme mit dokumentierter Version.
-- Tests verwenden temporäre HOME-/VIBE-Verzeichnisse und eigene Ports.
+- Tests verwenden temporäre Verzeichnisse und eigene Ports.
 - Keine Tests gegen persönliche Projekte oder produktive Konfigurationen.
-- Keine echten kostenpflichtigen Modellaufrufe in Standardtests.
 - Testprotokolle nennen Befehl, Ergebnis und Grenzen des Nachweises.
 - Jedes Ticket benötigt Tests, fachliche und technische Dokumentation sowie
   unabhängigen Review vor dem Abschluss.
@@ -315,7 +326,7 @@ docs/
 - Eigener Modellhost oder eigene Zahlungsabwicklung.
 - Öffentlicher Remotezugriff auf das Dashboard.
 - Mehrbenutzerbetrieb oder Cloud-Synchronisation.
-- Vollständiger Ersatz für opencode.
+- Vollständiger Ersatz für coding harniss.
 - Automatische Veröffentlichung, Push, Merge oder Release ohne Freigabe.
 - Vollständiger Frameworkwechsel als Voraussetzung für weitere Entwicklung.
 
@@ -328,3 +339,31 @@ docs/
 - Laufzeitdaten und Geheimnisse nicht ins Repository aufnehmen.
 - Ungeprüfte Modellinformationen als unbekannt behandeln.
 - Sicherheits- und Datenintegritätsfehler vor neuen Komfortfunktionen beheben.
+## Git Workflow & Branch Rules (Strictly Enforced)
+
+- **Branch naming:** `feature/<owner>/<kebab-case-name>` (lowercase, numbers, hyphens only).
+- **Ownership:** Check your Git/GitHub user (`git config user.name` or `gh api user`) and use ONLY your folder:
+  - `mop` -> `feature/mop/*`
+- **Restrictions:** Never push directly to `dev` or `main`, and never create PRs targeting `main` unless explicitly instructed.
+- **Workflow (per feature/ticket):**
+  1. Pull latest `dev` and create **one dedicated branch** `feature/<owner>/<kebab-case-name>` (never reuse branches).
+  2. Implement the feature and its tests.
+  3. Fetch and merge/rebase latest `origin/dev` into your branch. If conflicts occur, **integrate both sets of changes** so that incoming features/tests from `dev` and your new feature/tests both remain intact and functional (never overwrite one side with `--ours` or `--theirs`).
+  4. Run the full test suite and verify **all existing and new tests pass**.
+  5. Push the branch, open a PR targeting `dev`, and squash-merge it (`gh pr merge --squash --delete-branch`).
+  6. Switch back to `dev`, pull latest `dev`, delete the local feature branch (`git branch -D <branch>`), and move to the next task.
+
+## Git&GitHub Workflow & Branch Rules (Strictly Enforced)
+
+- **Branch naming:** `feature/<owner>/<kebab-case-name>` (lowercase, numbers, hyphens only).
+- **Ownership:**
+  - `mop` -> `feature/mop/*`
+- **Workflow:**
+  1. Always branch off `dev`. Never push directly to `dev` or `main`.
+  2. Push your `feature/<owner>/*` branch and open a PR targeting `dev`.
+  3. Stop after opening the PR—a human must review and squash-merge into `dev` (and delete the branch).
+  4. Never create PRs targeting `main` unless explicitly instructed.
+
+## Zielgruppe und Nutzung
+
+Die zielgruppe von vibe sind berater, product ower oder projektmanager. alle, welche schnell eine solide software erstellen wollen, aber keine tiefen entwicklungskenntnisse haben. vibe dient im unternehmen dazu interne, solide anwendungen schnell und einfach, durch fachliche steuerung zu entwickeln.

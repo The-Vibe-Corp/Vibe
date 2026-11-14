@@ -11,6 +11,7 @@ import importlib.machinery
 import importlib.util
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -560,6 +561,249 @@ class RunnerV015Test(unittest.TestCase):
         result = self.run_runner(verify="exit 9")
 
         self.assertEqual(result.returncode, 9, result.stdout + result.stderr)
+
+
+class RunsCommandTest(CliFixture):
+    """Abnahme V-024: Registereinträge anzeigen und verwaiste Einträge aufräumen."""
+
+    def setUp(self):
+        super().setUp()
+        self.fakebin = self.root / "fakebin"
+        self.fakebin.mkdir()
+        self.sessions_file = self.root / "tmux-sessions.txt"
+        self.sessions_file.write_text("", encoding="utf-8")
+        self.calls_file = self.root / "tmux-calls.txt"
+        self.calls_file.write_text("", encoding="utf-8")
+        tmux = self.fakebin / "tmux"
+        tmux.write_text(
+            "#!/bin/sh\n"
+            'printf \'%s\\n\' "$*" >> "$FAKE_TMUX_CALLS"\n'
+            'if [ "$1" = "-L" ]; then shift 2; fi\n'
+            'if [ "$1" = "has-session" ]; then\n'
+            '  if [ -n "$FAKE_TMUX_HAS_SESSION_RC" ]; then\n'
+            '    exit "$FAKE_TMUX_HAS_SESSION_RC"\n'
+            "  fi\n"
+            '  name=""\n'
+            '  prev=""\n'
+            '  for arg in "$@"; do\n'
+            '    if [ "$prev" = "-t" ]; then name="$arg"; fi\n'
+            '    prev="$arg"\n'
+            "  done\n"
+            '  if [ -n "$name" ] && grep -Fxq -- "$name" "$FAKE_TMUX_SESSIONS" 2>/dev/null; then\n'
+            "    exit 0\n"
+            "  fi\n"
+            "  exit 1\n"
+            "fi\n"
+            'if [ "$1" = "kill-session" ]; then\n'
+            "  exit 0\n"
+            "fi\n"
+            "exit 1\n",
+            encoding="utf-8",
+        )
+        tmux.chmod(0o755)
+
+    def live_sessions(self, *names):
+        self.sessions_file.write_text("\n".join(names) + ("\n" if names else ""), encoding="utf-8")
+
+    def record(self, run_id, state="running", session="", project=None, name="proj", key="proj"):
+        return {
+            "id": run_id,
+            "project": str(project if project is not None else self.project),
+            "name": name,
+            "key": key,
+            "agent": "tester",
+            "session": session,
+            "log": "",
+            "verify_log": "",
+            "state": state,
+            "exit_code": None,
+        }
+
+    def runs_path(self):
+        return self.root / "_logs" / "runs.json"
+
+    def write_runs(self, records):
+        self.runs_path().parent.mkdir(parents=True, exist_ok=True)
+        self.runs_path().write_text(
+            json.dumps({"runs": records}, indent=1), encoding="utf-8"
+        )
+
+    def read_runs(self):
+        data = json.loads(self.runs_path().read_text(encoding="utf-8"))
+        return {record["id"]: record for record in data.get("runs", [])}
+
+    def run_cli_with_tmux(self, *args, **extra):
+        env = {
+            "PATH": str(self.fakebin) + os.pathsep + os.environ.get("PATH", ""),
+            "FAKE_TMUX_SESSIONS": str(self.sessions_file),
+            "FAKE_TMUX_CALLS": str(self.calls_file),
+        }
+        env.update(extra)
+        return self.run_cli(*args, **env)
+
+    def tmux_calls(self):
+        return [
+            line
+            for line in self.calls_file.read_text(encoding="utf-8").splitlines()
+            if line
+        ]
+
+    def line_for(self, output, run_id):
+        for line in output.splitlines():
+            if run_id in line:
+                return line
+        self.fail(f"Registereintrag {run_id} fehlt in der Ausgabe:\n{output}")
+
+    def test_runs_list_shows_state_session_status_and_project_path_without_changes(self):
+        missing_project = self.root / "nicht-mehr-da" / "proj"
+        self.write_runs(
+            [
+                self.record("live-1", "running", "vibe-proj", self.project),
+                self.record("orphan-1", "running", "vibe-weg", missing_project),
+                self.record("done-1", "finished", "vibe-fertig", self.project),
+            ]
+        )
+        self.live_sessions("vibe-proj")
+        before = self.runs_path().read_bytes()
+
+        result = self.run_cli_with_tmux("runs", "list")
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.runs_path().read_bytes(), before, "runs list darf nichts ändern")
+
+        live_line = self.line_for(result.stdout, "live-1")
+        orphan_line = self.line_for(result.stdout, "orphan-1")
+        done_line = self.line_for(result.stdout, "done-1")
+
+        self.assertIn("running", live_line)
+        self.assertIn("finished", done_line)
+        self.assertIn(str(self.project), live_line)
+        self.assertIn(str(missing_project), orphan_line)
+        self.assertIn("verwaist", orphan_line.lower())
+        self.assertNotIn("verwaist", live_line.lower())
+        self.assertRegex(live_line, r"(vibe-proj|läuft|aktiv|vorhanden)")
+
+    def test_runs_without_argument_lists_entries_too(self):
+        missing_project = self.root / "weg" / "proj"
+        self.write_runs(
+            [self.record("orphan-1", "running", "vibe-weg", missing_project)]
+        )
+        before = self.runs_path().read_bytes()
+
+        result = self.run_cli_with_tmux("runs")
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.runs_path().read_bytes(), before, "runs darf nichts ändern")
+        self.assertIn("orphan-1", result.stdout)
+        self.assertIn("verwaist", self.line_for(result.stdout, "orphan-1").lower())
+
+    def test_prune_marks_only_orphaned_live_records_ended(self):
+        records = [
+            self.record("orphan-running", "running", "vibe-weg-1", self.root / "weg-1" / "proj"),
+            self.record("orphan-starting", "starting", "vibe-weg-2", self.root / "weg-2" / "proj"),
+            self.record("live", "running", "vibe-live", self.project),
+            self.record("done", "finished", "vibe-fertig", self.project),
+            self.record("stopped", "stopped", "vibe-gestoppt", self.project),
+            self.record("already-ended", "ended", "vibe-weg-3", self.root / "weg-3" / "proj"),
+        ]
+        before = {record["id"]: dict(record) for record in records}
+        self.write_runs(records)
+        self.live_sessions("vibe-live")
+
+        result = self.run_cli_with_tmux("runs", "prune")
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        runs = self.read_runs()
+        self.assertEqual(runs["orphan-running"]["state"], "ended")
+        self.assertEqual(runs["orphan-starting"]["state"], "ended")
+        for unchanged in ("live", "done", "stopped", "already-ended"):
+            self.assertEqual(
+                runs[unchanged], before[unchanged], f"{unchanged} darf unverändert bleiben"
+            )
+        calls = self.tmux_calls()
+        self.assertFalse(
+            [call for call in calls if "kill-session" in call],
+            f"prune darf niemals Sitzungen beenden: {calls}",
+        )
+
+    def test_prune_works_when_the_project_directory_is_gone(self):
+        missing_project = self.root / "verschwunden" / "proj"
+        self.assertFalse(missing_project.exists())
+        self.write_runs(
+            [self.record("orphan-weg", "running", "vibe-weg", missing_project)]
+        )
+
+        result = self.run_cli_with_tmux("runs", "prune")
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.read_runs()["orphan-weg"]["state"], "ended")
+        self.assertFalse(
+            [call for call in self.tmux_calls() if "kill-session" in call]
+        )
+
+    def test_runs_list_marks_an_unverifiable_session_not_as_orphaned(self):
+        self.write_runs(
+            [self.record("unklar-1", "running", "vibe-unklar", self.project)]
+        )
+        before = self.runs_path().read_bytes()
+
+        result = self.run_cli_with_tmux(
+            "runs", "list", FAKE_TMUX_HAS_SESSION_RC="2"
+        )
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.runs_path().read_bytes(), before, "runs list darf nichts ändern")
+        line = self.line_for(result.stdout, "unklar-1")
+        self.assertIn("nicht prüfbar", line.lower())
+        self.assertNotIn("verwaist", line.lower())
+
+    def test_prune_keeps_unverifiable_records_and_reports_them(self):
+        record = self.record("unklar-1", "running", "vibe-unklar", self.project)
+        self.write_runs([record])
+
+        result = self.run_cli_with_tmux(
+            "runs", "prune", FAKE_TMUX_HAS_SESSION_RC="2"
+        )
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(
+            self.read_runs()["unklar-1"],
+            record,
+            "ein nicht prüfbarer Eintrag darf nicht als ended markiert werden",
+        )
+        line = self.line_for(result.stdout, "unklar-1")
+        self.assertIn("nicht prüfbar", line.lower())
+        summary = [
+            candidate
+            for candidate in result.stdout.splitlines()
+            if "unklar-1" not in candidate and "nicht prüfbar" in candidate.lower()
+        ]
+        self.assertTrue(summary, f"Zusammenfassung fehlt:\n{result.stdout}")
+        self.assertTrue(
+            any(re.search(r"\b1\b", candidate) for candidate in summary),
+            f"Zusammenfassung muss den Eintrag als nicht prüfbar zählen:\n{result.stdout}",
+        )
+        self.assertFalse(
+            [call for call in self.tmux_calls() if "kill-session" in call]
+        )
+
+    def test_prune_reports_records_without_a_session_and_keeps_them(self):
+        record = self.record("ohne-sitzung", "running", "", self.project)
+        self.write_runs([record])
+
+        result = self.run_cli_with_tmux("runs", "prune")
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(
+            self.read_runs()["ohne-sitzung"],
+            record,
+            "ein Eintrag ohne Sitzungsangabe ist nicht prüfbar und darf nicht verändert werden",
+        )
+        line = self.line_for(result.stdout, "ohne-sitzung")
+        self.assertIn("sitzung", line.lower())
+        self.assertFalse(
+            [call for call in self.tmux_calls() if "kill-session" in call]
+        )
 
 
 class FritzGateTest(CliFixture):

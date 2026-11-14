@@ -13,13 +13,22 @@ Die Sandbox begrenzt Schreibzugriffe auf:
 - die im Projekt konfigurierten Build-Tool-Caches (``SANDBOX_TOOLS``),
 - den Rückfrageordner ``questions`` des Laufzeitordners (F16, nur dieser
   Unterordner; Token, Protokolle und Laufregister bleiben unerreichbar) und
-- die technisch notwendigen Caches für MCP-Laufzeiten und
-- ``/tmp/opencode`` für den opencode-Zustand.
+- die technisch notwendigen Caches für MCP-Laufzeiten,
+- ``/tmp/opencode`` für den opencode-Zustand und
+- der eigene, beschreibbare Pi-Agentenordner über ``PI_CODING_AGENT_DIR``
+  (Bug B4: Pi liest und schreibt ``~/.pi/agent`` unabhängig von XDG_* —
+  auch mit ``--no-session``, zum Beispiel die Sperrdatei
+  ``trust.json.lock`` beim Lesen der Vertrauensliste).
 
 Zusätzlich gilt:
 - ``/tmp`` ist ein privater tmpfs und wird nach dem Binden der erlaubten
   Verzeichnisse schreibgeschützt. Temporärdateien gehören nach ``TMPDIR`` im
   Zustandsordner; ein explizit erlaubtes ``/tmp`` bleibt schreibbar.
+- ``/dev/shm`` ist ohne ausdrückliche Freigabe ein frisches, isoliertes
+  tmpfs (kein Zugriff auf das Host-Verzeichnis; Bug B5).
+- Der Zustandsort ist begrenzt und weicht bei zu langen Pfaden auf die kurze
+  tmpfs-Wurzel ``/tmp/opencode/vsb`` aus, damit Werkzeug-Sockets die
+  AF_UNIX-Pfadgrenze (108 Zeichen) nicht erreichen (Bug B5).
 - ``.vibe`` des Projekts bleibt auch im beschreibbaren Projektverzeichnis nur
   lesend, damit ein Agent seine Sandbox-Konfiguration nicht für spätere Läufe
   verändern kann.
@@ -45,6 +54,13 @@ import sys
 
 WRITE_DIRS_DEFAULT = "/tmp/opencode"
 SANDBOX_ROOT = "/tmp/opencode/vibe-sandbox"
+SHORT_STATE_ROOT = "/tmp/opencode/vsb"
+# Sicherheitsabstand zur AF_UNIX-Grenze von 108 Zeichen (Bug B5, siehe
+# docs/features/B5.md): Zustandspfade bleiben <= 84 Zeichen, damit
+# nachgeschaltete Werkzeugpfade die Grenze nicht erreichen — z. B.
+# ``TMPDIR = state + "/tmp"`` (<= 88 Zeichen) und darunter der tmux-Socket
+# ``TMPDIR/tmux-<uid>/default`` (<= 106 Zeichen).
+STATE_PATH_LIMIT = 84
 TOOL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]*$")
 
 # Caches, die für die jeweiligen Build-Werkzeuge beschreibbar sein müssen.
@@ -124,6 +140,7 @@ TOOL_DEFAULTS = {
 
 
 def read_env_file(path):
+    """Liest einfache ``KEY=WERT``-Zeilen; eine fehlende Datei bleibt leer."""
     values = {}
     try:
         with open(path, encoding="utf-8") as handle:
@@ -165,6 +182,7 @@ def normalize_tools(value):
 
 
 def normalize_dir(value):
+    """Prüft ein Schreibverzeichnis: absolut, expandiert, ohne Wurzel ``/``."""
     if not isinstance(value, str):
         raise ValueError("Pfad muss Text sein")
     text = value.strip()
@@ -190,7 +208,7 @@ def project_write_dirs(project):
         with open(path, encoding="utf-8") as handle:
             data = json.load(handle)
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
-        raise ValueError("Schreibrechte nicht lesbar: " + str(error))
+        raise ValueError("Schreibrechte nicht lesbar: " + str(error)) from error
     if not isinstance(data, dict) or not isinstance(data.get("write_dirs"), list):
         raise ValueError(
             "Schreibrechte nicht lesbar: 'write_dirs' fehlt oder ist keine Liste"
@@ -204,10 +222,25 @@ def project_write_dirs(project):
 
 
 def state_dir(project):
-    base = os.environ.get("VIBE_SANDBOX_ROOT") or SANDBOX_ROOT
+    """Zustandsort des Projekts unterhalb der Sandbox-Wurzel.
+
+    Werkzeuge im Lauf legen Sockets (tmux, IPC) unterhalb dieser Pfade an; die
+    AF_UNIX-Grenze liegt bei 108 Zeichen. Ist der berechnete Pfad länger als
+    die sichere Begrenzung (Bug B5: NTFS-Arbeitsbäume mit langen Pfaden, ein
+    nach oben gesetztes ``VIBE_SANDBOX_ROOT``), weicht die Funktion auf eine
+    kurze tmpfs-Wurzel unter /tmp aus; der SHA-256-Präfix des Projektwegs
+    bleibt als eindeutige Zuordnung erhalten. Die Begrenzung auf 84
+    Zeichen (``STATE_PATH_LIMIT``) hält Sicherheitsabstand zur AF_UNIX-Grenze
+    von 108: auch Nachfolger wie ``TMPDIR`` und der darunter liegende
+    tmux-Socket-Pfad überschreiten die Grenze nicht.
+    """
     digest = hashlib.sha256(os.path.realpath(project).encode("utf-8")).hexdigest()[:10]
     name = re.sub(r"[^A-Za-z0-9_-]", "_", os.path.basename(os.path.realpath(project)))
-    return os.path.join(os.path.abspath(os.path.expanduser(base)), f"{name}-{digest}")
+    base = os.environ.get("VIBE_SANDBOX_ROOT") or SANDBOX_ROOT
+    path = os.path.join(os.path.abspath(os.path.expanduser(base)), f"{name}-{digest}")
+    if len(path) <= STATE_PATH_LIMIT:
+        return path
+    return os.path.join(SHORT_STATE_ROOT, digest)
 
 
 def git_common_dir(project):
@@ -376,6 +409,7 @@ def check(project):
                 capture_output=True,
                 text=True,
                 timeout=15,
+                check=False,
             )
         except (OSError, subprocess.SubprocessError) as error:
             problems.append("bubblewrap startet nicht: " + str(error))
@@ -485,6 +519,17 @@ def bwrap_argv(project, command, bwrap=None, runtime=None):
         "/proc",
         "--tmpfs",
         "/tmp",
+    ]
+    # /dev/shm (Bug B5) vor allen Bindungen: bubblewrap stapelt Mounts in
+    # Argumentreihenfolge. Bindungen auf Pfade unter /dev/shm (z. B. ein
+    # Rückfrageordner oder ein Projekt im Prüf-tmpfs) müssen in der
+    # isolierten Ansicht ansetzen, sonst überschattet der frische Mount die
+    # Bindung. Ohne Freigabe bleibt das Host-Verzeichnis aus (der Agent
+    # konnte dort außerhalb der erlaubten Verzeichnisse schreiben); mit
+    # Freigabe übernimmt die Bindungsschleife unten die Rolle.
+    if "/dev/shm" not in directories:
+        argv += ["--tmpfs", "/dev/shm"]
+    argv += [
         "--unshare-pid",
         "--die-with-parent",
         "--new-session",
@@ -526,6 +571,29 @@ def bwrap_argv(project, command, bwrap=None, runtime=None):
         if problem:
             raise ValueError(problem)
         argv += ["--ro-bind", auth, target]
+    # Pi folgt nicht XDG_*: Es liest und schreibt sein Agentenverzeichnis
+    # unter ``~/.pi/agent`` — auch im Print-Modus mit ``--no-session``
+    # (Sperrdatei ``trust.json.lock`` beim Lesen der Vertrauensliste;
+    # Bug B4). Das Wurzel-Dateisystem der Sandbox ist nur lesend; Pi
+    # erhält deshalb hier den eigenen, beschreibbaren Agentenordner unter
+    # dem Zustandsort. Die Umgebungsvariable ``PI_CODING_AGENT_DIR`` ist
+    # die von Pi auswertbare Umleitung. Eine bereits umgebungsseitig
+    # gesetzte Belegung überschreibt die Sandbox bewusst, damit die
+    # Schreibgrenze deterministisch bleibt.
+    pi_agent = os.path.join(state_path, "pi", "agent")
+    problem = _ensure_dir(pi_agent)
+    if problem:
+        raise ValueError(problem)
+    argv += ["--setenv", "PI_CODING_AGENT_DIR", pi_agent]
+    # Anmeldedaten der Modellprovider liegen in ``~/.pi/agent/auth.json``.
+    # Ohne Lesegabe bleibt Pi ohne Provider; die Datei wird in den
+    # Agentenordner nur lesend gebunden, damit Pi sie nicht über die
+    # Sandbox-Grenze hinaus verändern kann. Fehlt sie, startet Pi ohne
+    # Anmeldung; der Lauf endet dann sichtbar mit der Meldung von Pi, dass
+    # keine Modelle verfügbar sind.
+    pi_auth = os.path.expanduser("~/.pi/agent/auth.json")
+    if os.path.isfile(pi_auth):
+        argv += ["--ro-bind", pi_auth, os.path.join(pi_agent, "auth.json")]
     argv += [
         "--setenv",
         "XDG_DATA_HOME",
@@ -579,6 +647,9 @@ def run(project, command):
     except OSError as error:
         print("bubblewrap nicht ausführbar: " + str(error), file=sys.stderr)
         return 2
+    # execvpe ersetzt das Prozessbild; ein Ende im selben Pythonprozess gibt
+    # es nicht. Diese Rückgabe ist konsistenzhalber vorhanden.
+    return 2
 
 
 def _print_status(state):
@@ -606,6 +677,7 @@ def _print_status(state):
 
 
 def main(argv=None):
+    """Kommandozeileneinstieg; Rückgabe ist der Prozessende-Code (siehe Modulkopf)."""
     arguments = list(sys.argv[1:] if argv is None else argv)
     if not arguments or arguments[0] in ("-h", "--help"):
         print(__doc__.strip())

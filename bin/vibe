@@ -8,6 +8,7 @@ Aufruf:  vibe                 interaktives Menü
          vibe attach <p>      an laufende Sitzung anhängen
          vibe logs <p>        Log verfolgen
          vibe stop <p> [lauf-id]  Lauf beenden (ohne ID: der letzte laufende Lauf)
+         vibe runs [list|prune]  Läufe anzeigen; prune markiert verwaiste Einträge als beendet
          vibe pause <p> [on|off]  nach dem aktuellen Arbeitspaket anhalten
          vibe ask "Frage" [--option "A" ...] [--project <p>] [--timeout <s>] [--no-wait]
                               Rückfrage an den Nutzer (erscheint im Dashboard)
@@ -19,12 +20,14 @@ Aufruf:  vibe                 interaktives Menü
          vibe verify <p> [quick|full]
          vibe feedback <p>    neuen Punkt in FEEDBACK.md eintragen
          vibe new <name> <typ> [vorlage]   Typen: vibe types
+         vibe clone <url> [name] [--branch <b>]  Projekt aus Git/GitHub auschecken und mit den lokalen Einstellungen einrichten
          vibe init <p> [typ]  vorhandenes Projekt für vibe vorbereiten (ergänzt fehlende Dateien)
          vibe roots [add <pfad>|rm <pfad>]  Entwicklungsordner verwalten und Projekte einlesen
          vibe agents          alle Agenten (global und projektspezifisch)
          vibe agent new|edit|show|rm|backups|restore <name> [global|<projekt>] [sicherung]
          vibe project-agents <projekt>   Agentenauswahl und Modellüberschreibungen des Projekts
          vibe rights <projekt> [list|add <pfad>|rm <pfad>|reset]  erlaubte Schreibverzeichnisse
+         vibe priority <p> [list|set <Kennungen>|clear]  verbindliche Reihenfolge der Arbeitspakete (je Projekt, PACKAGE_ORDER in .vibe/project.env); erledigte Aufgaben werden der Priorisierung entnommen
          vibe sandbox <projekt> [status|on|off|tools "<liste>"|check]  Shell-Sandbox (bubblewrap)
          vibe models          Modellübersicht mit Einschätzung und Preis
          vibe model <agent> <modell> [global|<projekt>]
@@ -33,9 +36,11 @@ Aufruf:  vibe                 interaktives Menü
          vibe mcp list|show|test|on|off|rm|backups|restore [name] [global|<projekt>] [sicherung]   MCP-Tools verwalten
          vibe emu start|stop  Emulator (Android)
          vibe paths [prod|dev] [--json]   Profil, Pfade und Ports anzeigen
-         vibe ui [stop]       Dashboard im Browser (nur localhost)
+         vibe ui [start|stop] [--port <n>] [--bind <ip>]   Dashboard starten/beenden; Standard Loopback, Netz-Bindung nur als IP-Literal (Allowlist/Kennwort in der Karte „Zugriffssicherheit")
          vibe server [start|stop|status]  gemeinsamer opencode-Server mit Weboberfläche
          vibe harness [status|list|use <name>|setup [name]]  Harness (opencode/Pi) wählen und einrichten
+         vibe gates [status] [<schranke> <wert>]  Schranken des Läufers zeigen oder setzen (global oder mit --project <p> je Projekt)
+         vibe github <p> [status|token [clear]|link <url>|unlink|branches|fetch|pull|push [branch]|checkout <branch>|test|issues|issues-import|pr]  GitHub-Verknüpfung (optional je Projekt); alle Aktionen bewusst, Merge-Request nur mit --confirm; Token wird je Projekt verschlüsselt gespeichert (AP9), test prüft die Verbindungen
          vibe types           verfügbare Projekttypen
          vibe doctor          Umgebung prüfen
 """
@@ -49,7 +54,16 @@ except ImportError:  # pragma: no cover - Windows ohne Paket-Läufer
 
 if __name__ == "__main__": sys.modules["vibe"] = sys.modules[__name__]
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
-import vibe_storage, vibe_paths, vibe_opencode, vibe_models, vibe_runs, vibe_questions, vibe_autonomous, vibe_harness
+import vibe_storage, vibe_paths, vibe_opencode, vibe_models, vibe_runs, vibe_questions, vibe_autonomous, vibe_harness, vibe_github, vibe_packages, vibe_limits
+try:  # AP10: Ältere Installationen ohne vibe_gates.py dürfen weiterhin starten.
+    import vibe_gates
+except ImportError:  # pragma: no cover - unvollständige Installation
+    vibe_gates = None
+
+try:  # AP13: Ältere Installationen ohne vibe_ui_config.py dürfen weiterhin starten.
+    import vibe_ui_config
+except ImportError:  # pragma: no cover - unvollständige Installation
+    vibe_ui_config = None
 
 try:
     PATHS = vibe_paths.resolve()
@@ -91,6 +105,7 @@ GENERAL_RULES = """<!-- vibe:general-rules -->
 
 - Änderungen auf einem Feature-Branch umsetzen, nicht direkt auf main, master oder einem geschützten Branch.
 - Jedes abgeschlossene Arbeitspaket als zusammenhängenden Commit sichern; keine Zwischenstände oder fremden Änderungen mitcommitten.
+- Commit-Meldungen sind für Menschen verständlich, auf das Wesentliche reduziert und erläutern das Warum der Änderung.
 - Vor jedem Commit `git status` und den relevanten Diff prüfen und ausschließlich Dateien des eigenen Arbeitspakets stagen.
 - Keine temporären Dateien, Protokolle, Build-Artefakte, Arbeitskopien oder Screenshots ohne Nachweiswert committen.
 - Fremde oder vorbestehende Änderungen nicht löschen, überschreiben, stashen oder mitcommitten.
@@ -230,26 +245,66 @@ def run_key(name):
 
 def logpath(name, kind="run"): return os.path.join(LOGS, run_key(name) + (".verify.log" if kind == "verify" else ".log"))
 
-def child_exports():
+def child_exports(paths=None):
     """Exportiert die aufgelösten Pfade für tmux-Kindprozesse.
 
-    Schlüssel sind feste Konstanten, Werte werden mit ``shlex.quote`` als ein
-    Argument geschützt. Pfade mit Leerzeichen bleiben dadurch unverändert.
+    ``paths`` erlaubt ein erneut aufgelöstes Paths-Objekt (AP13: Der
+    Dashboard-Start berücksichtigt ui.json im Zustandsordner; die effektiv
+    geltenden Werte werden dem Kind übergeben). Ohne Übergabe gelten die
+    beim Import aufgelösten Pfade. Schlüssel sind feste Konstanten, Werte
+    werden mit ``shlex.quote`` als ein Argument geschützt. Pfade mit
+    Leerzeichen bleiben dadurch unverändert.
     """
     return " ".join(
         f"export {key}={shlex.quote(value)};"
-        for key, value in PATHS.child_env().items()
+        for key, value in (paths or PATHS).child_env().items()
     )
 
 def profile_session(base):
     """Eigene tmux-Sitzung je Profil, damit Dev und Prod parallel laufen."""
     return base if PATHS.profile == "prod" else base + "-" + PATHS.profile
 
+def run_socket(session):
+    """Eigener tmux-Server je Agentenlauf (V-026).
+
+    Der Socket-Name ist der Sitzungsname. Ein fremdes ``tmux kill-server`` auf
+    dem Standard-Server beendet damit weder Dashboard noch laufende Läufe.
+    Dashboard und opencode-Server bleiben auf dem Standard-Server.
+    """
+    return session
+
+def tmux_argv(session, *arguments, own_socket=False):
+    """tmux-Aufruf als Argumentliste; Laufsitzungen auf ihrem eigenen Server."""
+    argv = ["tmux"]
+    if own_socket and session:
+        argv += ["-L", run_socket(session)]
+    return argv + list(arguments)
+
+def tmux_session_state(session, own_socket=False):
+    """Prüft eine bereits aufgelöste Sitzung: True, False oder None.
+
+    ``True`` bedeutet vorhanden, ``False`` sicher nicht vorhanden (tmux
+    antwortet regulär mit Exit 1). Fehlt tmux oder endet die Abfrage anders
+    (nicht ausführbar, Zeitüberschreitung, unerwarteter Fehlercode), ist das
+    Ergebnis ``None``: nicht prüfbar. Aufrufer dürfen ``None`` nie als
+    "Sitzung fehlt" behandeln. ``own_socket`` prüft eine Laufsitzung auf
+    ihrem eigenen tmux-Server.
+    """
+    if not session:
+        return None
+    code = run(tmux_argv(session, "has-session", "-t", session,
+                         own_socket=own_socket))[0]
+    if code == 0:
+        return True
+    if code == 1:
+        return False
+    return None
+
 def tmux_session_exists(session):
     """Prüft eine bereits aufgelöste Sitzung (nicht den Projektnamen)."""
-    return run(["tmux", "has-session", "-t", session])[0] == 0
+    return tmux_session_state(session) is True
 
-def session_marker(session):
+def session_marker(session, own_socket=False):
     """Markierung einer tmux-Sitzung: run, ui, server oder fremd.
 
     ``VIBE_MANAGED`` wird beim Anlegen der Sitzung gesetzt. Fehlt die
@@ -257,7 +312,8 @@ def session_marker(session):
     ohne Umgebungsauskunft) bleibt ``unbekannt`` und wird nie als Nachweis
     für eine fremde Sitzung verwendet.
     """
-    rc, out = run(["tmux", "show-environment", "-t", session, MANAGED_VAR])
+    rc, out = run(tmux_argv(session, "show-environment", "-t", session,
+                            MANAGED_VAR, own_socket=own_socket))
     if rc == 0:
         line = out.strip().splitlines()[-1] if out.strip() else ""
         prefix = MANAGED_VAR + "="
@@ -268,8 +324,8 @@ def session_marker(session):
         return "unmanaged"
     return "unbekannt"
 
-def session_owned(session, kind):
-    return session_marker(session) == kind
+def session_owned(session, kind, own_socket=False):
+    return session_marker(session, own_socket=own_socket) == kind
 
 def port_in_use(host, port):
     """Erkennt einen bereits lauschenden Dienst auf einem Loopback-Port."""
@@ -279,15 +335,18 @@ def port_in_use(host, port):
     except OSError:
         return False
 
-def dashboard_health():
+def dashboard_health(bind=None, port=None):
     """Health-Antwort des eigenen Dashboards; fremde Dienste zählen nicht.
 
-    Der Health-Endpunkt ist absichtlich ohne Token lesbar. Zusätzlich zur
-    App-Kennung muss die Instanzkennung der laufenden Laufzeit entsprechen;
+    Der Health-Endpunkt ist absichtlich ohne Token lesbar. ``bind``/``port``
+    erlauben die Abfrage gegen erneut aufgelöste Werte (AP13: ui.json). Zusätzlich
+    zur App-Kennung muss die Instanzkennung der laufenden Laufzeit entsprechen;
     ein fremder Dienst auf dem Port wird dadurch nicht für vibe gehalten.
     """
+    bind = UI_BIND if bind is None else bind
+    port = UI_PORT if port is None else port
     rc, out = run(["curl", "-sf", "--max-time", "2",
-                   f"http://{UI_BIND}:{UI_PORT}/api/health"])
+                   f"http://{bind}:{port}/api/health"])
     if rc != 0:
         return None
     try:
@@ -433,12 +492,27 @@ def read_env(path):
 def penv(name): return read_env(os.path.join(ppath(name), ".vibe", "project.env"))
 def is_init(name): return os.path.exists(os.path.join(ppath(name), ".vibe", "project.env"))
 
+# Datei-Marker je Projekttyp; gemeinsam für die Typ-Erkennung registrierter
+# Projekte (ptype) und frisch ausgecheckter Projekte (AP8, _detect_project_type).
+TYPE_MARKERS = (
+    ("gradlew", "android"),
+    ("pubspec.yaml", "flutter"),
+    ("package.json", "web"),
+    ("pyproject.toml", "python"),
+    ("docker-compose.yml", "docker"),
+    ("compose.yaml", "docker"),
+)
+
 def ptype(name):
     p = ppath(name)
     t = penv(name).get("TYPE")
     if t: return t
-    for f, ty in (("gradlew", "android"), ("pubspec.yaml", "flutter"), ("package.json", "web"), ("pyproject.toml", "python"), ("docker-compose.yml", "docker"), ("compose.yaml", "docker")):
-        if os.path.exists(os.path.join(p, f)): return ty
+    return type_from_markers(p)
+
+def type_from_markers(project):
+    """Erkennt den Projekttyp anhand von Datei-Markern im Projektordner."""
+    for f, ty in TYPE_MARKERS:
+        if os.path.exists(os.path.join(project, f)): return ty
     return "generic"
 
 def cmd_roots(action=None, path=None):
@@ -773,9 +847,18 @@ def _ticket_ids(text):
     return ids
 
 def add_ticket(name, tid, title, description=""):
-    """Legt ein Arbeitspaket in TICKETS.md an; die ID gibt der Nutzer vor."""
+    """Legt ein Arbeitspaket in TICKETS.md an.
+
+    Ohne ID (F23) wird die ID automatisch vergeben: fortlaufend mit dem
+    Präfix ``AP`` über die vorhandene Nummernvergabe. Eine eigene ID bleibt
+    erlaubt und wird unverändert geprüft."""
     tid = (tid or "").strip()
-    if not tid: raise ValueError("ID fehlt")
+    if not tid:
+        # Auto-IDs dürfen keine fehlende TICKETS.md still erzeugen.
+        if not os.path.exists(ticket_path(name)):
+            raise ValueError("Keine TICKETS.md vorhanden")
+        return "AP" + str(_add_entry(
+            name, "TICKETS.md", "AP", title, description))
     if not _ID_TOKEN.match(tid): raise ValueError("Ungültige ID: " + tid)
     title = _validate_title(title)
     fp = ticket_path(name)
@@ -866,9 +949,44 @@ def cmd_rights(name, action=None, path=None):
     print(col("d", "Anpassen: vibe rights " + name + " add|rm <pfad>, zurücksetzen: vibe rights " + name + " reset"))
     print(col("d", "Die Liste begrenzt edit, nicht Shell-Befehle (bash): Agenten mit Shellzugriff können außerhalb der Liste schreiben."))
 
+# ---------- Priorisierung der Arbeitspakete (AP11) ----------
+# Die Reihenfolge der Arbeitspakete/Feedback/Bugs ist je Projekt einstellbar
+# (PACKAGE_ORDER in .vibe/project.env) und für die Agentenläufe verbindlich.
+def cmd_priority(name, action=None, values=None):
+    try:
+        if action == "set":
+            if not values or not values.strip():
+                sys.exit("Kennungen fehlen: vibe priority " + name + " set <Kennungen>")
+            order = vibe_packages.normalize_order(ppath(name), values)
+            set_env_values(name, {vibe_packages.ORDER_KEY: " ".join(order)})
+        elif action == "clear":
+            set_env_values(name, {vibe_packages.ORDER_KEY: ""})
+        elif action not in (None, "list"):
+            sys.exit("vibe priority <projekt> [list|set <Kennungen>|clear]")
+        view = vibe_packages.priority_view(ppath(name))
+    except ValueError as e:
+        sys.exit(str(e))
+    print(col("b", f"Priorisierung für {name}:")
+          + ("" if view["order"] else "  (keine; Standardordnung: TICKETS vor FEEDBACK, dann Priorität)"))
+    marks = {"erledigt": col("d", "  (erledigt — der Priorisierung entnommen)"),
+             "gesperrt": col("y", "  (BLOCKIERT)"),
+             "fehlt": col("y", "  (unbekannt)")}
+    for entry in view["order"]:
+        print(f"  {entry['id']}" + marks.get(entry["status"], ""))
+    print(col("b", "Effektive Abarbeitungsreihenfolge:"))
+    for index, item in enumerate(view["queue"], 1):
+        print(f"  {index}. {item['id']}" + (col("d", "  (priorisiert)") if item["ordered"] else ""))
+    print(col("d", "Ändern: vibe priority " + name + " set <Kennungen>, leeren: vibe priority " + name + " clear"))
+    print(col("d", "Die Priorisierung ist verbindlich: der Läufer wählt den ersten geeigneten Eintrag vor der Standardordnung; erledigte Aufgaben werden der Priorisierung entnommen."))
+
 # ---------- Shell-Sandbox je Projekt ----------
-def set_env_values(name, values):
-    """Ersetzt oder ergänzt Schlüssel in .vibe/project.env und erhält alle anderen Zeilen."""
+def set_env_values(name, values, quote=True):
+    """Ersetzt oder ergänzt Schlüssel in .vibe/project.env und erhält alle anderen Zeilen.
+
+    ``quote=False`` schreibt die Werte ohne Anführungszeichen (AP10-Schranken:
+    reine Zahlen und ``ask``/``off`` brauchen keine Quotierung und der
+    Abnahmetest verlangt die Zeilenform ``SCHLUESSEL=WERT``).
+    """
     fp = os.path.join(ppath(name), ".vibe", "project.env")
     snapshot = vibe_storage.read_snapshot(fp)
     if not snapshot.exists:
@@ -879,10 +997,19 @@ def set_env_values(name, values):
     for key, value in values.items():
         if not re.fullmatch(r"[A-Z_]+", key):
             raise ValueError("Ungültiger Einstellungsschlüssel: " + key)
+        if value is None:
+            # AP10: Ein leerer Projektwert entfernt die Zeile vollständig,
+            # damit die Schranke wieder als „nicht gesetzt“ gilt.
+            pattern = re.compile(r"^\s*" + re.escape(key) + r"\s*=")
+            lines = [line for line in lines if not pattern.match(line)]
+            continue
         text_value = str(value)
         if any(c in text_value for c in ("\x00", "\n", "\r")):
             raise ValueError("Einstellung enthält unerlaubte Steuerzeichen: " + key)
-        line = f'{key}="{text_value}"' if text_value else f'{key}=""'
+        if quote:
+            line = f'{key}="{text_value}"' if text_value else f'{key}=""'
+        else:
+            line = f"{key}={text_value}"
         pattern = re.compile(r"^\s*" + re.escape(key) + r"\s*=")
         replaced = False
         target = None
@@ -955,8 +1082,245 @@ def cmd_sandbox(name, action=None, value=None):
     if st["error"]: print(col("r", "Fehler: " + st["error"]))
     print(col("d", "Anpassen: vibe sandbox " + name + " on|off|tools \"git node npm\". Die Sandbox begrenzt Schreiben auf diese Verzeichnisse und Tool-Caches; /tmp ist privat und schreibgeschützt, Temporärdateien liegen im Zustandsordner. MCP und Netzwerk bleiben erlaubt, Lesezugriffe werden nicht eingeschränkt."))
 
+# ---------- GitHub-Verknüpfung je Projekt (AP6) ----------
+def github_env_path(name):
+    return os.path.join(ppath(name), ".vibe", "project.env")
+
+def github_status(name):
+    """Zustandsansicht mit bewusstem Fern-Abgleich: ls-remote (kein Merge)."""
+    return vibe_github.status(ppath(name))
+
+def github_branches(name):
+    return vibe_github.branches(ppath(name))
+
+def github_link(name, url):
+    """Neue/aktualisierte GitHub-Verknüpfung: Remote origin + Konfiguration."""
+    slug = vibe_github.parse_remote_url(url)
+    rc, out = vibe_github.git(ppath(name), "remote", "get-url", "origin")
+    if rc == 0:
+        rc, out = vibe_github.git(ppath(name), "remote", "set-url", "origin", url)
+    else:
+        rc, out = vibe_github.git(ppath(name), "remote", "add", "origin", url)
+    if rc != 0:
+        raise ValueError("Git-Remote konnte nicht gesetzt werden: " + (out or "unbekannt"))
+    # origin/HEAD gleich mit versorgen, damit der Merge-Request-Fluss
+    # (auch aus der Oberfläche) ohne Vorarbeit eine Basis kennt.
+    vibe_github.set_head_default(ppath(name))
+    values = {"GITHUB_ENABLED": "1"}
+    if slug:
+        values["GITHUB_REPO"] = slug
+    set_env_values(name, values)
+    return github_status(name)
+
+def github_unlink(name):
+    """Löst die GitHub-Verknüpfung (Remote origin + Schlüssel) ohne Fremdänderungen."""
+    rc, out = vibe_github.git(ppath(name), "remote", "remove", "origin")
+    if rc != 0 and "No such remote" not in out:
+        raise ValueError("Git-Remote konnte nicht entfernt werden: " + (out or "unbekannt"))
+    set_env_values(name, {"GITHUB_ENABLED": "", "GITHUB_REPO": ""})
+    return github_status(name)
+
+def github_issues(name, label=None):
+    """Offene GitHub-Issues (etikettenfilterbar, Standardlabel pro Projekt)."""
+    config = vibe_github.read_config(github_env_path(name))
+    if not config["repo"]:
+        raise ValueError("Nicht verknüpft: GITHUB_REPO fehlt")
+    wanted = config["label"] if label is None else label
+    issues = vibe_github.list_issues(config["repo"], wanted, api=config["api"],
+                                     project=ppath(name))
+    for issue in issues:
+        issue["label_requested"] = wanted
+    return issues
+
+def github_issues_import(name, label=None):
+    """Übernimmt offene GitHub-Issues als Arbeitspakete in TICKETS.md."""
+    list_out = github_issues(name, label)
+    added = vibe_github.import_issues_into_tickets(ppath(name), list_out)
+    return added, len(list_out)
+
+def github_pr(name, title=None, base=None, branch=None, confirm=False):
+    """Merge-Request stellen; Push und API nur mit ausdrücklicher Freigabe."""
+    config = vibe_github.read_config(github_env_path(name))
+    if not config["enabled"]:
+        raise ValueError("GitHub ist für dieses Projekt nicht aktiv (GITHUB_ENABLED=1)")
+    if not config["repo"]:
+        raise ValueError("Kein Repository verknüpft: GITHUB_REPO fehlt")
+    project = ppath(name)
+    branch = (branch or vibe_github.current_branch(project)).strip()
+    if not branch:
+        raise ValueError("Kein Branch ausgecheckt: Merge-Request verweigert")
+    if not confirm:
+        planned_base = (base or config["base"]
+                        or vibe_github.default_base(project)
+                        or "(unbekannt; --base angeben)")
+        return {"ok": False, "planned": branch + " -> " + planned_base,
+                "message": "Vorgesehener Merge-Request: "
+                           + branch + " -> " + planned_base
+                           + "  (ausführen mit --confirm bzw. Bestätigung in der Oberfläche)"}
+    ok, message = vibe_github.push(project, branch)
+    if not ok:
+        raise ValueError(message)
+    if not (base or config["base"]) and not vibe_github.default_base(project):
+        # Bewusster, einmaliger Nachversuch in der bestätigten Aktion:
+        # origin/HEAD nachziehen, statt mit unbekannter Basis zu scheitern.
+        vibe_github.set_head_default(project)
+    request = vibe_github.create_pull_request(
+        project, config["repo"], branch,
+        base=base or config["base"] or None, title=title or ("Merge-Request: " + branch),
+        body=None, api=config["api"])
+    return {"ok": True, "branch": branch, "base": request.get("base"),
+            "number": request.get("number"), "url": request.get("url"),
+            "message": "Merge-Request erstellt: " + (request.get("url") or branch)}
+
+def cmd_github(name=None, action="status", value=None, label=None, title=None,
+               base=None, branch=None, confirm=False, out=None):
+    """CLI-Zugang zu den GitHub-Funktionen (optional, pro Projekt)."""
+    if name is None:
+        print(__doc__)
+        sys.exit(2)
+    out = out or sys.stdout
+    def line(*parts): print(*parts, file=out)
+    try:
+        if action in (None, "", "status"):
+            st = github_status(name)
+            state = "verknüpft mit " + st["repo"] if st["repo"] else "nicht verknüpft"
+            line(col("b", "GitHub für " + name + ": ") + state)
+            line("Aktiv:", "ja" if st["enabled"] else "nein", " Label:", st["label"],
+                 " API:", st["api"])
+            line("Branch:", st["branch"],
+                 "Ahead/Behind: %d/%d" % (st["ahead"], st["behind"]),
+                 "(ungesendete Commits)" if st["unpushed"] else "")
+            for remote in st["remotes"]:
+                line("Remote " + remote["name"] + ": " + remote["url"])
+            auth = st.get("auth") or {}
+            line("Zugangstoken:", (auth.get("source") or "-"
+                                   ) + (" (hinterlegt)" if auth.get("set") else
+                                        "(kein Token)"))
+            line("Branchübersicht: vibe github " + name + " branches")
+        elif action == "link":
+            if not value:
+                raise ValueError("URL fehlt: vibe github <projekt> link https://github.com/owner/name.git")
+            github_link(name, value)
+            line("Verknüpft: " + vibe_github.mask_url(value))
+        elif action == "unlink":
+            github_unlink(name)
+            line("Verknüpfung gelöst (Remote origin entfernt)")
+        elif action == "branches":
+            rows = github_branches(name)
+            if not rows:
+                line("Keine lokalen Branches.")
+            for row in rows:
+                mark = "*" if row["current"] else " "
+                line(f"{mark} {row['name']:24} Ahead/Behind: {row['ahead']}/{row['behind']}  {row['last'][:60]}")
+        elif action == "fetch":
+            ok, message = vibe_github.fetch(ppath(name))
+            line(message)
+            sys.exit(0 if ok else 1)
+        elif action == "pull":
+            ok, message = vibe_github.pull(ppath(name))
+            line(message)
+            sys.exit(0 if ok else 1)
+        elif action == "push":
+            ok, message = vibe_github.push(ppath(name), branch=value or "")
+            line(message)
+            sys.exit(0 if ok else 1)
+        elif action == "checkout":  # AP9: bewusster Branch-Wechsel
+            if not value:
+                raise ValueError("Branch fehlt: vibe github <projekt> checkout <branch>")
+            ok, message = vibe_github.checkout_branch(ppath(name), value)
+            line(message)
+            sys.exit(0 if ok else 1)
+        elif action == "test":  # AP9: Verbindungsprüfung für den Nutzer
+            view = vibe_github.connection(ppath(name))
+            line("Verbindung: " + ("OK" if view["ok"] else "FEHLER"))
+            line(str(view["message"] or ""))
+            sys.exit(0 if view["ok"] else 1)
+        elif action == "token":  # B7/AP9: Token je Projekt (nicht als Argument)
+            if value in ("clear", "--clear"):
+                vibe_github.delete_project_token(ppath(name))
+                line("GitHub-Token für dieses Projekt entfernt")
+            elif value in (None, ""):
+                if sys.stdin.isatty():
+                    import getpass
+                    token = getpass.getpass(
+                        "GitHub-Token für dieses Projekt (Eingabe bleibt unsichtbar): ")
+                else:
+                    # Nicht-interaktive Nutzung (Skripte/Tests): Eine Zeile
+                    # aus der Standardeingabe; der Inhalt wird nie echoen.
+                    token = sys.stdin.readline().rstrip("\r\n")
+                vibe_github.save_project_token(ppath(name), token)
+                line("GitHub-Token für dieses Projekt gespeichert (verschlüsselt)")
+            else:
+                raise ValueError('Token nie als Argument angeben. Befehle: '
+                                 '"vibe github <projekt> token" (Eingabe, unsichtbar) '
+                                 'oder "vibe github <projekt> token clear"')
+        elif action == "issues":
+            rows = github_issues(name, label)
+            line("Offene Issues: %d" % len(rows))
+            for issue in rows:
+                line("* %s: %s" % (issue["number"], issue["title"]))
+                if issue["html_url"]:
+                    line("  " + issue["html_url"])
+        elif action == "issues-import":
+            added, seen = github_issues_import(name, label)
+            if added:
+                line("Arbeitspakete übernommen (%d von %d Issues): %s"
+                     % (len(added), seen, ", ".join(added)))
+            else:
+                line("Keine neuen Issues (%d gesehen); TICKETS.md unverändert." % seen)
+        elif action == "pr":
+            result = github_pr(name, title=title, base=base, branch=branch,
+                               confirm=confirm)
+            line(result["message"])
+        else:
+            raise ValueError('Aktion unbekannt: "%s" (status|link|unlink|branches|'
+                             'fetch|pull|push|checkout|test|issues|issues-import|'
+                             'token|pr)' % action)
+    except ValueError as e:
+        sys.exit(str(e))
+    except Exception as e:  # GitHubError u. a.: verständlich, ohne Token
+        sys.exit(str(e))
+
+def _parse_github_cli(rest):
+    """CLI-Optionen (--confirm, --label/--title/--base/--branch Wert, Position)."""
+    options = {"label": None, "title": None, "base": None, "branch": None,
+               "confirm_on": False}
+    positional = []
+    index = 0
+    while index < len(rest):
+        token = rest[index]
+        if token == "--confirm":
+            options["confirm_on"] = True
+        elif token in ("--label", "--title", "--base", "--branch"):
+            if index + 1 >= len(rest):
+                raise ValueError("Option " + token + " erwartet einen Wert")
+            options[{"--label": "label", "--title": "title", "--base": "base",
+                     "--branch": "branch"}[token]] = rest[index + 1]
+            index += 1
+        else:
+            positional.append(token)
+        index += 1
+    if len(positional) < 1:
+        raise ValueError("Projekt fehlt: vibe github <projekt> [aktion]")
+    return positional[0], (positional[1] if len(positional) > 1 else "status"), \
+           (positional[2] if len(positional) > 2 else None), options
+
+def github_cli(rest):
+    """CLI-Dispatch: vibe github <projekt> [aktion|optionen]."""
+    try:
+        name, action, value, options = _parse_github_cli(rest)
+    except ValueError as e:
+        sys.exit(str(e))
+    cmd_github(name, action, value, label=options["label"], title=options["title"],
+               base=options["base"], branch=options["branch"],
+               confirm=options["confirm_on"])
+
 def sess(name): return profile_session("vibe-" + run_key(name))
-def tmux_has_session(name): return run(["tmux", "has-session", "-t", sess(name)])[0] == 0
+def tmux_has_session(name):
+    """Laufsitzung auf ihrem eigenen tmux-Server (V-026)."""
+    session = sess(name)
+    return run(tmux_argv(session, "has-session", "-t", session,
+                         own_socket=True))[0] == 0
 tmux_has = tmux_has_session
 
 # ---------- Laufregister und Laufzustand ----------
@@ -1583,21 +1947,49 @@ def default_agent():
         if role == "coder": return agent
     return ""
 
-def cmd_run(name, agent=None, out=None):
+def pending_changes(project):
+    """Nicht committete Projektänderungen ohne die verwalteten Arbeitsnotizen."""
+    return vibe_packages.dirty_report(project)
+
+
+def changed_file(project, name):
+    """True, wenn genau diese Datei nicht committete Änderungen hat."""
+    result = vibe_packages.run_git(project, "status", "--porcelain", "--", name)
+    return result.returncode == 0 and bool(result.stdout.strip())
+
+
+def cmd_run(name, agent=None, out=None, keep_changes=False, continue_session=None):
     out = out or sys.stdout
     p = ppath(name)
+    # AP14: Fortsetzung in derselben Modell-Session. Die Kennung reist als
+    # Umgebungsvariable zum Läufer und wird vor der Übergabe rigoros
+    # geprüft, damit sie nie als zusätzliches Kommando ausgewertet wird.
+    if continue_session is not None and not re.fullmatch(r"[A-Za-z0-9_-]+", continue_session):
+        sys.exit("Ungültige Session-Kennung für die Fortsetzung: " + continue_session)
     if agent is not None: require_agent(agent)
     if tmux_has(name): print("Läuft bereits. vibe attach", name, file=out); return
     if not is_init(name): sys.exit("Projekt ist nicht für vibe vorbereitet: vibe init " + name)
+    # F27: Ein ausdrücklich angeforderter Neustart darf vorhandene Änderungen
+    # behalten. Sie werden nur genannt, nie gestaged, committet, gestasht oder
+    # wiederhergestellt; der Preflight lässt ausschließlich diesen Befund zu.
+    pending = pending_changes(p) if keep_changes else ""
+    if pending:
+        print(col("y", "Lauf startet trotz nicht committeter Änderungen; sie bleiben unverändert:\n" + pending), file=out)
     # Die allgemeinen Leitlinien gelten auch für bestehende Projekte. Vor dem
     # Start wird der verwaltete Regelblock deshalb auf den aktuellen Stand
     # gebracht; fremde Inhalte außerhalb der Marker bleiben unverändert.
-    try:
-        rules = ensure_general_rules(p)
-    except (OSError, vibe_storage.StorageError) as error:
-        sys.exit("Allgemeine Regeln in AGENTS.md konnten nicht aktualisiert werden: " + str(error))
-    if rules:
-        print(col("y", "Allgemeine Regeln in AGENTS.md aktualisiert; bitte prüfen und committen."), file=out)
+    # F27: Hat AGENTS.md selbst nicht committete Änderungen, wird sie nicht
+    # überschrieben. Sonst würde ein älterer Regelsatz die Nutzeränderung
+    # verwerfen und der Lauf anschließend am eigenen Schreibzugriff scheitern.
+    if changed_file(p, "AGENTS.md"):
+        print(col("y", "AGENTS.md hat nicht committete Änderungen; die allgemeinen Regeln werden nicht automatisch aktualisiert und bleiben unverändert."), file=out)
+    else:
+        try:
+            rules = ensure_general_rules(p)
+        except (OSError, vibe_storage.StorageError) as error:
+            sys.exit("Allgemeine Regeln in AGENTS.md konnten nicht aktualisiert werden: " + str(error))
+        if rules:
+            print(col("y", "Allgemeine Regeln in AGENTS.md aktualisiert; bitte prüfen und committen."), file=out)
     # Der unabhängige Test-Agent ist für jedes Projekt Pflicht. Bestehende
     # Projekte erhalten ihn vor dem nächsten Lauf; vorhandene Dateien und ein
     # gesetzter TESTER bleiben unverändert.
@@ -1625,13 +2017,38 @@ def cmd_run(name, agent=None, out=None):
         sys.exit("Der Vibe-Agent '" + status["name"] + "' hat kein Modell konfiguriert. Ohne Modell können keine Projekte ausgeführt werden.")
     # Die Ausnahme für Altbestände gilt nur, solange gar kein Vibe-Agent
     # definiert ist: dann bleibt ein ausdrücklich gewählter Agent oder die
-    # Coder-Rolle startbar.
-    agent = agent or env.get("AGENT") or status["name"]
+    # Coder-Rolle startbar. Ein gespeicherter AGENT kann nach einer Umbenennung
+    # veraltet sein; er wird deshalb gegen die systemweit vorhandenen und im
+    # Projekt aktiven Agenten geprüft. Nur der gespeicherte Wert wird
+    # automatisch ersetzt, nie ein ausdrücklich übergebenes Argument.
+    stored_agent = (env.get("AGENT") or "").strip()
+    if agent is None and status["name"] and stored_agent:
+        config, _snapshot = project_agents_load(name)
+        active = set(config["aktiv"])
+        active.add(status["name"])
+        inventory = project_agent_inventory(name)
+        if stored_agent not in inventory or stored_agent not in active:
+            replacement = status["name"]
+            if replacement in inventory and replacement in active:
+                print(col("y", f"Agent '{stored_agent}' ist nicht verfügbar oder im Projekt nicht aktiv; verwende '{replacement}' und korrigiere .vibe/project.env."), file=out)
+                try:
+                    repair_project_agent(name, replacement)
+                except (OSError, ValueError, vibe_storage.StorageError) as error:
+                    print(col("r", "AGENT in .vibe/project.env konnte nicht korrigiert werden: " + str(error)), file=out)
+                stored_agent = replacement
+    agent = agent or stored_agent or status["name"]
     if not agent:
         agent = default_agent()
     if not agent:
         sys.exit("Kein Vibe-Agent definiert. In der Agentenverwaltung muss ein Agent die Rolle 'vibe' erhalten.")
     agent = require_agent(agent)
+    # B3: Zusatzanweisungen (F19) brauchen die Kennwortdatei <runtime>/opencode.password.
+    # Nur "vibe server start" legte sie bisher an; jeder andere Einstieg (Dashboard,
+    # autonome Läufe) endete beim Senden mit "Kennwortdatei fehlt". Der Laufstart
+    # richtet die Anmeldung deshalb automatisch ein: neue Zufallskennung nur, wenn
+    # die Datei fehlt, bestehender Inhalt bleibt unverändert. Ein Anlagefehler
+    # bricht den Laufstart mit der Meldung von ensure_opencode_password ab.
+    ensure_opencode_password()
     try:
         model = run_agent_selection(name, agent)
     except ValueError as error:
@@ -1656,12 +2073,22 @@ def cmd_run(name, agent=None, out=None):
     # Die Modellüberschreibung des Projekts reist als weitere Position mit und
     # wird erst im Läufer an opencode übergeben; Agentendateien bleiben
     # unverändert, andere Projekte sehen die Überschreibung nicht.
-    inner = ("source ~/.bashrc; " + child_exports()
-             + ' export VIBE_LOGNAME="$1" VIBE_RUN_ID="$2" VIBE_SESSION="$3" VIBE_MODEL="$7"; bash "$4" "$5" "$6" "$7"')
-    rc, output = run(["tmux", "new-session", "-d", "-s", session,
+    # F22: Nur der Produktpfad aktiviert die Rückfrage-Assistenz im Preflight.
+    # F27: Die ausdrückliche Neustart-Absicht reist als Umgebungsvariable zum
+    # Läufer; sie wird nie als Positionsargument ausgewertet.
+    keep_export = " export VIBE_KEEP_CHANGES=1;" if keep_changes else ""
+    # AP14: Fortsetzung in derselben Session nur als geprüfte Umgebungs-
+    # variable übergeben; sie wird im Läufer nie als Kommando ausgewertet.
+    continue_export = (" export VIBE_CONTINUE_SESSION=" + continue_session + ";"
+                       if continue_session else "")
+    inner = ("source ~/.bashrc; " + child_exports() + keep_export + continue_export
+             + ' export VIBE_PREFLIGHT_ASSIST=1 VIBE_LOGNAME="$1" VIBE_RUN_ID="$2" VIBE_SESSION="$3" VIBE_MODEL="$7"; bash "$4" "$5" "$6" "$7"')
+    rc, output = run(tmux_argv(
+                   session, "new-session", "-d", "-s", session,
                    "-e", MANAGED_VAR + "=run", "-c", p,
                    "bash", "-lc", inner, name, key, run_id, session,
-                   os.path.join(BIN, "vibe-run.sh"), p, agent, model])
+                   os.path.join(BIN, "vibe-run.sh"), p, agent, model,
+                   own_socket=True))
     if rc != 0:
         registry.finish(run_id, exit_code=None, state="failed")
         print(col("r", output, stream=out), file=out)
@@ -1669,9 +2096,37 @@ def cmd_run(name, agent=None, out=None):
     print(col("g", f"Gestartet: Lauf {run_id}, tmux-Sitzung {session}, Agent {agent}"), file=out)
     print("Zuschauen: vibe attach", name, "| Log: vibe logs", name, file=out)
 
+def cmd_run_cli(args):
+    """``vibe run <projekt> [agent] [--keep-changes]`` ohne Positionsverwechslung.
+
+    Die Option darf vor oder nach dem Agenten stehen. Unbekannte Optionen
+    werden abgelehnt, statt als Agentenname zu gelten.
+    """
+    keep_changes = False
+    positional = []
+    for arg in args:
+        if arg == "--keep-changes":
+            if keep_changes:
+                sys.exit("--keep-changes darf nur einmal angegeben werden.")
+            keep_changes = True
+        elif arg.startswith("-"):
+            sys.exit("Unbekannte Option für vibe run: " + arg)
+        else:
+            positional.append(arg)
+    if not positional:
+        sys.exit("Projektname fehlt: vibe run <projekt> [agent] [--keep-changes]")
+    if len(positional) > 2:
+        sys.exit("Aufruf: vibe run <projekt> [agent] [--keep-changes]")
+    cmd_run(
+        positional[0],
+        positional[1] if len(positional) > 1 else None,
+        keep_changes=keep_changes,
+    )
+
 def cmd_attach(name):
     if not tmux_has(name): sys.exit("Keine laufende Sitzung für " + name)
-    subprocess.run(["tmux", "attach", "-t", sess(name)])
+    session = sess(name)
+    subprocess.run(tmux_argv(session, "attach", "-t", session, own_socket=True))
 
 def cmd_logs(name):
     lg = logpath(name)
@@ -1711,24 +2166,89 @@ def cmd_stop(name, run_id=None, out=None):
     # Nur eine von vibe markierte Sitzung ist ein verwalteter Lauf. Ein
     # Registereintrag allein genügt nicht, weil eine fremde Sitzung denselben
     # Namen tragen kann; "unbekannt" toleriert nur Attrappen ohne Auskunft.
-    marker = session_marker(session)
+    marker = session_marker(session, own_socket=True)
     if record is not None:
         if marker not in ("run", "unbekannt"):
             sys.exit(f"tmux-Sitzung {session} gehört nicht zu vibe; nichts beendet.")
     elif marker != "run":
         sys.exit(f"tmux-Sitzung {session} gehört nicht zu vibe; nichts beendet.")
-    rc, output = run(["tmux", "kill-session", "-t", session])
+    rc, output = run(tmux_argv(session, "kill-session", "-t", session,
+                               own_socket=True))
     if rc != 0:
         if record is not None and not tmux_has_session(name):
-            registry.finish(record["id"], exit_code=None, state="ended")
+            # V-026: Hat der Läufer das Ende bereits festgehalten (z. B. mit
+            # Signalnotiz), bleibt dieser Eintrag unverändert.
+            registry.finish(record["id"], exit_code=None, state="ended",
+                            only_live=True)
             print("Lauf", record["id"], "war bereits beendet.", file=out)
             return
         sys.exit("Lauf nicht beendbar: " + output)
     if record is not None:
-        registry.finish(record["id"], exit_code=None, state="stopped")
+        # V-026: Der Signalhandler des Läufers kann zuerst schreiben. Ein
+        # bereits beendeter Eintrag behält dann Zustand und Notiz; der Stopp
+        # überschreibt ihn nicht.
+        registry.finish(record["id"], exit_code=None, state="stopped",
+                        only_live=True)
         print("Beendet:", name, "Lauf", record["id"], file=out)
     else:
         print("Beendet:", name, file=out)
+
+def cmd_runs(action="list"):
+    """Zeigt das Laufregister; ``prune`` beendet verwaiste Einträge.
+
+    Verwaist ist ein Eintrag in ``starting``/``running``, dessen tmux-Sitzung
+    nicht mehr existiert. Aufgeräumt wird ausschließlich das Register, nie eine
+    tmux-Sitzung; laufende Sitzungen und beendete Einträge bleiben unverändert.
+    """
+    action = (action or "list").lower()
+    if action not in ("list", "prune"):
+        sys.exit("vibe runs [list|prune]")
+    registry = run_registry()
+    records = registry.all()
+    if action == "list":
+        if not records:
+            print("Keine Läufe im Register.")
+            return
+        for record in reversed(records):
+            state = record.get("state") or "?"
+            session = str(record.get("session") or "")
+            line = f"{record.get('id', '?')}  {state}"
+            if state in vibe_runs.LIVE_STATES:
+                if not session:
+                    line += "  Sitzung nicht prüfbar"
+                else:
+                    live = tmux_session_state(session, own_socket=True)
+                    if live is True:
+                        line += f"  Sitzung {session} läuft"
+                    elif live is False:
+                        line += f"  Sitzung {session} verwaist"
+                    else:
+                        line += f"  Sitzung {session} nicht prüfbar"
+            print(line + "  " + str(record.get("project") or "?"))
+        return
+    ended = running = unknown = 0
+    for record in records:
+        if record.get("state") not in vibe_runs.LIVE_STATES:
+            continue
+        run_id = record.get("id") or "?"
+        session = str(record.get("session") or "")
+        if not session:
+            print(f"Unverändert: {run_id} (keine Sitzungsangabe, nicht prüfbar)")
+            unknown += 1
+            continue
+        live = tmux_session_state(session, own_socket=True)
+        if live is None:
+            print(f"Unverändert: {run_id} (Sitzung {session} nicht prüfbar)")
+            unknown += 1
+            continue
+        if live:
+            print(f"Läuft weiter: {run_id} (Sitzung {session})")
+            running += 1
+            continue
+        registry.finish(run_id, exit_code=None, state="ended")
+        print(f"Verwaist beendet: {run_id} (Sitzung {session} fehlt)")
+        ended += 1
+    print(f"{ended} verwaiste Einträge beendet, {running} laufen weiter, {unknown} nicht prüfbar.")
 
 class VerifyConfigError(ValueError):
     """Prüfkonfiguration ist unvollständig oder nur ein Platzhalter."""
@@ -1958,6 +2478,254 @@ def cmd_new(name, typ, tpl=None, out=None):
     _pm.clear()
     print(col("g", f"Projekt {name} ({typ}) angelegt: {p}", stream=out), file=out)
     print("Als Nächstes: SPEC.md und TICKETS.md füllen, dann vibe run", name, file=out)
+
+# ---------- Auschecken aus GitHub (AP8) ----------
+# Ein ausgechecktes Projekt bekommt die lokale vibe-Konfiguration: Vorlagen,
+# allgemeine Regeln, Test-Agent und die Agentenauswahl werden auf den lokalen
+# Stand gebracht. Mit dem Repository mitgelieferte vibe-Einstellungen
+# überschreiben die lokalen Einstellungen nie — jeder Nutzer passt die
+# Einstellungen je Projekt individuell an seine vibe-Instanz an (analog zu
+# einer IDE). Managed-Schlüssel in .vibe/project.env stammen deshalb aus der
+# lokalen Vorlage; fremde, nicht verwaltete Schlüssel bleiben erhalten.
+
+
+# Schlüssel in .vibe/project.env, die beim Auschecken konsequent auf den
+# lokalen Stand gebracht werden (Projektordination); alle anderen Schlüssel
+# eines mitgelieferten project.env bleiben unangetastet.
+MANAGED_ENV_KEYS = (
+    "TYPE", "REVIEWER", "TESTER", "SANDBOX", "SANDBOX_TOOLS",
+    "VERIFY_QUICK", "VERIFY_PACKAGE", "VERIFY_FULL",
+)
+
+
+def _detect_project_type(project):
+    """Erkennt den Projekttyp anhand von Markern (ohne project.env)."""
+    return type_from_markers(project)
+
+
+def _checkout_name(url, name):
+    """Prüft einen gegebenen Namen oder leitet ihn aus der Adresse ab."""
+    name = str(name or "").strip()
+    if name:
+        if not NAME_RE.match(name):
+            raise ValueError("Projektname: nur a-z, 0-9, _ und -, beginnend mit "
+                             "Buchstabe oder Ziffer (erhalten: " + repr(name) + ")")
+        return name
+    raw = str(url).split("?", 1)[0].split("#", 1)[0].rstrip("/")
+    part = re.split(r"[/\\:]", raw)[-1]
+    part = re.sub(r"\.git$", "", part, flags=re.IGNORECASE)
+    part = re.sub(r"[^a-z0-9_-]+", "-", part.lower())
+    part = re.sub(r"-{2,}", "-", part).strip("-_")[:64]
+    if not NAME_RE.match(part):
+        raise ValueError("Aus der Adresse lässt sich kein Projektname ableiten: "
+                         "Namen angeben (" + vibe_github.mask_url(url) + ")")
+    return part
+
+
+def _ensure_local_test_agent(project):
+    """Test-Agent aus der lokalen Vorlage; eine mitgelieferte Version weicht.
+
+    Der unabhängige Test-Agent ist ein verwaltetes vibebestandteil (AP02):
+    Nach dem Auschecken gilt die lokale Vorlage, nicht eine im Repository
+    mitgelieferte Datei. Symlinks und Verzeichnisse bleiben unangetastet.
+    Liefert eine Meldung oder den Leerwert, wenn nichts zu berichten ist.
+    """
+    result = ensure_test_agent(project)
+    path = os.path.join(project, *TEST_AGENT_REL)
+    if os.path.islink(path) or not os.path.isfile(path):
+        return "Unabhängiger Test-Agent ergänzt (lokale Vorlage)" if result["agent"] else ""
+    template_path = os.path.join(TPL, "common", *TEST_AGENT_REL)
+    if os.path.isfile(template_path):
+        with open(template_path, encoding="utf-8") as handle:
+            content = handle.read()
+    else:
+        content = TEST_AGENT_TEMPLATE
+    with open(path, encoding="utf-8") as handle:
+        current = handle.read()
+    if current == content:
+        return ""
+    vibe_storage.write_text(path, content)
+    return "Unabhängiger Test-Agent aus der lokalen Vorlage übernommen (mitgelieferte Version ersetzt)"
+
+
+def _adopt_project_env(project, name, typ):
+    """Vereinheitlicht .vibe/project.env auf die lokale Vorlage.
+
+    Fehlt die Datei, entsteht sie aus der Vorlage des erkannten Typs
+    (kopiert von copy_tree) oder minimal. Existiert sie (mit dem Repository
+    mitgeliefert), werden nur abweichende verwaltete Schlüssel auf die
+    lokalen Vorlagewerte gesetzt; identische Zeilen bleiben im bisherigen
+    Format, sonstige Schlüssel und Kommentare bleiben erhalten.
+    """
+    env_path = os.path.join(project, ".vibe", "project.env")
+    if not os.path.isfile(env_path):
+        os.makedirs(os.path.dirname(env_path), exist_ok=True)
+        vibe_storage.write_text(env_path, "TYPE=" + typ + "\n")
+        return "Projekteinstellungen angelegt (Typ " + typ + ")"
+    template_env = os.path.join(TPL, typ, ".vibe", "project.env")
+    values = read_env(template_env) if os.path.isfile(template_env) else {}
+    values["TYPE"] = typ
+    current = read_env(env_path)
+    # Nur verwaltete Schlüssel gewinnen: Mit dem Repository mitgelieferte
+    # Werte werden auf den lokalen Vorlagestand gebracht, fremde Schlüssel
+    # (z. B. projektspezifische Zusätze) bleiben erhalten.
+    diff = {key: value for key, value in values.items()
+            if key in MANAGED_ENV_KEYS and current.get(key) != value}
+    if diff:
+        set_env_values(name, diff)
+    return "Projekteinstellungen auf den lokalen Stand gebracht (Typ " + typ + ")"
+
+
+def _remap_project_agents(name, project):
+    """Bildet die aktiven Agenten des Projekts auf lokale Agenten ab.
+
+    Agenten, die es lokal nicht gibt, verlieren die Aktivierung und ihre
+    Modellüberschreibung; der Vibe-Agent bleibt immer aktiv. Eine unlesbare
+    Auswahl bleibt unverändert und wird gemeldet, statt sie still zu
+    überschreiben.
+    """
+    path = os.path.join(project, ".vibe", "agents.json")
+    if not os.path.isfile(path):
+        return ""
+    try:
+        config, snapshot = project_agents_load(name)
+    except ValueError as error:
+        return "Agentenauswahl unlesbar, bleibt unverändert (" + str(error) + ")"
+    inventory = project_agent_inventory(name)
+    vibe = vibe_agent_name()
+    active = [agent for agent in config["aktiv"] if agent in inventory]
+    if vibe and vibe not in active:
+        active.append(vibe)
+    models = {agent: model for agent, model in config["modelle"].items()
+              if agent in inventory}
+    removed = sorted(set(config["aktiv"]) - set(active)
+                     | set(config["modelle"]) - set(models))
+    clean = {"version": PROJECT_AGENTS_VERSION, "aktiv": sorted(set(active)),
+             "modelle": models}
+    if clean == config:
+        return "" if not removed else \
+            "Aktive Agenten: bereits auf die lokal konfigurierten Agenten begrenzt"
+    project_agents_save(name, clean,
+                        expected=snapshot.digest if snapshot.exists else vibe_storage.MISSING)
+    return "Aktive Agenten auf die lokal konfigurierten Agenten angepasst" + \
+        ("; entfernt: " + ", ".join(removed) if removed else "")
+
+
+def checkout_from_github(url, name=None, branch=None):
+    """Checkt ein Repository aus und richtet es als neues Projekt ein.
+
+    Mit ``branch`` wird genau dieser Branch ausgecheckt (AP9); ohne Angabe
+    gilt der Standard-Branch des Remotes.
+
+    Liefert (Name, Zusammenfassung). Fehler werden als ValueError mit
+    verständlicher Meldung geworfen; ein fehlgeschlagener Aufruf hinterlässt
+    kein halbes Projekt (Auschecken und Übernahme räumen den Zielordner auf,
+    wenn er vorher nicht existierte). github.com-Adressen werden zusätzlich
+    verknüpft (GITHUB_REPO/GITHUB_ENABLED wie bei „vibe github link“), ohne
+    einen GitHub-REST-API-Aufruf oder Token zu benötigen; das Setzen des
+    Remote-Standard-Branch fragt den Git-Remote selbst ab. Andere Remotes
+    bleiben ohne GitHub-Schlüssel.
+    """
+    url = str(url or "").strip()
+    if not url:
+        raise ValueError("Remote-Adresse fehlt")
+    slug = vibe_github.parse_remote_url(url)
+    name = _checkout_name(url, name)
+    target = os.path.join(VIBE, name)
+    _pm.clear()
+    if os.path.lexists(target):
+        raise ValueError("Zielordner existiert bereits: " + target
+                         + " — anderen Namen wählen")
+    if name in project_map():
+        raise ValueError("Projektname ist bereits vergeben: " + name)
+    # AP9: Der optionale Branch wird nur weitergereicht, wenn er gesetzt ist;
+    # der AP8-Standardaufruf bleibt unverändert.
+    if branch:
+        rc, out = vibe_github.clone(url, target, branch=branch)
+    else:
+        rc, out = vibe_github.clone(url, target)
+    if rc != 0:
+        shutil.rmtree(target, ignore_errors=True)
+        raise ValueError("Auschecken fehlgeschlagen: " + (out or "unbekannter Fehler"))
+    _pm.clear()
+    try:
+        notes = _adopt_checked_out_project(target, name)
+        if slug:
+            set_env_values(name, {"GITHUB_ENABLED": "1", "GITHUB_REPO": slug})
+            vibe_github.set_head_default(target)
+            notes.append("GitHub verknüpft: " + slug)
+    except (OSError, vibe_storage.StorageError) as error:
+        # Das Projekt ist angelegt, aber nicht vollständig übernommen; ohne
+        # Aufräumen bliebe ein halbes Projekt zurück und ein erneuter Versuch
+        # scheiterte am Zielordner. Nur der frisch erzeugte Ordner wird
+        # entfernt — bestehende Ordner wurden oben abgelehnt.
+        shutil.rmtree(target, ignore_errors=True)
+        _pm.clear()
+        raise ValueError("Übernahme fehlgeschlagen, Zielordner entfernt: "
+                         + str(error)) from None
+    return name, "; ".join(notes) if notes else "Projekt übernommen (keine Anpassungen nötig)"
+
+
+def _adopt_checked_out_project(project, name):
+    """Bringt die vibe-Einstellungen des Projekts auf den lokalen Stand."""
+    notes = []
+    typ = _detect_project_type(project)
+    if typ not in types():
+        typ = "generic"
+    created = copy_tree(os.path.join(TPL, "common"), project, name) \
+        + copy_tree(os.path.join(TPL, typ), project, name)
+    if created:
+        notes.append("Fehlende Vorlagedateien ergänzt: " + ", ".join(created))
+    rules = ensure_general_rules(project)
+    if rules:
+        notes.append("Allgemeine Regeln in AGENTS.md "
+                     + ("aktualisiert" if rules == "updated" else "ergänzt"))
+    agent_note = _ensure_local_test_agent(project)
+    if agent_note:
+        notes.append(agent_note)
+    try:
+        env_note = _adopt_project_env(project, name, typ)
+        notes.append(env_note)
+        agents_note = _remap_project_agents(name, project)
+        if agents_note:
+            notes.append(agents_note)
+    except (OSError, vibe_storage.StorageError) as error:
+        raise ValueError("Lokale Einstellungen konnten nicht übernommen werden: "
+                         + str(error)) from None
+    return notes
+
+
+def _parse_clone_cli(rest):
+    """CLI-Optionen für „vibe clone <url> [name] --branch <branch>“."""
+    positional = []
+    branch = None
+    index = 0
+    while index < len(rest):
+        token = rest[index]
+        if token == "--branch":
+            if index + 1 >= len(rest):
+                raise ValueError("Option --branch erwartet einen Branch-Namen")
+            branch = rest[index + 1]
+            index += 1
+        else:
+            positional.append(token)
+        index += 1
+    if len(positional) < 1:
+        raise ValueError("Remote-Adresse fehlt: vibe clone <url> [name]")
+    url = positional[0]
+    name = positional[1] if len(positional) > 1 else None
+    return url, name, branch
+
+def cmd_clone(url, name=None, branch=None, out=None):
+    """CLI für „vibe clone <url> [name] [--branch <branch>]“."""
+    out = out or sys.stdout
+    try:
+        found, summary = checkout_from_github(url, name, branch=branch)
+    except (ValueError, OSError, vibe_storage.StorageError) as error:
+        sys.exit(str(error))
+    print(col("g", "Projekt " + found + " ausgecheckt und eingerichtet."), file=out)
+    print(summary, file=out)
+    print("Änderungen am Arbeitsbaum liegen vor: bitte prüfen und selbst committen.", file=out)
 
 # ---------- Agenten (global und projektspezifisch) ----------
 PERMS = {
@@ -2535,15 +3303,17 @@ def agent_version(refresh=False):
     return _AGENT_VERSION
 
 def agent_version_warning():
-    """Hinweis, wenn die installierte opencode-Version nicht geprüft ist.
+    """Hinweis, wenn die installierte opencode-Version nicht exakt geprüft ist.
 
     Die Agentenregeln und das Verzeichnis ``.opencode/agents`` gelten
     unabhängig von der erkannten Version (V-007). Ein harter Riegel würde die
     Agentenverwaltung nach jedem opencode-Update ohne fachlichen Grund sperren;
-    deshalb wird der Unterschied nur gemeldet.
+    deshalb wird der Unterschied nur gemeldet (F26). Auch eine über ein
+    Fallback-Profil behandelte Version (assumed) bleibt eine ungeprüfte
+    Version und wird gemeldet.
     """
     info = agent_version()
-    if info.supported: return ""
+    if info.checked: return ""
     return (info.message + " Die Agentenregeln gelten unverändert; "
             "der Schreibvorgang wird nicht gesperrt.")
 
@@ -2810,6 +3580,38 @@ def run_agent_selection(name, agent):
         if agent not in active:
             raise ValueError(f"Agent '{agent}' ist für dieses Projekt nicht ausgewählt oder nicht konfiguriert.")
     return config["modelle"].get(agent, "")
+
+
+def repair_project_agent(name, agent):
+    """Setzt AGENT in .vibe/project.env ohne Anführungszeichen und erhält alle anderen Zeilen.
+
+    Der Startagent wird bewusst unquoted geschrieben, damit die von Hand
+    gepflegte Projektdatei ihr bisheriges Format behält. Die Prüfsumme
+    verhindert, dass eine gleichzeitige Änderung still überschrieben wird.
+    """
+    if not NAME_RE.match(agent or ""):
+        raise ValueError("Ungültiger Agentenname für den Start: " + repr(agent))
+    fp = os.path.join(ppath(name), ".vibe", "project.env")
+    snapshot = vibe_storage.read_snapshot(fp)
+    if not snapshot.exists:
+        raise ValueError("Nicht für vibe vorbereitet: " + fp)
+    text = snapshot.text
+    newline = "\r\n" if "\r\n" in text else "\n"
+    pattern = re.compile(r"^(\s*)AGENT[ \t]*=[^\r\n]*(\r\n|\n|\r|$)", re.M)
+    if pattern.search(text):
+        updated = pattern.sub(
+            lambda hit: hit.group(1) + "AGENT=" + agent + hit.group(2),
+            text,
+            count=1,
+        )
+    else:
+        if text and not text.endswith(("\n", "\r")):
+            text += newline
+        updated = text + "AGENT=" + agent + newline
+    if updated == snapshot.text:
+        return
+    vibe_storage.write_text(fp, updated, expected=snapshot.digest)
+
 
 def effective_agent(name, scope="global"):
     """Bereich, dessen Datei für einen Agentennamen tatsächlich gilt."""
@@ -4045,10 +4847,15 @@ def cmd_server(action="status", out=None):
                 sys.exit(f"tmux-Sitzung {session} gehört nicht zu vibe; nichts gestartet.")
             print("opencode-Server startet bereits (tmux attach -t " + session + ").", file=out)
             return
+        # F26: Die Version wird einmal erkannt und dem Adapter übergeben, so
+        # dass Startbefehl und Hinweis aus derselben Prüfung stammen.
+        version_info = vibe_opencode.probe()
         try:
-            command = vibe_opencode.server_command(PATHS.opencode_port)
+            command = vibe_opencode.server_command(PATHS.opencode_port, info=version_info)
         except vibe_opencode.CompatibilityError as error:
             sys.exit(str(error))
+        if not version_info.checked:
+            print("Hinweis: " + version_info.message, file=out)
         # F19: Der Server erhält ein eigenes Kennwort für angemeldete
         # Zusatzanweisungen. Das Kennwort selbst steht nie in der Befehlszeile;
         # der Kindprozess liest es beim Start aus der Laufzeitdatei.
@@ -4059,7 +4866,7 @@ def cmd_server(action="status", out=None):
                        "-e", MANAGED_VAR + "=server",
                        "-e", "OPENCODE_SERVER_PASSWORD_FILE=" + password_file,
                        "bash", "-lc",
-                       'source ~/.bashrc; export OPENCODE_SERVER_PASSWORD="$(cat "$OPENCODE_SERVER_PASSWORD_FILE")"; exec ' + shlex.join(command)])
+                       'source ~/.bashrc; unset OPENCODE_PASSWORD; export OPENCODE_SERVER_PASSWORD="$(cat "$OPENCODE_SERVER_PASSWORD_FILE")"; exec ' + shlex.join(command)])
         if rc != 0:
             sys.exit("opencode-Server nicht gestartet: " + output)
         time.sleep(4); print("Gestartet:" if server_health() else "Start angestoßen, Server antwortet noch nicht (tmux attach -t " + session + "):", OC_URL, file=out)
@@ -4072,6 +4879,130 @@ def cmd_server(action="status", out=None):
         run(["tmux", "kill-session", "-t", session]); print("opencode-Server beendet.", file=out)
     else:
         h = server_health(); print("opencode-Server:", col("g", "läuft " + OC_URL + " " + h, stream=out) if h else "aus", file=out)
+
+def cmd_limits(action="status"):
+    """Zeigt oder ändert das globale Limitverhalten (V-027).
+
+    Die Einstellung wirkt für alle Projekte. Ohne Datei und bei defekter
+    Datei gilt ``stop``; eine ungültige Angabe wird gemeldet und nie still
+    als ``continue`` ausgelegt.
+    """
+    action = (action or "status").lower()
+    if action not in ("status", *vibe_limits.MODES):
+        sys.exit("Aufruf: vibe limits [status|stop|continue]")
+    if action in vibe_limits.MODES:
+        try:
+            vibe_limits.save(PATHS.state, action)
+        except OSError as error:
+            sys.exit("Limitverhalten nicht gespeichert: " + str(error))
+    _mode, problem = vibe_limits.load(PATHS.state)
+    if problem:
+        print(problem, file=sys.stderr)
+    print(vibe_limits.describe(PATHS.state))
+
+# ---------- Schrankeneinstellungen des Läufers (AP10) ----------
+# Die Schranken sind global in <Zustand>/gates.json abgelegt und können je
+# Projekt in .vibe/project.env optional abweichen (Priorität: Projekt >
+# global > Voreinstellung). Sie steuern Reparaturrunden, Assistenzrunden,
+# Wiederholungen, das Durchgangslimit und die Rückfrage an blockierten Paketen.
+GATES_USAGE = ("Aufruf: vibe gates [--project <projekt>] [status] "
+               "[<schranke> <wert>]  Schranken: "
+               + ", ".join(vibe_gates.DEFAULTS) if vibe_gates else
+               "Aufruf: vibe gates — vibe_gates.py fehlt in der Installation")
+
+def project_for_cwd():
+    """Name und Pfad des Projekts, in dem der Aufruf läuft (oder None, None).
+
+    Ein Projekt gilt als gefunden, wenn der aktuelle Ordner der registrierte
+    Projektpfad ist oder darin liegt. So zeigt `vibe gates status` im
+    Projektordner automatisch dessen abweichende Werte.
+    """
+    cwd = os.path.realpath(os.getcwd())
+    for name, path in project_map().items():
+        real = os.path.realpath(path)
+        if cwd == real or cwd.startswith(real + os.sep):
+            return name, real
+    return None, None
+
+def _gates_show(project_name=None):
+    """Zeigt die wirksamen Schranken samt Herkunft (AP10)."""
+    if vibe_gates is None:
+        sys.exit("vibe_gates.py fehlt in der Installation; "
+                 "bitte Setup --update ausführen.")
+    project_dir = None
+    if project_name is not None:
+        project_dir = ppath(project_name)
+    else:
+        project_name, project_dir = project_for_cwd()
+    result = vibe_gates.effective(PATHS.state, project_dir)
+    where = f" (Projekt: {project_name})" if project_name else ""
+    print(col("b", "Wirksame Schranken des Läufers" + where + ":"))
+    for key, entry in result["gates"].items():
+        print(f"  {key:<14}{str(entry['value']):<6}{entry['origin']}")
+    for message in result["problems"]:
+        print(col("y", "Hinweis: " + message))
+
+def cmd_gates(rest=None):
+    """Zeigt oder setzt die Läufer-Schranken (AP10).
+
+    Ohne Argumente bzw. mit ``status`` werden die wirksamen Werte samt
+    Herkunft gezeigt (Projekt aus dem aktuellen Ordner, falls registriert,
+    oder mit ``--project <name>``, an beliebiger Position). ``<schranke>
+    <wert>`` setzt global; ``--project <name> <schranke> <wert>`` schreibt den Projektwert, ein
+    leerer Wert entfernt ihn. Unbekannte Schranken und ungültige Werte
+    werden ohne Schreibvorgang mit Fehler abgewiesen.
+    """
+    if vibe_gates is None:
+        sys.exit("vibe_gates.py fehlt in der Installation; "
+                 "bitte Setup --update ausführen.")
+    args = list(rest or [])
+    project_name = None
+    # --project <name> wird in jeder Position erkannt, auch nach "status",
+    # damit "vibe gates status --project proj" nicht still das falsche
+    # Projekt zeigt.
+    while "--project" in args:
+        index = args.index("--project")
+        if len(args) <= index + 1:
+            sys.exit(GATES_USAGE)
+        project_name = args[index + 1]
+        args = args[:index] + args[index + 2:]
+    if not args or args[0] == "status":
+        _gates_show(project_name)
+        return
+    if len(args) != 2: sys.exit(GATES_USAGE)
+    key, value = args
+    if project_name is not None and value == "":
+        # Leerer Wert entfernt den Projektwert (set_env_values löscht die
+        # Zeile); der Schlüssel wird trotzdem gegen die bekannten Schranken
+        # geprüft, damit Tippfehler nicht still durchlaufen.
+        gate_env = vibe_gates.PROJECT_ENV_KEYS.get(key)
+        if gate_env is None:
+            sys.exit("Unbekannte Schranke: " + key)
+        try:
+            set_env_values(project_name, {gate_env: None}, quote=False)
+        except (OSError, ValueError) as error:
+            sys.exit("Projektschranke nicht entfernt: " + str(error))
+        print(f"Projektschranke entfernt ({project_name}): {gate_env}")
+        _gates_show(project_name)
+        return
+    try:
+        parsed = vibe_gates.validate(key, value)
+    except ValueError as error:
+        sys.exit(str(error))
+    if project_name is None:
+        try:
+            vibe_gates.save(PATHS.state, key, parsed)
+        except OSError as error:
+            sys.exit("Schranke nicht gespeichert: " + str(error))
+        print(f"Gespeichert (global): {key}={parsed}")
+    else:
+        gate_env = vibe_gates.PROJECT_ENV_KEYS[key]
+        try:
+            set_env_values(project_name, {gate_env: str(parsed)}, quote=False)
+        except (OSError, ValueError) as error:
+            sys.exit("Projektschranke nicht gespeichert: " + str(error))
+        print(f"Gespeichert (Projekt {project_name}): {gate_env}={parsed}")
+    _gates_show(project_name)
 
 def cmd_harness(action="status", name=None, out=None):
     """Zeigt, wechselt und erklärt den Harness; die Auswahl liegt im Zustandsordner."""
@@ -4112,8 +5043,51 @@ def cmd_harness(action="status", name=None, out=None):
 def ui_session():
     return profile_session("vibe-ui")
 
-def cmd_ui(action="start"):
+def _ui_arguments(arguments):
+    """Zerlegt ``vibe ui``-Argumente in Aktion und Port-/Bind-Übergaben.
+
+    ``start``/``stop`` werden nur an Position 0 als Aktion gelesen, damit
+    sie nicht mit Werten verwechselt werden; ``--port``/``--bind`` sind
+    anywhere erlaubt. Rückgabe (aktion, overrides-dict).
+    """
+    args = list(arguments or [])
+    action = None
+    if args and args[0] in ("start", "stop"):
+        action = args.pop(0)
+    overrides = {}
+    while args:
+        flag = args[0]
+        if flag == "--port" and len(args) >= 2:
+            overrides["ui_port"] = args[1]
+        elif flag == "--bind" and len(args) >= 2:
+            overrides["ui_bind"] = args[1]
+        else:
+            sys.exit("Aufruf: vibe ui [start|stop] [--port <n>] [--bind <ip>]")
+        args = args[2:]
+    return action or "start", overrides
+
+def cmd_ui(arguments=None):
+    """Startet oder beendet das Dashboard (AP13: Port/Bind je Aufruf).
+
+    Priorität: Defaults < ui.json (Zustandsordner) < Umgebung < CLI-Übergabe
+    — „CLI überschreibt immer Konfiguration". CLI-Werte werden vorab
+    validiert: Eine ungültige Übergabe beendet den Aufruf, bevor etwas
+    gestartet oder geändert wird.
+    """
     session = ui_session()
+    # Rückwärtskompatibel: Ältere Aufrufer (Tests, Menü) übergeben die Aktion
+    # als einzelnen String statt als Argumentliste.
+    if isinstance(arguments, str):
+        arguments = [arguments]
+    action, overrides = _ui_arguments(arguments)
+    try:
+        for key in ("ui_port", "ui_bind"):
+            if key in overrides:
+                validator = (vibe_paths.validate_port if key == "ui_port"
+                             else vibe_paths.validate_bind)
+                overrides[key] = validator(overrides[key])
+    except vibe_paths.ConfigError as error:
+        sys.exit(str(error))
     if action == "stop":
         if not tmux_session_exists(session):
             print("Dashboard läuft nicht.")
@@ -4121,24 +5095,35 @@ def cmd_ui(action="start"):
         if not session_owned(session, "ui"):
             sys.exit(f"tmux-Sitzung {session} gehört nicht zu vibe; nichts beendet.")
         run(["tmux", "kill-session", "-t", session]); print("Dashboard beendet."); return
+    extra_config = {}
+    if vibe_ui_config is not None:
+        try:
+            extra_config = vibe_ui_config.config_extra(PATHS.state)
+        except (vibe_ui_config.ConfigError, vibe_paths.ConfigError) as error:
+            sys.exit("Dashboard-Konfiguration: " + str(error))
+    try:
+        paths = PATHS if not (overrides or extra_config) else vibe_paths.resolve(
+            overrides=overrides or None, extra_config=extra_config or None)
+    except vibe_paths.ConfigError as error:
+        sys.exit("Pfadkonfiguration: " + str(error))
     try:
         vibe_paths.ensure(PATHS, "runtime")
     except vibe_paths.ConfigError as error:
         sys.exit("Pfadkonfiguration: " + str(error))
-    if dashboard_health():
-        print("Dashboard läuft bereits:", f"http://{UI_BIND}:{UI_PORT}/")
+    if dashboard_health(paths.ui_bind, paths.ui_port):
+        print("Dashboard läuft bereits:", f"http://{paths.ui_bind}:{paths.ui_port}/")
         return
-    if port_in_use(UI_BIND, UI_PORT):
-        sys.exit(f"Port {UI_PORT} ist belegt, aber kein eigenes Dashboard erkannt; nichts gestartet.")
+    if port_in_use(paths.ui_bind, paths.ui_port):
+        sys.exit(f"Port {paths.ui_port} ist belegt, aber kein eigenes Dashboard erkannt; nichts gestartet.")
     if tmux_session_exists(session):
         if not session_owned(session, "ui"):
             sys.exit(f"tmux-Sitzung {session} gehört nicht zu vibe; nichts gestartet.")
-        print("Dashboard-Sitzung läuft bereits, antwortet aber noch nicht:", f"http://{UI_BIND}:{UI_PORT}/")
+        print("Dashboard-Sitzung läuft bereits, antwortet aber noch nicht:", f"http://{paths.ui_bind}:{paths.ui_port}/")
         return
     # Aufgelöste Pfade und Ports ausdrücklich übergeben, damit der
     # Kindprozess dieselbe Konfiguration verwendet; shlex.quote schützt
     # Pfade mit Leerzeichen und Sonderzeichen.
-    inner = "source ~/.bashrc; " + child_exports() + ' exec python3 "$1"'
+    inner = "source ~/.bashrc; " + child_exports(paths) + ' exec python3 "$1"'
     rc, out = run(["tmux", "new-session", "-d", "-s", session,
                    "-e", MANAGED_VAR + "=ui", "bash", "-lc",
                    inner, "vibe-ui", os.path.join(BIN, "vibe-web.py")])
@@ -4147,8 +5132,20 @@ def cmd_ui(action="start"):
     time.sleep(2)
     tokf = os.path.join(LOGS, "web.token")
     tok = open(tokf).read().strip() if os.path.exists(tokf) else "?"
-    print(col("g", f"Dashboard ({PATHS.profile}): http://{UI_BIND}:{UI_PORT}/#t={tok}"))
-    print("(nur lokal erreichbar; Beenden: Knopf im Dashboard oder vibe ui stop)")
+    print(col("g", f"Dashboard ({PATHS.profile}): http://{paths.ui_bind}:{paths.ui_port}/#t={tok}"))
+    if paths.ui_bind == "127.0.0.1":
+        print("(nur lokal erreichbar; Beenden: Knopf im Dashboard oder vibe ui stop)")
+    else:
+        # AP13: Netzexposition nicht verschweigen. Die gedruckte URL trägt
+        # die Bind-Adresse (z. B. 0.0.0.0), die auf fremden Rechnern nicht
+        # adressierbar ist; andere Rechner erreichen das Dashboard über die
+        # IP-Adresse dieses Rechners. Die Gegenmaßnahmen (IP-Allowlist,
+        # Kennwort) werden an ihrer Stelle in der Karte „Zugriffssicherheit"
+        # des Dashboards gepflegt.
+        print("(Achtung: über das Netzwerk erreichbar. Vom anderen Rechner "
+              "aus erreichst du das Dashboard über die IP-Adresse dieses "
+              "Rechners. Allowlist und Kennwort stellst du im Dashboard in "
+              "der Karte „Zugriffssicherheit“ ein; Beenden: vibe ui stop)")
 
 def cmd_paths(*arguments):
     """Zeigt Profil, Pfade und Ports; ändert nichts und startet nichts."""
@@ -4184,7 +5181,10 @@ def cmd_paths(*arguments):
 
 def doctor_checks():
     r = []
-    def chk(label, ok, hint=""): r.append((label, bool(ok), hint))
+    def chk(label, ok, hint="", warn=False):
+        # F26: Ein Hinweis bei bestandener Prüfung erscheint nur mit warn=True;
+        # sonst bleibt ok+hint die gewohnte reine OK-Zeile (Installationshinweise).
+        r.append((label, bool(ok), hint if (warn or not ok) else ""))
     chk("im Container", in_container(), "distrobox enter " + CONTAINER)
     chk(f"VIBE-Ordner beschreibbar ({VIBE})", os.access(VIBE, os.W_OK))
     for tool, hint in (("git", ""), ("tmux", "sudo dnf install -y tmux"), ("java", "sudo dnf install -y java-25-openjdk-devel"), ("android", "Android CLI installieren"), ("adb", "android sdk install platform-tools"), ("python3", ""), ("curl", ""), ("flock", "util-linux")):
@@ -4200,7 +5200,15 @@ def doctor_checks():
             shutil.which(info["binary"]) is not None, info["hint"])
         if selected == "opencode":
             version = vibe_opencode.probe()
-            chk("opencode-Version " + (version.version or "?"), version.supported, version.message)
+            if version.checked:
+                chk("opencode-Version " + version.version, True, "")
+            elif version.supported:
+                # F26: Vermutlich kompatibel über das Fallback-Profil; kein
+                # Fehler, aber sichtbarer Hinweis mit der ungeprüften Version.
+                chk("opencode-Version " + version.version + " (nicht geprüft)",
+                    True, version.message, warn=True)
+            else:
+                chk("opencode-Version " + (version.version or "?"), False, version.message)
         else:
             chk("node für " + info["name"] + " (22.19+)",
                 shutil.which("node") is not None,
@@ -4232,7 +5240,10 @@ def cmd_doctor():
           + (" · Commit " + release["commit"] if release["commit"] else "")
           + " · " + origin)
     for label, ok, hint in doctor_checks():
-        print(f"  {col('g','OK  ') if ok else col('r','FEHL')} {label}" + (f"  -> {hint}" if not ok and hint else ""))
+        if ok and hint:
+            print(f"  {col('y','HINW')} {label} -> {hint}")
+        else:
+            print(f"  {col('g','OK  ') if ok else col('r','FEHL')} {label}" + (f"  -> {hint}" if not ok and hint else ""))
 
 def cmd_mcp(action="list", name=None, scope="global", backup=None):
     import vibe_mcp
@@ -4463,7 +5474,7 @@ def menu():
         elif i == 8: cmd_mcp("list")
         elif i == 9: cmd_emu("start")
         elif i == 10: cmd_emu("stop")
-        elif i == 11: cmd_ui("start")
+        elif i == 11: cmd_ui(["start"])
         elif i == 12: cmd_server("start")
         elif i == 13: cmd_types()
         elif i == 14: cmd_doctor()
@@ -4479,8 +5490,9 @@ def main():
     if not a: return menu()
     c, r = a[0], a[1:]
     try:
-        table = {"list": lambda: cmd_list(), "status": lambda: cmd_status(r[0]), "run": lambda: cmd_run(r[0], r[1] if len(r) > 1 else None),
+        table = {"list": lambda: cmd_list(), "status": lambda: cmd_status(r[0]), "run": lambda: cmd_run_cli(r),
                  "attach": lambda: cmd_attach(r[0]), "logs": lambda: cmd_logs(r[0]), "stop": lambda: cmd_stop(r[0], r[1] if len(r) > 1 else None),
+                 "runs": lambda: cmd_runs(r[0] if r else "list"),
                  "pause": lambda: cmd_pause(r[0], r[1] if len(r) > 1 else None),
                  "ask": lambda: cmd_ask(r), "questions": lambda: cmd_questions(),
                  "answer": lambda: cmd_answer(r),
@@ -4488,19 +5500,24 @@ def main():
                  "fritz": lambda: cmd_fritz(r[0] if r else None),
                  "verify": lambda: cmd_verify(r[0], r[1] if len(r) > 1 else "quick"), "feedback": lambda: cmd_feedback(r[0]),
                  "new": lambda: cmd_new(r[0], r[1] if len(r) > 1 else "generic", r[2] if len(r) > 2 else None),
+                 "clone": lambda: (lambda parsed: cmd_clone(parsed[0], parsed[1], branch=parsed[2]))(_parse_clone_cli(r)),
                  "init": lambda: cmd_init(r[0], r[1] if len(r) > 1 else None),
                  "roots": lambda: cmd_roots(r[0] if r else None, r[1] if len(r) > 1 else None), "scan": lambda: cmd_roots(),
                  "agents": lambda: cmd_agents(), "agent": lambda: cmd_agent(r[0], r[1], r[2] if len(r) > 2 else "global", r[3] if len(r) > 3 else None),
                  "project-agents": lambda: cmd_project_agents(r[0]),
                  "rights": lambda: cmd_rights(r[0], r[1] if len(r) > 1 else None, r[2] if len(r) > 2 else None),
+                 "priority": lambda: cmd_priority(r[0], r[1] if len(r) > 1 else None, " ".join(r[2:]) if len(r) > 2 else None),
                  "sandbox": lambda: cmd_sandbox(r[0], r[1] if len(r) > 1 else None, r[2] if len(r) > 2 else None),
                  "models": lambda: cmd_models(r[0] if r else None), "model": lambda: cmd_model(r[0], r[1], r[2] if len(r) > 2 else "global"),
                  "profile": lambda: cmd_profile(r[0] if r else "list", r[1] if len(r) > 1 else None),
                  "costs": lambda: cmd_costs(r[0] if r else None),
                  "mcp": lambda: cmd_mcp(r[0] if r else "list", r[1] if len(r) > 1 else None, r[2] if len(r) > 2 else "global", r[3] if len(r) > 3 else None),
                  "emu": lambda: cmd_emu(r[0]), "paths": lambda: cmd_paths(*r),
-                 "ui": lambda: cmd_ui(r[0] if r else "start"), "server": lambda: cmd_server(r[0] if r else "status"),
+                 "ui": lambda: cmd_ui(r), "server": lambda: cmd_server(r[0] if r else "status"),
                  "harness": lambda: cmd_harness(r[0] if r else "status", r[1] if len(r) > 1 else None),
+                 "limits": lambda: cmd_limits(r[0] if r else "status"),
+                 "gates": lambda: cmd_gates(r),
+                 "github": lambda: github_cli(r),
                  "types": lambda: cmd_types(), "doctor": lambda: cmd_doctor()}
         table[c]()
     except (KeyError, IndexError):

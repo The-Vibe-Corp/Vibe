@@ -1,6 +1,6 @@
 # Trilium-Index
 
-Zuordnung der Projekt-Dokumentation zu den Notizen in Trilium (Stand 2026-11-07).
+Zuordnung der Projekt-Dokumentation zu den Notizen in Trilium (Stand 2026-11-13).
 
 | Projekt | Bereich | Notiz | Notiz-ID |
 | --- | --- | --- | --- |
@@ -50,5 +50,16 @@ Zuordnung der Projekt-Dokumentation zu den Notizen in Trilium (Stand 2026-11-07)
 | vibe | Features | AP02 Verpflichtender Test Agent | `3XWCoX6XbDy7` |
 | vibe | Features | AP03 Überarbeitung Agentenverwaltung | `z9AVIt88OWdN` |
 | vibe | Features | AP04 Austauschbares Coding-Harness und Pi | `pVrde5xTkFvu` |
+| vibe | Features | AP05 Saubere Paketabwicklung | `tBNmEWqnGmeI` |
+| vibe | Features | AP6 Vorbereitung für github Repo | `RTYec92LsBSL` |
+| vibe | Features | AP7 Einstellungs-UI neu aufgebaut | `vDzuhFgjY4PV` |
+| vibe | Features | AP8 Projekt aus GitHub auschecken | `RtG0XQF3SqMN` |
+| vibe | Features | AP9 GitHub Teil 3: Token, Branches, Merge-Request | `RZaerCNe9ngJ` |
+| vibe | Features | AP10 Schrankeneinstellungen und bewusstes Fortsetzen | `LjeuWE7WkXs4` |
+| vibe | Features | AP11 Priorisierung der Abarbeitungsreihenfolge | `KrGYItU1tR0u` |
+| vibe | Features | F29 Feedback zu AP11: Priorisierung speichern und direkt bedienen | `7IOsrEg6dGdu` |
 | vibe | Features | B1 Kostentabelle aktualisiert sich nach jedem AP | `V3AV2elZkQgo` |
 | vibe | Analyse | Arbeitspakete bleiben offen — Ursachen und Maßnahmen | `nLcQBDnwBXZW` |
+| vibe | Features | AP13 Vibe lokal über das Netzwerk erreichbar machen | `cppXft8LmYCx` |
+| vibe | Features | B12 Subagenten in Ausgabe nicht sichtbar | `cKuhcXZA0O3A` |
+| vibe | Features | AP16 Syntaxhervorhebung in der Agentenausgabe | `GYqPCwzWLy38` |

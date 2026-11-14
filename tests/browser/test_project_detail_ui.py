@@ -37,6 +37,26 @@ SHOTS = Path(os.environ.get("VIBE_VERIFY_SCREENSHOT_DIR", REPO / "docs" / "featu
 OVERVIEW_SHOT = SHOTS / "F13-uebersicht.png"
 SETTINGS_SHOT = SHOTS / "F13-einstellungen.png"
 
+# Ambient VIBE_* values would point vibe-web at the productive
+# installation; the test must own all runtime paths.
+ISOLATED_ENV = (
+    "VIBE",
+    "VIBE_NO_CONTAINER",
+    "HOME",
+    "VIBE_PROFILE",
+    "VIBE_INSTALL",
+    "VIBE_RUNTIME",
+    "VIBE_STATE",
+    "VIBE_AGENTS_DIR",
+    "VIBE_CONFIG_FILE",
+    "VIBE_CONFIG_DIR",
+    "VIBE_UI_PORT",
+    "VIBE_OPENCODE_PORT",
+    "VIBE_UI_BIND",
+    "VIBE_CONTAINER",
+    "VIBE_HARNESS",
+)
+
 FEEDBACK = (
     "# FEEDBACK — Test\n\n"
     "- [ ] F1 Erster Punkt\n"
@@ -73,12 +93,21 @@ class ProjectDetailUiTest(unittest.TestCase):
         cls.log_dir.mkdir()
         cls.port = free_port()
         env = os.environ.copy()
+        for key in ISOLATED_ENV:
+            env.pop(key, None)
         env.update(
             {
                 "VIBE": str(cls.root),
                 "VIBE_NO_CONTAINER": "1",
                 "VIBE_UI_PORT": str(cls.port),
                 "HOME": str(cls.root / "home"),
+                "VIBE_STATE": str(cls.root / "_toolchain"),
+                "VIBE_INSTALL": str(cls.root / "_toolchain"),
+                "VIBE_RUNTIME": str(cls.log_dir),
+                "VIBE_AGENTS_DIR":
+                    str(cls.root / "home" / ".config" / "opencode" / "agents"),
+                "VIBE_CONFIG_FILE":
+                    str(cls.root / "home" / ".config" / "vibe" / "config.json"),
             }
         )
         cls.proc = subprocess.Popen(
@@ -130,6 +159,20 @@ class ProjectDetailUiTest(unittest.TestCase):
 
     def tearDown(self):
         self.page.close()
+
+    def expand_optional(self, selector):
+        """AP7-neutral: klappt einen Abschnitt auf, falls er als <details>
+        umgesetzt ist. Auf der Bestandsstruktur bleibt der Aufruf ein No-op."""
+        summary = self.page.locator(selector + " > summary")
+        if summary.count():
+            section = self.page.locator(selector).first
+            section.evaluate("el => el.scrollIntoView({block: 'center'})")
+            if not section.evaluate("el => !!el.open"):
+                summary.click()
+                self.wait_until(
+                    lambda: section.evaluate("el => !!el.open"),
+                    message="%s ließ sich nicht aufklappen" % selector,
+                )
 
     def wait_until(self, predicate, timeout=10, message="Bedingung nicht erfüllt"):
         deadline = time.time() + timeout
@@ -208,6 +251,20 @@ class ProjectDetailUiTest(unittest.TestCase):
             self.page.get_by_text("Schreibrechte (Agenten)").is_visible()
         )
 
+        # Der Einstellungen-Screenshot ist der Standardzustands-Nachweis des
+        # AP7-Layouts; er darf nicht die Ladezeile der Agententabelle zeigen.
+        # Die Suite ohne Agentendateien kennt keine Projekt-Agentenzeile,
+        # deshalb ist das Ladeende-Signal die Toggle-Checkbox (erscheint erst
+        # nach Abschluss von /api/project-agents) und zusätzlich der Nachweis,
+        # dass die Ladezeile weg ist.
+        toggle = self.page.locator('input[data-toggle="unconfigured"]')
+        toggle.wait_for()
+        self.assertNotIn(
+            "Lade Agenten",
+            self.panel("einstellungen").inner_text(),
+            "Agententabelle lädt: Screenshot würde die Ladezeile zeigen",
+        )
+
         SHOTS.mkdir(parents=True, exist_ok=True)
         self.page.screenshot(path=str(SETTINGS_SHOT))
         self.assertTrue(SETTINGS_SHOT.exists() and SETTINGS_SHOT.stat().st_size > 0)
@@ -243,6 +300,7 @@ class ProjectDetailUiTest(unittest.TestCase):
         )
 
         old_tablist = self.page.locator('[role="tablist"]').element_handle()
+        self.expand_optional("#sandbox")
         tools = self.panel("einstellungen").get_by_label("Build-Werkzeuge")
         tools.fill("git npm")
         self.panel("einstellungen").get_by_role(
@@ -257,6 +315,7 @@ class ProjectDetailUiTest(unittest.TestCase):
             "Einstellungen",
             "Die Aktion setzte das gewählte Register zurück",
         )
+        self.expand_optional("#sandbox")
         self.assertEqual(
             self.panel("einstellungen").get_by_label("Build-Werkzeuge").input_value(),
             "git npm",

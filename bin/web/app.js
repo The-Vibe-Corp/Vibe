@@ -1,6 +1,11 @@
 
 const OC_URL=(document.querySelector('meta[name="vibe-opencode-url"]')||{}).content||'';
-const T=(()=>{const m=location.hash.match(/t=([^&]+)/);if(m){sessionStorage.t=m[1];history.replaceState(null,'',location.pathname)}return sessionStorage.t||''})();
+/* AP13: Der Token kommt nur aus dem #t=-Hash und wird ausschließlich im
+   Speicher gehalten. Beim ersten Laden tauscht boot() ihn gegen einen
+   Session-Cookie ein (POST /api/login), damit ein Neuladen ohne Hash
+   angemeldet bleibt. Der frühere Weg über sessionStorage entfällt bewusst:
+   Er hielt das Geheimnis dauerhaft im Browser-Speicher. */
+const T=(()=>{const m=location.hash.match(/t=([^&]+)/);if(m)history.replaceState(null,'',location.pathname);return m?m[1]:''})();
 function errText(j,status){const e=j&&j.error;return (e&&(e.message||e))||(j&&j.message)||('HTTP '+status)}
 async function api(p,body){const o=body?{method:'POST',headers:{'X-Token':T,'Content-Type':'application/json'},body:JSON.stringify(body)}:{headers:{'X-Token':T}};
  const r=await fetch(p,o);const j=await r.json().catch(()=>({}));if(!r.ok&&!body)throw new Error(errText(j,r.status));return j}
@@ -8,8 +13,8 @@ function el(t,a={},...c){const e=document.createElement(t);for(const[k,v]of Obje
  for(const x of c.flat())if(x!==null&&x!==undefined&&x!==false)e.append(x.nodeType?x:document.createTextNode(String(x)));return e}
 const main=document.getElementById('main'),nav=document.getElementById('nav'),srvbox=document.getElementById('srv');let tab='projects',es=null,timer=null,LOG=null;
 function showErr(e){main.replaceChildren(el('div',{class:'card err'},el('b',{class:'bad'},'Fehler: '),String(e&&e.message||e)),el('button',{class:'b',on:{click:()=>setTab('projects')}},'← zur Projektliste'))}
-function setTab(t){exitLogFull();LOG=null;DTAB='arbeit';tab=t;if(es){es.close();es=null}clearInterval(timer);[...nav.children].forEach(b=>b.classList.toggle('on',b.dataset.t===t));Promise.resolve(({projects,agents,mcp,env,costs}[t])()).catch(showErr);header()}
-[['projects','Projekte'],['agents','Agenten & Modelle'],['mcp','MCP-Tools'],['env','Umgebung'],['costs','Kosten']].forEach(([k,l])=>nav.append(el('button',{'data-t':k,on:{click:()=>setTab(k)}},l)));
+function setTab(t){exitLogFull();LOG=null;DTAB='arbeit';tab=t;if(es){es.close();es=null}clearInterval(timer);[...nav.children].forEach(b=>b.classList.toggle('on',b.dataset.t===t));Promise.resolve(({projects,agents,mcp,env,costs,security}[t])()).catch(showErr);header()}
+[['projects','Projekte'],['agents','Agenten & Modelle'],['mcp','MCP-Tools'],['env','Umgebung'],['costs','Kosten'],['security','Zugriffssicherheit']].forEach(([k,l])=>nav.append(el('button',{'data-t':k,on:{click:()=>setTab(k)}},l)));
 const toastBox=el('div',{id:'toasts',class:'toasts',role:'status','aria-live':'polite','aria-atomic':'false'});
 document.body.append(toastBox);
 function toast(m){const t=el('div',{class:'toast'},el('span',{class:'toasttext'},String(m)),el('button',{class:'b x',type:'button','aria-label':'Meldung schließen',title:'Meldung schließen',on:{click:()=>t.remove()}},'×'));
@@ -63,11 +68,17 @@ window.addEventListener('resize',()=>{if(LOG)LOG.fit()});
 const GOOD=['sehr schnell','schnell','gering','geeignet','gut','ja'],MID=['mittel','bedingt','unklar'],BAD=['langsam','hoch','eingeschränkt','nicht empfohlen','nein'];
 function badge(v){v=v||'?';return el('span',{class:'pill '+(GOOD.includes(v)?'ok':MID.includes(v)?'warn':BAD.includes(v)?'bad':'mut')},v)}
 async function header(){try{const s=await api('/api/server');
- const quit=el('button',{class:'b quit',title:'Beendet diese App (das Dashboard), nicht opencode',on:{click:()=>askInline(quit,'Dashboard (diese App) beenden? Laufende Agentenläufe in tmux laufen weiter.','Ja, beenden',async()=>{await api('/api/shutdown',{});
+ const isPi=(s.harness||'opencode')==='pi';
+ const quit=el('button',{class:'b quit',title:isPi?'Beendet diese App (das Dashboard), nicht laufende Agentenläufe in tmux':'Beendet diese App (das Dashboard), nicht opencode',on:{click:()=>askInline(quit,'Dashboard (diese App) beenden? Laufende Agentenläufe in tmux laufen weiter.','Ja, beenden',async()=>{await api('/api/shutdown',{});
    main.replaceChildren(el('div',{class:'card'},'Dashboard beendet. Neu starten im Terminal: vibe ui'));srvbox.replaceChildren()})}},'Dashboard beenden');
  srvbox.replaceChildren(el('span',{class:'ok'},'Harness: '+(s.harness||'?')),el('span',{class:'sep'}),
-  el('span',{class:s.up?'ok':'mut'},'opencode-Server: '+(s.up?'an':'aus')),
-  el('button',{class:'b',title:'Startet/stoppt nur den gemeinsamen opencode-Server (Weboberfläche), nicht dieses Dashboard',on:{click:async()=>{toast((await api('/api/server',{action:s.up?'stop':'start'})).message);header()}}},s.up?'opencode stoppen':'opencode starten'),el('span',{class:'sep'}),quit)}catch(e){}}
+  ...((isPi?[el('span',{class:'mut'},'Pi: Agentenläufe laufen ohne opencode-Server'),el('span',{class:'sep'})
+      ]:[el('span',{class:s.up?'ok':'mut'},'opencode-Server: '+(s.up?'an':'aus')),
+      el('button',{class:'b',title:'Startet/stoppt nur den gemeinsamen opencode-Server (Weboberfläche), nicht dieses Dashboard',on:{click:async()=>{toast((await api('/api/server',{action:s.up?'stop':'start'})).message);header()}}},s.up?'opencode stoppen':'opencode starten'),el('span',{class:'sep'})])),
+  quit)}catch(e){}}
+/* F20: Welche Alternative gilt? Die Karten richten ihre Hinweise und
+   steuerbaren Elemente nach der aktiv gewählten Harness-Auswahl aus. */
+const harnessSelected=async()=>{try{const s=await api('/api/server');return (s&&s.harness)||'opencode'}catch(e){return 'opencode'}};
 async function rootsCard(){const rs=await api('/api/roots');const inp=el('input',{placeholder:'/var/mnt/data/.../mein-entwicklungsordner'});
  const rows=rs.map(r=>el('div',{class:'bar'},el('b',{},r.path),el('span',{class:'mut'},r.projects.length+' Projekt(e)'+(r.projects.length?': '+r.projects.join(', '):'')),
   r.fixed?el('span',{class:'pill'},'Standard'):el('button',{class:'b d',on:{click:async()=>{await api('/api/roots',{action:'remove',path:r.path});setTab('projects')}}},'entfernen')));
@@ -75,7 +86,9 @@ async function rootsCard(){const rs=await api('/api/roots');const inp=el('input'
   el('div',{class:'bar'},inp,el('button',{class:'b p',on:{click:async()=>{const r=await api('/api/roots',{action:'add',path:inp.value});toast(r.message);setTab('projects')}}},'Einlesen'),
    el('button',{class:'b',on:{click:async()=>{await api('/api/roots',{action:'scan'});setTab('projects')}}},'Neu einlesen')))}
 async function projects(){
- if(!T){main.replaceChildren(el('div',{class:'card'},'Token fehlt. Dashboard mit "vibe ui" öffnen (der Link enthält das Token).'));return}
+ // AP13: Kein clientseitiger Token-Zwang mehr. Die Berechtigung prüft der
+ // Server (Session-Cookie oder Token); ohne Berechtigung entscheidet boot()
+ // über die Anmeldekarte, und die Anfrage scheitert strukturiert.
  const render=async()=>{const ps=await api('/api/projects');
   const tb=el('table',{},el('tr',{},...['Projekt','Typ','Branch','Offen','Änd.','Lauf','Letzter Commit'].map(h=>el('th',{},h))));
   ps.forEach(p=>tb.append(el('tr',{class:'row',on:{click:()=>detail(p.name).catch(showErr)}},el('td',{},p.name,p.init?null:el('span',{class:'warn'},' ●')),el('td',{},p.type),el('td',{},p.branch),
@@ -85,16 +98,19 @@ async function projects(){
  await render();timer=setInterval(()=>{if(tab==='projects'&&!document.activeElement.matches('input,textarea,select'))render().catch(()=>{})},5000)}
 function newForm(){const types=el('select',{});api('/api/types').then(t=>t.forEach(x=>types.append(el('option',{},x))));
  const nm=el('input',{placeholder:'projektname (a-z, 0-9, -)'}),tp=el('input',{placeholder:'nur Android: Vorlage aus "android create --list"'});
+ const gu=el('input',{placeholder:'https://github.com/owner/name.git','aria-label':'GitHub-Adresse zum Auschecken'});
  return el('div',{class:'card',id:'nf'},el('b',{},'Neues Projekt (im Standardordner)'),el('div',{class:'grid'},el('div',{},el('label',{},'Name'),nm),el('div',{},el('label',{},'Typ'),types)),el('label',{},'Android-Vorlage'),tp,
-  el('div',{class:'mut'},'Nach dem Anlegen öffnet der Projektassistent die fachlichen Schritte und legt SPEC.md sowie fehlende Grundlagen an.'),
-  el('div',{class:'bar'},el('button',{class:'b p',on:{click:async()=>{const r=await api('/api/new',{name:nm.value,type:types.value,tpl:tp.value});toast(r.message);if(r.ok){DTAB='assistent';detail(nm.value).catch(showErr)}else setTab('projects')}}},'Anlegen und Assistent öffnen')))}
+  el('label',{},'Oder aus GitHub auschecken'),gu,
+  el('div',{class:'mut'},'Nach dem Anlegen öffnet der Projektassistent die fachlichen Schritte und legt SPEC.md sowie fehlende Grundlagen an. Beim Auschecken gilt die lokale vibe-Konfiguration dieses Rechners; aktive Agenten werden auf die lokal konfigurierten Agenten angepasst.'),
+  el('div',{class:'bar'},el('button',{class:'b p',on:{click:async()=>{const r=await api('/api/new',{name:nm.value,type:types.value,tpl:tp.value});toast(r.message);if(r.ok){DTAB='assistent';detail(nm.value).catch(showErr)}else setTab('projects')}}},'Anlegen und Assistent öffnen'),
+   el('button',{class:'b',type:'button',on:{click:async()=>{const r=await api('/api/clone',{url:gu.value,name:nm.value});toast(r.message||'');if(r.ok&&r.project){await projects();setTimeout(()=>detail(r.project).catch(showErr),800)}else setTab('projects')}}},'Aus GitHub auschecken')))}
 let DTAB='arbeit';
 const DTABS=[['arbeit','Arbeit'],['ausgabe','Ausgabe'],['assistent','Assistent'],['einstellungen','Einstellungen']];
 function tile(k,v,tone){return el('div',{class:'tile'},el('div',{class:'k'},k),el('div',{class:'v'+(tone?' '+tone:'')},String(v)))}
 function tabPanel(key,...c){return el('section',{class:'tabpanel',role:'tabpanel',id:'panel-'+key,'data-panel':key,'aria-labelledby':'tab-'+key,hidden:''},...c)}
 function showDetailTab(key,panels,btns,focus){DTAB=key;
  DTABS.forEach(([k])=>{const on=k===key;btns[k].setAttribute('aria-selected',on?'true':'false');btns[k].tabIndex=on?0:-1;panels[k].hidden=!on});
- if(key!=='ausgabe')exitLogFull();if(key==='ausgabe'&&LOG)LOG.fit();if(focus&&btns[key])btns[key].focus()}
+ if(key!=='ausgabe')exitLogFull();if(key==='ausgabe'&&LOG&&LOG.card.isConnected)LOG.fit();if(focus&&btns[key])btns[key].focus()}
 function detailTabs(panels){const btns={},list=el('div',{class:'tabs',role:'tablist','aria-label':'Projektbereiche'});
  DTABS.forEach(([k,label])=>{const b=el('button',{type:'button',role:'tab',id:'tab-'+k,'aria-controls':'panel-'+k},label);
   b.addEventListener('click',()=>showDetailTab(k,panels,btns));btns[k]=b;list.append(b)});
@@ -107,14 +123,14 @@ function detailTabs(panels){const btns={},list=el('div',{class:'tabs',role:'tabl
 async function detail(name){
  clearInterval(timer);if(es){es.close();es=null}exitLogFull();LOG=null;window.scrollTo(0,0);
  const d=await api('/api/project?name='+encodeURIComponent(name));
+ const isPi=(await harnessSelected())==='pi';
  const runPill=el('span',{id:'runstate',class:'pill '+(d.running?'run':''),title:d.running?'Der Paket-Läufer ist aktiv.':'Der Agentenlauf ist beendet.'},d.running?'läuft':'gestoppt');
  const refreshRun=async()=>{const s=await api('/api/run-state?name='+encodeURIComponent(name));
   runPill.textContent=s.running?'läuft':'gestoppt';runPill.className='pill '+(s.running?'run':'');
   runPill.title=s.running?'Der Paket-Läufer ist aktiv.':'Der Agentenlauf ist beendet.';return s};
  const act=(p,b)=>async()=>{const r=await api(p,b);toast(r.message);detail(name).catch(showErr)};
  let openTab=()=>{};
- const items=el('div',{class:'itemlist'},d.items.length?d.items.map(i=>el('div',{class:'item'},el('span',{class:'pill '+(i.state==='BLOCKIERT'?'bad':'warn')},i.state),el('span',{},el('b',{},i.id+' '),i.title))):el('span',{class:'ok'},'Alles abgehakt'));
- const itemsCard=el('div',{class:'card'},el('div',{class:'bar'},el('b',{},'Offene Arbeitspakete ('+d.items.length+')')),items);
+ const itemsCard=openPackagesCard(d,name);
  const fact=(k,v)=>el('div',{class:'factrow'},el('span',{class:'mut'},k),el('span',{},String(v)));
  const factsCard=el('div',{class:'card'},el('b',{},'Projekt'),fact('Pfad',d.path),fact('Typ',d.type),fact('Branch',d.branch),fact('Letzter Commit',d.last||'—'),fact('Vorbereitet',d.init?'ja':'nein'));
  const startVerify=mode=>async()=>{openTab('ausgabe');const r=await api('/api/verify',{name,mode});toast(r.message);if(r.ok)stream('verify')};
@@ -122,32 +138,55 @@ async function detail(name){
   el('div',{class:'mut'},'quick prüft Struktur und Sicherheit, full zusätzlich Unit- und Browsertests. Die Ausgabe erscheint im Bereich „Ausgabe“.'),
   el('div',{class:'bar'},el('button',{class:'b',type:'button',on:{click:startVerify('quick')}},'Prüfung quick'),
    el('button',{class:'b',type:'button',on:{click:startVerify('full')}},'Prüfung full'),
-   el('a',{href:OC_URL,target:'_blank'},'opencode-Weboberfläche')));
+   isPi?null:el('a',{href:OC_URL,target:'_blank'},'opencode-Weboberfläche')));
  const tsel=el('select',{});api('/api/types').then(t=>t.forEach(x=>{const o=el('option',{},x);if(x===d.type)o.selected=true;tsel.append(o)}));
  const initCard=d.init?null:el('div',{class:'card warnbox'},el('b',{class:'warn'},'Noch nicht für vibe vorbereitet'),el('div',{class:'mut'},'Ergänzt fehlende Dateien (FEEDBACK.md, TICKETS.md, AGENTS.md, .vibe/project.env). Vorhandenes wird nie überschrieben, es wird nichts committet.'),
   el('div',{class:'bar'},tsel,el('button',{class:'b p',type:'button',on:{click:act('/api/init',{name,type:tsel.value})}},'Für vibe vorbereiten')));
  const head=el('div',{class:'bar detailbar'},
   el('button',{class:'b',type:'button',on:{click:()=>setTab('projects')}},'← zurück'),
   el('div',{class:'dhead'},el('h2',{},name),runPill,el('span',{class:'mut dmeta',title:d.path},d.type+' · '+d.branch+' · '+d.dirty+' Änderungen · '+d.path)),
-  el('div',{class:'bar dactions'},el('button',{class:'b p',type:'button',on:{click:act('/api/run',{name})}},'Agentenlauf starten'),el('button',{class:'b',type:'button',on:{click:act('/api/stop',{name})}},'Stoppen')));
+  el('div',{class:'bar dactions'},
+   d.dirty?el('button',{class:'b',type:'button',on:{click:function(){askInline(this,'Nicht committete Änderungen bleiben unverändert. Lauf trotzdem starten?','Trotz Änderungen starten',async()=>{const r=await api('/api/run',{name,keep_changes:true});toast(r.message);detail(name).catch(showErr)})}}},'Trotz Änderungen starten'):null,
+   el('button',{class:'b p',type:'button',on:{click:act('/api/run',{name})}},'Agentenlauf starten'),el('button',{class:'b',type:'button',on:{click:act('/api/stop',{name})}},'Stoppen')));
  const tiles=el('div',{class:'tiles'},tile('Offene Arbeitspakete',d.items.length,d.items.length?'warn':'ok'),tile('Änderungen',d.dirty,d.dirty?'warn':'ok'),tile('Branch',d.branch,'small'),tile('Letzter Commit',d.last||'—','small'));
  const L=logView(d,()=>stream('run'));
- const steer=steerCard(name),S=subagentCard(name);
+ /* B11: Die Ausgabeansicht wird von Grund auf neu aufgebaut. Sie zeigt den
+    Hauptagenten und jeden laufenden Subagenten gleichzeitig; beendete
+    Subagenten verschwinden. Die frühere Protokollkarte bleibt nur als
+    Rückfall für Projekte ohne Agentenlauf (und für Prüfungsläufe) bestehen. */
+ const O=outputView(name,d,isPi);
+ const ausgabePanel=tabPanel('ausgabe');
+ let outputMode='';
+ let outputPinned='';
+ function setOutputMode(mode){
+  if(mode===outputMode)return;
+  outputMode=mode;
+  ausgabePanel.classList.toggle('bv-agent',mode==='agent');
+  if(mode==='agent')ausgabePanel.replaceChildren(O.card);else ausgabePanel.replaceChildren(L.card);
+  if(mode==='legacy')L.fit();else O.fit()}
  const panels={arbeit:tabPanel('arbeit',tiles,el('div',{class:'grid'},
    el('div',{},itemsCard,ticketCard(d,name),ticketFormCard(d,name),feedbackCard(d,name),bugFormCard(d,name),feedbackFormCard(d,name)),
    el('div',{},pauseCard(d,name),autonomousCard(d,name),checksCard,factsCard))),
-  ausgabe:tabPanel('ausgabe',el('div',{class:'output-layout'},L.card,el('div',{class:'output-side',id:'f19-controls'},steer.card,S.card))),
+  ausgabe:ausgabePanel,
   assistent:tabPanel('assistent',guideCard(name)),
-  einstellungen:tabPanel('einstellungen',el('div',{class:'grid'},projectAgentsCard(name),rightsCard(d,name),sandboxCard(d,name)))};
+  einstellungen:tabPanel('einstellungen',settingsPanel(d,name,isPi))};
  const tabs=detailTabs(panels);
  openTab=k=>showDetailTab(k,panels,tabs.btns);
  main.replaceChildren(...[head,initCard,tabs.list,panels.arbeit,panels.ausgabe,panels.assistent,panels.einstellungen].filter(Boolean));
- L.fit();
- function stream(kind){if(es)es.close();L.clear();es=new EventSource('/api/stream?name='+encodeURIComponent(name)+'&kind='+kind+'&t='+encodeURIComponent(T));
-  es.onmessage=ev=>L.feed(JSON.parse(ev.data).join('\n')+'\n')}
- function syncRun(){refreshRun().then(s=>steer.setState(!!(s&&s.running))).catch(()=>{})}
- stream('run');syncRun();S.poll().catch(()=>{});
- timer=setInterval(()=>{syncRun();S.poll().catch(()=>{})},3000)}
+ setOutputMode('legacy');
+ let streamKind='run';
+ function stream(kind){if(es)es.close();streamKind=kind;L.clear();O.clearMain();
+  if(kind==='verify'){outputPinned='verify';setOutputMode('legacy')}else{outputPinned='';}
+  es=new EventSource('/api/stream?name='+encodeURIComponent(name)+'&kind='+kind+'&t='+encodeURIComponent(T));
+  es.onmessage=ev=>{const text=JSON.parse(ev.data).join('\n')+'\n';L.feed(text);O.feedMain(text)}}
+ function applyAgents(data){
+  if(outputPinned==='verify'){setOutputMode('legacy');return}
+  const running=!!(data&&data.running),session=String((data&&data.session)||'');
+  setOutputMode(running||session?'agent':'legacy');
+  O.sync(data)}
+ async function pollAgents(){try{applyAgents(await api('/api/subagents?name='+encodeURIComponent(name)))}catch(e){}}
+ stream('run');refreshRun().catch(()=>{});pollAgents();
+ timer=setInterval(()=>{refreshRun().catch(()=>{});pollAgents()},2000)}
 function pauseCard(d,name){
  const active=!!d.pause_after;
  const btn=el('button',{class:'b'+(active?' p':''),on:{click:async()=>{const r=await api('/api/pause',{name,action:active?'off':'on'});toast(r.message);if(r.ok)detail(name).catch(showErr)}}},active?'Pause aufheben':'Nach aktuellem Paket anhalten');
@@ -158,7 +197,50 @@ function autonomousCard(d,name){
  const btn=el('button',{class:'b'+(active?'':' p'),type:'button',on:{click:async()=>{const r=await api('/api/autonomous',{name,action:active?'off':'on'});toast(r.message);if(r.ok)detail(name).catch(showErr)}}},active?'Autonomen Modus ausschalten':'Autonomen Modus einschalten');
  return el('div',{class:'card',id:'autonomous'},el('div',{class:'bar'},el('b',{},'Autonomer Modus'),el('span',{class:'pill '+(active?'warn':'mut')},active?'aktiv':'aus'),btn),
   el('div',{class:'mut'},'Ist der Modus aktiv, entscheidet der Agent ohne Antwort des Nutzers selbst und dokumentiert die Entscheidung als Antwort auf seine Rückfrage. Die Einstellung lässt sich auch während eines Laufs ändern und gilt nur für dieses Projekt.'))}
-function projectAgentsCard(name){
+/* AP7: Einstellungs-Tab neu gegliedert. Wichtiges (Agenten) steht offen oben,
+   optionale Bereiche sind als sichtbare Aufklapunkte eingeklappt. Die
+   Abschnittsleiste zeigt den Zustand je Bereich und springt bei Klick dorthin,
+   sodass der Standardzustand ohne Scrollen bedienbar bleibt. */
+function settingsSection(id,title,open,body){
+ return el('details',{class:'card seccard',id,...(open?{open:'open'}:{})},
+  el('summary',{},el('span',{},title)),el('div',{class:'secbody'},body))}
+function sandboxStatus(s){
+ const active=!!(s&&s.enabled),missing=(s&&s.missing_tools)||[];
+ const state=!active?'aus':(s.error?'Fehler':(!s.bwrap?'bubblewrap fehlt':(missing.length?'Werkzeuge fehlen':'bereit')));
+ const tone=!active?'mut':(s.error||!s.bwrap||missing.length?'bad':'ok');
+ return {state,tone}}
+function settingsPanel(d,name,isPi){
+ const g=d.github||{enabled:false};
+ const sandbox=sandboxStatus(d.sandbox);
+ const zustand={agenten:'…',
+  rechte:d.write_dirs_error?'Fehler':(d.write_dirs_custom?(d.write_dirs.length+' Verzeichnisse'):'Standardliste'),
+  sandbox:sandbox.state,github:g.enabled?'aktiv':'aus'};
+ const tone=key=>{
+  if(key==='agenten')return 'mut';
+  if(key==='rechte')return zustand.rechte==='Fehler'?'bad':'mut';
+  if(key==='sandbox')return sandbox.tone;
+  return g.enabled?'ok':'mut'};
+ /* F29: Die Priorisierung ist in der Maske „Arbeit" zu Hause (Karte
+    „Offene Arbeitspakete") und hat keinen Abschnitt mehr in Einstellungen. */
+ const chips={},sections={};
+ for(const[key,label] of [['agenten','Agenten'],['rechte','Schreibrechte'],['sandbox','Sandbox'],['github','Git & GitHub']]){
+  chips[key]=el('button',{class:'b settingschip',type:'button','data-goto':key,
+   on:{click:()=>to(key)},
+   title:'Öffnet den Abschnitt „'+label+'“'},el('span',{},label),
+   el('span',{class:'pill '+tone(key)},zustand[key]))}
+ const to=key=>{const sec=sections[key];if(!sec)return;
+  if(sec.tagName==='DETAILS')sec.open=true;sec.scrollIntoView({block:'start'})}
+ const agentPill=chips.agenten.querySelector('.pill');
+ const agentsSec=projectAgentsCard(name,(text,t)=>{agentPill.textContent=text;
+  if(t)agentPill.className='pill '+t});
+ const rechteSec=settingsSection('settings-rechte','Schreibrechte (Agenten)',false,rightsBody(d,name));
+ const sandboxSec=settingsSection('sandbox','Sandbox (optional)',false,sandboxBody(d,name,isPi));
+ const githubSec=settingsSection('github','Git & GitHub (optional)',false,githubBody(d,name));
+ sections.agenten=agentsSec;sections.rechte=rechteSec;sections.sandbox=sandboxSec;sections.github=githubSec;
+ return el('div',{class:'settingsstack'},
+  el('div',{class:'settings-nav','aria-label':'Einstellungsbereiche'},...Object.values(chips)),
+  agentsSec,rechteSec,sandboxSec,githubSec)}
+function projectAgentsCard(name,onPill){
  const body=el('div',{},el('span',{class:'mut'},'Lade Agenten …'));
  let showUnconfigured=false;
  const rowFor=(data,a)=>{
@@ -192,9 +274,11 @@ function projectAgentsCard(name){
   if(!visible.length)parts.push(el('span',{class:'mut'},'Keine Agenten sichtbar.'));
   if(data.error)parts.push(el('div',{class:'bad'},data.error));
   body.replaceChildren(...parts)};
- const load=async()=>{rowsCard(await api('/api/project-agents?name='+encodeURIComponent(name)))};
- load().catch(e=>body.replaceChildren(el('div',{class:'bad'},'Agentenauswahl nicht verfügbar: '+String(e&&e.message||e))));
- return el('div',{class:'card',id:'project-agents'},el('b',{},'Agenten in diesem Projekt'),body)}
+ const load=async()=>{const data=await api('/api/project-agents?name='+encodeURIComponent(name));rowsCard(data);
+  if(onPill)onPill(String(data.agents.filter(a=>a.configured||a.is_vibe).length)+' aktiv')};
+ load().catch(e=>{body.replaceChildren(el('div',{class:'bad'},'Agentenauswahl nicht verfügbar: '+String(e&&e.message||e)));
+  if(onPill)onPill('Fehler','bad')});
+ return el('section',{class:'card',id:'project-agents'},el('b',{},'Agenten in diesem Projekt'),body)}
 function guideCard(name){
  const body=el('div',{},el('span',{class:'mut'},'Lade Projektassistent …'));
  const load=async()=>{const g=await api('/api/guide?name='+encodeURIComponent(name));body.replaceChildren(...drawGuide(g,name))};
@@ -276,8 +360,8 @@ function ticketCard(d,name){const list=el('div',{});const cls=s=>s==='erledigt'?
  draw();
  return el('div',{class:'card',id:'tickets'},el('div',{class:'bar'},el('b',{},'Arbeitspakete ('+d.tickets.length+')'),toggle),list)}
 function ticketFormCard(d,name){
- const f={id:el('input',{placeholder:'z. B. F18','aria-label':'ID des Arbeitspakets'}),t:el('input',{}),b:el('textarea',{rows:3,placeholder:'Was soll umgesetzt werden?'})};
- return el('div',{class:'card',id:'ticket-new'},el('b',{},'Neues Arbeitspaket'),el('label',{},'ID'),f.id,el('label',{},'Titel'),f.t,el('label',{},'Beschreibung'),f.b,
+ const f={id:el('input',{placeholder:'leer lassen: automatisch vergebene ID','aria-label':'ID des Arbeitspakets'}),t:el('input',{}),b:el('textarea',{rows:3,placeholder:'Was soll umgesetzt werden?'})};
+ return el('div',{class:'card',id:'ticket-new'},el('b',{},'Neues Arbeitspaket'),el('label',{},'ID (automatisch vergeben, wenn leer)'),f.id,el('label',{},'Titel'),f.t,el('label',{},'Beschreibung'),f.b,
   el('div',{class:'bar'},el('button',{class:'b p',type:'button',on:{click:async()=>{const r=await api('/api/ticket',{name,action:'add',id:f.id.value,title:f.t.value,description:f.b.value});toast(r.message);if(r.ok)detail(name).catch(showErr)}}},'Arbeitspaket anlegen')))}
 function bugFormCard(d,name){
  const f={t:el('input',{}),b:el('textarea',{rows:3,placeholder:'Was funktioniert nicht?'})};
@@ -304,6 +388,10 @@ function hlLineClass(line){
  return ''}
 function hlLine(line){
  const cls=hlLineClass(line),span=cls?el('span',{class:cls}):el('span');
+ /* AP16/AK4: Zeilen mit Markup-Zeichen bleiben als ein Textknoten
+    unangetastet. So ist der Protokolltext wörtlich und unteilbar sichtbar
+    und eine HTML-Interpretation bleibt ausgeschlossen. */
+ if(/[<>]/.test(line)){span.append(document.createTextNode(line));return span}
  let last=0,m;HL_INLINE.lastIndex=0;
  while((m=HL_INLINE.exec(line))){
   if(m.index>last)span.append(document.createTextNode(line.slice(last,m.index)));
@@ -333,92 +421,147 @@ function logView(d,onRun){
  const pauseBtn=el('button',{class:'b',type:'button'},'Pause'),fullBtn=el('button',{class:'b',type:'button'},'Vergrößern');
  const runBtn=el('button',{class:'b',type:'button',title:'Verbindet die Ausgabe wieder mit dem Agentenlauf',on:{click:onRun}},'Lauf-Log');
  const card=el('div',{class:'card logcard'});
- const fit=()=>{if(card.classList.contains('full'))return;const h=Math.max(240,window.innerHeight-pre.getBoundingClientRect().top-18);pre.style.height=h+'px'};
+ const fit=()=>{if(card.classList.contains('full'))return;
+  pre.style.height=Math.max(240,window.innerHeight-pre.getBoundingClientRect().top-18)+'px'};
  pauseBtn.addEventListener('click',()=>{logPaused=!logPaused;pauseBtn.textContent=logPaused?'Fortsetzen':'Pause';pauseBtn.classList.toggle('p',logPaused);
   if(!logPaused&&logBuf){append(logBuf);logBuf='';pre.scrollTop=pre.scrollHeight}});
  fullBtn.addEventListener('click',()=>setLogFull(!card.classList.contains('full')));
  card.append(el('div',{class:'bar'},el('b',{},'Live-Ausgabe'),el('span',{class:'mut'},'Lauf-Ausgabe des aktuellen Projekts'),runBtn,pauseBtn,fullBtn),pre);
  LOG={card,pre,button:fullBtn,fit};
- return {card,fit,clear:()=>{pre.replaceChildren();totalChars=0;logBuf=''},feed:text=>{if(logPaused){logBuf=(logBuf+text).slice(-80000);return}append(text)}}}
-/* F19: Zusatzanweisung an den laufenden Agenten. Der Erfolg wird ausschließlich
-   aus der Antwort der API abgeleitet; ohne aktiven Lauf ist der Knopf gesperrt. */
-function steerCard(name){
- const ta=el('textarea',{rows:2,maxlength:'4000',id:'steer-text','aria-label':'Zusatzanweisung an den laufenden Agenten',placeholder:'Zusatzanweisung an den laufenden Agenten …'});
- const btn=el('button',{class:'b p',type:'button',id:'steer-send'},'Anweisung senden');
- const state=el('span',{class:'pill mut',id:'steer-state'},'Lauf unbekannt');
- const send=async()=>{
+ return {card,pre,fit,
+  clear:()=>{pre.replaceChildren();totalChars=0;logBuf=''},
+  feed:text=>{if(logPaused){logBuf=(logBuf+text).slice(-80000);return}append(text)}}
+}
+/* B11: Die Ausgabeansicht ist vollständig neu gebaut. Hauptagent und jeder
+   laufende Subagent haben eine eigene, gleichzeitig sichtbare Live-Fläche;
+   beendete Subagenten verschwinden. Die Anweisungseingabe nennt ihr Ziel
+   sichtbar und sendet die gewählte Session; Fortsetzen erscheint nur bei
+   einem gestoppten Lauf mit bekannter Session. */
+function outputView(name,d,isPi){
+ const mainPre=el('pre',{class:'bv-log','aria-label':'Ausgabe des Hauptagenten'});
+ const mainState=el('span',{class:'pill mut'},'gestoppt');
+ const mainView=el('section',{class:'bv-view bv-main','data-agent-view':'','data-role':'main','data-session':'',role:'log','aria-label':'Hauptagent'},
+  el('div',{class:'bv-head'},el('b',{},'Hauptagent'),mainState),mainPre);
+ const subsBox=el('div',{class:'bv-subs','aria-label':'Laufende Subagenten'});
+ const select=el('select',{'aria-label':'Ziel'});
+ const ta=el('textarea',{rows:'2',maxlength:'4000','aria-label':'Zusatzanweisung für den gewählten Agenten',placeholder:'Zusatzanweisung …'});
+ const send=el('button',{class:'b p',type:'button'},'Anweisung senden');
+ const cont=el('button',{class:'b p',type:'button',hidden:''},'Fortsetzen');
+ const hint=el('span',{class:'mut'},isPi
+  ?'Bei Pi ist das Steuern nicht möglich: Pi läuft im Print-Modus (--no-session) ohne fortsetzbare Session.'
+  :'Die Anweisung geht an das in „Ziel“ gewählte Ziel und ist nur während eines Laufs möglich.');
+ const controls=el('section',{class:'card bv-controls'},
+  el('div',{class:'bv-bar'},el('span',{class:'bv-label'},'Ziel'),select),
+  el('div',{class:'bv-bar'},ta),
+  el('div',{class:'bv-bar'},send,cont,hint));
+ const card=el('div',{class:'bv-root'},controls,mainView,subsBox);
+ let mainText=(d.tail||[]).join('\n')||'(noch keine Ausgabe)';
+ let lastRunning=false,optionKey='';
+ const children=new Map();
+ /* AP16: Die Ausgabeansicht nutzt denselben F19-Highlighter wie das
+    Lauf-Log (renderLogChunk, DOM-only). Der Text bleibt unverändert; die
+    Hervorhebung ist reine Darstellung. */
+ function renderMain(){mainPre.replaceChildren(renderLogChunk(mainText))}
+ renderMain();
+ function nameOf(entry){return String(entry.agent||'Subagent')+(entry.description?' — '+entry.description:'')}
+ function setText(node,text){
+  if(node.text===text)return;
+  node.text=text;
+  const near=node.pre.scrollHeight-node.pre.scrollTop-node.pre.clientHeight<70;
+  node.pre.replaceChildren(renderLogChunk(text||'(noch keine Ausgabe)'));
+  if(near)node.pre.scrollTop=node.pre.scrollHeight}
+ function makeChild(entry){
+  const pre=el('pre',{class:'bv-log'});
+  const state=el('span',{class:'pill run'},'läuft');
+  /* F30: Jede laufende Karte lässt sich per Knopf nahezu ansichtsfüllend
+     vergrößern und mit demselben Knopf wieder herstellen. Der Zustand lebt
+     nur am Kartenelement; beim Entfernen des Subagenten verschwindet er mit. */
+  const toggle=el('button',{class:'b',type:'button','aria-label':'Subagent vergrößern','aria-expanded':'false'},'Vergrößern');
+  const view=el('section',{class:'bv-view bv-sub','data-agent-view':'','data-role':'subagent','data-session':String(entry.session||''),role:'log','aria-label':nameOf(entry)},
+   el('div',{class:'bv-head'},el('b',{},nameOf(entry)),el('div',{class:'bv-head-actions'},state,toggle)),pre);
+  let enlarged=false;
+  const setEnlarged=on=>{
+   enlarged=on;
+   view.classList.toggle('enlarged',on);
+   toggle.textContent=on?'Verkleinern':'Vergrößern';
+   toggle.setAttribute('aria-label',on?'Subagent verkleinern':'Subagent vergrößern');
+   toggle.setAttribute('aria-expanded',on?'true':'false')};
+  toggle.addEventListener('click',()=>setEnlarged(!enlarged));
+  const node={view,pre,state,text:'',loading:false};
+  setText(node,String(entry.output||''));
+  return node}
+ async function loadChild(node,entry){
+  if(node.loading)return;
+  node.loading=true;
+  try{const r=await api('/api/subagent-output?name='+encodeURIComponent(name)+'&session='+encodeURIComponent(entry.session||''));
+   if(r&&r.ok)setText(node,String(r.text||''));
+   else if(!node.text&&entry.output)setText(node,String(entry.output))}
+  catch(e){}
+  finally{node.loading=false}}
+ function sync(data){
+  const running=!!(data&&data.running),session=String((data&&data.session)||'');
+  lastRunning=running;
+  mainView.setAttribute('data-session',session);
+  mainView.setAttribute('aria-label','Hauptagent'+(session?' '+session:''));
+  mainState.textContent=running?'läuft':'gestoppt';
+  mainState.className='pill '+(running?'run':'mut');
+  const subs=((data&&data.subagents)||[]).filter(s=>s&&s.session&&s.status==='running');
+  const entries=[{session,label:'Hauptagent'}].concat(subs.map(s=>({session:String(s.session),label:nameOf(s)}))).filter(e=>e.session);
+  const key=entries.map(e=>e.session).join('|');
+  if(key!==optionKey){optionKey=key;select.replaceChildren(...entries.map(e=>el('option',{value:e.session},e.label)))}
+  const values=new Set([...select.options].map(o=>o.value));
+  select.value=values.has(select.value)?select.value:(values.has(session)?session:(entries[0]?entries[0].session:''));
+  const wanted=new Set(subs.map(s=>String(s.session)));
+  for(const[id,node]of [...children]){if(!wanted.has(id)){node.view.remove();children.delete(id)}}
+  subs.forEach(s=>{const id=String(s.session);let node=children.get(id);
+   if(!node){node=makeChild(s);children.set(id,node)}
+   node.view.setAttribute('data-session',id);
+   node.view.setAttribute('aria-label',nameOf(s));
+   node.state.textContent=s.status||'läuft';
+   if(!node.text&&s.output)setText(node,String(s.output));
+   if(node.view.parentNode!==subsBox)subsBox.append(node.view);
+   loadChild(node,s)});
+  subsBox.hidden=!subs.length;
+  cont.hidden=!(session&&!running);
+  send.disabled=isPi||!running;
+  ta.disabled=isPi||!running}
+ async function sendNow(){
+  if(isPi){toast('Bei Pi ist das Steuern nicht möglich: Pi läuft im Print-Modus (--no-session) ohne fortsetzbare Session.');return}
   const text=ta.value.trim();
   if(!text){ta.focus();toast('Bitte eine Zusatzanweisung eingeben.');return}
-  btn.disabled=true;
-  try{const r=await api('/api/steer',{name,text});
-   toast(r.message||(r.ok?'Zusatzanweisung übermittelt.':'Zusatzanweisung abgelehnt.'));
-   if(r.ok)ta.value=''}
-  catch(e){toast('Zusatzanweisung nicht gesendet: '+String(e&&e.message||e))}
-  finally{btn.disabled=false}};
- btn.addEventListener('click',send);
- ta.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key==='Enter'){e.preventDefault();send()}});
- const card=el('div',{class:'card',id:'steer-card'},
-  el('div',{class:'bar'},el('b',{},'Agent steuern'),state),
-  el('div',{class:'mut'},'Die Anweisung wird direkt an die aktive opencode-Session übermittelt und im Laufprotokoll vermerkt. Sie ist nur während eines Laufs möglich.'),
-  ta,el('div',{class:'bar'},btn,el('span',{class:'mut'},'Strg/⌘ + Enter sendet')));
- return {card,setState:running=>{state.textContent=running?'Lauf aktiv':'Kein aktiver Lauf';state.className='pill '+(running?'run':'mut');btn.disabled=!running}}}
-/* F19: Übersicht der erfassten Subagenten mit Ausgabe. Die Liste wird aus der
-   Zustandsdatei des Laufs gespeist; ohne Erfassung werden keine Einträge
-   erfunden. */
-function subagentCard(name){
- const count=el('span',{class:'pill mut',id:'subagent-count'},'–');
- const list=el('div',{class:'subagents',id:'subagent-list'});
- const card=el('div',{class:'card',id:'subagents-card'},
-  el('div',{class:'bar'},el('b',{},'Subagenten'),count),
-  el('div',{class:'mut'},'Erfasste Subagenten des aktuellen Projekts. Eine Ausgabe erscheint, sobald der Subagent sie liefert.'),
-  list);
- const nodes=new Map();let order='',openSession='';
- const fmt=ts=>{if(!ts)return '—';try{return new Date(ts*1000).toLocaleTimeString()}catch(e){return '—'}};
- const keyOf=entry=>String(entry.session||('~'+(entry.agent||'')+'|'+(entry.description||'')));
- function showCard(session,on){const n=nodes.get(session);if(!n)return;
-  n.out.hidden=!on;n.btn.textContent=on?'Ausgabe ausblenden':'Ausgabe anzeigen';n.btn.classList.toggle('p',on)}
- async function loadOutput(session){
-  const n=nodes.get(session);if(!n)return;
-  try{const r=await api('/api/subagent-output?name='+encodeURIComponent(name)+'&session='+encodeURIComponent(session));
-   const text=r.ok?String(r.text||''):String(r.message||'Keine Ausgabe verfügbar.');
-   if(n.text!==text){n.text=text;n.out.replaceChildren(renderLogChunk(text))}
-   n.out.classList.toggle('empty',!r.ok)}
-  catch(e){const text='Ausgabe nicht abrufbar: '+String(e&&e.message||e);n.text=text;n.out.replaceChildren(renderLogChunk(text))}}
- function build(entry){
-  const n={text:''};
-  n.title=el('b',{},'');n.status=el('span',{class:'pill mut'},entry.status||'?');n.meta=el('span',{class:'mut'});
-  n.out=el('pre',{class:'subagent-out','data-session':entry.session||''});n.out.hidden=true;
-  n.btn=el('button',{class:'b',type:'button'},'Ausgabe anzeigen');
-  if(!entry.session){n.btn.disabled=true;n.btn.title='Diese Session ist noch nicht erfasst.'}
-  n.btn.addEventListener('click',()=>{if(!n.btn.isConnected)return;
-   if(openSession===entry.session){openSession='';showCard(entry.session,false)}
-   else{if(openSession)showCard(openSession,false);openSession=entry.session;showCard(entry.session,true);loadOutput(entry.session)}});
-  n.card=el('div',{class:'subagent','data-session':entry.session||''},
-   el('div',{class:'bar'},n.title,n.status,n.meta),n.btn,n.out);
-  return n}
- function showEmpty(message){nodes.clear();order='';openSession='';list.replaceChildren(el('span',{class:'mut'},message))}
- async function poll(){
-  let data;try{data=await api('/api/subagents?name='+encodeURIComponent(name))}catch(e){return}
-  const subs=(data&&data.subagents)||[];
-  const running=subs.filter(s=>s.status==='running').length;
-  count.textContent=running+' aktiv / '+subs.length;count.className='pill '+(running?'run':'mut');
-  if(!subs.length){showEmpty(data&&data.running?'Der Lauf ist aktiv, aber es wurden noch keine Subagenten gestartet.':'Keine Subagenten erfasst.');return}
-  const next=subs.map(keyOf).join('|');
-  if(next!==order){order=next;nodes.clear();openSession='';const frag=document.createDocumentFragment();
-   subs.forEach(s=>{const n=build(s);nodes.set(keyOf(s),n);frag.append(n.card)});list.replaceChildren(frag)}
-  subs.forEach(s=>{const n=nodes.get(keyOf(s));if(!n)return;
-   n.title.textContent=(s.agent||'Subagent')+(s.description?' — '+s.description:'');
-   n.status.textContent=s.status||'?';
-   n.status.className='pill '+(s.status==='running'?'run':/error|fail|cancel/.test(String(s.status||''))?'bad':'mut');
-   n.meta.textContent=(s.session||'ohne Session')+' · Start '+fmt(s.started)+(s.ended?' · Ende '+fmt(s.ended):'')});
-  if(openSession&&nodes.has(openSession))loadOutput(openSession);else openSession=''}
- return {card,poll}}
-function rightsCard(d,name){const inp=el('input',{placeholder:'/absoluter/pfad','aria-label':'Schreibverzeichnis'});
+  /* Sofort leeren: Eine zweite Anweisung darf nicht durch die verspätete
+     Antwort der ersten gelöscht werden. */
+  ta.value='';
+  try{const body={name,text};const session=select.value;if(session)body.session=session;
+   const r=await api('/api/steer',body);
+   toast(r.message||(r.ok?'Zusatzanweisung übermittelt.':'Zusatzanweisung abgelehnt.'))}
+  catch(e){toast('Zusatzanweisung nicht gesendet: '+String(e&&e.message||e));if(!ta.value)ta.value=text}
+  finally{send.disabled=isPi||!lastRunning}}
+ function feedMain(text){
+  if(!text)return;
+  const near=mainPre.scrollHeight-mainPre.scrollTop-mainPre.clientHeight<70;
+  mainText=(mainText+text).slice(-120000);
+  renderMain();
+  if(near)mainPre.scrollTop=mainPre.scrollHeight}
+ function clearMain(){mainText='';renderMain()}
+ function fit(){mainPre.scrollTop=mainPre.scrollHeight}
+ cont.addEventListener('click',async()=>{
+  cont.disabled=true;
+  try{const r=await api('/api/continue',{name});
+   toast(r.message||(r.ok?'Der Lauf wird fortgesetzt.':'Fortsetzen abgelehnt.'));
+   if(r.ok)detail(name).catch(showErr)}
+  catch(e){toast('Fortsetzen nicht gesendet: '+String(e&&e.message||e))}
+  finally{cont.disabled=false}});
+ send.addEventListener('click',sendNow);
+ ta.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key==='Enter'){e.preventDefault();sendNow()}});
+ return {card,sync,feedMain,clearMain,fit}
+}
+function rightsBody(d,name){const inp=el('input',{placeholder:'/absoluter/pfad','aria-label':'Schreibverzeichnis'});
  const reset=el('button',{class:'b',on:{click:()=>askInline(reset,'Standardverzeichnisse wiederherstellen?','Ja, zurücksetzen',async()=>{const r=await api('/api/rights',{name,action:'reset'});toast(r.message);if(r.ok)detail(name).catch(showErr)})}},'Standard wiederherstellen');
  const rows=el('div',{},...(d.write_dirs.length?d.write_dirs.map(p=>el('div',{class:'bar'},el('span',{class:'mut'},p),
    el('button',{class:'b d',on:{click:async()=>{const r=await api('/api/rights',{name,action:'remove',path:p});toast(r.message);if(r.ok)detail(name).catch(showErr)}}},'Entfernen'))):[el('span',{class:'mut'},'Keine Verzeichnisse – Schreiben ist gesperrt.')]));
  const sandboxOn=!!(d.sandbox&&d.sandbox.enabled);
- return el('div',{class:'card'},el('b',{},'Schreibrechte (Agenten)'),
+ return el('div',{},
   el('div',{class:'mut'},sandboxOn
    ? 'Sandbox aktiv: Schreibwerkzeug (edit) und Shell-Befehle (bash) können nur in diesen Verzeichnissen, den Caches der Build-Werkzeuge und /tmp/opencode schreiben. MCP und Netzwerk bleiben erlaubt; Lesezugriffe werden nicht eingeschränkt.'
    : 'Verzeichnisse für das Schreibwerkzeug (edit) der Projektagenten. Voreingestellt sind /tmp/opencode und das Projektverzeichnis. Agenten ohne Schreibrecht bleiben unverändert. Shell-Befehle (bash) bleiben erlaubt und können Dateien außerhalb dieser Liste ändern – die Liste ist keine Sandbox.'),
@@ -428,22 +571,247 @@ function rightsCard(d,name){const inp=el('input',{placeholder:'/absoluter/pfad',
   el('div',{class:'bar'},reset,
    el('button',{class:'b',on:{click:async()=>{const r=await api('/api/rights',{name,action:'apply'});toast(r.message);if(r.ok)detail(name).catch(showErr)}}},'Auf Projektagenten anwenden')),
   el('div',{class:'mut'},d.write_dirs_custom?'Eigene Liste aktiv.':'Standardliste aktiv.'))}
-function sandboxCard(d,name){const s=d.sandbox||{enabled:false,tools:[],write_dirs:[],missing_tools:[],error:null,bwrap:''};
+function sandboxBody(d,name,isPi){const s=d.sandbox||{enabled:false,tools:[],write_dirs:[],missing_tools:[],error:null,bwrap:''};
  const active=!!s.enabled,missing=s.missing_tools||[],dirs=s.write_dirs||[],tools=s.tools||[];
- const state=!active?'aus':(s.error?'Fehler':(!s.bwrap?'bubblewrap fehlt':(missing.length?'Werkzeuge fehlen':'bereit')));
- const tone=!active?'mut':(s.error||!s.bwrap||missing.length?'bad':'ok');
+ const st=sandboxStatus(s),state=st.state,tone=st.tone;
  const inp=el('input',{value:tools.join(' '),placeholder:'git node npm','aria-label':'Build-Werkzeuge'});
- return el('div',{class:'card',id:'sandbox'},el('div',{class:'bar'},el('b',{},'Sandbox (Shell und Build-Werkzeuge)'),el('span',{class:'pill '+tone},state),
+ return el('div',{},el('div',{class:'bar'},el('span',{class:'pill '+tone},state),
    el('button',{class:'b'+(active?'':' p'),on:{click:async()=>{const r=await api('/api/sandbox',{name,action:active?'off':'on'});toast(r.message);if(r.ok)detail(name).catch(showErr)}}},active?'Sandbox ausschalten':'Sandbox einschalten'),
    el('button',{class:'b',on:{click:async()=>{const r=await api('/api/sandbox',{name,action:'check'});toast(r.message)}}},'Prüfen')),
-  el('div',{class:'mut'},'Aktiv läuft der Agent mit eigenem opencode-Server in bubblewrap. Schreiben ist nur in den Verzeichnissen unten, in den Caches der Build-Werkzeuge und in einem privaten Temporärordner möglich; /tmp ist sonst schreibgeschützt. MCP und Netzwerk bleiben verfügbar; Lesezugriffe werden nicht eingeschränkt.'),
+  el('div',{class:'mut'},isPi
+   ? 'Aktiv läuft der Agent mit Pi im Print-Modus (ohne opencode-Server) in bubblewrap. Schreiben ist nur in den Verzeichnissen unten, in den Caches der Build-Werkzeuge und in einem privaten Temporärordner möglich; /tmp ist sonst schreibgeschützt. MCP und Netzwerk bleiben verfügbar; Lesezugriffe werden nicht eingeschränkt.'
+   : 'Aktiv läuft der Agent mit eigenem opencode-Server in bubblewrap. Schreiben ist nur in den Verzeichnissen unten, in den Caches der Build-Werkzeuge und in einem privaten Temporärordner möglich; /tmp ist sonst schreibgeschützt. MCP und Netzwerk bleiben verfügbar; Lesezugriffe werden nicht eingeschränkt.'),
   el('div',{class:'mut'},'Die Sandbox-Konfiguration (.vibe/project.env, .vibe/permissions.json) ist im Lauf schreibgeschützt.'),
   s.error?el('div',{class:'bad'},'Fehler: '+s.error):null,
   missing.length?el('div',{class:'bad'},'Fehlende Werkzeuge: '+missing.join(', ')):null,
   !active?el('div',{class:'mut'},'Ohne Sandbox bleiben Shell-Befehle (bash) außerhalb der Liste möglich.'):null,
   el('label',{},'Build-Werkzeuge (Leerzeichen oder Komma)'),inp,
   el('div',{class:'bar'},el('button',{class:'b',on:{click:async()=>{const r=await api('/api/sandbox',{name,action:'tools',tools:inp.value});toast(r.message);if(r.ok)detail(name).catch(showErr)}}},'Werkzeuge speichern')),
-  el('details',{},el('summary',{},'Erlaubte Schreibverzeichnisse ('+dirs.length+')'),el('div',{},...dirs.map(p=>el('div',{class:'mut'},p)))))}
+  el('b',{},'Erlaubte Schreibverzeichnisse ('+dirs.length+')'),el('div',{},...dirs.map(p=>el('div',{class:'mut'},p))))}
+
+/* ---------- Git & GitHub (AP6: optional je Projekt; AP7: Aktionen erscheinen
+   nur bei aktiver Verknüpfung, damit der aus-Zustand übersichtlich bleibt;
+   B7: GitHub-Zugang (Token) direkt in der Karte hinterlegen und entfernen;
+   fehlgeschlagene Aktionen bleiben dauerhaft in der Fehlerbox stehen;
+   AP9: Token je Projekt verschlüsselt, Branch-Kontrolle, Verbindungsprüfung,
+   Basis-Branch; der Läufer zieht bei GITHUB_ENABLED vor jedem Arbeitspaket
+   den Haupt-Branch und pusht nach jedem abgeschlossenen Paket automatisch
+   den Paket-Branch samt Merge-Request — das Zusammenführen bleibt manuell) ---------- */
+function githubBody(d,name){
+ const g=d.github||{enabled:false,repo:'',label:'vibe',api:'',base:'',branch:'-',remotes:[],branches:[],ahead:0,behind:0,unpushed:false};
+ const active=!!g.enabled;
+ const fact=(k,v)=>el('div',{class:'factrow'},el('span',{class:'mut'},k),el('span',{},String(v)));
+ const errBox=el('div',{class:''});
+ const issuesBox=el('div',{class:'mut'});
+ const setErr=message=>{errBox.className=String(message||'').length?'bad':'';errBox.textContent=String(message||'')};
+ const refresh=()=>detail(name).catch(showErr);
+ const post=async body=>{const r=await api('/api/github',body);toast(r.message||'');if(r.ok)setErr('');else setErr(r.message);return r};
+ const enabled=el('input',{type:'checkbox','aria-label':'GitHub-Verknüpfung aktiv'});enabled.checked=active;
+ const repo=el('input',{value:g.repo||'',placeholder:'owner/name','aria-label':'GitHub-Repository (owner/name)'});
+ const label=el('input',{value:g.label||'vibe',placeholder:'vibe','aria-label':'GitHub-Label für vibe-Aufgaben'});
+ const apiIn=el('input',{value:(g.api&&g.api!=='https://api.github.com')?g.api:'',placeholder:'https://api.github.com (Standard)','aria-label':'GitHub-API-Basis'});
+ /* AP9: Basis-Branch für Merge-Requests (GITHUB_BASE); Leerwert = Standard-Branch der origin (meist main). */
+ const baseIn=el('input',{value:g.base||'',placeholder:'z. B. main (leer = Standard-Branch der origin)','aria-label':'Basis-Branch für Merge-Requests'});
+ /* B7/AP9: GitHub-Zugang (Token) direkt in der Karte, ohne CLI oder Umgebungsvariable.
+    Seit AP9 gilt der Token je Projekt und wird verschlüsselt im Zustandsordner
+    abgelegt. Der Zustand spiegelt g.auth (set/source ohne Geheimnis) und wird
+    nach speichern/entfernen unverzüglich in der Zeile aktualisiert (kein
+    Refresh, damit der aufgeklappte Abschnitt geöffnet bleibt). */
+ const authLine=el('div',{class:'mut','data-auth':''});
+ const setAuth=source=>{
+  const text=source==='umgebung'?'Zugang über die Umgebung (GITHUB_TOKEN/GH_TOKEN).'
+    :source==='projekt'?'GitHub-Token für dieses Projekt gespeichert (verschlüsselt).'
+    :source==='gespeichert'?'Zugang über den früher global gespeicherten Token (Rückfall, nicht projektbezogen).'
+    :'';
+  authLine.textContent='GitHub-Zugang: '+(text
+    ||'Kein Token hinterlegt — für Push, private Repositories und Merge-Requests ist ein Token nötig. GitHub empfiehlt einen Personal Access Token.');
+ };
+ setAuth(g.auth&&g.auth.set?g.auth.source:'');
+ const tokenIn=el('input',{type:'password',placeholder:'GitHub-Token einfügen (Personal Access Token)','aria-label':'GitHub-Token einfügen'});
+ const tokenSave=el('button',{class:'b p',on:{click:async()=>{
+   const value=tokenIn.value.trim();
+   if(!value){setErr('Kein Token angegeben: GitHub-Token einfügen, dann speichern.');return}
+   const r=await api('/api/github',{name,action:'token.save',token:value});
+   setErr(r.ok?'':r.message);toast(r.message||'');
+   if(r.ok){tokenIn.value='';setAuth(r.auth&&r.auth.set?r.auth.source:'')}}}},'Token hinterlegen');
+ const tokenClear=el('button',{class:'b',on:{click:async()=>{
+   const r=await api('/api/github',{name,action:'token.clear'});
+   setErr(r.ok?'':r.message);toast(r.message||'');
+   if(r.ok){tokenIn.value='';setAuth(r.auth&&r.auth.set?r.auth.source:'')}}}},'Token entfernen');
+ const save=el('button',{class:'b p',on:{click:async()=>{const r=await api('/api/github',{name,action:'settings',enabled:enabled.checked,repo:repo.value.trim(),label:label.value.trim(),api:apiIn.value.trim(),base:baseIn.value.trim()});
+   if(!r.ok)setErr(r.message);toast(r.message);if(r.ok){setErr('');refresh()}}}},'Speichern');
+ const linkBtn=el('button',{class:'b',on:{click:async()=>{
+   const value=repo.value.trim();
+   if(!value||!value.includes('/')){setErr('Repository in der Form owner/name angeben');return}
+   const r=await api('/api/github',{name,action:'link',url:'https://github.com/'+value+'.git'});
+   if(!r.ok)setErr(r.message);toast(r.message);if(r.ok){setErr('');refresh()}}}},'Mit GitHub verknüpfen');
+ const unlinkBtn=el('button',{class:'b',on:{click:async()=>{const r=await api('/api/github',{name,action:'unlink'});
+   if(!r.ok)setErr(r.message);toast(r.message);if(r.ok){setErr('');refresh()}}}},'Verknüpfung lösen');
+ const fetchBtn=el('button',{class:'b',on:{click:async()=>{const r=await post({name,action:'fetch'});if(r.ok)refresh()}}},'Abrufen (fetch, kein Merge)');
+ const pushTarget=el('input',{placeholder:'Ziel-Branch (leer = gleicher Name)','aria-label':'Ziel-Branch für Push (optional)'});
+ const pushBtn=el('button',{class:'b',on:{click:async()=>{const r=await post({name,action:'push',target:pushTarget.value.trim()});if(r.ok)refresh()}}},'Push (aktueller Branch)');
+ const pullBtn=el('button',{class:'b',on:{click:async()=>{const r=await post({name,action:'pull'});if(r.ok)refresh()}}},'Pull (aufholen, --ff-only)');
+ /* AP9: Verbindungsprüfung in der Karte — Fernseite (origin) und GitHub-REST
+    werden geprüft; das Ergebnis bleibt als Zeile mit ok/fehler-Kennung stehen. */
+ const connLine=el('div',{class:'mut','data-connection':''});
+ const testBtn=el('button',{class:'b',on:{click:async()=>{
+   const r=await api('/api/github',{name,action:'connection'});
+   const c=r.connection||{};
+   connLine.className=c.ok?'ok':'bad';
+   connLine.textContent='Verbindung: '+(c.ok?'OK':'FEHLER')+' — '+String(r.message||c.message||'');
+   toast(r.message||'')}}},'Verbindung testen');
+ const issueFilter=el('input',{value:g.label||'vibe',placeholder:'Label (leer = alle)','aria-label':'Issues nach Label filtern'});
+ const loadBtn=el('button',{class:'b',on:{click:async()=>{const r=await api('/api/github',{name,action:'issues',label:issueFilter.value.trim()});
+   if(!r.ok){setErr(r.message);toast(r.message);return}
+   const rows=(r.issues||[]).map(i=>el('div',{class:'mut'},el('b',{},'GH-'+i.number+' '),i.title,
+     i.labels&&i.labels.length?el('span',{class:'mut'},' ['+i.labels.join(', ')+']'):null));
+   issuesBox.replaceChildren(...(rows.length?rows:[el('span',{class:'mut'},'Keine offenen Issues für dieses Label.')]))}}},'Issues laden');
+ const importBtn=el('button',{class:'b',on:{click:async()=>{const r=await api('/api/github',{name,action:'import',label:issueFilter.value.trim()});
+   if(!r.ok)setErr(r.message);else setErr('');toast(r.message);if(r.ok)refresh()}}},'Import');
+ const prBtn=el('button',{class:'b p',on:{click:()=>{askInline(prBtn,'Merge-Request stellen: Erst den aktuellen Branch nach origin pushen, dann den Merge-Request über GitHub anlegen. Fortfahren?','Ja, stellen',async()=>{
+   const r=await api('/api/github',{name,action:'pr',confirm:true});
+   if(!r.ok)setErr(r.message);toast(r.message||'Fehler beim Merge-Request');if(r.ok)refresh()})}}},'Merge-Request stellen');
+ const facts=[fact('Zustand',active?'aktiv':'aus'),fact('Repository',g.repo||'—'),fact('Branch',g.branch||'-'),
+   fact('Ahead/Behind',(g.ahead||0)+' / '+(g.behind||0)+(g.unpushed?' (ungesendete Commits)':''))];
+ if(g.error)facts.push(fact('Hinweis',String(g.error)));
+ const remoteRows=(g.remotes||[]).map(r=>el('div',{class:'mut'},'Remote '+r.name+': '+r.url));
+ /* AP9: Branch-Kontrolle je Zeile — „Wechseln“ checkt den Branch aus
+    (erzeugt ihn bei Bedarf aus origin/<branch>), „Push“ überträgt ihn
+    nach origin. Meldungen landen im Toast, Fehler in der Fehlerbox. */
+ const branchRows=(g.branches||[]).map(b=>el('div',{class:'mut'},
+  (b.current?'* ':'  ')+b.name+' (Ahead/Behind '+b.ahead+'/'+b.behind+')',
+  el('div',{class:'bar'},
+   el('button',{class:'b',on:{click:async()=>{const r=await post({name,action:'checkout',branch:b.name});if(r.ok)refresh()}}},'Wechseln'),
+   el('button',{class:'b',on:{click:async()=>{const r=await post({name,action:'push',branch:b.name});if(r.ok)refresh()}}},'Push'))));
+ const conn=el('div',{},
+   el('div',{class:'mut'},'GitHub ist optional je Projekt. Die Einstellungen gelten nur für dieses Projekt; die Knöpfe bleiben bewusste Aktionen. Bei aktiver Verknüpfung zieht der Läufer vor jedem Arbeitspaket den Haupt-Branch (pull) und überträgt nach jedem abgeschlossenen Paket den Paket-Branch automatisch nach origin und stellt einen Merge-Request — das Zusammenführen bleibt manuell.'),
+   authLine,
+   el('div',{class:'bar'},tokenIn,tokenSave,tokenClear),
+   el('label',{class:'inline'},enabled,' GitHub-Verknüpfung aktiv'),
+   el('label',{},'Repository (owner/name)'),repo,
+   el('label',{},'Label für vibe-Aufgaben'),label,
+   el('label',{},'API-Basis (optional)'),apiIn,
+   /* AP9: Basis-Branch für Merge-Requests (GITHUB_BASE); leer = Standard-Branch der origin. */
+   el('label',{},'Basis-Branch für Merge-Requests (optional)'),baseIn,
+   el('div',{class:'bar'},save,linkBtn,unlinkBtn));
+ const actions=active?el('div',{class:'gh-actions'},
+   ...facts,
+   remoteRows.length?el('div',{'data-remotes':''},...remoteRows):null,
+   el('div',{class:'bar'},fetchBtn,pushBtn,pullBtn),
+   branchRows.length?el('details',{},el('summary',{},'Branches ('+branchRows.length+')'),el('div',{},...branchRows))
+                    :el('div',{class:'mut'},'Keine lokalen Branches erkannt.'),
+   /* AP9: Verbindungsprüfung mit dauerhafter Ergebniszeile in der Karte. */
+   el('div',{class:'bar'},testBtn),
+   connLine,
+   el('div',{class:'bar'},prBtn),
+   el('hr'),
+   el('b',{},'Issues als Arbeitspakete'),
+   el('div',{class:'mut'},'Offene GitHub-Issues nach Label filtern und als Arbeitspakete (GH-Nummer) in TICKETS.md übernehmen.'),
+   el('label',{},'Label-Filter'),issueFilter,
+   el('div',{class:'bar'},loadBtn,importBtn),
+   issuesBox):null;
+ return el('div',{},conn,actions,errBox)}
+
+/* ---------- Offene Arbeitspakete (F29: Die Reihenfolge der Arbeitspakete
+   wird direkt hier per Drag&Drop am Handle je Paket geändert und als
+   PACKAGE_ORDER gespeichert — statt versteckt im Einstellungs-Tab, wo sie
+   beim Speichern wegen eines nicht gesetzten ok den UnboundLocalError
+   auslöste. Der Läufer wählt den ersten geeigneten Eintrag dieser Liste vor
+   der Standardordnung; erledigte oder gesperrte Einträge halten ihn nicht
+   auf.) ---------- */
+function openPackagesCard(d,name){
+ const stateOf={};(d.items||[]).forEach(i=>{stateOf[i.id]=i.state});
+ const list=el('div',{class:'itemlist','data-open-packages':''},el('span',{class:'mut'},'Lade Reihenfolge …'));
+ const errBox=el('div',{});
+ const hintBox=el('div',{class:'mut'});
+ const setErr=message=>{errBox.className=String(message||'').length?'bad':'';errBox.textContent=String(message||'')};
+ let rows=[],dragId=null;
+ const rowFor=r=>{
+  const handle=el('span',{class:'draghandle','data-drag-handle':r.id,role:'button',tabindex:'0',
+   'aria-label':'Paket '+r.id+' verschieben (Pfeiltasten auf/ab)','title':'Paket '+r.id+' verschieben'},'⋮⋮');
+  const row=el('div',{class:'item packitem',draggable:'true','data-item':r.id},handle,
+   el('span',{},el('b',{},r.id+' '),r.title?el('span',{class:'mut'},r.title):null),
+   r.state?el('span',{class:'pill '+(r.state==='BLOCKIERT'?'bad':'warn')},r.state):null,
+   r.ordered===undefined?null:el('span',{class:'pill '+(r.ordered?'ok':'mut')},r.ordered?'priorisiert':'Standardordnung'));
+  handle.addEventListener('keydown',e=>{
+   if(e.key!=='ArrowUp'&&e.key!=='ArrowDown')return;
+   e.preventDefault();
+   const i=rows.findIndex(x=>x.id===r.id),n=e.key==='ArrowUp'?i-1:i+1;
+   if(i<0||n<0||n>=rows.length)return;
+   [rows[i],rows[n]]=[rows[n],rows[i]];draw();
+   const h=list.querySelector('[data-drag-handle="'+r.id+'"]');if(h)h.focus()});
+  row.addEventListener('dragstart',e=>{dragId=r.id;row.classList.add('dragging');
+   e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',r.id)});
+  row.addEventListener('dragend',()=>{dragId=null;row.classList.remove('dragging');
+   /* F29-Review: Indikator auch zurücksetzen, wenn ohne Ablage beendet wird. */
+   list.querySelectorAll('.dropbefore').forEach(x=>x.classList.remove('dropbefore'))});
+  row.addEventListener('dragover',e=>{e.preventDefault();e.dataTransfer.dropEffect='move';
+   const rect=row.getBoundingClientRect();
+   row.classList.toggle('dropbefore',e.clientY<rect.top+rect.height/2)});
+  row.addEventListener('dragleave',()=>row.classList.remove('dropbefore'));
+  row.addEventListener('drop',e=>{e.preventDefault();
+   const before=row.classList.contains('dropbefore');row.classList.remove('dropbefore');
+   if(!dragId||dragId===r.id)return;
+   const from=rows.findIndex(x=>x.id===dragId);if(from<0)return;
+   const moved=rows.splice(from,1)[0];
+   let to=rows.findIndex(x=>x.id===r.id);
+   if(to<0){rows.splice(from,0,moved);draw();return}
+   if(!before)to+=1;
+   rows.splice(to,0,moved);draw()});
+  return row};
+ const draw=()=>{list.replaceChildren(...rows.map(rowFor))};
+ const render=data=>{
+  /* F29-Review M1: Die Anzeige folgt der gespeicherten Reihenfolge
+     (data.order), nicht der Auswahl-Queue — gesperrte und abhängigkeits-
+     geblockte Pakete fehlen in der Queue, gehören aber mit ihrer gezogenen
+     Position in die Karte, damit sie vorn stehen, sobald sie frei sind.
+     F29-Review 2 M1: Offene Pakete ohne Eintrag in der Priorisierung folgen
+     in der Läufer-Standardordnung (data.standard: TICKETS vor FEEDBACK,
+     innerhalb der TICKETS nach Priorität) — blankes Speichern legt sonst
+     eine Ordnung ab, die der Läufer ohne Priorisierung nicht wählen würde.
+     Erledigte und unbekannte Einträge (fehlt) erscheinen nicht als Zeile;
+     unbekannte werden im Hinweis genannt und beim nächsten Speichern aus
+     PACKAGE_ORDER entfernt. */
+  const order=data.order||[];
+  const visible=new Set((d.items||[]).map(i=>i.id));
+  const configured=new Set(),missing=[];
+  rows=order.filter(o=>{
+   if(!visible.has(o.id)){if(o.status==='fehlt')missing.push(o.id);return false}
+   return true})
+   .map(o=>({id:o.id,title:o.title,ordered:true,state:stateOf[o.id]}));
+  order.forEach(o=>configured.add(o.id));
+  const shown=new Set(rows.map(r=>r.id));
+  const byId=new Map((d.items||[]).map(i=>[i.id,i]));
+  const remaining=(d.items||[]).filter(i=>!configured.has(i.id));
+  const ids=data.standard&&data.standard.length
+   ?data.standard.map(o=>o.id):remaining.map(i=>i.id);
+  ids.concat(remaining.filter(i=>!ids.includes(i.id)).map(i=>i.id))
+   .forEach(id=>{
+    const i=byId.get(id);
+    if(i&&!shown.has(id)){shown.add(id);
+     rows.push({id:i.id,title:i.title,state:i.state,ordered:false})}});
+  hintBox.textContent=missing.length
+   ?('Unbekannte Kennungen in der gespeicherten Priorisierung (nicht in diesem Projekt): '+missing.join(', ')+'. Sie werden beim nächsten Speichern entfernt.')
+   :'';
+  draw()};
+ const save=el('button',{class:'b p',type:'button',on:{click:async()=>{
+  setErr('');const r=await api('/api/priority',{name,action:'set',order:rows.map(x=>x.id).join(' ')});
+  toast(r.message||'');if(!r.ok)setErr(r.message);
+  if(r.ok&&r.priority)render(r.priority)}}},'Speichern');
+ const clear=el('button',{class:'b',type:'button',on:{click:async()=>{
+  setErr('');const r=await api('/api/priority',{name,action:'clear'});
+  toast(r.message||'');if(!r.ok)setErr(r.message);
+  if(r.ok&&r.priority)render(r.priority)}}},'Leeren (Standardordnung)');
+ rows=(d.items||[]).map(i=>({id:i.id,title:i.title,state:i.state}));
+ draw();
+ api('/api/priority?name='+encodeURIComponent(name)).then(render)
+  .catch(e=>setErr('Priorisierung nicht verfügbar: '+String(e&&e.message||e)));
+ return el('div',{class:'card','data-open-packages-card':''},
+  el('div',{class:'bar'},el('b',{},'Offene Arbeitspakete ('+d.items.length+')')),
+  d.items.length?el('div',{},list,
+   el('div',{class:'mut'},'Reihenfolge am Handle ändern — durch Ziehen oder mit den Pfeiltasten am Handle. „Speichern“ legt sie als PACKAGE_ORDER ab (für die Agentenläufe verbindlich); „Leeren“ stellt die Standardordnung wieder her.'),
+   el('div',{class:'bar'},save,clear),hintBox,errBox)
+  :el('span',{class:'ok'},'Alles abgehakt'))}
 
 /* ---------- Kosten ---------- */
 const PRICE_SOURCE={user:'eigener Preis',system:'Systempreis',kostenlos:'kostenlos',unbekannt:'Preis unbekannt'};
@@ -634,6 +1002,7 @@ function allowedLabel(agent){
  return 'keine';
 }
 async function agents(){AG=await api('/api/agents');const d=AG;
+ const isPi=(await harnessSelected())==='pi';
  // AP03: Die allgemeine Verwaltung zeigt und ändert ausschließlich
  // systemweite Agenten. Projektmodelle werden nur in den Projekteinstellungen
  // überschrieben; projektlokale Agentendateien erscheinen hier nicht.
@@ -667,9 +1036,11 @@ async function agents(){AG=await api('/api/agents');const d=AG;
    el('div',{class:'bar'},el('b',{},'Agenten'),el('button',{class:'b p',type:'button',on:{click:()=>agentForm(null,null).catch(showErr)}},'Neuer Agent')),
    status,
    rows.length?el('div',{class:'tablewrap'},tb):el('span',{class:'mut'},'Keine systemweiten Agenten vorhanden.'),
-   el('div',{class:'mut',style:'margin-top:8px'},'Systemweite Agenten liegen unter ~/.config/opencode/agents und gelten für alle Projekte. Ein Projekt verwendet ausschließlich diese Agenten; nur sein Modell lässt sich in den Projekteinstellungen überschreiben. Aufgabe, Ergebnis und Subagenten-Rechte sind hier direkt sichtbar.')),
-  profilesCard(d),modelsCard(d))}
-function profilesCard(d){const P=JSON.parse(JSON.stringify(d.profiles));const names=Object.keys(P.profile);const cur=el('select',{},...names.map(n=>el('option',{value:n},n+(n===P.aktiv?' (aktiv)':''))));cur.value=P.aktiv;
+   el('div',{class:'mut',style:'margin-top:8px'},isPi
+    ? 'Bei Pi ist die Agentendatei nur die Prompt-Quelle: Der Lauf liest den Prompt-Text der Datei, Frontmatter (Beschreibung, Rechte, Modell) bleibt ungenutzt. Die Dateien liegen weiterhin unter ~/.config/opencode/agents und gelten für alle Projekte.'
+    : 'Systemweite Agenten liegen unter ~/.config/opencode/agents und gelten für alle Projekte. Ein Projekt verwendet ausschließlich diese Agenten; nur sein Modell lässt sich in den Projekteinstellungen überschreiben. Aufgabe, Ergebnis und Subagenten-Rechte sind hier direkt sichtbar.')),
+  profilesCard(d,isPi),modelsCard(d,isPi))}
+function profilesCard(d,isPi){const P=JSON.parse(JSON.stringify(d.profiles));const names=Object.keys(P.profile);const cur=el('select',{},...names.map(n=>el('option',{value:n},n+(n===P.aktiv?' (aktiv)':''))));cur.value=P.aktiv;
  const roles=['coder','reviewer'];const body=el('div',{});
  const draw=()=>{const prof=P.profile[cur.value];body.replaceChildren(
    el('table',{},el('tr',{},el('th',{},'Rolle'),el('th',{},'Agenten in dieser Rolle'),el('th',{},'Modell im Profil „'+cur.value+'“')),
@@ -679,10 +1050,10 @@ function profilesCard(d){const P=JSON.parse(JSON.stringify(d.profiles));const na
  const roleRows=(d.global_agents||[]).filter(a=>a.role).map(a=>a.name+' → '+a.role);
  const rol=el('div',{class:'mut'},'Rollen werden in der Agentenliste gesetzt (Rolle je Agent). '+(roleRows.length?roleRows.join(' · '):'Noch keine Rolle zugewiesen.'));
  return el('div',{class:'card'},el('details',{open:'open'},el('summary',{},'Profile – Modelle pro Rolle umschalten (z. B. kostenlos ↔ bezahlt)'),
-  el('div',{class:'mut',style:'margin:6px 0'},'Ein Profil legt fest, welches Modell die Rollen Coder und Reviewer nutzen. „Anwenden“ schreibt die model:-Zeile der zugeordneten globalen Agenten (mit Sicherung). Bezahlte Modelle erscheinen erst, wenn der Anbieter verbunden ist (/connect bzw. opencode auth login).'),
+  el('div',{class:'mut',style:'margin:6px 0'},'Ein Profil legt fest, welches Modell die Rollen Coder und Reviewer nutzen. „Anwenden“ schreibt die model:-Zeile der zugeordneten globalen Agenten (mit Sicherung). '+(isPi?'Bezahlte Modelle erscheinen erst, wenn der Anbieter in Pi angemeldet ist (Ergebnis von „pi --list-models“).':'Bezahlte Modelle erscheinen erst, wenn der Anbieter verbunden ist (/connect bzw. opencode auth login).')),
   el('div',{class:'bar'},cur,el('button',{class:'b',on:{click:async()=>{const r=await api('/api/profiles',{action:'save',data:P});toast(r.message)}}},'Profile speichern'),
    el('button',{class:'b p',on:{click:async()=>{const sv=await api('/api/profiles',{action:'save',data:P});const r=await api('/api/profiles',{action:'use',profile:cur.value});toast(r.message);if(r.ok)agents().catch(showErr)}}},'Speichern und anwenden')),body,rol))}
-function modelsCard(d){const used={};d.agents.forEach(a=>{(used[a.model]=used[a.model]||[]).push(a.name+(a.scope==='global'?'':'@'+a.scope))});
+function modelsCard(d,isPi){const used={};d.agents.forEach(a=>{(used[a.model]=used[a.model]||[]).push(a.name+(a.scope==='global'?'':'@'+a.scope))});
  const K=d.katalog||{};const known=d.models.length>0;
  const ids=d.models.filter(m=>m.startsWith('opencode/')||d.info[m]);Object.keys(d.info).forEach(i=>{if(!ids.includes(i))ids.push(i)});
  const other={};d.models.filter(m=>!m.startsWith('opencode/')&&!d.info[m]).forEach(m=>{other[m.split('/')[0]]=(other[m.split('/')[0]]||0)+1});
@@ -700,7 +1071,9 @@ function modelsCard(d){const used={};d.agents.forEach(a=>{(used[a.model]=used[a.
     el('div',{class:'mproof'},el('b',{},'Preis und Beleg'),mPrice(m),
      el('div',{class:'mut'},'ID-Beleg: '+(beleg.quelle||'—')+(beleg.datum?' ('+beleg.datum+')':'')),
      el('div',{class:'mut'},'ID-Status: '+(m.id_status||'unbekannt')),
-     gone?el('div',{class:'bad'},'Nicht in „opencode models“ (Anbieter nicht verbunden oder Modell entfernt).'):null,
+     gone?el('div',{class:'bad'},isPi
+      ?'Nicht in „pi --list-models“ (Pi meldet dieses Modell nicht; Anbieter in Pi abgemeldet oder Modell entfernt).'
+      :'Nicht in „opencode models“ (Anbieter nicht verbunden oder Modell entfernt).'):null,
      m.id_status==='entfernt'?el('div',{class:'bad'},'Als entfernt geführt'+(m.entfernt_am?' seit '+m.entfernt_am:'')+(m.entfernt_quelle?' ('+m.entfernt_quelle+')':'')):null))));
    det.style.display='none'}
   const price=(m&&m.preis)||{};
@@ -843,6 +1216,7 @@ async function agentForm(scope,name){const d=AG||await api('/api/agents');const 
   isNew?null:el('div',{class:'card'},el('b',{},'Sicherungen'),el('div',{class:'mut'},'Vor jedem Speichern wird der bisherige Stand gesichert. Die Wiederherstellung sichert zuerst den aktuellen Stand.'),backupBox))}
 /* ---------- MCP-Tools ---------- */
 async function mcp(){const d=await api('/api/mcp');
+ const isPi=(await harnessSelected())==='pi';
  const tb=el('table',{},el('tr',{},...['Name','Geltung','Typ','Ziel','aktiv',''].map(h=>el('th',{},h))));
  d.servers.forEach(s=>{ if(s.error){tb.append(el('tr',{},el('td',{colspan:'6',class:'bad'},s.scope+': Konfiguration nicht lesbar: '+s.error)));return}
   tb.append(el('tr',{},el('td',{},s.name),el('td',{},s.scope==='global'?el('span',{class:'pill ok'},'global'):el('span',{class:'pill'},'Projekt: '+s.scope)),el('td',{},s.type),el('td',{class:'mut'},s.target),el('td',{},badge(s.enabled?'ja':'nein')),
@@ -853,7 +1227,7 @@ async function mcp(){const d=await api('/api/mcp');
  main.replaceChildren(el('div',{class:'card'},el('div',{class:'bar'},el('b',{},'MCP-Server (Model Context Protocol)'),el('button',{class:'b p',on:{click:()=>mcpForm(null,null).catch(showErr)}},'Neuer MCP-Server')),
   d.servers.length?tb:el('span',{class:'mut'},'Keine MCP-Server konfiguriert.'),
   el('div',{class:'mut',style:'margin-top:8px'},'MCP-Server geben dem Agenten zusätzliche Werkzeuge (z. B. Notizen, Datenbanken, Dokumentation). Die Werkzeuge belegen Kontext und kosten dadurch Tokens: nur aktivieren, was gebraucht wird. Geheimnisse (Token, Schlüssel) werden hier maskiert; beim Speichern bleiben sie unverändert.'),
-  el('div',{class:'mut'},'Verbindungstest: startet bei local ein Programm und stellt bei remote eine Netzverbindung her. Unterstützt werden local (stdio) und remote (Streamable HTTP); andere Transporte werden nicht getestet. Geprüft werden nur initialize und tools/list, keine fachlichen Werkzeuge. OAuth: vibe führt keine Anmeldung durch und liest keine Tokens; bei OAuth-Servern zuerst „opencode mcp auth“ ausführen.'),
+  el('div',{class:'mut'},'Verbindungstest: startet bei local ein Programm und stellt bei remote eine Netzverbindung her. Unterstützt werden local (stdio) und remote (Streamable HTTP); andere Transporte werden nicht getestet. Geprüft werden nur initialize und tools/list, keine fachlichen Werkzeuge. OAuth: vibe führt keine Anmeldung durch und liest keine Tokens. '+(isPi?'Bei Pi werden MCP-Server vom Agentenlauf nicht eingebunden; die Konfiguration richtet sich auf opencode aus.':'Bei OAuth-Servern zuerst „opencode mcp auth“ ausführen.')),
   layouts.length?el('div',{class:'mut'},'Konfigurationsdateien: '+layouts.join(' | ')):null),el('div',{id:'mcpres'}))}
 function mcpResult(r,into){const t=r.result;const box=into||document.getElementById('mcpres');if(!box)return toast(r.message);
  box.replaceChildren(el('div',{class:'card '+(t&&t.ok?'':'err')},el('b',{class:t&&t.ok?'ok':'bad'},t?(t.ok?'Test bestanden':'Test fehlgeschlagen'):'Fehler'),r.ok?null:el('div',{class:'bad'},r.message),
@@ -940,4 +1314,103 @@ function fritzCard(f){
    el('button',{class:'b',on:{click:async()=>{const r=await api('/api/fritz',{action:'automation',enabled:cb.checked});toast(r.message);if(r.ok)env().catch(showErr)}}},'Automatik übernehmen')),
   resultBox)}
 window.addEventListener('unhandledrejection',e=>showErr(e.reason));
-setTab('projects');
+/* ---------- AP13: Anmeldung und Karte „Zugriffssicherheit“ ---------- */
+/* AP13: Ohne Token prüft der Start die Berechtigung direkt am Server und
+   zeigt andernfalls die Anmeldekarte. Ein Token aus dem #t=-Hash wird beim
+   ersten Laden gegen einen Session-Cookie eingetauscht (POST /api/login),
+   damit ein Neuladen ohne Hash angemeldet bleibt. Die Prüfung läuft bewusst
+   über eine echte Anfrage statt über clientseitige Annahmen: Nur der Server
+   kennt den wirklichen Berechtigungszustand. */
+async function boot(){
+ try{
+  // Token → Session-Cookie tauschen; ohne Token bleibt der Aufruf weg.
+  if(T)await api('/api/login',{token:T});
+  await api('/api/projects');
+  setTab('projects');
+ }catch(e){showLogin()}}
+function showLogin(){
+ const inp=el('input',{type:'password',placeholder:'Kennwort oder Token','aria-label':'Kennwort oder Token'});
+ const go=()=>doLogin(inp);
+ const btn=el('button',{class:'b p',type:'button',on:{click:go}},'Anmelden');
+ inp.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();go()}});
+ main.replaceChildren(el('div',{class:'card',id:'login'},el('b',{},'Anmeldung'),
+  el('div',{class:'mut'},'Diese Oberfläche ist geschützt. Bitte Kennwort oder Token eingeben.'),
+  el('label',{},'Kennwort oder Token'),inp,el('div',{class:'bar'},btn)));
+ inp.focus()}
+async function doLogin(inp){
+ const v=String(inp.value||'').trim();
+ if(!v){inp.focus();return}
+ // Der Wert wird als Token und als Kennwort angeboten; der Server prüft
+ // zuerst das Token und fällt sonst auf das Kennwort zurück. So genügt eine
+ // Eingabe für beide Anmeldearten, ohne dass die Oberfläche den Unterschied
+ // raten muss. Kennwort und Token erscheinen in keiner Meldung.
+ try{const r=await api('/api/login',{token:v,password:v});
+  if(r.ok){toast(r.message||'Angemeldet.');setTab('projects')}
+  else toast(r.message||'Anmeldung fehlgeschlagen.')}
+ catch(e){toast('Anmeldung fehlgeschlagen: '+String(e&&e.message||e))}}
+/* AP13: Karte „Zugriffssicherheit“. Sie zeigt den laufenden Zustand (Port,
+   Bind-Adresse, Allowlist, Passwortstatus) und speichert Änderungen in
+   ui.json; sie wirken erst nach einem Neustart des Dashboards, deshalb der
+   dauerhafte Hinweis und die Zusatzwarnung, wenn gespeicherte Werte vom
+   laufenden Server abweichen. Der Tab ist bewusst nicht Teil des
+   periodischen Pollings: Nach jeder Aktion wird die Ansicht einmalig neu
+   geladen. Die Ansicht enthält keine Kennwort- oder Hash-Auskunft. */
+async function security(){
+ let s=await api('/api/security');
+ const fact=(k,v)=>el('div',{class:'factrow'},el('span',{class:'mut'},k),el('span',{},String(v)));
+ const facts=el('div',{});
+ const warn=el('div',{class:'warn',hidden:''},'Wirksame Änderung steht aus: Der gespeicherte Port oder die Bind-Adresse weicht vom laufenden Server ab. Damit die Änderung greift, das Dashboard neu starten („vibe ui“ beenden und erneut starten).');
+ const portInp=el('input',{inputmode:'numeric',placeholder:'neuer Port (leer = unverändert)','aria-label':'Port'});
+ const bindInp=el('input',{placeholder:'neue Bind-Adresse, z. B. 0.0.0.0 (leer = unverändert)','aria-label':'Bind-Adresse'});
+ // „Leer = unverändert": Ein leeres Eingabefeld ändert die gespeicherte
+ // Allowlist nicht; sie lässt sich nur über den Knopf „Alle Clients
+ // zulassen" leeren.
+ const allowInp=el('input',{placeholder:'IPs oder Netze, getrennt durch Leerzeichen oder Komma (leer = unverändert)','aria-label':'IP-Allowlist'});
+ const passInp=el('input',{type:'password',placeholder:'neues Passwort (mind. 8 Zeichen)','aria-label':'Neues Passwort'});
+ const draw=()=>{
+  facts.replaceChildren(
+   fact('Port',s.port),fact('Bind-Adresse',s.bind),
+   fact('Allowlist',(s.allowlist&&s.allowlist.length)?s.allowlist.join(', '):'alle Clients erlaubt'),
+   fact('Passwort',s.password_set?'gesetzt':'nicht gesetzt'));
+  warn.hidden=!s.restart_required;
+  removeBtn.hidden=!s.password_set};
+ const refresh=async()=>{try{s=await api('/api/security')}catch(e){/* Ansicht bleibt beim letzten Stand */}draw()};
+ const saveBtn=el('button',{class:'b p',type:'button',on:{click:async()=>{
+  const port=portInp.value.trim();
+  if(port&&!/^\d+$/.test(port)){toast('Bitte eine gültige Portnummer eingeben.');portInp.focus();return}
+  const bind=bindInp.value.trim();
+  const allow=allowInp.value.trim()?allowInp.value.split(/[\s,]+/).filter(Boolean):[];
+  const pw=passInp.value;
+  saveBtn.disabled=true;
+  try{
+   // Leere Felder werden nicht gesendet: Der Server ändert dann nichts.
+   // So setzt ein reines Kennwort-Speichern weder Port noch Bind-Adresse
+   // noch Allowlist nebenbei zurück.
+   const update={action:'save'};
+   if(port)update.port=Number(port);
+   if(bind)update.bind=bind;
+   if(allow.length)update.allowlist=allow;
+   const r=await api('/api/security',update);toast(r.message||'');
+   if(r.ok&&pw){const rp=await api('/api/security',{action:'password',password:pw});toast(rp.message||'')}
+  }catch(e){toast('Speichern fehlgeschlagen: '+String(e&&e.message||e))}
+  finally{saveBtn.disabled=false}
+  portInp.value='';bindInp.value='';allowInp.value='';passInp.value='';
+  await refresh()}}},'Speichern');
+ const removeBtn=el('button',{class:'b',type:'button',on:{click:()=>askInline(removeBtn,'Passwort entfernen? Die Anmeldung mit Token bleibt möglich.','Ja, entfernen',async()=>{
+  try{const r=await api('/api/security',{action:'password',clear:true});toast(r.message||'')}
+  catch(e){toast('Entfernen fehlgeschlagen: '+String(e&&e.message||e))}
+  await refresh()})}},'Passwort entfernen');
+ const clearBtn=el('button',{class:'b',type:'button',on:{click:()=>askInline(clearBtn,'Allowlist entfernen? Danach dürfen alle Clients im Netz zugreifen; der lokale Rechner (Loopback) bleibt immer zugelassen.','Ja, zulassen',async()=>{
+  try{const r=await api('/api/security',{action:'save',allowlist:[]});toast(r.message||'')}
+  catch(e){toast('Zulassen fehlgeschlagen: '+String(e&&e.message||e))}
+  await refresh()})}},'Alle Clients zulassen');
+ draw();
+ main.replaceChildren(el('div',{class:'card',id:'security'},el('b',{},'Zugriffssicherheit'),facts,
+  el('div',{class:'mut'},'Änderungen an Port, Bind-Adresse und Allowlist werden in ui.json im Zustandsordner gespeichert und wirken erst nach einem Neustart des Dashboards. Ohne Allowlist sind alle Clients zugelassen; der lokale Rechner (Loopback) bleibt immer zugelassen.'),
+  warn,
+  el('label',{},'Port'),portInp,
+  el('label',{},'Bind-Adresse'),bindInp,
+  el('label',{},'IP-Allowlist'),allowInp,
+  el('label',{},'Neues Passwort'),passInp,
+  el('div',{class:'bar'},saveBtn,clearBtn,removeBtn)))}
+boot();

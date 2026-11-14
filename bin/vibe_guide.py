@@ -27,6 +27,14 @@ from pathlib import Path
 
 import vibe_storage
 
+# Die Sandbox gehört zur selben Installation (Datei im selben bin-Ordner).
+# Fehlt sie in einer unvollständigen Kopie, läuft der Assistent unverändert
+# und meldet den Ausfall erst, wenn ein geschützter Agentenauftrag gebraucht wird.
+try:
+    import vibe_sandbox
+except ImportError:  # pragma: no cover - unvollständige Kopie des bin-Ordners
+    vibe_sandbox = None
+
 GUIDE_MARK = "<!-- vibe-guide:generated -->"
 PLACEHOLDER = "Noch offen – im Projektassistenten ergänzen."
 DRAFT_DIR = ".vibe/guide"
@@ -125,6 +133,7 @@ def steps():
 
 
 def step(step_id):
+    """Schrittkopie für Aufrufer; unbekannte IDs werfen ValueError."""
     for entry in STEPS:
         if entry["id"] == step_id:
             return dict(entry)
@@ -287,6 +296,7 @@ def _ensure_files(project, name, answers, templates_dir):
 # ---------- Zustand, Entwürfe und Anwenden ----------
 
 def draft_path(project, step_id):
+    """Pfad der Entwurfsdatei eines Schritts (Prüfung der Schritt-ID inklusive)."""
     step(step_id)
     return Path(_safe_path(_project(project), DRAFT_REL.format(step=step_id)))
 
@@ -301,6 +311,7 @@ def _drafts(project):
 
 
 def state(project, name=None):
+    """Zustandsansicht des Assistenten: Abschnitte, Pflichtdateien, Entwürfe."""
     project = _project(project)
     name = name or os.path.basename(project)
     spec = _safe_path(project, "SPEC.md")
@@ -396,6 +407,11 @@ def _validate_replace(replace):
 
 
 def apply(project, answers, replace=(), name=None, templates_dir=None):
+    """Schreibt freigegebene Antworten in SPEC.md und ergänzt Pflichtdateien.
+
+    Vorhandene Abschnitte werden nur ersetzt, wenn ``replace`` sie nennt
+    oder der Inhalt unverändert ist; die Rückgabe beschreibt jede Änderung.
+    """
     project = _project(project)
     name = name or os.path.basename(project)
     answers = _validate_answers(answers)
@@ -469,6 +485,7 @@ def _project_agent(project):
 
 
 def agent_prompt(project, step_id, name=None, note=""):
+    """Baut den Entwurfs-Prompt für den Schritt (Regeln gegen Erfindung)."""
     project = _project(project)
     name = name or os.path.basename(project)
     entry = step(step_id)
@@ -516,6 +533,7 @@ def _tmux_has(session):
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             timeout=5,
+            check=False,
         )
         return result.returncode == 0
     except (OSError, subprocess.SubprocessError):
@@ -530,6 +548,7 @@ def _default_runner(argv):
             stderr=subprocess.STDOUT,
             text=True,
             timeout=30,
+            check=False,
         )
     except FileNotFoundError:
         return 127, "Programm nicht gefunden: " + str(argv[0])
@@ -559,14 +578,12 @@ def _sandbox_command(project, command):
     Ausgabe des Assistenten und wird deshalb nach diesem Read-only-Bind gezielt
     schreibbar gebunden. Alles andere unter ``.vibe`` bleibt geschützt.
     """
-    try:
-        import vibe_sandbox
-    except ImportError as error:
+    if vibe_sandbox is None:
         raise ValueError(
             "Sandbox-Modul fehlt; der Agentenauftrag startet nicht ungeschützt."
-        ) from error
-    state = vibe_sandbox.status(project)
-    if not state["enabled"]:
+        )
+    sandbox = vibe_sandbox.status(project)
+    if not sandbox["enabled"]:
         return command
     checked = vibe_sandbox.check(project)
     if not checked["ok"]:
@@ -596,6 +613,8 @@ def _agent_command(project, agent, title, prompt):
 
 def start_agent(project, step_id, name=None, note="", agent=None,
                 log_dir=None, runner=None, tmux_has=None):
+    """Startet den Entwurfslauf im eigenen tmux; ein vorheriger Entwurf wird
+    beiseitegelegt und bei Startabsagen zurückgeschrieben."""
     project = _project(project)
     name = name or os.path.basename(project)
     step(step_id)
@@ -667,6 +686,7 @@ def _tail(path, limit=40):
 
 
 def agent_status(project, name=None, log_dir=None, tmux_has=None):
+    """Laufender Assistentenauftrag mit Protokollende und Entwurfsstand."""
     project = _project(project)
     name = name or os.path.basename(project)
     session = _session(name)
@@ -686,7 +706,7 @@ def agent_status(project, name=None, log_dir=None, tmux_has=None):
     }
 
 
-def _draft_body(text, title):
+def _draft_body(text, _title):
     text = (text or "").strip()
     if text.startswith("```"):
         lines = text.splitlines()
@@ -725,6 +745,7 @@ def _shift_inner_headings(body):
 
 
 def draft_apply(project, step_id, name=None, templates_dir=None):
+    """Übernimmt einen fertigen Entwurf in SPEC.md und entfernt die Datei."""
     project = _project(project)
     name = name or os.path.basename(project)
     entry = step(step_id)
@@ -741,6 +762,7 @@ def draft_apply(project, step_id, name=None, templates_dir=None):
 
 
 def draft_discard(project, step_id):
+    """Verwirft den Entwurf; SPEC.md bleibt unverändert."""
     project = _project(project)
     entry = step(step_id)
     target = _safe_path(project, DRAFT_REL.format(step=step_id))

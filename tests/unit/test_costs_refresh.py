@@ -15,14 +15,19 @@ Projektpfad und frisches Lesen nach neuen Sitzungsdaten). Die automatische
 Aktualisierung der Oberfläche prüft ``tests/browser/test_costs_refresh_ui.py``.
 """
 import hashlib
+import importlib.machinery
+import importlib.util
 import json
 import os
-import re
+import shutil
 import sqlite3
 import unittest
 from pathlib import Path
 
 from tests.unit.test_costs import CostFixture, DDL_V2, add_message, make_db
+
+REPO = Path(__file__).resolve().parents[2]
+SANDBOX = REPO / "bin" / "vibe_sandbox.py"
 
 PROJECT_DDL = """
 CREATE TABLE `project` (
@@ -127,13 +132,25 @@ class AliasDirectoryTest(CostFixture):
 def sandbox_db_for(base, project):
     """Pfad der opencode-Datenbank im Sandbox-Zustand eines Projekts.
 
-    Entspricht ``vibe_sandbox.state_dir``: Basisverzeichnis, Projektname und
-    die ersten zehn Zeichen des SHA-256 des realen Projektpfads.
+    Entspricht ``vibe_sandbox.state_dir`` (Bug B5): Der Zustandspfad folgt
+    der Funktion ``state_dir`` der geladenen Sandbox-Implementierung. Er
+    bleibt unter dem Basisverzeichnis, solange das Zeichenlimit (AF_UNIX-
+    Grenze 108; sicheres Limit 84 gemäß ``STATE_PATH_LIMIT`` der
+    Implementierung) respektiert wird; zu lange Pfade weichen
+    auf die feste Kurzform ``/tmp/opencode/vsb/<sha256[:10]>`` aus. Die
+    Regel steht nur einmal, damit die Fixtur nicht von ihr abdriftet.
     """
-    real = os.path.realpath(str(project))
-    digest = hashlib.sha256(real.encode("utf-8")).hexdigest()[:10]
-    name = re.sub(r"[^A-Za-z0-9_-]", "_", os.path.basename(real))
-    return Path(base) / (name + "-" + digest) / "data" / "opencode" / "opencode.db"
+    module = load_sandbox_module()
+    old = os.environ.get("VIBE_SANDBOX_ROOT")
+    try:
+        os.environ["VIBE_SANDBOX_ROOT"] = str(base)
+        state = module.state_dir(project)
+    finally:
+        if old is None:
+            os.environ.pop("VIBE_SANDBOX_ROOT", None)
+        else:
+            os.environ["VIBE_SANDBOX_ROOT"] = old
+    return Path(state) / "data" / "opencode" / "opencode.db"
 
 
 class SandboxDatabaseTest(CostFixture):
@@ -262,6 +279,112 @@ class SandboxDatabaseTest(CostFixture):
             second["total"]["tokens"], {"input": 200, "cached": 0, "output": 20}
         )
         self.assertEqual([p["id"] for p in second["packages"]], ["F2"])
+
+
+
+_SANDBOX_MODULE = None
+
+
+def load_sandbox_module():
+    """Lädt bin/vibe_sandbox.py wie die benachbarten Sandbox-Tests."""
+    global _SANDBOX_MODULE
+    if _SANDBOX_MODULE is None:
+        loader = importlib.machinery.SourceFileLoader(
+            "costs_refresh_vibe_sandbox", str(SANDBOX))
+        spec = importlib.util.spec_from_loader(loader.name, loader)
+        module = importlib.util.module_from_spec(spec)
+        loader.exec_module(module)
+        _SANDBOX_MODULE = module
+    return _SANDBOX_MODULE
+
+
+def sandbox_db_path_of(module, base, project):
+    """db-Pfad laut geladener Implementierung mit dem gegebenen Basispfad."""
+    old = os.environ.get("VIBE_SANDBOX_ROOT")
+    try:
+        os.environ["VIBE_SANDBOX_ROOT"] = str(base)
+        return Path(module.state_dir(project)) / "data" / "opencode" / "opencode.db"
+    finally:
+        if old is None:
+            os.environ.pop("VIBE_SANDBOX_ROOT", None)
+        else:
+            os.environ["VIBE_SANDBOX_ROOT"] = old
+
+
+class SandboxDbPathRuleTest(unittest.TestCase):
+    """Der erwartete Sandbox-Datenbankpfad folgt der state_dir-Regel (B5).
+
+    Bug B5: Der Zustandspfad bleibt unter 84 Zeichen; zu lange Pfade weichen
+    auf die feste Kurzform ``/tmp/opencode/vsb/<sha256[:10]>`` aus. Der Test
+    prüft die Pfadberechnung der Fixtur ``sandbox_db_for``; die Sitzungs- und
+    Tokenzählung decken die bestehenden SandboxDatabaseTest-Fälle ab (B1).
+
+    Kein tempfile: Hängt die Basis am Temporärverzeichnis, wird sie von der
+    Umgebung bestimmt und kann beliebig lang werden (rotes /tmp). Beide
+    Basen liegen deshalb fest unter /tmp/opencode: kurz genug für die Formel
+    (Vorbedingung < 84 Zeichen im Zustandspfad) und lang genug für den
+    Rückfall (Basis >= 120 Zeichen). setUp legt sie an, addCleanup räumt ab.
+    """
+
+    def setUp(self):
+        self.short_base = "/tmp/opencode/b5-kurz"
+        self.long_base = "/tmp/opencode/b5-lang-" + "z" * 100
+        self.proj = Path(self.short_base) / "proj"
+        os.makedirs(self.short_base, exist_ok=True)
+        os.makedirs(self.long_base, exist_ok=True)
+        self.addCleanup(shutil.rmtree, self.short_base, ignore_errors=True)
+        self.addCleanup(shutil.rmtree, self.long_base, ignore_errors=True)
+
+    def digest_of(self, project):
+        real = os.path.realpath(str(project))
+        return hashlib.sha256(real.encode("utf-8")).hexdigest()[:10]
+
+    def test_sandbox_db_path_follows_the_state_dir_rule(self):
+        module = load_sandbox_module()
+        digest = self.digest_of(self.proj)
+
+        # Vorbedingung: die Basen sind bewusst kurz (max. ~40 Zeichen) bzw.
+        # lang (>= 120 Zeichen) und unabhängig vom Temporärverzeichnis.
+        self.assertLessEqual(len(self.short_base), 40)
+        self.assertGreaterEqual(len(self.long_base), 120)
+
+        # Variante "kurz": die gewohnte Formel bleibt unverändert.
+        short_state = os.path.join(self.short_base, "proj-" + digest)
+        self.assertLess(
+            len(short_state), 84,
+            "Vorbedingung: kurzer Basispfad muss die 84er-Begrenzung"
+            " (STATE_PATH_LIMIT) unterschreiten")
+        self.assertEqual(
+            sandbox_db_for(self.short_base, self.proj),
+            Path(short_state) / "data" / "opencode" / "opencode.db",
+        )
+
+        # Variante "lang": Rückfall auf die feste Kurzform mit demselben
+        # SHA-256-Präfix des Projektwegs.
+        old_rule_state = os.path.join(self.long_base, "proj-" + digest)
+        self.assertGreater(
+            len(old_rule_state), 84,
+            "Vorbedingung: langer Basispfad muss die 84er-Begrenzung"
+            " (STATE_PATH_LIMIT) überschreiten")
+        path = sandbox_db_for(self.long_base, self.proj)
+        # sandbox_db_for liefert den db-Pfad (<state>/data/opencode/db)...
+        expected_db = Path("/tmp/opencode/vsb") / digest / "data" / "opencode" / "opencode.db"
+        self.assertEqual(path, expected_db)
+        # ... dessen Zustandsordner ist exakt der feste Kurzpfad mit dem
+        # SHA-256-Präfix des Projektwegs.
+        state = path.parent.parent.parent
+        self.assertEqual(str(state), "/tmp/opencode/vsb/" + digest)
+        self.assertFalse(
+            str(state).startswith(self.long_base),
+            "Rückfallpfad darf die lange Basis nicht enthalten")
+
+        # Die Fixtur muss mit der geladenen Implementierung übereinstimmen.
+        for label, base in (("kurz", self.short_base), ("lang", self.long_base)):
+            with self.subTest(basis=label):
+                self.assertEqual(
+                    sandbox_db_for(base, self.proj),
+                    sandbox_db_path_of(module, base, self.proj),
+                )
 
 
 if __name__ == "__main__":

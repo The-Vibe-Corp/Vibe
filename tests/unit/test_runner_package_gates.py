@@ -209,7 +209,15 @@ class ClosingGateTest(RunnerGateTestCase):
 
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertIn("Abschlussschranke für F1", result.stdout)
-        self.assertEqual(len(self.call_lines()), 1, self.call_lines())
+        # B9: Der Schrankenbefund löst zwei Reparaturrunden im selben
+        # Arbeitsbaum aus (Erstlauf plus zwei Reparaturen).
+        calls = self.call_lines()
+        self.assertEqual(len(calls), 3, calls)
+        self.assertEqual(
+            len({line.split("\t", 1)[1] for line in calls}),
+            1,
+            "Reparaturrunden liefen nicht im selben Arbeitsbaum: %s" % calls,
+        )
         self.assertTrue(self.worktrees(), "Blockierte Arbeitskopie fehlt zur Diagnose")
         self.assertIn("BLOCKIERT", result.stdout)
 
@@ -292,8 +300,11 @@ class ErrorClassTest(RunnerGateTestCase):
 
 class ReportTest(RunnerGateTestCase):
     def test_report_lists_closed_blocked_and_open_packages(self):
+        # F1 schließt ab. F2 scheitert im Erstlauf und in beiden
+        # Reparaturrunden; die Sequenz muss deshalb dauerhaft bei
+        # ``no-artifacts`` bleiben (der letzte Eintrag wiederholt sich).
         result = self.run_runner(
-            FAKE_MODE_SEQUENCE="complete,no-artifacts,complete",
+            FAKE_MODE_SEQUENCE="complete,no-artifacts,no-artifacts,no-artifacts",
             VIBE_MAX_PACKAGES="3",
         )
 

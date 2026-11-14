@@ -34,12 +34,16 @@ PROGRAM_FILES = (
     "vibe_models.py",
     "vibe_sandbox.py",
     "vibe_paths.py",
+    "vibe_ui_config.py",
     "vibe_storage.py",
     "vibe_guide.py",
     "vibe_questions.py",
     "vibe_autonomous.py",
     "vibe_harness.py",
+    "vibe_limits.py",
+    "vibe_gates.py",
     "vibe_services.py",
+    "vibe_github.py",
     "fritz-reconnect.py",
 )
 WEB_FILES = ("index.html", "styles.css", "app.js")

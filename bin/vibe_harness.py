@@ -28,7 +28,6 @@ import json
 import os
 import re
 import shutil
-import subprocess
 import sys
 
 import vibe_opencode
@@ -67,6 +66,24 @@ HARNESSES = {
     },
 }
 
+# AP14: Fähigkeitsschicht je Harness. opencode kann Zusatzanweisungen
+# entgegennehmen (steer) und eine Session fortsetzen (continue). Pi läuft im
+# Print-Modus (--no-session): keine fortsetzbare Session, also keine der
+# beiden Fähigkeiten. Die Abfrage ist eine reine Funktion; Harnesses ohne
+# Eintrag melden jede Fähigkeit als nicht unterstützt.
+CAPABILITIES = {"opencode": ("steer", "continue")}
+
+
+def supports(name, capability):
+    """Meldet, ob ein Harness die Fähigkeit unterstützt (reine Funktion).
+
+    Unbekannte oder ungültige Harness-Namen und unbekannte oder ungültige
+    Fähigkeiten ergeben ``False`` statt eines Fehlers, damit Aufrufer (Web-API
+    und Oberfläche) ohne Ausnahmebehandlung entscheiden können.
+    """
+    harness = str(name or "").strip().lower()
+    return capability in CAPABILITIES.get(harness, ())
+
 
 class HarnessError(ValueError):
     """Die Harness-Auswahl oder ihre Konfiguration ist ungültig."""
@@ -89,6 +106,7 @@ def definition(name):
 
 
 def selection_path(state_dir):
+    """Pfad der Auswahl-Datei im Zustandsordner."""
     return os.path.join(str(state_dir), SELECTION_FILE)
 
 
@@ -116,11 +134,11 @@ def read_selection(state_dir, environ=None):
     except FileNotFoundError:
         return DEFAULT_HARNESS
     except OSError as error:
-        raise HarnessError(f"Harness-Auswahl {path} ist nicht lesbar: {error}")
+        raise HarnessError(f"Harness-Auswahl {path} ist nicht lesbar: {error}") from error
     try:
         data = json.loads(raw)
     except ValueError as error:
-        raise HarnessError(f"Harness-Auswahl {path} ist kein gültiges JSON: {error}")
+        raise HarnessError(f"Harness-Auswahl {path} ist kein gültiges JSON: {error}") from error
     if not isinstance(data, dict) or not isinstance(data.get("harness"), str):
         raise HarnessError(f"Harness-Auswahl {path} enthält kein Feld 'harness'.")
     return definition(data["harness"])["id"]
@@ -133,7 +151,7 @@ def write_selection(state_dir, name, expected=None):
     try:
         os.makedirs(str(state_dir), exist_ok=True)
     except OSError as error:
-        raise HarnessError(f"Zustandsordner {state_dir} konnte nicht angelegt werden: {error}")
+        raise HarnessError(f"Zustandsordner {state_dir} konnte nicht angelegt werden: {error}") from error
     text = json.dumps({"harness": chosen}, indent=1) + "\n"
     snapshot = vibe_storage.read_snapshot(path)
     if expected is None:
@@ -141,28 +159,20 @@ def write_selection(state_dir, name, expected=None):
     try:
         vibe_storage.write_text(path, text, expected=expected)
     except vibe_storage.StorageError as error:
-        raise HarnessError(f"Harness-Auswahl {path} konnte nicht gespeichert werden: {error}")
+        raise HarnessError(f"Harness-Auswahl {path} konnte nicht gespeichert werden: {error}") from error
     return path
 
 
 def _run(runner, argv, timeout, environ=None):
+    """Startet das Programm für Diagnosen; ``runner`` ersetzt es in Tests.
+
+    Ohne Test-Runner wird auf die gemeinsame Semantik des opencode-Adapters
+    zurückgegriffen (127/124/126), optional mit eigener Umgebung für
+    PATH-beschränkte Diagnosen.
+    """
     if runner is not None:
         return runner(argv, timeout)
-    if environ is None:
-        return vibe_opencode.run_command(argv, timeout)
-    # Eigene Umgebung für Diagnosen (z. B. ein temporärer PATH in Tests);
-    # Semantik wie vibe_opencode.run_command: 127/124/126.
-    try:
-        process = subprocess.run(
-            argv, capture_output=True, text=True, timeout=timeout, env=environ
-        )
-        return process.returncode, (process.stdout + process.stderr).strip()
-    except FileNotFoundError:
-        return 127, "Programm nicht gefunden: " + argv[0]
-    except subprocess.TimeoutExpired:
-        return 124, f"Zeitüberschreitung nach {timeout:g} s: {argv[0]}"
-    except OSError as error:
-        return 126, f"Programm nicht ausführbar: {argv[0]}: {error}"
+    return vibe_opencode.run_command(argv, timeout, environ=environ)
 
 
 def probe(name=None, state_dir=None, binary=None, runner=None, timeout=10, environ=None):
@@ -278,7 +288,7 @@ def agent_prompt(project, agent, agents_dir=None):
         except FileNotFoundError:
             continue
         except OSError as error:
-            raise HarnessError(f"Agentendatei {path} ist nicht lesbar: {error}")
+            raise HarnessError(f"Agentendatei {path} ist nicht lesbar: {error}") from error
         match = FRONTMATTER_RE.match(text)
         body = text[match.end():] if match else text
         if not body.strip():
@@ -291,12 +301,19 @@ def agent_prompt(project, agent, agents_dir=None):
 
 
 def run_argv(name, prompt, project, agent=None, model=None, server_url=None,
-             title=None, binary=None, agents_dir=None):
+             title=None, binary=None, agents_dir=None, events=False):
     """Baut die Argumentliste für einen Agentenlauf.
 
     opencode erhält unverändert die bisher geprüften Argumente. Pi läuft im
     Print-Modus; der Prompt der Agentendatei wird der Aufgabe vorangestellt,
     weil Pi keine opencode-Agentendateien liest.
+
+    ``events=True`` baut bei Pi die strukturierte Ereignisausgabe ein
+    (``--mode json``, Pi-Dokumentation docs/json.md); der Läufer nutzt sie
+    für die Subagentenerfassung (F19/F24). Ohne ``events`` bleibt die Liste
+    byte-identisch zum bisherigen Verhalten. opencode erhält seine
+    Ereignisoption weiterhin vom Läufer (``--format json``) und wird von
+    ``events`` nie beeinflusst.
     """
     info = definition(name)
     if not isinstance(prompt, str) or not prompt.strip():
@@ -322,10 +339,16 @@ def run_argv(name, prompt, project, agent=None, model=None, server_url=None,
     if not agent:
         raise HarnessError("Für Pi muss ein Agent mit Prompt-Datei gewählt sein.")
     message = agent_prompt(project, agent, agents_dir=agents_dir) + "\n\n---\n\n" + prompt
-    # Agentenläufe sind einmalig. Ohne Sitzungsdatei schreibt Pi nichts in
-    # ~/.pi/agent und funktioniert damit auch in der Schreib-Sandbox, deren
-    # Wurzeldateisystem nur lesend eingebunden ist.
+    # Agentenläufe sind einmalig. Ohne Sitzungsdatei schreibt Pi keine
+    # Sitzungsdateien; sein Agentenverzeichnis ~/.pi/agent liest und
+    # schreibt Pi trotzdem — auch mit --no-session (Sperrdatei
+    # trust.json.lock beim Lesen des Vertrauensspeichers; Bug B4). Die
+    # Scratch-Sandbox stellt deshalb über die Umgebungsvariable
+    # PI_CODING_AGENT_DIR einen beschreibbaren Agentenordner bereit
+    # (bin/vibe_sandbox.py, bwrap_argv()).
     argv = [target, "--print", "--no-session"]
+    if events:
+        argv += ["--mode", "json"]
     argv += model_args
     if title:
         argv += ["--name", str(title)]
@@ -435,7 +458,7 @@ def _cmd_run(args):
         argv = run_argv(
             args.harness, prompt, args.project,
             agent=args.agent, model=args.model, server_url=args.server_url,
-            title=args.title, agents_dir=args.agents_dir,
+            title=args.title, agents_dir=args.agents_dir, events=args.json,
         )
     except HarnessError as error:
         print("Harness: " + str(error), file=sys.stderr)
@@ -448,9 +471,13 @@ def _cmd_run(args):
     except OSError as error:
         print(f"Harness-Programm nicht ausführbar: {argv[0]}: {error}", file=sys.stderr)
         return 126
+    # execvp ersetzt das Prozessbild; ein Ende im selben Pythonprozess gibt
+    # es nicht. Diese Rückgabe ist konsistenzhalber vorhanden.
+    return 126
 
 
 def main(argv=None):
+    """Kommandozeileneinstieg; Rückgabe ist der Prozessende-Code."""
     parser = argparse.ArgumentParser(prog="vibe_harness.py")
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -486,6 +513,11 @@ def main(argv=None):
     run.add_argument("--prompt", default=None)
     run.add_argument("--prompt-file", default=None)
     run.add_argument("--state", default=None)
+    # B6: Pi mit strukturiertem Ereignisstrom starten (--mode json). Die
+    # Erfassung (F19/F24) setzt diese Argumente; ohne Flag bleibt der
+    # Klartext-Print-Modus (bisheriges Verhalten).
+    run.add_argument("--json", action="store_true",
+                     help="Pi: Ereignisausgabe --mode json ankoppeln")
 
     args = parser.parse_args(argv)
 

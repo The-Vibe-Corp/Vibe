@@ -18,9 +18,11 @@ Eigenschaften:
 * **Begrenzte Datei** — nur die letzten Einträge bleiben erhalten.
 
 Dieses Modul startet keine Prozesse, spricht nicht mit dem Netzwerk und ruft
-keine Modelle auf. Es schreibt ausschließlich im Laufzeitordner. Es ist bewusst
-eigenständig (nur Standardbibliothek): ``bin/vibe-run.sh`` ruft es als Skript
-auf, auch wenn die Installation unvollständig ist.
+keine Modelle auf. Es schreibt ausschließlich im Laufzeitordner und nutzt nur
+die Standardbibliothek plus die im selben Ordner gelieferte
+Gemeinschaftsschicht
+``vibe_storage`` (liegt im selben ``bin``-Ordner): ``bin/vibe-run.sh`` ruft
+es als Skript auf, auch wenn die übrige Installation unvollständig ist.
 
 Aufruf aus ``bin/vibe`` und ``bin/vibe-run.sh``:
 
@@ -38,9 +40,14 @@ import json
 import os
 import re
 import secrets
+import subprocess
 import sys
 import tempfile
 import time
+
+# Die Gemeinschaftsschicht liegt als Datei im selben bin-Ordner (Skriptpfad
+# ist sys.path[0]); aus ihr kommt die gemeinsame Verzeichnis-Fsync-Hilfe.
+import vibe_storage
 
 try:  # Nur unter POSIX verfügbar; ohne Sperre bleibt der letzte Schreibvorgang gewinnen.
     import fcntl
@@ -52,7 +59,7 @@ KEEP_RECORDS = 100
 DEFAULT_MAX_BYTES = 5 * 1024 * 1024
 DEFAULT_KEEP = 3
 LIVE_STATES = ("starting", "running")
-STATES = ("starting", "running", "finished", "stopped", "paused", "failed", "ended")
+STATES = ("starting", "running", "finished", "stopped", "paused", "failed", "ended", "blocked")
 
 
 def clean_key(text):
@@ -93,9 +100,55 @@ def rotate_log(path, max_bytes=DEFAULT_MAX_BYTES, keep=DEFAULT_KEEP):
 
 
 SUBAGENT_FINISHED = ("completed", "error", "failed", "cancelled", "canceled")
+# B12: opencode ≥ 2.3 führt Subagenten standardmäßig im Hintergrund; das
+# task-Werkzeug der Hauptsession ist sofort "completed", während die
+# Metadaten den tatsächlichen Zustand (u. a. "running") nennen. Nur bekannte
+# Werte werden übernommen, fremde Formen bleiben unverändert.
+SUBAGENT_STATUSES = ("running",) + SUBAGENT_FINISHED
 # opencode nennt das Werkzeug intern "task"; ältere Stände und die Anzeige
 # verwenden "subagent". Beide Formen werden erkannt.
 SUBAGENT_TOOLS = ("task", "subagent")
+# B11: Die Zustandsdatei darf durch viele abgeschlossene Subagenten nicht
+# unbegrenzt wachsen. Laufende Einträge werden bevorzugt erhalten; bei mehr
+# als MAX_SUBAGENTS gleichzeitig laufenden Einträgen können die ältesten
+# laufenden verdrängt werden.
+MAX_SUBAGENTS = 50
+# B11: Auch die Ausgabe je Eintrag braucht ein Budget. Gespeichert wird nur
+# der jüngste Tail; das begrenzt Zustandsdatei, Schreib-/fsync-Kosten und die
+# Listenantwort. Die volle Live-Ausgabe liefert /api/subagent-output.
+MAX_SUBAGENT_OUTPUT_BYTES = 64 * 1024
+
+
+def output_tail(text, budget):
+    """Liefert die letzten ``budget`` UTF-8-Bytes von ``text``.
+
+    Ein Mehrbyte-Zeichen, das durch den Schnitt zerteilt würde, wird am
+    Anfang des Tails verworfen.
+    """
+    value = str(text or "")
+    raw = value.encode("utf-8")
+    if len(raw) <= budget:
+        return value
+    return raw[-budget:].decode("utf-8", "ignore")
+
+# Pi 1.5.0 liefert im JSON-Modus (--mode json) genau diese Ereignistypen
+# (Pi-Dokumentation docs/json.md). Der Erfassungsfilter erkennt die Form
+# automatisch anhand des Ereignistyps; opencode nutzt eine andere Menge
+# (text/reasoning/error/tool_use), so dass sich beide Formen nicht stören.
+PI_EVENT_TYPES = (
+    "session",
+    "agent_start", "agent_end", "agent_settled",
+    "turn_start", "turn_end",
+    "message_start", "message_update", "message_end",
+    "tool_execution_start", "tool_execution_update", "tool_execution_end",
+    "queue_update", "entry_appended", "session_info_changed",
+    "thinking_level_changed",
+    "compaction_start", "compaction_end",
+    "auto_retry_start", "auto_retry_end",
+    "summarization_retry_scheduled", "summarization_retry_attempt_start",
+    "summarization_retry_finished",
+    "bash_execution_update", "extension_error",
+)
 
 
 def subagent_state_path(log_path):
@@ -122,8 +175,24 @@ def load_subagent_state(path):
 
 def save_subagent_state(path, state):
     """Schreibt den Subagenten-Zustand atomar; nur der Läufer schreibt hier."""
+    entries = state.get("subagents")
+    if isinstance(entries, list):
+        _trim_subagent_entries(entries)
     text = json.dumps(state, ensure_ascii=False, indent=1) + "\n"
     _atomic_write(path, text)
+
+
+def _trim_subagent_entries(entries):
+    """Begrenzt die Einträge auf MAX_SUBAGENTS; laufende bleiben bevorzugt."""
+    if len(entries) <= MAX_SUBAGENTS:
+        return
+    running = [item for item in entries
+               if item.get("status") not in SUBAGENT_FINISHED]
+    finished = [item for item in entries
+                if item.get("status") in SUBAGENT_FINISHED]
+    room = max(0, MAX_SUBAGENTS - len(running))
+    kept = running + (finished[-room:] if room else [])
+    entries[:] = kept[-MAX_SUBAGENTS:]
 
 
 def _subagent_session(part, tool_state=None):
@@ -148,6 +217,28 @@ def _subagent_session(part, tool_state=None):
     return ""
 
 
+def _subagent_metadata_status(part, tool_state=None):
+    """Liest den Subagenten-Status aus den Werkzeug-Metadaten.
+
+    B12: Die Metadaten haben dieselben beiden Formen wie bei
+    :func:`_subagent_session` (``tool_state.metadata`` bzw. ``part.metadata``,
+    teils verschachtelt). Nur bekannte Statuswerte zählen; ohne Statusfeld
+    oder mit unbekanntem Wert bleibt der Werkzeugzustand maßgeblich.
+    """
+    candidates = []
+    if isinstance(tool_state, dict):
+        candidates.append(tool_state.get("metadata"))
+    candidates.append(part.get("metadata"))
+    for metadata in candidates:
+        if not isinstance(metadata, dict):
+            continue
+        inner = metadata.get("metadata") if isinstance(metadata.get("metadata"), dict) else metadata
+        value = inner.get("status")
+        if isinstance(value, str) and value in SUBAGENT_STATUSES:
+            return value
+    return ""
+
+
 def _subagent_entry(state, session, agent, description):
     """Findet den bestehenden Eintrag; ohne Session über Agent und Beschreibung."""
     if session:
@@ -163,31 +254,139 @@ def _subagent_entry(state, session, agent, description):
     return None
 
 
-def translate_event(event, state):
+def _child_event_lines(event):
+    """Klartextzeilen eines Ereignisses aus einer Kind-Session (B11).
+
+    Nur Text, Denken und Werkzeuge tragen zur Live-Ausgabe eines Subagenten
+    bei; andere Ereignisse erfinden keinen Eintrag. Die Schreibweise folgt der
+    bestehenden opencode-Übersetzung („[Denken] “, „[Werkzeug] “).
+    """
+    kind = event.get("type")
+    part = event.get("part") if isinstance(event.get("part"), dict) else {}
+    if kind == "text":
+        text = part.get("text")
+        return text.splitlines() if isinstance(text, str) and text else []
+    if kind == "reasoning":
+        text = part.get("text")
+        if not isinstance(text, str) or not text.strip():
+            return []
+        return ["[Denken] " + line for line in text.splitlines()]
+    if kind != "tool_use":
+        return []
+    tool = part.get("tool") or part.get("name") or "?"
+    tool_state = part.get("state") if isinstance(part.get("state"), dict) else {}
+    status = str(tool_state.get("status") or "unbekannt")
+    inputs = tool_state.get("input") if isinstance(tool_state.get("input"), dict) else {}
+    detail = inputs.get("description") or inputs.get("command") or inputs.get("filePath") or ""
+    detail = " ".join(str(detail).split())
+    return [f"[Werkzeug] {tool} — {status}" + (": " + detail if detail else "")]
+
+
+def _capture_child_event(event, state, session):
+    """Erfasst ein Ereignis einer fremden Session als laufenden Subagenten.
+
+    B11: Sandbox-Läufe teilen keinen Dashboard-Server mit dem Läufer. Damit
+    die Subagenten-Ausgabe trotzdem live sichtbar wird, legt der Filter für
+    jede unbekannte Kind-Session einen laufenden Eintrag an und sammelt deren
+    Ausgabe. Der Abschluss kommt weiterhin über das ``task``-Ereignis der
+    Hauptsession.
+    """
+    lines = _child_event_lines(event)
+    if not lines:
+        return [], False
+    entry = _subagent_entry(state, session, "", "")
+    if entry is None:
+        entry = {
+            "session": session,
+            "agent": "",
+            "description": "",
+            "prompt": "",
+            "status": "running",
+            "started": int(time.time()),
+            "ended": 0,
+            "output": "",
+        }
+        state["subagents"].append(entry)
+    if entry.get("status") in SUBAGENT_FINISHED:
+        # B12: Lebende Kind-Ereignisse beweisen, dass der Eintrag weiterläuft;
+        # ein früher gemeldeter Abschluss war voreilig. Das ist die
+        # Rückfalllinie für Harnesses, die Kind-Ereignisse doch liefern.
+        entry["status"] = "running"
+        entry["ended"] = 0
+    text = "\n".join(lines)
+    previous = str(entry.get("output") or "")
+    entry["output"] = output_tail(
+        previous + "\n" + text if previous else text,
+        MAX_SUBAGENT_OUTPUT_BYTES,
+    )
+    return lines, True
+
+
+def translate_event(event, state, run=None):
     """Übersetzt ein opencode-JSON-Ereignis in Protokollzeilen und Zustand.
 
     Rückgabe: (Zeilen, Zustand geändert). Roh-JSON wird nie zurückgegeben.
+
+    B11: Ereignisse einer fremden Session (Subagent) legen einen laufenden
+    Eintrag an bzw. verlängern dessen Ausgabe; die Hauptsession bleibt
+    unverändert.
+
+    ``run`` ist der Kontext eines Agentenlaufs aus :func:`stream_events`:
+
+    * ``run["attempt"]`` (Aufruf durch den Paket-Läufer): Genau ein
+      Agentenlauf je Aufruf. Die erste gesehene Session ist die Hauptsession
+      dieses Laufs und ersetzt am Ende die gespeicherte; abweichende Sessions
+      sind Kind-Sessions. Das trägt F25 (Wiederholung als neue Hauptsession).
+    * Ohne ``attempt`` bleibt die gespeicherte Session die Hauptsession;
+      abweichende Sessions werden als Kinder erfasst (B11).
+    * Ohne ``run`` (direkter Aufruf) gilt F25 „zuletzt gewinnt“: Eine
+      abweichende Session wird als neue Hauptsession übernommen.
     """
     if not isinstance(event, dict):
         return [], False
     changed = False
+    session_lines = []
     session = event.get("sessionID")
-    if isinstance(session, str) and session and not state.get("session"):
+    known_session = state.get("session") or ""
+    run_main = ""
+    if isinstance(run, dict):
+        if run.get("attempt"):
+            run_main = run.get("main") or ""
+            if not run_main and isinstance(session, str) and session:
+                run["main"] = run_main = session
+            if isinstance(session, str) and session and run_main \
+                    and session != run_main:
+                return _capture_child_event(event, state, session)
+        elif isinstance(session, str) and session and known_session \
+                and session != known_session:
+            return _capture_child_event(event, state, session)
+    if (not isinstance(run, dict) and isinstance(session, str) and session
+            and known_session and session != known_session
+            and any(item.get("session") == session
+                    for item in state["subagents"])):
+        # B12: Eine bereits erfasste Kind-Session bleibt ein Subagent; ihre
+        # späteren Ereignisse beleben den Eintrag wieder, statt die
+        # Hauptsession zu ersetzen. F25 „zuletzt gewinnt“ gilt nur für
+        # unbekannte Sessions.
+        return _capture_child_event(event, state, session)
+    if isinstance(session, str) and session and session != known_session:
         state["session"] = session
         changed = True
+        session_lines.append("[Session] " + session)
 
     kind = event.get("type")
     part = event.get("part") if isinstance(event.get("part"), dict) else {}
     if kind == "text":
         text = part.get("text")
         if isinstance(text, str) and text:
-            return text.splitlines(), changed
-        return [], changed
+            return session_lines + text.splitlines(), changed
+        return session_lines, changed
     if kind == "reasoning":
         text = part.get("text")
         if isinstance(text, str) and text.strip():
-            return ["[Denken] " + line for line in text.splitlines()], changed
-        return [], changed
+            thinking = ["[Denken] " + line for line in text.splitlines()]
+            return session_lines + thinking, changed
+        return session_lines, changed
     if kind == "error":
         error = event.get("error")
         if isinstance(error, dict):
@@ -196,9 +395,11 @@ def translate_event(event, state):
         else:
             message = error
         message = " ".join(str(message or "").split())
-        return (["[Fehler] " + message] if message else []), changed
+        if message:
+            return session_lines + ["[Fehler] " + message], changed
+        return session_lines, changed
     if kind != "tool_use":
-        return [], changed
+        return session_lines, changed
 
     tool = part.get("tool") or part.get("name") or "?"
     tool_state = part.get("state") if isinstance(part.get("state"), dict) else {}
@@ -215,6 +416,11 @@ def translate_event(event, state):
     prompt = inputs.get("prompt") if isinstance(inputs.get("prompt"), str) else ""
     output = tool_state.get("output") if isinstance(tool_state.get("output"), str) else ""
     child_session = _subagent_session(part, tool_state)
+    # B12: Die Metadaten sind Authorität. opencode ≥ 2.3 kehrt beim
+    # task-Werkzeug sofort mit state.status="completed" zurück, meldet in den
+    # Metadaten aber "running", solange die Kind-Session weiterläuft. Ohne
+    # bekannten Metadatenstatus gilt wie bisher der Werkzeugzustand.
+    status = _subagent_metadata_status(part, tool_state) or status
     now = int(time.time())
     entry = _subagent_entry(state, child_session, agent, description)
     if entry is None:
@@ -241,7 +447,7 @@ def translate_event(event, state):
         entry["status"] = status
         changed = True
     if output and entry.get("output") != output:
-        entry["output"] = output
+        entry["output"] = output_tail(output, MAX_SUBAGENT_OUTPUT_BYTES)
         changed = True
     ended = now if status in SUBAGENT_FINISHED else 0
     if entry.get("ended") != ended:
@@ -254,17 +460,206 @@ def translate_event(event, state):
     lines = [f"[Subagent] {agent or '?'}: {description or '(ohne Beschreibung)'} — {status}"]
     if output:
         lines.extend(output.splitlines())
-    return lines, changed
+    return session_lines + lines, changed
 
 
-def stream_events(stdin, emit, state_path):
+def _pi_result_text(result):
+    """Vereinigt die Textblöcke eines Pi-Werkzeupergebnisses zur Ausgabe.
+
+    Pi liefert Werkzeupergebnisse als ``{"content":[{"type":"text",...}]}``
+    (Pi-Dokumentation docs/json.md). Andere Blockarten (Bilder, Details)
+    tragen nichts zur erfassten Ausgabe bei.
+    """
+    if isinstance(result, str):
+        return result
+    if not isinstance(result, dict):
+        return ""
+    content = result.get("content")
+    if isinstance(content, str):
+        return content
+    if not isinstance(content, list):
+        return ""
+    texts = [
+        block["text"]
+        for block in content
+        if isinstance(block, dict) and block.get("type") == "text"
+        and isinstance(block.get("text"), str)
+    ]
+    return "\n".join(texts)
+
+
+def _pi_tool_detail(inputs):
+    """Kurzinfo einer Pi-Werkzeugausführung (analog opencode-Übersetzung)."""
+    detail = (
+        inputs.get("description") or inputs.get("command")
+        or inputs.get("filePath") or ""
+    )
+    return " ".join(str(detail).split())
+
+
+def _pi_new_entry(tool_call, inputs, now):
+    """Lege den Subagenteneintrag für ein Pi-Subagenten-Werkzeug an."""
+    return {
+        "session": tool_call,
+        "agent": str(inputs.get("agent") or ""),
+        "description": str(inputs.get("description") or ""),
+        "prompt": inputs.get("prompt") if isinstance(inputs.get("prompt"), str) else "",
+        "status": "running",
+        "started": int(now),
+        "ended": 0,
+        "output": "",
+    }
+
+
+def _pi_tool_lines(event, state, mode):
+    """Übersetzt eine Pi-Werkzeugausführung in Zeilen und Subagentenzustand.
+
+    ``mode`` ist der Ereignistyp ohne Präfix (``start``/``update``/``end``).
+    Subagenten-Werkzeuge (SUBAGENT_TOOLS) erzeugen einen Eintrag mit dem
+    ``toolCallId`` als Tab-Schlüssel (``session``).
+    """
+    tool = str(event.get("toolName") or "?")
+    inputs = event.get("args") if isinstance(event.get("args"), dict) else {}
+    tool_call = str(event.get("toolCallId") or "")
+    detail = _pi_tool_detail(inputs)
+    now = int(time.time())
+    changed = False
+    if mode == "start":
+        line = f"[Werkzeug] {tool} — läuft" + (": " + detail if detail else "")
+        if tool in SUBAGENT_TOOLS:
+            entry = _subagent_entry(state, tool_call, "", "")
+            if entry is None:
+                entry = _pi_new_entry(tool_call, inputs, now)
+                state["subagents"].append(entry)
+            for key, value in (
+                ("session", tool_call), ("agent", str(inputs.get("agent") or "")),
+                ("description", str(inputs.get("description") or "")),
+            ):
+                if value and entry.get(key) != value:
+                    entry[key] = value
+            prompt = inputs.get("prompt")
+            if isinstance(prompt, str) and prompt and entry.get("prompt") != prompt:
+                entry["prompt"] = prompt
+            if entry.get("status") != "running":
+                entry["status"] = "running"
+            if not isinstance(entry.get("started"), int):
+                entry["started"] = now
+            entry["ended"] = 0
+            changed = True
+        return [line], changed
+    if mode == "update":
+        if tool not in SUBAGENT_TOOLS:
+            return [], False
+        entry = _subagent_entry(state, tool_call, "", "")
+        if entry is None:
+            entry = _pi_new_entry(tool_call, inputs, now)
+            state["subagents"].append(entry)
+        text = _pi_result_text(event.get("partialResult"))
+        if text and entry.get("output") != text:
+            entry["output"] = output_tail(text, MAX_SUBAGENT_OUTPUT_BYTES)
+        return [], True
+    # mode == "end"
+    failed = bool(event.get("isError"))
+    line = f"[Werkzeug] {tool} — " + ("Fehler" if failed else "abgeschlossen")
+    if tool not in SUBAGENT_TOOLS:
+        return [line], False
+    entry = _subagent_entry(state, tool_call, "", "")
+    if entry is None:
+        entry = _pi_new_entry(tool_call, inputs, now)
+        state["subagents"].append(entry)
+    ending = ("error" if failed else "completed")
+    if entry.get("status") != ending:
+        entry["status"] = ending
+    text = _pi_result_text(event.get("result"))
+    if text and entry.get("output") != text:
+        entry["output"] = output_tail(text, MAX_SUBAGENT_OUTPUT_BYTES)
+    if isinstance(entry.get("ended"), int) and entry.get("ended") != now:
+        entry["ended"] = now
+    if not isinstance(entry.get("started"), int):
+        entry["started"] = now
+    return [line], True
+
+
+def translate_pi_event(event, state):
+    """Übersetzt ein Pi-JSON-Ereignis in Protokollzeilen und Zustand.
+
+    Pi 1.5.0 liefert im JSON-Modus (``--mode json``) einen JSONL-Strom mit
+    Session-Header, Nachrichten- und Werkzeigereignissen (Pi-Dokumentation
+    docs/json.md). Rückgabe ist gleich der von :func:`translate_event`:
+    ``(Zeilen, Zustand geändert)``.
+
+    Der Session-Header erzeugt nur eine ``[Session]``-Zeile. Die Kennung
+    wird bewusst nicht als Hauptsession übernommen: Pi läuft mit
+    ``--no-session``, die Kennung ist ephemeral, und die opencode-Live-
+    Abfrage dürfte niemals mit ihr befragt werden. Verheiratete Zustände
+    der opencode-Übersetzung bleiben dadurch unverändert.
+    """
+    if not isinstance(event, dict):
+        return [], False
+    kind = str(event.get("type") or "")
+    if kind == "session":
+        session_id = event.get("id")
+        if isinstance(session_id, str) and session_id:
+            return ["[Session] " + session_id], False
+        return [], False
+    if kind == "message_end":
+        message = (
+            event.get("message") if isinstance(event.get("message"), dict) else {}
+        )
+        if message.get("role") != "assistant":
+            return [], False
+        content = message.get("content")
+        if isinstance(content, str):
+            blocks = [{"type": "text", "text": content}] if content else []
+        elif isinstance(content, list):
+            blocks = content
+        else:
+            blocks = []
+        lines = []
+        for block in blocks:
+            if not isinstance(block, dict):
+                continue
+            text = block.get("text")
+            if not isinstance(text, str) or not text.strip():
+                continue
+            if block.get("type") == "thinking":
+                lines.extend("[Denken] " + line for line in text.splitlines())
+            elif block.get("type") == "text":
+                lines.extend(text.splitlines())
+        return lines, False
+    if not kind.startswith("tool_execution_"):
+        # Streaming-Deltas und Rauschen (message_update, turn_*, agent_*,
+        # queue, compaction, retry) erzeugen keine Zeilen und keine
+        # Zustandsänderung.
+        return [], False
+    mode = kind[len("tool_execution_"):]
+    if mode not in ("start", "update", "end"):
+        return [], False
+    return _pi_tool_lines(event, state, mode)
+
+
+def stream_events(stdin, emit, state_path, attempt=False):
     """Liest JSON-Zeilen von stdin, schreibt Klartext und pflegt den Zustand.
 
     Nicht-JSON-Zeilen (z. B. stderr des Agenten) werden unverändert
     durchgereicht. Jede Zustandsänderung wird atomar gespeichert, damit das
     Dashboard nie eine halbe Datei liest.
+
+    B6: Die Ereignisform wird automatisch erkannt — opencode-Ereignisse
+    behalten ihr Verhalten, Ereignisse vom Pi-JSON-Modus gehen durch die
+    Pi-Übersetzung. Beide Formen teilen sich dieselbe Zustandsdatei.
+
+    ``attempt`` kennzeichnet den Aufruf als genau einen Agentenlauf des
+    Paket-Läufers (F25/B11): Die erste Session dieses Stroms ist die
+    Hauptsession, abweichende Sessions sind Kind-Sessions. Ohne diese Angabe
+    bleibt die gespeicherte Session die Hauptsession; ein Strom, der nur
+    Text-Ereignisse einer einzelnen fremden Session enthält, wird am Ende
+    dennoch als neuer Hauptversuch übernommen (Rückwärtskompatibilität der
+    direkten Einbettung).
     """
     state = load_subagent_state(state_path)
+    run = {"attempt": bool(attempt), "main": "", "saw_main": False,
+           "unknown": {}}
     for raw in stdin:
         line = raw.rstrip("\r\n")
         if not line.strip():
@@ -277,25 +672,58 @@ def stream_events(stdin, emit, state_path):
         except ValueError:
             emit("opencode: " + line)
             continue
-        lines, changed = translate_event(event, state)
+        if isinstance(event, dict) and event.get("type") in PI_EVENT_TYPES:
+            lines, changed = translate_pi_event(event, state)
+        else:
+            if not run["attempt"]:
+                _track_unknown_session(event, state, run)
+            lines, changed = translate_event(event, state, run)
         for output_line in lines:
             emit(output_line)
         if changed:
             save_subagent_state(state_path, state)
+    if _promote_text_only_attempt(state, run):
+        emit("[Session] " + state["session"])
+        save_subagent_state(state_path, state)
 
 
-def _fsync_dir(directory):
-    """Sichert den Verzeichniseintrag nach ``os.replace`` (best effort)."""
-    try:
-        fd = os.open(directory, os.O_RDONLY)
-    except OSError:
+def _track_unknown_session(event, state, run):
+    """Merkt sich fremde Sessions für die Versuchserkennung ohne ``attempt``.
+
+    ``saw_main`` wird gesetzt, sobald ein Ereignis der gespeicherten
+    Hauptsession (oder die erste Session eines leeren Zustands) erscheint.
+    ``unknown`` hält je fremder Session fest, ob sie ausschließlich
+    Text-Ereignisse geliefert hat.
+    """
+    if not isinstance(event, dict):
         return
-    try:
-        os.fsync(fd)
-    except OSError:
-        pass
-    finally:
-        os.close(fd)
+    session = event.get("sessionID")
+    known = state.get("session") or ""
+    if not isinstance(session, str) or not session:
+        return
+    if not known or session == known:
+        run["saw_main"] = True
+        return
+    text_only = event.get("type") == "text"
+    run["unknown"][session] = run["unknown"].get(session, True) and text_only
+
+
+def _promote_text_only_attempt(state, run):
+    """Übernimmt eine text-only Einzelsession als neuen Hauptversuch.
+
+    B11 erfasst fremde Sessions live als Subagenten. Ein Aufruf, der keine
+    Hauptsession-Ereignisse enthält und ausschließlich Text einer einzigen
+    fremden Session liefert, ist jedoch der Zweitversuch aus F25: Seine
+    Session ersetzt die gespeicherte („zuletzt gewinnt“). Die erfasste
+    Ausgabe bleibt erhalten, damit kein Subagenten-Text verloren geht.
+    """
+    if run.get("attempt") or run.get("saw_main") or len(run.get("unknown") or {}) != 1:
+        return False
+    promoted, text_only = next(iter(run["unknown"].items()))
+    if not text_only or state.get("session") == promoted:
+        return False
+    state["session"] = promoted
+    return True
 
 
 def _atomic_write(path, text):
@@ -308,7 +736,7 @@ def _atomic_write(path, text):
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(tmp, path)
-        _fsync_dir(directory)
+        vibe_storage.fsync_dir(directory)
     except OSError:
         with contextlib.suppress(OSError):
             os.unlink(tmp)
@@ -327,7 +755,7 @@ class RunRegistry:
     @contextlib.contextmanager
     def _locked(self):
         os.makedirs(self.runtime, exist_ok=True)
-        handle = open(self.lock_path, "a+")
+        handle = open(self.lock_path, "a+", encoding="utf-8")
         try:
             if fcntl is not None:
                 fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
@@ -357,9 +785,11 @@ class RunRegistry:
         _atomic_write(self.path, text)
 
     def all(self):
+        """Alle erfassten Läufe; die Reihenfolge folgt dem Register."""
         return self._read()
 
     def get(self, run_id):
+        """Laufdatensatz als Kopie oder None, wenn die ID unbekannt ist."""
         for record in reversed(self._read()):
             if record.get("id") == run_id:
                 return dict(record)
@@ -401,23 +831,95 @@ class RunRegistry:
             self._write(runs)
         return dict(record)
 
-    def finish(self, run_id, exit_code=None, state="finished"):
-        """Beendet einen Lauf; ein unbekannter Lauf bleibt unbekannt (None)."""
+    def finish(self, run_id, exit_code=None, state="finished", note="",
+               only_live=False):
+        """Beendet einen Lauf; ein unbekannter Lauf bleibt unbekannt (None).
+
+        ``note`` wird nur gespeichert, wenn er nicht leer ist. ``only_live``
+        lässt bereits beendete Einträge unverändert (V-026): Ein Signal darf
+        einen abgeschlossenen Lauf nicht nachträglich umdeuten.
+        """
         if state not in STATES:
             raise ValueError(f"Unbekannter Laufzustand: {state!r}")
         with self._locked():
             runs = self._read()
             found = None
+            changed = False
             for record in runs:
                 if record.get("id") != run_id:
                     continue
+                if only_live and record.get("state") not in LIVE_STATES:
+                    return dict(record)
                 record["state"] = state
                 record["exit_code"] = exit_code
                 record["ended"] = time.strftime("%Y-%m-%dT%H:%M:%S%z")
+                if note:
+                    record["note"] = str(note)
+                else:
+                    record.pop("note", None)
                 found = dict(record)
-            if found is not None:
+                changed = True
+            if changed:
                 self._write(runs)
             return found
+
+
+def tmux_session_state(session):
+    """True, False oder None für eine Laufsitzung auf ihrem eigenen Server.
+
+    Agentenläufe liegen seit V-026 auf einem eigenen tmux-Server; der
+    Socket-Name ist der Sitzungsname. ``False`` gilt nur bei Exitcode 1
+    ("keine solche Sitzung"); alles andere ist nicht prüfbar.
+    """
+    if not session:
+        return None
+    try:
+        completed = subprocess.run(
+            ["tmux", "-L", session, "has-session", "-t", session],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if completed.returncode == 0:
+        return True
+    if completed.returncode == 1:
+        return False
+    return None
+
+
+def prune_orphans(runtime, project=None, note="extern beendet (Sitzung fehlt)"):
+    """Markiert verwaiste Live-Einträge als ``ended``.
+
+    Ohne ``project`` gilt das Register als Ganzes, mit ``project`` nur dessen
+    Einträge. Laufende Sitzungen, nicht prüfbare Sitzungen und bereits
+    beendete Einträge bleiben unverändert. Es wird nie eine Sitzung beendet.
+    Rückgabe: ``(ended, running, unknown)``.
+    """
+    registry = RunRegistry(runtime)
+    real = os.path.realpath(os.path.abspath(str(project))) if project else None
+    ended = running = unknown = 0
+    for record in registry.all():
+        if record.get("state") not in LIVE_STATES:
+            continue
+        if real is not None and os.path.realpath(
+            os.path.abspath(str(record.get("project") or ""))
+        ) != real:
+            continue
+        session = str(record.get("session") or "")
+        state = tmux_session_state(session)
+        if state is None:
+            unknown += 1
+            continue
+        if state:
+            running += 1
+            continue
+        registry.finish(record["id"], exit_code=None, state="ended",
+                        note=note, only_live=True)
+        ended += 1
+    return ended, running, unknown
 
 
 def choose_key(project, runtime, preferred=""):
@@ -451,6 +953,7 @@ def _state(value):
 
 
 def build_parser():
+    """Argumentkatalog für Kommandozeilenaufrufe des Registrier-Skripts."""
     parser = argparse.ArgumentParser(
         prog="vibe_runs.py", description="Laufregister für Agentenläufe (V-015)"
     )
@@ -478,6 +981,18 @@ def build_parser():
     finish.add_argument("--id", required=True)
     finish.add_argument("--exit-code", type=int, default=None)
     finish.add_argument("--state", type=_state, default="finished")
+    finish.add_argument("--note", default="")
+    finish.add_argument(
+        "--only-live", action="store_true",
+        help="bereits beendete Einträge unverändert lassen",
+    )
+
+    prune = sub.add_parser(
+        "prune", help="verwaiste Live-Einträge als ended markieren"
+    )
+    prune.add_argument("--runtime", required=True)
+    prune.add_argument("--project", default="")
+    prune.add_argument("--note", default="extern beendet (Sitzung fehlt)")
 
     rotate = sub.add_parser("rotate", help="Logdatei bei Bedarf rotieren")
     rotate.add_argument("path")
@@ -489,10 +1004,15 @@ def build_parser():
         help="opencode-JSON-Ereignisse in Klartext und Subagenten-Zustand übersetzen",
     )
     stream.add_argument("--state", required=True, help="Zustandsdatei <log>.state.json")
+    stream.add_argument(
+        "--attempt", action="store_true",
+        help="Strom ist genau ein Agentenlauf; erste Session ist die Hauptsession",
+    )
     return parser
 
 
 def main(argv=None):
+    """Kommandozeileneinstieg; Rückgabe ist der Prozessende-Code."""
     parser = build_parser()
     args = parser.parse_args(list(sys.argv[1:] if argv is None else argv))
     if not args.command:
@@ -511,12 +1031,20 @@ def main(argv=None):
         return 0
     if args.command == "finish":
         record = RunRegistry(args.runtime).finish(
-            args.id, exit_code=args.exit_code, state=args.state
+            args.id, exit_code=args.exit_code, state=args.state,
+            note=args.note, only_live=args.only_live,
         )
         if record is None:
             print(f"Unbekannter Lauf: {args.id}", file=sys.stderr)
             return 1
         print(record["id"])
+        return 0
+    if args.command == "prune":
+        ended, running, unknown = prune_orphans(
+            args.runtime, args.project or None, args.note
+        )
+        print(f"{ended} verwaiste Einträge beendet, {running} laufen weiter, "
+              f"{unknown} nicht prüfbar.")
         return 0
     if args.command == "rotate":
         rotate_log(args.path, max_bytes=args.max_bytes, keep=args.keep)
@@ -525,7 +1053,7 @@ def main(argv=None):
         def emit(line):
             sys.stdout.write(str(line) + "\n")
             sys.stdout.flush()
-        stream_events(sys.stdin, emit, args.state)
+        stream_events(sys.stdin, emit, args.state, attempt=args.attempt)
         return 0
     parser.print_help(sys.stderr)
     return 2
