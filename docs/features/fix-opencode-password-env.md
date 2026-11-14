@@ -136,4 +136,4 @@ Ergebnisse auf dem Fix-Stand (tatsächlich ausgeführt):
 | `bash scripts/verify.sh quick` | Exit 0 (Importmanifest, Syntax 164 Python-/8 Bash-/6 JSON-Dateien, keine Geheimnisse) nach Manifestaktualisierung. |
 | Unit-Tests | 3/3 OK (`test_f31_inherited_opencode_password`); Regression 30/31 OK, 1 vorbestehender umgebungsabhängiger Sandbox-Fehlschlag (identisch am Fix-vorher-Stand, Details oben) |
 | Unabhängiger Review | ausstehend (nach Abschluss des parallelen produktiven Laufs) |
-| Trilium-Dokumentation | <!-- TRILIUM-BLOCK: wird ergänzt --> |
+| Trilium-Dokumentation | Notiz `PgaZqt2vEwBQ` („Fix: Geerbtes OPENCODE_PASSWORD blockierte den privaten opencode-Server"), Ordner Features, lesend verifiziert. |
