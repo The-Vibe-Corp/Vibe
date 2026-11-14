@@ -339,6 +339,19 @@ docs/
 - Laufzeitdaten und Geheimnisse nicht ins Repository aufnehmen.
 - Ungeprüfte Modellinformationen als unbekannt behandeln.
 - Sicherheits- und Datenintegritätsfehler vor neuen Komfortfunktionen beheben.
+## Git Workflow & Branch Rules (Strictly Enforced)
+
+- **Branch naming:** `feature/<owner>/<kebab-case-name>` (lowercase, numbers, hyphens only).
+- **Ownership:** Check your Git/GitHub user (`git config user.name` or `gh api user`) and use ONLY your folder:
+  - `mop` -> `feature/mop/*`
+- **Restrictions:** Never push directly to `dev` or `main`, and never create PRs targeting `main` unless explicitly instructed.
+- **Workflow (per feature/ticket):**
+  1. Pull latest `dev` and create **one dedicated branch** `feature/<owner>/<kebab-case-name>` (never reuse branches).
+  2. Implement the feature and its tests.
+  3. Fetch and merge/rebase latest `origin/dev` into your branch. If conflicts occur, **integrate both sets of changes** so that incoming features/tests from `dev` and your new feature/tests both remain intact and functional (never overwrite one side with `--ours` or `--theirs`).
+  4. Run the full test suite and verify **all existing and new tests pass**.
+  5. Push the branch, open a PR targeting `dev`, and squash-merge it (`gh pr merge --squash --delete-branch`).
+  6. Switch back to `dev`, pull latest `dev`, delete the local feature branch (`git branch -D <branch>`), and move to the next task.
 
 ## Git&GitHub Workflow & Branch Rules (Strictly Enforced)
 
