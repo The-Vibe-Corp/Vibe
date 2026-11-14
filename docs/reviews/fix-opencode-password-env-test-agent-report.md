@@ -18,10 +18,11 @@ Testdatei: `tests/unit/test_f31_inherited_opencode_password.py` · Attrappe: `te
   konservierten Protokollen wortgleich. Der Coding-Agent hat keine Testdatei
   angelegt, geändert oder abgeschwächt.
 - Konservierte Rohausgaben: Rotphase am Fix-vorher-Stand `10dca46` (3
-  Failures, siehe unten) und Grünlauf am Fix-Stand (4/4 OK) als Klartext in
-  `/tmp/opencode/f31-evidence/red-10dca46.txt` und
-  `/tmp/opencode/f31-evidence/green-fix-stand.txt`; die wesentlichen
-  Ausschnitte sind in diesem Bericht zitiert.
+  Failures, siehe unten) und Grünlauf am Fix-Stand (4/4 OK) als Klartext
+  dauerhaft im Repository unter
+  `docs/reviews/fix-opencode-password-env-evidence-red-10dca46.txt` und
+  `docs/reviews/fix-opencode-password-env-evidence-green-fix.txt`; die
+  wesentlichen Ausschnitte sind in diesem Bericht zitiert.
 
 ## Testfälle
 
@@ -68,6 +69,43 @@ Befehl: wie oben. Ergebnis: **4 Tests, OK** (Exit 0), Laufdauer ~12,6 s.
   nachgewiesen vorbestehend: identischer Fehlschlag am Fix-vorher-Stand
   `10dca46` (Details in `docs/features/fix-opencode-password-env.md`,
   Bekannte Grenzen).
+- Konservierte Rohausgabe der Runner-Suite am Fix-Stand (9 Tests, 1
+  vorbestehender AK6-Fehlschlag):
+  `docs/reviews/fix-opencode-password-env-evidence-regression-fix-stand.txt`.
+
+## Verbindlicher Full-Lauf (`bash scripts/verify.sh full`)
+
+Ausgeführt auf zwei tmpfs-Prüfständen mit identischer Methode
+(`env -u TMPDIR -u VIBE_RUNTIME`, `PATH` mit einem sicheren
+`opencode`-Stub vorangestellt, der mit Exit 2 abbricht — der
+AK6-Sandbox-Test würde sonst unbeabsichtigt echte Agentenläufe starten;
+Ursache und Vorfall in der Feature-Doku, Bekannte Grenzen):
+
+- **Fix-Stand** (rsync-Kopie des Worktrees, HEAD `5128864`, plus
+  `.vibe/project.env`): **Ran 1770 tests — FAILED (failures=5,
+  errors=2)**, Prüf-Exit 5.
+  Rohausgabe (Auszug):
+  `docs/reviews/fix-opencode-password-env-evidence-full-fix-auszug.txt`.
+- **Baseline-Stand `10dca46`** (Fix-vorher, gleiche Testdateien und
+  gleiche `project.env`): **Ran 1770 tests — FAILED (failures=8,
+  errors=2)**, Prüf-Exit 5.
+  Rohausgabe (Auszug):
+  `docs/reviews/fix-opencode-password-env-evidence-full-baseline-10dca46-auszug.txt`.
+
+**Fail-Mengenvergleich:** Die Mengen sind identisch bis auf die drei
+F31-Fälle. Die Baseline scheitert zusätzlich an
+`test_inherited_opencode_password_is_absent_from_the_server_env` (AK1),
+`test_project_env_opencode_password_is_absent_from_the_server_env`
+(AK1b) und `test_server_start_does_not_inherit_opencode_password`
+(AK3) — genau der behobene Defekt; AK2 ist an beiden Ständen grün.
+Am Fix-Stand sind diese drei Fälle grün, und **keiner** der übrigen
+Fehlschläge ist neu. Die übrigen 5 Failures + 2 Errors sind an beiden
+Ständen gleich und in der Feature-Doku (Bekannte Grenzen) einzeln
+eingeordnet: Prüfstandsartefakte (fehlendes ungetracktes `FEEDBACK.md`
+in den beiden 2-Errors), der durch den Stub verursachte AK6-Modus sowie
+umgebungsabhängige Behauptungen (`test_ap04` pi-Hinweis, `test_b4`
+HOME-Berechtigungen, `test_release` Home-Pfad-Scan, `test_sandbox`
+echtes bwrap), die Codepfade betreffen, die der F31-Fix nicht berührt.
 
 ## Aufräumen
 
