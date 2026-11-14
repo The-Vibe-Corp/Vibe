@@ -185,10 +185,22 @@ def _b13_serve(argv):
         return
     if delay:
         time.sleep(delay)
+
+    def password_shape(name):
+        """F31: Nur Anwesenheit und Laenge notieren, nie den Kennwortwert."""
+        value = os.environ.get(name)
+        return bool(value), (len(value) if value is not None else 0)
+
+    op_present, op_len = password_shape("OPENCODE_PASSWORD")
+    server_present, server_len = password_shape("OPENCODE_SERVER_PASSWORD")
     httpd = ThreadingHTTPServer(("127.0.0.1", port), Handler)
     bound = httpd.server_address[1]
     note({"event": "listening", "port_bound": bound, "pid": os.getpid(),
-          "tmpdir": os.environ.get("TMPDIR", "")})
+          "tmpdir": os.environ.get("TMPDIR", ""),
+          "opencode_password_present": op_present,
+          "opencode_password_len": op_len,
+          "server_password_present": server_present,
+          "server_password_len": server_len})
     print("SERVE_FAKE_PORT=" + str(bound), flush=True)
 
     def terminate(signum, frame):
