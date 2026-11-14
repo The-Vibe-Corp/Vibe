@@ -340,6 +340,17 @@ docs/
 - Ungeprüfte Modellinformationen als unbekannt behandeln.
 - Sicherheits- und Datenintegritätsfehler vor neuen Komfortfunktionen beheben.
 
+## Git&GitHub Workflow & Branch Rules (Strictly Enforced)
+
+- **Branch naming:** `feature/<owner>/<kebab-case-name>` (lowercase, numbers, hyphens only).
+- **Ownership:**
+  - `mop` -> `feature/mop/*`
+- **Workflow:**
+  1. Always branch off `dev`. Never push directly to `dev` or `main`.
+  2. Push your `feature/<owner>/*` branch and open a PR targeting `dev`.
+  3. Stop after opening the PR—a human must review and squash-merge into `dev` (and delete the branch).
+  4. Never create PRs targeting `main` unless explicitly instructed.
+
 ## Zielgruppe und Nutzung
 
 Die zielgruppe von vibe sind berater, product ower oder projektmanager. alle, welche schnell eine solide software erstellen wollen, aber keine tiefen entwicklungskenntnisse haben. vibe dient im unternehmen dazu interne, solide anwendungen schnell und einfach, durch fachliche steuerung zu entwickeln.
