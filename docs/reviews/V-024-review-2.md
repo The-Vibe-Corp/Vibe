@@ -1,0 +1,34 @@
+# Review result
+
+## Summary
+- Critical: 0
+- High: 0
+- Medium: 0
+- Minor: 0
+- Verdict: PASS
+
+## Acceptance criteria
+| Criterion | Status | Implementation (file:line) | Test (file:method) / Evidence |
+|---|---|---|---|
+| 1. Update blockiert nicht bei „starting"/„running" ohne existierende tmux-Sitzung | PASS | `scripts/setup-vibe.py:1045-1058` (`session_state` 1017-1030; `False` → weiter) | `RunningGuardTest.test_update_proceeds_when_a_running_record_has_no_session`, `..._starting_record_has_no_session`; Rotphase (2 Fehlschläge) im Testbericht |
+| 2. Sperre bleibt bei existierender Sitzung | PASS | `scripts/setup-vibe.py:1057-1058` | `RunningGuardTest.test_update_refuses_while_a_run_is_live`, `..._while_a_starting_run_is_live`; neu: `test_force_bypasses_the_guard_of_a_live_session` (`tests/unit/test_install_lifecycle.py:832-868`) — Sperre ohne `--force`, Durchlassen mit `--force`, Programmdatei bleibt/unverändert prüft beides |
+| 3. Konservative Sperre bei unlesbarem runs.json und ohne tmux | PASS | `scripts/setup-vibe.py:1036-1037`, `1019-1020`, `1052-1056` | `test_update_refuses_when_the_run_state_is_unreadable` (unverändert, `:802-813`), `test_update_refuses_conservatively_when_tmux_is_unavailable` (~:763-800) |
+| 4. `vibe runs` (auch ohne Argument) listet Zustand, Sitzungsstatus, Pfad; ändert nichts; Verwaiste erkennbar; Nicht-Prüfbares ist vom Verwaisten unterschieden | PASS | `bin/vibe:1769-1801` (`cmd_runs` list-Zweig), `tmux_session_state` `bin/vibe:249-265`, Dispatch `bin/vibe:4577` | `test_runs_list_shows_state_session_status_and_project_path_without_changes`, `test_runs_without_argument_lists_entries_too`; neu: `test_runs_list_marks_an_unverifiable_session_not_as_orphaned` (`tests/unit/test_run_control.py:743-757`: Exit-2-Fake-tmux → „nicht prüfbar", ausdrücklich nicht „verwaist", Register byte-identisch) |
+| 5. `prune` markiert nur nachweislich verwaiste Einträge als `ended` (auch ohne Projektverzeichnis); laufende/beendete unverändert; niemals kill-session; kein stilles Beenden bei unprüfbarem tmux | PASS | `bin/vibe:1808-1823` (nur bei `False` → `registry.finish(..., state="ended")`; `None` → unverändert, `:1812-1816`), `bin/vibe:267-269` (`True` erforderlich) | `test_prune_marks_only_orphaned_live_records_ended`, `test_prune_works_when_the_project_directory_is_gone` (je `kill-session`-Verbot per Fake-Aufrufprotokoll); neu: `test_prune_keeps_unverifiable_records_and_reports_them` (`tests/unit/test_run_control.py:759-788`: Record-Vollvergleich, Zusammenfassungszähler, kein `kill-session`); Rotphase (30 Tests, 2 Fehlschläge) im Testbericht |
+| 6. Einträge ohne Sitzungsangabe werden gemeldet und nicht verändert | PASS | `bin/vibe:1808-1810` | `test_prune_reports_records_without_a_session_and_keeps_them` (Record-Vollvergleich) |
+
+Runde-1-Befunde:
+- [Medium] `bin/vibe:249-265` (`tmux_session_state`), `bin/vibe:1789-1799` (list), `bin/vibe:1812-1816` (prune) — **behoben.** Nur Exit 0 → vorhanden, Exit 1 → nachweislich fehlend, alles andere (127 Programm fehlt, 126 nicht ausführbar, 124 Zeitüberschreitung, beliebiger Restcode) → `None` = „nicht prüfbar". `prune` behandelt `None` wie „keine Sitzungsangabe" (unverändert, eigene Meldung, Zähler), `list` zeigt „nicht prüfbar". `tmux_session_exists` bleibt als `is True` bewahrt (Rückfallverhalten der Aufrufer `bin/vibe:4136-4226` unverändert). Beide neuen Tests decken den Fall über echten CLI-Subprozess mit Fake-tmux-Exit 2 ab; Rotphase belegt. Doku passt (`docs/features/V-024.md` Fachverhalten/Technik/Grenzen, `docs/betrieb.md:97-107`).
+- [Minor] Force-Bypass-Sicherung — **behoben** (`test_force_bypasses_the_guard_of_a_live_session`, vollständige Vor-/Nachprüfung ohne Red-Phase-Anspruch, Testbericht ergänzt).
+- [Minor] `docs/baseline.md:158` — **behoben** (`bin/vibe:1769-1815` und Dispatch `bin/vibe:4577` verifiziert; Bezeichner weichen von den Originalangaben leicht ab, Teilbereich korrekt dargestellt).
+
+## Findings
+- No findings.
+
+## Verification
+- Change set reviewed: `20c8f78..3615e49` (Gesamtdiff, 11 Dateien) plus Detaildiff `58dccb3..3615e49` (9 Dateien); HEAD = 3615e49, Branch `feature/v-024-verwaiste-laeufe`, Arbeitsbaum sauber laut `git status --short`. Alle geänderten Dateien vollständig gelesen; `scripts/setup-vibe.py` und dessen Manifest-Hashes sind seit Runde 1 unverändert (nicht Teil von `58dccb3..3615e49`).
+- Git commands run by me: `git status --short`, `git log --oneline`, `git diff --stat 20c8f78..3615e49` und `58dccb3..3615e49`, `git diff … -- <je Datei>`, `grep` auf `bin/vibe`/`bin/vibe_runs.py`/`tests/`, Lesen betroffener Abschnitte (`bin/vibe:240-265, 1769-1824`; `test_run_control.py:74-788`; Kommandozeilenbelege via grep).
+- Checks with supplied output: `test_run_control.py` 30 OK, `test_install_lifecycle.py` 43 OK, `test_setup_vibe.py` 49 OK, `test_process_safety.py` 18 OK, `verify.sh quick` Exit 0, `verify.sh full` 1161 Tests mit den zwei bekannten Altfehlschlägen, `check-import-manifest.py` OK (56 Dateien) — alles Coding-/Test-Agent outputs, von mir plausibilisiert (Testzahl 1158→1161 entspricht exakt den 3 neuen Tests; die Altfehlschläge sind mit den unveränderten `/home/nutzer`-Belegen in `docs/features/B4.md:15,36`, `B5.md:218`, `F23.md:114`, `AP02.md:181` sowie `docs/reviews/V-023-review-2.md:24` konsistent und die betreffenden Quell-/Dokdateien sind nicht Teil des Diffs).
+- Checks not independently run: Alle unittest-, `verify.sh`- und Manifest-Prüfungen (read-only-Regel); Hashes in `docs/import-manifest.json` nicht selbst nachgerechnet.
+- Important areas inspected: `bin/vibe` (`tmux_session_state`, `tmux_session_exists`, `cmd_runs` komplett, Dispatch), `bin/vibe_runs.py` (`LIVE_STATES`, `STATES`, `finish`), `scripts/setup-vibe.py` (`running_installation` und die drei Sperrenstellen), beide Testdateien inkl. Fake-tmux-Erweiterung (`FAKE_TMUX_HAS_SESSION_RC`), `docs/features/V-024.md`, `docs/reviews/V-024-test-agent-report.md`, `docs/reviews/V-024-review-1.md` (unverändert archiviert), `docs/betrieb.md`, `docs/baseline.md`, `docs/handbuch.md`, `docs/import-manifest.json`.
+- Remaining risks: Prüfergebnisse sind übernommen, nicht unabhängig ausgeführt; Manifest-Hashes rechnerisch nicht verifiziert. Ein durch die Fix nicht adressierter Restfall bleibt dokumentierte Basissemantik: tmux-Antworten mit Exit 1 gelten weiterhin ausnahmslos als „Sitzung fehlt" (auch auf der Setup-Seite, `scripts/setup-vibe.py:1030`, und für die übrigen `tmux_session_exists`-Aufrufer); dieses Verhalten ist vorbestehend, projektweit konservativ übereinstimmend und in der Feature-Doku („regulärer Exitcode 1") ausgewiesen — kein auf V-024-Evidenz gestützter Befund. Nach Ticketabschluss stehen weiterhin aus: Trilium-Sync und Nachweisvervollständigung in `docs/features/V-024.md` („Commit/Review/Trilium: folgt") sowie das Abhaken in `TICKETS.md:571` mit echten Nachweisen — jeweils ohne weitere Implementierungsänderungen.

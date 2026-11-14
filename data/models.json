@@ -1,0 +1,1110 @@
+{
+ "schema": 2,
+ "version": "2026-10-30.1",
+ "stand": "2026-10-30",
+ "waehrung": "USD",
+ "einheit": "1 Mio. Tokens",
+ "hinweis": "Öffentlicher Modellkatalog. Modell-IDs wurden am 2026-10-30 mit 'opencode models --standalone' (opencode 2.2.2) bestätigt. Fakten und Preise stammen aus der models.dev-API (Anbieter opencode), abgerufen am 2026-10-30; Preise in US-Dollar je 1 Mio. Tokens, Eingabe/Ausgabe getrennt. Einschätzungen stammen aus dem Altkatalog vom 2026-10-25 und dem dort zitierten bigiron.cc-Test vom 2026-10-19; sie sind keine Messung an eigenen Projekten. Unbekannte Werte sind ausdrücklich zulässig.",
+ "quellen": [
+  {
+   "name": "opencode models --standalone, opencode 2.2.2",
+   "zweck": "Verfügbare Modell-IDs dieser Installation",
+   "datum": "2026-10-30"
+  },
+  {
+   "name": "models.dev API, Anbieter opencode",
+   "zweck": "Fakten und Preise",
+   "datum": "2026-10-30"
+  },
+  {
+   "name": "Altkatalog data/models.json, Stand 2026-10-25",
+   "zweck": "Einschätzungen und Datenschutz-Altangaben",
+   "datum": "2026-10-25"
+  },
+  {
+   "name": "bigiron.cc-Test vom 2026-10-19",
+   "zweck": "Messwerte und Nutzerberichte (über Altkatalog zitiert)",
+   "datum": "2026-10-19"
+  }
+ ],
+ "modelle": [
+  {
+   "id": "opencode/beam-free",
+   "name": "Beam Free",
+   "anbieter": "OpenCode Zen",
+   "id_status": "bestaetigt",
+   "id_beleg": {
+    "quelle": "opencode models --standalone, opencode 2.2.2",
+    "datum": "2026-10-30"
+   },
+   "preis": {
+    "status": "kostenlos",
+    "waehrung": "USD",
+    "einheit": "1 Mio. Tokens",
+    "stand": "2026-10-30",
+    "quelle": "models.dev API, Anbieter opencode (abgerufen 2026-10-30)",
+    "tarife": {
+     "eingabe": 0,
+     "ausgabe": 0,
+     "cache_lesen": 0
+    }
+   },
+   "fakten": {
+    "beschreibung": {
+     "wert": "Sparse mixture-of-experts reasoning model with 23B active parameters for coding and agentic workflows",
+     "art": "fakt",
+     "quelle": "models.dev API, Anbieter opencode (abgerufen 2026-10-30)",
+     "datum": "2026-10-30"
+    },
+    "kontext": {
+     "wert": "1.048.576 Token",
+     "art": "fakt",
+     "quelle": "models.dev API, Anbieter opencode (abgerufen 2026-10-30)",
+     "datum": "2026-10-30"
+    },
+    "ausgabe": {
+     "wert": "131.072 Token",
+     "art": "fakt",
+     "quelle": "models.dev API, Anbieter opencode (abgerufen 2026-10-30)",
+     "datum": "2026-10-30"
+    },
+    "bild": {
+     "wert": "nein",
+     "art": "fakt",
+     "quelle": "models.dev API, Anbieter opencode (abgerufen 2026-10-30)",
+     "datum": "2026-10-30"
+    },
+    "veroeffentlicht": {
+     "wert": "2026-10-05",
+     "art": "fakt",
+     "quelle": "models.dev API, Anbieter opencode (abgerufen 2026-10-30)",
+     "datum": "2026-10-30"
+    },
+    "zuletzt_aktualisiert": {
+     "wert": "2026-10-16",
+     "art": "fakt",
+     "quelle": "models.dev API, Anbieter opencode (abgerufen 2026-10-30)",
+     "datum": "2026-10-30"
+    },
+    "offene_gewichte": {
+     "wert": "ja",
+     "art": "fakt",
+     "quelle": "models.dev API, Anbieter opencode (abgerufen 2026-10-30)",
+     "datum": "2026-10-30"
+    },
+    "herkunft": {
+     "wert": "reflection/beam-1.0-501b-a23b",
+     "art": "fakt",
+     "quelle": "models.dev API, Anbieter opencode (abgerufen 2026-10-30)",
+     "datum": "2026-10-30"
+    },
+    "daten": {
+     "wert": "Kein Training, 30 Tage gespeichert, regional gesperrt (u. a. Russland, China, Iran)",
+     "art": "altbestand",
+     "quelle": "Altkatalog data/models.json, Stand 2026-10-25 (dort OpenCode-Docs/Zen-Datenschutz); nicht erneut geprüft",
+     "datum": "2026-10-25"
+    }
+   },
+   "einschaetzungen": {
+    "tempo": {
+     "wert": "sehr schnell",
+     "art": "einschaetzung",
+     "quelle": "Altkatalog data/models.json, Stand 2026-10-25",
+     "datum": "2026-10-25"
+    },
+    "aufwand": {
+     "wert": "hoch",
+     "art": "einschaetzung",
+     "quelle": "Altkatalog data/models.json, Stand 2026-10-25",
+     "datum": "2026-10-25"
+    },
+    "coder": {
+     "wert": "bedingt",
+     "art": "einschaetzung",
+     "quelle": "Altkatalog data/models.json, Stand 2026-10-25",
+     "datum": "2026-10-25"
+    },
+    "reviewer": {
+     "wert": "bedingt",
+     "art": "einschaetzung",
+     "quelle": "Altkatalog data/models.json, Stand 2026-10-25",
+     "datum": "2026-10-25"
+    },
+    "staerken": [
+     {
+      "text": "Schnellste Antwort bei der Ein-Fehler-Aufgabe im Test (6 s)",
+      "art": "messung",
+      "quelle": "bigiron.cc-Test vom 2026-10-19, zitiert im Altkatalog 2026-10-25",
+      "datum": "2026-10-19"
+     }
+    ],
+    "schwaechen": [
+     {
+      "text": "Doppelt so viele Anfragen wie GLM bei der Zwei-Dateien-Aufgabe (12 Aufrufe / 107K Tokens): belastet Tageslimits",
+      "art": "messung",
+      "quelle": "bigiron.cc-Test vom 2026-10-19, zitiert im Altkatalog 2026-10-25",
+      "datum": "2026-10-19"
+     }
+    ]
+   }
+  },
+  {
+   "id": "opencode/big-pickle",
+   "name": "Big Pickle",
+   "anbieter": "OpenCode Zen",
+   "id_status": "bestaetigt",
+   "id_beleg": {
+    "quelle": "opencode models --standalone, opencode 2.2.2",
+    "datum": "2026-10-30"
+   },
+   "preis": {
+    "status": "kostenlos",
+    "waehrung": "USD",
+    "einheit": "1 Mio. Tokens",
+    "stand": "2026-10-30",
+    "quelle": "models.dev API, Anbieter opencode (abgerufen 2026-10-30)",
+    "tarife": {
+     "eingabe": 0,
+     "ausgabe": 0,
+     "cache_lesen": 0,
+     "cache_schreiben": 0
+    }
+   },
+   "fakten": {
+    "beschreibung": {
+     "wert": "Reasoning model for deliberate analysis, multi-step problem solving, and tool use",
+     "art": "fakt",
+     "quelle": "models.dev API, Anbieter opencode (abgerufen 2026-10-30)",
+     "datum": "2026-10-30"
+    },
+    "kontext": {
+     "wert": "200.000 Token",
+     "art": "fakt",
+     "quelle": "models.dev API, Anbieter opencode (abgerufen 2026-10-30)",
+     "datum": "2026-10-30"
+    },
+    "ausgabe": {
+     "wert": "32.000 Token",
+     "art": "fakt",
+     "quelle": "models.dev API, Anbieter opencode (abgerufen 2026-10-30)",
+     "datum": "2026-10-30"
+    },
+    "bild": {
+     "wert": "nein",
+     "art": "fakt",
+     "quelle": "models.dev API, Anbieter opencode (abgerufen 2026-10-30)",
+     "datum": "2026-10-30"
+    },
+    "veroeffentlicht": {
+     "wert": "2025-10-17",
+     "art": "fakt",
+     "quelle": "models.dev API, Anbieter opencode (abgerufen 2026-10-30)",
+     "datum": "2026-10-30"
+    },
+    "zuletzt_aktualisiert": {
+     "wert": "2025-10-17",
+     "art": "fakt",
+     "quelle": "models.dev API, Anbieter opencode (abgerufen 2026-10-30)",
+     "datum": "2026-10-30"
+    },
+    "offene_gewichte": {
+     "wert": "nein",
+     "art": "fakt",
+     "quelle": "models.dev API, Anbieter opencode (abgerufen 2026-10-30)",
+     "datum": "2026-10-30"
+    },
+    "herkunft": {
+     "wert": "unbekannt",
+     "art": "fakt",
+     "quelle": "models.dev API, Anbieter opencode (abgerufen 2026-10-30)",
+     "datum": "2026-10-30"
+    },
+    "daten": {
+     "wert": "Daten dürfen zur Verbesserung des Modells genutzt werden",
+     "art": "altbestand",
+     "quelle": "Altkatalog data/models.json, Stand 2026-10-25 (dort OpenCode-Docs/Zen-Datenschutz); nicht erneut geprüft",
+     "datum": "2026-10-25"
+    }
+   },
+   "einschaetzungen": {
+    "tempo": {
+     "wert": "langsam",
+     "art": "einschaetzung",
+     "quelle": "Altkatalog data/models.json, Stand 2026-10-25",
+     "datum": "2026-10-25"
+    },
+    "aufwand": {
+     "wert": "mittel",
+     "art": "einschaetzung",
+     "quelle": "Altkatalog data/models.json, Stand 2026-10-25",
+     "datum": "2026-10-25"
+    },
+    "coder": {
+     "wert": "nicht empfohlen",
+     "art": "einschaetzung",
+     "quelle": "Altkatalog data/models.json, Stand 2026-10-25",
+     "datum": "2026-10-25"
+    },
+    "reviewer": {
+     "wert": "bedingt",
+     "art": "einschaetzung",
+     "quelle": "Altkatalog data/models.json, Stand 2026-10-25",
+     "datum": "2026-10-25"
+    },
+    "staerken": [
+     {
+      "text": "Laut Nutzerberichten gut beim Lesen von Code, Dokumentation und Planung",
+      "art": "nutzerbericht",
+      "quelle": "bigiron.cc-Test vom 2026-10-19, zitiert im Altkatalog 2026-10-25 und dort zitierte Nutzerberichte",
+      "datum": "2026-10-19"
+     }
+    ],
+    "schwaechen": [
+     {
+      "text": "Langsamster Kandidat im Test mit Ausreißern bis 337 s",
+      "art": "messung",
+      "quelle": "bigiron.cc-Test vom 2026-10-19, zitiert im Altkatalog 2026-10-25",
+      "datum": "2026-10-19"
+     },
+     {
+      "text": "Nutzerbericht (Januar 2026): Qualitätsverlust ab ca. 50.000 bis 70.000 Tokens, lange Dateien nur teilweise gelesen, AGENTS.md teils ignoriert",
+      "art": "nutzerbericht",
+      "quelle": "bigiron.cc-Test vom 2026-10-19, zitiert im Altkatalog 2026-10-25 und dort zitierte Nutzerberichte",
+      "datum": "2026-10-19"
+     },
+     {
+      "text": "Nutzerbericht: Ein Git-Befehl hat nicht committete Arbeit gelöscht",
+      "art": "nutzerbericht",
+      "quelle": "bigiron.cc-Test vom 2026-10-19, zitiert im Altkatalog 2026-10-25 und dort zitierte Nutzerberichte",
+      "datum": "2026-10-19"
+     }
+    ]
+   }
+  },
+  {
+   "id": "opencode/deepseek-v4.1-flash-free",
+   "name": "DeepSeek V4.1 Flash Free",
+   "anbieter": "OpenCode Zen",
+   "id_status": "bestaetigt",
+   "id_beleg": {
+    "quelle": "opencode models --standalone, opencode 2.2.2",
+    "datum": "2026-10-30"
+   },
+   "preis": {
+    "status": "kostenlos",
+    "waehrung": "USD",
+    "einheit": "1 Mio. Tokens",
+    "stand": "2026-10-30",
+    "quelle": "models.dev API, Anbieter opencode (abgerufen 2026-10-30)",
+    "tarife": {
+     "eingabe": 0,
+     "ausgabe": 0,
+     "cache_lesen": 0
+    }
+   },
+   "fakten": {
+    "beschreibung": {
+     "wert": "DeepSeek V4.1 Flash model for reasoning and agentic coding",
+     "art": "fakt",
+     "quelle": "models.dev API, Anbieter opencode (abgerufen 2026-10-30)",
+     "datum": "2026-10-30"
+    },
+    "kontext": {
+     "wert": "200.000 Token",
+     "art": "fakt",
+     "quelle": "models.dev API, Anbieter opencode (abgerufen 2026-10-30)",
+     "datum": "2026-10-30"
+    },
+    "ausgabe": {
+     "wert": "32.000 Token",
+     "art": "fakt",
+     "quelle": "models.dev API, Anbieter opencode (abgerufen 2026-10-30)",
+     "datum": "2026-10-30"
+    },
+    "bild": {
+     "wert": "ja",
+     "art": "fakt",
+     "quelle": "models.dev API, Anbieter opencode (abgerufen 2026-10-30)",
+     "datum": "2026-10-30"
+    },
+    "veroeffentlicht": {
+     "wert": "2026-09-10",
+     "art": "fakt",
+     "quelle": "models.dev API, Anbieter opencode (abgerufen 2026-10-30)",
+     "datum": "2026-10-30"
+    },
+    "zuletzt_aktualisiert": {
+     "wert": "2026-09-10",
+     "art": "fakt",
+     "quelle": "models.dev API, Anbieter opencode (abgerufen 2026-10-30)",
+     "datum": "2026-10-30"
+    },
+    "offene_gewichte": {
+     "wert": "ja",
+     "art": "fakt",
+     "quelle": "models.dev API, Anbieter opencode (abgerufen 2026-10-30)",
+     "datum": "2026-10-30"
+    },
+    "herkunft": {
+     "wert": "deepseek/deepseek-v4.1-flash",
+     "art": "fakt",
+     "quelle": "models.dev API, Anbieter opencode (abgerufen 2026-10-30)",
+     "datum": "2026-10-30"
+    },
+    "daten": {
+     "wert": "Zero-Retention, kein Training",
+     "art": "altbestand",
+     "quelle": "Altkatalog data/models.json, Stand 2026-10-25 (dort OpenCode-Docs/Zen-Datenschutz); nicht erneut geprüft",
+     "datum": "2026-10-25"
+    }
+   },
+   "einschaetzungen": {
+    "tempo": {
+     "wert": "schnell",
+     "art": "einschaetzung",
+     "quelle": "Altkatalog data/models.json, Stand 2026-10-25",
+     "datum": "2026-10-25"
+    },
+    "aufwand": {
+     "wert": "gering",
+     "art": "einschaetzung",
+     "quelle": "Altkatalog data/models.json, Stand 2026-10-25",
+     "datum": "2026-10-25"
+    },
+    "coder": {
+     "wert": "geeignet",
+     "art": "einschaetzung",
+     "quelle": "Altkatalog data/models.json, Stand 2026-10-25",
+     "datum": "2026-10-25"
+    },
+    "reviewer": {
+     "wert": "geeignet",
+     "art": "einschaetzung",
+     "quelle": "Altkatalog data/models.json, Stand 2026-10-25",
+     "datum": "2026-10-25"
+    },
+    "staerken": [
+     {
+      "text": "Schnellste Zwei-Dateien-Lösung im Test (20 s)",
+      "art": "messung",
+      "quelle": "bigiron.cc-Test vom 2026-10-19, zitiert im Altkatalog 2026-10-25",
+      "datum": "2026-10-19"
+     }
+    ],
+    "schwaechen": [
+     {
+      "text": "Bei Auslastung sind Wartezeiten möglich (freie Hosts)",
+      "art": "einschaetzung",
+      "quelle": "bigiron.cc-Test vom 2026-10-19, zitiert im Altkatalog 2026-10-25",
+      "datum": "2026-10-19"
+     },
+     {
+      "text": "Bei kleinen Aufgaben etwas langsamer als GLM",
+      "art": "messung",
+      "quelle": "bigiron.cc-Test vom 2026-10-19, zitiert im Altkatalog 2026-10-25",
+      "datum": "2026-10-19"
+     }
+    ]
+   }
+  },
+  {
+   "id": "opencode/flint-40b-free",
+   "name": "Flint 40B Free",
+   "anbieter": "OpenCode Zen",
+   "id_status": "bestaetigt",
+   "id_beleg": {
+    "quelle": "opencode models --standalone, opencode 2.2.2",
+    "datum": "2026-10-30"
+   },
+   "preis": {
+    "status": "kostenlos",
+    "waehrung": "USD",
+    "einheit": "1 Mio. Tokens",
+    "stand": "2026-10-30",
+    "quelle": "models.dev API, Anbieter opencode (abgerufen 2026-10-30)",
+    "tarife": {
+     "eingabe": 0,
+     "ausgabe": 0,
+     "cache_lesen": 0
+    }
+   },
+   "fakten": {
+    "beschreibung": {
+     "wert": "Open-weight mixture-of-experts model with about 2.5B active parameters for local coding agents",
+     "art": "fakt",
+     "quelle": "models.dev API, Anbieter opencode (abgerufen 2026-10-30)",
+     "datum": "2026-10-30"
+    },
+    "kontext": {
+     "wert": "262.144 Token",
+     "art": "fakt",
+     "quelle": "models.dev API, Anbieter opencode (abgerufen 2026-10-30)",
+     "datum": "2026-10-30"
+    },
+    "ausgabe": {
+     "wert": "65.536 Token",
+     "art": "fakt",
+     "quelle": "models.dev API, Anbieter opencode (abgerufen 2026-10-30)",
+     "datum": "2026-10-30"
+    },
+    "bild": {
+     "wert": "nein",
+     "art": "fakt",
+     "quelle": "models.dev API, Anbieter opencode (abgerufen 2026-10-30)",
+     "datum": "2026-10-30"
+    },
+    "veroeffentlicht": {
+     "wert": "2026-10-21",
+     "art": "fakt",
+     "quelle": "models.dev API, Anbieter opencode (abgerufen 2026-10-30)",
+     "datum": "2026-10-30"
+    },
+    "zuletzt_aktualisiert": {
+     "wert": "2026-10-21",
+     "art": "fakt",
+     "quelle": "models.dev API, Anbieter opencode (abgerufen 2026-10-30)",
+     "datum": "2026-10-30"
+    },
+    "offene_gewichte": {
+     "wert": "ja",
+     "art": "fakt",
+     "quelle": "models.dev API, Anbieter opencode (abgerufen 2026-10-30)",
+     "datum": "2026-10-30"
+    },
+    "herkunft": {
+     "wert": "recursive/flint",
+     "art": "fakt",
+     "quelle": "models.dev API, Anbieter opencode (abgerufen 2026-10-30)",
+     "datum": "2026-10-30"
+    },
+    "daten": {
+     "wert": "Daten dürfen zur Verbesserung des Modells genutzt werden, 30 Tage gespeichert",
+     "art": "altbestand",
+     "quelle": "Altkatalog data/models.json, Stand 2026-10-25 (dort OpenCode-Docs/Zen-Datenschutz); nicht erneut geprüft",
+     "datum": "2026-10-25"
+    }
+   },
+   "einschaetzungen": {
+    "tempo": {
+     "wert": "unbekannt",
+     "art": "einschaetzung",
+     "quelle": "Altkatalog data/models.json, Stand 2026-10-25",
+     "datum": "2026-10-25"
+    },
+    "aufwand": {
+     "wert": "unbekannt",
+     "art": "einschaetzung",
+     "quelle": "Altkatalog data/models.json, Stand 2026-10-25",
+     "datum": "2026-10-25"
+    },
+    "coder": {
+     "wert": "keine Daten",
+     "art": "einschaetzung",
+     "quelle": "Altkatalog data/models.json, Stand 2026-10-25",
+     "datum": "2026-10-25"
+    },
+    "reviewer": {
+     "wert": "keine Daten",
+     "art": "einschaetzung",
+     "quelle": "Altkatalog data/models.json, Stand 2026-10-25",
+     "datum": "2026-10-25"
+    },
+    "staerken": [],
+    "schwaechen": [
+     {
+      "text": "Keine unabhängige Messung vorhanden",
+      "art": "einschaetzung",
+      "quelle": "Altkatalog data/models.json, Stand 2026-10-25",
+      "datum": "2026-10-25"
+     }
+    ]
+   }
+  },
+  {
+   "id": "opencode/glm-5.3-flash-free",
+   "name": "GLM-5.3-Flash Free",
+   "anbieter": "OpenCode Zen",
+   "id_status": "bestaetigt",
+   "id_beleg": {
+    "quelle": "opencode models --standalone, opencode 2.2.2",
+    "datum": "2026-10-30"
+   },
+   "preis": {
+    "status": "kostenlos",
+    "waehrung": "USD",
+    "einheit": "1 Mio. Tokens",
+    "stand": "2026-10-30",
+    "quelle": "models.dev API, Anbieter opencode (abgerufen 2026-10-30)",
+    "tarife": {
+     "eingabe": 0,
+     "ausgabe": 0,
+     "cache_lesen": 0
+    }
+   },
+   "fakten": {
+    "beschreibung": {
+     "wert": "Native multimodal GLM model for efficient coding and long-horizon agent tasks",
+     "art": "fakt",
+     "quelle": "models.dev API, Anbieter opencode (abgerufen 2026-10-30)",
+     "datum": "2026-10-30"
+    },
+    "kontext": {
+     "wert": "200.000 Token",
+     "art": "fakt",
+     "quelle": "models.dev API, Anbieter opencode (abgerufen 2026-10-30)",
+     "datum": "2026-10-30"
+    },
+    "ausgabe": {
+     "wert": "32.000 Token",
+     "art": "fakt",
+     "quelle": "models.dev API, Anbieter opencode (abgerufen 2026-10-30)",
+     "datum": "2026-10-30"
+    },
+    "bild": {
+     "wert": "ja",
+     "art": "fakt",
+     "quelle": "models.dev API, Anbieter opencode (abgerufen 2026-10-30)",
+     "datum": "2026-10-30"
+    },
+    "veroeffentlicht": {
+     "wert": "2026-08-26",
+     "art": "fakt",
+     "quelle": "models.dev API, Anbieter opencode (abgerufen 2026-10-30)",
+     "datum": "2026-10-30"
+    },
+    "zuletzt_aktualisiert": {
+     "wert": "2026-08-26",
+     "art": "fakt",
+     "quelle": "models.dev API, Anbieter opencode (abgerufen 2026-10-30)",
+     "datum": "2026-10-30"
+    },
+    "offene_gewichte": {
+     "wert": "ja",
+     "art": "fakt",
+     "quelle": "models.dev API, Anbieter opencode (abgerufen 2026-10-30)",
+     "datum": "2026-10-30"
+    },
+    "herkunft": {
+     "wert": "zhipuai/glm-5.3-flash",
+     "art": "fakt",
+     "quelle": "models.dev API, Anbieter opencode (abgerufen 2026-10-30)",
+     "datum": "2026-10-30"
+    },
+    "daten": {
+     "wert": "Zero-Retention, kein Training",
+     "art": "altbestand",
+     "quelle": "Altkatalog data/models.json, Stand 2026-10-25 (dort OpenCode-Docs/Zen-Datenschutz); nicht erneut geprüft",
+     "datum": "2026-10-25"
+    }
+   },
+   "einschaetzungen": {
+    "tempo": {
+     "wert": "sehr schnell",
+     "art": "einschaetzung",
+     "quelle": "Altkatalog data/models.json, Stand 2026-10-25",
+     "datum": "2026-10-25"
+    },
+    "aufwand": {
+     "wert": "gering",
+     "art": "einschaetzung",
+     "quelle": "Altkatalog data/models.json, Stand 2026-10-25",
+     "datum": "2026-10-25"
+    },
+    "coder": {
+     "wert": "geeignet",
+     "art": "einschaetzung",
+     "quelle": "Altkatalog data/models.json, Stand 2026-10-25",
+     "datum": "2026-10-25"
+    },
+    "reviewer": {
+     "wert": "geeignet",
+     "art": "einschaetzung",
+     "quelle": "Altkatalog data/models.json, Stand 2026-10-25",
+     "datum": "2026-10-25"
+    },
+    "staerken": [
+     {
+      "text": "Schnellster Kandidat im Test bei Ein- und Zwei-Dateien-Aufgabe (10 s / 26 s)",
+      "art": "messung",
+      "quelle": "bigiron.cc-Test vom 2026-10-19, zitiert im Altkatalog 2026-10-25",
+      "datum": "2026-10-19"
+     },
+     {
+      "text": "Wenig Anfragen und Tokens (4 Aufrufe / 31K bzw. 6 / 52K)",
+      "art": "messung",
+      "quelle": "bigiron.cc-Test vom 2026-10-19, zitiert im Altkatalog 2026-10-25",
+      "datum": "2026-10-19"
+     }
+    ],
+    "schwaechen": [
+     {
+      "text": "Keine Aussage zu großen, langen Läufen",
+      "art": "einschaetzung",
+      "quelle": "bigiron.cc-Test vom 2026-10-19, zitiert im Altkatalog 2026-10-25",
+      "datum": "2026-10-19"
+     },
+     {
+      "text": "Frei nur zeitlich begrenzt und mit Anfragelimit",
+      "art": "einschaetzung",
+      "quelle": "Altkatalog data/models.json, Stand 2026-10-25",
+      "datum": "2026-10-25"
+     }
+    ]
+   }
+  },
+  {
+   "id": "opencode/mimo-v2.6-flash-free",
+   "name": "MiMo-V2.6-Flash Free",
+   "anbieter": "OpenCode Zen",
+   "id_status": "bestaetigt",
+   "id_beleg": {
+    "quelle": "opencode models --standalone, opencode 2.2.2",
+    "datum": "2026-10-30"
+   },
+   "preis": {
+    "status": "kostenlos",
+    "waehrung": "USD",
+    "einheit": "1 Mio. Tokens",
+    "stand": "2026-10-30",
+    "quelle": "models.dev API, Anbieter opencode (abgerufen 2026-10-30)",
+    "tarife": {
+     "eingabe": 0,
+     "ausgabe": 0,
+     "cache_lesen": 0
+    }
+   },
+   "fakten": {
+    "beschreibung": {
+     "wert": "MiMo Flash model for multimodal coding agents and long-context automation",
+     "art": "fakt",
+     "quelle": "models.dev API, Anbieter opencode (abgerufen 2026-10-30)",
+     "datum": "2026-10-30"
+    },
+    "kontext": {
+     "wert": "200.000 Token",
+     "art": "fakt",
+     "quelle": "models.dev API, Anbieter opencode (abgerufen 2026-10-30)",
+     "datum": "2026-10-30"
+    },
+    "ausgabe": {
+     "wert": "32.000 Token",
+     "art": "fakt",
+     "quelle": "models.dev API, Anbieter opencode (abgerufen 2026-10-30)",
+     "datum": "2026-10-30"
+    },
+    "bild": {
+     "wert": "ja",
+     "art": "fakt",
+     "quelle": "models.dev API, Anbieter opencode (abgerufen 2026-10-30)",
+     "datum": "2026-10-30"
+    },
+    "veroeffentlicht": {
+     "wert": "2026-09-22",
+     "art": "fakt",
+     "quelle": "models.dev API, Anbieter opencode (abgerufen 2026-10-30)",
+     "datum": "2026-10-30"
+    },
+    "zuletzt_aktualisiert": {
+     "wert": "2026-09-22",
+     "art": "fakt",
+     "quelle": "models.dev API, Anbieter opencode (abgerufen 2026-10-30)",
+     "datum": "2026-10-30"
+    },
+    "offene_gewichte": {
+     "wert": "ja",
+     "art": "fakt",
+     "quelle": "models.dev API, Anbieter opencode (abgerufen 2026-10-30)",
+     "datum": "2026-10-30"
+    },
+    "herkunft": {
+     "wert": "xiaomi/mimo-v2.6-flash",
+     "art": "fakt",
+     "quelle": "models.dev API, Anbieter opencode (abgerufen 2026-10-30)",
+     "datum": "2026-10-30"
+    },
+    "daten": {
+     "wert": "Daten dürfen zur Verbesserung des Modells genutzt werden",
+     "art": "altbestand",
+     "quelle": "Altkatalog data/models.json, Stand 2026-10-25 (dort OpenCode-Docs/Zen-Datenschutz); nicht erneut geprüft",
+     "datum": "2026-10-25"
+    }
+   },
+   "einschaetzungen": {
+    "tempo": {
+     "wert": "langsam",
+     "art": "einschaetzung",
+     "quelle": "Altkatalog data/models.json, Stand 2026-10-25",
+     "datum": "2026-10-25"
+    },
+    "aufwand": {
+     "wert": "hoch",
+     "art": "einschaetzung",
+     "quelle": "Altkatalog data/models.json, Stand 2026-10-25",
+     "datum": "2026-10-25"
+    },
+    "coder": {
+     "wert": "bedingt",
+     "art": "einschaetzung",
+     "quelle": "Altkatalog data/models.json, Stand 2026-10-25",
+     "datum": "2026-10-25"
+    },
+    "reviewer": {
+     "wert": "bedingt",
+     "art": "einschaetzung",
+     "quelle": "Altkatalog data/models.json, Stand 2026-10-25",
+     "datum": "2026-10-25"
+    },
+    "staerken": [],
+    "schwaechen": [
+     {
+      "text": "Einziger Fehlschlag im Test: ein Timeout nach 420 s",
+      "art": "messung",
+      "quelle": "bigiron.cc-Test vom 2026-10-19, zitiert im Altkatalog 2026-10-25",
+      "datum": "2026-10-19"
+     },
+     {
+      "text": "Langsamste Zwei-Dateien-Lösung (81 s) mit 10 Aufrufen / 98K Tokens",
+      "art": "messung",
+      "quelle": "bigiron.cc-Test vom 2026-10-19, zitiert im Altkatalog 2026-10-25",
+      "datum": "2026-10-19"
+     },
+     {
+      "text": "Laut Altangabe dürfen Daten zur Modellverbesserung genutzt werden",
+      "art": "altbestand",
+      "quelle": "Altkatalog data/models.json, Stand 2026-10-25",
+      "datum": "2026-10-25"
+     }
+    ]
+   }
+  },
+  {
+   "id": "opencode/nemotron-3.5-lightning-free",
+   "name": "Nemotron 3.5 Lightning Free",
+   "anbieter": "OpenCode Zen",
+   "id_status": "bestaetigt",
+   "id_beleg": {
+    "quelle": "opencode models --standalone, opencode 2.2.2",
+    "datum": "2026-10-30"
+   },
+   "preis": {
+    "status": "kostenlos",
+    "waehrung": "USD",
+    "einheit": "1 Mio. Tokens",
+    "stand": "2026-10-30",
+    "quelle": "models.dev API, Anbieter opencode (abgerufen 2026-10-30)",
+    "tarife": {
+     "eingabe": 0,
+     "ausgabe": 0,
+     "cache_lesen": 0
+    }
+   },
+   "fakten": {
+    "beschreibung": {
+     "wert": "Fast NVIDIA Nemotron MoE for reliable agentic tasks across enterprise workloads",
+     "art": "fakt",
+     "quelle": "models.dev API, Anbieter opencode (abgerufen 2026-10-30)",
+     "datum": "2026-10-30"
+    },
+    "kontext": {
+     "wert": "262.144 Token",
+     "art": "fakt",
+     "quelle": "models.dev API, Anbieter opencode (abgerufen 2026-10-30)",
+     "datum": "2026-10-30"
+    },
+    "ausgabe": {
+     "wert": "262.144 Token",
+     "art": "fakt",
+     "quelle": "models.dev API, Anbieter opencode (abgerufen 2026-10-30)",
+     "datum": "2026-10-30"
+    },
+    "bild": {
+     "wert": "nein",
+     "art": "fakt",
+     "quelle": "models.dev API, Anbieter opencode (abgerufen 2026-10-30)",
+     "datum": "2026-10-30"
+    },
+    "veroeffentlicht": {
+     "wert": "2026-08-11",
+     "art": "fakt",
+     "quelle": "models.dev API, Anbieter opencode (abgerufen 2026-10-30)",
+     "datum": "2026-10-30"
+    },
+    "zuletzt_aktualisiert": {
+     "wert": "2026-08-11",
+     "art": "fakt",
+     "quelle": "models.dev API, Anbieter opencode (abgerufen 2026-10-30)",
+     "datum": "2026-10-30"
+    },
+    "offene_gewichte": {
+     "wert": "ja",
+     "art": "fakt",
+     "quelle": "models.dev API, Anbieter opencode (abgerufen 2026-10-30)",
+     "datum": "2026-10-30"
+    },
+    "herkunft": {
+     "wert": "nvidia/nemotron-3.5-lightning",
+     "art": "fakt",
+     "quelle": "models.dev API, Anbieter opencode (abgerufen 2026-10-30)",
+     "datum": "2026-10-30"
+    },
+    "daten": {
+     "wert": "NVIDIA-Testbedingungen: protokolliert, keine vertraulichen Daten",
+     "art": "altbestand",
+     "quelle": "Altkatalog data/models.json, Stand 2026-10-25 (dort OpenCode-Docs/Zen-Datenschutz); nicht erneut geprüft",
+     "datum": "2026-10-25"
+    }
+   },
+   "einschaetzungen": {
+    "tempo": {
+     "wert": "schnell",
+     "art": "einschaetzung",
+     "quelle": "Altkatalog data/models.json, Stand 2026-10-25",
+     "datum": "2026-10-25"
+    },
+    "aufwand": {
+     "wert": "mittel",
+     "art": "einschaetzung",
+     "quelle": "Altkatalog data/models.json, Stand 2026-10-25",
+     "datum": "2026-10-25"
+    },
+    "coder": {
+     "wert": "bedingt",
+     "art": "einschaetzung",
+     "quelle": "Altkatalog data/models.json, Stand 2026-10-25",
+     "datum": "2026-10-25"
+    },
+    "reviewer": {
+     "wert": "bedingt",
+     "art": "einschaetzung",
+     "quelle": "Altkatalog data/models.json, Stand 2026-10-25",
+     "datum": "2026-10-25"
+    },
+    "staerken": [
+     {
+      "text": "Im Test stabil (12 s / 21 s)",
+      "art": "messung",
+      "quelle": "bigiron.cc-Test vom 2026-10-19, zitiert im Altkatalog 2026-10-25",
+      "datum": "2026-10-19"
+     },
+     {
+      "text": "Mixture-of-Experts mit 3B aktiven von 30B Parametern, ausgelegt für durchsatzstarke Agentenläufe",
+      "art": "altbestand",
+      "quelle": "Altkatalog data/models.json, Stand 2026-10-25",
+      "datum": "2026-10-25"
+     }
+    ],
+    "schwaechen": [
+     {
+      "text": "Wenig aktive Parameter: bei schwierigen Aufgaben vermutlich schwächer (Vermutung, nicht gemessen)",
+      "art": "einschaetzung",
+      "quelle": "Altkatalog data/models.json, Stand 2026-10-25",
+      "datum": "2026-10-25"
+     },
+     {
+      "text": "Protokollierung der Eingaben laut Altangabe",
+      "art": "altbestand",
+      "quelle": "Altkatalog data/models.json, Stand 2026-10-25",
+      "datum": "2026-10-25"
+     }
+    ]
+   }
+  },
+  {
+   "id": "opencode/nemotron-3.5-super-vl-free",
+   "name": "Nemotron 3.5 Super VL Free",
+   "anbieter": "OpenCode Zen",
+   "id_status": "bestaetigt",
+   "id_beleg": {
+    "quelle": "opencode models --standalone, opencode 2.2.2",
+    "datum": "2026-10-30"
+   },
+   "preis": {
+    "status": "kostenlos",
+    "waehrung": "USD",
+    "einheit": "1 Mio. Tokens",
+    "stand": "2026-10-30",
+    "quelle": "models.dev API, Anbieter opencode (abgerufen 2026-10-30)",
+    "tarife": {
+     "eingabe": 0,
+     "ausgabe": 0,
+     "cache_lesen": 0
+    }
+   },
+   "fakten": {
+    "beschreibung": {
+     "wert": "NVIDIA vision-language reasoning model for text, image, and video understanding and agentic tool use",
+     "art": "fakt",
+     "quelle": "models.dev API, Anbieter opencode (abgerufen 2026-10-30)",
+     "datum": "2026-10-30"
+    },
+    "kontext": {
+     "wert": "1.048.576 Token",
+     "art": "fakt",
+     "quelle": "models.dev API, Anbieter opencode (abgerufen 2026-10-30)",
+     "datum": "2026-10-30"
+    },
+    "ausgabe": {
+     "wert": "131.072 Token",
+     "art": "fakt",
+     "quelle": "models.dev API, Anbieter opencode (abgerufen 2026-10-30)",
+     "datum": "2026-10-30"
+    },
+    "bild": {
+     "wert": "ja",
+     "art": "fakt",
+     "quelle": "models.dev API, Anbieter opencode (abgerufen 2026-10-30)",
+     "datum": "2026-10-30"
+    },
+    "veroeffentlicht": {
+     "wert": "2026-10-15",
+     "art": "fakt",
+     "quelle": "models.dev API, Anbieter opencode (abgerufen 2026-10-30)",
+     "datum": "2026-10-30"
+    },
+    "zuletzt_aktualisiert": {
+     "wert": "2026-10-15",
+     "art": "fakt",
+     "quelle": "models.dev API, Anbieter opencode (abgerufen 2026-10-30)",
+     "datum": "2026-10-30"
+    },
+    "offene_gewichte": {
+     "wert": "ja",
+     "art": "fakt",
+     "quelle": "models.dev API, Anbieter opencode (abgerufen 2026-10-30)",
+     "datum": "2026-10-30"
+    },
+    "herkunft": {
+     "wert": "nvidia/nemotron-3.5-super-vl-120b-a12b",
+     "art": "fakt",
+     "quelle": "models.dev API, Anbieter opencode (abgerufen 2026-10-30)",
+     "datum": "2026-10-30"
+    },
+    "daten": {
+     "wert": "NVIDIA-Testbedingungen: protokolliert, keine vertraulichen Daten",
+     "art": "altbestand",
+     "quelle": "Altkatalog data/models.json, Stand 2026-10-25 (dort OpenCode-Docs/Zen-Datenschutz); nicht erneut geprüft",
+     "datum": "2026-10-25"
+    }
+   },
+   "einschaetzungen": {
+    "tempo": {
+     "wert": "mittel",
+     "art": "einschaetzung",
+     "quelle": "Altkatalog data/models.json, Stand 2026-10-25",
+     "datum": "2026-10-25"
+    },
+    "aufwand": {
+     "wert": "mittel",
+     "art": "einschaetzung",
+     "quelle": "Altkatalog data/models.json, Stand 2026-10-25",
+     "datum": "2026-10-25"
+    },
+    "coder": {
+     "wert": "bedingt",
+     "art": "einschaetzung",
+     "quelle": "Altkatalog data/models.json, Stand 2026-10-25",
+     "datum": "2026-10-25"
+    },
+    "reviewer": {
+     "wert": "bedingt",
+     "art": "einschaetzung",
+     "quelle": "Altkatalog data/models.json, Stand 2026-10-25",
+     "datum": "2026-10-25"
+    },
+    "staerken": [
+     {
+      "text": "Im Test lauffähig (13 s Median; 47 s Zwei-Dateien-Aufgabe)",
+      "art": "messung",
+      "quelle": "bigiron.cc-Test vom 2026-10-19, zitiert im Altkatalog 2026-10-25",
+      "datum": "2026-10-19"
+     }
+    ],
+    "schwaechen": [
+     {
+      "text": "Einzelner Ausreißer von 308 s",
+      "art": "messung",
+      "quelle": "bigiron.cc-Test vom 2026-10-19, zitiert im Altkatalog 2026-10-25",
+      "datum": "2026-10-19"
+     },
+     {
+      "text": "Langsamster der Nemotron-Reihe bei der Zwei-Dateien-Aufgabe",
+      "art": "messung",
+      "quelle": "bigiron.cc-Test vom 2026-10-19, zitiert im Altkatalog 2026-10-25",
+      "datum": "2026-10-19"
+     },
+     {
+      "text": "Protokollierung der Eingaben laut Altangabe",
+      "art": "altbestand",
+      "quelle": "Altkatalog data/models.json, Stand 2026-10-25",
+      "datum": "2026-10-25"
+     }
+    ]
+   }
+  }
+ ],
+ "nicht_uebernommen": [
+  {
+   "id": "opencode/nemotron-3-ultra-free",
+   "name": "Nemotron 3 Ultra",
+   "grund": "Am Prüftag nicht in 'opencode models --standalone'; models.dev führt das Modell als deprecated.",
+   "quelle": "opencode models --standalone, opencode 2.2.2",
+   "datum": "2026-10-30"
+  },
+  {
+   "id": "opencode/glm-5.3-flash",
+   "name": "GLM-5.3-Flash (bezahlt)",
+   "grund": "Am Prüftag nicht in 'opencode models --standalone' (Anbieter nicht verbunden); Preis daher für diese Installation nicht belegt.",
+   "quelle": "opencode models --standalone, opencode 2.2.2",
+   "datum": "2026-10-30"
+  },
+  {
+   "id": "opencode/deepseek-v4.1-flash",
+   "name": "DeepSeek V4.1 Flash (bezahlt)",
+   "grund": "Am Prüftag nicht in 'opencode models --standalone' (Anbieter nicht verbunden); Preis daher für diese Installation nicht belegt.",
+   "quelle": "opencode models --standalone, opencode 2.2.2",
+   "datum": "2026-10-30"
+  },
+  {
+   "id": "opencode/glm-5.3",
+   "name": "GLM 5.3",
+   "grund": "Am Prüftag nicht in 'opencode models --standalone'; Altangabe ohne Gültigkeitsdatum.",
+   "quelle": "opencode models --standalone, opencode 2.2.2",
+   "datum": "2026-10-30"
+  },
+  {
+   "id": "opencode/deepseek-v4-pro",
+   "name": "DeepSeek V4 Pro",
+   "grund": "Am Prüftag nicht in 'opencode models --standalone'; Altangabe ohne Gültigkeitsdatum.",
+   "quelle": "opencode models --standalone, opencode 2.2.2",
+   "datum": "2026-10-30"
+  },
+  {
+   "id": "opencode/claude-haiku-5-5",
+   "name": "Claude Haiku 5.5",
+   "grund": "Am Prüftag nicht in 'opencode models --standalone'; Altpreis ohne Gültigkeitsdatum.",
+   "quelle": "opencode models --standalone, opencode 2.2.2",
+   "datum": "2026-10-30"
+  },
+  {
+   "id": "opencode/claude-sonnet-5-5",
+   "name": "Claude Sonnet 5.5",
+   "grund": "Am Prüftag nicht in 'opencode models --standalone'; Altpreis ohne Gültigkeitsdatum.",
+   "quelle": "opencode models --standalone, opencode 2.2.2",
+   "datum": "2026-10-30"
+  },
+  {
+   "id": "opencode/claude-opus-5-5",
+   "name": "Claude Opus 5.5",
+   "grund": "Am Prüftag nicht in 'opencode models --standalone'; Altpreis ohne Gültigkeitsdatum.",
+   "quelle": "opencode models --standalone, opencode 2.2.2",
+   "datum": "2026-10-30"
+  },
+  {
+   "id": "opencode/gpt-6-sol",
+   "name": "GPT 6 Sol",
+   "grund": "Am Prüftag nicht in 'opencode models --standalone'; Altpreis ohne Gültigkeitsdatum.",
+   "quelle": "opencode models --standalone, opencode 2.2.2",
+   "datum": "2026-10-30"
+  }
+ ]
+}

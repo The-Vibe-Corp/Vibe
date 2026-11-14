@@ -1,0 +1,123 @@
+
+:root{--bg:#14161a;--card:#1d2026;--line:#2c313a;--tx:#e6e8eb;--mut:#8b93a1;--ac:#5aa9ff;--ok:#4cc38a;--warn:#f2b84b;--bad:#f06a6a}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--tx);font:14px/1.4 system-ui,sans-serif}
+header{display:flex;gap:16px;align-items:center;padding:10px 18px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+header h1{font-size:16px;margin:0}nav button{background:none;border:0;color:var(--mut);padding:8px 12px;cursor:pointer;font-size:14px}
+nav button.on{color:var(--tx);border-bottom:2px solid var(--ac)}main{padding:18px;max-width:1300px;margin:auto}
+table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:8px;border-bottom:1px solid var(--line);vertical-align:top}th{color:var(--mut);font-weight:500}
+td.num{text-align:right;font-variant-numeric:tabular-nums}
+tr.row{cursor:pointer}tr.row:hover{background:#1a1d23}.pill{padding:2px 8px;border-radius:10px;font-size:12px;background:#2a2f38;white-space:nowrap}
+.run{background:#17382a;color:var(--ok)}.warn{color:var(--warn)}.bad{color:var(--bad)}.ok{color:var(--ok)}.mut{color:var(--mut)}
+.pill.ok{background:#17382a}.pill.warn{background:#3a3016}.pill.bad{background:#3d1d1d}.pill.mut{background:#2a2f38}
+button.b{background:#2a2f38;color:var(--tx);border:1px solid var(--line);padding:6px 12px;border-radius:6px;cursor:pointer}button.b:hover{border-color:var(--ac)}
+button.p{background:var(--ac);color:#06121f;border-color:var(--ac)}button.d{border-color:var(--bad);color:var(--bad)}button.quit{background:#5a1d1d;border-color:var(--bad);color:#fff;font-weight:600}
+.card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:14px;margin-bottom:14px}
+pre#log{background:#0d0f12;border:1px solid var(--line);border-radius:6px;padding:10px;height:320px;overflow:auto;white-space:pre-wrap;font:12px/1.4 ui-monospace,monospace;margin:0}
+input,textarea,select{background:#0d0f12;color:var(--tx);border:1px solid var(--line);border-radius:6px;padding:6px;width:100%}label{display:block;margin:8px 0 2px;color:var(--mut);font-size:12px}
+input[type=checkbox]{width:auto}textarea.raw{font:12px/1.4 ui-monospace,monospace;min-height:360px}details summary{cursor:pointer;font-weight:600}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}.grid>*{min-width:0}.tablewrap{overflow-x:auto;max-width:100%}.bar{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0;align-items:center}a{color:var(--ac)}
+.err{border-color:var(--bad)}.detail td{background:#181b20}ul.l{margin:4px 0 8px 18px;padding:0}.sep{width:1px;height:22px;background:var(--line)}@media(max-width:900px){.grid,.grid3{grid-template-columns:1fr}}
+.logcard{display:flex;flex-direction:column;min-height:0}.logcard.full{position:fixed;inset:8px;z-index:100;margin:0;box-shadow:0 0 0 1px var(--line),0 12px 40px #000a}
+.logcard.full pre#log{flex:1 1 auto;height:auto;min-height:0}body.logfull{overflow:hidden}
+/* F19: Syntaxhervorhebung der Live-Ausgabe. AP16: Dieselben Farben gelten
+   unverändert in der Agentenausgabe (.bv-log) der B11-Ausgabeansicht. */
+pre#log .hl-head,.bv-log .hl-head{color:#8ab4f8;font-weight:600}
+pre#log .hl-err,.bv-log .hl-err{color:var(--bad)}
+pre#log .hl-tool,.bv-log .hl-tool{color:#c9a7ff}
+pre#log .hl-sub,.bv-log .hl-sub{color:#7fd1c1}
+pre#log .hl-think,.bv-log .hl-think{color:#8a94a6;font-style:italic}
+pre#log .hl-cmd,.bv-log .hl-cmd{color:var(--warn)}
+pre#log .hl-add,.bv-log .hl-add{color:var(--ok)}
+pre#log .hl-del,.bv-log .hl-del{color:var(--bad)}
+pre#log .hl-code,.bv-log .hl-code{color:#e8c07d;background:#232830;border-radius:3px}
+pre#log .hl-str,.bv-log .hl-str{color:#a5d6a7}
+pre#log .hl-path,.bv-log .hl-path{color:#9ecbff}
+pre#log .hl-sha,.bv-log .hl-sha{color:#c3a6ff}
+pre#log .hl-num,.bv-log .hl-num{color:#f0a66a}
+/* B11: Ausgabeansicht — Hauptagent und alle laufenden Subagenten gleichzeitig.
+   Das Panel nutzt die verfügbare Höhe; die Hauptfläche bleibt mindestens 40 %
+   des Viewports hoch und endet im sichtbaren Bereich. */
+[role=tabpanel][data-panel=ausgabe].bv-agent:not([hidden]){display:flex;flex-direction:column;height:calc(100vh - 210px);min-height:65vh;overflow:hidden;padding:0}
+.bv-root{display:flex;flex-direction:column;gap:8px;height:100%;min-height:0;overflow-y:auto}
+.bv-controls{flex:0 0 auto;margin:0;padding:10px 12px}
+.bv-bar{display:flex;gap:8px;align-items:center;margin:4px 0}
+.bv-label{color:var(--mut);font-size:12px;flex:0 0 auto}
+.bv-bar select{flex:1 1 auto}
+.bv-bar textarea{margin:0;font:12px/1.4 ui-monospace,monospace;resize:vertical}
+.bv-view{display:flex;flex-direction:column;min-height:0;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:#0d0f12}
+.bv-root .bv-main{flex:1 1 auto;min-height:40vh}
+.bv-head{display:flex;gap:10px;align-items:center;justify-content:space-between;padding:6px 10px;border-bottom:1px solid var(--line);background:#181b20;flex:0 0 auto}
+.bv-head b{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bv-head-actions{display:flex;gap:8px;align-items:center;flex:0 0 auto}
+.bv-log{margin:0;padding:10px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.4 ui-monospace,monospace;flex:1 1 auto;min-height:0;background:#0d0f12}
+/* F30: Die Subagentenausgabe ist die eigentliche Arbeitsfläche; jede Karte
+   startet bei 300 px Höhe und lässt sich über den Knopf im Kopf nahezu
+   ansichtsfüllend vergrößern. Der Kasten scrollt bei Bedarf im Panel. */
+.bv-subs{display:flex;gap:8px;overflow-x:auto;flex:0 0 auto}
+.bv-subs[hidden]{display:none}
+.bv-sub{flex:0 0 min(560px,60%);height:300px}
+.bv-sub .bv-log{height:100%}
+.bv-sub.enlarged{position:fixed;inset:8px;z-index:120;height:auto;flex-basis:auto;box-shadow:0 0 0 1px var(--line),0 12px 40px #000a}
+.bv-sub.enlarged .bv-log{height:auto}
+@media(max-width:900px){.bv-sub{flex-basis:80%}}
+.fbentry{border-top:1px solid var(--line);padding:8px 0}.fbentry:first-child{border-top:0}.fbdesc{white-space:pre-wrap;margin:2px 0 6px}.fbentry .bar{margin:4px 0 0}
+.toasts{position:fixed;right:16px;bottom:16px;z-index:200;display:flex;flex-direction:column;gap:8px;width:min(460px,calc(100vw - 32px))}
+.toast{display:flex;gap:10px;align-items:flex-start;background:#232830;border:1px solid var(--line);border-left:3px solid var(--ac);border-radius:8px;padding:10px 12px;box-shadow:0 8px 24px #0008}
+.toast .toasttext{white-space:pre-wrap;overflow-wrap:anywhere}.toast .x{padding:2px 8px;margin-left:auto;cursor:pointer;flex:0 0 auto}
+/* Rückfragen des Agenten (F16) */
+.qwrap{max-width:1300px;margin:0 auto;padding:14px 18px 0}
+.qwrap[hidden]{display:none}
+.qcard{background:var(--card);border:1px solid var(--warn);border-left:4px solid var(--warn);border-radius:8px;padding:12px 14px;margin-bottom:10px}
+.qhead{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:4px}
+.qtext{font-size:15px;font-weight:600;margin:0 0 4px;white-space:pre-wrap;overflow-wrap:anywhere}
+.qopts{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0 0}
+.qfree{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;align-items:center}
+.qfree input{flex:1 1 240px;width:auto;min-width:0}
+.confirm{display:inline-flex;gap:8px;align-items:center;flex-wrap:wrap;background:#2a2416;border:1px solid var(--warn);border-radius:6px;padding:4px 8px}
+/* Projektdetail: feste Kopfleiste, Register und Kennzahlen (F13) */
+.tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin:0 0 16px;overflow-x:auto;scrollbar-width:thin}
+.tabs [role=tab]{background:none;border:0;border-bottom:2px solid transparent;color:var(--mut);padding:10px 14px;cursor:pointer;font-size:14px;white-space:nowrap}
+.tabs [role=tab]:hover{color:var(--tx)}
+.tabs [role=tab][aria-selected=true]{color:var(--tx);border-bottom-color:var(--ac)}
+/* AP7: Einstellungs-Tab als Abschnittsstapel. Die Leiste zeigt Zustand und
+   Sprungziele; optionale Abschnitte sind eingeklappte Karten. */
+.settingsstack{display:flex;flex-direction:column;gap:14px}
+.settings-nav{display:flex;gap:8px;flex-wrap:wrap;margin:0}
+.settingschip{display:inline-flex;align-items:center;gap:8px;margin:0}
+.seccard{padding:0;margin:0}
+/* Sprungabstand: mit Abstand zur fixen Kopfleiste, damit der
+   Zusammenfassungstitel des Abschnitts nach dem Chip-Klick sichtbar bleibt.
+   Nachweis aus der Reviewrunde 1/2: die fixe .detailbar misst gerendert
+   76.06 px, deshalb 78 px Sprungabstand (im Alignment-Regime gemessen). */
+.seccard,#project-agents{scroll-margin-top:78px}
+.seccard>summary{padding:12px 14px;list-style:none;display:flex;align-items:center;gap:8px;cursor:pointer}
+.seccard>summary::-webkit-details-marker{display:none}
+.seccard>summary::before{content:'▸';color:var(--mut);font-size:12px}
+.seccard[open]>summary::before{content:'▾'}
+.seccard>summary::after{content:'';flex:1}
+.seccard[open]>summary{border-bottom:1px solid var(--line)}
+.seccard>.secbody{padding:14px;margin:0}
+.detailbar{position:sticky;top:0;z-index:60;background:var(--bg);border-bottom:1px solid var(--line);margin:0 0 14px;padding:10px 0;align-items:center}
+.dhead{display:flex;gap:10px;align-items:center;flex-wrap:wrap;min-width:0}
+.dhead h2{font-size:18px}
+.dmeta{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:48ch}
+.dactions{margin:0 0 0 auto;flex-wrap:nowrap}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px}
+.tile{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:10px 12px;min-width:0}
+.tile .k{color:var(--mut);font-size:11px;text-transform:uppercase;letter-spacing:.05em}
+.tile .v{font-size:20px;font-weight:600;margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tile .v.small{font-size:13px;font-weight:500}
+.item{padding:4px 0}.item+.item{border-top:1px solid var(--line)}
+/* F29: Drag&Drop für die Reihenfolge der offenen Arbeitspakete */
+.packitem{display:flex;gap:8px;align-items:center}
+.packitem.dragging{opacity:.5}
+.packitem.dropbefore{box-shadow:inset 0 2px 0 0 var(--ac)}
+.draghandle{cursor:grab;user-select:none;color:var(--mut);padding:2px 6px;border-radius:4px;letter-spacing:-2px;touch-action:none}
+.draghandle:hover,.draghandle:focus{color:var(--tx);background:var(--line);outline:none}
+.warnbox{border-color:var(--warn)}
+.factrow{display:flex;gap:12px;justify-content:space-between;padding:5px 0;border-top:1px solid var(--line);font-size:13px}
+.factrow:first-of-type{border-top:0}.factrow span:last-child{text-align:right;overflow-wrap:anywhere}
+button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible,[role=tab]:focus-visible{outline:2px solid var(--ac);outline-offset:2px}
+[role=tabpanel][hidden]{display:none}
+@media(max-width:640px){.detailbar{position:static}.dactions{margin-left:0;flex-wrap:wrap}.dmeta{display:none}}
+
