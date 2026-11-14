@@ -886,6 +886,15 @@
       ],
       "datum": "2026-11-14",
       "grund": "Manifestsync nach der Vorlagenüberarbeitung (ddd1d4d): die Projektvorlagen enthalten keine Umgebungsspezifika mehr (REVIEWER- und TESTER-Zeilen entfernt, VERIFY_QUICK/VERIFY_PACKAGE/VERIFY_FULL je Projekt zu befüllen); die Vorlage templates/common/.opencode/agents/test-agent.md und der Projekttyp openwrt sind nicht mehr Teil des Bestands. Größe und SHA-256 der zehn geänderten Einträge aktualisiert, die drei gelöschten Einträge entfernt, dadurch begründet."
+    },
+    {
+      "arbeitspaket": "REPO-AUFRÄUMEN",
+      "dateien": [
+        "bin/vibe-web.py",
+        "docs/import-manifest.json"
+      ],
+      "datum": "2026-11-14",
+      "grund": "Integrationsmerge für die GitHub-Veröffentlichung: der AP12/AP13-Integrationsstand (GitHub-Vorbereitung, Dashboard für lokales Netzwerk) und der master-Stand (F31-Manifestsync) wurden in den aktuellen Stand überführt; beide Änderungssätze bleiben erhalten. AP13s Erweiterungen an bin/vibe-web.py (Zugriffssicherheit) ergänzen die F31-/AP14-Funktionalität unverändert; Größe und SHA-256 des geänderten files-Eintrags wurden aktualisiert und dadurch begründet."
     }
   ],
   "files": [
@@ -910,9 +919,9 @@
       "sha256": "226029e02fb2d4abf719ae8d26117264731b39263b9a63ba7e991dde51774cae"
     },
     {
-      "bytes": 92839,
+      "bytes": 94247,
       "path": "bin/vibe-web.py",
-      "sha256": "274cdc13ada49105f1becba2d5650e88864e804916b6dd747d29dfaa0900104c"
+      "sha256": "4d739f583bfaed9b4343968cc2d3f33f40839d966d1476107b124abeed3dac87"
     },
     {
       "bytes": 5189,

@@ -11,11 +11,24 @@ config-backups/
 agent-backups/
 _secrets.env
 
-# Laufzeit- und Sperrartefakte des Projekts
-.vibe/agents.json
-.vibe/project.env
+# Lokale Einstellungen des vibe-Projekts bleiben beim Nutzer
+# (seit AP12: Vorbereitung für ein öffentliches GitHub-Repository).
+# Anker am Wurzelverzeichnis, damit die mitgelieferten Vorlagen unter
+# templates/ versioniert bleiben.
+/.vibe/
+/opencode.json
+/.opencode/
+/TICKETS.md
+/FEEDBACK.md
 vibe-storage-locks-*/
 
-# Vom Preflight verwaltete Werk-Notizen, nicht versionieren
-FEEDBACK.md
-TICKETS.md
+# Systemspezifische OS- und Editor-Artefakte
+.DS_Store
+Thumbs.db
+desktop.ini
+.directory
+*~
+*.swp
+*.swo
+.idea/
+.vscode/

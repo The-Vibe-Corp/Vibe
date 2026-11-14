@@ -145,3 +145,9 @@ hin.
 
 V-001 aus TICKETS.md bearbeiten.
 Danach V-002, bevor funktionale Änderungen begonnen werden.
+
+## Mitwirken und Lizenz
+
+Beiträge: siehe `CONTRIBUTING.md`, Verhaltensregeln in
+`CODE_OF_CONDUCT.md`. Sicherheitsmeldungen bitte nicht öffentlich — siehe
+`SECURITY.md`. Das Projekt steht unter der MIT-Lizenz (`LICENSE`).

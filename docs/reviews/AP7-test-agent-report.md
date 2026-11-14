@@ -22,7 +22,7 @@ neutral sein):
 
 Umgebung: jede Suite startet einen eigenen vibe-web-Prozess auf eigenem Port
 mit vollständig isolierten VIBE_*-Pfaden; Chromium über Playwright headless
-(`PLAYWRIGHT_BROWSERS_PATH=/home/marc/.cache/ms-playwright`). Playwright und
+(`PLAYWRIGHT_BROWSERS_PATH=/home/nutzer/.cache/ms-playwright`). Playwright und
 Chromium sind installiert — kein BLOCKED.
 
 ## Neue Suite `tests/browser/test_ap7_settings_ui.py` (roter Lauf)
@@ -178,7 +178,7 @@ Ladeende-Signal der Agententabelle warten — `input[data-toggle=
 Agenten im Fixture) plus Assertion, dass die Ladezeile in
 `#panel-einstellungen` nicht mehr enthalten ist. Keine Abschwächung.
 
-Befehl: `PLAYWRIGHT_BROWSERS_PATH=/home/marc/.cache/ms-playwright
+Befehl: `PLAYWRIGHT_BROWSERS_PATH=/home/nutzer/.cache/ms-playwright
 python3 -m unittest tests.browser.test_project_detail_ui -v`
 Ergebnis: `Ran 8 tests in 28.106 s`, `OK` — 8/8 grün. Neu geschriebenes
 `docs/features/F13-einstellungen.png` (Zeitstempel 01:51, 84 KB statt zuvor
@@ -222,7 +222,7 @@ Ergebnisrunde: `python3 -m unittest tests.browser.test_ap7_settings_ui -v`
 Erster Bestandssuitenlauf (ohne korrektes `PLAYWRIGHT_BROWSERS_PATH`) fing
 zwei Umgebungsartefakte als ERRORs ein (Chromium-Executable im Sandbox-Cache fehlt) — der
 Lauf mit
-`PLAYWRIGHT_BROWSERS_PATH=/home/marc/.cache/ms-playwright` zeigte dieselben
+`PLAYWRIGHT_BROWSERS_PATH=/home/nutzer/.cache/ms-playwright` zeigte dieselben
 zwei ERRORs als echte, reproduzierbare Testfehler:
 
 1. `test_sandbox_ui.test_card_switches_on_sets_tools_checks_and_switches_off`
@@ -250,7 +250,7 @@ klappt erst dann ggf. wieder auf. Keine Assertionsabschwächung — die Fach-Erw
 je drei Aktions-Nähten (Sandbox ein/aus/Werkzeuge speichern;
 Hinzufügen/Entfernen/Zurücksetzen).
 
-Ergebnisse (jeweils `PLAYWRIGHT_BROWSERS_PATH=/home/marc/.cache/ms-playwright ...`):
+Ergebnisse (jeweils `PLAYWRIGHT_BROWSERS_PATH=/home/nutzer/.cache/ms-playwright ...`):
 
 * `python3 -m unittest tests.browser.test_sandbox_ui tests.browser.test_write_dirs_ui`
   → `Ran 5 tests in 33.5 s` / `OK` — 5/5 grün.
@@ -313,7 +313,7 @@ Zusätzlich (R2-Info-Befund): in `tests/browser/test_sandbox_ui.py`
 Titel-Assertion auf den Aufklapp-Titel `Sandbox (optional)`
 (`#sandbox > summary`) ergänzt.
 
-Ergebnisse (`PLAYWRIGHT_BROWSERS_PATH=/home/marc/.cache/ms-playwright ...`):
+Ergebnisse (`PLAYWRIGHT_BROWSERS_PATH=/home/nutzer/.cache/ms-playwright ...`):
 - `python3 -m unittest tests.browser.test_ap7_settings_ui -v` →
   `Ran 7 tests in 63.4 s`, `FAILED (failures=1)` — 6/7 OK; der einzige
   Fehlschlag ist der M1-Fall mit den exakten Werten oben (zweiter Lauf:

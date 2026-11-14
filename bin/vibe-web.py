@@ -700,6 +700,45 @@ def security_data():
     }
 
 
+def reload_ui_data():
+    """Lädt ui.json nach einer security-Aktion neu; Erfolg als boolescher Wert.
+
+    Eine dann defekte Datei ist praktisch ausgeschlossen (save schreibt
+    atomar und validiert vorher); sie wird gemeldet statt still als leer
+    behandelt zu werden — Allowlist/Kennwort würden sonst unbemerkt weichen.
+    """
+    try:
+        data = vibe_ui_config.load(PATHS.state)
+    except vibe_ui_config.ConfigError:
+        return False
+    UI_DATA.clear()
+    UI_DATA.update(data)
+    return True
+
+
+def restart_required():
+    """Markiert geplante Port-/Bind-Änderungen, die erst nach Neustart wirken.
+
+    ui.json kann jederzeit Port und Bind verschieben; der laufende Server
+    hält die Werte seines Starts. weicht der geplante Zustand vom laufenden
+    ab, zeigt die Oberfläche den Neustart-Hinweis.
+    """
+    planned_port = UI_DATA.get("ui_port") if UI_DATA.get("ui_port") is not None else PORT
+    planned_bind = UI_DATA.get("ui_bind") if UI_DATA.get("ui_bind") is not None else BIND
+    return planned_port != PORT or planned_bind != BIND
+
+
+def security_data():
+    """Zugriffssicherheit als Ansichtsobjekt, ohne Kennwort- oder Hash-Auskunft."""
+    return {
+        "port": PORT,
+        "bind": BIND,
+        "allowlist": list(UI_DATA.get("allowlist") or []),
+        "password_set": bool(UI_DATA.get("password_hash")),
+        "restart_required": restart_required(),
+    }
+
+
 class RequestError(Exception):
     """Fehlerbearbeitung bei ungültiger Anfrage: HTTP-Status und Fehlercode."""
 

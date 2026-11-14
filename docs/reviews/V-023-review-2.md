@@ -21,7 +21,7 @@ Runde-1-Befunde [High] Failing-First-Nachweis und [Medium] `verify.sh full` sind
 | Doku und Importmanifest | PASS | `docs/features/V-023.md`, `docs/features/worknotes-nachweis-sync.md:79-84`, `docs/import-manifest.json` (V-023, nur `bin/vibe_packages.py`) | `check-import-manifest.py` → OK (gemeldet); Diff enthält kein Werkzeug/Manifest-Fremdänderung |
 | `verify.sh quick` und `full` | PASS (mit dokumentierter Vorbestands-Grenze) | — | quick Exit 0 (gemeldet, nach Nachbesserung erneut); full `Ran 1130 tests`, `FAILED (failures=2)`, Exit 5 — beide Fehlschläge am Ausgangsstand ab599cd identisch reproduziert und dokumentiert (`docs/features/V-023.md:113-128`); beide betreffen von V-023 unberührte Bestände (AP04/B5) |
 
-Die Vorbestands-Fehlschläge betreffen nachweislich Nicht-Paketdateien: `tests/unit/test_ap04_setup_harness.py:83` und `tests/unit/test_release.py:315` sind nicht Bestandteil des Paket-Diffs (`git diff ab599cd dab6022 --name-only`), und der beanstandete Home-Pfad steht unverändert in `docs/features/B5.md:218` (`/home/marc/.opencode/bin`) — von mir direkt am Arbeitsbaum verifiziert. 1106 (Unit-Phase laut B5-Nachweis) + 24 neue Tests = 1130 ist mit der übergebenen Testzahl konsistent.
+Die Vorbestands-Fehlschläge betreffen nachweislich Nicht-Paketdateien: `tests/unit/test_ap04_setup_harness.py:83` und `tests/unit/test_release.py:315` sind nicht Bestandteil des Paket-Diffs (`git diff ab599cd dab6022 --name-only`), und der beanstandete Home-Pfad steht unverändert in `docs/features/B5.md:218` (`/home/nutzer/.opencode/bin`) — von mir direkt am Arbeitsbaum verifiziert. 1106 (Unit-Phase laut B5-Nachweis) + 24 neue Tests = 1130 ist mit der übergebenen Testzahl konsistent.
 
 ## Findings
 
