@@ -847,6 +847,15 @@
       ],
       "datum": "2026-11-14",
       "grund": "Subagenten-Ausgabe bleibt statisch (Bug B14): Das Dashboard fragte die Live-Ausgabe der Subagenten weiterhin am gemeinsamen opencode-Server (OC_URL) ab, während der Lauf seit B13 an seinem privaten Loopback-Server arbeitet, der nur über <Laufprotokoll>.server.json bekannt ist. Dadurch lieferte /api/subagent-output nur den einmal erfassten Ersttext und die Karte fror ein. GET /api/subagent-output, /api/subagents und die Live-Erkennung nutzen jetzt steer_endpoint(name): mit Projektkontext gehen Session- und Nachrichtenabfragen authentifiziert an den privaten Laufserver, ohne gültige Serverdatei bleibt der bisherige gemeinsame Server und die erfasste Ausgabe als Rückfall. Kennwörter erscheinen nicht in Antworten oder Protokollen. Eine geänderte Datei liegt im Bereich bin; Größe und SHA-256 des files-Eintrags wurden aktualisiert."
+    },
+    {
+      "arbeitspaket": "F31",
+      "dateien": [
+        "bin/vibe",
+        "bin/vibe-run.sh"
+      ],
+      "datum": "2026-11-14",
+      "grund": "Geerbtes OPENCODE_PASSWORD blockierte den privaten opencode-Server (Defekt-Fix, Anlass Lauf vibe-20261114-192106-c11f59): opencode v2.3 steuert den Basic-Auth des Servers auch über OPENCODE_PASSWORD, und ein gesetzter Wert schlägt OPENCODE_SERVER_PASSWORD. Der Lauf erbte über Dashboard/tmux einen veralteten 16-Zeichen-Wert, während die Gesundheitsprüfung das Kennwort aus der Laufzeitdatei (32 Zeichen) sendete — dauerhaft 401, „nicht gesund“, Laufabbruch. Der Läufer entfernt OPENCODE_PASSWORD jetzt vor der Kennwortbehandlung des privaten Servers und erneut nach dem Einlesen von .vibe/project.env (set -a würde dort definierte Werte erneut exportieren); derselbe Schutz gilt im tmux-Innenbefehl des gemeinsamen Servers. Das Kennwort kommt weiterhin ausschließlich aus der Laufzeitdatei. Beide geänderten Dateien liegen im Bereich bin; Größe und SHA-256 der files-Einträge wurden aktualisiert und dadurch begründet."
     }
   ],
   "files": [
@@ -866,9 +875,9 @@
       "sha256": "3564e653a010df9fe393383b94d33c0490cc7f4c7cbc0184652b5d212c636bf6"
     },
     {
-      "bytes": 56236,
+      "bytes": 56672,
       "path": "bin/vibe-run.sh",
-      "sha256": "731f07db8470e7b65a85fb120364e72a222e24eff01db3030968aa8e7316c01e"
+      "sha256": "226029e02fb2d4abf719ae8d26117264731b39263b9a63ba7e991dde51774cae"
     },
     {
       "bytes": 91367,

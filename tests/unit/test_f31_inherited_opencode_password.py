@@ -249,6 +249,99 @@ class PrivateServerIgnoresInheritedPasswordTest(b13.B13RunnerFixture):
 
         self.assert_no_password_leak()
 
+    def define_project_env_password(self):
+        """AK1b: Belegt OPENCODE_PASSWORD in der .vibe/project.env.
+
+        Der Wert steht genau einmal in der Datei, in doppelten
+        Anführungszeichen — so exportiert ``set -a; . file; set +a`` ihn,
+        wie der Läufer die Projektdatei einliest. Der Baum wird neu
+        committet, damit der Läufer an einem sauberen Stand startet.
+        """
+        env_file = self.project / ".vibe" / "project.env"
+        self.assertTrue(env_file.exists())
+        text = env_file.read_text(encoding="utf-8")
+        line = 'OPENCODE_PASSWORD="' + STALE_PASSWORD + '"\n'
+        self.assertNotIn("OPENCODE_PASSWORD=", text)
+        env_file.write_text(text + line, encoding="utf-8")
+        self.assertEqual(
+            1, env_file.read_text(encoding="utf-8").count(line.strip()),
+            "OPENCODE_PASSWORD muss genau einmal in der Projektdatei stehen")
+        support.commit_all(self.project, "AK1b: Projektdatei belegt Kennwort")
+
+    def test_project_env_opencode_password_is_absent_from_the_server_env(self):
+        """AK1b: OPENCODE_PASSWORD aus .vibe/project.env erreicht den Server nicht.
+
+        Vorbedingung: Kennwortdatei ``$RUNTIME/opencode.password`` nichtleer;
+        die übergeordnete Prozessumgebung enthält KEIN ``OPENCODE_PASSWORD``;
+        die ``.vibe/project.env`` des Testprojekts definiert
+        ``OPENCODE_PASSWORD="<veralteter Attrappenwert>"`` (genau eine Zeile);
+        Attrappen zeichnen opencode-Aufrufe und Serve-Beobachtungen auf.
+        Aktion: ``vibe-run.sh <projekt>``.
+        Erwartung: Der Lauf läuft durch (FERTIG); genau ein ``serve``-Aufruf;
+        im ``listening``-Record der Attrappe ist ``OPENCODE_PASSWORD``
+        abwesend (present False, Länge 0), während
+        ``OPENCODE_SERVER_PASSWORD`` vorhanden ist und exakt die Länge des
+        Datei-Kennworts hat; die Gesundheitsprüfung (GET /api/info) wird mit
+        gültiger Basic-Auth aus der Kennwortdatei beantwortet; der
+        Agentenaufruf nutzt ``--server http://127.0.0.1:<Port>`` ohne
+        ``--standalone``; kein Kennwortwert steht im Klartext in einem
+        Artefakt (AK4).
+        Fehlerfall: Das späte Einlesen der Projektdatei exportiert den
+        ``OPENCODE_PASSWORD``-Wert erneut und die Attrappe beobachtet eine
+        Belegung in ihrer eigenen Umgebung, oder der Lauf scheitert an der
+        Gesundheitsprüfung (401), weil der falsche Wert das Datei-Kennwort
+        schlägt.
+        """
+        self.write_password()
+        self.define_project_env_password()
+        env = self.env()
+        env.pop("OPENCODE_PASSWORD", None)
+
+        result = self.run_runner(env=env)
+
+        log = self.log_text()
+        self.assertEqual(
+            result.returncode, 0, "Läufer bricht ab:\n" + result.stdout
+            + result.stderr + "\n" + log)
+        self.assertIn("FERTIG", log)
+
+        serve_calls = [record for record in self.arg_records()
+                       if record and record[0] == "serve"]
+        self.assertEqual(
+            1, len(serve_calls),
+            "Genau ein privater Server je Lauf erwartet: " + repr(serve_calls))
+
+        entry = self.listening_entry()
+        self.assertFalse(
+            entry.get("opencode_password_present"),
+            "Der private Server-Prozess erhielt ein OPENCODE_PASSWORD aus "
+            "der Projektdatei: "
+            + repr({key: entry[key] for key in entry
+                    if "password" in key}))
+        self.assertEqual(
+            0, entry.get("opencode_password_len"),
+            "Die Länge eines aus der Projektdatei exportierten "
+            "OPENCODE_PASSWORD wurde beobachtet")
+        self.assertTrue(
+            entry.get("server_password_present"),
+            "OPENCODE_SERVER_PASSWORD fehlte im Serverprozess")
+        self.assertEqual(
+            len(FILE_PASSWORD), entry.get("server_password_len"),
+            "OPENCODE_SERVER_PASSWORD stammt nicht aus der Kennwortdatei")
+
+        self.assert_health_checked_with_file_password()
+
+        run_calls = self.run_records()
+        self.assertTrue(run_calls, "Agent wurde nicht gestartet")
+        bound_port = entry["port_bound"]
+        url = "http://127.0.0.1:" + str(bound_port)
+        for record in run_calls:
+            self.assertIn("--server", record, repr(record))
+            self.assertIn(url, record, repr(record))
+            self.assertNotIn("--standalone", record, repr(record))
+
+        self.assert_no_password_leak()
+
 
 # Attrappe des opencode-CLI für ``vibe server start`` (AK3): ``--version``
 # antwortet wie die geprüfte Version; ``serve`` schreibt nur Anwesenheit und

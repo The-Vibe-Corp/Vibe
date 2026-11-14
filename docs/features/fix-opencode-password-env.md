@@ -4,7 +4,9 @@ Stand: 2026-11-14
 Ausgangscommit: `10dca46` (`B14: Subagenten-Ausgabe live über den privaten Laufserver`)
 Arbeitsbranch: `fix/stale-opencode-password` (Implementierung), `fix/f31-tests-docs` (Tests und Doku)
 Implementierungscommit: `88509a0` (`F31: Geerbtes OPENCODE_PASSWORD vor dem Serverstart entfernen`)
-Anlass: Läufer-Defekt beim Lauf `vibe-20261114-192106-c11f59` (Paket F31, „Der private opencode-Server konnte nicht gestartet werden“)
+Testbericht: `docs/reviews/fix-opencode-password-env-test-agent-report.md`
+Review: `docs/reviews/fix-opencode-password-env-review-1.md` (Runde 1: CHANGES REQUIRED, 2 Medium/2 Low, behoben)
+Anlass: Läufer-Defekt beim Lauf `vibe-20261114-192106-c11f59` (Paket F31, „Der private opencode-Server konnte nicht gestartet werden")
 
 ## Fehlerbild
 
@@ -34,7 +36,7 @@ Authentifizierung ab. Es lag weder am Modelllimit noch am Start-Timing.
    Kennwortdatei `$RUNTIME/opencode.password` 32 Zeichen hat
    (`secrets.token_urlsafe(24)`, Stand 8. Nov). Die Werte wurden während der
    gesamten Analyse nie ausgegeben (nur Längen- und Hashvergleich).
-2. **opencode v2.3.0 honor `OPENCODE_PASSWORD` und lässt sie vor
+2. **opencode v2.3.0 honoriert `OPENCODE_PASSWORD` und lässt sie vor
    `OPENCODE_SERVER_PASSWORD` gelten.** Serientests:
    * Server mit Datei-Kennwort in `OPENCODE_SERVER_PASSWORD` **plus** geerbtem
      `OPENCODE_PASSWORD` → curl mit Datei-Kennwort: **401**, curl mit
@@ -58,9 +60,9 @@ um 19:20:28 installiert worden, 19:21 war ihr erster produktiver Einsatz.
 
 | Datei | Änderung |
 | --- | --- |
-| `bin/vibe-run.sh` | `unset OPENCODE_PASSWORD` vor der Kennwortbehandlung des privaten Servers; Kommentar erklärt den Vorrang-Mechanismus |
+| `bin/vibe-run.sh` | `unset OPENCODE_PASSWORD` vor der Kennwortbehandlung des privaten Servers und erneut direkt nach dem Einlesen von `.vibe/project.env` (das mit `set -a` dort definierte Variablen erneut exportieren würde — Review-Befund M1); Kommentare erklären den Vorrang-Mechanismus |
 | `bin/vibe` | derselbe Schutz im tmux-Innenbefehl des gemeinsamen Servers (`vibe server start`, F19) |
-| `docs/import-manifest.json` | Bytes und SHA-256 für `bin/vibe` und `bin/vibe-run.sh` aktualisiert |
+| `docs/import-manifest.json` | Bytes und SHA-256 für `bin/vibe` und `bin/vibe-run.sh` aktualisiert, `aenderungen`-Eintrag ergänzt |
 
 Das Kennwort kommt in beiden Pfaden weiterhin ausschließlich aus der
 Laufzeitdatei; der geerbte Wert wird nicht „korrigiert“, sondern entfernt.
@@ -80,18 +82,20 @@ nur ausgeführt und berichtet.
 | Fall | AK | Vorbedingung | Aktion | Erwartung | Ergebnis |
 | --- | --- | --- | --- | --- | --- |
 | `test_inherited_opencode_password_is_absent_from_the_server_env` | AK1+AK4 | Kennwortdatei nichtleer; Startumgebung des Läufers mit veraltetem `OPENCODE_PASSWORD` | `vibe-run.sh <projekt>` | Lauf FERTIG; genau ein `serve`-Aufruf; `OPENCODE_PASSWORD` im Serverprozess abwesend; `OPENCODE_SERVER_PASSWORD` mit Datei-Länge; Gesundheitsprüfung gültig; Agent mit `--server` ohne `--standalone`; kein Kennwort im Klartext | **OK** auf `88509a0`, **FAIL** auf `10dca46` (geerbter Wert beobachtet) |
+| `test_project_env_opencode_password_is_absent_from_the_server_env` | AK1b+AK4 | Kennwortdatei nichtleer; kein `OPENCODE_PASSWORD` in der Prozessumgebung; `.vibe/project.env` definiert `OPENCODE_PASSWORD="…"` | `vibe-run.sh <projekt>` | wie AK1: der Projektdatei-Wert erreicht den Serverprozess nicht | **OK** am Fix-Stand (inkl. zweitem `unset`), **FAIL** am Vorher-Stand `10dca46` und am Zwischenstand `a0757d8` (Restpfad, Review-Befund M1) |
 | `test_without_inherited_password_b13_behaviour_is_unchanged` | AK2 | Kennwortdatei nichtleer; kein `OPENCODE_PASSWORD` in der Startumgebung | `vibe-run.sh <projekt>` | B13-Verhalten unverändert | **OK** auf beiden Ständen |
 | `test_server_start_does_not_inherit_opencode_password` | AK3+AK4 | Kennwortdatei nichtleer; Startumgebung mit veraltetem `OPENCODE_PASSWORD`; echter tmux auf isoliertem Socket; opencode-Attrappe | `vibe server start` | Serverprozess der tmux-Sitzung ohne `OPENCODE_PASSWORD`, mit Datei-Kennwort-Länge; kein Kennwort im Klartext | **OK** auf `88509a0`, **FAIL** auf `10dca46` |
 
 Rotphasennachweis: Auf dem Fix-vorher-Stand `10dca46` (eigener Weggewerk-
-Worktree) scheitern AK1 und AK3 exakt an der beobachteten Erbung
+Worktree) scheitern AK1, AK1b und AK3 exakt an der beobachteten Erbung
 (`opencode_password_present: True`, Länge des veralteten Werts), während AK2
-grün bleibt — die Fehlschläge betreffen also genau die Fixstellen.
+grün bleibt — die Fehlschläge betreffen also genau die Fixstellen. Die
+Rohausgaben sind im Testbericht zitiert und konserviert.
 
 Ergebnisse auf dem Fix-Stand (tatsächlich ausgeführt):
 
 - `python3 -m unittest tests.unit.test_f31_inherited_opencode_password -v`:
-  **3/3 OK**.
+  **4/4 OK**.
 - Regression `tests.unit.test_b13_private_server_steering` (9 OK),
   `tests.unit.test_b14_subagent_output_live` (13 OK),
   `tests.unit.test_b13_private_server_runner` (8 OK, 1 Fehlschlag: AK6
@@ -134,6 +138,6 @@ Ergebnisse auf dem Fix-Stand (tatsächlich ausgeführt):
 | --- | --- |
 | Funktionsnachweis des Fix | Kennwortblock aus der geänderten `vibe-run.sh` mit „infizierter“ Elternumgebung (Alt-`OPENCODE_PASSWORD`) ausgeführt → Serverstart über die originale setsid-Kette → Gesundheitscheck **200**. Ohne Fix war derselbe Aufbau **401**. |
 | `bash scripts/verify.sh quick` | Exit 0 (Importmanifest, Syntax 164 Python-/8 Bash-/6 JSON-Dateien, keine Geheimnisse) nach Manifestaktualisierung. |
-| Unit-Tests | 3/3 OK (`test_f31_inherited_opencode_password`); Regression 30/31 OK, 1 vorbestehender umgebungsabhängiger Sandbox-Fehlschlag (identisch am Fix-vorher-Stand, Details oben) |
-| Unabhängiger Review | ausstehend (nach Abschluss des parallelen produktiven Laufs) |
+| Unit-Tests | 4/4 OK (`test_f31_inherited_opencode_password`, inkl. AK1b-Restpfad `.vibe/project.env`); Rotphase am `10dca46` konserviert; Regression 30/31 OK, 1 vorbestehender umgebungsabhängiger Sandbox-Fehlschlag (identisch am Fix-vorher-Stand, Details oben) |
+| Unabhängiger Review | Runde 1: `docs/reviews/fix-opencode-password-env-review-1.md` (CHANGES REQUIRED — Restpfad `.vibe/project.env`, Nachweislücken, 2 Low; behoben). Runde 2: ausstehend |
 | Trilium-Dokumentation | Notiz `PgaZqt2vEwBQ` („Fix: Geerbtes OPENCODE_PASSWORD blockierte den privaten opencode-Server"), Ordner Features, lesend verifiziert. |
