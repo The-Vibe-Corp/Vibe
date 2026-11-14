@@ -839,6 +839,14 @@
       ],
       "datum": "2026-11-14",
       "grund": "Anweisung senden gibt Fehler (Bug B13): Läufe ohne erreichbaren gemeinsamen Server starteten mit --standalone, sodass die Agentensitzung nur im Agentenprozess lebte und das Dashboard kein Zustellziel hatte. Der Paket-Läufer startet jetzt bei Harness opencode, nichtleerer Kennwortdatei und (Sandbox an oder kein gemeinsamer Server erreichbar) einen privaten opencode-Server auf einem freien 127.0.0.1-Port, prüft dessen Gesundheit vor dem ersten Agentenaufruf, verwendet ihn zwischen Paketen wieder, schreibt Ziel und Kennwortdatei nach <Laufprotokoll>.server.json und beendet ihn beim Laufende; Übergabedatei und PID-Datei werden entfernt. Das Dashboard liest das Ziel ausschließlich als Loopback-HTTP-URL aus dieser Serverdatei und das Kennwort aus der dort genannten Datei; defekte oder fremde Serverdateien werden ignoriert und der bisherige gemeinsame Server bleibt der Rückfall. Ein erreichbarer gemeinsamer Server und Pi-Läufe bleiben unverändert. Beide geänderten Dateien liegen im Bereich bin; Größe und SHA-256 der files-Einträge wurden aktualisiert und dadurch begründet."
+    },
+    {
+      "arbeitspaket": "B14",
+      "dateien": [
+        "bin/vibe-web.py"
+      ],
+      "datum": "2026-11-14",
+      "grund": "Subagenten-Ausgabe bleibt statisch (Bug B14): Das Dashboard fragte die Live-Ausgabe der Subagenten weiterhin am gemeinsamen opencode-Server (OC_URL) ab, während der Lauf seit B13 an seinem privaten Loopback-Server arbeitet, der nur über <Laufprotokoll>.server.json bekannt ist. Dadurch lieferte /api/subagent-output nur den einmal erfassten Ersttext und die Karte fror ein. GET /api/subagent-output, /api/subagents und die Live-Erkennung nutzen jetzt steer_endpoint(name): mit Projektkontext gehen Session- und Nachrichtenabfragen authentifiziert an den privaten Laufserver, ohne gültige Serverdatei bleibt der bisherige gemeinsame Server und die erfasste Ausgabe als Rückfall. Kennwörter erscheinen nicht in Antworten oder Protokollen. Eine geänderte Datei liegt im Bereich bin; Größe und SHA-256 des files-Eintrags wurden aktualisiert."
     }
   ],
   "files": [
@@ -863,9 +871,9 @@
       "sha256": "e095362f99b2283595abd4380771d3e320b08b997555479a3bcda1d364508ef4"
     },
     {
-      "bytes": 90076,
+      "bytes": 91367,
       "path": "bin/vibe-web.py",
-      "sha256": "e1dff88fe19cefe82bc229c918a2795aa6b14650ff08128748f3db5f957502b7"
+      "sha256": "2f081d19a01f942573dbbf9f8247a0c5eb30ef44ed8450921d7236d1c9182595"
     },
     {
       "bytes": 5189,

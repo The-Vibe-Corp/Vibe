@@ -204,16 +204,19 @@ def entry_started(entry):
         return 0
 
 
-def opencode_request(path, timeout=3):
+def opencode_request(path, timeout=3, url=None, password=None):
     """Liest eine GET-Antwort des opencode-Servers mit Basic-Auth.
 
-    Ohne Kennwortdatei wird nicht angefragt. Fehler und nicht-JSON-Antworten
-    liefern ``None``; die Oberfläche erfindet daraus keine Subagenten.
+    B14: Ziel-URL und Kennwort sind Parameter; ohne Angabe bleibt der
+    bisherige gemeinsame Server mit dem globalen Kennwort maßgeblich. Ohne
+    Kennwort wird nicht angefragt. Fehler und nicht-JSON-Antworten liefern
+    ``None``; die Oberfläche erfindet daraus keine Subagenten.
     """
-    password = opencode_password()
+    if password is None:
+        password = opencode_password()
     if not password:
         return None
-    target = urlparse(vibe.OC_URL)
+    target = urlparse(url or vibe.OC_URL)
     host = target.hostname or "127.0.0.1"
     port = target.port or 80
     credential = base64.b64encode(("opencode:" + password).encode("utf-8")).decode("ascii")
@@ -250,22 +253,41 @@ def _agent_name(info):
     return str(agent or "")
 
 
-def live_subagents(main_session):
+def live_endpoint(name=None):
+    """Ziel-URL und Kennwort für Live-Lesezugriffe des Dashboards (B14).
+
+    Mit Projektkontext liefert ``steer_endpoint`` den privaten Laufserver
+    aus ``<Laufprotokoll>.server.json`` (Loopback, Kennwort aus der dort
+    genannten Datei) oder den gemeinsamen Server als Rückfall. Ohne
+    Projektkontext bleibt der bisherige Pfad unverändert. Beide Werte werden
+    pro Anfrage gelesen, damit geänderte Server- oder Kennwortdateien sofort
+    wirken.
+    """
+    if name:
+        return steer_endpoint(name)
+    return vibe.OC_URL, opencode_password()
+
+
+def live_subagents(main_session, name=None):
     """Fragt laufende und beendete Kind-Sessions beim opencode-Server ab.
 
     ``opencode run --format json`` meldet ein ``task``-Werkzeug erst bei
     Abschluss. Für die Anforderung „zu jedem Zeitpunkt sichtbar“ liest das
-    Dashboard deshalb ergänzend die Session-Liste und den Aktivstatus. Ohne
-    gemeinsamen Server oder ohne Kennwort bleibt die Liste aus der
-    Zustandsdatei maßgeblich.
+    Dashboard deshalb ergänzend die Session-Liste und den Aktivstatus. B14:
+    Mit Projektkontext werden diese Abfragen am privaten Lauf-Endpunkt
+    gestellt; sonst bleibt der gemeinsame Server maßgeblich. Ohne Server
+    oder ohne Kennwort bleibt die Liste aus der Zustandsdatei gültig.
     """
     if not main_session:
         return []
-    data = opencode_request("/api/session?limit=100")
+    target_url, password = live_endpoint(name)
+    data = opencode_request(
+        "/api/session?limit=100", url=target_url, password=password)
     items = data.get("data") if isinstance(data, dict) else None
     if not isinstance(items, list):
         return []
-    active_data = opencode_request("/api/session/active")
+    active_data = opencode_request(
+        "/api/session/active", url=target_url, password=password)
     active_map = active_data.get("data") if isinstance(active_data, dict) else None
     active = {
         session_id for session_id, value in (active_map or {}).items()
@@ -323,18 +345,22 @@ def _message_role(message, info):
     return ""
 
 
-def live_subagent_output(session):
+def live_subagent_output(session, name=None):
     """Liest die vollständige Agentenausgabe einer Kind-Session (AP14).
 
-    Bis zu 500 Nachrichten werden angefragt. opencode v2 liefert Nachrichten
-    standardmäßig neueste zuerst; ``order=asc`` erzwingt die chronologische
-    Reihenfolge. Textteile erscheinen unverändert, Reasoning-Teile mit dem
-    Präfix „[Denken] “ und Werkzeugteile je Teil als
-    „[Werkzeug] <tool> — <status>: <detail>“ mit Detail aus ``state.input``
-    (description/command/filePath). Nutzer-Nachrichten werden übersprungen.
+    Bis zu 500 Nachrichten werden angefragt. B14: Mit Projektkontext kommt
+    die Antwort vom privaten Lauf-Endpunkt aus der Serverdatei, sonst vom
+    gemeinsamen Server. opencode v2 liefert Nachrichten standardmäßig
+    neueste zuerst; ``order=asc`` erzwingt die chronologische Reihenfolge.
+    Textteile erscheinen unverändert, Reasoning-Teile mit dem Präfix
+    „[Denken] “ und Werkzeugteile je Teil als „[Werkzeug] <tool> — <status>:
+    <detail>“ mit Detail aus ``state.input`` (description/command/filePath).
+    Nutzer-Nachrichten werden übersprungen.
     """
+    target_url, password = live_endpoint(name)
     data = opencode_request(
-        "/api/session/" + quote(session, safe="") + "/message?limit=500&order=asc")
+        "/api/session/" + quote(session, safe="") + "/message?limit=500&order=asc",
+        url=target_url, password=password)
     messages = data.get("data") if isinstance(data, dict) else None
     if not isinstance(messages, list):
         return ""
@@ -388,7 +414,7 @@ def subagents_of(name):
         # Die Set-Abbildung wurde nie gelesen; der Unterstrich markiert das
         # angedeutete, nicht ausgebaute Feld.
         _known = {entry.get("session") for entry in entries if entry.get("session")}
-        for live in live_subagents(session):
+        for live in live_subagents(session, name):
             existing = next(
                 (entry for entry in entries if entry.get("session") == live["session"]),
                 None,
@@ -955,7 +981,7 @@ class H(BaseHTTPRequestHandler):
                 # Fallback (Sandbox ohne Server, fehlendes Kennwort, Störung,
                 # noch keine Agentennachricht). Der Tail hält den Kartenkörper
                 # im selben Budget wie gespeicherte Ausgaben.
-                output = live_subagent_output(entry.get("session") or "")
+                output = live_subagent_output(entry.get("session") or "", n)
                 if not output.strip():
                     output = str(entry.get("output") or "")
                 output = vibe_runs.output_tail(
