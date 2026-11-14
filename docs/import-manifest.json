@@ -857,6 +857,15 @@
       ],
       "datum": "2026-11-14",
       "grund": "AGENTS.md je Projekt in der Assistenten-Ansicht ansehen und in den freien Teilen bearbeiten: Ansicht/Anlegen/Speichern in bin/vibe mit Digest-Schutz, GET/POST /api/agents_file und eine Karte in der bestehenden Assistenten-Ansicht; der von vibe verwaltete Regelblock bleibt schreibgeschützt. Größe und SHA-256 der geänderten files-Einträge wurden aktualisiert. Zusätzlich wurde das Manifest gegen den überarbeiteten Vorlagenstand (ddd1d4d) abgeglichen: Prüfsummen/Größen von templates/* aktualisiert, gelöschte Dateien (templates/openwrt/*, templates/common/.opencode/agents/test-agent.md) aus dem Manifest entfernt — nach Anweisung des Nutzers im Arbeitspaket F31."
+    },
+    {
+      "arbeitspaket": "F31",
+      "dateien": [
+        "bin/vibe",
+        "bin/vibe-run.sh"
+      ],
+      "datum": "2026-11-14",
+      "grund": "Geerbtes OPENCODE_PASSWORD blockierte den privaten opencode-Server (Defekt-Fix, Anlass Lauf vibe-20261114-192106-c11f59): opencode v2.3 steuert den Basic-Auth des Servers auch über OPENCODE_PASSWORD, und ein gesetzter Wert schlägt OPENCODE_SERVER_PASSWORD. Der Lauf erbte über Dashboard/tmux einen veralteten 16-Zeichen-Wert, während die Gesundheitsprüfung das Kennwort aus der Laufzeitdatei (32 Zeichen) sendete — dauerhaft 401, „nicht gesund“, Laufabbruch. Der Läufer entfernt OPENCODE_PASSWORD jetzt vor der Kennwortbehandlung des privaten Servers und erneut nach dem Einlesen von .vibe/project.env (set -a würde dort definierte Werte erneut exportieren); derselbe Schutz gilt im tmux-Innenbefehl des gemeinsamen Servers. Das Kennwort kommt weiterhin ausschließlich aus der Laufzeitdatei. Beide geänderten Dateien liegen im Bereich bin; Größe und SHA-256 der files-Einträge wurden aktualisiert und dadurch begründet."
     }
   ],
   "files": [
@@ -876,9 +885,9 @@
       "sha256": "7f9982fbc228a565ec72b9c3712745469d4fad4e5adc73ec0dcb229a1f3f3871"
     },
     {
-      "bytes": 56236,
+      "bytes": 56672,
       "path": "bin/vibe-run.sh",
-      "sha256": "731f07db8470e7b65a85fb120364e72a222e24eff01db3030968aa8e7316c01e"
+      "sha256": "226029e02fb2d4abf719ae8d26117264731b39263b9a63ba7e991dde51774cae"
     },
     {
       "bytes": 92839,

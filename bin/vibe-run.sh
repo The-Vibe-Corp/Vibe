@@ -230,6 +230,13 @@ RUN_ID="${VIBE_RUN_ID:-}"
 RUN_SESSION="${VIBE_SESSION:-vibe-$NAME}"
 cd "$P" || exit 1
 [ -f .vibe/project.env ] && set -a && . ./.vibe/project.env && set +a
+# F31: Das Einlesen der Projektdatei exportiert mit set -a alle dort
+# definierten Variablen erneut. Belegt die Projektdatei OPENCODE_PASSWORD
+# (etwa als übernommener Alt-Export), würde ein späterer privater
+# Server-(Neu)start diesen Wert erben — dasselbe Fehlerbild wie bei einem
+# geerbten Wert aus der Startumgebung. Das Kennwort für den opencode-Server
+# kommt ausschließlich aus der Laufzeitdatei.
+unset OPENCODE_PASSWORD
 if [ ! -f "$PACKAGES_PY" ]; then
   echo "ABBRUCH: $PACKAGES_PY fehlt. Installation aktualisieren (Setup --update)." | tee -a "$LOG"
   exit 2
