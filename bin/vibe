@@ -120,67 +120,12 @@ GENERAL_RULES = """<!-- vibe:general-rules -->
 
 ## Unabhängiger Test-Agent (verbindlich)
 
-- Tests werden ausschließlich vom Test-Agenten geschrieben, geändert und gelöscht. Der Test-Agent ist in `.vibe/project.env` als `TESTER` konfiguriert (Vorlage: `test-agent`, Datei `.opencode/agents/test-agent.md`).
+- Tests werden ausschließlich vom Test-Agenten geschrieben, geändert und gelöscht.
 - Coding- und Review-Agent dürfen keine Testdateien anlegen, ändern, löschen oder abschwächen. Sie dürfen die vom Test-Agenten geschriebenen Tests ausführen und deren Ergebnisse melden.
 - Vor der Implementierung fordert der Coding-Agent die Tests beim Test-Agenten an und übergibt Arbeitspaket, Akzeptanzkriterien und den vorgesehenen Testbefehl. Der Test-Agent leitet die Fälle unabhängig aus Arbeitspaket und `SPEC.md` ab, nicht aus dem Implementierungsdiff.
 - Der Test-Agent beschreibt jeden Testfall (Name, Vorbedingung, Aktion, erwartetes Ergebnis), schreibt ihn vor der Implementierung und führt ihn tatsächlich aus. Ein nicht ausgeführter Test ist kein Nachweis.
 - Nur Tests, die nachweislich vom Test-Agenten stammen, zählen für die Abnahme. Vom Coding-Agenten geschriebene oder nachträglich abgeschwächte Tests sind kein Nachweis; der Reviewer weist sie zurück.
-- Fehlt der Test-Agent oder `TESTER` in `.vibe/project.env`, ist das Arbeitspaket blockiert.
 <!-- /vibe:general-rules -->"""
-TESTER_KEY = "TESTER"
-TEST_AGENT_NAME = "test-agent"
-TEST_AGENT_REL = (".opencode", "agents", TEST_AGENT_NAME + ".md")
-TEST_AGENT_TEMPLATE = """---
-description: Unabhängiger Test-Agent: schreibt und pflegt ausschließlich die Tests eines Arbeitspakets
-mode: subagent
-permission:
-  read: allow
-  glob: allow
-  grep: allow
-  list: allow
-  edit: allow
-  bash:
-    "*": allow
-  task: deny
-  webfetch: deny
-  websearch: deny
----
-
-Du bist der unabhängige Test-Agent dieses Projekts. Du schreibst und pflegst
-ausschließlich Tests. Produktionscode, Konfiguration, Prüfskripte und
-bestehende Tests anderer Autoren änderst du nicht.
-
-Deine Unabhängigkeit:
-- Leite Testfälle aus dem Arbeitspaket, `SPEC.md` und `AGENTS.md` ab. Verlasse
-  dich nicht auf den Implementierungsdiff, Vorschläge oder Begründungen des
-  Coding-Agenten.
-- Frage beim Coding-Agenten nur fachliche Schnittstellen und den vorgesehenen
-  Testbefehl ab, nicht die erwartete Lösung.
-- Der Reviewer prüft deine Tests; du prüfst nicht die Implementierung.
-
-Arbeitsablauf:
-1. Lies Arbeitspaket, Akzeptanzkriterien, `SPEC.md`, `AGENTS.md` und
-   `.vibe/project.env`.
-2. Beschreibe die Testfälle: Name, Vorbedingung, Aktion, erwartetes Ergebnis
-   und Fehlerfall. Ordne jeden Testfall einem Akzeptanzkriterium zu.
-3. Schreibe die Tests vor der Implementierung. Sie müssen ohne die Änderung
-   fehlschlagen und dürfen keine Attrappen enthalten, die das Verhalten
-   ersetzen.
-4. Führe die Tests aus und dokumentiere Befehl, Ausgabe und Exit-Code. Ein
-   nicht ausgeführter Test zählt nicht.
-5. Nach der Implementierung prüfst du erneut, dass deine Tests grün sind.
-   Schwäche keine Assertions ab und lösche keine Tests, nur um Grün zu erhalten.
-6. Melde dem Coding- und Review-Agenten: Testdateien, Testnamen, Testbefehl,
-   Rot-/Grün-Status und verbleibende Lücken.
-
-Grenzen:
-- Keine Produktionsdateien, Build-Dateien, Prüfskripte, Geheimnisse oder
-  persönlichen Konfigurationen ändern.
-- Keine bestehenden Tests löschen oder abschwächen; falsche Tests meldest du
-  mit Begründung.
-- Keine kostenpflichtigen Modellaufrufe und keine echten externen Dienste ohne
-  ausdrückliche Freigabe.
-"""
 FRONTMATTER_RE = re.compile(r"---[ \t]*\r?\n(.*?)\r?\n---[ \t]*(?:\r?\n|$)", re.S)
 FRONT_KEY_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_-]*):[ \t]*(.*)$")
 AGENT_FIELDS = ("description", "mode", "model", "temperature", "steps")
@@ -1990,15 +1935,6 @@ def cmd_run(name, agent=None, out=None, keep_changes=False, continue_session=Non
             sys.exit("Allgemeine Regeln in AGENTS.md konnten nicht aktualisiert werden: " + str(error))
         if rules:
             print(col("y", "Allgemeine Regeln in AGENTS.md aktualisiert; bitte prüfen und committen."), file=out)
-    # Der unabhängige Test-Agent ist für jedes Projekt Pflicht. Bestehende
-    # Projekte erhalten ihn vor dem nächsten Lauf; vorhandene Dateien und ein
-    # gesetzter TESTER bleiben unverändert.
-    try:
-        test_agent = ensure_test_agent(p)
-    except (OSError, vibe_storage.StorageError) as error:
-        sys.exit("Test-Agent konnte nicht angelegt werden: " + str(error))
-    if test_agent["agent"] or test_agent["config"]:
-        print(col("y", "Unabhängiger Test-Agent ergänzt; bitte prüfen und committen."), file=out)
     sandbox = sandbox_status(name)
     if sandbox["enabled"]:
         checked = sandbox_check(name)
@@ -2506,42 +2442,12 @@ def agents_file_create(name):
     vibe_storage.write_text(path, content, expected=vibe_storage.MISSING)
     return "created"
 
-def ensure_test_agent(project):
-    """Legt den unabhängigen Test-Agenten an und ergänzt ``TESTER``.
-
-    Vorhandene Agentendateien werden nie überschrieben, auch keine Symlinks.
-    Ein bereits gesetzter ``TESTER`` bleibt erhalten; nur ein fehlender
-    Schlüssel wird ergänzt. Liefert ein Wörterbuch mit ``agent`` und
-    ``config`` als Wahrheitswerten für tatsächlich vorgenommene Änderungen.
-    """
-    result = {"agent": False, "config": False}
-    path = os.path.join(project, *TEST_AGENT_REL)
-    if not os.path.lexists(path):
-        _write_text_atomic(path, TEST_AGENT_TEMPLATE)
-        result["agent"] = True
-    env_path = os.path.join(project, ".vibe", "project.env")
-    if os.path.isfile(env_path) and not os.path.islink(env_path):
-        snapshot = vibe_storage.read_snapshot(env_path)
-        if snapshot.exists and not re.search(r"^\s*" + TESTER_KEY + r"\s*=", snapshot.text, re.M):
-            newline = "\r\n" if "\r\n" in snapshot.text else "\n"
-            text = snapshot.text
-            if text and not text.endswith(("\n", "\r")):
-                text += newline
-            text += TESTER_KEY + "=" + TEST_AGENT_NAME + newline
-            _write_text_atomic(env_path, text, expected=snapshot.digest)
-            result["config"] = True
-    return result
-
 def cmd_init(name, typ=None, out=None):
     out = out or sys.stdout
     p = ppath(name); typ = typ or ptype(name)
     if typ not in types(): typ = "generic"
     created = copy_tree(os.path.join(TPL, "common"), p, name) + copy_tree(os.path.join(TPL, typ), p, name)
     rules = ensure_general_rules(p)
-    try:
-        agent = ensure_test_agent(p)
-    except (OSError, vibe_storage.StorageError) as error:
-        sys.exit("Test-Agent oder TESTER konnten nicht ergänzt werden: " + str(error))
     print(col("g", f"{name}: als '{typ}' vorbereitet.", stream=out) + (" Neu angelegt: " + ", ".join(created) if created else " Nichts zu ergänzen."), file=out)
     if rules:
         action = "aktualisiert" if rules == "updated" else "ergänzt"
@@ -2584,7 +2490,6 @@ def cmd_new(name, typ, tpl=None, out=None):
         os.makedirs(p)
     copy_tree(os.path.join(TPL, "common"), p, name); copy_tree(os.path.join(TPL, typ), p, name)
     ensure_general_rules(p)
-    ensure_test_agent(p)
     rc, output = _init_git(p)
     if rc != 0: print(col("y", "Git-Hinweis: " + output, stream=out), file=out)
     _pm.clear()
@@ -2632,33 +2537,6 @@ def _checkout_name(url, name):
         raise ValueError("Aus der Adresse lässt sich kein Projektname ableiten: "
                          "Namen angeben (" + vibe_github.mask_url(url) + ")")
     return part
-
-
-def _ensure_local_test_agent(project):
-    """Test-Agent aus der lokalen Vorlage; eine mitgelieferte Version weicht.
-
-    Der unabhängige Test-Agent ist ein verwaltetes vibebestandteil (AP02):
-    Nach dem Auschecken gilt die lokale Vorlage, nicht eine im Repository
-    mitgelieferte Datei. Symlinks und Verzeichnisse bleiben unangetastet.
-    Liefert eine Meldung oder den Leerwert, wenn nichts zu berichten ist.
-    """
-    result = ensure_test_agent(project)
-    path = os.path.join(project, *TEST_AGENT_REL)
-    if os.path.islink(path) or not os.path.isfile(path):
-        return "Unabhängiger Test-Agent ergänzt (lokale Vorlage)" if result["agent"] else ""
-    template_path = os.path.join(TPL, "common", *TEST_AGENT_REL)
-    if os.path.isfile(template_path):
-        with open(template_path, encoding="utf-8") as handle:
-            content = handle.read()
-    else:
-        content = TEST_AGENT_TEMPLATE
-    with open(path, encoding="utf-8") as handle:
-        current = handle.read()
-    if current == content:
-        return ""
-    vibe_storage.write_text(path, content)
-    return "Unabhängiger Test-Agent aus der lokalen Vorlage übernommen (mitgelieferte Version ersetzt)"
-
 
 def _adopt_project_env(project, name, typ):
     """Vereinheitlicht .vibe/project.env auf die lokale Vorlage.
@@ -2792,7 +2670,6 @@ def _adopt_checked_out_project(project, name):
     if rules:
         notes.append("Allgemeine Regeln in AGENTS.md "
                      + ("aktualisiert" if rules == "updated" else "ergänzt"))
-    agent_note = _ensure_local_test_agent(project)
     if agent_note:
         notes.append(agent_note)
     try:
