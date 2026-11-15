@@ -348,7 +348,12 @@ def _message_role(message, info):
 def live_subagent_output(session, name=None):
     """Liest die vollständige Agentenausgabe einer Kind-Session (AP14).
 
-    Bis zu 500 Nachrichten werden angefragt. B14: Mit Projektkontext kommt
+    Bis zu 200 Nachrichten werden angefragt. Echtes opencode begrenzt
+    ``limit`` auf höchstens 200; ein größerer Wert endet mit HTTP 400
+    ``InvalidRequestError`` („Expected a value less than or equal to 200“)
+    und die Live-Ausgabe fiele auf den statischen Ersttext zurück (Befund
+    am laufenden System, 2026-11-15: limit=500 → HTTP 400).
+    B14: Mit Projektkontext kommt
     die Antwort vom privaten Lauf-Endpunkt aus der Serverdatei, sonst vom
     gemeinsamen Server. opencode v2 liefert Nachrichten standardmäßig
     neueste zuerst; ``order=asc`` erzwingt die chronologische Reihenfolge.
@@ -359,7 +364,7 @@ def live_subagent_output(session, name=None):
     """
     target_url, password = live_endpoint(name)
     data = opencode_request(
-        "/api/session/" + quote(session, safe="") + "/message?limit=500&order=asc",
+        "/api/session/" + quote(session, safe="") + "/message?limit=200&order=asc",
         url=target_url, password=password)
     messages = data.get("data") if isinstance(data, dict) else None
     if not isinstance(messages, list):

@@ -42,7 +42,8 @@ Geprüfte Schnittstellen (fester Vertrag):
     Detail aus ``state.input`` (description/command/filePath), ohne Detail
     falls leer;
   - Nutzer-Nachrichten werden übersprungen;
-  - bis zu 500 Nachrichten (``GET …/message?limit=500``).
+  - bis zu 200 Nachrichten (``GET …/message?limit=200``); echtes opencode
+    lehnt ein größeres Limit mit HTTP 400 InvalidRequestError ab.
 
 Keine echten Modellaufrufe: Der opencode-Server ist ein lokaler
 Testserver, tmux ist eine aufzeichnende Attrappe (Muster aus
@@ -162,7 +163,7 @@ class _FakeOpenCodeHandler(BaseHTTPRequestHandler):
     kommen aus der von Tests geschriebenen Datei ``messages_path``; alle
     übrigen GET-Pfade antworten mit ``{"ok":true}``. Jede Anfrage (GET und
     POST) wird in ``record_path`` protokolliert, damit ein Test sowohl die
-    angefragte Nachrichtenbegrenzung (limit=500) als auch die tatsächliche
+    angefragte Nachrichtenbegrenzung (limit=200) als auch die tatsächliche
     Zustellung einer Zusatzanweisung beweisen kann. POST nimmt eine
     Anweisung nur mit gültiger Basic-Auth (Benutzer „opencode“, Kennwort aus
     ``credential_path``) an — niemals vorgetäuschter Erfolg.
@@ -889,7 +890,7 @@ class LiveOutputTest(Ap14ApiFixture):
         self.assertIn("ALT-4711 zweite Zeile", text, text)
         self.assertNotIn("GEHEIM-ALT-EINGABE", text, text)
 
-    def test_live_output_requests_up_to_500_messages(self):
+    def test_live_output_requests_at_most_200_messages(self):
         self.write_messages(V2_MESSAGES)
 
         status, data, raw = self.live()
@@ -905,8 +906,12 @@ class LiveOutputTest(Ap14ApiFixture):
         )
         for entry in message_requests:
             self.assertIn(
+                "limit=200", entry["path"],
+                f"Nachrichtenabruf ohne limit=200: {entry['path']}",
+            )
+            self.assertNotIn(
                 "limit=500", entry["path"],
-                f"Nachrichtenabruf ohne limit=500: {entry['path']}",
+                f"Nachrichtenabruf mit unzulässigem Limit: {entry['path']}",
             )
 
 
