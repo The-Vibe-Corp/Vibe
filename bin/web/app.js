@@ -1048,7 +1048,9 @@ async function agents(){AG=await api('/api/agents');const d=AG;
  rows.forEach(a=>{
   const role=el('select',{'data-role':a.name,'aria-label':'Rolle von '+a.name},
    el('option',{value:''},'— keine Rolle —'),el('option',{value:'coder'},'coder'),
-   el('option',{value:'reviewer'},'reviewer'),el('option',{value:'vibe'},'vibe (Standardagent)'));
+   el('option',{value:'reviewer'},'reviewer'),el('option',{value:'vibe'},'vibe (Standardagent)'),
+   el('option',{value:'tester'},'tester'),el('option',{value:'analyst'},'analyst'),
+   el('option',{value:'sonstiges'},'sonstiges'),el('option',{value:'content-creator'},'content-creator'));
   role.value=a.role||'';
   role.addEventListener('change',async()=>{const r=await api('/api/agent',{action:'role',scope:'global',name:a.name,role:role.value});
    toast(r.message);if(r.ok)agents().catch(showErr);else role.value=a.role||''});

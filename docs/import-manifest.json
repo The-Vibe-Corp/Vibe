@@ -895,6 +895,16 @@
       ],
       "datum": "2026-11-14",
       "grund": "Integrationsmerge für die GitHub-Veröffentlichung: der AP12/AP13-Integrationsstand (GitHub-Vorbereitung, Dashboard für lokales Netzwerk) und der master-Stand (F31-Manifestsync) wurden in den aktuellen Stand überführt; beide Änderungssätze bleiben erhalten. AP13s Erweiterungen an bin/vibe-web.py (Zugriffssicherheit) ergänzen die F31-/AP14-Funktionalität unverändert; Größe und SHA-256 des geänderten files-Eintrags wurden aktualisiert und dadurch begründet."
+    },
+    {
+      "arbeitspaket": "AP17",
+      "dateien": [
+        "bin/vibe",
+        "bin/vibe_packages.py",
+        "bin/web/app.js"
+      ],
+      "datum": "2026-11-15",
+      "grund": "Weitere Agentenrollen tester, analyst, sonstiges und content-creator: ROLE_NAMES erweitert, Rollenauswahl der Agentenliste ergänzt und der fehlende TESTER im Preflight analog zum REVIEWER über die Rolle tester aus profiles.json aufgelöst. Größe und SHA-256 der drei geänderten files-Einträge wurden aktualisiert und dadurch begründet; der files-Eintrag von bin/vibe wich bereits am Basiscommit 35233ff von der tatsächlichen Datei ab (Manifest 263019 Bytes/7f9982fbc228…, tatsächlich 257322 Bytes) und wurde durch die AP17-Aktualisierung mitkorrigiert."
     }
   ],
   "files": [
@@ -909,9 +919,9 @@
       "sha256": "e5ae3183efcb76dace1e0bcbde9993be7afe82d93d7877da9ee39846cf45330a"
     },
     {
-      "bytes": 263019,
+      "bytes": 257375,
       "path": "bin/vibe",
-      "sha256": "7f9982fbc228a565ec72b9c3712745469d4fad4e5adc73ec0dcb229a1f3f3871"
+      "sha256": "e31a988bb68720ec38b736d11cda50aa96968e8af80732ec26375950ef68eee4"
     },
     {
       "bytes": 56672,
@@ -969,9 +979,9 @@
       "sha256": "ac3b26da4208a087a09c67c389238c82802d7c1bd50b10d9bcd9492a07050462"
     },
     {
-      "bytes": 60826,
+      "bytes": 61017,
       "path": "bin/vibe_packages.py",
-      "sha256": "d05293613d6955c875c45be57d1cd7aee85b90c66093c401fb70f6af455e3677"
+      "sha256": "1f16efa0008595695973d86ddf11d06124c546fe84c283fb7f6b5fa1368fb25b"
     },
     {
       "bytes": 20789,
@@ -1009,9 +1019,9 @@
       "sha256": "d49b2406f2c9837c63ed3c3dcb265938fe5702e78c5aeb0df07b9f349fd65594"
     },
     {
-      "bytes": 125827,
+      "bytes": 126017,
       "path": "bin/web/app.js",
-      "sha256": "3789866d01ca14f471fd1d13049d4e9c29f09385261dbb28d2667d4743b5de0f"
+      "sha256": "42194a1e40aa550ad5c3bba9189be59727ba9052d951e6cad86602c03fb9aeb9"
     },
     {
       "bytes": 588,
@@ -1195,6 +1205,6 @@
     "setup-vibe.cmd",
     "VERSION"
   ],
-  "stand": "2026-11-14",
+  "stand": "2026-11-15",
   "version": 1
 }

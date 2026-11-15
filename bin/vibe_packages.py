@@ -618,9 +618,11 @@ def preflight_errors(project, agents_dir, tester, reviewer, state_dir=None,
                      allow_dirty=False):
     """Prüft die Startbedingungen und liefert alle Befunde als Liste.
 
-    Eine fehlende REVIEWER-Zuordnung wird aus der Rolle ``reviewer`` in
-    ``<state_dir>/profiles.json`` ergänzt. Ein ausdrücklich gesetzter Reviewer
-    (Argument oder project.env) bleibt vorrangig.
+    Eine fehlende TESTER-Zuordnung wird aus der Rolle ``tester`` in
+    ``<state_dir>/profiles.json`` ergänzt. Ebenso wird eine fehlende
+    REVIEWER-Zuordnung aus der Rolle ``reviewer`` ergänzt. Ein ausdrücklich
+    gesetzter TESTER oder REVIEWER (Argument oder project.env) bleibt
+    vorrangig.
 
     ``allow_dirty`` überspringt ausschließlich den Befund eines unsauberen
     Arbeitsbaums. Alle anderen Startbedingungen bleiben unverändert streng;
@@ -647,6 +649,8 @@ def preflight_errors(project, agents_dir, tester, reviewer, state_dir=None,
     agents_dir = agents_dir or os.path.join(
         os.path.expanduser("~"), ".config", "opencode", "agents"
     )
+    if not tester:
+        tester = agent_for_role("tester", state_dir, project, agents_dir)
     if not reviewer:
         reviewer = agent_for_role("reviewer", state_dir, project, agents_dir)
     if not tester:
