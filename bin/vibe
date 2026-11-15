@@ -2752,7 +2752,7 @@ def agent_dir(scope):
 AGENT_META_FILE = os.path.join(PATHS.state, "agent-meta.json")
 AGENT_META_KEYS = ("agents",)
 AGENT_META_ENTRY_KEYS = ("result",)
-ROLE_NAMES = ("coder", "reviewer", "vibe")
+ROLE_NAMES = ("coder", "reviewer", "vibe", "tester", "analyst", "sonstiges", "content-creator")
 
 
 def _agent_meta_check(data):

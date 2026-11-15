@@ -361,7 +361,21 @@ class Ap03AgentsBrowserTest(unittest.TestCase):
         values = select.locator("option").evaluate_all(
             "nodes => nodes.map(node => node.value)"
         )
-        self.assertEqual(sorted(values), sorted(["", "coder", "reviewer", "vibe"]))
+        self.assertEqual(
+            sorted(values),
+            sorted(
+                [
+                    "",
+                    "coder",
+                    "reviewer",
+                    "vibe",
+                    "tester",
+                    "analyst",
+                    "sonstiges",
+                    "content-creator",
+                ]
+            ),
+        )
 
         select.select_option("coder")
         self.wait_until(
