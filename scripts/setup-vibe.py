@@ -391,41 +391,33 @@ def _prod_config(environ=None):
         raise SetupError(str(error)) from error
 
 
-def default_workspace(info, home, environ=None):
-    """Standard-Workspace: VIBE, dann Konfiguration, sonst ~/VibeCode."""
+def _configured_path(key, environ_key, environ):
     environ = os.environ if environ is None else environ
-    if environ.get("VIBE"):
-        return Path(os.path.expanduser(environ["VIBE"]))
-    configured = _prod_config(environ).get("workspace")
+    if environ.get(environ_key):
+        return Path(os.path.abspath(os.path.expanduser(environ[environ_key])))
+    configured = _prod_config(environ).get(key)
     if isinstance(configured, str) and configured.strip():
         return Path(os.path.abspath(os.path.expanduser(configured.strip())))
-    return Path(home) / "VibeCode"
+    return None
+
+
+def default_workspace(info, home, environ=None):
+    """Standard-Workspace: VIBE, dann Konfiguration, sonst ~/VibeCode."""
+    return _configured_path("workspace", "VIBE", environ) or (Path(home) / "VibeCode")
 
 
 def default_install(workspace, environ=None):
     """Standard-Installationsort: VIBE_INSTALL, Konfiguration, sonst <workspace>/_toolchain."""
-    environ = os.environ if environ is None else environ
-    if environ.get("VIBE_INSTALL"):
-        return Path(os.path.expanduser(environ["VIBE_INSTALL"]))
-    configured = _prod_config(environ).get("install")
-    if isinstance(configured, str) and configured.strip():
-        return Path(os.path.abspath(os.path.expanduser(configured.strip())))
-    return Path(workspace) / "_toolchain"
+    return _configured_path("install", "VIBE_INSTALL", environ) or (Path(workspace) / "_toolchain")
 
 
-def runtime_dir(workspace, environ=None):
-    """Laufzeitordner (Logs, runs.json): VIBE_RUNTIME, Konfiguration, sonst <workspace>/_logs."""
-    environ = os.environ if environ is None else environ
-    if environ.get("VIBE_RUNTIME"):
-        return Path(os.path.expanduser(environ["VIBE_RUNTIME"]))
-    configured = _prod_config(environ).get("runtime")
-    if isinstance(configured, str) and configured.strip():
-        return Path(os.path.abspath(os.path.expanduser(configured.strip())))
-    return Path(workspace) / "_logs"
+def default_logs(workspace, environ=None):
+    """Standard-Logverzeichnis: VIBE_RUNTIME, Konfiguration, sonst <workspace>/_logs."""
+    return _configured_path("runtime", "VIBE_RUNTIME", environ) or (Path(workspace) / "_logs")
 
 
 def validate_install(value, workspace, kit, home):
-    """Wie validate_target; zusätzlich getrennt vom Workspace (Workspace nicht im Installationsort)."""
+    """Wie validate_target; getrennt vom Workspace (Workspace nicht im Installationsort)."""
     install = Path(validate_target(value, kit, home))
     workspace = Path(workspace).resolve(strict=False)
     if install == workspace:
@@ -438,11 +430,24 @@ def validate_install(value, workspace, kit, home):
     return str(install)
 
 
-def save_paths_config(workspace, install, timestamp=None, environ=None):
-    """Trägt Workspace und Installationsort unter profiles.prod der persönlichen Konfiguration ein.
+def validate_logs(value, workspace, install, kit, home):
+    """Wie validate_target; das Logverzeichnis ist weder Workspace noch Installationsort."""
+    logs = Path(validate_target(value, kit, home))
+    for label, other in (("Workspace", workspace), ("Installationsort", install)):
+        other = Path(other).resolve(strict=False)
+        if logs == other:
+            raise SetupError(f"Das Logverzeichnis darf nicht mit dem {label} identisch sein.")
+        if logs in other.parents:
+            raise SetupError(f"Der {label} darf nicht innerhalb des Logverzeichnisses liegen.")
+    return str(logs)
 
-    Andere Einstellungen bleiben erhalten; eine vorhandene Datei wird vorher
-    gesichert. Eine ungültige Datei wird nicht überschrieben.
+
+def save_paths_config(workspace, install, logs, timestamp=None, environ=None):
+    """Trägt Pfade unter profiles.prod der persönlichen Konfiguration ein.
+
+    ``runtime`` wird nur gespeichert, wenn es vom Standard <workspace>/_logs
+    abweicht. Andere Einstellungen bleiben erhalten; eine vorhandene Datei wird
+    vorher gesichert; eine ungültige Datei wird nicht überschrieben.
     """
     environ = os.environ if environ is None else environ
     timestamp = timestamp or time.strftime("%Y%m%d-%H%M%S")
@@ -461,11 +466,16 @@ def save_paths_config(workspace, install, timestamp=None, environ=None):
         prod = {}
     if not isinstance(prod, dict):
         raise SetupError(f"Konfiguration {path}: 'profiles.prod' muss ein Objekt sein; nicht geändert.")
-    if prod.get("workspace") == str(workspace) and prod.get("install") == str(install):
+    wanted = {"workspace": str(workspace), "install": str(install)}
+    if Path(logs) != Path(workspace) / "_logs":
+        wanted["runtime"] = str(logs)
+    updated = dict(prod)
+    updated.update(wanted)
+    if "runtime" not in wanted:
+        updated.pop("runtime", None)
+    if updated == prod:
         return {"path": str(path), "changed": False, "backup": None}
-    prod["workspace"] = str(workspace)
-    prod["install"] = str(install)
-    profiles["prod"] = prod
+    profiles["prod"] = updated
     data["profiles"] = profiles
     backup = None
     if path.is_file():
@@ -1322,7 +1332,7 @@ def verify_installation(vibe_root):
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(
         prog="setup-vibe.py",
-        description="Interaktiver Setup für vibe (Linux, Container und Windows); Workspace und Installationsort sind getrennt.",
+        description="Interaktiver Setup für vibe (Linux, Container und Windows); Workspace, Installationsort und Logverzeichnis sind getrennt.",
     )
     try:
         version_text = (KIT / VERSION_FILE).read_text(encoding="utf-8").strip() or UNKNOWN_VERSION
@@ -1338,6 +1348,8 @@ def parse_args(argv=None):
                         help="Workspace (Projektordner, entspricht VIBE)")
     parser.add_argument("--install", metavar="PFAD",
                         help="Installationsort (Programme, Vorlagen, Einstellungen; Standard: <Workspace>/_toolchain)")
+    parser.add_argument("--logs", metavar="PFAD",
+                        help="Log- und Laufzeitverzeichnis (entspricht VIBE_RUNTIME; Standard: <Workspace>/_logs)")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--reuse", action="store_true", help="bestehende Installation wiederverwenden")
     mode.add_argument("--update", action="store_true", help="Programmdateien aktualisieren (mit Sicherung)")
@@ -1418,13 +1430,23 @@ def main(argv=None, input_fn=None, output=print, which=None, runner=None,
             else:
                 raw_install = str(default_inst)
         target = Path(validate_install(raw_install, workspace, kit, home))
-        logs_dir = runtime_dir(workspace)
+
+        if options.logs:
+            raw_logs = options.logs
+        else:
+            default_log = default_logs(workspace)
+            if interactive:
+                answer = input_fn(f"Logverzeichnis (Logs, Laufzeitzustand) [{default_log}]: ").strip()
+                raw_logs = answer or str(default_log)
+            else:
+                raw_logs = str(default_log)
+        logs_dir = Path(validate_logs(raw_logs, workspace, target, kit, home))
     except SetupError as error:
         output("FEHLER: " + str(error))
         return 1
     output(f"Workspace:        {workspace}")
     output(f"Installationsort: {target}")
-    output(f"Laufzeitdaten:    {logs_dir}")
+    output(f"Logverzeichnis:   {logs_dir}")
 
     if options.backup and not options.rollback:
         output("FEHLER: --backup ist nur zusammen mit --rollback zulässig.")
@@ -1595,8 +1617,8 @@ def main(argv=None, input_fn=None, output=print, which=None, runner=None,
         prefix = privilege_prefix(info, is_root, has_sudo)
         for command in install_commands(info, installable, prefix):
             output("(dry-run) " + " ".join(command))
-        output(f"(dry-run) Konfiguration {vibe_paths.default_config_path()}: profiles.prod.workspace={workspace}, install={target}")
-        output(f"(dry-run) Ziel: {target}; Workspace: {workspace}; Modus: {mode}; es wird nichts geändert.")
+        output(f"(dry-run) Konfiguration {vibe_paths.default_config_path()}: profiles.prod.workspace={workspace}, install={target}, runtime={logs_dir}")
+        output(f"(dry-run) Ziel: {target}; Workspace: {workspace}; Logs: {logs_dir}; Modus: {mode}; es wird nichts geändert.")
         return 0
 
     if mode == "update" and existing["toolchain"] and not options.force:
@@ -1682,16 +1704,21 @@ def main(argv=None, input_fn=None, output=print, which=None, runner=None,
             return 1
 
     try:
-        saved = save_paths_config(workspace, target, timestamp=timestamp)
+        for directory in (workspace, logs_dir):
+            directory.mkdir(parents=True, exist_ok=True)
+        saved = save_paths_config(workspace, target, logs_dir, timestamp=timestamp)
     except (SetupError, OSError) as error:
         output("FEHLER: " + str(error))
-        output(f"Setze stattdessen VIBE={workspace} und VIBE_INSTALL={target} in deiner Shell-Umgebung.")
+        output(
+            f"Setze stattdessen VIBE={workspace}, VIBE_INSTALL={target} und "
+            f"VIBE_RUNTIME={logs_dir} in deiner Shell-Umgebung."
+        )
         return 2
     if saved["changed"]:
-        output(f"Konfiguration: {saved['path']} (profiles.prod.workspace/install)")
+        output(f"Konfiguration: {saved['path']} (profiles.prod: workspace/install/runtime)")
         if saved["backup"]:
             output("Vorherige Konfiguration gesichert: " + saved["backup"])
-    for variable, chosen in (("VIBE", workspace), ("VIBE_INSTALL", target)):
+    for variable, chosen in (("VIBE", workspace), ("VIBE_INSTALL", target), ("VIBE_RUNTIME", logs_dir)):
         value = os.environ.get(variable)
         if value and os.path.abspath(os.path.expanduser(value)) != str(chosen):
             output(f"Hinweis: {variable}={value} überschreibt die Konfiguration; Variable anpassen oder entfernen.")

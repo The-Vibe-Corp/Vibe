@@ -52,8 +52,49 @@ Der Setup erkennt Ubuntu/Debian, Fedora, Bazzite, Container (Docker/Podman/
 Toolbx/Distrobox) und Windows, prüft die Werkzeuge und bietet fehlende
 Pakete nur mit Zustimmung an. Eine bestehende Installation wird standardmäßig
 wiederverwendet; `--update` ersetzt Programmdateien mit Sicherung. Laufzeitdaten
-(`vibe.json`, `models.json`, `profiles.json`, `fritz.json`, `_logs`) und
+(`vibe.json`, `models.json`, `profiles.json`, `fritz.json`, Logverzeichnis) und
 vorhandene `.vibe/project.env` werden nie überschrieben.
+
+### Verzeichnisse: Workspace, Installationsort, Logs
+
+Der Setup fragt drei Orte getrennt ab. Jeder Ort lässt sich einzeln wählen;
+die Vorschläge entsprechen der bisherigen Anordnung unter `~/VibeCode`.
+
+| Rolle | Inhalt | Option | Umgebungsvariable | Standard |
+|---|---|---|---|---|
+| Workspace | Projektordner (Git-Repositories) | `--vibe` oder `--workspace` | `VIBE` | `~/VibeCode` |
+| Installationsort | Programme, Vorlagen, Versionskennung, Sicherungen, persönliche Einstellungen | `--install` | `VIBE_INSTALL` | `<Workspace>/_toolchain` |
+| Logverzeichnis | Logs, `runs.json`, Laufzeitzustand | `--logs` | `VIBE_RUNTIME` | `<Workspace>/_logs` |
+
+Regeln: Installationsort und Workspace dürfen nicht identisch sein, und der
+Workspace darf nicht im Installationsort liegen. Das Logverzeichnis ist weder
+Workspace noch Installationsort und enthält beide nicht. Der Installationsort
+und das Logverzeichnis dürfen innerhalb des Workspace liegen. Der Quellordner
+des Setups ist als Ziel ausgeschlossen. Der Zustand (`vibe.json`,
+`profiles.json`, `fritz.json`, `limits.json`) liegt wie bisher im
+Installationsort.
+
+Der Setup trägt die Auswahl nach erfolgreicher Installation in
+`~/.config/vibe/config.json` unter `profiles.prod` ein (`workspace`, `install`
+und nur bei abweichendem Ort `runtime`). Andere Einstellungen der Datei bleiben
+erhalten; eine vorhandene Datei wird vorher als `config.json.bak-<Zeitstempel>`
+gesichert, eine ungültige Datei wird nicht verändert. Umgebungsvariablen haben
+Vorrang vor der Konfiguration; weicht eine gesetzte Variable ab, weist der
+Setup darauf hin. Das Dev-Profil bleibt davon unberührt. Die Priorität der
+Konfiguration beschreibt `docs/betrieb.md`.
+
+Beispiel mit drei getrennten Orten:
+
+    python3 scripts/setup-vibe.py \
+        --vibe ~/projects \
+        --install ~/.local/share/vibe \
+        --logs ~/.local/state/vibe
+
+Bei einer bestehenden Installation unter `~/VibeCode/_toolchain` genügt es, die
+Vorschläge zu bestätigen; es ändert sich nichts. Wer den Installationsort
+wechselt, muss persönliche Dateien (`vibe.json`, `profiles.json`,
+`fritz.json`) selbst in den neuen Ort kopieren, oder `state` in der
+Konfiguration auf den alten Ort setzen.
 
 Der bisherige Einstieg bleibt kompatibel:
 
@@ -61,9 +102,10 @@ Der bisherige Einstieg bleibt kompatibel:
 
 Nicht-interaktive Varianten und Vorschau:
 
-    python3 scripts/setup-vibe.py --yes --vibe /pfad/zu/VibeCode
-    python3 scripts/setup-vibe.py --dry-run --vibe /pfad/zu/VibeCode
-    python3 scripts/setup-vibe.py --yes --install-deps --vibe /pfad/zu/VibeCode
+    python3 scripts/setup-vibe.py --yes --vibe /pfad/zu/workspace
+    python3 scripts/setup-vibe.py --yes --vibe /pfad/zu/workspace --install /pfad/zu/install --logs /pfad/zu/logs
+    python3 scripts/setup-vibe.py --dry-run --vibe /pfad/zu/workspace
+    python3 scripts/setup-vibe.py --yes --install-deps --vibe /pfad/zu/workspace
 
 ### Harness wählen (opencode oder Pi)
 
@@ -105,37 +147,42 @@ gemeldet und wie `stop` ausgelegt.
 
 ### Vorschau, Update, Rollback und Uninstall
 
-Die Vorschau zeigt Ziel, Version und jede Datei mit Aktion (`+` neu,
+Die Vorschau zeigt Workspace, Installationsort, Logverzeichnis, die geplante
+Konfigurationsänderung, die Version und jede Datei mit Aktion (`+` neu,
 `~` sichern und ersetzen, `=` unverändert) und schreibt nichts:
 
-    python3 scripts/setup-vibe.py --dry-run --vibe /pfad/zu/VibeCode
+    python3 scripts/setup-vibe.py --dry-run --vibe /pfad/zu/workspace
 
 Ein Update sichert ersetzte Programmdateien und geänderte Nutzervorlagen unter
-`_toolchain/backup-<Zeitstempel>/` und schreibt die Versionskennung nach
-`_toolchain/version.json`. Solange ein Agentenlauf oder eine Dashboard-Sitzung
-dieser Installation läuft, verweigert der Setup das Update; `--force` hebt die
+`<Installationsort>/backup-<Zeitstempel>/` und schreibt die Versionskennung nach
+`<Installationsort>/version.json`. Solange ein Agentenlauf (`runs.json` im Logverzeichnis) oder eine
+Dashboard-Sitzung dieser Installation läuft, verweigert der Setup das Update; `--force` hebt die
 Sperre nur nach ausdrücklicher Entscheidung auf:
 
-    python3 scripts/setup-vibe.py --yes --update --vibe /pfad/zu/VibeCode
-    python3 scripts/setup-vibe.py --yes --update --force --vibe /pfad/zu/VibeCode
+    python3 scripts/setup-vibe.py --yes --update --vibe /pfad/zu/workspace
+    python3 scripts/setup-vibe.py --yes --update --force --vibe /pfad/zu/workspace
 
 Ein Rollback stellt die jüngste Sicherung wieder her; neu hinzugekommene
 Dateien werden dabei entfernt:
 
-    python3 scripts/setup-vibe.py --yes --rollback --vibe /pfad/zu/VibeCode
-    python3 scripts/setup-vibe.py --yes --rollback --backup backup-20261102-101500 --vibe /pfad/zu/VibeCode
+    python3 scripts/setup-vibe.py --yes --rollback --vibe /pfad/zu/workspace
+    python3 scripts/setup-vibe.py --yes --rollback --backup backup-20261102-101500 --vibe /pfad/zu/workspace
 
 Uninstall entfernt Programmdateien, Vorlagen und die Versionskennung. Projekte,
 Laufzeitdaten (`vibe.json`, `models.json`, `profiles.json`, `fritz.json`,
-`costs.json`, `_logs`), Sicherungen und persönliche Konfiguration bleiben
+`costs.json`, Logverzeichnis), Sicherungen und persönliche Konfiguration bleiben
 erhalten:
 
-    python3 scripts/setup-vibe.py --yes --uninstall --vibe /pfad/zu/VibeCode
+    python3 scripts/setup-vibe.py --yes --uninstall --vibe /pfad/zu/workspace
 
 Die Quellversion steht in `VERSION`, der zuletzt installierte Stand in
-`_toolchain/version.json` (Version, Commit, Zeitpunkt, Modus, Quelle). Der
+`<Installationsort>/version.json` (Version, Commit, Zeitpunkt, Modus, Quelle). Der
 Setup meldet beides in der Vorschau und nach der Installation; fehlt `VERSION`,
 lautet die Angabe ausdrücklich `unbekannt` statt geraten.
+
+Rollback, Uninstall und Update fragen dieselben drei Orte ab (oder lesen sie aus
+Optionen und Konfiguration); `--install` und `--logs` sind dafür ebenfalls
+gültig. Unter Windows liegt `vibe.cmd` im Installationsort.
 
 Windows kann die vibe-Dateien und die Oberfläche installieren. Agentenläufe
 benötigen `tmux` und `flock` und damit WSL2 oder Docker; der Setup weist darauf
