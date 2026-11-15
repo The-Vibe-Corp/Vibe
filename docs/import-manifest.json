@@ -849,6 +849,14 @@
       "grund": "Subagenten-Ausgabe bleibt statisch (Bug B14): Das Dashboard fragte die Live-Ausgabe der Subagenten weiterhin am gemeinsamen opencode-Server (OC_URL) ab, während der Lauf seit B13 an seinem privaten Loopback-Server arbeitet, der nur über <Laufprotokoll>.server.json bekannt ist. Dadurch lieferte /api/subagent-output nur den einmal erfassten Ersttext und die Karte fror ein. GET /api/subagent-output, /api/subagents und die Live-Erkennung nutzen jetzt steer_endpoint(name): mit Projektkontext gehen Session- und Nachrichtenabfragen authentifiziert an den privaten Laufserver, ohne gültige Serverdatei bleibt der bisherige gemeinsame Server und die erfasste Ausgabe als Rückfall. Kennwörter erscheinen nicht in Antworten oder Protokollen. Eine geänderte Datei liegt im Bereich bin; Größe und SHA-256 des files-Eintrags wurden aktualisiert."
     },
     {
+      "arbeitspaket": "B14",
+      "dateien": [
+        "bin/vibe-web.py"
+      ],
+      "datum": "2026-11-15",
+      "grund": "Subagenten-Ausgabe weiterhin statisch (Bug B14, erneut geöffnet): live_subagent_output fragte /message?limit=500&order=asc ab. Echtes opencode begrenzt limit auf 200 und antwortet bei 500 mit HTTP 400 InvalidRequestError (Expected a value less than or equal to 200); dadurch blieb die Live-Ausgabe leer und die Karte fiel auf den erfassten Ersttext zurück. Am laufenden System verifiziert (limit=500 → HTTP 400, limit=200&order=asc → HTTP 200). Der Nachrichtenabruf verwendet jetzt limit=200; Tests und Fakes validieren das Limit streng wie opencode. Größe und SHA-256 des files-Eintrags wurden aktualisiert."
+    },
+    {
       "arbeitspaket": "F31",
       "dateien": [
         "bin/vibe",
@@ -905,6 +913,13 @@
       ],
       "datum": "2026-11-15",
       "grund": "Weitere Agentenrollen tester, analyst, sonstiges und content-creator: ROLE_NAMES erweitert, Rollenauswahl der Agentenliste ergänzt und der fehlende TESTER im Preflight analog zum REVIEWER über die Rolle tester aus profiles.json aufgelöst. Größe und SHA-256 der drei geänderten files-Einträge wurden aktualisiert und dadurch begründet; der files-Eintrag von bin/vibe wich bereits am Basiscommit 35233ff von der tatsächlichen Datei ab (Manifest 263019 Bytes/7f9982fbc228…, tatsächlich 257322 Bytes) und wurde durch die AP17-Aktualisierung mitkorrigiert."
+      "arbeitspaket": "B14",
+      "dateien": [
+        "bin/vibe",
+        "scripts/setup-vibe.py"
+      ],
+      "datum": "2026-11-15",
+      "grund": "Manifestsync für die Installer-/Läufer-Überarbeitung der Veröffentlichungs-Commits 67d53bc, f609a3c und 35233ff (Größe und SHA-256 neu berechnet): die Änderungen an bin/vibe und scripts/setup-vibe.py wurden dort ohne Manifestaktualisierung integriert; die Abweichungen ließen scripts/verify.sh quick und die Paketprüfung (check-import-manifest.py) unabhängig von B14 rot bleiben. Kein Inhaltswechsel an den beiden Dateien."
     }
   ],
   "files": [
@@ -922,6 +937,9 @@
       "bytes": 257375,
       "path": "bin/vibe",
       "sha256": "e31a988bb68720ec38b736d11cda50aa96968e8af80732ec26375950ef68eee4"
+      "bytes": 257322,
+      "path": "bin/vibe",
+      "sha256": "6f68a8f27778e8afbb919e6d72b6727b6e436f552d16bb2e5b6a5cddef0f3a0e"
     },
     {
       "bytes": 56672,
@@ -929,9 +947,9 @@
       "sha256": "226029e02fb2d4abf719ae8d26117264731b39263b9a63ba7e991dde51774cae"
     },
     {
-      "bytes": 94247,
+      "bytes": 94565,
       "path": "bin/vibe-web.py",
-      "sha256": "4d739f583bfaed9b4343968cc2d3f33f40839d966d1476107b124abeed3dac87"
+      "sha256": "024f53100bb178822ea724d0806b3a634f523e7d91844fa58849aa281f76e5b0"
     },
     {
       "bytes": 5189,
@@ -1179,9 +1197,9 @@
       "sha256": "51c075f3a684b9f7d101e708eb77f6a3d4b96c40d990ffee51d6b170a180b8ac"
     },
     {
-      "bytes": 64185,
+      "bytes": 70550,
       "path": "scripts/setup-vibe.py",
-      "sha256": "8665fb5b607071f672ef269185a1982e4cea674cfbe6158a25fbbf71e4062c3d"
+      "sha256": "def52b1e2c595a4780e2ae07d55dc07def95e4a1e41df9aeda3aede933f47dcd"
     },
     {
       "bytes": 377,

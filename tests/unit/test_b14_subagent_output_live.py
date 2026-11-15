@@ -105,6 +105,23 @@ Testfälle mit Zuordnung:
     Aktion: GET /api/subagent-output mit vollständigem Setup.
     Erwartung: Weder das private noch das globale Kennwort erscheint in
     einer API-Antwort oder in einem Protokoll.
+14. test_real_opencode_limit_cap_still_serves_live_output            [B14 erneut]
+    Vorbedingung: Der Fake-Laufserver validiert ``limit`` streng wie
+    echtes opencode (limit>200 → HTTP 400 InvalidRequestError); er kennt
+    LIVE-A-4711.
+    Aktion: GET /api/subagent-output.
+    Erwartung: ok:true mit LIVE-A-4711, nicht STATISCH-4711.
+    Fehlerfall (Ausgangsstand): limit=500 → HTTP 400 → statischer Text.
+15. test_message_request_uses_the_accepted_limit                      [B14 erneut]
+    Aktion: GET /api/subagent-output.
+    Erwartung: Der Nachrichtenabruf lautet exakt
+    ``/api/session/<session>/message?limit=200&order=asc``; kein
+    ``limit=500``.
+    Fehlerfall (Ausgangsstand): ``limit=500``.
+
+Der Fake-Laufserver dieser Suite lehnt ``/message`` mit ``limit>200`` wie
+das echte opencode mit HTTP 400 ab. Damit sind die Live-Tests nicht mehr
+blind gegenüber der Servergrenze.
 
 Der gemeinsame opencode-Port ist in dieser Suite ein lauschender,
 aufzeichnender Attrappenserver ohne verwertbare Daten: So lässt sich
@@ -125,6 +142,7 @@ import time
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 
 REPO = Path(__file__).resolve().parents[2]
 WEB = REPO / "bin" / "vibe-web.py"
@@ -235,6 +253,24 @@ class _RunServerHandler(BaseHTTPRequestHandler):
             self._send_json(200, self.context.get("active") or {"data": {}})
             return
         if "/message" in self.path:
+            # Echtes opencode begrenzt ``limit`` auf 200: limit>200 endet mit
+            # HTTP 400 InvalidRequestError. Die Attrappe bildet das nach,
+            # damit Tests nicht versehentlich ein unzulässiges Limit
+            # akzeptieren.
+            limit_text = parse_qs(urlparse(self.path).query).get(
+                "limit", [""])[0]
+            try:
+                limit = int(limit_text)
+            except ValueError:
+                limit = None
+            if limit is not None and limit > 200:
+                self._send_json(400, {
+                    "_tag": "InvalidRequestError",
+                    "message": ("Expected a value less than or equal to 200\n"
+                                '  at ["limit"]'),
+                    "kind": "Query",
+                })
+                return
             payload = self.context.get("messages") or {"data": []}
             if "order=asc" not in self.path:
                 messages = payload.get("data") if isinstance(payload, dict) else []
@@ -742,6 +778,77 @@ class LiveOutputViaRunEndpointTest(B14ApiFixture):
             [], leaked,
             "Trotz gültiger Serverdatei wurde der gemeinsame Server "
             f"angefragt: {leaked}")
+
+
+class RealOpencodeLimitTest(B14ApiFixture):
+    """B14 erneut: echtes opencode akzeptiert nur ``limit`` ≤ 200.
+
+    Der Fake-Laufserver validiert das Limit wie der echte Server (HTTP 400
+    InvalidRequestError bei limit>200). Damit belegt diese Klasse, dass die
+    Live-Ausgabe nicht mehr blind am Limit scheitert und der ausgehende
+    Nachrichtenabruf das akzeptierte Limit verwendet.
+    """
+
+    def _live_setup(self):
+        self.register_run()
+        self.write_state()
+        self.start_run_server()
+        self.set_messages({"data": [
+            {"info": {"role": "assistant"},
+             "parts": [{"type": "text", "text": LIVE_TEXT_A}]},
+        ]})
+        self.write_server_file()
+
+    def test_real_opencode_limit_cap_still_serves_live_output(self):
+        """Limit>200 liefert HTTP 400; das Dashboard muss trotzdem LIVE liefern.
+
+        Vorbedingung: aktiver Lauf mit gültiger Serverdatei; der
+        Laufserver verhält sich wie echtes opencode und lehnt
+        ``/message?limit=500`` mit HTTP 400 InvalidRequestError ab
+        (limit≤200 wird beantwortet); die Attrappe kennt LIVE-A-4711.
+        Aktion: GET /api/subagent-output.
+        Erwartung: ok:true mit LIVE-A-4711, nicht der statische erfasste
+        Text.
+        Fehlerfall (Ausgangsstand): HTTP 400 → leere Live-Ausgabe → die
+        Karte zeigt STATISCH-4711.
+        """
+        self._live_setup()
+
+        status, data, raw = self.get_output()
+
+        self.assertEqual(200, status, raw)
+        self.assertTrue(self.ok_flag(data), raw)
+        text = str((data or {}).get("text") or "")
+        self.assertIn("LIVE-A-4711", text,
+                      f"Live-Ausgabe fehlt trotz Limit-Grenze: {text!r}")
+        self.assertNotIn(
+            "STATISCH-4711", text,
+            "Der statische erfasste Text wurde statt der LIVE-Ausgabe "
+            f"geliefert: {text!r}")
+
+    def test_message_request_uses_the_accepted_limit(self):
+        """Der Nachrichtenabruf verwendet exakt ``limit=200&order=asc``.
+
+        Vorbedingung: wie oben; der Laufserver zeichnet die Anfrage auf.
+        Aktion: GET /api/subagent-output.
+        Erwartung: Genau eine Anfrage an
+        ``/api/session/<session>/message?limit=200&order=asc``; kein
+        ``limit=500``.
+        Fehlerfall (Ausgangsstand): ``limit=500`` → HTTP 400.
+        """
+        self._live_setup()
+
+        status, data, raw = self.get_output()
+        self.assertEqual(200, status, raw)
+
+        expected = ("/api/session/%s/message?limit=200&order=asc"
+                    % CHILD_SESSION)
+        paths = [entry["path"] for entry in self.message_requests()]
+        self.assertIn(expected, paths,
+                      f"Akzeptiertes Nachrichtenlimit fehlt: {paths}")
+        self.assertNotIn(
+            "/api/session/%s/message?limit=500&order=asc" % CHILD_SESSION,
+            paths, f"Unzulässiges Limit angefragt: {paths}")
 
 
 class WithoutServerFileTest(B14ApiFixture):

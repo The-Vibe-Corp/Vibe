@@ -36,6 +36,10 @@ Testfälle:
    Zeitpunkt; der erste LIVE-Text bleibt sichtbar, bis er sich ändert.
    Fehlerfall (Ausgangsstand): Der statische Ersttext bleibt stehen.
 
+Der Fake-Laufserver lehnt ``/message`` mit ``limit>200`` wie echtes
+opencode mit HTTP 400 ``InvalidRequestError`` ab; die Karte muss auch mit
+dieser strengen Grenze den LIVE-Text zeigen.
+
 Keine echten Modellaufrufe, keine produktive Installation.
 """
 import json
@@ -49,6 +53,7 @@ import time
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 
 _BROWSERS = os.environ.get("PLAYWRIGHT_BROWSERS_PATH")
 if not _BROWSERS:
@@ -126,6 +131,22 @@ class _RunServerHandler(BaseHTTPRequestHandler):
             self._send_json(200, {"data": {}})
             return
         if "/message" in self.path:
+            # Echtes opencode akzeptiert nur limit≤200; größere Werte
+            # enden mit HTTP 400 InvalidRequestError.
+            limit_text = parse_qs(urlparse(self.path).query).get(
+                "limit", [""])[0]
+            try:
+                limit = int(limit_text)
+            except ValueError:
+                limit = None
+            if limit is not None and limit > 200:
+                self._send_json(400, {
+                    "_tag": "InvalidRequestError",
+                    "message": ("Expected a value less than or equal to 200\n"
+                                '  at ["limit"]'),
+                    "kind": "Query",
+                })
+                return
             try:
                 payload = json.loads(
                     Path(self.context["messages_path"]).read_text(
