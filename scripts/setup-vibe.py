@@ -1238,35 +1238,11 @@ def install_launcher(vibe_root, home, info, timestamp=None):
     return {"path": str(launcher), "backed_up": backed_up, "created": True}
 
 
-def ensure_project_test_agent(project, toolchain):
-    """Legt den unabhängigen Test-Agenten in einem bestehenden Projekt an.
-
-    Eine vorhandene Agentendatei wird nie überschrieben, auch kein Symlink.
-    Die Projektkonfiguration bleibt unverändert; ``TESTER`` ergänzt der
-    Projektstart (``vibe init``/``vibe run``). Liefert ``created`` und
-    ``warning``.
-    """
-    project, toolchain = Path(project), Path(toolchain)
-    result = {"created": False, "warning": ""}
-    agent = project / ".opencode" / "agents" / "test-agent.md"
-    if agent.exists() or agent.is_symlink():
-        return result
-    source = toolchain / "templates" / "common" / ".opencode" / "agents" / "test-agent.md"
-    if not source.is_file():
-        result["warning"] = (
-            f"Test-Agent-Vorlage fehlt; {project.name} wurde nicht ergänzt."
-        )
-        return result
-    _copy_file(source, agent)
-    result["created"] = True
-    return result
-
-
 def register_projects(workspace, install):
     """Ergänzt fehlende .vibe/project.env im Workspace; Vorlagen kommen aus dem Installationsort."""
     vibe_root = Path(workspace)
     toolchain = Path(install)
-    result = {"projects": [], "created": [], "test_agent_created": [], "warnings": []}
+    result = {"projects": [], "created": [], "warnings": []}
     if not vibe_root.is_dir():
         return result
     for child in sorted(vibe_root.iterdir(), key=lambda item: item.name.lower()):
@@ -1275,11 +1251,6 @@ def register_projects(workspace, install):
         if not (child / ".git").exists():
             continue
         entry = {"project": child.name, "type": None, "created": False}
-        test_agent = ensure_project_test_agent(child, toolchain)
-        if test_agent["created"]:
-            result["test_agent_created"].append(child.name)
-        if test_agent["warning"]:
-            result["warnings"].append(test_agent["warning"])
         project_env = child / ".vibe" / "project.env"
         if project_env.exists():
             result["projects"].append(entry)
