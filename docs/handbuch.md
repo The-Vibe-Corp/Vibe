@@ -33,7 +33,17 @@ Ausführungsschnittstelle.
 ```
 vibe ui            # Dashboard starten und URL mit Token ausgeben
 vibe ui stop       # ausschließlich das Dashboard beenden
+vibe ui password   # Anmeldekennwort anzeigen (gesetzt / nicht gesetzt)
+vibe ui password set      # Kennwort unsichtbar eingeben und bestätigen
+vibe ui password clear    # Kennwort entfernen
 ```
+
+Das Kennwort wird unsichtbar eingegeben und nie als Befehlszeilenargument
+entgegen genommen; für Skripte liest `vibe ui password set --stdin` genau eine
+Zeile von der Standardeingabe. Es ist mindestens 8 Zeichen lang und liegt nur
+als gesalzener Hash in `ui.json`. Ein laufendes Dashboard übernimmt die
+Änderung bei der nächsten Anmeldung, ohne neu gestartet zu werden. Details:
+`docs/features/AP18.md`.
 
 Läuft das Dashboard bereits, öffnet der Starter nur den Browser. Ein fremder
 Dienst auf dem Dashboard-Port wird erkannt und nicht übernommen. Details:
@@ -42,6 +52,11 @@ Dienst auf dem Dashboard-Port wird erkannt und nicht übernommen. Details:
 Nach dem Start zeigt die Konsole eine URL der Form
 `http://127.0.0.1:8787/#t=<token>`. Das Token wird nicht in Logs geschrieben.
 Ein direkter Aufruf ohne Token wird abgewiesen.
+
+Statt mit dem Token kann die Anmeldung auch über das Anmeldekennwort
+erfolgen, sobald es gesetzt ist (`vibe ui password set`, siehe oben). Beide
+Wege stellen dieselbe Sitzung; das Kennwort lässt sich jederzeit ändern oder
+entfernen.
 
 ## Orientierung in der Oberfläche
 

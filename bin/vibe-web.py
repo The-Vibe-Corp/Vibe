@@ -1131,6 +1131,12 @@ class H(BaseHTTPRequestHandler):
         # ist der einzige Weg, eine zu erhalten. Misserfolg bleibt
         # strukturiert, ohne Token oder Kennwort zu verraten.
         if u.path == "/api/login":
+            # AP18: Kennwort-/Allowlist-Änderungen von außen (CLI `vibe ui
+            # password`) wirken ohne Neustart; die Anmeldung liest ui.json
+            # neu. Bleibt die Datei dabei defekt, bleibt der zuletzt
+            # geladene Stand wirksam (reload_ui_data meldet, ersetzt aber
+            # nichts still durch Defaults).
+            reload_ui_data()
             try:
                 body = self._read_json()
             except RequestError as e:

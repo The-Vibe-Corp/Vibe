@@ -913,6 +913,8 @@
       ],
       "datum": "2026-11-15",
       "grund": "Weitere Agentenrollen tester, analyst, sonstiges und content-creator: ROLE_NAMES erweitert, Rollenauswahl der Agentenliste ergänzt und der fehlende TESTER im Preflight analog zum REVIEWER über die Rolle tester aus profiles.json aufgelöst. Größe und SHA-256 der drei geänderten files-Einträge wurden aktualisiert und dadurch begründet; der files-Eintrag von bin/vibe wich bereits am Basiscommit 35233ff von der tatsächlichen Datei ab (Manifest 263019 Bytes/7f9982fbc228…, tatsächlich 257322 Bytes) und wurde durch die AP17-Aktualisierung mitkorrigiert."
+    },
+    {
       "arbeitspaket": "B14",
       "dateien": [
         "bin/vibe",
@@ -920,6 +922,15 @@
       ],
       "datum": "2026-11-15",
       "grund": "Manifestsync für die Installer-/Läufer-Überarbeitung der Veröffentlichungs-Commits 67d53bc, f609a3c und 35233ff (Größe und SHA-256 neu berechnet): die Änderungen an bin/vibe und scripts/setup-vibe.py wurden dort ohne Manifestaktualisierung integriert; die Abweichungen ließen scripts/verify.sh quick und die Paketprüfung (check-import-manifest.py) unabhängig von B14 rot bleiben. Kein Inhaltswechsel an den beiden Dateien."
+    },
+    {
+      "arbeitspaket": "AP18",
+      "dateien": [
+        "bin/vibe",
+        "bin/vibe-web.py"
+      ],
+      "datum": "2026-11-17",
+      "grund": "Kennwort der WebUI über die CLI: `vibe ui password [set [--stdin]|clear|status]` verwaltet das Anmeldekennwort des Dashboards über dieselbe Fachlogik wie die Karte „Zugriffssicherheit“ (vibe_ui_config; Eingabe unsichtbar, nie als Kommandozeilenargument). vibe-web.py lädt ui.json vor der Kennwortprüfung der Anmeldung neu, damit ein per CLI gesetztes Kennwort im laufenden Betrieb ohne Neustart wirkt. Größe und SHA-256 der beiden geänderten files-Einträge wurden aktualisiert und dadurch begründet; vorbestehende Manifest-Defekte wurden mitkorrigiert (fehlendes Komma zwischen den AP17-/B14-Einträgen, veraltete Doppelfassung im files-Eintrag von bin/vibe), da sie jede Prüfung (JSONDecodeError) blockierten. Reviewrunde 1 (Minor) umgesetzt: --stdin ist nur mit der Unteraktion set gültig (vibe ui password --stdin/clear --stdin/status --stdin brechen mit der Usage-Meldung ab, ohne ui.json zu lesen oder zu ändern); der files-Eintrag von bin/vibe wurde dafür erneut aktualisiert."
     }
   ],
   "files": [
@@ -934,12 +945,9 @@
       "sha256": "e5ae3183efcb76dace1e0bcbde9993be7afe82d93d7877da9ee39846cf45330a"
     },
     {
-      "bytes": 257375,
+      "bytes": 261362,
       "path": "bin/vibe",
-      "sha256": "e31a988bb68720ec38b736d11cda50aa96968e8af80732ec26375950ef68eee4"
-      "bytes": 257322,
-      "path": "bin/vibe",
-      "sha256": "6f68a8f27778e8afbb919e6d72b6727b6e436f552d16bb2e5b6a5cddef0f3a0e"
+      "sha256": "41a1c478f589a71a97ab468292752d9651b9f65e33766f58cacbdc809ef17a99"
     },
     {
       "bytes": 56672,
@@ -947,9 +955,9 @@
       "sha256": "226029e02fb2d4abf719ae8d26117264731b39263b9a63ba7e991dde51774cae"
     },
     {
-      "bytes": 94565,
+      "bytes": 94933,
       "path": "bin/vibe-web.py",
-      "sha256": "024f53100bb178822ea724d0806b3a634f523e7d91844fa58849aa281f76e5b0"
+      "sha256": "3b9aa18f38d6b6460e4b51358d18a74f45db69ecd379112f414b1bb43d49c268"
     },
     {
       "bytes": 5189,
@@ -1223,6 +1231,6 @@
     "setup-vibe.cmd",
     "VERSION"
   ],
-  "stand": "2026-11-15",
+  "stand": "2026-11-17",
   "version": 1
 }

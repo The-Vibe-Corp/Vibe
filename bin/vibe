@@ -37,6 +37,7 @@ Aufruf:  vibe                 interaktives Menü
          vibe emu start|stop  Emulator (Android)
          vibe paths [prod|dev] [--json]   Profil, Pfade und Ports anzeigen
          vibe ui [start|stop] [--port <n>] [--bind <ip>]   Dashboard starten/beenden; Standard Loopback, Netz-Bindung nur als IP-Literal (Allowlist/Kennwort in der Karte „Zugriffssicherheit")
+         vibe ui password [set [--stdin]|clear|status]  Anmeldekennwort des Dashboards setzen (Eingabe unsichtbar, nie als Argument), entfernen oder anzeigen
          vibe server [start|stop|status]  gemeinsamer opencode-Server mit Weboberfläche
          vibe harness [status|list|use <name>|setup [name]]  Harness (opencode/Pi) wählen und einrichten
          vibe gates [status] [<schranke> <wert>]  Schranken des Läufers zeigen oder setzen (global oder mit --project <p> je Projekt)
@@ -5032,17 +5033,92 @@ def cmd_harness(action="status", name=None, out=None):
 def ui_session():
     return profile_session("vibe-ui")
 
+UI_PASSWORD_USAGE = "Aufruf: vibe ui password [set [--stdin]|clear|status]"
+
+def _ui_password(sub, use_stdin=False):
+    """Setzt, entfernt oder zeigt das Dashboard-Anmeldekennwort (AP18).
+
+    Das Kennwort läuft nie über Kommandozeilenargumente (Prozessliste und
+    Shell-History): interaktiv liest getpass ohne Echo und verlangt eine
+    Wiederholung, für Skripte liest ``--stdin`` genau eine Zeile. Die
+    Fachlogik (Mindestlänge 8, atomares Schreiben, nur der Hash landet in
+    ui.json) bleibt in vibe_ui_config — CLI und Web nutzen dieselbe
+    Prüfung. Ein laufendes Dashboard liest ui.json vor jeder Kennwort-
+    Anmeldung neu, daher ist kein Neustart nötig.
+    """
+    if vibe_ui_config is None:
+        sys.exit("vibe_ui_config.py fehlt in der Installation; "
+                 "bitte Setup --update ausführen.")
+    if sub == "status":
+        try:
+            data = vibe_ui_config.load(PATHS.state)
+        except (vibe_ui_config.ConfigError, vibe_paths.ConfigError) as error:
+            sys.exit("Dashboard-Konfiguration: " + str(error))
+        if data.get("password_hash"):
+            print("Dashboard-Kennwort: gesetzt")
+        else:
+            print("Dashboard-Kennwort: nicht gesetzt (Anmeldung nur mit Instanz-Token)")
+        return
+    if sub == "clear":
+        try:
+            removed = vibe_ui_config.clear_password(PATHS.state)
+        except (vibe_ui_config.ConfigError, vibe_paths.ConfigError) as error:
+            sys.exit("Dashboard-Kennwort nicht entfernt: " + str(error))
+        print("Dashboard-Kennwort entfernt." if removed is not None
+              else "Kein Dashboard-Kennwort gesetzt; nichts geändert.")
+        return
+    # sub == "set": Kennwort beschaffen, nie als Argument annehmen.
+    if use_stdin:
+        password = sys.stdin.readline().rstrip("\r\n")
+        if not password:
+            sys.exit("Kein Kennwort von der Standardeingabe gelesen; nichts geändert.")
+    else:
+        if not sys.stdin.isatty():
+            sys.exit("Kennwort-Eingabe erfordert ein Terminal; "
+                     "für Skripte: vibe ui password set --stdin.")
+        import getpass
+        password = getpass.getpass(
+            "Dashboard-Kennwort (Eingabe bleibt unsichtbar): ")
+        if password != getpass.getpass("Dashboard-Kennwort (Wiederholung): "):
+            sys.exit("Die Eingaben stimmen nicht überein; nichts geändert.")
+    try:
+        vibe_ui_config.set_password(PATHS.state, password)
+    except (vibe_ui_config.ConfigError, vibe_paths.ConfigError) as error:
+        sys.exit("Dashboard-Kennwort nicht gesetzt: " + str(error))
+    print("Dashboard-Kennwort gesetzt; Anmeldung im Dashboard mit diesem "
+          "Kennwort (Eintrag „Zugriffssicherheit“ zeigt den Zustand).")
+
 def _ui_arguments(arguments):
     """Zerlegt ``vibe ui``-Argumente in Aktion und Port-/Bind-Übergaben.
 
-    ``start``/``stop`` werden nur an Position 0 als Aktion gelesen, damit
-    sie nicht mit Werten verwechselt werden; ``--port``/``--bind`` sind
-    anywhere erlaubt. Rückgabe (aktion, overrides-dict).
+    ``start``/``stop``/``password`` werden nur an Position 0 als Aktion
+    gelesen, damit sie nicht mit Werten verwechselt werden;
+    ``--port``/``--bind`` sind anywhere erlaubt. Rückgabe (aktion,
+    overrides-dict); bei ``password`` liegt die Unteraktion in
+    ``password_sub`` und die ``--stdin``-Marke in ``password_stdin``.
     """
     args = list(arguments or [])
     action = None
-    if args and args[0] in ("start", "stop"):
+    if args and args[0] in ("start", "stop", "password"):
         action = args.pop(0)
+    if action == "password":
+        sub = None
+        use_stdin = False
+        while args:
+            value = args.pop(0)
+            if value in ("set", "clear", "status") and sub is None:
+                sub = value
+            elif value == "--stdin":
+                use_stdin = True
+            else:
+                sys.exit(UI_PASSWORD_USAGE)
+        if use_stdin and sub != "set":
+            # Review AP18 Runde 1 (Minor): --stdin gehört ausdrücklich zu
+            # set; sonst würde ein Skript eine Statusausgabe erhalten und
+            # sein Kennwort nie lesen.
+            sys.exit(UI_PASSWORD_USAGE)
+        return "password", {"password_sub": sub or "status",
+                            "password_stdin": use_stdin}
     overrides = {}
     while args:
         flag = args[0]
@@ -5056,7 +5132,8 @@ def _ui_arguments(arguments):
     return action or "start", overrides
 
 def cmd_ui(arguments=None):
-    """Startet oder beendet das Dashboard (AP13: Port/Bind je Aufruf).
+    """Startet oder beendet das Dashboard (AP13: Port/Bind je Aufruf) oder
+    verwaltet das Anmeldekennwort (AP18: ``vibe ui password …``).
 
     Priorität: Defaults < ui.json (Zustandsordner) < Umgebung < CLI-Übergabe
     — „CLI überschreibt immer Konfiguration". CLI-Werte werden vorab
@@ -5069,6 +5146,9 @@ def cmd_ui(arguments=None):
     if isinstance(arguments, str):
         arguments = [arguments]
     action, overrides = _ui_arguments(arguments)
+    if action == "password":
+        _ui_password(overrides["password_sub"], overrides["password_stdin"])
+        return
     try:
         for key in ("ui_port", "ui_bind"):
             if key in overrides:
