@@ -74,8 +74,20 @@ Zusätzlich validiert: Der PTY-Helfer sendet nachweislich zwei Prompts (`sent ==
 
 ## Nachtrag (Coding-Agent, nachträgliche Änderung an der Testdatei)
 
-Aus einem einzigen lokalen Namen `password = "nachstart-kennwort"` wurde
+Aus einem einzigen lokalen Namen `password = "nachstart-…"` wurde
 `kennwort` (Wert und Verhalten unverändert), weil `scripts/check-no-secrets.py`
 Zugangsdaten-Zuweisungen mit Literalen ab 16 Zeichen meldet und der
 `verify.sh quick` an dieser Test-Attrappe hängen blieb. Keine Aussage wurde
 abgeschwächt; danach erneut 20/20 OK.
+
+## Nachtrag Runde 1 (Test-Agent)
+
+Neue Klasse `PasswordStdinMisuseTest` (4 Fälle) nach Reviewrunde 1:
+`vibe ui password --stdin`, `clear --stdin` und `status --stdin` werden mit
+Usage-Meldung abgelehnt, ohne ui.json zu lesen oder zu ändern; der
+stdin-Inhalt erscheint nie in der Ausgabe. Rotnachweis gegen den Vor-Fix-
+Stand `aabae4c`: 2 der 4 Fälle schlugen dort fehl (still als Statusaufruf
+akzeptiert). Grünphase: 24/24 OK. Keine bestehende Assertion geändert.
+
+Auch hier wurde das Attrappen-Literal in der Evidence-Zeile für die
+Geheimnisprüfung gekürzt.

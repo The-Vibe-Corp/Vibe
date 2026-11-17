@@ -930,7 +930,7 @@
         "bin/vibe-web.py"
       ],
       "datum": "2026-11-17",
-      "grund": "Kennwort der WebUI über die CLI: `vibe ui password [set [--stdin]|clear|status]` verwaltet das Anmeldekennwort des Dashboards über dieselbe Fachlogik wie die Karte „Zugriffssicherheit“ (vibe_ui_config; Eingabe unsichtbar, nie als Kommandozeilenargument). vibe-web.py lädt ui.json vor der Kennwortprüfung der Anmeldung neu, damit ein per CLI gesetztes Kennwort im laufenden Betrieb ohne Neustart wirkt. Größe und SHA-256 der beiden geänderten files-Einträge wurden aktualisiert und dadurch begründet; vorbestehende Manifest-Defekte wurden mitkorrigiert (fehlendes Komma zwischen den AP17-/B14-Einträgen, veraltete Doppelfassung im files-Eintrag von bin/vibe), da sie jede Prüfung (JSONDecodeError) blockierten."
+      "grund": "Kennwort der WebUI über die CLI: `vibe ui password [set [--stdin]|clear|status]` verwaltet das Anmeldekennwort des Dashboards über dieselbe Fachlogik wie die Karte „Zugriffssicherheit“ (vibe_ui_config; Eingabe unsichtbar, nie als Kommandozeilenargument). vibe-web.py lädt ui.json vor der Kennwortprüfung der Anmeldung neu, damit ein per CLI gesetztes Kennwort im laufenden Betrieb ohne Neustart wirkt. Größe und SHA-256 der beiden geänderten files-Einträge wurden aktualisiert und dadurch begründet; vorbestehende Manifest-Defekte wurden mitkorrigiert (fehlendes Komma zwischen den AP17-/B14-Einträgen, veraltete Doppelfassung im files-Eintrag von bin/vibe), da sie jede Prüfung (JSONDecodeError) blockierten. Reviewrunde 1 (Minor) umgesetzt: --stdin ist nur mit der Unteraktion set gültig (vibe ui password --stdin/clear --stdin/status --stdin brechen mit der Usage-Meldung ab, ohne ui.json zu lesen oder zu ändern); der files-Eintrag von bin/vibe wurde dafür erneut aktualisiert."
     }
   ],
   "files": [
@@ -945,9 +945,9 @@
       "sha256": "e5ae3183efcb76dace1e0bcbde9993be7afe82d93d7877da9ee39846cf45330a"
     },
     {
-      "bytes": 261184,
+      "bytes": 261362,
       "path": "bin/vibe",
-      "sha256": "3601b1d9a26f02a42dd513103b400d1cce172d8f86c9cc3e7b4640217f0a105e"
+      "sha256": "41a1c478f589a71a97ab468292752d9651b9f65e33766f58cacbdc809ef17a99"
     },
     {
       "bytes": 56672,

@@ -5112,7 +5112,10 @@ def _ui_arguments(arguments):
                 use_stdin = True
             else:
                 sys.exit(UI_PASSWORD_USAGE)
-        if use_stdin and sub not in (None, "set"):
+        if use_stdin and sub != "set":
+            # Review AP18 Runde 1 (Minor): --stdin gehört ausdrücklich zu
+            # set; sonst würde ein Skript eine Statusausgabe erhalten und
+            # sein Kennwort nie lesen.
             sys.exit(UI_PASSWORD_USAGE)
         return "password", {"password_sub": sub or "status",
                             "password_stdin": use_stdin}

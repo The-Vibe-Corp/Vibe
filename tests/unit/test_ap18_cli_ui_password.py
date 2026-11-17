@@ -92,6 +92,25 @@ Testfälle
 ``PasswordUnknownActionTest.test_unknown_action_is_rejected_without_change``
     Vorbedingung: ``ui.json`` mit Hash. Aktion: ``password frobnicate``.
     Erwartung: Exit ≠ 0, Usage-Meldung, Datei bytegleich.
+``PasswordStdinMisuseTest.test_stdin_without_subaction_is_rejected_without_file``
+    Vorbedingung: kein ``ui.json``. Aktion: ``vibe ui password --stdin`` mit
+    einem Kennwort auf stdin. Erwartung: Exit ≠ 0, Usage-Meldung
+    „Aufruf: vibe ui password [set [--stdin]|clear|status]", weiterhin keine
+    Datei; der stdin-Inhalt erscheint nicht in der Ausgabe. (Review AP18
+    Runde 1, Minor: ``--stdin`` ist nur zu ``set`` gültig.)
+``PasswordStdinMisuseTest.test_stdin_without_subaction_keeps_existing_file``
+    Vorbedingung: ``ui.json`` mit gesetztem Hash. Aktion:
+    ``vibe ui password --stdin`` mit einem Kennwort auf stdin. Erwartung:
+    Exit ≠ 0, Usage-Meldung, Datei bytegleich, Hash bleibt gültig, kein
+    stdin-Inhalt in der Ausgabe.
+``PasswordStdinMisuseTest.test_clear_stdin_is_rejected_and_keeps_the_hash``
+    Vorbedingung: ``ui.json`` mit gesetztem Hash. Aktion:
+    ``vibe ui password clear --stdin``. Erwartung: Exit ≠ 0, Usage-Meldung,
+    Datei bytegleich, Hash bleibt gültig, kein stdin-Inhalt in der Ausgabe.
+``PasswordStdinMisuseTest.test_status_stdin_is_rejected_without_change``
+    Vorbedingung: ``ui.json`` mit gesetztem Hash. Aktion:
+    ``vibe ui password status --stdin``. Erwartung: Exit ≠ 0, Usage-Meldung,
+    keine Statusausgabe, Datei bytegleich.
 ``UiExistingBehaviourTest.test_ui_start_with_port_and_bind_still_starts``
     Vorbedingung: isolierte Pfade, tmux-Attrappe, freier Port. Aktion:
     ``vibe ui start --port N --bind 127.0.0.1``. Erwartung: tmux-Attrappe
@@ -682,6 +701,114 @@ class PasswordUnknownActionTest(CliSandbox):
             self.ui_json_bytes(),
             before,
             "Unbekannte Unteraktion veränderte ui.json",
+        )
+
+
+class PasswordStdinMisuseTest(CliSandbox):
+    """``--stdin`` ist nur zusammen mit ``set`` gültig (Review Runde 1)."""
+
+    USAGE = "Aufruf: vibe ui password [set [--stdin]|clear|status]"
+
+    def assert_usage_rejected(self, completed, eingabe):
+        combined = completed.stdout + completed.stderr
+        self.assertNotEqual(
+            completed.returncode,
+            0,
+            "Aufruf mit --stdin ohne set wurde akzeptiert: " + combined,
+        )
+        self.assertIn(
+            self.USAGE,
+            combined,
+            "Erwartete Usage-Meldung fehlt: " + combined,
+        )
+        self.assertNotIn(
+            eingabe,
+            combined,
+            "stdin-Inhalt erschien in der Ausgabe: " + combined,
+        )
+
+    def test_stdin_without_subaction_is_rejected_without_file(self):
+        eingabe = "stdin-nie-gesetzt"
+
+        completed = self.run_cli(
+            "password", "--stdin", input_text=eingabe + "\n"
+        )
+
+        self.assert_usage_rejected(completed, eingabe)
+        self.assertFalse(
+            self.ui_json.exists(),
+            "Abgelehnter Aufruf legte trotzdem eine ui.json an",
+        )
+
+    def test_stdin_without_subaction_keeps_existing_file(self):
+        ui_config = load_ui_config()
+        ui_config.set_password(str(self.state), "abcdefgh")
+        before = self.ui_json_bytes()
+        eingabe = "stdin-nie-gesetzt"
+
+        completed = self.run_cli(
+            "password", "--stdin", input_text=eingabe + "\n"
+        )
+
+        self.assert_usage_rejected(completed, eingabe)
+        self.assertEqual(
+            self.ui_json_bytes(),
+            before,
+            "Abgelehnter Aufruf veränderte ui.json",
+        )
+        self.assertTrue(
+            ui_config.verify_password(
+                ui_config.load(str(self.state)), "abcdefgh"
+            ),
+            "Bestehender Hash ging beim abgelehnten Aufruf verloren",
+        )
+
+    def test_clear_stdin_is_rejected_and_keeps_the_hash(self):
+        ui_config = load_ui_config()
+        ui_config.set_password(str(self.state), "abcdefgh")
+        before = self.ui_json_bytes()
+        eingabe = "stdin-nie-gesetzt"
+
+        completed = self.run_cli(
+            "password", "clear", "--stdin", input_text=eingabe + "\n"
+        )
+
+        self.assert_usage_rejected(completed, eingabe)
+        self.assertEqual(
+            self.ui_json_bytes(),
+            before,
+            "Abgelehntes clear --stdin veränderte ui.json",
+        )
+        self.assertTrue(
+            ui_config.verify_password(
+                ui_config.load(str(self.state)), "abcdefgh"
+            ),
+            "Kennwort-Hash wurde trotz abgelehntem clear --stdin entfernt",
+        )
+
+    def test_status_stdin_is_rejected_without_change(self):
+        ui_config = load_ui_config()
+        ui_config.set_password(str(self.state), "abcdefgh")
+        before = self.ui_json_bytes()
+
+        completed = self.run_cli("password", "status", "--stdin")
+
+        combined = completed.stdout + completed.stderr
+        self.assertNotEqual(
+            completed.returncode,
+            0,
+            "status --stdin wurde akzeptiert: " + combined,
+        )
+        self.assertIn(self.USAGE, combined, combined)
+        self.assertNotIn(
+            "Dashboard-Kennwort: gesetzt",
+            combined,
+            "status --stdin lieferte trotz Ablehnung eine Statusausgabe",
+        )
+        self.assertEqual(
+            self.ui_json_bytes(),
+            before,
+            "Abgelehntes status --stdin veränderte ui.json",
         )
 
 
