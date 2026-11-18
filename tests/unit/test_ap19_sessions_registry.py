@@ -622,36 +622,44 @@ class OverviewRobustnessTest(RegistryFixture):
     übersprungen (nicht mit 0 geführt)."""
 
     def test_overview_skips_entries_with_corrupt_last_seen(self):
-        """Vorbedingung: ``sessions.json`` von Hand mit zwei Einträgen — einer
-        mit intakten Zahlenfeldern, einer mit ``"last_seen": "abc"`` und
-        intakter Session-Kennung.
-        Aktion: ``session_overview`` aufrufen.
-        Erwartung: kein ``ValueError``; der beschädigte Eintrag wird
-        übersprungen, der intakte erscheint normal.
-        Fehlerfall: die gesamte Auflistung bricht wegen eines einzelnen
-        defekten Feldes ab.
+        """Vorbedingung: ``sessions.json`` von Hand mit je einem intakten und
+        einem defekten Eintrag; die defekte Variante ist nichtnumerischer Text
+        (``"last_seen": "abc"``) bzw. ein boolescher Wert
+        (``"last_seen": true``), der wie ``observe``/``_read`` als unlesbar
+        gilt.
+        Aktion: ``session_overview`` je defekter Variante aufrufen.
+        Erwartung: kein ``ValueError``; der defekte Eintrag wird übersprungen
+        (nicht als 1 geführt), der intakte erscheint normal.
+        Fehlerfall: die Auflistung bricht ab oder ein boolescher Wert wird als
+        Zeit 1 missverstanden und mitgelistet.
         """
         intact = {
             "session": "ses_ok", "project": self.project(), "name": "proj",
             "run_id": "", "agent": "vibe-agent", "harness": "opencode",
             "first_seen": 10, "last_seen": 100,
         }
-        corrupt = {
-            "session": "ses_bad", "project": self.project(), "name": "proj",
-            "run_id": "", "agent": "vibe-agent", "harness": "opencode",
-            "first_seen": 10, "last_seen": "abc",
+        corrupt_variants = {
+            "text": "abc",
+            "bool": True,
         }
-        self.runtime.mkdir(parents=True, exist_ok=True)
-        self.sessions_file().write_text(
-            json.dumps({"limit": 5, "sessions": [corrupt, intact]}),
-            encoding="utf-8")
+        for label, value in corrupt_variants.items():
+            corrupt = {
+                "session": "ses_bad", "project": self.project(),
+                "name": "proj", "run_id": "", "agent": "vibe-agent",
+                "harness": "opencode", "first_seen": 10, "last_seen": value,
+            }
+            with self.subTest(last_seen=label):
+                self.runtime.mkdir(parents=True, exist_ok=True)
+                self.sessions_file().write_text(
+                    json.dumps({"limit": 5, "sessions": [corrupt, intact]}),
+                    encoding="utf-8")
 
-        entries = self.overview(limit=100)
+                entries = self.overview(limit=100)
 
-        self.assertEqual(
-            ["ses_ok"], [item["session"] for item in entries],
-            "Der beschädigte Eintrag wurde nicht übersprungen oder die "
-            "Auflistung brach ab: " + repr(entries))
+                self.assertEqual(
+                    ["ses_ok"], [item["session"] for item in entries],
+                    "Der beschädigte Eintrag wurde nicht übersprungen oder "
+                    "die Auflistung brach ab: " + repr(entries))
 
 
 if __name__ == "__main__":

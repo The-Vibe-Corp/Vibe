@@ -496,3 +496,26 @@ Beide Hygiene-Fälle wurden einzeln ausgeführt:
 
 Die übrigen vorbestehenden Befunde dieser Suiten sind nicht Teil dieses
 Nachtrags.
+
+### Minor aus Review Runde 2 — boolescher `last_seen`
+
+Der Robustheitsfall `OverviewRobustnessTest.test_overview_skips_entries_with_corrupt_last_seen`
+wurde um einen booleschen Unterfall erweitert (kein neuer Testfall, damit
+bleibt die Summe bei 77): Neben `"last_seen": "abc"` wird nun auch
+`"last_seen": true` geprüft. Beide Varianten müssen wie jeder unlesbare
+Zeitwert übersprungen werden; ein boolescher Wert darf nicht als Zeit 1
+missverstanden und mitgelistet werden. Die bestehende Erwartung
+(`["ses_ok"]`) blieb unverändert und wurde nicht abgeschwächt.
+
+Rotphase am Stand `b5ee2cd`:
+`python3 -m unittest tests.unit.test_ap19_sessions_registry.OverviewRobustnessTest.test_overview_skips_entries_with_corrupt_last_seen -v`
+→ **Ran 1 test, FAILED (failures=1)**, Exit 1; nur der Unterfall
+`last_seen='bool'` scheitert:
+`AssertionError: Lists differ: ['ses_ok'] != ['ses_ok', 'ses_bad']` — der
+boolesche Eintrag erscheint mit `'last_seen': 1`. Der Text-Unterfall
+(`"abc"`) ist bereits grün.
+
+Die Korrektur (`bool` in `_epoch_number` als unlesbar behandeln) ist Teil der
+Implementierungsrunde, nicht dieses Test-Nachtrags; nach ihr muss derselbe
+Fall grün laufen. Es wurden keine Produktionsdateien verändert und keine
+Commits erstellt.

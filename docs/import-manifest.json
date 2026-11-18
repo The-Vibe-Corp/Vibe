@@ -957,7 +957,7 @@
         "bin/web/app.js"
       ],
       "datum": "2026-11-18",
-      "grund": "Session Management: sessions.json-Register mit Zustandsableitung aus dem Laufregister, Erfassung der Hauptsession im Protokollfilter (Preflight ohne, Paketlauf mit Lauf-ID), CLI vibe sessions (list/limit/resume), Web-API GET/POST /api/sessions und Sessions-Karte im Dashboard; Fortsetzen weiterhin über die unveränderte AP14-Mechanik. Reviewkorrekturen: Projektauflösung über die Projektkarte im Projektfilter, Kürzung des Registers nach last_seen statt Einfügereihenfolge, überspringen beschädigter Zeitwerte in der Übersicht und korrekter Erfolgs-Toast bei abgelehntem Fortsetzen. Lint-Kommentarnachziehung: pylint protected-access an der AP19-Session-Fortsetzungsstelle in bin/vibe-web.py."
+      "grund": "Session Management: sessions.json-Register mit Zustandsableitung aus dem Laufregister, Erfassung der Hauptsession im Protokollfilter (Preflight ohne, Paketlauf mit Lauf-ID), CLI vibe sessions (list/limit/resume), Web-API GET/POST /api/sessions und Sessions-Karte im Dashboard; Fortsetzen weiterhin über die unveränderte AP14-Mechanik. Reviewkorrekturen: Projektauflösung über die Projektkarte im Projektfilter, Kürzung des Registers nach last_seen statt Einfügereihenfolge, überspringen beschädigter Zeitwerte in der Übersicht und korrekter Erfolgs-Toast bei abgelehntem Fortsetzen. Lint-Kommentarnachziehung: pylint protected-access an der AP19-Session-Fortsetzungsstelle in bin/vibe-web.py. Boolesche Zeitwerte gelten als unlesbar."
     }
   ],
   "files": [
@@ -1047,9 +1047,9 @@
       "sha256": "9a4bb9a2a182977c276b04676b133d918c97ed4f0a957c4d6f0e72835848b5cd"
     },
     {
-      "bytes": 54711,
+      "bytes": 54960,
       "path": "bin/vibe_runs.py",
-      "sha256": "ed7ab6569b25f5988de4ed5b5dc0262a60be21e45e489e5993fd2a4e28740966"
+      "sha256": "d086689d67fc4fbe7023b06bf0da60a4ac001899c457a7f8bae3d7d267f25aae"
     },
     {
       "bytes": 28218,

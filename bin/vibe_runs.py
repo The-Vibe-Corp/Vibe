@@ -920,7 +920,14 @@ class RunRegistry:
 
 
 def _epoch_number(value):
-    """Epochenwert defensiv als int; unlesbare Angaben ergeben None."""
+    """Epochenwert defensiv als int; unlesbare Angaben ergeben None.
+
+    Bool ist hier unlesbar: ``int(True)`` wäre 1 und würde einen beschädigten
+    Zeitwert als gültige Sekunde ausgeben. ``observe`` und ``_read`` verwerfen
+    bool aus demselben Grund.
+    """
+    if isinstance(value, bool):
+        return None
     try:
         return int(value)
     except (TypeError, ValueError, OverflowError):
