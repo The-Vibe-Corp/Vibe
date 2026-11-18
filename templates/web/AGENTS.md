@@ -23,6 +23,12 @@
 - Fremde oder vorbestehende Änderungen nicht löschen, überschreiben, stashen oder mitcommitten.
 - Keine Historie umschreiben, keine Force-Pushes und kein Push ohne ausdrückliche Freigabe.
 
+## Effizienz der Prüfungen (verbindlich)
+
+- Für betroffene Testmodule gilt während der Bearbeitung: gezielter unittest-Aufruf und die Paketprüfung VERIFY_PACKAGE, nicht die gesamte Suite.
+- Die vollständige Prüfung (VERIFY_FULL) läuft pro Arbeitspaket genau einmal vor der Abnahme; erneut nur nach echten Änderungen an Code oder Tests seit dem letzten Lauf.
+- Der Nachweisumfang der Abnahme wird nicht abgeschwächt: Die Stufen sparen Wiederholungen unveränderter Volläufe, nicht den Nachweis selbst.
+
 ## Leitlinien für Coding-Agenten (verbindlich)
 
 - KISS ist verpflichtend: Wähle die einfachste Lösung, die das Problem vollständig löst. Keine spekulativen Abstraktionen, Funktionen oder Optimierungen auf Vorrat und keine Komplexität ohne belegten Bedarf.

@@ -931,6 +931,21 @@
       ],
       "datum": "2026-11-17",
       "grund": "Kennwort der WebUI über die CLI: `vibe ui password [set [--stdin]|clear|status]` verwaltet das Anmeldekennwort des Dashboards über dieselbe Fachlogik wie die Karte „Zugriffssicherheit“ (vibe_ui_config; Eingabe unsichtbar, nie als Kommandozeilenargument). vibe-web.py lädt ui.json vor der Kennwortprüfung der Anmeldung neu, damit ein per CLI gesetztes Kennwort im laufenden Betrieb ohne Neustart wirkt. Größe und SHA-256 der beiden geänderten files-Einträge wurden aktualisiert und dadurch begründet; vorbestehende Manifest-Defekte wurden mitkorrigiert (fehlendes Komma zwischen den AP17-/B14-Einträgen, veraltete Doppelfassung im files-Eintrag von bin/vibe), da sie jede Prüfung (JSONDecodeError) blockierten. Reviewrunde 1 (Minor) umgesetzt: --stdin ist nur mit der Unteraktion set gültig (vibe ui password --stdin/clear --stdin/status --stdin brechen mit der Usage-Meldung ab, ohne ui.json zu lesen oder zu ändern); der files-Eintrag von bin/vibe wurde dafür erneut aktualisiert."
+    },
+    {
+      "arbeitspaket": "F31",
+      "dateien": [
+        "bin/vibe",
+        "bin/vibe-web.py",
+        "bin/web/app.js",
+        "templates/android/AGENTS.md",
+        "templates/docker/AGENTS.md",
+        "templates/generic/AGENTS.md",
+        "templates/rebuild/AGENTS.md",
+        "templates/web/AGENTS.md"
+      ],
+      "datum": "2026-11-17",
+      "grund": "Test-Suite-Effizienz (F31): Prüfmodus package in scripts/verify.py samt VERIFY_MODES-Menü in bin/vibe und API/Button in bin/vibe-web.py und bin/web/app.js; gestufte Prüfregeln in den Projektvorlagen (templates/*/AGENTS.md) und neuer paralleler Testläufer scripts/run-tests-parallel.py. Größe und SHA-256 der acht geänderten files-Einträge wurden aktualisiert und dadurch begründet. scripts/verify.py und scripts/run-tests-parallel.py liegen außerhalb der Manifest-Bereiche (unter scripts/ führt das Manifest nur setup-vibe.py), daher werden sie nicht als files-Einträge geführt; dies folgt dem vorhandenen Muster. Sprachangleichung: Der verwaltete Regelabschnitt „Effizienz der Prüfungen (verbindlich)“ trägt ab nun exakt die Marker der neuen Vorlagen-/Regeltests („betroffene Testmodule“, kleingeschriebenes „während der Bearbeitung“) in bin/vibe und allen fünf templates/*/AGENTS.md; die Aussage bleibt inhaltlich und verbindlich unverändert. Größe und SHA-256 dieser sechs Einträge wurden erneut aktualisiert und dadurch begründet. Bereinigung der Vorlagen: In templates/android/AGENTS.md und templates/docker/AGENTS.md stand ein zweites, unpaariges <!-- vibe:general-rules --> ohne schließenden Marker vor dem echten verwalteten Block (docker zusätzlich mit veraltetem android-dev-Text); erst nach dem Entfernen dieses veralteten Duplikat-Blocks liegt der verwaltete Block genau einmal als Markenpaar vor, damit ensure_general_rules ihn korrekt aktualisiert — bei belassenem Zustand wäre alles bis zum ersten schließenden Marker als verwalteter Block behandelt worden und ein Regel-Update hätte die projektspezifischen Kopfzeilen verschluckt."
     }
   ],
   "files": [
@@ -945,9 +960,9 @@
       "sha256": "e5ae3183efcb76dace1e0bcbde9993be7afe82d93d7877da9ee39846cf45330a"
     },
     {
-      "bytes": 261362,
+      "bytes": 262056,
       "path": "bin/vibe",
-      "sha256": "41a1c478f589a71a97ab468292752d9651b9f65e33766f58cacbdc809ef17a99"
+      "sha256": "931ff67e311c444e2b80ea138c54cca1b4f3b31a3c67271a46259f0932e65fc3"
     },
     {
       "bytes": 56672,
@@ -955,9 +970,9 @@
       "sha256": "226029e02fb2d4abf719ae8d26117264731b39263b9a63ba7e991dde51774cae"
     },
     {
-      "bytes": 94933,
+      "bytes": 95184,
       "path": "bin/vibe-web.py",
-      "sha256": "3b9aa18f38d6b6460e4b51358d18a74f45db69ecd379112f414b1bb43d49c268"
+      "sha256": "c5fd904d79d41daadae18c964306ac9a62559a319cd25ac790158855e3ef8235"
     },
     {
       "bytes": 5189,
@@ -1045,9 +1060,9 @@
       "sha256": "d49b2406f2c9837c63ed3c3dcb265938fe5702e78c5aeb0df07b9f349fd65594"
     },
     {
-      "bytes": 126017,
+      "bytes": 126168,
       "path": "bin/web/app.js",
-      "sha256": "42194a1e40aa550ad5c3bba9189be59727ba9052d951e6cad86602c03fb9aeb9"
+      "sha256": "d443e363e7b549ddb8f7e6ab24e4518be9c5bd9fd24001691bcd829be99f8169"
     },
     {
       "bytes": 588,
@@ -1070,9 +1085,9 @@
       "sha256": "b45ed5e95c842e67dbecf165bb6096ec9c513cc431ede7442cd4bbad9ed0e806"
     },
     {
-      "bytes": 4728,
+      "bytes": 4749,
       "path": "templates/android/AGENTS.md",
-      "sha256": "0ae7668589a3732c602e1a3be758f71c1e43044d82d9de2326b64774696cb83a"
+      "sha256": "8543171b03983b55d7b13c72a0df045dd1ef5969601deed15e431e1560de284f"
     },
     {
       "bytes": 522,
@@ -1110,9 +1125,9 @@
       "sha256": "722919bbc27d3ec4bf3ccadaff4be18ff5cf6c9cb1e4666e6f080c467e48f1b7"
     },
     {
-      "bytes": 4342,
+      "bytes": 4363,
       "path": "templates/docker/AGENTS.md",
-      "sha256": "4885999cd63a0825542aac9307871fc6a6cc3122dcbaf59d1031adbfcfc33cbd"
+      "sha256": "5a66cf698eb1ffd5c60e4caaaecc525b0f763db60fbd79c7cfc56ba3942e2288"
     },
     {
       "bytes": 354,
@@ -1120,9 +1135,9 @@
       "sha256": "63c0ebab49aa870ae5e5f731890cce3f0ce2859364152c00b64cb89e3e6d9ae5"
     },
     {
-      "bytes": 3536,
+      "bytes": 4048,
       "path": "templates/generic/AGENTS.md",
-      "sha256": "8e56e300248ad0cee72e482e2417dd81be7e7904afda216349ddf8e75c8c547b"
+      "sha256": "0263bd39567f58d26c9e3c7acc241cc5f7ab46275546bc2ee1c631f53378cf3b"
     },
     {
       "bytes": 670,
@@ -1175,9 +1190,9 @@
       "sha256": "db8026a75dd2f358a771be9e2fc2fd4ba88c6180f026078552c3259e5156360f"
     },
     {
-      "bytes": 7181,
+      "bytes": 7693,
       "path": "templates/rebuild/AGENTS.md",
-      "sha256": "fd8431c1c74fc198790b4127cf34de47396d5546d4dc235120e0bf51930e7524"
+      "sha256": "e5e1f6daa8fa57d2ff8483c6efd5fce42c4763ee58fe8027e39df751652bb95e"
     },
     {
       "bytes": 1675,
@@ -1200,9 +1215,9 @@
       "sha256": "54b4975a06030dc63f299d0a0e2ef8249857b08d62e3e35e61bacb2205c8e1c4"
     },
     {
-      "bytes": 3901,
+      "bytes": 4413,
       "path": "templates/web/AGENTS.md",
-      "sha256": "51c075f3a684b9f7d101e708eb77f6a3d4b96c40d990ffee51d6b170a180b8ac"
+      "sha256": "e66a74e066237f76e64bd186dd34480b0baeee8d2230091a29c7db3218013f39"
     },
     {
       "bytes": 70550,

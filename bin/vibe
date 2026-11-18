@@ -17,7 +17,7 @@ Aufruf:  vibe                 interaktives Menü
          vibe answer <id> [--option <nummer>|--text "..."] [--by <quelle>]  Rückfrage beantworten
          vibe autonomous [on|off|status] [--project <p>]  autonomer Modus (Agent entscheidet selbst)
          vibe fritz [status|on|off|reconnect]  FRITZ!Box-Reconnect (Automatik/manuel)
-         vibe verify <p> [quick|full]
+         vibe verify <p> [quick|package|full]
          vibe feedback <p>    neuen Punkt in FEEDBACK.md eintragen
          vibe new <name> <typ> [vorlage]   Typen: vibe types
          vibe clone <url> [name] [--branch <b>]  Projekt aus Git/GitHub auschecken und mit den lokalen Einstellungen einrichten
@@ -111,6 +111,12 @@ GENERAL_RULES = """<!-- vibe:general-rules -->
 - Keine temporären Dateien, Protokolle, Build-Artefakte, Arbeitskopien oder Screenshots ohne Nachweiswert committen.
 - Fremde oder vorbestehende Änderungen nicht löschen, überschreiben, stashen oder mitcommitten.
 - Keine Historie umschreiben, keine Force-Pushes und kein Push ohne ausdrückliche Freigabe.
+
+## Effizienz der Prüfungen (verbindlich)
+
+- Für betroffene Testmodule gilt während der Bearbeitung: gezielter unittest-Aufruf und die Paketprüfung VERIFY_PACKAGE, nicht die gesamte Suite.
+- Die vollständige Prüfung (VERIFY_FULL) läuft pro Arbeitspaket genau einmal vor der Abnahme; erneut nur nach echten Änderungen an Code oder Tests seit dem letzten Lauf.
+- Der Nachweisumfang der Abnahme wird nicht abgeschwächt: Die Stufen sparen Wiederholungen unveränderter Volläufe, nicht den Nachweis selbst.
 
 ## Leitlinien für Coding-Agenten (verbindlich)
 
@@ -2190,7 +2196,7 @@ def cmd_runs(action="list"):
 class VerifyConfigError(ValueError):
     """Prüfkonfiguration ist unvollständig oder nur ein Platzhalter."""
 
-VERIFY_MODES = ("quick", "full")
+VERIFY_MODES = ("quick", "package", "full")
 
 def verify_command(name, mode="quick"):
     """Prüfbefehl des Projekts; ``None``, wenn keiner konfiguriert ist.
@@ -2203,9 +2209,10 @@ def verify_command(name, mode="quick"):
     still mit Android-Abnahmedateien geprüft.
     """
     if mode not in VERIFY_MODES:
-        raise VerifyConfigError(f"Unbekannter Prüfmodus: {mode} (erlaubt: quick, full)")
+        raise VerifyConfigError(
+            f"Unbekannter Prüfmodus: {mode} (erlaubt: " + ", ".join(VERIFY_MODES) + ")")
     p = ppath(name); env = penv(name)
-    key = "VERIFY_FULL" if mode == "full" else "VERIFY_QUICK"
+    key = {"quick": "VERIFY_QUICK", "package": "VERIFY_PACKAGE", "full": "VERIFY_FULL"}[mode]
     cmd = (env.get(key) or "").strip()
     if "TODO" in cmd:
         raise VerifyConfigError(
@@ -2225,7 +2232,7 @@ def verify_argv(name, mode="quick"):
 
 def cmd_verify(name, mode="quick"):
     if mode not in VERIFY_MODES:
-        print(f"Unbekannter Prüfmodus: {mode} (erlaubt: quick, full)", file=sys.stderr)
+        print(f"Unbekannter Prüfmodus: {mode} (erlaubt: " + ", ".join(VERIFY_MODES) + ")", file=sys.stderr)
         sys.exit(2)
     try:
         argv = verify_argv(name, mode)
@@ -2233,7 +2240,7 @@ def cmd_verify(name, mode="quick"):
         print(str(error), file=sys.stderr)
         sys.exit(3)
     if not argv:
-        print(f"Keine Prüfbefehle in {ppath(name)}/.vibe/project.env (VERIFY_QUICK / VERIFY_FULL).", file=sys.stderr)
+        print(f"Keine Prüfbefehle in {ppath(name)}/.vibe/project.env (VERIFY_QUICK / VERIFY_PACKAGE / VERIFY_FULL).", file=sys.stderr)
         sys.exit(3)
     # Der Exitcode der Prüfung ist das Ergebnis; er wird nicht geglättet.
     sys.exit(subprocess.run(argv, cwd=ppath(name)).returncode)
@@ -5503,17 +5510,17 @@ def pick(title, options):
 
 def project_menu(name):
     acts = ["Status / offene Arbeitspakete", "Agentenlauf starten", "An Lauf anhängen (tmux)", "Log verfolgen", "Lauf beenden",
-            "Prüfung quick", "Prüfung full", "Feedback eintragen", "Git-Verlauf (10)", "opencode-Sitzungen", "Lauf mit anderem Agent", "Für vibe vorbereiten (init)", "Neuer Projekt-Agent", "MCP-Tools des Projekts", "Schreibrechte (Verzeichnisse)", "Pause nach aktuellem Arbeitspaket (an/aus)", "Sandbox (Shell und Build-Tools)"]
+            "Prüfung quick", "Prüfung package", "Prüfung full", "Feedback eintragen", "Git-Verlauf (10)", "opencode-Sitzungen", "Lauf mit anderem Agent", "Für vibe vorbereiten (init)", "Neuer Projekt-Agent", "MCP-Tools des Projekts", "Schreibrechte (Verzeichnisse)", "Pause nach aktuellem Arbeitspaket (an/aus)", "Sandbox (Shell und Build-Tools)"]
     while True:
         i = pick(f"Projekt {name} ({ptype(name)})", acts)
         if i is None: return
         p = ppath(name)
         {0: lambda: cmd_status(name), 1: lambda: cmd_run(name), 2: lambda: cmd_attach(name), 3: lambda: cmd_logs(name), 4: lambda: cmd_stop(name),
-         5: lambda: cmd_verify(name, "quick"), 6: lambda: cmd_verify(name, "full"), 7: lambda: cmd_feedback(name),
-         8: lambda: print(git_run(p, "log", "--oneline", "-10")[1]), 9: lambda: print(run(["opencode", "session", "list"], cwd=p)[1]),
-         10: lambda: cmd_run(name, input("Agent-Name: ").strip() or None), 11: lambda: cmd_init(name),
-         12: lambda: cmd_agent("new", input("Agent-Name: ").strip(), name), 13: lambda: cmd_mcp("list", None, name), 14: lambda: cmd_rights(name),
-         15: lambda: cmd_pause(name, "off" if pause_after_active(name) else "on"), 16: lambda: cmd_sandbox(name)}[i]()
+         5: lambda: cmd_verify(name, "quick"), 6: lambda: cmd_verify(name, "package"), 7: lambda: cmd_verify(name, "full"), 8: lambda: cmd_feedback(name),
+         9: lambda: print(git_run(p, "log", "--oneline", "-10")[1]), 10: lambda: print(run(["opencode", "session", "list"], cwd=p)[1]),
+         11: lambda: cmd_run(name, input("Agent-Name: ").strip() or None), 12: lambda: cmd_init(name),
+         13: lambda: cmd_agent("new", input("Agent-Name: ").strip(), name), 14: lambda: cmd_mcp("list", None, name), 15: lambda: cmd_rights(name),
+         16: lambda: cmd_pause(name, "off" if pause_after_active(name) else "on"), 17: lambda: cmd_sandbox(name)}[i]()
 
 def menu():
     while True:

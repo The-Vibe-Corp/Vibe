@@ -1230,7 +1230,13 @@ class H(BaseHTTPRequestHandler):
             elif u.path == "/api/stop":
                 ok, msg = vibe_services.capture(vibe.cmd_stop, name, body.get("run_id") or None)
             elif u.path == "/api/verify":
-                ok, msg = vibe_services.verify_bg(vibe, name, "full" if body.get("mode") == "full" else "quick")
+                mode = body.get("mode")
+                if mode not in vibe.VERIFY_MODES:
+                    ok, msg = False, (
+                        "Unbekannter Prüfmodus: " + str(mode)
+                        + " (erlaubt: " + ", ".join(vibe.VERIFY_MODES) + ")")
+                else:
+                    ok, msg = vibe_services.verify_bg(vibe, name, mode)
             elif u.path == "/api/init":
                 ok, msg = vibe_services.capture(vibe.cmd_init, name, body.get("type") or None)
             elif u.path == "/api/feedback":

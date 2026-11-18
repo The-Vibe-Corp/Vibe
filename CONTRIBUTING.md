@@ -23,7 +23,23 @@ ablaufen.
 4. Prüfe deinen Stand mit:
 
        bash scripts/verify.sh quick
+       bash scripts/verify.sh package
        bash scripts/verify.sh full
+
+   `quick` ist die statische Prüfung, `package` die Paketprüfung mit
+   Testnachweis (aus `VERIFY_PACKAGE`), `full` die vollständige Abnahme aus
+   `VERIFY_FULL`. Prüfe in Stufen: während der Bearbeitung nur die
+   betroffenen Testmodule (z. B. `python3 -m unittest
+   tests.unit.test_verify_script`) und `package`; die vollständige Suite
+   (`full`) läuft einmal vor der Abnahme. Für vollständige Läufe über
+   mehrere Kerne steht der parallele Läufer bereit (Ergebnisse sind mit
+   `unittest discover` vergleichbar; `--jobs` begrenzt die Parallelität):
+
+       python3 scripts/run-tests-parallel.py --dir tests/unit
+       python3 scripts/run-tests-parallel.py --dir tests/unit --dir tests/browser --jobs 2
+
+   Mit `--timeout SEK` (Default 900, 0 ohne Limit) wird ein hängendes
+   Modul beendet und als fehlgeschlagen gemeldet.
 
 5. Stelle einen Pull Request; benutze die Vorlage
    `.github/PULL_REQUEST_TEMPLATE.md` und nenne Ticket, Tests, Prüfergebnisse

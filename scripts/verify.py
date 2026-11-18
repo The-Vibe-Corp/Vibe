@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Isolierte Projektprüfung für vibe (V-002).
 
-Aufruf über den Wrapper: bash scripts/verify.sh quick|full [--project DIR] [--keep]
+Aufruf über den Wrapper: bash scripts/verify.sh quick|package|full [--project DIR] [--keep]
 
 Die Prüfung liest die Befehle aus <projekt>/.vibe/project.env und führt sie in
 einer temporären Umgebung aus:
@@ -16,6 +16,9 @@ einer temporären Umgebung aus:
   VIBE_VERIFY_PORT).
 * Der Vollmodus muss eine Teststruktur und tatsächlich ausgeführte Tests
   nachweisen. Ein Lauf ohne Tests oder mit "Ran 0 tests" ist kein Erfolg.
+* Der Mittelmodus "package" (F31) führt ausschließlich VERIFY_PACKAGE aus.
+  Ist VERIFY_TESTS gesetzt, gilt derselbe Testnachweis wie im Vollmodus;
+  ohne VERIFY_TESTS besteht kein Nachweiszwang (wie bei "quick").
 
 Exitcodes:
   0  Prüfung erfolgreich
@@ -24,7 +27,8 @@ Exitcodes:
   3  fehlende oder ungültige Prüfkonfiguration
   4  benötigtes Werkzeug fehlt
   5  Prüfbefehl ist fehlgeschlagen
-  6  Testnachweis fehlt oder ist unvollständig (nur full)
+  6  Testnachweis fehlt oder ist unvollständig (full; package nur bei gesetztem
+     VERIFY_TESTS)
 """
 import glob
 import json
@@ -48,14 +52,16 @@ EXIT_TOOL = 4
 EXIT_CHECK = 5
 EXIT_TESTS = 6
 
-MODES = ("quick", "full")
+MODES = ("quick", "package", "full")
 DEFAULT_TEST_PATTERN = r"Ran (\d+) tests?"
 TEMP_PREFIX = "vibe-verify-"
 
 USAGE = (
-    "Aufruf: bash scripts/verify.sh quick|full [--project DIR] [--keep]\n"
+    "Aufruf: bash scripts/verify.sh quick|package|full [--project DIR] [--keep]\n"
     "\n"
     "  quick    schnelle statische Prüfung (VERIFY_QUICK)\n"
+    "  package  Paketprüfung (VERIFY_PACKAGE); Testnachweis nur bei gesetztem"
+    " VERIFY_TESTS\n"
     "  full     vollständige Prüfung inklusive Testnachweis (VERIFY_FULL)\n"
     "  --project DIR  Projekt mit .vibe/project.env (Standard: dieses Repository)\n"
     "  --keep   temporäres Prüfverzeichnis auch bei Erfolg behalten\n"
@@ -107,7 +113,7 @@ def parse_args(argv):
             if arg not in MODES:
                 fail(
                     EXIT_USAGE,
-                    f"Unbekannter Modus '{arg}'. Erlaubt: quick, full.",
+                    f"Unbekannter Modus '{arg}'. Erlaubt: {', '.join(MODES)}.",
                 )
             mode = arg
         else:
@@ -154,8 +160,11 @@ def project_root(argument):
     return root
 
 
+VERIFY_KEYS = {"quick": "VERIFY_QUICK", "package": "VERIFY_PACKAGE", "full": "VERIFY_FULL"}
+
+
 def select_command(values, mode, env_file):
-    key = "VERIFY_QUICK" if mode == "quick" else "VERIFY_FULL"
+    key = VERIFY_KEYS[mode]
     command = values.get(key, "").strip()
     if not command:
         fail(EXIT_CONFIG, f"{key} fehlt in {env_file}.")
@@ -391,7 +400,10 @@ def main(argv=None):
 
         specs = shlex.split(values.get("VERIFY_TESTS", ""))
         minimum = 1
-        if mode == "full":
+        # package verlangt den Testnachweis nur, wenn VERIFY_TESTS gesetzt ist
+        # (F31); quick verlangt ihn nie, full immer.
+        requires_proof = mode == "full" or (mode == "package" and bool(specs))
+        if requires_proof:
             if not specs:
                 fail(
                     EXIT_TESTS,
@@ -442,7 +454,7 @@ def main(argv=None):
                     f"Prüf-Exit {EXIT_CHECK}).",
                 )
 
-            if mode == "full":
+            if requires_proof:
                 count = test_count(output, pattern)
                 if count < minimum:
                     fail(
