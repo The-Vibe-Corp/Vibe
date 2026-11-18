@@ -1,6 +1,6 @@
 # Trilium-Index
 
-Zuordnung der Projekt-Dokumentation zu den Notizen in Trilium (Stand 2026-11-17).
+Zuordnung der Projekt-Dokumentation zu den Notizen in Trilium (Stand 2026-11-18).
 
 | Projekt | Bereich | Notiz | Notiz-ID |
 | --- | --- | --- | --- |
@@ -67,3 +67,4 @@ Zuordnung der Projekt-Dokumentation zu den Notizen in Trilium (Stand 2026-11-17)
 | vibe | Features | AP16 Syntaxhervorhebung in der Agentenausgabe | `GYqPCwzWLy38` |
 | vibe | Features | AP18 Kennwort der WebUI über die CLI setzen | `LtyM7rb6m1I0` |
 | vibe | Features | Fix: Geerbtes OPENCODE_PASSWORD blockierte den privaten opencode-Server | `PgaZqt2vEwBQ` |
+| vibe | Features | F31 Test-Suite-Effizienz: Prüfmodus package, gestufte Prüfpraxis, paralleler Läufer | `H0o1fqgdaNWP` |

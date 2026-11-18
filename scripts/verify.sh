@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Isolierte Projektprüfung (V-002).
-# Aufruf: bash scripts/verify.sh quick|full [--project DIR] [--keep]
+# Aufruf: bash scripts/verify.sh quick|package|full [--project DIR] [--keep]
 # Die eigentliche Logik liegt in scripts/verify.py (Python-Standardbibliothek).
 set -u
 SCRIPT_SOURCE="${BASH_SOURCE[0]}"

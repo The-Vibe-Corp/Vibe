@@ -302,6 +302,58 @@ class CommandBoundaryTest(CliFixture):
         self.assertIn("emulator", str(caught.exception.code).lower())
         self.assertFalse(marker.exists())
 
+    def test_package_mode_reads_verify_package_from_project_env(self):
+        (self.project / ".vibe" / "project.env").write_text(
+            "TYPE=generic\n"
+            'VERIFY_QUICK="printf quick"\n'
+            'VERIFY_FULL="printf full"\n'
+            'VERIFY_PACKAGE="printf paket"\n',
+            encoding="utf-8",
+        )
+
+        self.assertEqual(self.cli.verify_command("proj", "package"), "printf paket")
+        argv = self.cli.verify_argv("proj", "package")
+
+        self.assertEqual(argv[:2], ["bash", "-lc"])
+        self.assertIn("printf paket", argv[2])
+        self.assertEqual(len(argv), 3)
+
+    def test_package_mode_has_no_quick_or_full_fallback(self):
+        # Nur quick/full konfiguriert: package darf nicht still eine andere
+        # Stufe ausführen, sonst wäre der Nachweis falsch benannt.
+        (self.project / ".vibe" / "project.env").write_text(
+            "TYPE=generic\n"
+            'VERIFY_QUICK="printf quick"\n'
+            'VERIFY_FULL="printf full"\n',
+            encoding="utf-8",
+        )
+
+        self.assertIsNone(self.cli.verify_command("proj", "package"))
+        self.assertIsNone(self.cli.verify_argv("proj", "package"))
+
+    def test_package_placeholder_is_rejected_as_configuration_error(self):
+        (self.project / ".vibe" / "project.env").write_text(
+            'TYPE=generic\nVERIFY_PACKAGE="echo TODO"\n', encoding="utf-8"
+        )
+
+        with self.assertRaises(self.cli.VerifyConfigError) as caught:
+            self.cli.verify_command("proj", "package")
+
+        self.assertIn("VERIFY_PACKAGE", str(caught.exception))
+
+    def test_unknown_verify_mode_lists_package_as_allowed(self):
+        error = io.StringIO()
+        with contextlib.redirect_stderr(error):
+            with self.assertRaises(SystemExit) as caught:
+                self.cli.cmd_verify("proj", "paket")
+
+        self.assertEqual(caught.exception.code, 2)
+        message = error.getvalue()
+        self.assertIn("paket", message)
+        self.assertIn("quick", message)
+        self.assertIn("package", message)
+        self.assertIn("full", message)
+
 
 class ReadActionTest(CliFixture):
     def test_read_actions_do_not_execute_project_programs(self):

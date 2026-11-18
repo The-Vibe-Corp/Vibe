@@ -3,7 +3,9 @@
 Die Tests bauen eigene Fixture-Projekte in temporären Verzeichnissen. Sie
 prüfen Erfolg, beabsichtigten Fehlschlag, unbekannte Modi, fehlende Werkzeuge,
 die Testvollständigkeit im Vollmodus sowie die Isolation von HOME, VIBE und
-Ports. Die produktive Konfiguration des Aufrufers wird dabei nur gelesen.
+Ports. F31 ergänzt den Mittelmodus ``package``: Er führt die Paketprüfung aus
+und verlangt nur dann einen Testnachweis, wenn ``VERIFY_TESTS`` konfiguriert
+ist. Die produktive Konfiguration des Aufrufers wird dabei nur gelesen.
 """
 import hashlib
 import json
@@ -408,6 +410,209 @@ class VerifyFullTest(unittest.TestCase):
         result = run_verify("full", project=project)
         self.assertEqual(result.returncode, 6, result.stdout + result.stderr)
         self.assertIn("Minimum 2", result.stdout + result.stderr)
+
+
+class VerifyPackageTest(unittest.TestCase):
+    """Mittelmodus ``package``: Paketprüfung mit optionalem Testnachweis.
+
+    F31: Die Agenten brauchen zwischen ``quick`` und ``full`` einen schnellen,
+    belegbaren Modus. ``package`` führt ausschließlich ``VERIFY_PACKAGE`` aus.
+    Ist ``VERIFY_TESTS`` gesetzt, gilt derselbe Testnachweis wie in ``full``
+    (Testdateien vorhanden, Mindestanzahl erreicht, Exit 6 bei Verstoß). Ohne
+    ``VERIFY_TESTS`` besteht kein Nachweiszwang wie in ``quick``.
+    """
+
+    BEISPIELTEST = (
+        "import unittest\n\n"
+        "class BeispielTest(unittest.TestCase):\n"
+        "    def test_summe(self):\n"
+        "        self.assertEqual(1 + 1, 2)\n"
+    )
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.base = Path(self.tmp.name)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def make_test_project(self, lines, test_source=None, with_tests=True):
+        project = make_project(self.base, lines)
+        if with_tests:
+            tests = project / "tests"
+            tests.mkdir()
+            (tests / "test_beispiel.py").write_text(
+                self.BEISPIELTEST if test_source is None else test_source,
+                encoding="utf-8",
+            )
+        return project
+
+    def test_package_runs_verify_package_instead_of_quick_or_full(self):
+        project = make_project(
+            self.base,
+            [
+                "TYPE=generic",
+                'VERIFY_QUICK="echo quick-pruefung"',
+                'VERIFY_FULL="echo full-pruefung"',
+                'VERIFY_PACKAGE="echo paket-pruefung"',
+            ],
+        )
+
+        result = run_verify("package", project=project)
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("OK: Prüfung 'package'", result.stdout)
+        self.assertIn("paket-pruefung", result.stdout)
+        # Kein stiller Rückfall auf die anderen Stufen.
+        self.assertNotIn("quick-pruefung", result.stdout)
+        self.assertNotIn("full-pruefung", result.stdout)
+
+    def test_package_requires_verify_package_without_falling_back(self):
+        marker = self.base / "quick-oder-full-lief"
+        project = make_project(
+            self.base,
+            [
+                "TYPE=generic",
+                f'VERIFY_QUICK="touch {marker}"',
+                f'VERIFY_FULL="touch {marker}"',
+            ],
+        )
+
+        result = run_verify("package", project=project)
+
+        self.assertEqual(result.returncode, 3, result.stdout + result.stderr)
+        self.assertIn("VERIFY_PACKAGE", result.stdout + result.stderr)
+        self.assertFalse(
+            marker.exists(),
+            "package darf ohne VERIFY_PACKAGE nicht quick oder full ausführen",
+        )
+
+    def test_package_rejects_a_todo_placeholder(self):
+        project = make_project(
+            self.base,
+            ["TYPE=generic", 'VERIFY_PACKAGE="echo TODO"'],
+        )
+
+        result = run_verify("package", project=project)
+
+        self.assertEqual(result.returncode, 3, result.stdout + result.stderr)
+        self.assertIn("VERIFY_PACKAGE", result.stdout + result.stderr)
+        self.assertIn("TODO", result.stdout + result.stderr)
+
+    def test_package_requires_test_files_when_verify_tests_is_set(self):
+        project = make_project(
+            self.base,
+            [
+                "TYPE=generic",
+                'VERIFY_PACKAGE="true"',
+                'VERIFY_TESTS="tests"',
+            ],
+        )
+
+        result = run_verify("package", project=project)
+
+        self.assertEqual(result.returncode, 6, result.stdout + result.stderr)
+        self.assertIn("VERIFY_TESTS", result.stdout + result.stderr)
+
+    def test_package_rejects_a_run_without_executed_tests(self):
+        project = self.make_test_project(
+            [
+                "TYPE=generic",
+                'VERIFY_PACKAGE="python3 leerlauf.py"',
+                'VERIFY_TESTS="tests"',
+                'VERIFY_TEST_PATTERN="Ran ([0-9]+) tests?"',
+            ]
+        )
+        write_script(project, "leerlauf.py", "print('Ran 0 tests in 0.001s')\n")
+
+        result = run_verify("package", project=project)
+
+        self.assertEqual(result.returncode, 6, result.stdout + result.stderr)
+        self.assertIn("0", result.stdout + result.stderr)
+        self.assertIn("Tests", result.stdout + result.stderr)
+
+    def test_package_passes_with_real_tests_and_reports_the_count(self):
+        project = self.make_test_project(
+            [
+                "TYPE=generic",
+                'VERIFY_PACKAGE="python3 -m unittest discover -s tests -v"',
+                'VERIFY_TESTS="tests"',
+                'VERIFY_TEST_PATTERN="Ran ([0-9]+) tests?"',
+            ]
+        )
+
+        result = run_verify("package", project=project)
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Tests erkannt: 1", result.stdout)
+        self.assertIn("OK: Prüfung 'package'", result.stdout)
+
+    def test_package_rejects_fewer_tests_than_configured(self):
+        project = self.make_test_project(
+            [
+                "TYPE=generic",
+                'VERIFY_PACKAGE="python3 -m unittest discover -s tests -v"',
+                'VERIFY_TESTS="tests"',
+                'VERIFY_TEST_PATTERN="Ran ([0-9]+) tests?"',
+                "VERIFY_MIN_TESTS=2",
+            ]
+        )
+
+        result = run_verify("package", project=project)
+
+        self.assertEqual(result.returncode, 6, result.stdout + result.stderr)
+        self.assertIn("Minimum 2", result.stdout + result.stderr)
+
+    def test_package_without_verify_tests_requires_no_test_proof(self):
+        project = make_project(
+            self.base,
+            ["TYPE=generic", 'VERIFY_PACKAGE="echo ohne-testnachweis"'],
+        )
+
+        result = run_verify("package", project=project)
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("ohne-testnachweis", result.stdout)
+        self.assertIn("OK: Prüfung 'package'", result.stdout)
+
+    def test_package_does_not_start_the_opencode_service(self):
+        # Der opencode-Dienst gehört nur zum Vollmodus; package bleibt schnell.
+        fake_bin = self.base / "fake-bin"
+        fake_bin.mkdir()
+        marker = self.base / "opencode-gestartet"
+        fake = fake_bin / "opencode"
+        fake.write_text(
+            "#!/bin/sh\n"
+            f"touch {marker}\n"
+            "exit 0\n",
+            encoding="utf-8",
+        )
+        fake.chmod(0o755)
+        project = make_project(
+            self.base,
+            ["TYPE=generic", 'VERIFY_PACKAGE="echo paket-ohne-dienst"'],
+        )
+
+        result = run_verify(
+            "package",
+            project=project,
+            env={"PATH": str(fake_bin) + os.pathsep + os.environ.get("PATH", "")},
+        )
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertFalse(marker.exists(), "package startete den opencode-Dienst")
+
+    def test_help_names_the_package_mode(self):
+        result = run_verify("--help")
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("package", result.stdout)
+
+    def test_unknown_mode_lists_package_as_allowed(self):
+        result = run_verify("unbekannt")
+
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn("package", result.stdout + result.stderr)
 
 
 class ScreenshotIsolationTest(unittest.TestCase):

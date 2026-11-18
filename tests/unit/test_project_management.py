@@ -439,6 +439,51 @@ class InitTest(ProjectFixture):
 
 
 class TemplateRulesTest(ProjectFixture):
+    # Verbindliche Mindestmerkmale der gestuften Prüfpraxis (F31). Die Tests
+    # legen damit die erwartete Fachlichkeit wörtlich fest; die Umsetzung muss
+    # diese Aussagen in den allgemeinen Regeln und allen Vorlagen führen.
+    VERIFY_EFFICIENCY_RULE = (
+        "Effizienz der Prüfungen (verbindlich)",
+        "betroffene Testmodule",
+        "VERIFY_PACKAGE",
+        "VERIFY_FULL",
+        "genau einmal",
+        "vor der Abnahme",
+        "Änderungen",
+        "Code oder Tests",
+        "Nachweisumfang",
+        "abgeschwächt",
+    )
+
+    def assert_efficiency_rule(self, text, source):
+        for marker in self.VERIFY_EFFICIENCY_RULE:
+            self.assertIn(marker, text, f"{marker!r} fehlt in {source}")
+
+    def test_general_rules_require_tiered_verification(self):
+        rules = self.cli.GENERAL_RULES
+
+        self.assert_efficiency_rule(rules, "GENERAL_RULES")
+        # Während der Arbeit bleibt die Prüfung klein; die vollständige Suite
+        # ist der Abschlussnachweis und wird nicht durch Wiederholungen ersetzt.
+        self.assertIn("während der Bearbeitung", rules)
+
+    def test_all_shipped_project_templates_contain_the_verification_efficiency_rule(self):
+        templates = sorted((REPO / "templates").glob("*/AGENTS.md"))
+        self.assertTrue(templates)
+        for path in templates:
+            text = path.read_text(encoding="utf-8")
+            self.assert_efficiency_rule(text, str(path))
+
+    def test_repository_agents_file_contains_the_verification_efficiency_rule(self):
+        path = REPO / "AGENTS.md"
+        self.assertTrue(
+            path.is_file(),
+            "AGENTS.md fehlt im Repository-Wurzelverzeichnis; die Repository-"
+            "Regeln können nicht geprüft werden.",
+        )
+        text = path.read_text(encoding="utf-8")
+        self.assert_efficiency_rule(text, str(path))
+
     def test_all_shipped_project_templates_contain_the_cleanup_rules(self):
         templates = sorted((REPO / "templates").glob("*/AGENTS.md"))
         self.assertTrue(templates)
@@ -536,6 +581,22 @@ class TemplateRulesTest(ProjectFixture):
         self.assertIn("Testfälle", text)
         self.assertIn("Produktionscode", text)
         self.cli.agent_validate(text)
+
+    def test_all_shipped_project_templates_have_exactly_one_general_rules_marker(self):
+        # F31: Jede Vorlage darf genau ein oeffnendes und genau ein
+        # schliessendes Markerpaar fuer die allgemeinen Regeln enthalten.
+        templates = sorted((REPO / "templates").glob("*/AGENTS.md"))
+        self.assertTrue(templates)
+        for path in templates:
+            text = path.read_text(encoding="utf-8")
+            self.assertEqual(
+                text.count(self.cli.GENERAL_RULES_MARK), 1,
+                f"{path}: oeffnender Marker count != 1",
+            )
+            self.assertEqual(
+                text.count(self.cli.GENERAL_RULES_END), 1,
+                f"{path}: schliessender Marker count != 1",
+            )
 
 
 if __name__ == "__main__":

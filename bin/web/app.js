@@ -135,8 +135,9 @@ async function detail(name){
  const factsCard=el('div',{class:'card'},el('b',{},'Projekt'),fact('Pfad',d.path),fact('Typ',d.type),fact('Branch',d.branch),fact('Letzter Commit',d.last||'—'),fact('Vorbereitet',d.init?'ja':'nein'));
  const startVerify=mode=>async()=>{openTab('ausgabe');const r=await api('/api/verify',{name,mode});toast(r.message);if(r.ok)stream('verify')};
  const checksCard=el('div',{class:'card'},el('b',{},'Prüfungen'),
-  el('div',{class:'mut'},'quick prüft Struktur und Sicherheit, full zusätzlich Unit- und Browsertests. Die Ausgabe erscheint im Bereich „Ausgabe“.'),
+  el('div',{class:'mut'},'quick prüft Struktur und Sicherheit, package führt die Paketprüfung aus (VERIFY_PACKAGE), full zusätzlich Unit- und Browsertests. Die Ausgabe erscheint im Bereich „Ausgabe“.'),
   el('div',{class:'bar'},el('button',{class:'b',type:'button',on:{click:startVerify('quick')}},'Prüfung quick'),
+   el('button',{class:'b',type:'button',on:{click:startVerify('package')}},'Prüfung package'),
    el('button',{class:'b',type:'button',on:{click:startVerify('full')}},'Prüfung full'),
    isPi?null:el('a',{href:OC_URL,target:'_blank'},'opencode-Weboberfläche')));
  const tsel=el('select',{});api('/api/types').then(t=>t.forEach(x=>{const o=el('option',{},x);if(x===d.type)o.selected=true;tsel.append(o)}));
