@@ -60,6 +60,24 @@ DEFAULT_MAX_BYTES = 5 * 1024 * 1024
 DEFAULT_KEEP = 3
 LIVE_STATES = ("starting", "running")
 STATES = ("starting", "running", "finished", "stopped", "paused", "failed", "ended", "blocked")
+# AP19: Session-Register. Die Kennung ist zugleich Datei- und Sitzungsname;
+# deshalb gilt dieselbe strenge Zeichenklasse wie für Laufschlüssel.
+SESSION_ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+SESSION_LIMIT_DEFAULT = 5
+SESSION_LIMIT_MAX = 100
+# Laufzustand -> (Anzeigezustand, deutsches Label). "ended" ist der unerwartete
+# Abbruch und wird bewusst als "aborted" vorgetragen; ein fehlender Lauf bleibt
+# "unknown". Die Tabelle ist die einzige Quelle für state/state_label.
+SESSION_STATES = {
+    "starting": ("running", "läuft"),
+    "running": ("running", "läuft"),
+    "finished": ("finished", "abgeschlossen"),
+    "failed": ("failed", "fehlgeschlagen"),
+    "stopped": ("stopped", "gestoppt"),
+    "paused": ("paused", "pausiert"),
+    "blocked": ("blocked", "blockiert"),
+    "ended": ("aborted", "abgebrochen"),
+}
 
 
 def clean_key(text):
@@ -638,7 +656,9 @@ def translate_pi_event(event, state):
     return _pi_tool_lines(event, state, mode)
 
 
-def stream_events(stdin, emit, state_path, attempt=False):
+def stream_events(stdin, emit, state_path, attempt=False, sessions=None,
+                  session_project="", session_name="", session_run="",
+                  session_agent="", session_harness=""):
     """Liest JSON-Zeilen von stdin, schreibt Klartext und pflegt den Zustand.
 
     Nicht-JSON-Zeilen (z. B. stderr des Agenten) werden unverändert
@@ -656,10 +676,41 @@ def stream_events(stdin, emit, state_path, attempt=False):
     Text-Ereignisse einer einzelnen fremden Session enthält, wird am Ende
     dennoch als neuer Hauptversuch übernommen (Rückwärtskompatibilität der
     direkten Einbettung).
+
+    AP19: Mit ``sessions`` (Registerpfad) wird beim ersten Erscheinen bzw.
+    Wechsel der Hauptsession ein Registereintrag geschrieben — noch während
+    des Stroms, damit ein harter Abbruch die Kennung nicht verliert. Ohne die
+    Option bleibt das Verhalten byte-identisch. Kind-Sessions und Pi-Header
+    ändern ``state["session"]`` nicht und erzeugen darum nie einen Eintrag.
     """
     state = load_subagent_state(state_path)
     run = {"attempt": bool(attempt), "main": "", "saw_main": False,
            "unknown": {}}
+    # --sessions ist der Dateipfad <laufzeit>/sessions.json; die Registry
+    # arbeitet auf dem Laufzeitordner und ergänzt den Dateinamen selbst.
+    registry = SessionRegistry(os.path.dirname(os.path.abspath(str(sessions)))) if sessions else None
+    recorded = ""
+
+    def capture(event, previous):
+        """Einziger Prüfpunkt: Hauptsession des Stroms dauerhaft erfassen."""
+        nonlocal recorded
+        if registry is None:
+            return
+        current = str(state.get("session") or "")
+        if not current or current == recorded:
+            return
+        # Ein im Zustand bereits bekannter Sessionname wird nur erfasst, wenn
+        # er in diesem Strom auch wirklich erscheint. Am Stromende übernommene
+        # Sessions weichen vom vorherigen Wert ab und zählen ebenfalls.
+        seen = isinstance(event, dict) and event.get("sessionID") == current
+        if current == str(previous or "") and not seen:
+            return
+        registry.observe(
+            session=current, project=session_project, name=session_name,
+            run_id=session_run, agent=session_agent, harness=session_harness,
+        )
+        recorded = current
+
     for raw in stdin:
         line = raw.rstrip("\r\n")
         if not line.strip():
@@ -672,6 +723,7 @@ def stream_events(stdin, emit, state_path, attempt=False):
         except ValueError:
             emit("opencode: " + line)
             continue
+        previous = state.get("session")
         if isinstance(event, dict) and event.get("type") in PI_EVENT_TYPES:
             lines, changed = translate_pi_event(event, state)
         else:
@@ -682,9 +734,12 @@ def stream_events(stdin, emit, state_path, attempt=False):
             emit(output_line)
         if changed:
             save_subagent_state(state_path, state)
+        capture(event, previous)
+    previous = state.get("session")
     if _promote_text_only_attempt(state, run):
         emit("[Session] " + state["session"])
         save_subagent_state(state_path, state)
+        capture(None, previous)
 
 
 def _track_unknown_session(event, state, run):
@@ -864,6 +919,176 @@ class RunRegistry:
             return found
 
 
+class SessionRegistry:
+    """Erfasste Hauptsessions eines Laufzeitordners (AP19).
+
+    Das Register liegt als ``<laufzeit>/sessions.json`` neben ``runs.json`` und
+    wird unter einer eigenen Sperrdatei atomar geschrieben. Es bleiben höchstens
+    ``SESSION_LIMIT_MAX`` Einträge. Ein fehlender oder defekter Bestand wird wie
+    beim Laufregister als leerer Bestand mit dem Standardlimit gelesen; die
+    Datei wird dabei nie gelöscht.
+    """
+
+    def __init__(self, runtime):
+        self.runtime = os.path.abspath(str(runtime))
+        self.path = os.path.join(self.runtime, "sessions.json")
+        self.lock_path = os.path.join(self.runtime, "sessions.lock")
+
+    @contextlib.contextmanager
+    def _locked(self):
+        os.makedirs(self.runtime, exist_ok=True)
+        handle = open(self.lock_path, "a+", encoding="utf-8")
+        try:
+            if fcntl is not None:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            yield
+        finally:
+            if fcntl is not None:
+                with contextlib.suppress(OSError):
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+            handle.close()
+
+    def _read(self):
+        try:
+            with open(self.path, encoding="utf-8") as handle:
+                data = json.load(handle)
+        except (OSError, ValueError):
+            data = None
+        if not isinstance(data, dict):
+            data = {}
+        limit = data.get("limit")
+        if (isinstance(limit, bool) or not isinstance(limit, int)
+                or not 1 <= limit <= SESSION_LIMIT_MAX):
+            limit = SESSION_LIMIT_DEFAULT
+        entries = data.get("sessions")
+        if not isinstance(entries, list):
+            entries = []
+        return {
+            "limit": int(limit),
+            "sessions": [
+                dict(item) for item in entries
+                if isinstance(item, dict) and isinstance(item.get("session"), str)
+            ],
+        }
+
+    def _write(self, data):
+        sessions = list(data.get("sessions") or [])[-SESSION_LIMIT_MAX:]
+        text = json.dumps(
+            {"limit": int(data.get("limit", SESSION_LIMIT_DEFAULT)),
+             "sessions": sessions},
+            indent=1, ensure_ascii=False,
+        ) + "\n"
+        _atomic_write(self.path, text)
+
+    def all(self):
+        """Alle erfassten Sessions in Registerreihenfolge (Kopien)."""
+        return self._read()["sessions"]
+
+    def get(self, session):
+        """Sessioneintrag als Kopie oder None, wenn die Kennung unbekannt ist."""
+        for entry in self._read()["sessions"]:
+            if entry.get("session") == session:
+                return dict(entry)
+        return None
+
+    def observe(self, session, project, name, run_id, agent, harness, now=None):
+        """Erfasst die Session (Upsert) und liefert den gespeicherten Eintrag.
+
+        Ungültige Kennungen werden ohne jede Dateiänderung ignoriert. Beim
+        Upsert bleibt ``first_seen`` erhalten; ``last_seen`` geht nicht zurück.
+        """
+        if not isinstance(session, str) or not SESSION_ID_RE.fullmatch(session):
+            return None
+        moment = int(time.time()) if now is None else int(now)
+        with self._locked():
+            data = self._read()
+            entries = data["sessions"]
+            entry = next(
+                (item for item in entries if item.get("session") == session), None)
+            if entry is None:
+                entry = {"session": session, "first_seen": moment}
+                entries.append(entry)
+            elif (isinstance(entry.get("first_seen"), bool)
+                  or not isinstance(entry.get("first_seen"), int)):
+                entry["first_seen"] = moment
+            previous = entry.get("last_seen")
+            if isinstance(previous, bool) or not isinstance(previous, int):
+                previous = moment
+            entry.update({
+                "project": os.path.realpath(os.path.abspath(str(project or ""))),
+                "name": str(name or ""),
+                "run_id": str(run_id or ""),
+                "agent": str(agent or ""),
+                "harness": str(harness or ""),
+                "last_seen": max(moment, previous),
+            })
+            self._write(data)
+            return dict(entry)
+
+    def limit(self):
+        """Gespeicherter Standard für die Auflistung (immer ein int)."""
+        return int(self._read()["limit"])
+
+    def set_limit(self, value):
+        """Setzt den Standard (1..100), ohne die Einträge zu verändern."""
+        if (isinstance(value, bool) or not isinstance(value, int)
+                or not 1 <= value <= SESSION_LIMIT_MAX):
+            raise ValueError(
+                f"Session-Limit muss 1 bis {SESSION_LIMIT_MAX} sein: {value!r}")
+        with self._locked():
+            data = self._read()
+            data["limit"] = int(value)
+            self._write(data)
+        return int(value)
+
+
+def session_overview(runtime, project=None, limit=None, text=None):
+    """Sessions jüngste zuerst, mit Zustand aus dem Laufregister (AP19).
+
+    Die Rangfolge des Limits ist Parameter > gespeicherter Standard > 5. Der
+    Projektfilter vergleicht über ``realpath``, der Textfilter sucht ohne
+    Rücksicht auf Groß-/Kleinschreibung in der Session-Kennung. Jeder Eintrag
+    trägt die Registerfelder sowie ``state`` und ``state_label``.
+    """
+    registry = SessionRegistry(runtime)
+    if limit is None:
+        effective = registry.limit()
+    elif (isinstance(limit, bool) or not isinstance(limit, int)
+          or not 1 <= limit <= SESSION_LIMIT_MAX):
+        raise ValueError(
+            f"Session-Limit muss 1 bis {SESSION_LIMIT_MAX} sein: {limit!r}")
+    else:
+        effective = int(limit)
+
+    entries = registry.all()
+    if project:
+        real = os.path.realpath(os.path.abspath(str(project)))
+        entries = [
+            item for item in entries
+            if os.path.realpath(os.path.abspath(str(item.get("project") or ""))) == real
+        ]
+    if text:
+        needle = str(text).lower()
+        entries = [
+            item for item in entries
+            if needle in str(item.get("session") or "").lower()
+        ]
+    entries.sort(key=lambda item: int(item.get("last_seen") or 0), reverse=True)
+
+    runs = RunRegistry(runtime)
+    overview = []
+    for entry in entries[:effective]:
+        run_id = str(entry.get("run_id") or "")
+        record = runs.get(run_id) if run_id else None
+        state, label = SESSION_STATES.get(
+            str((record or {}).get("state") or ""), ("unknown", "unbekannt"))
+        item = dict(entry)
+        item["state"] = state
+        item["state_label"] = label
+        overview.append(item)
+    return overview
+
+
 def tmux_session_state(session):
     """True, False oder None für eine Laufsitzung auf ihrem eigenen Server.
 
@@ -1008,6 +1233,14 @@ def build_parser():
         "--attempt", action="store_true",
         help="Strom ist genau ein Agentenlauf; erste Session ist die Hauptsession",
     )
+    # AP19: Ohne --sessions bleibt der Filter unverändert; die Zusatzangaben
+    # landen im Registereintrag der erfassten Hauptsession.
+    stream.add_argument("--sessions", default="", help="Pfad zu sessions.json")
+    stream.add_argument("--session-project", default="", help="Projektpfad des Eintrags")
+    stream.add_argument("--session-name", default="", help="Projektname des Eintrags")
+    stream.add_argument("--session-run", default="", help="Lauf-ID des Eintrags")
+    stream.add_argument("--session-agent", default="", help="Agent des Eintrags")
+    stream.add_argument("--session-harness", default="", help="Harness des Eintrags")
     return parser
 
 
@@ -1053,7 +1286,12 @@ def main(argv=None):
         def emit(line):
             sys.stdout.write(str(line) + "\n")
             sys.stdout.flush()
-        stream_events(sys.stdin, emit, args.state, attempt=args.attempt)
+        stream_events(
+            sys.stdin, emit, args.state, attempt=args.attempt,
+            sessions=args.sessions, session_project=args.session_project,
+            session_name=args.session_name, session_run=args.session_run,
+            session_agent=args.session_agent, session_harness=args.session_harness,
+        )
         return 0
     parser.print_help(sys.stderr)
     return 2

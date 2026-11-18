@@ -156,6 +156,7 @@ async function detail(name){
     Subagenten verschwinden. Die frühere Protokollkarte bleibt nur als
     Rückfall für Projekte ohne Agentenlauf (und für Prüfungsläufe) bestehen. */
  const O=outputView(name,d,isPi);
+ const sessionsCardView=await sessionsCard(name);
  const ausgabePanel=tabPanel('ausgabe');
  let outputMode='';
  let outputPinned='';
@@ -167,7 +168,7 @@ async function detail(name){
   if(mode==='legacy')L.fit();else O.fit()}
  const panels={arbeit:tabPanel('arbeit',tiles,el('div',{class:'grid'},
    el('div',{},itemsCard,ticketCard(d,name),ticketFormCard(d,name),feedbackCard(d,name),bugFormCard(d,name),feedbackFormCard(d,name)),
-   el('div',{},pauseCard(d,name),autonomousCard(d,name),checksCard,factsCard))),
+   el('div',{},pauseCard(d,name),sessionsCardView,autonomousCard(d,name),checksCard,factsCard))),
   ausgabe:ausgabePanel,
   assistent:tabPanel('assistent',guideCard(name)),
   einstellungen:tabPanel('einstellungen',settingsPanel(d,name,isPi))};
@@ -198,6 +199,36 @@ function autonomousCard(d,name){
  const btn=el('button',{class:'b'+(active?'':' p'),type:'button',on:{click:async()=>{const r=await api('/api/autonomous',{name,action:active?'off':'on'});toast(r.message);if(r.ok)detail(name).catch(showErr)}}},active?'Autonomen Modus ausschalten':'Autonomen Modus einschalten');
  return el('div',{class:'card',id:'autonomous'},el('div',{class:'bar'},el('b',{},'Autonomer Modus'),el('span',{class:'pill '+(active?'warn':'mut')},active?'aktiv':'aus'),btn),
   el('div',{class:'mut'},'Ist der Modus aktiv, entscheidet der Agent ohne Antwort des Nutzers selbst und dokumentiert die Entscheidung als Antwort auf seine Rückfrage. Die Einstellung lässt sich auch während eines Laufs ändern und gilt nur für dieses Projekt.'))}
+/* AP19: Erfasste Sessions im Projektpanel. Die Karte lädt die Liste einmalig
+   beim Öffnen (kein Polling) und zeigt Zustand, Agent und lesbare Zeit. */
+function sessionTone(state){
+  return state==='running'?'run':state==='finished'?'ok':state==='aborted'?'warn':state==='failed'?'bad':'mut'}
+function sessionTime(value){
+  const n=Number(value);if(!Number.isFinite(n)||n<=0)return '—';
+  const d=new Date(n*1000),p=x=>String(x).padStart(2,'0');
+  return p(d.getDate())+'.'+p(d.getMonth()+1)+'.'+d.getFullYear()+' '+p(d.getHours())+':'+p(d.getMinutes())}
+async function sessionsCard(name){
+  const card=el('div',{class:'card'},el('div',{class:'bar'},el('b',{},'Sessions')));
+  let data;
+  try{data=await api('/api/sessions?name='+encodeURIComponent(name))}
+  catch(e){card.append(el('div',{class:'mut'},'Sessions konnten nicht geladen werden: '+String(e&&e.message||e)));return card}
+  const list=Array.isArray(data&&data.sessions)?data.sessions:[];
+  const canResume=!!(data&&data.resume_supported)&&!(data&&data.running);
+  if(!list.length)card.append(el('div',{class:'mut'},'Noch keine erfassten Sessions.'));
+  for(const s of list){
+    const btn=canResume?el('button',{class:'b',type:'button','aria-label':'Session '+s.session+' fortsetzen',on:{click:async()=>{
+      try{const r=await api('/api/sessions',{name,session:s.session,action:'continue'});toast((r&&r.message)||'Fortsetzen gestartet.')}
+      catch(e){toast('Fortsetzen nicht gestartet: '+String(e&&e.message||e))}
+    }}},'Fortsetzen'):null;
+    card.append(el('div',{class:'bar','data-session':String(s.session)},
+      el('span',{class:'pill '+sessionTone(s.state)},s.state_label||s.state||'?'),
+      el('span',{},' '+s.session),
+      el('span',{class:'mut'},s.agent||'?'),
+      el('span',{class:'mut'},sessionTime(s.last_seen)),btn));
+  }
+  if(list.length&&data&&data.resume_supported===false)
+    card.append(el('div',{class:'mut'},'Fortsetzen ist bei Pi nicht möglich (--no-session): Pi läuft ohne fortsetzbare Session.'));
+  return card}
 /* AP7: Einstellungs-Tab neu gegliedert. Wichtiges (Agenten) steht offen oben,
    optionale Bereiche sind als sichtbare Aufklapunkte eingeklappt. Die
    Abschnittsleiste zeigt den Zustand je Bereich und springt bei Klick dorthin,

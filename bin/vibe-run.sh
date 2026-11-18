@@ -748,7 +748,9 @@ fi
 # für den Preflight-Agenten (F22) gebraucht und deshalb vorher eingerichtet.
 STREAM_FILTER=(cat)
 if [ -f "$RUNS_PY" ]; then
-  STREAM_FILTER=(python3 "$RUNS_PY" stream --state "$LOG.state.json" --attempt)
+  # AP19: Der Preflight erfasst seine Hauptsession ohne Lauf-ID (RUN_ID ist
+  # hier noch nicht vergeben). Ohne RUNS_PY bleibt der cat-Rückfall aktiv.
+  STREAM_FILTER=(python3 "$RUNS_PY" stream --state "$LOG.state.json" --attempt --sessions "$RUNTIME/sessions.json" --session-project "$P" --session-name "$NAME" --session-agent "$AGENT" --session-harness "$HARNESS")
 fi
 # Preflight: sauberer Git-Integrationsstand, verfügbare Test-/Review-Agenten
 # und ein echter Paketprüfbefehl. Ohne diese Bedingungen startet kein Paket.
@@ -925,6 +927,14 @@ if [ -f "$RUNS_PY" ]; then
     --note "extern beendet (Sitzung fehlt)" >>"$LOG" 2>&1 || true
 fi
 register_start
+# AP19: Ab jetzt ist RUN_ID bekannt. Der Filter wird erneut eingerichtet,
+# damit Paket-, Reparatur- und Assistenzsessions die Lauf-ID tragen und ihr
+# Zustand aus dem Laufregister abgeleitet werden kann (ohne Register bleibt
+# es beim cat-Rückfall). Die Zuweisung steht bewusst ohne Einrückung, damit
+# sie als zweite Filterzuweisung am Zeilenanfang erkennbar bleibt.
+if [ -f "$RUNS_PY" ]; then
+STREAM_FILTER=(python3 "$RUNS_PY" stream --state "$LOG.state.json" --attempt --sessions "$RUNTIME/sessions.json" --session-project "$P" --session-name "$NAME" --session-run "$RUN_ID" --session-agent "$AGENT" --session-harness "$HARNESS")
+fi
 if [ "$HARNESS" = "pi" ]; then RUN_MODE="Pi --print"
 elif [ "$PRIVATE_SERVER" = 1 ]; then RUN_MODE="privater opencode-Server"
 else RUN_MODE="$SERVER_ARGS"; fi

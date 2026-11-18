@@ -9,6 +9,9 @@ Aufruf:  vibe                 interaktives Menü
          vibe logs <p>        Log verfolgen
          vibe stop <p> [lauf-id]  Lauf beenden (ohne ID: der letzte laufende Lauf)
          vibe runs [list|prune]  Läufe anzeigen; prune markiert verwaiste Einträge als beendet
+         vibe sessions [list] [--limit N] [--project NAME] [suchtext]  erfasste Sessions auflisten
+         vibe sessions limit [N]  Standardlimit der Sessionliste zeigen/setzen
+         vibe sessions resume <p> (--session ID | --last | --aborted)  Session fortsetzen
          vibe pause <p> [on|off]  nach dem aktuellen Arbeitspaket anhalten
          vibe ask "Frage" [--option "A" ...] [--project <p>] [--timeout <s>] [--no-wait]
                               Rückfrage an den Nutzer (erscheint im Dashboard)
@@ -2192,6 +2195,133 @@ def cmd_runs(action="list"):
         print(f"Verwaist beendet: {run_id} (Sitzung {session} fehlt)")
         ended += 1
     print(f"{ended} verwaiste Einträge beendet, {running} laufen weiter, {unknown} nicht prüfbar.")
+
+def cmd_sessions(args):
+    """AP19: Sessions auflisten, Standardlimit pflegen, eine Session fortsetzen.
+
+    Jede Ablehnung bricht mit einer verständlichen Meldung ab, bevor ein Lauf
+    gestartet wird. Die eigentliche Fortsetzung läuft über die unveränderte
+    AP14-Mechanik ``cmd_run(..., continue_session=...)``.
+    """
+    args = list(args or [])
+    if args and args[0] == "list":
+        action, rest = "list", list(args[1:])
+    elif args and not str(args[0]).startswith("-"):
+        action, rest = args[0], list(args[1:])
+    else:
+        action, rest = "list", list(args)
+    usage = ("vibe sessions [list] [--limit N] [--project NAME] [suchtext]\n"
+             "       vibe sessions limit [N]\n"
+             "       vibe sessions resume <projekt> (--session ID | --last | --aborted)")
+    if action not in ("list", "limit", "resume"):
+        sys.exit(usage)
+
+    if action == "limit":
+        if len(rest) > 1:
+            sys.exit("vibe sessions limit [N]")
+        registry = vibe_runs.SessionRegistry(LOGS)
+        if not rest:
+            print(f"Standardlimit für Sessions: {registry.limit()}")
+            return
+        try:
+            value = int(rest[0])
+        except ValueError:
+            sys.exit(f"Ungültiges Session-Limit: {rest[0]!r} "
+                     f"(erlaubt: 1..{vibe_runs.SESSION_LIMIT_MAX})")
+        try:
+            registry.set_limit(value)
+        except ValueError as error:
+            sys.exit(str(error))
+        print(f"Standardlimit für Sessions: {registry.limit()}")
+        return
+
+    if action == "resume":
+        if not rest:
+            sys.exit(usage)
+        name = rest[0]
+        project = ppath(name)
+        options = rest[1:]
+        if "--session" in options:
+            position = options.index("--session")
+            if position + 1 >= len(options):
+                sys.exit("--session braucht eine Session-Kennung")
+            session_id = options[position + 1]
+            entry = vibe_runs.SessionRegistry(LOGS).get(session_id)
+            if (not entry or os.path.realpath(str(entry.get("project") or ""))
+                    != os.path.realpath(project)):
+                sys.exit(f"Session '{session_id}' ist für Projekt '{name}' nicht im Register.")
+        elif "--last" in options or "--aborted" in options:
+            candidates = vibe_runs.session_overview(
+                LOGS, project=project, limit=vibe_runs.SESSION_LIMIT_MAX)
+            if "--aborted" in options:
+                candidates = [item for item in candidates
+                              if item.get("state") == "aborted"]
+                label = "abgebrochene"
+            else:
+                label = "jüngste"
+            if not candidates:
+                sys.exit(f"Keine {label} Session für Projekt '{name}' im Register.")
+            session_id = candidates[0]["session"]
+        else:
+            sys.exit("--session, --last oder --aborted angeben")
+
+        # Reihenfolge: aktiver Lauf (Register oder Sitzung) vor der Frage, ob
+        # der Harness überhaupt fortsetzen kann.
+        active = tmux_has(name)
+        if not active:
+            real = os.path.realpath(project)
+            active = any(
+                str(record.get("state")) in vibe_runs.LIVE_STATES
+                and os.path.realpath(os.path.abspath(str(record.get("project") or ""))) == real
+                for record in run_registry().all()
+            )
+        if active:
+            sys.exit(f"Für Projekt '{name}' läuft bereits ein Lauf; "
+                     "Fortsetzen ist erst nach Stoppen möglich.")
+        try:
+            selected = vibe_harness.read_selection(PATHS.state)
+        except vibe_harness.HarnessError:
+            selected = "opencode"
+        if not vibe_harness.supports(selected, "continue"):
+            sys.exit("Fortsetzen ist bei Pi nicht möglich: Pi läuft im "
+                     "Print-Modus (--no-session) ohne fortsetzbare Session.")
+        cmd_run(name, continue_session=session_id)
+        return
+
+    limit = None
+    project = None
+    search = []
+    position = 0
+    while position < len(rest):
+        value = rest[position]
+        if value in ("--limit", "--project"):
+            position += 1
+            if position >= len(rest):
+                sys.exit(f"{value} braucht einen Wert")
+            if value == "--project":
+                project = rest[position]
+            else:
+                try:
+                    limit = int(rest[position])
+                except ValueError:
+                    sys.exit(f"Ungültiges Session-Limit: {rest[position]!r}")
+        elif str(value).startswith("-"):
+            sys.exit(f"Unbekannte Option für vibe sessions: {value}")
+        else:
+            search.append(str(value))
+        position += 1
+    try:
+        entries = vibe_runs.session_overview(
+            LOGS, project=project, limit=limit, text=" ".join(search) or None)
+    except ValueError as error:
+        sys.exit(str(error))
+    if not entries:
+        print("Keine Sessions im Register.")
+        return
+    for entry in entries:
+        print(f"{entry['session']}  {entry['state_label']}  "
+              f"{entry.get('agent') or '?'}  "
+              f"{entry.get('name') or entry.get('project') or '?'}")
 
 class VerifyConfigError(ValueError):
     """Prüfkonfiguration ist unvollständig oder nur ein Platzhalter."""
@@ -5569,6 +5699,7 @@ def main():
         table = {"list": lambda: cmd_list(), "status": lambda: cmd_status(r[0]), "run": lambda: cmd_run_cli(r),
                  "attach": lambda: cmd_attach(r[0]), "logs": lambda: cmd_logs(r[0]), "stop": lambda: cmd_stop(r[0], r[1] if len(r) > 1 else None),
                  "runs": lambda: cmd_runs(r[0] if r else "list"),
+                 "sessions": lambda: cmd_sessions(r),
                  "pause": lambda: cmd_pause(r[0], r[1] if len(r) > 1 else None),
                  "ask": lambda: cmd_ask(r), "questions": lambda: cmd_questions(),
                  "answer": lambda: cmd_answer(r),
