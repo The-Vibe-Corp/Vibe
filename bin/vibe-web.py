@@ -1274,7 +1274,7 @@ class H(BaseHTTPRequestHandler):
                         "wird unterstützt.")
                 else:
                     entry = vibe_runs.SessionRegistry(PATHS.runtime).get(session)
-                    project = vibe._real(vibe.ppath(name))
+                    project = vibe._real(vibe.ppath(name))  # pylint: disable=protected-access
                     if (not entry or os.path.realpath(
                             str(entry.get("project") or "")) != project):
                         ok, msg = False, (

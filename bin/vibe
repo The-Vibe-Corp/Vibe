@@ -2299,7 +2299,10 @@ def cmd_sessions(args):
             if position >= len(rest):
                 sys.exit(f"{value} braucht einen Wert")
             if value == "--project":
-                project = rest[position]
+                # AP19/Review M1: --project ist ein Projektname aus der
+                # Projektkarte, kein Pfad relativ zum aktuellen Verzeichnis.
+                # ppath meldet einen unbekannten Namen klar und bricht ab.
+                project = ppath(rest[position])
             else:
                 try:
                     limit = int(rest[position])

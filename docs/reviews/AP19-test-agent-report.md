@@ -16,12 +16,12 @@ Auftrag war das Schreiben von Testfällen (kein Produktionscode) für AP19:
 
 | Datei | Umfang |
 |---|---|
-| `tests/unit/test_ap19_sessions_registry.py` | 21 Tests |
+| `tests/unit/test_ap19_sessions_registry.py` | 23 Tests (21 + 2 aus Runde 3) |
 | `tests/unit/test_ap19_runner_capture.py` | 11 Tests |
-| `tests/unit/test_ap19_sessions_cli.py` | 18 Tests |
+| `tests/unit/test_ap19_sessions_cli.py` | 19 Tests (18 + 1 aus Runde 3, mit zwei Unterfällen) |
 | `tests/unit/test_ap19_sessions_api.py` | 17 Tests |
 | `tests/browser/test_ap19_sessions_ui.py` | 7 Tests |
-| **Summe** | **74 Tests** |
+| **Summe** | **77 Tests** |
 
 Grenzen, die eingehalten wurden:
 
@@ -195,8 +195,8 @@ Payload verhindert, dass die UI versehentlich die falsche Session startet.
 
 ## Ausführungsergebnisse (tatsächlich)
 
-Alle Befehle im Arbeitsbaum
-`/home/vibe/vibe-logs/worktrees/vibe-AP19-0es20i`.
+Alle Befehle im Arbeitsbaum `vibe-AP19-0es20i` (Paket-Worktree unter
+`/home/nutzer/vibe-logs/worktrees/`).
 
 ### Rotphase der Unit-Suiten (Baseline ohne AP19-Implementierung)
 
@@ -349,3 +349,150 @@ nicht abgeschwächt.
 Damit sind alle 74 AP19-Fälle und alle 53 Regressionstests grün. Es wurden
 keine weiteren Dateien und keine Produktionsdateien verändert sowie keine
 Commits erstellt.
+
+## Nachträge Runde 3 (2026-11-19)
+
+Grundlage: Review-Befunde M1 (Projektfilter/CWD), M2 (Kürzen nach
+Einfügereihenfolge), Minor (`session_overview` bei beschädigtem `last_seen`)
+sowie H1 (fehlende Browser-Rotphasen-Dokumentation). Es wurden **nur
+Testfälle ergänzt**; bestehende Fälle, Produktionsdateien und Branches blieben
+unangetastet. Die zugehörigen Implementierungskorrekturen (M1/M2/Minor/Toast)
+sind **nicht** Teil dieser Runde; die drei neuen Fälle sind gegen `57cc5db`
+erwartungsgemäß **ROT**.
+
+Neue Fallzahl: **77** (23 Registry + 11 Capture + 19 CLI + 17 API + 7 Browser).
+Der CLI-Fall enthält zwei Unterfälle (`subTest`), zählt aber als ein Testfall.
+
+### A1 (Review M1) — `ProjectFilterCwdTest` in `tests/unit/test_ap19_sessions_cli.py`
+
+Fachlichkeit: `--project` ist ein Projektname aus der Projektkarte. Die
+Auflösung darf nicht davon abhängen, aus welchem Arbeitsverzeichnis die CLI
+läuft; ein unbekannter Name ist ein Fehler, keine stille Leerliste.
+
+`test_list_project_filter_works_from_a_foreign_cwd` (zwei Unterfälle):
+- Vorbedingung: Projekt `proj` mit erfasster Session; CWD ist ein leeres
+  Fremdverzeichnis unterhalb von `TMPDIR`, nicht die Workspace-Wurzel.
+- (a) Erwartung: `vibe sessions list --project proj` zeigt `ses_proj`,
+  Exit 0.
+- (b) Erwartung: `--project gibtesnicht` endet mit Exit != 0, nennt den Namen
+  und erzeugt keinen Traceback.
+- Rotphase gegen `57cc5db`:
+  `python3 -m unittest tests.unit.test_ap19_sessions_cli.ProjectFilterCwdTest -v`
+  → **Ran 1 test, FAILED (failures=2)**, Exit 1.
+  - (a) `AssertionError: 'ses_proj' not found in 'Keine Sessions im Register.\n'`
+  - (b) `AssertionError: 0 == 0 : Unbekanntes Projekt wurde still als leere
+    Liste behandelt: Keine Sessions im Register.`
+
+### A2 (Review M2) — `OverviewLimitTest.test_reobserved_old_entry_survives_the_100_limit_trim`
+
+Fachlichkeit: Die Obergrenze 100 muss nach `last_seen` verwerfen. Ein erneut
+beobachteter alter Eintrag trägt das neueste `last_seen` und ist damit
+fortsetzbar; er darf nicht wegen seiner alten Einfügeposition wegfallen.
+
+- Vorbedingung: `ses_001`..`ses_100` mit `last_seen` 1..100 beobachten;
+  danach `ses_001` mit `now=200` erneut beobachten und `ses_neu` mit
+  `now=201` (erzwingt das Kürzen).
+- Erwartung: `ses_001` bleibt, `ses_002` (kleinstes `last_seen`) fällt weg,
+  genau 100 Einträge, Übersicht beginnt mit `ses_neu`, `ses_001`, `ses_100`.
+- Rotphase gegen `57cc5db`:
+  `python3 -m unittest tests.unit.test_ap19_sessions_registry.OverviewLimitTest.test_reobserved_old_entry_survives_the_100_limit_trim -v`
+  → **FAILED (failures=1)**, Exit 1.
+  Kernaussage:
+  `AssertionError: 'ses_001' not found in ['ses_002', …, 'ses_100', 'ses_neu']
+  : Der erneut gesehene Eintrag wurde nach Einfügereihenfolge verworfen`.
+
+### A3 (Review Minor) — `OverviewRobustnessTest.test_overview_skips_entries_with_corrupt_last_seen`
+
+Fachlichkeit: Ein einzelner manuell beschädigter Eintrag (`last_seen` als
+Text) darf Liste, API und UI nicht mit `ValueError` abbrechen.
+
+- Festgelegte Variante: Der beschädigte Eintrag wird **übersprungen** (nicht
+  mit `last_seen` 0 geführt).
+- Vorbedingung: `sessions.json` von Hand mit zwei Einträgen — `ses_ok` mit
+  intakten Zahlenfeldern, `ses_bad` mit `"last_seen": "abc"`.
+- Erwartung: kein Absturz; die Übersicht enthält nur `ses_ok`.
+- Rotphase gegen `57cc5db`:
+  `python3 -m unittest tests.unit.test_ap19_sessions_registry.OverviewRobustnessTest.test_overview_skips_entries_with_corrupt_last_seen -v`
+  → **FAILED (errors=1)**, Exit 1.
+  Kernaussage: `ValueError: invalid literal for int() with base 10: 'abc'`.
+
+### B (Review H1) — Browser-Rotphase gegen den Basiscommit
+
+Reproduktion am Basiscommit `b8b08e6` in einem temporären, losgelösten
+Worktree; der Hauptarbeitsbaum blieb auf `57cc5db`.
+
+1. `git worktree add --detach /tmp/opencode/ap19-rot-b8b08e6 b8b08e6`
+   → Exit 0, `HEAD is now at b8b08e6`.
+2. Fünf AP19-Testdateien unverändert aus `57cc5db` kopiert:
+   `git show 57cc5db:<pfad> > /tmp/opencode/ap19-rot-b8b08e6/<pfad>`
+   (Registry, Runner-Capture, CLI, API, Browser).
+3. Im Rot-Worktree:
+   `python3 -m unittest tests.browser.test_ap19_sessions_ui -v`
+   → **Ran 7 tests in 145.278s, FAILED (errors=7)**, Exit 1.
+   Alle sieben Fälle scheitern identisch beim Warten auf die Sessions-Karte:
+   `playwright._impl._errors.TimeoutError: Locator.wait_for: Timeout 20000ms
+   exceeded.` Betroffen: `test_card_lists_sessions_with_state_labels_and_pill_tones`,
+   `test_row_shows_a_human_readable_last_seen_time`,
+   `test_empty_state_when_no_sessions_were_captured`,
+   `test_resume_posts_exactly_name_session_and_action`,
+   `test_resume_is_not_offered_while_the_run_is_active`,
+   `test_pi_shows_no_resume_button_and_explains_no_session`,
+   `test_resume_can_be_operated_by_keyboard`.
+4. Aufgeräumt:
+   `git worktree remove --force /tmp/opencode/ap19-rot-b8b08e6`
+   → Exit 0, Verzeichnis entfernt; `git worktree list` zeigt nur die bekannten
+   Worktrees (Hauptprojekt, AP19-Arbeitsbaum, F31-Arbeitsbaum).
+
+Hinweis: Die erste Ausführung derselben Suite gegen den unveränderten
+Basisstand erfolgte bereits am 18.11.2026 durch den Koordinator
+(`Ran 7 tests in 143.694s, FAILED (errors=7)`). Die obige Reproduktion
+bestätigt dieses Ergebnis und macht es nachvollziehbar.
+
+### Erneute Läufe am Paketstand `57cc5db` (nach Ergänzung)
+
+- `python3 -m unittest tests.unit.test_ap19_sessions_registry -v`
+  → **Ran 23 tests, FAILED (failures=1, errors=1)**, Exit 1 — genau A2/A3 rot,
+  die 21 Bestandsfälle grün.
+- `python3 -m unittest tests.unit.test_ap19_sessions_cli -v`
+  → **Ran 19 tests, FAILED (failures=2)**, Exit 1 — die zwei Unterfälle aus A1
+  rot, die 18 Bestandsfälle grün.
+- `python3 -m unittest tests.unit.test_ap19_runner_capture tests.unit.test_ap19_sessions_api -v`
+  → **Ran 28 tests, OK**, Exit 0.
+- `python3 -m unittest tests.browser.test_ap19_sessions_ui`
+  → **Ran 7 tests, OK**, Exit 0.
+- Regressionen (AP14/F25/F19):
+  `python3 -m unittest tests.unit.test_ap14_runner_continue tests.unit.test_ap14_output_view_api tests.unit.test_f25_session_continue tests.unit.test_output_view_f19_api`
+  → **Ran 53 tests, OK**, Exit 0.
+
+Damit sind 74 der 77 AP19-Fälle grün; die drei neuen Fälle sind bis zur
+Umsetzung der Review-Korrekturen erwartungsgemäß rot. Es wurden keine
+Produktionsdateien verändert und keine Commits erstellt.
+
+### Home-Pfad-Hygiene (Befund aus der Vollprüfung)
+
+Die Hygiene-Prüfungen des Projekts
+(`tests/unit/test_ap12_github_readiness.py` und `tests/unit/test_release.py`)
+lehnen versionierte Dateien mit absoluten echten Home-Pfaden ab. Der Bericht
+enthielt eine solche Stelle im Abschnitt „Ausführungsergebnisse“ (Zeile 199):
+einen absoluten Pfad mit echtem Nutzer-Home-Präfix auf den Arbeitsbaum
+`vibe-AP19-0es20i`.
+
+Ersetzt nach der etablierten AP17-Konvention:
+- vorher: absoluter Pfad `$HOME/vibe-logs/worktrees/vibe-AP19-0es20i` mit
+  echtem Home-Präfix
+- nachher: „Alle Befehle im Arbeitsbaum `vibe-AP19-0es20i` (Paket-Worktree
+  unter `/home/nutzer/vibe-logs/worktrees/`).“
+
+Die anschließende Suche `grep -n "/home/" docs/reviews/AP19-test-agent-report.md`
+findet nur noch die Konventionsform `/home/nutzer/vibe-logs/worktrees/`; echte
+Nutzer-Home-Pfade sind nicht mehr enthalten (`/tmp/opencode`-Pfade sind
+zulässig und bleiben).
+
+Beide Hygiene-Fälle wurden einzeln ausgeführt:
+- `python3 -m unittest tests.unit.test_ap12_github_readiness.TrackedContentHygieneTest.test_no_tracked_file_contains_personal_home_paths_or_secrets -v`
+  → **Ran 1 test, OK**, Exit 0.
+- `python3 -m unittest tests.unit.test_release.ReleaseBuildTest.test_repository_content_has_no_personal_home_paths_or_secrets -v`
+  → **Ran 1 test, OK**, Exit 0.
+
+Die übrigen vorbestehenden Befunde dieser Suiten sind nicht Teil dieses
+Nachtrags.

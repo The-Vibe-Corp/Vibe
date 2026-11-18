@@ -217,7 +217,8 @@ async function sessionsCard(name){
   if(!list.length)card.append(el('div',{class:'mut'},'Noch keine erfassten Sessions.'));
   for(const s of list){
     const btn=canResume?el('button',{class:'b',type:'button','aria-label':'Session '+s.session+' fortsetzen',on:{click:async()=>{
-      try{const r=await api('/api/sessions',{name,session:s.session,action:'continue'});toast((r&&r.message)||'Fortsetzen gestartet.')}
+      try{const r=await api('/api/sessions',{name,session:s.session,action:'continue'});
+        toast(r&&r.ok?((r.message)||'Fortsetzen gestartet.'):'Fortsetzen abgelehnt: '+((r&&r.message)||'Unbekannter Grund.'))}
       catch(e){toast('Fortsetzen nicht gestartet: '+String(e&&e.message||e))}
     }}},'Fortsetzen'):null;
     card.append(el('div',{class:'bar','data-session':String(s.session)},

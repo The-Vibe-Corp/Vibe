@@ -957,7 +957,7 @@
         "bin/web/app.js"
       ],
       "datum": "2026-11-18",
-      "grund": "Session Management: session.json-Register mit Zustandsableitung aus dem Laufregister, Erfassung der Hauptsession im Protokollfilter (Preflight ohne, Paketlauf mit Lauf-ID), CLI vibe sessions (list/limit/resume), Web-API GET/POST /api/sessions und Sessions-Karte im Dashboard; Fortsetzen weiterhin über die unveränderte AP14-Mechanik."
+      "grund": "Session Management: sessions.json-Register mit Zustandsableitung aus dem Laufregister, Erfassung der Hauptsession im Protokollfilter (Preflight ohne, Paketlauf mit Lauf-ID), CLI vibe sessions (list/limit/resume), Web-API GET/POST /api/sessions und Sessions-Karte im Dashboard; Fortsetzen weiterhin über die unveränderte AP14-Mechanik. Reviewkorrekturen: Projektauflösung über die Projektkarte im Projektfilter, Kürzung des Registers nach last_seen statt Einfügereihenfolge, überspringen beschädigter Zeitwerte in der Übersicht und korrekter Erfolgs-Toast bei abgelehntem Fortsetzen. Lint-Kommentarnachziehung: pylint protected-access an der AP19-Session-Fortsetzungsstelle in bin/vibe-web.py."
     }
   ],
   "files": [
@@ -972,9 +972,9 @@
       "sha256": "e5ae3183efcb76dace1e0bcbde9993be7afe82d93d7877da9ee39846cf45330a"
     },
     {
-      "bytes": 267626,
+      "bytes": 267857,
       "path": "bin/vibe",
-      "sha256": "dff8004857f812d669c64e87620eaad6d2c22fba2eaeeb6890b9fa8e9468c879"
+      "sha256": "9c1b9fe56d2ca16acceb451d04a00a0826ac5d4009638131102fc3a245496a4e"
     },
     {
       "bytes": 57599,
@@ -982,9 +982,9 @@
       "sha256": "ff57ee60a765d6fe424c5a6e54a026dbf706f0fcc54c3cbb2405652a7eb497c5"
     },
     {
-      "bytes": 98634,
+      "bytes": 98670,
       "path": "bin/vibe-web.py",
-      "sha256": "8ab40d0ff59d656879445a095ca54ac7641039c9312d580b50caf4930a2e3942"
+      "sha256": "b6a9fade6bf537d0dac7ecd065f9b449c16d8f99bee7a3cf863540ebda9fee58"
     },
     {
       "bytes": 5189,
@@ -1047,9 +1047,9 @@
       "sha256": "9a4bb9a2a182977c276b04676b133d918c97ed4f0a957c4d6f0e72835848b5cd"
     },
     {
-      "bytes": 52915,
+      "bytes": 54711,
       "path": "bin/vibe_runs.py",
-      "sha256": "2c97d065ec455596a8c43a9ff793b7cd5f8d635dffd6ad2c9f93d2b64409c258"
+      "sha256": "ed7ab6569b25f5988de4ed5b5dc0262a60be21e45e489e5993fd2a4e28740966"
     },
     {
       "bytes": 28218,
@@ -1072,9 +1072,9 @@
       "sha256": "d49b2406f2c9837c63ed3c3dcb265938fe5702e78c5aeb0df07b9f349fd65594"
     },
     {
-      "bytes": 128257,
+      "bytes": 128337,
       "path": "bin/web/app.js",
-      "sha256": "48b6354d2e300442852791de07c34210e773d9d9d148079a088d8ccbb11d522c"
+      "sha256": "20deee63cf0dfcbd949bf14008273dd9ef470b2a6491256c8cc234f6fb20cdaa"
     },
     {
       "bytes": 588,

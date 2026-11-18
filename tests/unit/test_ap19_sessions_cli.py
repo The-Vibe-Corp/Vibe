@@ -413,6 +413,76 @@ class ListTest(SessionsCliFixture):
                          "Suchtext filterte nicht: " + text)
 
 
+class ProjectFilterCwdTest(SessionsCliFixture):
+    """Review M1: Der Projektfilter darf nicht am Arbeitsverzeichnis hängen.
+
+    ``--project`` ist ein Projektname aus der Projektkarte, kein Pfad. Die
+    Auflösung muss unabhängig davon sein, aus welchem Verzeichnis die CLI
+    aufgerufen wird; ein unbekannter Name ist ein Fehler, keine leere Liste.
+    """
+
+    def seed_one_project_session(self):
+        self.add_run("lauf-proj", "finished", project="proj")
+        self.seed_sessions([
+            self.session("ses_proj", project="proj", run_id="lauf-proj",
+                         first=100, last=200),
+        ])
+
+    def run_from(self, cwd, *args):
+        return subprocess.run(
+            [sys.executable, str(CLI), *args],
+            cwd=str(cwd),
+            env=self.env(),
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            timeout=90,
+        )
+
+    def test_list_project_filter_works_from_a_foreign_cwd(self):
+        """Vorbedingung: Projekt ``proj`` mit erfasster Session; ein leeres
+        Fremdverzeichnis, das weder Workspace-Wurzel noch Projekt ist.
+        Aktion/Erwartung, zwei Unterfälle:
+        (a) ``vibe sessions list --project proj`` aus dem Fremdverzeichnis:
+            die Session von proj erscheint (Namensauflösung über die
+            Projektkarte, nicht über das CWD).
+        (b) ``--project gibtesnicht``: Exit != 0 und eine Meldung, die den
+            unbekannten Namen nennt; kein Traceback, keine stille Leerliste.
+        Fehlerfall: leere Liste bzw. Exit 0, weil ``--project`` relativ zum
+        CWD aufgelöst wird.
+        """
+        self.seed_one_project_session()
+        foreign = self.root / "tmp" / "fremdes-cwd"
+        foreign.mkdir(parents=True, exist_ok=True)
+
+        with self.subTest(fall="bekanntes Projekt aus fremdem CWD"):
+            result = self.run_from(
+                foreign, "sessions", "list", "--project", "proj")
+            text = self.output(result)
+            self.assertEqual(0, result.returncode, text)
+            self.assertIn(
+                "ses_proj", text,
+                "Der Projektfilter verfehlt das Projekt aus fremdem CWD: "
+                + text)
+
+        with self.subTest(fall="unbekanntes Projekt"):
+            result = self.run_from(
+                foreign, "sessions", "list", "--project", "gibtesnicht")
+            text = self.output(result)
+            self.assertNotEqual(
+                0, result.returncode,
+                "Unbekanntes Projekt wurde still als leere Liste behandelt: "
+                + text)
+            self.assertIn(
+                "gibtesnicht", text,
+                "Die Fehlermeldung nennt den unbekannten Projektnamen nicht: "
+                + text)
+            self.assertNotIn(
+                "Traceback", text,
+                "Unbekanntes Projekt führte zu einem Absturz statt zu einer "
+                "Meldung: " + text)
+
+
 class LimitCommandTest(SessionsCliFixture):
     """AK1: ``vibe sessions limit`` zeigen und setzen."""
 

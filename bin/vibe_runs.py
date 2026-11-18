@@ -919,6 +919,14 @@ class RunRegistry:
             return found
 
 
+def _epoch_number(value):
+    """Epochenwert defensiv als int; unlesbare Angaben ergeben None."""
+    try:
+        return int(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+
 class SessionRegistry:
     """Erfasste Hauptsessions eines Laufzeitordners (AP19).
 
@@ -972,7 +980,23 @@ class SessionRegistry:
         }
 
     def _write(self, data):
-        sessions = list(data.get("sessions") or [])[-SESSION_LIMIT_MAX:]
+        sessions = list(data.get("sessions") or [])
+        if len(sessions) > SESSION_LIMIT_MAX:
+            # Review M2: Es bleiben die Einträge mit den höchsten last_seen,
+            # nicht die letzten der Einfügereihenfolge. Ein erneut beobachteter
+            # alter Eintrag trägt das neueste last_seen und überlebt damit.
+            # Unlesbare Zeitwerte zählen als 0; die Reihenfolge der übrig
+            # gebliebenen Einträge bleibt unverändert.
+            def seen_at(index):
+                item = sessions[index]
+                value = _epoch_number(item.get("last_seen")) if isinstance(item, dict) else None
+                return value if value is not None else 0
+
+            ranked = sorted(
+                range(len(sessions)), key=lambda index: (seen_at(index), index)
+            )[-SESSION_LIMIT_MAX:]
+            keep = set(ranked)
+            sessions = [item for index, item in enumerate(sessions) if index in keep]
         text = json.dumps(
             {"limit": int(data.get("limit", SESSION_LIMIT_DEFAULT)),
              "sessions": sessions},
@@ -1048,7 +1072,9 @@ def session_overview(runtime, project=None, limit=None, text=None):
     Die Rangfolge des Limits ist Parameter > gespeicherter Standard > 5. Der
     Projektfilter vergleicht über ``realpath``, der Textfilter sucht ohne
     Rücksicht auf Groß-/Kleinschreibung in der Session-Kennung. Jeder Eintrag
-    trägt die Registerfelder sowie ``state`` und ``state_label``.
+    trägt die Registerfelder sowie ``state`` und ``state_label``. Ein Eintrag
+    mit unlesbarem ``last_seen`` wird übersprungen statt die Auflistung
+    abbrechen zu lassen.
     """
     registry = SessionRegistry(runtime)
     if limit is None:
@@ -1073,7 +1099,21 @@ def session_overview(runtime, project=None, limit=None, text=None):
             item for item in entries
             if needle in str(item.get("session") or "").lower()
         ]
-    entries.sort(key=lambda item: int(item.get("last_seen") or 0), reverse=True)
+    # Review Minor: Zeitfelder defensiv überführen. Ein beschädigter
+    # last_seen-Wert darf weder Liste noch API noch UI abbrechen; der Eintrag
+    # wird übersprungen. Die Sortierung läuft danach über die Zahlenwerte.
+    usable = []
+    for item in entries:
+        last = _epoch_number(item.get("last_seen"))
+        if last is None:
+            continue
+        first = _epoch_number(item.get("first_seen"))
+        view = dict(item)
+        view["last_seen"] = last
+        view["first_seen"] = first if first is not None else 0
+        usable.append((last, view))
+    usable.sort(key=lambda pair: pair[0], reverse=True)
+    entries = [view for _, view in usable]
 
     runs = RunRegistry(runtime)
     overview = []

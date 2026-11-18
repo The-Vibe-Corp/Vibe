@@ -572,6 +572,87 @@ class OverviewLimitTest(RegistryFixture):
                 with self.assertRaises(ValueError, msg=f"{value!r} akzeptiert"):
                     self.overview(limit=value)
 
+    def test_reobserved_old_entry_survives_the_100_limit_trim(self):
+        """Review M2: Die Obergrenze verwirft nach ``last_seen``, nicht nach
+        Einfügereihenfolge.
+
+        Vorbedingung: genau 100 Sessions ``ses_001``..``ses_100`` mit
+        ``last_seen`` 1..100 in Einfügereihenfolge.
+        Aktion: ``ses_001`` erneut mit ``now=200`` beobachten (Upsert an alter
+        Position, neues ``last_seen``), danach ``ses_neu`` mit ``now=201``
+        beobachten, wodurch das Kürzen auf 100 erzwungen wird.
+        Erwartung: ``ses_001`` bleibt im Register; der Eintrag mit dem
+        kleinsten ``last_seen`` (``ses_002``) fällt weg; genau 100 Einträge;
+        die Übersicht beginnt mit ``ses_neu``, ``ses_001``, ``ses_100`` …
+        Fehlerfall: Kürzen nach Einfügereihenfolge verwirft ausgerechnet den
+        erneut gesehenen, fortsetzbaren Eintrag.
+        """
+        for index in range(1, 101):
+            self.observe("ses_%03d" % index, now=index)
+        self.observe("ses_001", now=200)
+        self.observe("ses_neu", now=201)
+
+        sessions = [item.get("session")
+                    for item in self.read_file().get("sessions") or []]
+        self.assertEqual(
+            100, len(sessions),
+            "Das Register ist nach dem Kürzen nicht bei 100 Einträgen: "
+            + str(len(sessions)))
+        self.assertIn(
+            "ses_001", sessions,
+            "Der erneut gesehene Eintrag wurde nach Einfügereihenfolge "
+            "verworfen: " + repr(sessions[:5]))
+        self.assertNotIn(
+            "ses_002", sessions,
+            "Verworfen wurde nicht der Eintrag mit dem kleinsten last_seen: "
+            + repr(sessions[:5]))
+
+        overview = self.overview(limit=100)
+        self.assertEqual(100, len(overview), len(overview))
+        self.assertEqual(
+            ["ses_neu", "ses_001", "ses_100"],
+            [item["session"] for item in overview[:3]],
+            "Die Übersicht sortiert nicht nach dem aktuellen last_seen: "
+            + repr([item["session"] for item in overview[:5]]))
+
+
+class OverviewRobustnessTest(RegistryFixture):
+    """Review Minor: Ein beschädigter ``last_seen`` darf die Auflistung nicht
+    crashen. Festgelegte Erwartung: der beschädigte Eintrag wird
+    übersprungen (nicht mit 0 geführt)."""
+
+    def test_overview_skips_entries_with_corrupt_last_seen(self):
+        """Vorbedingung: ``sessions.json`` von Hand mit zwei Einträgen — einer
+        mit intakten Zahlenfeldern, einer mit ``"last_seen": "abc"`` und
+        intakter Session-Kennung.
+        Aktion: ``session_overview`` aufrufen.
+        Erwartung: kein ``ValueError``; der beschädigte Eintrag wird
+        übersprungen, der intakte erscheint normal.
+        Fehlerfall: die gesamte Auflistung bricht wegen eines einzelnen
+        defekten Feldes ab.
+        """
+        intact = {
+            "session": "ses_ok", "project": self.project(), "name": "proj",
+            "run_id": "", "agent": "vibe-agent", "harness": "opencode",
+            "first_seen": 10, "last_seen": 100,
+        }
+        corrupt = {
+            "session": "ses_bad", "project": self.project(), "name": "proj",
+            "run_id": "", "agent": "vibe-agent", "harness": "opencode",
+            "first_seen": 10, "last_seen": "abc",
+        }
+        self.runtime.mkdir(parents=True, exist_ok=True)
+        self.sessions_file().write_text(
+            json.dumps({"limit": 5, "sessions": [corrupt, intact]}),
+            encoding="utf-8")
+
+        entries = self.overview(limit=100)
+
+        self.assertEqual(
+            ["ses_ok"], [item["session"] for item in entries],
+            "Der beschädigte Eintrag wurde nicht übersprungen oder die "
+            "Auflistung brach ab: " + repr(entries))
+
 
 if __name__ == "__main__":
     unittest.main()
