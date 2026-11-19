@@ -958,6 +958,16 @@
       ],
       "datum": "2026-11-18",
       "grund": "Session Management: sessions.json-Register mit Zustandsableitung aus dem Laufregister, Erfassung der Hauptsession im Protokollfilter (Preflight ohne, Paketlauf mit Lauf-ID), CLI vibe sessions (list/limit/resume), Web-API GET/POST /api/sessions und Sessions-Karte im Dashboard; Fortsetzen weiterhin über die unveränderte AP14-Mechanik. Reviewkorrekturen: Projektauflösung über die Projektkarte im Projektfilter, Kürzung des Registers nach last_seen statt Einfügereihenfolge, überspringen beschädigter Zeitwerte in der Übersicht und korrekter Erfolgs-Toast bei abgelehntem Fortsetzen. Lint-Kommentarnachziehung: pylint protected-access an der AP19-Session-Fortsetzungsstelle in bin/vibe-web.py. Boolesche Zeitwerte gelten als unlesbar."
+    },
+    {
+      "arbeitspaket": "F32",
+      "dateien": [
+        "bin/vibe",
+        "bin/vibe-web.py",
+        "bin/web/app.js"
+      ],
+      "datum": "2026-11-19",
+      "grund": "Subagenten-Parallelisierung: Agenten außer dem Vibe-Agenten können optional Subagenten ihres eigenen Typs erlauben (permission.task, Opt-in über die Agentenverwaltung, kein Standard); Hierarchieprüfung lässt Selbstaufruf zu, prüft Vibe-Rolle und eigenen Modus, Selbstkanten gelten nicht als Zyklus. Die Invariante gilt auch bei Rollenwechsel und Rohtext (zentrale Prüfung im Speicherpfad und in agent_role_set)."
     }
   ],
   "files": [
@@ -972,9 +982,9 @@
       "sha256": "e5ae3183efcb76dace1e0bcbde9993be7afe82d93d7877da9ee39846cf45330a"
     },
     {
-      "bytes": 267857,
+      "bytes": 270415,
       "path": "bin/vibe",
-      "sha256": "9c1b9fe56d2ca16acceb451d04a00a0826ac5d4009638131102fc3a245496a4e"
+      "sha256": "78988203db513e672c801d909bcc419828b1c96d1323133fc125be95f7a988e9"
     },
     {
       "bytes": 57599,
@@ -982,9 +992,9 @@
       "sha256": "ff57ee60a765d6fe424c5a6e54a026dbf706f0fcc54c3cbb2405652a7eb497c5"
     },
     {
-      "bytes": 98670,
+      "bytes": 100884,
       "path": "bin/vibe-web.py",
-      "sha256": "b6a9fade6bf537d0dac7ecd065f9b449c16d8f99bee7a3cf863540ebda9fee58"
+      "sha256": "2530836bac4e290a68c87e7d3c67a923d93637884a6a7e286336ca098f9f7bee"
     },
     {
       "bytes": 5189,
@@ -1072,9 +1082,9 @@
       "sha256": "d49b2406f2c9837c63ed3c3dcb265938fe5702e78c5aeb0df07b9f349fd65594"
     },
     {
-      "bytes": 128337,
+      "bytes": 129531,
       "path": "bin/web/app.js",
-      "sha256": "20deee63cf0dfcbd949bf14008273dd9ef470b2a6491256c8cc234f6fb20cdaa"
+      "sha256": "dffc82ca74e36501e380725abab79733be3bd44be5273bc59f1dd948304d739d"
     },
     {
       "bytes": 588,
@@ -1258,6 +1268,6 @@
     "setup-vibe.cmd",
     "VERSION"
   ],
-  "stand": "2026-11-18",
+  "stand": "2026-11-19",
   "version": 1
 }

@@ -1,6 +1,6 @@
 # Trilium-Index
 
-Zuordnung der Projekt-Dokumentation zu den Notizen in Trilium (Stand 2026-11-18).
+Zuordnung der Projekt-Dokumentation zu den Notizen in Trilium (Stand 2026-11-19).
 
 | Projekt | Bereich | Notiz | Notiz-ID |
 | --- | --- | --- | --- |
@@ -69,3 +69,4 @@ Zuordnung der Projekt-Dokumentation zu den Notizen in Trilium (Stand 2026-11-18)
 | vibe | Features | Fix: Geerbtes OPENCODE_PASSWORD blockierte den privaten opencode-Server | `PgaZqt2vEwBQ` |
 | vibe | Features | F31 Test-Suite-Effizienz: Prüfmodus package, gestufte Prüfpraxis, paralleler Läufer | `H0o1fqgdaNWP` |
 | vibe | Features | AP19 Session Management — Register, Erfassung, Auflistung und exaktes Fortsetzen | `bJEzUzTgBSHE` |
+| vibe | Features | F32 Subagenten-Parallelisierung: Selbstaufruf als Opt-in | `AxYQlwWQK6oX` |
