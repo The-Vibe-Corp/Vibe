@@ -822,3 +822,40 @@ Nach den Änderungen A–F (siehe `docs/features/AP21.md`) wurden dieselben
 Suiten erneut ausgeführt: `tests.unit.test_ap21_i18n` → **29 Tests, OK**.
 Die Browser-Suite und die weiteren Prüfungen sind im Abschnitt
 „Verifikation“ von `docs/features/AP21.md` dokumentiert.
+
+## 15.4 AP21 v2 — Rote Phase gegen `c496a65` (v1-Stand + Upgrade)
+
+Vor der v2-Implementierung wurde gegen den Stand `c496a65` (v1: i18n-
+Infrastruktur, Projekt-Sprachschalter) rot gemacht — die neuen v2-Verträge
+lassen sich an v1 nicht erfüllen, z. B.:
+
+- `GlobalLanguageServerTest` (GET/POST `/api/language`, HTML-Injektion,
+  ui.json-Roundtrip) – `404 not_found`, `vibe_ui_config` ohne `LANGUAGES`.
+- `test_meta_language_en_overrides_localstorage_de` – `i18n.js` fragt das
+  Meta-Feld `vibe-language` nicht ab; `readMeta` existiert nicht.
+- `test_web_files_cover_all_shipped_web_files` (Instal­lationsvollständigkeit)
+  – `WEB_FILES` in `scripts/setup-vibe.py` schließt `i18n.js` aus (Live-
+  Problem: `/static/i18n.js` liefert 404 in `vibe-toolchain/bin/web`).
+
+## 15.5 Die Schritte E/F der Implementierung (Rennfix, Syntaxfix, Typo)
+
+Korrekturen, die in die v2-Suiten eingehen (nach Dokumentation von
+`docs/features/AP21.md` „Render-Renn-Schutz“ und „Sprachumschalter“):
+
+- **Rennfix (Appen `bin/web/app.js`):** `RENDER_TOKEN` in `setTab`,
+  `rerenderView`, `detail`, `settings`; `renderStale(token)`-Guards vor
+  `main.replaceChildren` in `projects`, `agents`, `mcp`, `env`, `costs`,
+  `security`. Ausgangssituation: in `ReviewRound3Test.test_models_table_and_
+  select_are_english_and_german_reverses` blieb nach dem Umschalten auf DE die
+  GLOBALE „Agenten & Modelle“-Seite sichtbar und `select[data-model-override=
+  'ap21-modell-probe']` wurde nie angehängt — das in-Flight `agents()`-Render
+  (aus `open_models_card()` → `setTab('agents')`) ging nach der Navigation
+  in die Projektdetail über und wäschte die Detailansicht weg
+  (`panels: []`, `main` = globale Agentenpage). Nach dem Fix grün:
+  **25/25 Browser-Tests OK** (62 s).
+- **Syntaxfix:** `el('div',{class:'card',id='settings-language'},` hatte
+  `id='…'` statt `id:'…'` (ungültiges Objektliteral) — `node --check`
+  meldete „SyntaxError: Invalid shorthand property initializer“. Nach
+  Korrektur ist `node --check bin/web/app.js bin/web/i18n.js` OK.
+- **Konsistenz:** `settings()` für globale Nav-Tab und `MESSAGE_MAP`
+  (`Sprache gespeichert`), `(noch kein Commit)`-Mapping in `MESSAGE_PHRASES`.

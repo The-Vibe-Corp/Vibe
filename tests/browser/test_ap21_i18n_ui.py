@@ -256,6 +256,7 @@ isoliertem VIBE-Root und einer lokalen opencode-Attrappe, die keine
 Nachrichten liefert; die Agentenausgabe kommt aus der Zustandsdatei. Keine
 echten Modellaufrufe, keine produktive Installation.
 """
+import http.client
 import json
 import os
 import socket
@@ -494,6 +495,10 @@ class AP21BrowserTest(unittest.TestCase):
         (self.log_dir / "proj.log.state.json").unlink(missing_ok=True)
         (self.log_dir / "proj.log").unlink(missing_ok=True)
         (self.state_dir / "harness.json").unlink(missing_ok=True)
+        # AP21 v2: Die Sprache ist global in ui.json gespeichert. Vor jedem
+        # Test auf den englischen Standard zuruecksetzen (Datei + In-Memory),
+        # damit die Faelle unabhaengig sind.
+        self.post_language("en")
         self.page_errors = []
         self.dialogs = []
         self.page = self.browser.new_page(
@@ -556,7 +561,37 @@ class AP21BrowserTest(unittest.TestCase):
             self.page.wait_for_timeout(100)
         self.fail(message)
 
+    def post_language(self, lang, token=None):
+        """Setzt die globale Sprache direkt ueber die API (Test-Vorbedingung)."""
+        body = json.dumps({"language": lang}).encode("utf-8")
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=10)
+        try:
+            conn.request("POST", "/api/language", body=body, headers={
+                "Host": f"127.0.0.1:{self.port}", "X-Token": token or self.token,
+                "Content-Type": "application/json"})
+            resp = conn.getresponse()
+            return resp.status, resp.read().decode("utf-8", "replace")
+        finally:
+            conn.close()
+
+    def ui_json_language(self):
+        path = self.state_dir / "ui.json"
+        if not path.exists():
+            return None
+        return json.loads(path.read_text(encoding="utf-8")).get("language")
+
     # ---------- Sprache und Tabs ----------
+
+    def open_settings(self):
+        """Oeffnet die globale Navigationsseite 'Settings' (ohne Projekt)."""
+        if self.page.locator("#nav button[data-t]").count() == 0:
+            self.page.goto(self.base + "/#t=" + self.token)
+        nav_btn = self.page.locator("[data-t='settings']")
+        self.assertEqual(1, nav_btn.count(),
+                         "Der globale Nav-Tab [data-t='settings'] fehlt")
+        nav_btn.click()
+        self.page.locator("#settings-language").wait_for(
+            state="visible", timeout=15000)
 
     def html_lang(self):
         return self.page.evaluate("() => document.documentElement.lang")
@@ -627,15 +662,15 @@ class AP21BrowserTest(unittest.TestCase):
             state="visible", timeout=15000)
 
     def settings_select(self):
-        return self.page.locator(
-            "[data-panel='einstellungen'] select[aria-label='Language']")
+        """Der einzige globale Sprachumschalter (auf der Settings-Navseite)."""
+        return self.page.locator("select[aria-label='Language']")
 
     def require_settings_select(self):
         select = self.settings_select()
         self.assertEqual(
             1, select.count(),
-            "Der Sprachumschalter select[aria-label='Language'] fehlt in den "
-            "Einstellungen")
+            "Es gibt nicht genau einen globalen Sprachumschalter "
+            "select[aria-label='Language']")
         return select
 
     def settings_nav_chip(self, key):
@@ -712,13 +747,6 @@ class DefaultLanguageTest(AP21BrowserTest):
         self.open_project()
         self.open_tab("einstellungen")
 
-        panel = self.page.locator("[data-panel='einstellungen']")
-        panel_text = panel.inner_text()
-        self.assertIn(
-            "Language", panel_text,
-            "Der Einstellungsbereich nennt keinen Abschnitt „Language“: "
-            + repr(panel_text[:400]))
-
         for key, label in SETTINGS_NAV.items():
             chip = self.settings_nav_chip(key)
             self.assertEqual(
@@ -731,9 +759,23 @@ class DefaultLanguageTest(AP21BrowserTest):
                 f"Der Sprungknopf '{key}' ist nicht als {label!r} "
                 f"beschriftet: {chip_text!r}")
 
+        # AP21 v2: Kein Sprachumschalter mehr im Projekt-Einstellungs-Tab.
+        self.assertEqual(
+            0, self.page.locator(
+                "[data-panel='einstellungen'] select[aria-label='Language']").count(),
+            "Der Sprachumschalter darf nicht mehr im Projekt-Tab liegen")
+
+        # AP21 v2: Die Karte 'Language' liegt auf der globalen Settings-Seite.
+        self.open_settings()
+        card = self.page.locator("#settings-language")
+        self.assertIn(
+            "Language", card.inner_text(),
+            "Die globale Karte nennt keinen Abschnitt „Language“: "
+            + repr(card.inner_text()[:400]))
+
         select = self.require_settings_select()
         options = self.page.eval_on_selector_all(
-            "[data-panel='einstellungen'] select[aria-label='Language'] option",
+            "select[aria-label='Language'] option",
             "nodes => nodes.map(node => [node.value, node.textContent.trim()])")
         self.assertEqual(
             [["en", "English"], ["de", "Deutsch"]], options,
@@ -773,101 +815,196 @@ class DefaultLanguageTest(AP21BrowserTest):
 
 
 class LanguageSwitchTest(AP21BrowserTest):
-    def test_selecting_german_translates_visible_areas_without_reload(self):
-        """VP3: Deutsch im Umschalter stellt die sichtbare Oberfläche um.
+    """AP21 v2: Umschalten ueber die globale Settings-Navseite."""
 
-        Vorbedingung: Projekt geöffnet, Einstellungen geöffnet, Englisch aktiv.
-        Aktion: ``de`` im Sprachumschalter wählen; vorher einen JS-Marker
-        setzen, der ein Neuladen überführen würde.
-        Erwartung: ``lang="de"``, ``current()==='de'``, die Tabs sind nicht
-        mehr englisch beschriftet, der Marker lebt weiter; keine JS-Fehler.
-        Fehlerfall: Nur das ``lang``-Attribut wechselt, die Texte bleiben
-        englisch oder die Seite wird neu geladen.
+    def switch(self, lang):
+        self.open_settings()
+        self.require_settings_select().select_option(lang)
+        self.wait_until(lambda: self.html_lang() == lang, timeout=15,
+                        message=f"<html lang> wurde nicht {lang!r}")
+        self.wait_until(lambda: self.i18n().get("current") == lang, timeout=15,
+                        message=f"I18N.current() wurde nicht {lang!r}")
+
+    def back_to_project(self):
+        """Clientseitig (ohne Reload) vom Nav-Tab zurueck ins Projekt."""
+        self.page.locator("[data-t='projects']").click()
+        row = self.page.locator("tr.row", has_text="proj").first
+        row.wait_for(state="visible", timeout=20000)
+        row.click()
+        self.tab_button("arbeit").wait_for(state="visible", timeout=20000)
+
+    def test_selecting_german_translates_visible_areas_without_reload(self):
+        """VP3: Deutsch im globalen Umschalter stellt die Oberfläche um.
+
+        Vorbedingung: Projekt geöffnet, Englisch aktiv.
+        Aktion: ``de`` im globalen Sprachumschalter wählen; vorher einen
+        JS-Marker setzen, der ein Neuladen überführen würde.
+        Erwartung: ``lang="de"``, ``current()==='de'``, Nav und Projekt-Tabs
+        sind nicht mehr englisch, der Marker lebt weiter; keine JS-Fehler.
         """
         self.open_project()
-        self.open_tab("einstellungen")
+        self.assert_english_tabs()
         self.page.evaluate("() => { window.__ap21Marker = 'alive'; }")
 
-        select = self.require_settings_select()
-        handle = select.element_handle()
-        select.select_option("de")
-
-        self.wait_until(
-            lambda: self.html_lang() == "de",
-            timeout=15,
-            message="Nach der Wahl von Deutsch bleibt <html lang> bei "
-                    + repr(self.html_lang()))
-        self.assert_language("de")
-        self.assert_not_english_tabs()
-
+        self.switch("de")
         marker = self.page.evaluate("() => window.__ap21Marker || null")
         self.assertEqual(
             "alive", marker,
             "Der Sprachwechsel hat die Seite neu geladen (JS-Marker weg)")
-        self.assertEqual(
-            "de", handle.evaluate("node => node.value"),
-            "Der Sprachumschalter zeigt nach der Wahl nicht 'de'")
+        self.assert_language("de")
+
+        self.back_to_project()
+        self.assert_not_english_tabs()
         self.assert_clean_page()
 
-    def test_german_choice_survives_reload(self):
-        """VP3: Die Sprachwahl übersteht ein Neuladen (localStorage).
-
-        Vorbedingung: Deutsch im Umschalter gewählt.
-        Aktion: Seite neu laden; Projekt und Einstellungen erneut öffnen.
-        Erwartung: ``lang="de"``, Tabs deutsch, Umschalter auf ``de``,
-        ``current()==='de'``.
-        Fehlerfall: Nach dem Neuladen ist alles wieder englisch.
-        """
-        self.open_project()
-        self.open_tab("einstellungen")
-        self.require_settings_select().select_option("de")
-        self.wait_until(lambda: self.html_lang() == "de", timeout=15,
-                        message="Deutsch wurde nicht aktiv")
+    def test_german_choice_survives_reload_and_is_server_side(self):
+        """VP3/AP21 v2: Die Wahl steht in ui.json und übersteht ein Neuladen."""
+        self.switch("de")
+        self.assertEqual("de", self.ui_json_language(),
+                         "ui.json enthält die gewählte Sprache nicht")
 
         self.page.reload()
-        row = self.page.locator("tr.row", has_text="proj").first
-        row.wait_for(state="visible", timeout=20000)
-        self.wait_until(
-            lambda: self.html_lang() == "de",
-            timeout=15,
-            message="Nach dem Neuladen ist <html lang> nicht mehr 'de': "
-                    + repr(self.html_lang()))
+        self.wait_until(lambda: self.html_lang() == "de", timeout=15,
+                        message="Nach dem Neuladen ist <html lang> nicht 'de'")
         self.assert_language("de")
-        row.click()
-        self.tab_button("arbeit").wait_for(state="visible", timeout=20000)
-        self.assert_not_english_tabs()
-
-        self.open_tab("einstellungen")
-        select = self.require_settings_select()
+        self.open_settings()
         self.assertEqual(
-            "de", select.input_value(),
+            "de", self.require_settings_select().input_value(),
             "Der Sprachumschalter steht nach dem Neuladen nicht auf 'de'")
+        self.back_to_project()
+        self.assert_not_english_tabs()
         self.assert_clean_page()
 
     def test_switching_back_to_english_restores_english_labels(self):
-        """VP3: Der Rückwechsel auf Englisch stellt die englischen Labels her.
+        """VP3: Der Rückwechsel auf Englisch stellt die englischen Labels her."""
+        self.switch("de")
+        self.switch("en")
+        self.assert_language("en")
+        self.assertEqual("en", self.ui_json_language())
+        self.back_to_project()
+        self.assert_english_tabs()
+        self.assert_clean_page()
 
-        Vorbedingung: Deutsch ist aktiv.
-        Aktion: ``en`` im Sprachumschalter wählen.
-        Erwartung: ``lang="en"``, Tabs wieder ``Work``/``Output``/
-        ``Assistant``/``Settings``, ``current()==='en'``.
-        Fehlerfall: Der Rückwechsel bleibt wirkungslos.
-        """
+
+class GlobalLanguageBrowserTest(AP21BrowserTest):
+    """AP21 v2: globale Settings-Seite, All-Sprachen-Umstellung, Fehlerfall."""
+
+    def nav_texts(self):
+        return self.page.locator("#nav button[data-t]").all_inner_texts()
+
+    def test_global_settings_tab_exists_last_without_open_project(self):
+        """AC1: 'Settings' ist letzter Nav-Tab und ohne Projekt erreichbar."""
+        self.page.goto(self.base + "/#t=" + self.token)
+        keys = self.page.locator("#nav button[data-t]").evaluate_all(
+            "nodes => nodes.map(n => n.getAttribute('data-t'))")
+        self.assertEqual("settings", keys[-1],
+                         "Der globale Settings-Tab ist nicht der letzte: "
+                         + repr(keys))
+        self.assertEqual(1, keys.count("settings"))
+        # Kein Projekt geoeffnet: die Karte muss trotzdem erscheinen.
+        self.open_settings()
+        self.assertEqual(1, self.require_settings_select().count())
+        self.assert_clean_page()
+
+    def test_no_language_select_in_project_settings_tab(self):
+        """AC2: Kein Sprachumschalter mehr im Projekt-Einstellungs-Tab."""
         self.open_project()
         self.open_tab("einstellungen")
-        select = self.require_settings_select()
-        select.select_option("de")
-        self.wait_until(lambda: self.html_lang() == "de", timeout=15,
-                        message="Deutsch wurde nicht aktiv")
+        self.assertEqual(
+            0, self.page.locator(
+                "[data-panel='einstellungen'] select[aria-label='Language']").count(),
+            "Im Projekt-Tab darf kein Sprachumschalter stehen")
 
-        self.open_tab("einstellungen")
-        self.require_settings_select().select_option("en")
-        self.wait_until(
-            lambda: self.html_lang() == "en",
-            timeout=15,
-            message="Der Rückwechsel auf Englisch setzt <html lang> nicht")
-        self.assert_language("en")
+    def test_switch_en_to_de_translates_nav_list_and_all_project_tabs(self):
+        """AC4: Nav, Projektliste und alle vier Projekt-Tabs wechseln mit."""
+        self.open_project()
         self.assert_english_tabs()
+        self.assertIn("Projects", self.nav_texts())
+
+        # Umschalten ueber die globale Settings-Karte.
+        self.open_settings()
+        self.require_settings_select().select_option("de")
+        self.wait_until(lambda: self.html_lang() == "de", timeout=15)
+        self.wait_until(lambda: self.i18n().get("current") == "de", timeout=15)
+
+        texts = self.nav_texts()
+        self.assertIn("Projekte", texts, "Navigation nicht deutsch: " + repr(texts))
+        self.assertNotIn("Projects", texts)
+
+        # Projektliste in der Zielsprache (clientseitig, ohne Reload).
+        self.page.locator("[data-t='projects']").click()
+        self.wait_until(lambda: self.page.locator("th").count() > 0,
+                        timeout=15, message="Projektliste wurde nicht gerendert")
+        heads = self.page.locator("th").all_inner_texts()
+        self.assertIn("Projekt", heads, "Projektliste nicht deutsch: " + repr(heads))
+        self.assertNotIn("Project", heads)
+
+        # Alle vier Projekt-Tabs in der Zielsprache.
+        row = self.page.locator("tr.row", has_text="proj").first
+        row.wait_for(state="visible", timeout=20000)
+        row.click()
+        self.tab_button("arbeit").wait_for(state="visible", timeout=20000)
+        self.assert_not_english_tabs()
+        expected = {"arbeit": "Arbeit", "ausgabe": "Ausgabe",
+                    "assistent": "Assistent", "einstellungen": "Einstellungen"}
+        self.assertEqual(expected, self.tab_texts())
+        self.assert_language("de")
+        self.assertEqual("de", self.ui_json_language())
+        self.assert_clean_page()
+
+    def test_reload_and_new_browser_context_keep_german(self):
+        """AC4: Wahl überlebt Reload und gilt im neuen Browser-Kontext."""
+        self.open_settings()
+        self.require_settings_select().select_option("de")
+        self.wait_until(lambda: self.html_lang() == "de", timeout=15)
+        self.assertEqual("de", self.ui_json_language())
+
+        self.page.reload()
+        self.wait_until(lambda: self.html_lang() == "de", timeout=15)
+        self.assert_language("de")
+
+        # Frischer Browser-Kontext: kein localStorage, aber der Server liefert
+        # die Sprache ueber <meta name="vibe-language"> mit.
+        context = self.browser.new_context()
+        try:
+            fresh = context.new_page()
+            fresh.goto(self.base + "/#t=" + self.token)
+            fresh.wait_for_function(
+                "() => !!(window.VIBE_I18N || window.I18N)")
+            lang = fresh.evaluate("() => document.documentElement.lang")
+            current = fresh.evaluate(
+                "() => (window.VIBE_I18N || window.I18N).current()")
+            self.assertEqual("de", lang, "Neuer Kontext hat nicht <html lang=de>")
+            self.assertEqual("de", current, "Neuer Kontext liest die Sprache nicht")
+        finally:
+            context.close()
+        self.assert_clean_page()
+
+    def test_post_failure_shows_toast_and_reverts(self):
+        """AC4: POST-Fehler → sichtbarer Toast + Rückfall auf vorherige Sprache."""
+        def fail(route):
+            if route.request.method == "POST":
+                route.fulfill(status=500, content_type="application/json",
+                              body=json.dumps({"ok": False,
+                                               "error": {"code": "internal_error",
+                                                         "message": "Zweckfehler"}}))
+            else:
+                route.continue_()
+
+        self.page.route("**/api/language", fail)
+        self.open_settings()
+        self.require_settings_select().select_option("de")
+        toast = self.page.locator("#toasts .toast .toasttext").first
+        self.wait_until(
+            lambda: toast.count() > 0 and "Zweckfehler" in (toast.inner_text() or ""),
+            timeout=15,
+            message="Kein Fehler-Toast sichtbar: "
+                    + repr(self.page.locator("#toasts").inner_text()))
+        self.assert_language("en")
+        self.assertEqual("en", self.require_settings_select().input_value(),
+                         "Der Umschalter ist nicht auf die alte Sprache zurueckgefallen")
+        self.assertNotEqual("de", self.ui_json_language(),
+                            "ui.json darf bei einem POST-Fehler nicht geaendert werden")
         self.assert_clean_page()
 
 
@@ -2094,10 +2231,14 @@ class ReviewRound3Test(AP21BrowserTest):
             self.assert_models_table("de")
 
         with self.subTest(oberflaeche="Modellauswahl", sprache="de"):
-            # Ein ``goto`` auf dieselbe URL mit nur anderem Fragment lädt die
-            # Seite nicht neu; deshalb wird sie vorher geleert.
-            self.page.goto("about:blank")
-            self.open_project()
+            # AP21 v2: kein Seiten-Reload. Die Wahl steht im localStorage und
+            # waere nach einem Reload durch das Server-Meta ('en') ueberschrieben.
+            # Clientseitig ueber die Projektliste zurueck ins Projekt.
+            self.page.locator("[data-t='projects']").click()
+            row = self.page.locator("tr.row", has_text="proj").first
+            row.wait_for(state="visible", timeout=20000)
+            row.click()
+            self.tab_button("arbeit").wait_for(state="visible", timeout=20000)
             self.open_tab("einstellungen")
             self.assert_model_option("de")
 
