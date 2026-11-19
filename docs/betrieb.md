@@ -1,6 +1,6 @@
 # Betrieb und Diagnose
 
-Stand: 2026-11-03
+Stand: 2026-11-19
 Gilt für: vibe 0.18.0 (Repositorystand, siehe `VERSION`)
 
 Diese Anleitung beschreibt Pfade, Prozesse, Ports, Sicherungen, Installation,
@@ -181,6 +181,52 @@ Die produktive Installation nicht während eines Agentenlaufs überschreiben.
 Änderungen zuerst im Repository oder im Dev-Profil (`VIBE_PROFILE=dev`,
 Port 8788) prüfen. Vor einem Update den Lauf beenden oder die dokumentierte
 Sperre bewusst mit `--force` aufheben.
+
+## Entwicklung, Verifikation und installierte Instanz trennen (B17)
+
+Entwicklungs-Workspace, Verifikationsumgebung und installierte Instanz sind
+strikt getrennt. Produktive `VIBE_*`-Pfade stehen ausschließlich im UI-/
+Service-Prozess; Agenten- und Prüfprozesse erhalten sie nicht. `setup.main`
+nimmt `environ=` entgegen; alle Pfadauflösungen (Workspace, Installation,
+Laufzeit und Konfigurationspfad unter dessen `HOME`) erfolgen ausschließlich
+aus dieser Umgebung. Ohne Angabe bleibt die Prozessumgebung maßgeblich.
+
+- **Guard bei `--update`.** Trifft ein Update die laufende Installation — sei es
+  das implizit aus `environ` bzw. Konfiguration aufgelöste Ziel mit vorhandener
+  Installation oder ein ausdrücklich übergebenes `--install`, das nach
+  Normalisierung auf `VIBE_INSTALL` derselben Installation zeigt — wird es ohne
+  autorisierte Quelle vor jedem Schreibzugriff verweigert (Exit 1; die Meldung
+  nennt `--source`). `--dry-run` bleibt gefahrlos, schreibt nichts und erklärt
+  die Autorisierung. Die Ausnahme gilt nur für `--install`-Ziele, die *nicht*
+  der laufenden Installation entsprechen (z. B. Temp-Pfade in Tests); `--reuse`
+  bleibt unberührt.
+- **Autorisierte Quelle `--source`.** `--source <verzeichnis>` benennt das Kit
+  ausdrücklich, hat Vorrang vor einer injizierten Quelle und wird in
+  `version.json` als `source` vermerkt. Ein unvollständiges Quellverzeichnis
+  bricht mit `Unvollständiges Quellverzeichnis` ab, bevor geschrieben wird.
+  Der Wrapper `install-vibe.sh` autorisiert seinen eigenen Checkout mit
+  `--source "$KIT"`.
+- **Bereinigte Prozessumgebung.** Der Läufer entfernt für Agenten, privaten
+  Server und Prüfungen diese sieben Schlüssel: `VIBE`, `VIBE_PROFILE`,
+  `VIBE_INSTALL`, `VIBE_STATE`, `VIBE_RUNTIME`, `VIBE_CONFIG_FILE`,
+  `VIBE_AGENTS_DIR`. Laufsteuerung wie `VIBE_LOGNAME` bleibt erhalten.
+- **Sandbox auch für Prüfungen.** Bei `SANDBOX=on` laufen Agent, Paketprüfung
+  und Abschlussprüfung über bubblewrap: Paket-Arbeitskopie und
+  Konfigurationsprojekt sind beschreibbar gebunden, `<projekt>/.vibe` nur
+  lesend. `--chdir` setzt das Arbeitsverzeichnis auf die Arbeitskopie (für die
+  Paketprüfung) bzw. auf das Projekt (für die Abschlussprüfung). Rückfragen
+  liegen unter `<runtime>/questions` (beschreibbar), `<runtime>/autonomous.json`
+  nur lesend. Bei `SANDBOX=off` laufen die Prüfungen ungewrappt, aber gleich
+  bereinigt; Fail-closed bei `on` bleibt unberührt.
+- **`VIBE_VERIFY_RUNTIME`.** Prüfbefehle erhalten den laufsspezifischen
+  Laufzeitordner ausschließlich über diese Variable und nur für die Dauer
+  des jeweiligen Prüfaufrufs. Sie ist kein Produktivpfad; `VIBE_RUNTIME`
+  bleibt in Agenten- und Verify-Umgebung abwesend.
+- **`--skip-deps`.** Das Flag überspringt die Abhängigkeitsprüfung vollständig:
+  fehlende Werkzeuge werden weiterhin gemeldet, markieren den Setup aber nicht
+  als unvollständig (kein Exit 2). Isolierte Test- und Verifikationsläufe sind
+  damit nicht von im Test bewusst verborgenen Werkzeugen (z. B. `tmux`)
+  abhängig. Ohne das Flag bleibt die bisherige Meldung mit Exit 2 erhalten.
 
 ## Prüfungen und Nachweise
 

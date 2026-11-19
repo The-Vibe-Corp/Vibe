@@ -374,9 +374,10 @@ def install_commands(info, names, prefix):
     return commands
 
 
-def default_target(info, home):
+def default_target(info, home, environ=None):
     """Standard-Zielordner: vorhandenes VIBE oder ~/VibeCode."""
-    configured = os.environ.get("VIBE")
+    environ = os.environ if environ is None else environ
+    configured = environ.get("VIBE")
     if configured:
         return Path(os.path.expanduser(configured))
     return Path(home) / "VibeCode"
@@ -1321,6 +1322,8 @@ def parse_args(argv=None):
                         help="Installationsort (Programme, Vorlagen, Einstellungen; Standard: <Workspace>/_toolchain)")
     parser.add_argument("--logs", metavar="PFAD",
                         help="Log- und Laufzeitverzeichnis (entspricht VIBE_RUNTIME; Standard: <Workspace>/_logs)")
+    parser.add_argument("--source", metavar="VERZEICHNIS",
+                        help="autorisiertes Quellverzeichnis für --update (Kit aus diesem Checkout)")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--reuse", action="store_true", help="bestehende Installation wiederverwenden")
     mode.add_argument("--update", action="store_true", help="Programmdateien aktualisieren (mit Sicherung)")
@@ -1350,14 +1353,24 @@ def parse_args(argv=None):
 
 def main(argv=None, input_fn=None, output=print, which=None, runner=None,
          platform_info=None, home=None, kit=None, interactive=None,
-         is_root=None, has_sudo=None):
-    """Führt den Setup aus und liefert 0 (fertig), 1 (Fehler) oder 2 (unvollständig)."""
+         is_root=None, has_sudo=None, environ=None):
+    """Führt den Setup aus und liefert 0 (fertig), 1 (Fehler) oder 2 (unvollständig).
+
+    ``environ`` ist die einzige Quelle für Pfadauflösungen; ``None`` behält
+    das Verhalten der Prozessumgebung. So kann ein Test den Setup mit einer
+    bereinigten Umgebung und eigenen Temp-Pfaden aufrufen, ohne die laufende
+    Installation zu berühren (B17).
+    """
     options = parse_args(argv)
+    environ = os.environ if environ is None else environ
     input_fn = input_fn or input
     which = which or shutil.which
     runner = runner or subprocess.run
-    kit = Path(kit) if kit else KIT
-    home = Path(home) if home else Path(os.path.expanduser("~"))
+    # Eine ausdrücklich benannte Quelle hat Vorrang vor dem übergebenen Kit.
+    kit = Path(options.source) if options.source else (Path(kit) if kit else KIT)
+    home = Path(home) if home else Path(
+        environ.get("HOME") or os.path.expanduser("~")
+    )
     info = platform_info or detect_platform(which=which)
     interactive = sys.stdin.isatty() if interactive is None else interactive
     is_root = os.geteuid() == 0 if is_root is None and hasattr(os, "geteuid") else bool(is_root)
@@ -1381,7 +1394,7 @@ def main(argv=None, input_fn=None, output=print, which=None, runner=None,
         if options.vibe:
             raw_workspace = options.vibe
         else:
-            default_ws = default_workspace(info, home)
+            default_ws = default_workspace(info, home, environ=environ)
             if interactive:
                 answer = input_fn(f"Workspace (Projektordner) [{default_ws}]: ").strip()
                 raw_workspace = answer or str(default_ws)
@@ -1392,7 +1405,7 @@ def main(argv=None, input_fn=None, output=print, which=None, runner=None,
         if options.install:
             raw_install = options.install
         else:
-            default_inst = default_install(workspace)
+            default_inst = default_install(workspace, environ=environ)
             if interactive:
                 answer = input_fn(
                     f"Installationsort (Programme, Vorlagen, Einstellungen) [{default_inst}]: "
@@ -1405,7 +1418,7 @@ def main(argv=None, input_fn=None, output=print, which=None, runner=None,
         if options.logs:
             raw_logs = options.logs
         else:
-            default_log = default_logs(workspace)
+            default_log = default_logs(workspace, environ=environ)
             if interactive:
                 answer = input_fn(f"Logverzeichnis (Logs, Laufzeitzustand) [{default_log}]: ").strip()
                 raw_logs = answer or str(default_log)
@@ -1418,6 +1431,32 @@ def main(argv=None, input_fn=None, output=print, which=None, runner=None,
     output(f"Workspace:        {workspace}")
     output(f"Installationsort: {target}")
     output(f"Logverzeichnis:   {logs_dir}")
+
+    # B17: Ein --update darf die laufende Instanz nicht verändern. Das gilt
+    # auch für ein ausdrückliches --install, wenn es auf dieselbe Installation
+    # zeigt (VIBE_INSTALL aus environ/Konfiguration). Nur Ziele außerhalb der
+    # laufenden Installation sind ohne --source erlaubt. Die Vorschau bleibt
+    # gefahrlos möglich und erklärt die Autorisierung.
+    # Nur der produktive Pfad aus der übergebenen Umgebung markiert die
+    # laufende Installation; ein zuvor in der Testkonfiguration gespeicherter
+    # Pfad ist gerade kein Produktivpfad.
+    running_install = environ.get("VIBE_INSTALL")
+    implicit_running = not options.install and detect_existing(target)["toolchain"]
+    explicit_running = bool(running_install) and (
+        Path(target).resolve(strict=False)
+        == Path(os.path.abspath(os.path.expanduser(str(running_install)))).resolve(strict=False)
+    )
+    if options.update and not options.source and (implicit_running or explicit_running):
+        guard = (
+            "Schutz der laufenden Instanz: Für --update auf dieses "
+            "Installationsziel ist eine autorisierte Quelle nötig. "
+            "--source <verzeichnis> angeben oder mit --install ein eigenes "
+            "Ziel verwenden."
+        )
+        if not options.dry_run:
+            output("FEHLER: " + guard)
+            return 1
+        output("(dry-run) " + guard)
 
     if options.backup and not options.rollback:
         output("FEHLER: --backup ist nur zusammen mit --rollback zulässig.")
@@ -1588,7 +1627,7 @@ def main(argv=None, input_fn=None, output=print, which=None, runner=None,
         prefix = privilege_prefix(info, is_root, has_sudo)
         for command in install_commands(info, installable, prefix):
             output("(dry-run) " + " ".join(command))
-        output(f"(dry-run) Konfiguration {vibe_paths.default_config_path()}: profiles.prod.workspace={workspace}, install={target}, runtime={logs_dir}")
+        output(f"(dry-run) Konfiguration {vibe_paths.default_config_path(environ)}: profiles.prod.workspace={workspace}, install={target}, runtime={logs_dir}")
         output(f"(dry-run) Ziel: {target}; Workspace: {workspace}; Logs: {logs_dir}; Modus: {mode}; es wird nichts geändert.")
         return 0
 
@@ -1677,7 +1716,7 @@ def main(argv=None, input_fn=None, output=print, which=None, runner=None,
     try:
         for directory in (workspace, logs_dir):
             directory.mkdir(parents=True, exist_ok=True)
-        saved = save_paths_config(workspace, target, logs_dir, timestamp=timestamp)
+        saved = save_paths_config(workspace, target, logs_dir, timestamp=timestamp, environ=environ)
     except (SetupError, OSError) as error:
         output("FEHLER: " + str(error))
         output(
@@ -1690,7 +1729,7 @@ def main(argv=None, input_fn=None, output=print, which=None, runner=None,
         if saved["backup"]:
             output("Vorherige Konfiguration gesichert: " + saved["backup"])
     for variable, chosen in (("VIBE", workspace), ("VIBE_INSTALL", target), ("VIBE_RUNTIME", logs_dir)):
-        value = os.environ.get(variable)
+        value = environ.get(variable)
         if value and os.path.abspath(os.path.expanduser(value)) != str(chosen):
             output(f"Hinweis: {variable}={value} überschreibt die Konfiguration; Variable anpassen oder entfernen.")
     for warning in files["warnings"]:
@@ -1721,10 +1760,15 @@ def main(argv=None, input_fn=None, output=print, which=None, runner=None,
 
     report = dependency_report(info, which, harness=chosen_harness)
     remaining = [item for item in report if item["required"] and not item["present"]]
-    if remaining or dependency_failed:
+    # --skip-deps nimmt die Werkzeugprüfung aus dem Lauf heraus; fehlende
+    # Werkzeuge werden weiterhin gemeldet, sollen den Setup aber nicht als
+    # unvollständig markieren (B17: isolierte Läufe schalten die Prüfung ab).
+    if (remaining or dependency_failed) and not options.skip_deps:
         output("Unvollständig: folgende Werkzeuge fehlen noch: " + ", ".join(item["name"] for item in remaining))
         output("Bitte die Hinweise oben befolgen und den Setup erneut ausführen.")
         return 2
+    if remaining and options.skip_deps:
+        output("Hinweis: Werkzeuge übersprungen (--skip-deps): " + ", ".join(item["name"] for item in remaining))
     output("Fertig. Nächste Schritte: vibe list | vibe doctor | vibe ui")
     if info.get("os") == "windows":
         output(

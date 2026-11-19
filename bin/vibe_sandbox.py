@@ -453,13 +453,17 @@ def runtime_dir():
     return ""
 
 
-def bwrap_argv(project, command, bwrap=None, runtime=None):
+def bwrap_argv(project, command, bwrap=None, runtime=None,
+               extra_write_dirs=(), chdir=None):
     """Baut die bubblewrap-Argumentliste; verändert keine Projektdateien.
 
     ``runtime`` bindet ausschließlich den Rückfrageordner ``questions``
-    beschreibbar ein (F16). Der restliche Laufzeitordner mit Protokollen,
-    Token und Laufregister bleibt unerreichbar; ohne ``runtime`` entsteht
-    keine Bindung.
+    beschreibbar ein (F16); ``autonomous.json`` bleibt nur lesbar. Der
+    restliche Laufzeitordner mit Protokollen, Token und Laufregister bleibt
+    unerreichbar; ohne ``runtime`` entstehen keine Bindungen.
+    ``extra_write_dirs`` sind zusätzlich beschreibbar (z. B. die Paket-
+    Arbeitskopie), ``chdir`` überschreibt das Arbeitsverzeichnis der Sandbox.
+    Ohne die neuen Angaben bleibt die Argumentliste unverändert.
     """
     if not command:
         raise ValueError("Kein Befehl angegeben")
@@ -475,14 +479,19 @@ def bwrap_argv(project, command, bwrap=None, runtime=None):
             "die Sandbox bricht ab, statt ohne Schutz zu starten."
         )
     questions = ""
+    autonomous = ""
     if runtime:
-        questions = os.path.join(
-            os.path.abspath(os.path.expanduser(str(runtime))), "questions"
-        )
+        runtime_base = os.path.abspath(os.path.expanduser(str(runtime)))
+        questions = os.path.join(runtime_base, "questions")
+        autonomous = os.path.join(runtime_base, "autonomous.json")
         problem = _ensure_dir(questions)
         if problem:
             raise ValueError(problem)
     directories = []
+    for value in extra_write_dirs:
+        directory = os.path.abspath(os.path.expanduser(str(value)))
+        if directory not in directories:
+            directories.append(directory)
     for value in state["write_dirs"]:
         directory = os.path.realpath(os.path.abspath(os.path.expanduser(value)))
         if directory not in directories:
@@ -534,7 +543,7 @@ def bwrap_argv(project, command, bwrap=None, runtime=None):
         "--die-with-parent",
         "--new-session",
         "--chdir",
-        state["project"],
+        os.path.abspath(os.path.expanduser(str(chdir))) if chdir else state["project"],
     ]
     for directory in directories:
         argv += ["--bind", directory, directory]
@@ -546,6 +555,10 @@ def bwrap_argv(project, command, bwrap=None, runtime=None):
     # Inhalt von /tmp schreibgeschützt wird.
     if questions and questions not in directories:
         argv += ["--bind", questions, questions]
+    # Der Autonomiezustand steuert das Warten des Agenten; er bleibt lesbar,
+    # darf aber aus der Sandbox nicht verändert werden (B17).
+    if autonomous:
+        argv += ["--ro-bind-try", autonomous, autonomous]
     # /tmp ist ein privater tmpfs, aber kein erlaubtes Schreibziel. Nach dem
     # Binden der erlaubten Verzeichnisse wird er wieder schreibgeschützt;
     # Werkzeuge legen Temporärdateien über TMPDIR im Zustandsordner ab.
@@ -613,7 +626,7 @@ def bwrap_argv(project, command, bwrap=None, runtime=None):
     return argv
 
 
-def run(project, command):
+def run(project, command, runtime=None, extra_write_dirs=(), chdir=None):
     """Führt den Befehl aus; bei aktiver Sandbox ausschließlich über bwrap."""
     if not command:
         print("Kein Befehl angegeben.", file=sys.stderr)
@@ -629,16 +642,21 @@ def run(project, command):
     if not checked["ok"]:
         print(checked["message"], file=sys.stderr)
         return 2
-    runtime = runtime_dir()
+    runtime = runtime if runtime is not None else runtime_dir()
     if runtime:
-        problem = _ensure_dir(os.path.join(runtime, "questions"))
+        problem = _ensure_dir(
+            os.path.join(os.path.abspath(os.path.expanduser(str(runtime))), "questions")
+        )
         if problem:
             # Ohne Rückfrageordner bleibt der Lauf möglich, aber der Agent
             # kann keine Rückfrage stellen; das wird ausdrücklich gemeldet.
             print("Rückfragen nicht verfügbar: " + problem, file=sys.stderr)
             runtime = ""
     try:
-        argv = bwrap_argv(project, command, runtime=runtime)
+        argv = bwrap_argv(
+            project, command, runtime=runtime,
+            extra_write_dirs=extra_write_dirs, chdir=chdir,
+        )
     except ValueError as error:
         print(str(error), file=sys.stderr)
         return 2
@@ -690,13 +708,27 @@ def main(argv=None):
     do_check = False
     print_command = False
     enabled_only = False
+    runtime_opt = None
+    chdir_opt = None
+    extra_dirs = []
     command = []
     while arguments:
         argument = arguments.pop(0)
         if argument == "--":
             command = arguments
             break
-        if argument == "--json":
+        if argument in ("--runtime", "--chdir", "--write-dir"):
+            if not arguments:
+                print("Wert fehlt für " + argument, file=sys.stderr)
+                return 2
+            value = arguments.pop(0)
+            if argument == "--runtime":
+                runtime_opt = value
+            elif argument == "--chdir":
+                chdir_opt = value
+            else:
+                extra_dirs.append(value)
+        elif argument == "--json":
             as_json = True
         elif argument == "--check":
             do_check = True
@@ -726,15 +758,20 @@ def main(argv=None):
             print("Kein Befehl angegeben.", file=sys.stderr)
             return 2
         state = status(project)
-        runtime = runtime_dir()
+        runtime = runtime_opt if runtime_opt is not None else runtime_dir()
         if runtime:
-            problem = _ensure_dir(os.path.join(runtime, "questions"))
+            problem = _ensure_dir(
+                os.path.join(os.path.abspath(os.path.expanduser(str(runtime))), "questions")
+            )
             if problem:
                 print("Rückfragen nicht verfügbar: " + problem, file=sys.stderr)
                 runtime = ""
         try:
             if state["enabled"]:
-                print(shlex.join(bwrap_argv(project, command, runtime=runtime)))
+                print(shlex.join(bwrap_argv(
+                    project, command, runtime=runtime,
+                    extra_write_dirs=extra_dirs, chdir=chdir_opt,
+                )))
             else:
                 print(shlex.join(command))
         except ValueError as error:
@@ -748,7 +785,10 @@ def main(argv=None):
         else:
             _print_status(state)
         return 0
-    return run(project, command)
+    return run(
+        project, command, runtime=runtime_opt,
+        extra_write_dirs=extra_dirs, chdir=chdir_opt,
+    )
 
 
 if __name__ == "__main__":
