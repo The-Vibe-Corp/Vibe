@@ -501,14 +501,16 @@ class HierarchyTest(Ap03Fixture):
         self.assertIn("description: Erste Beschreibung", rendered)
         self.cli.agent_validate(rendered)
 
-    def test_agent_validate_hierarchy_rejects_unknown_self_and_cycles(self):
+    def test_agent_validate_hierarchy_rejects_unknown_and_cycles(self):
+        # F32 erlaubt den Selbstaufruf eines gewöhnlichen Subagenten. Die
+        # vollständige Abdeckung (erlaubt und abgelehnt) liegt in
+        # test_f32_subagent_self_spawn.py; hier bleiben nur die unveränderten
+        # Regeln für unbekannte Agenten und echte Zyklen.
         self.write_global("a", task_agent(["b"]))
         self.write_global("b", task_agent(["a"]))
 
         with self.assertRaises(ValueError):
             self.cli.agent_validate_hierarchy("a", ["unbekannt"])
-        with self.assertRaises(ValueError):
-            self.cli.agent_validate_hierarchy("a", ["a"])
         with self.assertRaises(ValueError):
             self.cli.agent_validate_hierarchy("a", ["b"])
 

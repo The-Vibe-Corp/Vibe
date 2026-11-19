@@ -1190,6 +1190,9 @@ async function agentForm(scope,name){const d=AG||await api('/api/agents');const 
   el('option',{value:'ausgewählt'},'ausgewählt'),el('option',{value:'alle'},'alle'));
  tm.value=row.task_mode==='all'?'alle':(row.task_mode==='custom'?'ausgewählt':'keine');
  const allowed=new Set(row.allowed_agents||[]);
+ // F32: Den eigenen Namen separat führen; bei isNew gibt es ihn noch nicht.
+ if(!isNew)allowed.delete(name);
+ let selfOn=(row.allowed_agents||[]).includes(name);
  const otherAgents=(d.global_agents||[]).filter(a=>a.name!==name&&(a.mode==='subagent'||a.mode==='all')).map(a=>a.name);
  const subBox=el('div',{'data-subagents':'1'});
  const drawSubs=()=>{subBox.replaceChildren();
@@ -1198,8 +1201,20 @@ async function agentForm(scope,name){const d=AG||await api('/api/agents');const 
   otherAgents.forEach(a=>{const cb=el('input',{type:'checkbox','data-subagent':a,'aria-label':'Subagent '+a});
    cb.checked=allowed.has(a);
    cb.addEventListener('change',()=>{if(cb.checked)allowed.add(a);else allowed.delete(a)});
-   subBox.append(el('label',{style:'display:block'},cb,' ',a))})};
- tm.addEventListener('change',drawSubs);drawSubs();
+   subBox.append(el('label',{style:'display:block'},cb,' ',a))});
+  // F32: Vibe-Rolle hat Vorrang vor dem Modus; sonst die Opt-in-Checkbox.
+  if(ro.value==='vibe'){
+   subBox.append(el('div',{class:'mut'},'Der Vibe-Agent ruft keine Subagenten seines eigenen Typs auf.'));
+  }else if(md.value==='primary'){
+   subBox.append(el('div',{class:'mut'},'Subagenten des eigenen Typs erfordern den Modus subagent oder all.'));
+  }else{
+   const cb=el('input',{type:'checkbox'});
+   cb.checked=selfOn;
+   cb.addEventListener('change',()=>{selfOn=cb.checked});
+   subBox.append(el('label',{style:'display:block'},cb,' Subagenten des eigenen Typs erlauben (Parallelisierung)'),
+    el('div',{class:'mut'},'Kein Standard: nur aktivieren, wenn dieser Agent Arbeit an Agenten desselben Typs parallelisieren soll.'));
+  }};
+ tm.addEventListener('change',drawSubs);md.addEventListener('change',drawSubs);ro.addEventListener('change',drawSubs);drawSubs();
  const permsFor=()=>d.perms;
  const pm=el('select',{'aria-label':'Rechte'});
  const setPerms=()=>{const keep=pm.value;const list=Object.entries(permsFor()).map(([k,v])=>el('option',{value:k},v));
@@ -1257,7 +1272,11 @@ async function agentForm(scope,name){const d=AG||await api('/api/agents');const 
    const payload={action:'save',scope:s,name:n,text:raw.value,create:isNew,expected:digest};
    if(structured){const current=formValues(),changed={};for(const k in current)if(current[k]!==baseline[k])changed[k]=current[k];
     if(Object.keys(changed).length)payload.values=changed}
+   const own=isNew?nm.value.trim():name;
    const allowedNow=[...allowed].sort();
+   if(own){if(selfOn){if(!allowedNow.includes(own))allowedNow.push(own)}
+    else{const i=allowedNow.indexOf(own);if(i>=0)allowedNow.splice(i,1)}}
+   allowedNow.sort();
    const allowedBefore=[...(row.allowed_agents||[])].sort();
    const modeNow=tm.value==='alle'?'all':(tm.value==='ausgewählt'?'custom':'none');
    const taskChanged=isNew||modeNow!==(row.task_mode||'none')||(modeNow==='custom'&&allowedNow.join(',')!==allowedBefore.join(','));

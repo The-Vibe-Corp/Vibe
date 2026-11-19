@@ -2983,6 +2983,23 @@ def agent_role_set(name, role):
         raise ValueError("Unbekannte Rolle: " + role)
     if not os.path.exists(agent_path("global", name)):
         raise ValueError("Agent nicht gefunden: " + name)
+    if role == "vibe":
+        # F32: Der Vibe-Agent darf keine Subagenten seines eigenen Typs
+        # erlauben. Die Invariante wird hier zentral für jede Rollenzuweisung
+        # erzwungen (auch action:'role' aus der Agentenliste).
+        try:
+            policy = agent_task_policy(agent_read("global", name))
+        except ValueError:
+            # Defekte Datei ohne lesbares Frontmatter: bisheriges Verhalten
+            # bleibt (Rolle zuweisbar); eine Selbstfreigabe ist darin nicht
+            # nachweisbar. Lesbares Frontmatter wird dagegen geprüft, auch
+            # wenn die Datei sonst ungültig ist (z. B. fehlende description).
+            policy = {"mode": "none", "allowed": []}
+        if policy["mode"] == "custom" and name in policy["allowed"]:
+            raise ValueError(
+                "Agent '" + name + "' erlaubt bereits Subagenten seines "
+                "eigenen Typs und kann deshalb nicht der Vibe-Agent werden."
+            )
     data, before = profiles_load(return_snapshot=True)
     roles = dict(data.get("rollen", {}))
     if roles.get(name) == "vibe" and role != "vibe":
@@ -3315,18 +3332,47 @@ def _global_agent_map():
     return agents
 
 
-def agent_validate_hierarchy(name, allowed):
-    """Prüft erlaubte Subagenten auf Existenz, Selbstbezug und Zyklen."""
+def agent_validate_hierarchy(name, allowed, own_text=None, vibe_agent=None):
+    """Prüft erlaubte Subagenten auf Existenz, Modus und Zyklen.
+
+    F32 erlaubt den Selbstaufruf: Ein Agent darf Subagenten seines eigenen
+    Typs aufrufen, wenn er selbst im Modus ``subagent`` oder ``all`` läuft und
+    nicht der Vibe-Agent ist. ``own_text`` ist der gerade gespeicherte Entwurf
+    und hat Vorrang vor der vorhandenen Datei. ``vibe_agent`` überschreibt die
+    Auflösung über die Rolle (``""`` schaltet die Vibe-Prüfung ab).
+    """
     if not NAME_RE.match(name or ""):
         raise ValueError("Name: nur a-z, 0-9, _ und -")
     if not isinstance(allowed, list) or any(
         not isinstance(agent, str) or not NAME_RE.match(agent) for agent in allowed
     ):
         raise ValueError("Erlaubte Subagenten müssen eine Liste gültiger Agentennamen sein.")
+    if vibe_agent is None:
+        vibe_agent = vibe_agent_name()
+    elif not isinstance(vibe_agent, str):
+        raise ValueError("Vibe-Agent muss ein Name oder eine leere Zeichenkette sein.")
     global_agents = _global_agent_map()
     for target in allowed:
         if target == name:
-            raise ValueError("Ein Agent darf sich nicht selbst als Subagent aufrufen.")
+            # F32: Der Selbstaufruf ist zulässig, aber die Vibe-Rolle und der
+            # eigene Modus bleiben verbindlich (Vibe-Prüfung zuerst).
+            if name == vibe_agent:
+                raise ValueError(
+                    "Der Vibe-Agent darf keine Subagenten seines eigenen Typs aufrufen."
+                )
+            if own_text is not None:
+                own_mode = (_parse_agent_text(own_text).get("mode") or "").strip()
+            else:
+                own_info = global_agents.get(name)
+                if not own_info:
+                    raise ValueError("Unbekannter oder nicht systemweiter Subagent: " + name)
+                own_mode = own_info["mode"]
+            if own_mode not in ("subagent", "all", ""):
+                raise ValueError(
+                    "Agent '" + name + "' ist kein Subagent (mode " + own_mode
+                    + ") und darf nicht aufgerufen werden."
+                )
+            continue
         info = global_agents.get(target)
         if not info:
             raise ValueError("Unbekannter oder nicht systemweiter Subagent: " + target)
@@ -3336,7 +3382,7 @@ def agent_validate_hierarchy(name, allowed):
                 "Agent '" + target + "' ist kein Subagent (mode " + mode + ") und darf nicht aufgerufen werden."
             )
     graph = {
-        agent: set(agent_task_policy(info["text"])["allowed"])
+        agent: {t for t in agent_task_policy(info["text"])["allowed"] if t != agent}
         for agent, info in global_agents.items()
     }
 
@@ -3349,6 +3395,8 @@ def agent_validate_hierarchy(name, allowed):
         return any(reachable(nxt, goal, seen) for nxt in graph[start])
 
     for target in allowed:
+        if target == name:
+            continue  # F32: eine Selbstkante ist kein Zyklus
         if reachable(target, name, set()):
             raise ValueError(
                 "Zyklus in der Agentenhierarchie: '" + name + "' ruft '" + target + "' auf, der wiederum zurückruft."

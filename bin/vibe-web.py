@@ -1769,8 +1769,39 @@ class H(BaseHTTPRequestHandler):
                         elif task_allowed is not None:
                             if scope != "global":
                                 raise ValueError("Subagenten-Rechte gelten nur für systemweite Agenten.")
-                            vibe.agent_validate_hierarchy(an, task_allowed)
+                            # F32: Der Vibe-Agent wird über die Rolle erkannt — auch wenn die Rolle
+                            # im selben Request gesetzt oder entfernt wird.
+                            effective_vibe = vibe.vibe_agent_name()
+                            if role is not None and str(role).strip() == "vibe":
+                                effective_vibe = an
+                            elif role is not None and not str(role).strip() and effective_vibe == an:
+                                # Die Rollenvalidierung oben („Der letzte
+                                # Vibe-Agent kann nicht entfernt werden…“)
+                                # stellt sicher, dass hier ein anderer
+                                # Vibe-Agent übrig bleibt; der gilt danach.
+                                others = [agent for agent, value in
+                                          vibe.profiles_load().get("rollen", {}).items()
+                                          if value == "vibe" and agent != an]
+                                effective_vibe = others[0]
+                            vibe.agent_validate_hierarchy(an, task_allowed, own_text=text,
+                                                          vibe_agent=effective_vibe)
                             text = vibe.agent_render_task(scope, text, task_allowed)
+                        # F32-Invariante: Der Vibe-Agent darf nach dem
+                        # Speichern keine Selbstfreigabe besitzen — egal, auf
+                        # welchem Weg sie in den Text kam (task_allowed,
+                        # Rohtext oder unveränderter bestehender Block).
+                        if scope == "global":
+                            effective_role = (
+                                role if role is not None
+                                else str(vibe.profiles_load().get("rollen", {}).get(an) or "")
+                            )
+                            if effective_role == "vibe":
+                                policy = vibe.agent_task_policy(text)
+                                if policy["mode"] == "custom" and an in policy["allowed"]:
+                                    raise ValueError(
+                                        "Der Vibe-Agent darf keine Subagenten "
+                                        "seines eigenen Typs aufrufen."
+                                    )
                         warn = vibe.agent_write(scope, an, text, create=bool(body.get("create")), expected=body.get("expected"))
                         if result is not None:
                             vibe.agent_result_set(an, result)
