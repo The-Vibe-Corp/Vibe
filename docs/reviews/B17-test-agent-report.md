@@ -270,6 +270,80 @@ TypeError: main() got an unexpected keyword argument 'environ'
 Die Rotphase tritt damit vor dem ersten Schreibzugriff ein. Die Module wurden
 im HEAD-Zustand nicht erneut ausgeführt (siehe 3.1).
 
+### 5.6 Rotphase auf Basis 8b07828 (origin/dev ohne B16)
+
+Nach dem Basiswechsel wurde die Rotphase am 19.11.2026 vollständig auf der
+tatsächlichen Basis wiederholt. Die Arbeitskopie steht auf `f11f070` (nur
+Testdateien und dieser Bericht); die Produktionsdateien sind die Fassungen von
+`8b07828` (origin/dev mit AP19- und F32-Squash, ohne B16). Abschnitt 5 bleibt
+der ursprüngliche Lauf gegen `d3bed1a`; für die 24 neuen Fälle sind die
+Ergebnisse und Ursachen identisch.
+
+Arbeitsverzeichnis war `/home/vibe/vibe-logs/worktrees/vibe-B17-m3QD8S`,
+ausgeführt mit Python 3.14.3. Jeder Lauf verwendete exakt dieses Präfix:
+
+```bash
+env -u VIBE -u VIBE_PROFILE -u VIBE_INSTALL -u VIBE_STATE \
+    -u VIBE_RUNTIME -u VIBE_CONFIG_FILE -u VIBE_AGENTS_DIR \
+    python3 -m unittest <modul> -v
+```
+
+| Modul | Ergebnis | Rotursachen | Beabsichtigtes B17-Verhalten? |
+|-------|----------|-------------|-------------------------------|
+| `tests.unit.test_b17_isolation` | 10 Tests: 1 Failure, 9 Errors | 9× `TypeError: main() got an unexpected keyword argument 'environ'` (alle `run_main`-Fälle); 1× `AssertionError: '--source' not found` in `install-vibe.sh` | ja: AK1/AK2/AK3 fehlen; AK5 bricht vor dem Schreibzugriff ab |
+| `tests.unit.test_b17_questions_runtime` | 4 Tests: 4 Errors | 4× `SystemExit: Unbekannte Option: --runtime` (3× `cmd_ask` Zeile 5568, 1× `cmd_answer` Zeile 5620) | ja: AK7, `--runtime` fehlt |
+| `tests.unit.test_b17_sandbox_argv` | 4 Tests: 1 Failure, 2 Errors, 1 grün | 2× `TypeError: bwrap_argv() got an unexpected keyword argument 'extra_write_dirs'`; 1× `('--ro-bind-try', …/autonomous.json, …) not found` | ja: AK8; der grüne Fall ist der AK9-Regressionsschutz |
+| `tests.unit.test_b17_runner_isolation` | 6 Tests: 5 Failures, 1 grün | Agent erbt alle sieben Produktivpfade; `'vibe ask --runtime' not found` im Prompt; „Der Agent lief nicht über bubblewrap“; „Paketprüfung lief außerhalb der Sandbox“; Prüfung erbt die sieben Produktivpfade | ja: AK6/AK7/AK8; grün ist der Regressionsschutz für die Laufsteuerung (`VIBE_LOGNAME`) |
+| `tests.unit.test_ap04_setup_harness` | 6 Tests: 3 Errors, 3 grün | 3× `TypeError: … 'environ'` (`test_dry_run_explains_pi_and_its_install_command`, `test_first_install_stores_the_chosen_harness`, `test_update_without_a_new_choice_keeps_the_stored_harness`) | ja: AK4; die drei grünen Fälle rufen `main` nicht auf |
+| `tests.unit.test_setup_vibe` | 49 Tests: 6 Failures, 15 Errors | 11× `TypeError: … 'environ'` (alle in `CliFlowTest`); 10 vorbestehende Reds (siehe unten) | ja für die 11 TypeErrors (AK4) |
+| `tests.unit.test_install_lifecycle` | 43 Tests: 4 Failures, 34 Errors | 6× `TypeError: … 'environ'` (`AbortTest`, 2× `PreviewTest`, 3× `UninstallTest`); 32 vorbestehende Reds (siehe unten) | ja für die 6 TypeErrors (AK4) |
+
+Damit sind 22 der 24 neuen Abnahmefälle rot; die zwei grünen Fälle sind die
+ausdrücklich als Regressionsschutz formulierten Fälle 18 (AK9) und 20 (AK6).
+Kein Rotfall stammt aus einem Import-, Umgebungs- oder Fixture-Fehler:
+`test_b17_runner_isolation` hat die Vor-B16-Fassung von `bin/vibe-run.sh`
+erfolgreich durchlaufen und dabei genau die erwarteten fünf Fehlschläge
+erzeugt.
+
+**Anpassungen an der Testinfrastruktur: keine.** Die Basisdrift hat weder die
+Runner-Fixtures noch das Laden der Module gebrochen; die bestehenden
+Testdateien aus `f11f070` waren unverändert ausführbar. Es wurden keine
+Assertions abgeschwächt und keine Fälle entfernt.
+
+**Vorbestehende, nicht B17-bedingte Reds.** Beide Setup-Module enthalten
+Fehlschläge in Klassen, die der B17-Commit nicht berührt (`install_program_files`,
+`install_launcher`, `register_projects` werden dort direkt aufgerufen):
+
+- `test_setup_vibe`: 6 Failures in `InstallFilesTest`/`LauncherTest`
+  (`_toolchain`-Pfaderwartung gegenüber der Produktionsablage direkt unter dem
+  übergebenen Wurzelordner), 3 Errors `TypeError: register_projects() missing
+  1 required positional argument: 'install'`, 1 Error `FileNotFoundError`
+  (`test_installed_launcher_starts_with_all_options`).
+- `test_install_lifecycle`: 28 Errors `FileNotFoundError` aus dem Helfer
+  `install()` (`install_program_files(kit, self.vibe)` gegenüber der
+  `self.toolchain`-Erwartung) und 4 Assertion-Failures in
+  `FreshInstallTest`, `PreviewTest` und `UninstallTest`.
+
+Diese Zahlen weichen von den in Abschnitt 6 genannten HEAD-Kopien ab
+(9 Failures/4 Errors bzw. 8 Failures/28 Errors). Die Abweichung betrifft
+ausschließlich die genannten, vom B17-Commit unveränderten Klassen; sie ist
+nicht durch die B17-Teständerungen verursacht und wurde nicht weiter
+aufgeklärt. Die unveränderten HEAD-Fassungen der drei Setup-Module wurden
+gemäß 3.1 auch diesmal nicht ausgeführt.
+
+**Anker (gleiches `env -u`-Präfix):**
+
+| Modul | Ergebnis |
+|-------|----------|
+| `tests.unit.test_questions` | `Ran 35 tests`, `OK` |
+| `tests.unit.test_sandbox` | `Ran 36 tests`, `FAILED (failures=3)` — dieselben drei Vorlagenfälle `web`, `docker`, `openwrt` wie in der Baseline |
+
+Die Stichprobe der Zeitstempel zeigt keine Schreibzugriffe außerhalb der
+Temp-Bereiche: `~/.config/vibe/config.json` (07:43) und
+`~/vibe-toolchain` (neueste Datei 10:54) blieben während der Läufe um
+11:23–11:24 unverändert. `git status` blieb leer; es wurde kein Commit
+erstellt und keine Produktionsdatei geändert.
+
 ## 6. Vorbestehende Baseline (nicht B17)
 
 Zum Zeitpunkt des Branches sind Teile der Setup-Suites bereits rot. Das wurde
