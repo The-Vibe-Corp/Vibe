@@ -999,9 +999,9 @@
       "sha256": "e5ae3183efcb76dace1e0bcbde9993be7afe82d93d7877da9ee39846cf45330a"
     },
     {
-      "bytes": 270752,
+      "bytes": 270415,
       "path": "bin/vibe",
-      "sha256": "1465b3ec0bf3a948d0603902446cdb55a80421e88a90a489695fb7c90ee4eefb"
+      "sha256": "78988203db513e672c801d909bcc419828b1c96d1323133fc125be95f7a988e9"
     },
     {
       "bytes": 59363,
@@ -1099,9 +1099,9 @@
       "sha256": "d49b2406f2c9837c63ed3c3dcb265938fe5702e78c5aeb0df07b9f349fd65594"
     },
     {
-      "bytes": 129539,
+      "bytes": 129531,
       "path": "bin/web/app.js",
-      "sha256": "644f45dd5cb8e6b69252e8aedb1b6eeb8186feaec7b04b80042dabb9b3b83863"
+      "sha256": "dffc82ca74e36501e380725abab79733be3bd44be5273bc59f1dd948304d739d"
     },
     {
       "bytes": 588,
