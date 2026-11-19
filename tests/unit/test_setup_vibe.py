@@ -602,6 +602,9 @@ class CliFlowTest(unittest.TestCase):
         out = io.StringIO()
         answers = answers or {}
         prompts = []
+        # B17: bereinigte Umgebung ohne VIBE_*-Variablen; alle Pfade liegen
+        # ausdrücklich unter dem Temp-Root des Tests.
+        environ = {"HOME": str(self.home), "PATH": os.environ.get("PATH", "")}
 
         def input_fn(prompt):
             prompts.append(prompt)
@@ -612,7 +615,10 @@ class CliFlowTest(unittest.TestCase):
 
         with contextlib.redirect_stdout(out):
             code = setup.main(
-                args,
+                list(args) + [
+                    "--install", str(self.vibe / "_toolchain"),
+                    "--logs", str(self.vibe / "_logs"),
+                ],
                 input_fn=input_fn,
                 output=lambda text="": out.write(str(text) + "\n"),
                 which=which or (lambda name: None),
@@ -623,6 +629,7 @@ class CliFlowTest(unittest.TestCase):
                 interactive=interactive,
                 is_root=False,
                 has_sudo=True,
+                environ=environ,
             )
         return code, out.getvalue(), prompts
 
@@ -636,7 +643,9 @@ class CliFlowTest(unittest.TestCase):
         notes = platform_info(os_release={"ID": "ubuntu"})
         out = io.StringIO()
         code = setup.main(
-            ["--yes", "--dry-run", "--vibe", str(self.vibe)],
+            ["--yes", "--dry-run", "--vibe", str(self.vibe),
+             "--install", str(self.vibe / "_toolchain"),
+             "--logs", str(self.vibe / "_logs")],
             output=lambda text="": out.write(str(text) + "\n"),
             which=lambda name: None,
             runner=self.runner,
@@ -646,6 +655,7 @@ class CliFlowTest(unittest.TestCase):
             interactive=False,
             is_root=False,
             has_sudo=True,
+            environ={"HOME": str(self.home), "PATH": os.environ.get("PATH", "")},
         )
         self.assertEqual(code, 0)
         self.assertFalse(self.vibe.exists())
@@ -777,6 +787,14 @@ class WrapperTest(unittest.TestCase):
 
     def test_install_vibe_sh_uses_the_python_setup(self):
         env = os.environ.copy()
+        # B17: Der Wrapper startet den echten Setup. Erbte der Test eine
+        # Produktivumgebung, würde install-vibe.sh die reale Installation
+        # aktualisieren. Deshalb ausschließlich Temp-Pfade übergeben.
+        for key in (
+            "VIBE", "VIBE_PROFILE", "VIBE_INSTALL", "VIBE_STATE",
+            "VIBE_RUNTIME", "VIBE_CONFIG_FILE", "VIBE_AGENTS_DIR",
+        ):
+            env.pop(key, None)
         env.update(
             {
                 "VIBE": str(self.vibe),

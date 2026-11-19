@@ -65,9 +65,16 @@ class SetupHarnessTest(unittest.TestCase):
         self.tmp.cleanup()
 
     def run_setup(self, *extra, which=fake_which):
+        # B17: Der Setup erhält eine bereinigte Umgebung ohne VIBE_*-Variablen
+        # und explizite Temp-Pfade. Ein geerbtes Produktiv-VIBE_* darf den
+        # Testlauf nicht mehr auf die echte Installation lenken.
         output = io.StringIO()
+        environ = {"HOME": str(self.home), "PATH": os.environ.get("PATH", "")}
         code = setup.main(
-            ["--vibe", str(self.target), "--yes", "--skip-deps", "--no-launcher",
+            ["--vibe", str(self.target),
+             "--install", str(self.target / "_toolchain"),
+             "--logs", str(self.target / "_logs"),
+             "--yes", "--skip-deps", "--no-launcher",
              "--no-register", *extra],
             output=lambda text="": output.write(str(text) + "\n"),
             which=which,
@@ -77,6 +84,7 @@ class SetupHarnessTest(unittest.TestCase):
             interactive=False,
             is_root=True,
             has_sudo=False,
+            environ=environ,
         )
         return code, output.getvalue()
 

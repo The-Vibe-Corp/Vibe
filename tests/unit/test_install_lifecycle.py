@@ -7,6 +7,7 @@ import importlib.machinery
 import importlib.util
 import io
 import json
+import os
 import subprocess
 import tempfile
 import unittest
@@ -105,8 +106,14 @@ class InstallLifecycleBase(unittest.TestCase):
 
     def run_main(self, args, interactive=False, which=None, runner=None):
         out = io.StringIO()
+        # B17: bereinigte Umgebung ohne VIBE_*-Variablen und explizite
+        # Temp-Pfade für Installation und Laufzeit.
+        environ = {"HOME": str(self.home), "PATH": os.environ.get("PATH", "")}
         code = setup.main(
-            args,
+            list(args) + [
+                "--install", str(self.toolchain),
+                "--logs", str(self.vibe / "_logs"),
+            ],
             output=lambda text="": out.write(str(text) + "\n"),
             which=which or (lambda name: None),
             runner=runner or (lambda command, **kwargs: subprocess.CompletedProcess(command, 1, "", "")),
@@ -116,6 +123,7 @@ class InstallLifecycleBase(unittest.TestCase):
             interactive=interactive,
             is_root=False,
             has_sudo=False,
+            environ=environ,
         )
         return code, out.getvalue()
 
