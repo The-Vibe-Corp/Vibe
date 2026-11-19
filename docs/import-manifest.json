@@ -997,6 +997,17 @@
       ],
       "datum": "2026-11-19",
       "grund": "UI-Verbesserungen Ausgabe (AP20): Neue kompakte Übersicht .bv-overview über alle aktiven Agenten mit Zähler („N Subagenten“), je Zeile Name, gekürzte Beschreibung, Status-Pille und Fokus-Knopf; ein einziger panelweiter Scrollbereich (.bv-root mit overflow-x:hidden und dünner Scrollbar), weil .bv-log im Normalmodus clippt; umbrechendes CSS-Raster .bv-subs mit repeat(auto-fit,minmax(320px,1fr)) ohne horizontalen Overflow auch bei 900 px; ein geteilter Fokus-Zustand für Karten-Vergrößern-Knopf, Übersichts-Fokus und Hauptagent (Escape oder zweiter Klick stellt zurück, aria-expanded wird gepflegt, Live-Updates laufen über setText/loadChild weiter). Der B11/F30-Vertrag bleibt unverändert (Panel, sieben gleichzeitige Agentenansichten, Zielauswahl, Anweisung, Senden/Fortsetzen, renderLogChunk/hlLine DOM-only, Karten ≥ 300 px, kein Modal, keine Tabliste). Geänderte Dateien liegen im Manifestbereich bin; Größe und SHA-256 von bin/web/app.js und bin/web/styles.css wurden aktualisiert und dadurch begründet. Review-Runde 1: Der Fokus-Knopf des Hauptagenten erhielt einen Klick-Handler auf toggleFocus(data-session), womit er exakt denselben geteilten Fokus-Zustand wie Karten- und Übersichts-Knöpfe schaltet (aria-label bleibt „Hauptagent fokussieren“, aria-expanded folgt dem Zustand); die Übersichtszeilen tragen ein title-Attribut „<Agent> — <vollständige Beschreibung>“, damit der per Ellipsis gekürzte, unterscheidende Text (testerD/E/F) per Hover/Tastatur-Tooltip verfügbar bleibt); der Leerzustand .bv-overview-empty richtet sich nach der Zahl laufender Subagenten (statt nach allen Zeilen inklusive Hauptagent) und trägt den zutreffenden Text „Keine laufenden Subagenten“. Der Screenshot der neuen Ansicht liegt unter docs/features/AP20-ausgabe.png (außerhalb der Manifest-Bereiche)."
+    },
+    {
+      "arbeitspaket": "AP21",
+      "dateien": [
+        "bin/web/app.js",
+        "bin/web/index.html",
+        "bin/web/i18n.js",
+        "bin/vibe-web.py"
+      ],
+      "datum": "2026-11-19",
+      "grund": "Vollständige Übersetzung der Web-UI auf Englisch und i18n-Infrastruktur: Neue Datei bin/web/i18n.js mit den Wörterbüchern en/de (englischer Standard, deutsch auswählbar, weitere Sprachen durch zusätzliches Wörterbuchobjekt ergänzbar), API available()/current()/set()/t()/locale() plus Formatierer; index.html lädt i18n.js vor app.js und startet mit lang=\"en\"; bin/web/app.js nutzt tr() mit German-Source-Keys für alle sichtbaren Strings, neuer Sprachabschnitt im Einstellungs-Tab mit select[aria-label=\"Language\"], sprachabhängige Zahlen-/Währungsformatierung und synchrone Neübersetzung des DOM bei set() ohne Reload; bin/vibe-web.py liefert /static/i18n.js aus. Die Panels und data-Attribute des AP20-Vertrags bleiben unverändert. Review-Nachbesserung: alle verbleibenden sichtbaren deutschen Restliterale in app.js nachgezogen; clientseitige Zuordnungen STATE_LABELS/DOCTOR_LABELS/MESSAGE_MAP/MESSAGE_PHRASES und bt() für Backend-Meldungen, Sitzungszustände, Doctor-Texte und Kataloghinweise (Server-API unverändert); markerbasierte Übersetzung nur an von tr() stammenden Knoten (el() markiert Text/Attribute), danach gezieltes Neu-Rendern der aktiven Ansicht inklusive zusammengesetzter Texte; CURRENT_PROJECT-Korrektur; DTABS/COSTS_HEAD/PACKAGE_HEAD ohne zwischengespeicherte tr()-Werte; Sprachoptionen aus I18N.available(); sessionTime() mit Intl.DateTimeFormat(I18N.locale()); Test-Key aus den Produktionswörterbüchern entfernt. Prüfsummen/Größen von app.js und i18n.js erneut aktualisiert. Review-Runde 3: Projektassistent (Titel/Fragen/Hilfen/Status aus bin/vibe_guide.py) wird ueber GUIDE_TEXT/gt() englisch dargestellt, Statusvergleiche gegen Rohwerte (gefuellt/offen/fehlt, unbekannt) statt uebersetzter Texte; dynamische Doctor-Labels ueber DOCTOR_PATTERNS/MESSAGE_PHRASES (Präfix- und Musterzuordnung) in bt(); rohe r.message-Toasts und weitere Platzhalter/aria-labels ueber tr()/bt(); Doku-Zahl der Browserfaelle auf 14 korrigiert. Prüfsummen/Größen von app.js und i18n.js erneut aktualisiert. Review-Runde 4: Modellbewertungen/Werte und -labels ueber Woerterbuch in en/de (sehr schnell->very fast, hoch->high, bedingt->conditional, aufwand->effort, daten->data usw.), modelLabel() mit tr()-Text, badge() tolle Verhalten auf Rohwert undAnzeige uebersetzt, zustand.rechte und mcp badge nutzen Rohkonstanten statt boxed Strings, MCP-Toasts ueber bt(), Doku-Zahl Browserfaelle auf 15 und Trilium-Notiz ID korrigiert. Pruefsummen/Größen von app.js und i18n.js erneut aktualisiert. Review-Runde 4: Modellbewertungen und Detail-Labels ueber tr()/Woerterbuch (ASSESSMENT-Werte wie sehr schnell/gut/bedingt, Aufwand/Daten/Bild/coder/reviewer/Staerken/Schwaechen, composite \" Aufwand, Daten \"); badge() erzeugt Pill-Ton aus Rohwert und Anzeige uebersetzt; boxed-String-Vergleiche (zustand.rechte, mcp ja/nein) auf Rohkonstanten umgestellt; MCP-Toasts ueber bt(); Doku auf 15 Browserfaelle und Trilium-Notiz Vh6mV66XMgcm korrigiert. Pruefsummen/Größen von app.js und i18n.js erneut aktualisiert. Review-Runde 5: Schreibrechte-Chip nutzt parametrierten Key {{count}} Verzeichnisse (EN \"N directories\", DE \"N Verzeichnisse\", auch beim Sprachwechsel ohne Reload); ID-Status-Werte bestaetigt/entfernt ueber Woerterbuch (confirmed/removed) mit unveraenderten Rohvergleichen; MESSAGE_PHRASES um testnamensspezifische und doppelte Eintraege bereinigt. Pruefsummen/Größen von app.js und i18n.js erneut aktualisiert. Review-Runde 5: Die DETAILZEILE \"Als entfernt geführt seit ...\" wurde als zusammengesetzter Textknoten beim Sprachwechsel nicht übersetzt; sie ist jetzt in einzelne von tr() markierte Textknoten zerlegt (Als entfernt geführt / seit / Quelle), sodass retranslateDOM sie ohne Neuladen korrekt umschaltet. Prüfsumme/Größe von app.js aktualisiert."
     }
   ],
   "files": [
@@ -1021,9 +1032,9 @@
       "sha256": "6f7f169479842777ad6369420590c8646ae3d4391174bbfa43d12f93c4aea4ae"
     },
     {
-      "bytes": 100884,
+      "bytes": 100950,
       "path": "bin/vibe-web.py",
-      "sha256": "2530836bac4e290a68c87e7d3c67a923d93637884a6a7e286336ca098f9f7bee"
+      "sha256": "dc2be04e6bd98fb7fb7b574ec9a94900a485a7298616ea6939058ed0068c56a3"
     },
     {
       "bytes": 5189,
@@ -1111,14 +1122,14 @@
       "sha256": "d49b2406f2c9837c63ed3c3dcb265938fe5702e78c5aeb0df07b9f349fd65594"
     },
     {
-      "bytes": 134189,
+      "bytes": 150090,
       "path": "bin/web/app.js",
-      "sha256": "7582556ce1559bf297e6dbc006dec23d34ef4b91da0e9825b57ba513de6c317c"
+      "sha256": "327c8b5cdd574f7eacca7093f9b6cf59829955c88cd1e58213422e0c0e8326b9"
     },
     {
-      "bytes": 588,
+      "bytes": 625,
       "path": "bin/web/index.html",
-      "sha256": "db45ba1dd9e5da380f5c05c24b2158eefce9b7e8f87faeb33a9e88910d0cd73d"
+      "sha256": "1a86c54de15e2e02a02ef5d4a4ee9951c5f48bec2654cb7107b39a8a1c81976a"
     },
     {
       "bytes": 12445,
@@ -1284,6 +1295,11 @@
       "bytes": 7,
       "path": "VERSION",
       "sha256": "f5e9382967c9833066a55808829f3750fc8e1181b170cafd222c37048bb49a77"
+    },
+    {
+      "bytes": 110043,
+      "path": "bin/web/i18n.js",
+      "sha256": "664da2278b037f3a7a3f2ff888b1b02ed100125121debf411a4949b326ce9e99"
     }
   ],
   "hinweis": "SHA-256 der übernommenen Programmdateien. Beabsichtigte Änderungen an diesen Dateien sind nur zulässig, wenn dieser Eintrag im selben Arbeitspaket aktualisiert und begründet wird. Laufzeitdaten, Sicherungen und Geheimnisse sind nicht Bestandteil des Imports.",

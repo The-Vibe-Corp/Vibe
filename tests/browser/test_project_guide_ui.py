@@ -63,6 +63,8 @@ class ProjectGuideBrowserTest(unittest.TestCase):
         shutil.copytree(REPO / "templates", toolchain / "templates")
         cls.log_dir = cls.root / "_logs"
         cls.log_dir.mkdir()
+        cls.state_dir = cls.root / "_state"
+        cls.state_dir.mkdir()
         cls.port = free_port()
         env = os.environ.copy()
         env.update(
@@ -70,6 +72,17 @@ class ProjectGuideBrowserTest(unittest.TestCase):
                 "VIBE": str(cls.root),
                 "VIBE_NO_CONTAINER": "1",
                 "VIBE_UI_PORT": str(cls.port),
+                # Isolation: Ohne VIBE_RUNTIME würde die persönliche
+                # Konfiguration des Entwicklers einen Laufzeitordner
+                # außerhalb des Temp-Bereichs wählen (im Sandbox-Lauf
+                # schreibgeschützt).
+                "VIBE_RUNTIME": str(cls.log_dir),
+                # Isolation: Auch der Zustandsordner (vibe.json mit
+                # zusätzlichen Entwicklungsordnern) kommt aus der
+                # persönlichen Konfiguration. Ohne eigene VIBE_STATE listet
+                # die Oberfläche fremde Projekte, und "tr.row" mit
+                # Teiltreffer öffnet das falsche Projekt.
+                "VIBE_STATE": str(cls.state_dir),
             }
         )
         cls.proc = subprocess.Popen(
@@ -143,7 +156,7 @@ class ProjectGuideBrowserTest(unittest.TestCase):
         row = self.page.locator("tr.row", has_text="proj").first
         row.wait_for()
         row.click()
-        self.page.get_by_role("tab", name="Assistent", exact=True).click()
+        self.page.get_by_role("tab", name="Assistant", exact=True).click()
         self.page.locator("#guide").wait_for()
         self.page.locator('.gstep[data-step="ziel"]').wait_for()
 
@@ -157,7 +170,7 @@ class ProjectGuideBrowserTest(unittest.TestCase):
         self.open_detail()
 
         guide = self.page.locator("#guide")
-        self.assertIn("0/6 Pflichtschritte", guide.inner_text())
+        self.assertRegex(guide.inner_text(), r"0/6 Pflichtschritte|0/6 required steps")
         self.assertEqual(guide.locator(".gstep").count(), 8)
         self.assertIn("SPEC.md", guide.inner_text())
         self.assertFalse((self.project / "SPEC.md").exists())
@@ -174,11 +187,11 @@ class ProjectGuideBrowserTest(unittest.TestCase):
             self.fill(step_id, value)
 
         self.page.get_by_role(
-            "button", name="Antworten speichern und Dateien anlegen"
+            "button", name="Save answers and create files"
         ).click()
 
         self.wait_until(
-            lambda: "vollständig" in self.page.locator("#guide").inner_text(),
+            lambda: "complete" in self.page.locator("#guide").inner_text(),
             message="Assistent meldet die Vollständigkeit nicht",
         )
         self.assertTrue((self.project / "SPEC.md").is_file())
@@ -190,7 +203,7 @@ class ProjectGuideBrowserTest(unittest.TestCase):
         self.assertTrue((self.project / "FEEDBACK.md").is_file())
         self.assertTrue((self.project / "README.md").is_file())
 
-        self.assertIn("vollständig", self.page.locator("#guide").inner_text())
+        self.assertIn("complete", self.page.locator("#guide").inner_text())
 
         SHOT.parent.mkdir(parents=True, exist_ok=True)
         self.page.locator("#guide").screenshot(path=str(SHOT))
@@ -206,12 +219,13 @@ class ProjectGuideBrowserTest(unittest.TestCase):
         )
         self.open_detail()
 
-        self.assertIn("gefüllt", self.step("ziel").inner_text())
+        self.assertRegex(
+            self.step("ziel").inner_text(), r"gefüllt|filled")
         self.assertEqual(self.step("ziel").locator("textarea").input_value(), "Bestehendes Ziel.")
         self.fill("umfang", "- Neue Funktion")
 
         self.page.get_by_role(
-            "button", name="Antworten speichern und Dateien anlegen"
+            "button", name="Save answers and create files"
         ).click()
 
         self.wait_until(
@@ -232,11 +246,11 @@ class ProjectGuideBrowserTest(unittest.TestCase):
         self.open_detail()
 
         draft = self.step("ziel")
-        self.assertIn("Entwurf des Agenten", draft.inner_text())
+        self.assertRegex(draft.inner_text(), r"Entwurf des Agenten|Agent draft")
         self.assertIn("Vom Agenten entworfenes Ziel.", draft.inner_text())
         self.assertFalse((self.project / "SPEC.md").exists())
 
-        draft.get_by_role("button", name="Entwurf übernehmen").click()
+        draft.get_by_role("button", name="Apply draft").click()
 
         self.wait_until(
             lambda: not (folder / "ziel.md").exists(),
@@ -257,8 +271,8 @@ class ProjectGuideBrowserTest(unittest.TestCase):
         self.open_detail()
 
         guide = self.page.locator("#guide")
-        self.assertIn("Agentenauftrag", guide.inner_text())
-        self.assertIn("beendet", guide.inner_text())
+        self.assertRegex(guide.inner_text(), r"Agentenauftrag|Agent task")
+        self.assertRegex(guide.inner_text(), r"beendet|finished")
         self.assertIn("Agent not found: test-agent", guide.inner_text())
 
 

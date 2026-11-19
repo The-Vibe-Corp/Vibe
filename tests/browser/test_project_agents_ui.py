@@ -234,7 +234,7 @@ class ProjectAgentsBrowserTest(unittest.TestCase):
 
     def open_agents(self):
         self.page.goto(self.base + "/#t=" + self.token)
-        self.page.get_by_role("button", name="Agenten & Modelle").click()
+        self.page.get_by_role("button", name="Agents & Models").click()
         self.page.locator("#agents").wait_for()
         self.page.locator('tr[data-agent="tester"]').wait_for()
 
@@ -247,7 +247,7 @@ class ProjectAgentsBrowserTest(unittest.TestCase):
         row = self.page.locator("tr.row", has_text="proj").first
         row.wait_for()
         row.click()
-        self.page.get_by_role("tab", name="Einstellungen", exact=True).click()
+        self.page.get_by_role("tab", name="Settings", exact=True).click()
         self.page.locator("#project-agents").wait_for()
         self.page.locator('tr[data-project-agent="vibe-agent"]').wait_for()
 
@@ -271,12 +271,12 @@ class ProjectAgentsBrowserTest(unittest.TestCase):
         """AK Editor: Modell und Prompt werden ohne Zwischenschritt gespeichert."""
         self.open_agents()
         self.page.locator('tr[data-agent="tester"]').get_by_role(
-            "button", name="Bearbeiten"
+            "button", name="Edit"
         ).click()
-        self.page.get_by_label("Modell", exact=True).wait_for()
+        self.page.get_by_label("Model", exact=True).wait_for()
 
-        self.page.get_by_label("Modell", exact=True).select_option("opencode/neu")
-        self.page.get_by_role("button", name="Speichern", exact=True).click()
+        self.page.get_by_label("Model", exact=True).select_option("opencode/neu")
+        self.page.get_by_role("button", name="Save", exact=True).click()
 
         path = self.global_agents / "tester.md"
         self.wait_until(
@@ -289,7 +289,7 @@ class ProjectAgentsBrowserTest(unittest.TestCase):
         # verarbeitet hat, ist der Ausgangsstand der Felder aktuell.
         self.wait_until(
             lambda: self.page.get_by_role(
-                "button", name="Speichern", exact=True
+                "button", name="Save", exact=True
             ).is_enabled(),
             message="Der erste Speichervorgang ist nicht abgeschlossen",
         )
@@ -299,16 +299,16 @@ class ProjectAgentsBrowserTest(unittest.TestCase):
         # vom asynchronen Aktualisieren der Feldbasis im ersten Durchlauf ab.
         self.open_agents()
         self.page.locator('tr[data-agent="tester"]').get_by_role(
-            "button", name="Bearbeiten"
+            "button", name="Edit"
         ).click()
-        self.page.get_by_label("Modell", exact=True).wait_for()
+        self.page.get_by_label("Model", exact=True).wait_for()
         self.assertEqual(
-            self.page.get_by_label("Modell", exact=True).input_value(),
+            self.page.get_by_label("Model", exact=True).input_value(),
             "opencode/neu",
         )
 
         self.page.get_by_label("Prompt", exact=True).fill("Neuer Prompt.")
-        self.page.get_by_role("button", name="Speichern", exact=True).click()
+        self.page.get_by_role("button", name="Save", exact=True).click()
         self.wait_until(
             lambda: "Neuer Prompt." in path.read_text(encoding="utf-8"),
             message="Der Prompt wurde nicht gespeichert",
@@ -334,9 +334,9 @@ class ProjectAgentsBrowserTest(unittest.TestCase):
         )
 
         toggle = self.page.locator('input[data-toggle="unconfigured"]')
-        self.assertEqual(
+        self.assertRegex(
             toggle.get_attribute("aria-label"),
-            "Nicht konfigurierte Agenten anzeigen",
+            r"Nicht konfigurierte Agenten anzeigen|Show unconfigured agents",
         )
         toggle.check()
         self.wait_until(
@@ -355,7 +355,9 @@ class ProjectAgentsBrowserTest(unittest.TestCase):
             "opencode/start", row.locator("td[data-wirksam]").inner_text()
         )
         model = self.page.locator('select[data-model-override="tester"]')
-        self.assertEqual(model.get_attribute("aria-label"), "Modell für tester")
+        self.assertRegex(
+            model.get_attribute("aria-label"),
+            r"Modell für tester|Model for tester")
 
         # Projektlokale Agentendateien sind auch nach dem Einblenden nicht
         # Teil der Auswahl.
@@ -367,8 +369,9 @@ class ProjectAgentsBrowserTest(unittest.TestCase):
         self.reveal_unconfigured()
 
         configure = self.page.locator('input[data-configure="tester"]')
-        self.assertEqual(
-            configure.get_attribute("aria-label"), "Agent tester konfigurieren"
+        self.assertRegex(
+            configure.get_attribute("aria-label"),
+            r"Agent tester (konfigurieren|configure)",
         )
         configure.check()
         self.wait_until(

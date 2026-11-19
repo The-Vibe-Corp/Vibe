@@ -179,29 +179,31 @@ class CentralWorkflowBrowserTest(unittest.TestCase):
         self.assertEqual(cells.nth(3).inner_text().strip(), "2")
 
         row.click()
-        self.page.get_by_role("tab", name="Arbeit", exact=True).wait_for()
-        self.assertTrue(self.page.get_by_role("tab", name="Ausgabe").is_visible())
+        self.page.get_by_role("tab", name="Work", exact=True).wait_for()
+        self.assertTrue(self.page.get_by_role("tab", name="Output").is_visible())
         self.assertTrue(
-            self.page.locator(".card", has_text="Offene Arbeitspakete (2)").count()
+            self.page.locator(".card", has_text="Open work packages (2)").count()
             >= 1
         )
 
         form = self.page.locator("#ticket-new")
-        form.locator("input[aria-label='ID des Arbeitspakets']").fill("V-901")
+        form.locator(
+            "input[aria-label='ID des Arbeitspakets'], "
+            "input[aria-label='Work package ID']").fill("V-901")
         form.locator("input").nth(1).fill("Zentraler Ablauf")
         form.locator("textarea").fill("Im Browser angelegt")
-        form.get_by_role("button", name="Arbeitspaket anlegen").click()
+        form.get_by_role("button", name="Create work package").click()
         self.wait_until(
             lambda: "- [ ] V-901 Zentraler Ablauf" in self.ticket_text(),
             message="Arbeitspaket wurde nicht gespeichert",
         )
 
-        self.page.get_by_role("button", name="Prüfung quick").click()
+        self.page.get_by_role("button", name="Check quick").click()
         self.wait_until(
             lambda: self.page.locator('[role="tab"][aria-selected="true"]')
             .inner_text()
             .strip()
-            == "Ausgabe",
+            == "Output",
             message="Prüfung wechselte nicht zur Ausgabe",
         )
         self.wait_until(
@@ -210,7 +212,7 @@ class CentralWorkflowBrowserTest(unittest.TestCase):
             message="Prüfungsausgabe erschien nicht",
         )
 
-        self.page.get_by_role("button", name="← zurück").click()
+        self.page.get_by_role("button", name="← Back").click()
         row = self.page.locator("tr.row", has_text="proj").first
         row.wait_for()
         self.wait_until(
@@ -220,15 +222,15 @@ class CentralWorkflowBrowserTest(unittest.TestCase):
 
     def test_environment_view_shows_release_and_diagnosis(self):
         self.open_list()
-        self.page.get_by_role("button", name="Umgebung").click()
-        self.page.get_by_text("Umgebungsprüfung").wait_for(timeout=60000)
+        self.page.get_by_role("button", name="Environment").click()
+        self.page.get_by_text("Environment check").wait_for(timeout=60000)
 
         body = self.page.locator("main").inner_text()
         self.assertIn("Release", body)
-        self.assertIn("Umgebungsprüfung", body)
+        self.assertIn("Environment check", body)
         self.assertIn("Version 0.18.0", body)
         self.assertIn("Commit abcdef1", body)
-        self.assertIn("Umgebung", body)
+        self.assertIn("Environment", body)
         self.assertTrue(
             "OK" in body or "FEHL" in body,
             "Umgebungsprüfung zeigte keinen Ergebniszustand: " + body[:400],

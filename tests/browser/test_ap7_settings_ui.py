@@ -169,7 +169,7 @@ class Ap7SettingsBrowserTest(unittest.TestCase):
         row = self.page.locator("tr.row", has_text="proj").first
         row.wait_for()
         row.click()
-        self.page.get_by_role("tab", name="Einstellungen", exact=True).click()
+        self.page.locator("[role='tab'][aria-controls='panel-einstellungen']").click()
         panel = self.page.locator("#panel-einstellungen")
         panel.wait_for()
         self.assertTrue(panel.is_visible(), "Einstellungen-Panel ist nicht sichtbar")
@@ -284,12 +284,12 @@ class Ap7SettingsBrowserTest(unittest.TestCase):
             timeout=15,
             message="Der Agenten-Chip zeigt weder … noch eine Zahl",
         )
-        self.assertIn("Standardliste", " ".join(self.chip_texts()),
-                      "Der Schreibrechte-Chip nennt „Standardliste“ nicht")
-        self.assertIn("aus", self.chip("sandbox").inner_text(),
-                      "Der Sandbox-Chip zeigt nicht „aus“")
-        self.assertIn("aus", self.chip("github").inner_text(),
-                      "Der GitHub-Chip zeigt nicht „aus“")
+        self.assertRegex(" ".join(self.chip_texts()), r"Standardliste|Default list",
+                         "Der Schreibrechte-Chip nennt weder „Standardliste“ noch „Default list“")
+        self.assertIn("off", self.chip("sandbox").inner_text(),
+                      "Der Sandbox-Chip zeigt nicht „off“")
+        self.assertIn("off", self.chip("github").inner_text(),
+                      "Der GitHub-Chip zeigt nicht „off“")
 
         agents = self.page.locator("#project-agents")
         agents.wait_for()
@@ -302,9 +302,9 @@ class Ap7SettingsBrowserTest(unittest.TestCase):
         )
 
         for section_selector, probe in (
-            ("#settings-rechte", "Standard wiederherstellen"),
+            ("#settings-rechte", "Restore defaults"),
             ("#sandbox", None),
-            ("#github", "Mit GitHub verknüpfen"),
+            ("#github", "Link with GitHub"),
         ):
             section = self.page.locator(section_selector)
             section.wait_for()
@@ -319,7 +319,7 @@ class Ap7SettingsBrowserTest(unittest.TestCase):
                     "Inhalt von %s ist sichtbar, obwohl eingeklappt"
                     % section_selector,
                 )
-        sandbox_input = self.page.get_by_label("Build-Werkzeuge")
+        sandbox_input = self.page.get_by_label("Build tools")
         self.assertFalse(
             sandbox_input.first.is_visible() if sandbox_input.count() else False,
             "Build-Werkzeuge-Eingabe ist im eingeklappten Zustand sichtbar",
@@ -366,7 +366,7 @@ class Ap7SettingsBrowserTest(unittest.TestCase):
         self.chip("sandbox").click(timeout=2000)
         self.wait_until(
             lambda: self.page.locator("#sandbox").evaluate("el => !!el.open")
-            and self.page.get_by_role("button", name="Sandbox einschalten").is_visible(),
+            and self.page.get_by_role("button", name="Turn on sandbox").is_visible(),
             message="Sandbox-Chip klappte den Sandbox-Abschnitt nicht auf",
         )
         self.section_visible_without_scroll("#sandbox")
@@ -375,7 +375,7 @@ class Ap7SettingsBrowserTest(unittest.TestCase):
 
         self.chip("rechte").click(timeout=2000)
         self.wait_until(
-            lambda: self.page.get_by_role("button", name="Standard wiederherstellen").is_visible(),
+            lambda: self.page.get_by_role("button", name="Restore defaults").is_visible(),
             message="Rechte-Chip klappte den Schreibrechte-Abschnitt nicht auf",
         )
         self.section_visible_without_scroll("#settings-rechte")
@@ -383,7 +383,7 @@ class Ap7SettingsBrowserTest(unittest.TestCase):
         self.chip("github").click(timeout=2000)
         self.wait_until(
             lambda: self.page.locator("#github").evaluate("el => !!el.open")
-            and self.page.get_by_role("button", name="Mit GitHub verknüpfen").is_visible(),
+            and self.page.get_by_role("button", name="Link with GitHub").is_visible(),
             message="GitHub-Chip klappte den Git-und-GitHub-Abschnitt nicht auf",
         )
         self.section_visible_without_scroll("#github")
@@ -420,10 +420,10 @@ class Ap7SettingsBrowserTest(unittest.TestCase):
         github = self.page.locator("#github")
 
         action_names = (
-            "Abrufen (fetch, kein Merge)",
-            "Push (Branch nach origin)",
-            "Pull (aufholen, --ff-only)",
-            "Merge-Request stellen",
+            "Fetch (no merge)",
+            "Push (current branch)",
+            "Pull (fast-forward, --ff-only)",
+            "Create merge request",
         )
         for name in action_names:
             button = github.get_by_role("button", name=name)
@@ -431,7 +431,7 @@ class Ap7SettingsBrowserTest(unittest.TestCase):
                 button.first.is_visible() if button.count() else False,
                 "„%s“ ist ohne Verknüpfung sichtbar" % name,
             )
-        issues_block = github.get_by_text("Issues als Arbeitspakete")
+        issues_block = github.get_by_text("Issues as work packages")
         self.assertFalse(
             issues_block.first.is_visible() if issues_block.count() else False,
             "Der Issues-Block ist ohne Verknüpfung sichtbar",
@@ -441,7 +441,7 @@ class Ap7SettingsBrowserTest(unittest.TestCase):
         checkbox.wait_for()
         self.assertFalse(checkbox.is_checked(), "Verknüpfung startete aktiv")
         checkbox.check()
-        github.get_by_role("button", name="Speichern").click()
+        github.get_by_role("button", name="Save", exact=True).click()
 
         env_file = self.project / ".vibe" / "project.env"
         self.wait_until(
@@ -451,8 +451,8 @@ class Ap7SettingsBrowserTest(unittest.TestCase):
 
         # Das Einstellungsregister wurde nach dem Speichern neu gebaut;
         # der Test verlässt das Register und öffnet es erneut.
-        self.page.get_by_role("tab", name="Arbeit", exact=True).click()
-        self.page.get_by_role("tab", name="Einstellungen", exact=True).click()
+        self.page.locator("[role='tab'][aria-controls='panel-arbeit']").click()
+        self.page.locator("[role='tab'][aria-controls='panel-einstellungen']").click()
         self.page.locator("#panel-einstellungen").wait_for()
         self.expand("#github")
         github = self.page.locator("#github")
@@ -462,7 +462,7 @@ class Ap7SettingsBrowserTest(unittest.TestCase):
                 message="„%s“ nach Verknüpfungsaufbau nicht sichtbar" % name,
             )
         self.assertTrue(
-            github.get_by_text("Issues als Arbeitspakete").first.is_visible(),
+            github.get_by_text("Issues as work packages").first.is_visible(),
             "Der Issues-Block nach Verknüpfungsaufbau nicht sichtbar",
         )
 
@@ -474,8 +474,8 @@ class Ap7SettingsBrowserTest(unittest.TestCase):
         # Server liest das Projekt beim Neuaufbau neu ein; deshalb das
         # Register einmal betreten/verlassen statt die Datei im Hintergrund
         # zu editieren.
-        self.page.get_by_role("tab", name="Arbeit", exact=True).click()
-        self.page.get_by_role("tab", name="Einstellungen", exact=True).click()
+        self.page.locator("[role='tab'][aria-controls='panel-arbeit']").click()
+        self.page.locator("[role='tab'][aria-controls='panel-einstellungen']").click()
         self.page.locator("#panel-einstellungen").wait_for()
         self.expand("#github")
         github = self.page.locator("#github")
@@ -483,7 +483,7 @@ class Ap7SettingsBrowserTest(unittest.TestCase):
         self.assertTrue(checkbox.is_checked(),
                         "Die Verknüpfung ist beim Aufräumen nicht mehr aktiv")
         checkbox.uncheck()
-        github.get_by_role("button", name="Speichern").click()
+        github.get_by_role("button", name="Save", exact=True).click()
         self.wait_until(
             lambda: 'GITHUB_ENABLED="1"'
                     not in env_file.read_text(encoding="utf-8"),
@@ -519,11 +519,11 @@ class Ap7SettingsBrowserTest(unittest.TestCase):
         )
 
         probe_specs = (
-            ("Build-Werkzeuge", lambda: self.page.get_by_label("Build-Werkzeuge")),
+            ("Build tools", lambda: self.page.get_by_label("Build tools")),
             ("Verzeichnis-Eingabe der Schreibrechte",
              lambda: self.page.get_by_placeholder("/absoluter/pfad")),
             ("GitHub-Repository-Eingabe",
-             lambda: self.page.locator('input[aria-label*="Repository"]')),
+             lambda: self.page.locator("input[placeholder='owner/name']")),
         )
         for label, probe_factory in probe_specs:
             probe = probe_factory()
@@ -596,7 +596,7 @@ class Ap7SettingsBrowserTest(unittest.TestCase):
         self.page.keyboard.press("Enter")
         self.wait_until(
             lambda: self.page.locator("#sandbox").evaluate("el => !!el.open")
-            and self.page.get_by_role("button", name="Sandbox einschalten").is_visible(),
+            and self.page.get_by_role("button", name="Turn on sandbox").is_visible(),
             message="Enter auf dem Sandbox-summary klappte den Abschnitt nicht auf",
         )
 
@@ -698,14 +698,14 @@ class Ap7SettingsBrowserTest(unittest.TestCase):
         error_box = self.page.locator("#project-agents .bad")
         self.wait_until(
             lambda: error_box.count() > 0
-            and "Agentenauswahl nicht verfügbar" in error_box.first.inner_text(),
+            and "Agent selection unavailable" in error_box.first.inner_text(),
             timeout=15,
             message="Der Agentenabschnitt meldete die blockierte API nicht",
         )
         chip = self.chip("agenten")
         self.wait_until(
-            lambda: "Fehler" in chip.inner_text(),
-            message="Agenten-Chip zeigt bei API-Fehler nicht „Fehler“",
+            lambda: "Error" in chip.inner_text(),
+            message="Agenten-Chip zeigt bei API-Fehler nicht „Error“",
         )
         pill_class = chip.locator(".pill").evaluate(
             "el => el.className", timeout=2000

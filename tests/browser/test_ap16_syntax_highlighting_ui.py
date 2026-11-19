@@ -324,13 +324,13 @@ class AP16OutputBrowserTest(unittest.TestCase):
         row.wait_for(state="visible", timeout=20000)
         row.click()
         tabs = self.page.locator(
-            "[aria-label='Projektbereiche'] button[role=tab]")
+            "[aria-label='Project sections'] button[role=tab]")
         tabs.first.wait_for(state="visible", timeout=20000)
 
     def open_output(self):
         tabs = self.page.locator(
-            "[aria-label='Projektbereiche'] button[role=tab]")
-        out_tab = tabs.filter(has_text="Ausgabe").first
+            "[aria-label='Project sections'] button[role=tab]")
+        out_tab = tabs.filter(has_text="Output").first
         out_tab.click()
         self.panel().wait_for(state="visible", timeout=15000)
 
@@ -425,7 +425,7 @@ class AP16OutputBrowserTest(unittest.TestCase):
         return info.value
 
     def steer_textarea(self):
-        area = self.panel().locator("textarea[aria-label*='Zusatzanweisung']")
+        area = self.panel().locator("textarea[aria-label*='Zusatzanweisung'], textarea[aria-label*='Additional instruction']")
         self.assertGreater(
             area.count(), 0,
             "Keine Anweisungseingabe (textarea mit aria-label "
@@ -434,14 +434,14 @@ class AP16OutputBrowserTest(unittest.TestCase):
 
     def steer_send_button(self):
         button = self.panel().locator("button").filter(
-            has_text=re.compile("senden", re.I)).first
+            has_text=re.compile("senden|Send", re.I)).first
         self.assertGreater(
             button.count(), 0, "Kein Senden-Knopf gefunden")
         return button
 
     def continue_button(self):
         return self.panel().locator("button").filter(
-            has_text=re.compile(r"^Fortsetzen$")).first
+            has_text=re.compile(r"^Resume$")).first
 
 
 class MainAgentHighlightTest(AP16OutputBrowserTest):

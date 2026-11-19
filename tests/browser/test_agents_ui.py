@@ -251,7 +251,7 @@ class AgentsBrowserTest(unittest.TestCase):
 
     def open_agents(self):
         self.page.goto(self.base + "/#t=" + self.token)
-        self.page.get_by_role("button", name="Agenten & Modelle").click()
+        self.page.get_by_role("button", name="Agents & Models").click()
         self.page.locator("#agents").wait_for()
         self.page.locator('tr[data-agent="tester"]').wait_for()
 
@@ -259,11 +259,11 @@ class AgentsBrowserTest(unittest.TestCase):
         return self.page.locator('tr[data-agent="tester"]')
 
     def open_global_editor(self):
-        self.global_row().get_by_role("button", name="Bearbeiten").click()
-        self.page.get_by_label("Beschreibung", exact=True).wait_for()
+        self.global_row().get_by_role("button", name="Edit").click()
+        self.page.get_by_label("Description", exact=True).wait_for()
 
     def raw_editor(self):
-        return self.page.get_by_label("Datei (Frontmatter + Prompt)")
+        return self.page.get_by_label("File (frontmatter + prompt)")
 
     def backup_files(self):
         folder = self.state / "agent-backups" / "global"
@@ -286,7 +286,7 @@ class AgentsBrowserTest(unittest.TestCase):
             self.page.locator('td[data-ergebnis="tester"]').inner_text(),
         )
         self.assertIn(
-            "alle", self.page.locator('td[data-erlaubt="tester"]').inner_text()
+            "all", self.page.locator('td[data-erlaubt="tester"]').inner_text()
         )
         self.assertIn(
             "opencode/test-modell",
@@ -294,9 +294,9 @@ class AgentsBrowserTest(unittest.TestCase):
         )
         self.assertEqual(self.page.locator('tr[data-agent="lokal"]').count(), 0)
 
-        self.page.get_by_role("button", name="Neuer Agent").click()
-        self.page.get_by_label("Rolle", exact=True).wait_for()
-        self.page.get_by_label("Ergebnis", exact=True).wait_for()
+        self.page.get_by_role("button", name="New agent").click()
+        self.page.get_by_label("Role", exact=True).wait_for()
+        self.page.get_by_label("Result", exact=True).wait_for()
 
     def test_role_change_is_saved_in_profiles_and_shown(self):
         """AK Rollen: Änderung über select[data-role] wirkt und bleibt sichtbar."""
@@ -324,13 +324,13 @@ class AgentsBrowserTest(unittest.TestCase):
         self.open_agents()
         self.open_global_editor()
 
-        self.page.get_by_label("Beschreibung", exact=True).fill("Global neu")
-        self.page.get_by_label("Modus", exact=True).select_option("primary")
-        self.page.get_by_label("Rechte", exact=True).select_option("lesen")
-        self.page.get_by_label("Temperatur", exact=True).fill("0.7")
-        self.page.get_by_label("Max. Schritte", exact=True).fill("5")
+        self.page.get_by_label("Description", exact=True).fill("Global neu")
+        self.page.get_by_label("Mode", exact=True).select_option("primary")
+        self.page.get_by_label("Permissions", exact=True).select_option("lesen")
+        self.page.get_by_label("Temperature", exact=True).fill("0.7")
+        self.page.get_by_label("Max. steps", exact=True).fill("5")
         self.page.get_by_label("Prompt", exact=True).fill("Neuer globaler Prompt.")
-        self.page.get_by_role("button", name="Speichern", exact=True).click()
+        self.page.get_by_role("button", name="Save", exact=True).click()
 
         path = self.global_agents / "tester.md"
         self.wait_until(
@@ -351,7 +351,7 @@ class AgentsBrowserTest(unittest.TestCase):
         before = path.read_text(encoding="utf-8")
 
         self.raw_editor().fill("kein Frontmatter\n")
-        self.page.get_by_role("button", name="Speichern", exact=True).click()
+        self.page.get_by_role("button", name="Save", exact=True).click()
         self.wait_until(
             lambda: self.page.get_by_text("Frontmatter", exact=False).count() > 0,
             message="Fehlermeldung zum ungültigen Frontmatter fehlt",
@@ -365,8 +365,8 @@ class AgentsBrowserTest(unittest.TestCase):
         path = self.global_agents / "tester.md"
         before = path.read_text(encoding="utf-8")
 
-        self.page.get_by_label("Temperatur", exact=True).fill("heiß")
-        self.page.get_by_role("button", name="Speichern", exact=True).click()
+        self.page.get_by_label("Temperature", exact=True).fill("heiß")
+        self.page.get_by_role("button", name="Save", exact=True).click()
         self.wait_until(
             lambda: self.page.get_by_text("Temperatur muss", exact=False).count() > 0,
             message="Fehlermeldung zur ungültigen Temperatur fehlt",
@@ -378,11 +378,11 @@ class AgentsBrowserTest(unittest.TestCase):
         self.open_agents()
         target = self.global_agents / "neuling.md"
 
-        self.page.get_by_role("button", name="Neuer Agent").click()
+        self.page.get_by_role("button", name="New agent").click()
         self.page.get_by_label("Name", exact=True).fill("neuling")
-        self.page.get_by_label("Beschreibung", exact=True).fill("Frischer Agent")
+        self.page.get_by_label("Description", exact=True).fill("Frischer Agent")
         self.page.get_by_label("Prompt", exact=True).fill("Arbeite sorgfältig.")
-        self.page.get_by_role("button", name="Speichern", exact=True).click()
+        self.page.get_by_role("button", name="Save", exact=True).click()
         self.wait_until(target.exists, message="Neuer Agent wurde nicht geschrieben")
         text = target.read_text(encoding="utf-8")
         self.assertIn("description: Frischer Agent", text)
@@ -390,9 +390,9 @@ class AgentsBrowserTest(unittest.TestCase):
 
         self.open_agents()
         row = self.page.locator('tr[data-agent="neuling"]')
-        row.get_by_role("button", name="Bearbeiten").click()
-        self.page.get_by_role("button", name="Löschen").click()
-        self.page.get_by_role("button", name="Ja, löschen").click()
+        row.get_by_role("button", name="Edit").click()
+        self.page.get_by_role("button", name="Delete").click()
+        self.page.get_by_role("button", name="Yes, delete").click()
         self.wait_until(lambda: not target.exists(), message="Agent wurde nicht gelöscht")
         backups = self.backup_files()
         self.assertTrue(backups, "Beim Löschen wurde keine Sicherung angelegt")
@@ -407,18 +407,18 @@ class AgentsBrowserTest(unittest.TestCase):
         path = self.global_agents / "tester.md"
         before = path.read_text(encoding="utf-8")
 
-        self.page.get_by_label("Beschreibung", exact=True).fill("Zwischenstand")
-        self.page.get_by_role("button", name="Speichern", exact=True).click()
+        self.page.get_by_label("Description", exact=True).fill("Zwischenstand")
+        self.page.get_by_role("button", name="Save", exact=True).click()
         self.wait_until(
             lambda: "Zwischenstand" in path.read_text(encoding="utf-8"),
             message="Zwischenstand wurde nicht gespeichert",
         )
 
-        self.page.get_by_role("button", name="Sicherungen anzeigen").click()
-        restore = self.page.get_by_role("button", name="Wiederherstellen").first
+        self.page.get_by_role("button", name="Show backups").click()
+        restore = self.page.get_by_role("button", name="Restore").first
         restore.wait_for()
         restore.click()
-        self.page.get_by_role("button", name="Ja, wiederherstellen").click()
+        self.page.get_by_role("button", name="Yes, restore").click()
         self.wait_until(
             lambda: path.read_text(encoding="utf-8") == before,
             message="Sicherung wurde nicht wiederhergestellt",

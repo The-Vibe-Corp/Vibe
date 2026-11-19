@@ -57,7 +57,9 @@ def general_rules():
 
 
 BLOCK = general_rules()
-EXPLANATION = "auf den aktuellen Stand gebracht und ist in der Bearbeitung geschützt"
+EXPLANATION = re.compile(
+    r"auf den aktuellen Stand gebracht und ist in der Bearbeitung geschützt"
+    r"|it brings the block up to date and protects it from editing")
 BEFORE = "Kopfteil-F31\n"
 AFTER = "\nFußteil-F31\n"
 
@@ -191,7 +193,7 @@ class AgentsFileUiTest(unittest.TestCase):
         row = self.page.locator("tr.row", has_text="proj").first
         row.wait_for()
         row.click()
-        self.page.get_by_role("tab", name="Assistent", exact=True).click()
+        self.page.get_by_role("tab", name="Assistant", exact=True).click()
         self.page.locator("#guide").wait_for()
 
     def agents_card(self):
@@ -207,11 +209,11 @@ class AgentsFileUiTest(unittest.TestCase):
         # trafe nie (der Karten-Div liegt INNERHALB von #guide und kann keinen
         # weiteren #guide-Nachfahren enthalten). Deshalb hier page-relativ.
         buttons = self.page.get_by_role(
-            "button", name=re.compile(r"^Speichern$|^Aus Vorlage anlegen$")
+            "button", name=re.compile(r"^(Speichern|Save)$|^(Aus Vorlage anlegen|Create from template)$")
         )
         return (
             guide.locator("div")
-            .filter(has_text="Regeln für Agenten")
+            .filter(has_text=re.compile(r"Regeln für Agenten|rules for agents", re.I))
             .filter(has=buttons)
             .last
         )
@@ -231,9 +233,9 @@ class AgentsFileUiTest(unittest.TestCase):
         card.wait_for()
         text = card.inner_text()
         self.assertIn("AGENTS.md", text)
-        self.assertIn("Regeln für Agenten", text)
+        self.assertRegex(text, r"Regeln für Agenten|rules for agents")
         # AK2: Erklärung zum geschützten, bei jedem Lauf aktualisierten Block.
-        self.assertIn(EXPLANATION, text)
+        self.assertRegex(text, EXPLANATION)
         # AK1: Die Karte zeigt die freien Teile und den verwalteten Inhalt.
         boxes = card.get_by_role("textbox")
         self.assertEqual(boxes.count(), 2, "vor/after-Textareas fehlen in der Karte")
@@ -260,7 +262,7 @@ class AgentsFileUiTest(unittest.TestCase):
                 break
         self.assertIsNotNone(target, "after-Textarea nicht gefunden")
         target.fill("Fußteil-F31 geändert\n")
-        card.get_by_role("button", name="Speichern").click()
+        card.get_by_role("button", name="Save").click()
         self.wait_until(
             lambda: "Fußteil-F31 geändert" in self.agents_path().read_text(encoding="utf-8"),
             message="Speichern hat AGENTS.md nicht aktualisiert",
@@ -275,7 +277,7 @@ class AgentsFileUiTest(unittest.TestCase):
         self.open_guide()
         card = self.agents_card()
         card.wait_for()
-        card.get_by_role("button", name="Aus Vorlage anlegen").click()
+        card.get_by_role("button", name="Create from template").click()
         self.wait_until(
             lambda: self.agents_path().exists(),
             message="AGENTS.md wurde nicht aus der Vorlage angelegt",

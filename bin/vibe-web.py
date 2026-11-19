@@ -1967,6 +1967,7 @@ class H(BaseHTTPRequestHandler):
 
 STATIC_FILES = {
     "/static/styles.css": ("web/styles.css", "text/css"),
+    "/static/i18n.js": ("web/i18n.js", "application/javascript"),
     "/static/app.js": ("web/app.js", "application/javascript"),
 }
 

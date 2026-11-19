@@ -173,16 +173,18 @@ class WorkPackageBrowserTest(unittest.TestCase):
         row.wait_for()
         row.click()
         self.page.locator("#tickets").wait_for()
-        self.page.get_by_role("tab", name="Arbeit", exact=True).wait_for()
+        self.page.get_by_role("tab", name="Work", exact=True).wait_for()
 
     def test_add_edit_and_delete_a_work_package(self):
         self.open_detail()
 
         form = self.page.locator("#ticket-new")
-        form.locator("input[aria-label='ID des Arbeitspakets']").fill("F18")
+        form.locator(
+            "input[aria-label='ID des Arbeitspakets'], "
+            "input[aria-label='Work package ID']").fill("F18")
         form.locator("input").nth(1).fill("Neues Paket")
         form.locator("textarea").fill("Zeile eins\nZeile zwei")
-        form.get_by_role("button", name="Arbeitspaket anlegen").click()
+        form.get_by_role("button", name="Create work package").click()
 
         self.wait_until(
             lambda: "F18 Neues Paket" in self.ticket_text(),
@@ -194,10 +196,10 @@ class WorkPackageBrowserTest(unittest.TestCase):
         self.assertIn("- [ ] F15 Arbeitspakete", text)
 
         entry = self.page.locator('#tickets .fbentry[data-id="F18"]')
-        entry.get_by_role("button", name="Bearbeiten").click()
+        entry.get_by_role("button", name="Edit").click()
         entry.locator("input").fill("Geändertes Paket")
         entry.locator("textarea").fill("Geänderte Beschreibung")
-        entry.get_by_role("button", name="Speichern").click()
+        entry.get_by_role("button", name="Save").click()
 
         self.wait_until(
             lambda: "F18 Geändertes Paket" in self.ticket_text(),
@@ -210,8 +212,8 @@ class WorkPackageBrowserTest(unittest.TestCase):
         self.assertIn("- [ ] F15 Arbeitspakete", text)
 
         entry = self.page.locator('#tickets .fbentry[data-id="F18"]')
-        entry.get_by_role("button", name="Löschen").click()
-        entry.locator(".confirm").get_by_role("button", name="Ja, löschen").click()
+        entry.get_by_role("button", name="Delete").click()
+        entry.locator(".confirm").get_by_role("button", name="Yes, delete").click()
         self.wait_until(
             lambda: "F18 Geändertes Paket" not in self.ticket_text(),
             message="Arbeitspaket wurde nicht gelöscht",
@@ -231,7 +233,7 @@ class WorkPackageBrowserTest(unittest.TestCase):
         # Das ID-Eingabefeld bleibt absichtlich leer.
         form.locator("input").nth(1).fill("Auto Paket")
         form.locator("textarea").fill("Zeile eins\nZeile zwei")
-        form.get_by_role("button", name="Arbeitspaket anlegen").click()
+        form.get_by_role("button", name="Create work package").click()
 
         def assigned_id():
             ids = self.page.eval_on_selector_all(
@@ -265,9 +267,9 @@ class WorkPackageBrowserTest(unittest.TestCase):
         entry = self.page.locator(
             '#tickets .fbentry[data-id="%s"]' % assigned
         )
-        entry.get_by_role("button", name="Bearbeiten").click()
+        entry.get_by_role("button", name="Edit").click()
         entry.locator("textarea").fill("Geänderte Beschreibung")
-        entry.get_by_role("button", name="Speichern").click()
+        entry.get_by_role("button", name="Save").click()
 
         self.wait_until(
             lambda: "  Beschreibung: Geänderte Beschreibung"
@@ -279,8 +281,8 @@ class WorkPackageBrowserTest(unittest.TestCase):
         entry = self.page.locator(
             '#tickets .fbentry[data-id="%s"]' % assigned
         )
-        entry.get_by_role("button", name="Löschen").click()
-        entry.locator(".confirm").get_by_role("button", name="Ja, löschen").click()
+        entry.get_by_role("button", name="Delete").click()
+        entry.locator(".confirm").get_by_role("button", name="Yes, delete").click()
         self.wait_until(
             lambda: "Auto Paket" not in self.ticket_text(),
             message="Auto-Arbeitspaket wurde nicht gelöscht",
@@ -295,7 +297,7 @@ class WorkPackageBrowserTest(unittest.TestCase):
         form = self.page.locator("#bug-new")
         form.locator("input").fill("Absturz beim Start")
         form.locator("textarea").fill("Fenster bleibt leer")
-        form.get_by_role("button", name="Bug melden").click()
+        form.get_by_role("button", name="Report bug").click()
 
         self.wait_until(
             lambda: "B1 Absturz beim Start" in self.feedback_text(),

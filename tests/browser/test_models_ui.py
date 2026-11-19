@@ -218,8 +218,8 @@ class ModelsBrowserTest(unittest.TestCase):
     def setUp(self):
         self.page = self.browser.new_page(viewport={"width": 1500, "height": 1100})
         self.page.goto(self.base + "/#t=" + self.token)
-        self.page.get_by_role("button", name="Agenten & Modelle").click()
-        self.page.get_by_role("button", name="Neuer Agent").wait_for()
+        self.page.get_by_role("button", name="Agents & Models").click()
+        self.page.get_by_role("button", name="New agent").wait_for()
         self.page.locator("#models > details > summary").wait_for()
 
     def tearDown(self):
@@ -243,7 +243,9 @@ class ModelsBrowserTest(unittest.TestCase):
         self.assertFalse(self.row("opencode/test-free").is_visible())
         self.open_models()
         self.assertTrue(self.row("opencode/test-free").is_visible())
-        self.assertIn("Fakten", self.page.locator("#models > details > summary").inner_text())
+        self.assertRegex(
+            self.page.locator("#models > details > summary").inner_text(),
+            r"Fakten|facts")
 
     def test_price_shows_currency_unit_and_tariff_tiers(self):
         self.open_models()
@@ -253,11 +255,11 @@ class ModelsBrowserTest(unittest.TestCase):
         detail = self.detail("opencode/test-free")
         self.assertTrue(detail.is_visible())
         text = detail.inner_text()
-        self.assertIn("Währung: USD", text)
-        self.assertIn("Einheit: 1 Mio. Tokens", text)
-        self.assertIn("Stand: 2026-10-30", text)
-        self.assertIn("Tarife je Einheit", text)
-        self.assertIn("Staffel ab 272000 Kontext", text)
+        self.assertRegex(text, r"Währung: USD|Currency: USD")
+        self.assertRegex(text, r"Einheit: 1 Mio\. Tokens|unit: 1 Mio\. Tokens")
+        self.assertRegex(text, r"Stand: 2026-10-30|as of: 2026-10-30")
+        self.assertRegex(text, r"Tarife je Einheit|Rates per unit")
+        self.assertRegex(text, r"Staffel ab 272000 Kontext|Tier from 272000 context")
 
     def test_detail_separates_facts_and_assessments_with_sources(self):
         self.open_models()
@@ -283,31 +285,35 @@ class ModelsBrowserTest(unittest.TestCase):
     def test_removed_model_is_marked(self):
         self.open_models()
         row = self.row("opencode/weg")
-        self.assertIn("nicht mehr gelistet", row.inner_text())
+        self.assertRegex(row.inner_text(), r"nicht mehr gelistet|no longer listed")
         row.click()
         text = self.detail("opencode/weg").inner_text()
-        self.assertIn("Nicht in „opencode models“", text)
-        self.assertIn("Als entfernt geführt seit 2026-10-30", text)
+        self.assertRegex(text, r'Nicht in „opencode models“|Not in "opencode models"')
+        self.assertRegex(
+            text, r"Als entfernt geführt seit 2026-10-30|Marked as removed since 2026-10-30")
 
     def test_unknown_model_has_no_assessment(self):
         self.open_models()
         row = self.row("opencode/fremd")
-        self.assertIn("unbekannt", row.inner_text())
+        self.assertIn("unknown", row.inner_text())
         # Auch ohne Katalogeintrag ist die Detailzeile erst nach dem Klick offen.
         self.assertFalse(self.detail("opencode/fremd").is_visible())
         row.click()
         self.assertTrue(self.detail("opencode/fremd").is_visible())
-        self.assertIn("Kein Katalogeintrag", self.detail("opencode/fremd").inner_text())
+        self.assertIn("No catalog entry", self.detail("opencode/fremd").inner_text())
 
     def test_catalog_findings_and_not_adopted_entries_are_visible(self):
         self.open_models()
         findings = self.page.locator("[data-catalog-findings]")
         self.assertEqual(findings.count(), 1)
-        self.assertIn("Katalogbefunde (1)", findings.inner_text())
+        self.assertRegex(
+            findings.inner_text(), r"Katalogbefunde \(1\)|Catalog findings \(1\)")
         self.assertIn("Quelle fehlt", findings.inner_text())
         notice = self.page.locator("[data-not-adopted]")
         notice.locator("summary").click()
-        self.assertIn("Nicht übernommene Altbestände (1)", notice.inner_text())
+        self.assertRegex(
+            notice.inner_text(),
+            r"Nicht übernommene Altbestände \(1\)|Not adopted legacy entries \(1\)")
         self.assertIn("opencode/alt-paid", notice.inner_text())
         self.assertIn("Altpreis ohne Gültigkeitsdatum", notice.inner_text())
 

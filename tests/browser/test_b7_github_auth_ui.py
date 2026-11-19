@@ -84,10 +84,14 @@ ISOLATED_ENV = (
     "VIBE_PROFIL", "VIBE_PROFILE",
 )
 
-SAVE_TOKEN = re.compile(r".*(zugangs)?token.*(speichern|hinterlegen).*", re.I)
-CLEAR_TOKEN = re.compile(r".*(zugangs)?token.*(entfernen|l[oö]schen).*", re.I)
-SETTINGS_SAVE = re.compile(r"^\s*Speichern\s*$")
-AUTH_STATUS = re.compile(r"gespeichert|hinterlegt|umgebung", re.I)
+SAVE_TOKEN = re.compile(
+    r"(?:.*(?:zugangs)?token.*(?:speichern|hinterlegen|save|store).*"
+    r"|.*(?:speichern|save|store).*(?:zugangs)?token.*)", re.I)
+CLEAR_TOKEN = re.compile(
+    r"(?:.*(?:zugangs)?token.*(?:entfernen|l[oö]schen|remove|clear).*"
+    r"|.*(?:entfernen|remove|clear|delete).*(?:zugangs)?token.*)", re.I)
+SETTINGS_SAVE = re.compile(r"^\s*(Speichern|Save)\s*$")
+AUTH_STATUS = re.compile(r"gespeichert|hinterlegt|umgebung|saved|stored|environment", re.I)
 
 
 def free_port():
@@ -378,7 +382,7 @@ class GitHubAuthUiTest(unittest.TestCase):
         self.page.goto(self.base + "/#t=" + self.web_token)
         self.page.wait_for_selector(".row")
         self.page.locator(".row").filter(has_text=name).first.click()
-        self.page.get_by_role("tab", name="Einstellungen").click()
+        self.page.get_by_role("tab", name="Settings").click()
         card = self.git_card()
         self.expand_optional("#github")
         return card
@@ -498,7 +502,7 @@ class GitHubAuthUiTest(unittest.TestCase):
         pr_button.click()
         group = card.locator(".confirm, [role='group']").first
         group.wait_for(state="visible", timeout=5000)
-        group.get_by_role("button", name=re.compile(r"Ja|Bestätigen", re.I)).first.click()
+        group.get_by_role("button", name=re.compile(r"Ja|Bestätigen|Yes|Confirm", re.I)).first.click()
 
         box = card.locator(".bad").first
         box.wait_for(state="visible", timeout=15000)
@@ -649,7 +653,7 @@ class GitHubAuthUiTest(unittest.TestCase):
             page.goto(base_url + "/#t=" + login_token)
             page.wait_for_selector(".row")
             page.locator(".row").filter(has_text="gh-b7-demo").first.click()
-            page.get_by_role("tab", name="Einstellungen").click()
+            page.get_by_role("tab", name="Settings").click()
             card = page.locator(".card").filter(has_text="Git & GitHub").first
             card.wait_for(state="visible", timeout=15000)
             summary = page.locator("#github > summary")
@@ -661,12 +665,12 @@ class GitHubAuthUiTest(unittest.TestCase):
             auth_line = card.locator("[data-auth]").first
             auth_line.wait_for(state="visible", timeout=10000)
             initial_text = auth_line.inner_text()
-            self.assertNotIn(
-                "Kein Token hinterlegt", initial_text,
+            self.assertNotRegex(
+                initial_text, r"Kein Token hinterlegt|No token stored",
                 "Der Server meldet Umgebungszugriff; die Startzeile zeigt ihn "
                 "nicht: %r" % initial_text)
             self.assertTrue(
-                re.search(r"umgebung", initial_text, re.IGNORECASE),
+                re.search(r"umgebung|environment", initial_text, re.IGNORECASE),
                 "Initialzeile muss 'Zugang über die Umgebung' zeigen: %r"
                 % initial_text)
 
@@ -704,15 +708,15 @@ class GitHubAuthUiTest(unittest.TestCase):
             texts_after_save = observe_line(
                 2.5, "nach token.save")
             for text in texts_after_save:
-                self.assertNotIn(
-                    "gespeichert", text,
+                self.assertNotRegex(
+                    text, r"gespeichert|saved",
                     "token.save zeigt die Quelle hartkodiert statt der "
                     "Serverquelle 'umgebung': %r" % text)
-                self.assertNotIn(
-                    "Kein Token hinterlegt", text,
+                self.assertNotRegex(
+                    text, r"Kein Token hinterlegt|No token stored",
                     "token.save hat die Anzeige geleert: %r" % text)
             self.assertTrue(
-                all(re.search(r"umgebung", t, re.IGNORECASE)
+                all(re.search(r"umgebung|environment", t, re.IGNORECASE)
                     for t in texts_after_save),
                 "Die Auth-Zeile muss nach token.save durchgehend die "
                 "Serverquelle 'umgebung' zeigen (setAuth(r.auth && "
@@ -726,16 +730,16 @@ class GitHubAuthUiTest(unittest.TestCase):
             texts_after_clear = observe_line(
                 2.5, "nach token.clear")
             for text in texts_after_clear:
-                self.assertNotIn(
-                    "Kein Token hinterlegt", text,
+                self.assertNotRegex(
+                    text, r"Kein Token hinterlegt|No token stored",
                     "token.clear setzt die Anzeige auf '' statt der "
                     "Serverquelle 'umgebung': %r" % text)
-                self.assertNotIn(
-                    "gespeichert", text,
+                self.assertNotRegex(
+                    text, r"gespeichert|saved",
                     "Nach token.clear bleibt eine falsche Quelle stehen: %r"
                     % text)
             self.assertTrue(
-                all(re.search(r"umgebung", t, re.IGNORECASE)
+                all(re.search(r"umgebung|environment", t, re.IGNORECASE)
                     for t in texts_after_clear),
                 "Die Auth-Zeile muss nach token.clear durchgehend die "
                 "Serverquelle 'umgebung' zeigen (setAuth(r.auth && "

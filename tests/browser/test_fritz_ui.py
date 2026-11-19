@@ -140,33 +140,34 @@ class FritzBrowserTest(unittest.TestCase):
         self.fail(message)
 
     def fritz_card(self):
-        return self.page.locator(".card", has_text="Fritzbox-Reconnect")
+        return self.page.locator(".card", has_text="FRITZ!Box reconnect")
 
     def test_automation_and_manual_reconnect_are_controllable(self):
         self.page.goto(self.base + "/#t=" + self.token)
-        self.page.get_by_role("button", name="Umgebung").click()
+        self.page.get_by_role("button", name="Environment").click()
         card = self.fritz_card()
         card.wait_for()
 
-        self.assertIn("Automatik: aus", card.inner_text())
-        self.assertIn("bereit", card.inner_text())
-        self.assertIn("standardmäßig aus", card.inner_text())
+        self.assertIn("Auto: off", card.inner_text())
+        self.assertIn("ready", card.inner_text())
+        self.assertRegex(
+            card.inner_text(), r"standardmäßig aus|off by default")
         self.assertNotIn("geheim-passwort", self.page.content())
         self.assertFalse(self.settings.exists())
 
         checkbox = card.get_by_role("checkbox")
         checkbox.check()
-        card.get_by_role("button", name="Automatik übernehmen").click()
+        card.get_by_role("button", name="Apply auto setting").click()
         self.wait_until(
             lambda: self.settings.is_file()
             and json.loads(self.settings.read_text(encoding="utf-8"))["automation"] is True,
             message="Automatik wurde nicht gespeichert",
         )
-        self.fritz_card().get_by_text("Automatik: an").wait_for()
+        self.fritz_card().get_by_text("Auto: on").wait_for()
 
-        self.fritz_card().get_by_role("button", name="Jetzt neu verbinden").click()
-        self.fritz_card().locator(".confirm").get_by_role("button", name="Ja, verbinden").click()
-        self.fritz_card().get_by_text("Reconnect erfolgreich").wait_for(timeout=30)
+        self.fritz_card().get_by_role("button", name="Reconnect now").click()
+        self.fritz_card().locator(".confirm").get_by_role("button", name="Yes, connect").click()
+        self.fritz_card().get_by_text("Reconnect successful").wait_for(timeout=30000)
         self.assertIn("neue IP: 203.0.113.9", self.fritz_card().inner_text())
         self.assertTrue(self.fritz_log.is_file())
 
@@ -176,12 +177,12 @@ class FritzBrowserTest(unittest.TestCase):
 
         card = self.fritz_card()
         card.get_by_role("checkbox").uncheck()
-        card.get_by_role("button", name="Automatik übernehmen").click()
+        card.get_by_role("button", name="Apply auto setting").click()
         self.wait_until(
             lambda: json.loads(self.settings.read_text(encoding="utf-8"))["automation"] is False,
             message="Automatik wurde nicht ausgeschaltet",
         )
-        self.fritz_card().get_by_text("Automatik: aus").wait_for()
+        self.fritz_card().get_by_text("Auto: off").wait_for()
 
 
 if __name__ == "__main__":

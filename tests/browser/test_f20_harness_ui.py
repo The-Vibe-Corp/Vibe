@@ -113,6 +113,9 @@ def mentions_serverless_run(text):
         r"(?i)(?:ohne|kein\w*|nicht|frei von)\s+[^<]{0,60}\bopencode",
         r"(?i)(?:ohne|kein\w*|nicht)\s+[^<]{0,40}\bserver\b",
         r"(?i)\bpi\b[^<]{0,80}(?:ohne|kein\w*|nicht)[^<]{0,40}\bserver\b",
+        r"(?i)(?:without|no|not)\s+[^<]{0,60}\bopencode",
+        r"(?i)(?:without|no|not)\s+[^<]{0,40}\bserver\b",
+        r"(?i)\bpi\b[^<]{0,80}(?:without|no|not)[^<]{0,40}\bserver\b",
     )
     import re as _re
     return any(_re.search(p, text) for p in patterns)
@@ -302,15 +305,15 @@ class PiHarnessUiTest(HarnessUiBase):
             "document.querySelector('#srv') && document.querySelector('#srv').innerText.length > 0"
         )
         text = box.inner_text()
-        self.assertNotIn("opencode-Server:", text,
-                         "Bei Pi bleibt der opencode-Server-Text in der Kopfleiste?")
+        self.assertNotRegex(text, r"opencode-Server:|opencode server:",
+                            "Bei Pi bleibt der opencode-Server-Text in der Kopfleiste?")
         self.assertEqual(
-            self.page.get_by_role("button", name="opencode stoppen").count(), 0)
+            self.page.get_by_role("button", name="Stop opencode").count(), 0)
         self.assertEqual(
-            self.page.get_by_role("button", name="opencode starten").count(), 0)
-        self.assertNotIn("opencode stoppen", text)
-        self.assertNotIn("opencode starten", text)
-        self.assertIn("Dashboard beenden", text,
+            self.page.get_by_role("button", name="Start opencode").count(), 0)
+        self.assertNotRegex(text, r"opencode stoppen|Stop opencode")
+        self.assertNotIn("Start opencode", text)
+        self.assertIn("Stop dashboard", text,
                       "Der Knopf „Dashboard beenden“ darf nicht verschwinden")
         import re
         self.assertTrue(re.search(r"(?i)\bpi\b", text),
@@ -335,7 +338,7 @@ class PiHarnessUiTest(HarnessUiBase):
         # modell fehlt in der Pi-Modellliste; Aktion: Register „Agenten &
         # Modelle“, Modellzeile aufklappen; Erwartung: „pi --list-models“ statt
         # „Nicht in „opencode models““.
-        self.open_nav("Agenten & Modelle")
+        self.open_nav("Agents & Models")
         self.open_models_table()
         row = self.page.locator('tr[data-model-row="opencode/test-free"]')
         row.wait_for()
@@ -350,7 +353,7 @@ class PiHarnessUiTest(HarnessUiBase):
         # AK B5b. Vorbedingung: Pi gewählt; Aktion: Register „Agenten &
         # Modelle“, Profilhinweis lesen; Erwartung: Anmelde-Hinweis nennt Pi,
         # „opencode auth login“ erscheint nicht.
-        self.open_nav("Agenten & Modelle")
+        self.open_nav("Agents & Models")
         self.page.wait_for_selector("#agents")
         import re
         self.assertTrue(
@@ -362,7 +365,7 @@ class PiHarnessUiTest(HarnessUiBase):
     def test_agents_dir_hint_explains_prompt_source(self):
         # AK B5c. Vorbedingung: Pi gewählt; Aktion: Agenten-Karte lesen;
         # Erwartung: Hinweis erklärt Agentendateien als Prompt-Quelle für Pi.
-        self.open_nav("Agenten & Modelle")
+        self.open_nav("Agents & Models")
         card = self.page.locator("#agents")
         card.wait_for()
         import re
@@ -377,7 +380,7 @@ class PiHarnessUiTest(HarnessUiBase):
         # „Einstellungen“, Sandbox-Karte lesen; Erwartung: keine „mit eigenem
         # opencode-Server in bubblewrap“-Formulierung, Pi-Laufart erkennbar.
         self.open_detail()
-        self.open_detail_tab("Einstellungen")
+        self.open_detail_tab("Settings")
         card = self.page.locator("#sandbox")
         card.wait_for()
         self.expand_optional("#sandbox")
@@ -392,7 +395,7 @@ class PiHarnessUiTest(HarnessUiBase):
         # AK B7. Vorbedingung: Pi gewählt; Aktion: Register „MCP-Tools“ öffnen;
         # Erwartung: kein „opencode mcp auth“-Hinweis, Pi-spezifischer Grenzwert
         # erkennbar.
-        self.open_nav("MCP-Tools", tab="mcp")
+        self.open_nav("MCP Tools", tab="mcp")
         # #mcpres ist eine leere Ergebnisbox (DOM vorhanden, ohne Inhalt
         # unsichtbar): auf DOM-Präsenz warten, nicht auf Sichtbarkeit.
         self.page.wait_for_selector("#mcpres", state="attached")
@@ -416,14 +419,14 @@ class OpencodeRegressionUiTest(HarnessUiBase):
         self.open_dashboard()
         box = self.page.locator("#srv")
         self.page.wait_for_function(
-            "document.querySelector('#srv') && document.querySelector('#srv').innerText.includes('opencode-Server:')"
+            "document.querySelector('#srv') && /opencode[ -]server:/i.test(document.querySelector('#srv').innerText)"
         )
         text = box.inner_text()
-        self.assertIn("opencode-Server:", text)
-        self.assertIn("opencode starten", text)
+        self.assertRegex(text, r"opencode-Server:|opencode server:")
+        self.assertIn("Start opencode", text)
         self.assertEqual(
-            self.page.get_by_role("button", name="opencode starten").count(), 1)
-        self.assertIn("Dashboard beenden", text)
+            self.page.get_by_role("button", name="Start opencode").count(), 1)
+        self.assertIn("Stop dashboard", text)
 
     def test_detail_link_and_cards_keep_opencode_wording(self):
         # AK Regression B2/B6 (B11: Ausgabe-Karten entfallen aus der Prüfung).
@@ -439,42 +442,46 @@ class OpencodeRegressionUiTest(HarnessUiBase):
         # Regression bleiben unverändert.
         self.open_detail()
         self.assertEqual(
-            self.page.locator('a:has-text("opencode-Weboberfläche")').count(), 1)
-        self.open_detail_tab("Einstellungen")
+            self.page.locator('a:has-text("opencode-Weboberfläche"), a:has-text("opencode web UI")').count(), 1)
+        self.open_detail_tab("Settings")
         sandbox = self.page.locator("#sandbox")
         sandbox.wait_for()
         self.expand_optional("#sandbox")
-        self.assertIn("opencode-Server in bubblewrap", sandbox.inner_text())
+        self.assertRegex(sandbox.inner_text(),
+                         r"opencode-Server in bubblewrap|opencode server inside bubblewrap")
         # „Voreingestellt sind …“ steht in der Karte „Schreibrechte (Agenten)“,
         # nicht in der Sandbox-Karte (Bestandsstruktur bin/web/app.js).
         self.expand_optional("#settings-rechte")
-        self.assertIn(
-            "Voreingestellt sind /tmp/opencode",
+        self.assertRegex(
             self.page.locator(
-                ".card", has_text="Schreibrechte (Agenten)").inner_text())
+                ".card", has_text="Write access (agents)").inner_text(),
+            r"Voreingestellt sind /tmp/opencode"
+            r"|/tmp/opencode and the project directory are preset")
 
     def test_agents_models_and_mcp_keep_opencode_wording(self):
         # AK Regression B5/B7. Vorbedingung: keine Auswahl; Aktion: Agenten->
         # Modellzeile aufklappen und MCP-Tab öffnen; Erwartung: „Nicht in
         # „opencode models““, „opencode auth login“,	     ~/.config/opencode/agents
         # und „opencode mcp auth“ bleiben.
-        self.open_nav("Agenten & Modelle")
+        self.open_nav("Agents & Models")
         self.open_models_table()
         row = self.page.locator('tr[data-model-row="opencode/test-free"]')
         row.wait_for()
         row.click()
         detail = self.page.locator('tr[data-model-detail="opencode/test-free"]')
         text = detail.inner_text()
-        self.assertIn("Nicht in „opencode models“", text)
+        self.assertRegex(text, r"Nicht in „opencode models“|Not in \"opencode models\"")
         agents_card = self.page.locator("#agents")
         agents_card.wait_for()
         agents_text = agents_card.inner_text()
-        self.assertIn("Systemweite Agenten liegen unter ~/.config/opencode/agents",
-                      agents_text)
+        self.assertRegex(
+            agents_text,
+            r"Systemweite Agenten liegen unter ~/.config/opencode/agents"
+            r"|System-wide agents reside under ~/.config/opencode/agents")
         self.assertNotIn("Pi", agents_text)
         self.page.locator("main").inner_text()
         self.assertIn("opencode auth login", self.page.locator("main").inner_text())
-        self.open_nav("MCP-Tools", tab="mcp")
+        self.open_nav("MCP Tools", tab="mcp")
         # #mcpres ist eine leere Ergebnisbox (DOM vorhanden, ohne Inhalt
         # unsichtbar): auf DOM-Präsenz warten, nicht auf Sichtbarkeit.
         self.page.wait_for_selector("#mcpres", state="attached")

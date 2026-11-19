@@ -290,7 +290,7 @@ class CheckoutUiTest(unittest.TestCase):
 
     def new_project_card(self):
         card = self.page.locator(".card").filter(
-            has_text=re.compile("Neues Projekt", re.I)
+            has_text=re.compile("New project", re.I)
         ).first
         card.wait_for(state="visible", timeout=20000)
         return card
@@ -316,7 +316,7 @@ class CheckoutUiTest(unittest.TestCase):
 
     def checkout_button(self, card):
         button = card.get_by_role(
-            "button", name=re.compile(r"Aus GitHub\s+a(u|ü)schecken", re.I)
+            "button", name=re.compile(r"Check out from GitHub", re.I)
         )
         self.assertEqual(button.count(), 1,
                          "Genau ein Auschecken-Knopf wird erwartet")

@@ -65,7 +65,7 @@ FEEDBACK = (
     "  Beschreibung: Zweite Beschreibung\n"
 )
 
-TABS = ["Arbeit", "Ausgabe", "Assistent", "Einstellungen"]
+TABS = ["Work", "Output", "Assistant", "Settings"]
 
 
 def free_port():
@@ -187,7 +187,7 @@ class ProjectDetailUiTest(unittest.TestCase):
         row = self.page.locator("tr.row", has_text="proj").first
         row.wait_for()
         row.click()
-        self.tab("Arbeit").wait_for()
+        self.tab("Work").wait_for()
 
     def tab(self, name):
         return self.page.get_by_role("tab", name=name, exact=True)
@@ -210,7 +210,7 @@ class ProjectDetailUiTest(unittest.TestCase):
             TABS,
             "Register sind nicht vollständig oder falsch benannt",
         )
-        self.assertEqual(self.selected_tab().strip(), "Arbeit")
+        self.assertEqual(self.selected_tab().strip(), "Work")
 
         self.assertTrue(self.panel("arbeit").is_visible(), "Standardbereich ist nicht sichtbar")
         for other in ("ausgabe", "assistent", "einstellungen"):
@@ -224,13 +224,13 @@ class ProjectDetailUiTest(unittest.TestCase):
         self.assertFalse(self.page.locator("#guide").is_visible(), "Assistent ist sofort sichtbar")
         self.assertFalse(self.page.locator("#sandbox").is_visible(), "Sandbox ist sofort sichtbar")
         self.assertFalse(
-            self.page.get_by_text("Schreibrechte (Agenten)").is_visible(),
+            self.page.get_by_text("Write access (agents)").is_visible(),
             "Schreibrechte sind sofort sichtbar",
         )
 
         # Die wichtigen Inhalte der täglichen Arbeit sind im Standardbild da.
         self.assertIn("Feedback (", self.panel("arbeit").inner_text())
-        self.assertTrue(self.page.get_by_text("Feedback eintragen").is_visible())
+        self.assertTrue(self.page.get_by_text("Add feedback").is_visible())
 
         SHOTS.mkdir(parents=True, exist_ok=True)
         self.page.screenshot(path=str(OVERVIEW_SHOT))
@@ -239,16 +239,16 @@ class ProjectDetailUiTest(unittest.TestCase):
     def test_tabs_can_be_switched_by_mouse_and_keyboard(self):
         self.open_detail()
 
-        self.tab("Einstellungen").click()
+        self.tab("Settings").click()
         self.wait_until(
             lambda: self.panel("einstellungen").is_visible(),
             message="Einstellungen wurden nicht geöffnet",
         )
-        self.assertEqual(self.selected_tab().strip(), "Einstellungen")
+        self.assertEqual(self.selected_tab().strip(), "Settings")
         self.assertFalse(self.panel("arbeit").is_visible())
         self.assertTrue(self.page.locator("#sandbox").is_visible())
         self.assertTrue(
-            self.page.get_by_text("Schreibrechte (Agenten)").is_visible()
+            self.page.get_by_text("Write access (agents)").is_visible()
         )
 
         # Der Einstellungen-Screenshot ist der Standardzustands-Nachweis des
@@ -269,17 +269,17 @@ class ProjectDetailUiTest(unittest.TestCase):
         self.page.screenshot(path=str(SETTINGS_SHOT))
         self.assertTrue(SETTINGS_SHOT.exists() and SETTINGS_SHOT.stat().st_size > 0)
 
-        self.tab("Einstellungen").focus()
+        self.tab("Settings").focus()
         self.page.keyboard.press("Home")
         self.wait_until(
-            lambda: self.selected_tab().strip() == "Arbeit",
+            lambda: self.selected_tab().strip() == "Work",
             message="Home führte nicht zum ersten Register",
         )
         self.assertTrue(self.panel("arbeit").is_visible())
 
         self.page.keyboard.press("ArrowRight")
         self.wait_until(
-            lambda: self.selected_tab().strip() == "Ausgabe",
+            lambda: self.selected_tab().strip() == "Output",
             message="Pfeil rechts wechselte nicht zum nächsten Register",
         )
         self.assertTrue(self.panel("ausgabe").is_visible())
@@ -287,13 +287,13 @@ class ProjectDetailUiTest(unittest.TestCase):
 
         self.page.keyboard.press("End")
         self.wait_until(
-            lambda: self.selected_tab().strip() == "Einstellungen",
+            lambda: self.selected_tab().strip() == "Settings",
             message="End führte nicht zum letzten Register",
         )
 
     def test_chosen_tab_survives_an_action_and_resets_when_leaving_the_detail(self):
         self.open_detail()
-        self.tab("Einstellungen").click()
+        self.tab("Settings").click()
         self.wait_until(
             lambda: self.panel("einstellungen").is_visible(),
             message="Einstellungen wurden nicht geöffnet",
@@ -301,10 +301,10 @@ class ProjectDetailUiTest(unittest.TestCase):
 
         old_tablist = self.page.locator('[role="tablist"]').element_handle()
         self.expand_optional("#sandbox")
-        tools = self.panel("einstellungen").get_by_label("Build-Werkzeuge")
+        tools = self.panel("einstellungen").get_by_label("Build tools")
         tools.fill("git npm")
         self.panel("einstellungen").get_by_role(
-            "button", name="Werkzeuge speichern"
+            "button", name="Save tools"
         ).click()
         self.wait_until(
             lambda: old_tablist.evaluate("el => !el.isConnected"),
@@ -312,22 +312,22 @@ class ProjectDetailUiTest(unittest.TestCase):
         )
         self.assertEqual(
             self.selected_tab().strip(),
-            "Einstellungen",
+            "Settings",
             "Die Aktion setzte das gewählte Register zurück",
         )
         self.expand_optional("#sandbox")
         self.assertEqual(
-            self.panel("einstellungen").get_by_label("Build-Werkzeuge").input_value(),
+            self.panel("einstellungen").get_by_label("Build tools").input_value(),
             "git npm",
             "Die gespeicherten Werkzeuge stehen nach dem Neuladen nicht im Feld",
         )
 
-        self.page.get_by_role("button", name="← zurück").click()
+        self.page.get_by_role("button", name="← Back").click()
         row = self.page.locator("tr.row").first
         row.wait_for()
         row.click()
         self.wait_until(
-            lambda: self.selected_tab().strip() == "Arbeit",
+            lambda: self.selected_tab().strip() == "Work",
             message="Der Rückweg zur Projektliste setzte das Register nicht zurück",
         )
         self.assertTrue(self.panel("arbeit").is_visible())
@@ -335,9 +335,9 @@ class ProjectDetailUiTest(unittest.TestCase):
     def test_verify_action_opens_the_output_area_and_streams_the_check_log(self):
         self.open_detail()
 
-        self.panel("arbeit").get_by_role("button", name="Prüfung quick").click()
+        self.panel("arbeit").get_by_role("button", name="Check quick").click()
         self.wait_until(
-            lambda: self.selected_tab().strip() == "Ausgabe",
+            lambda: self.selected_tab().strip() == "Output",
             message="Prüfung wechselte nicht zur Ausgabe",
         )
         self.assertTrue(self.panel("ausgabe").is_visible())
@@ -348,7 +348,7 @@ class ProjectDetailUiTest(unittest.TestCase):
 
         # Die frühere Funktion „Lauf-Log“ bleibt erhalten: Sie hängt die
         # Ausgabe wieder an den Agentenlauf statt an die Prüfung.
-        self.panel("ausgabe").get_by_role("button", name="Lauf-Log").click()
+        self.panel("ausgabe").get_by_role("button", name="Run log").click()
         self.wait_until(
             lambda: "Startzeile" in self.page.locator("#log").inner_text(),
             message="Lauf-Log verband die Ausgabe nicht wieder mit dem Agentenlauf",
@@ -359,8 +359,8 @@ class ProjectDetailUiTest(unittest.TestCase):
         self.page.set_viewport_size({"width": 390, "height": 844})
         self.page.wait_for_timeout(200)
 
-        self.assertTrue(self.tab("Arbeit").is_visible())
-        self.tab("Einstellungen").click()
+        self.assertTrue(self.tab("Work").is_visible())
+        self.tab("Settings").click()
         self.wait_until(
             lambda: self.panel("einstellungen").is_visible(),
             message="Einstellungen wurden im schmalen Fenster nicht geöffnet",
@@ -390,10 +390,10 @@ class ProjectDetailUiTest(unittest.TestCase):
         form.wait_for()
         form.locator("input").first.fill("neu")
         form.locator("select").select_option("generic")
-        form.get_by_role("button", name="Anlegen und Assistent öffnen").click()
+        form.get_by_role("button", name="Create and open assistant").click()
         self.wait_until(
             lambda: self.page.locator('[role="tab"][aria-selected="true"]').count() == 1
-            and self.selected_tab().strip() == "Assistent",
+            and self.selected_tab().strip() == "Assistant",
             timeout=20,
             message="„Anlegen und Assistent öffnen“ öffnete nicht den Assistenten",
         )
@@ -405,23 +405,23 @@ class ProjectDetailUiTest(unittest.TestCase):
 
         header = self.page.locator("main > div.bar").first
         self.assertTrue(
-            header.get_by_role("button", name="Agentenlauf starten").is_visible()
+            header.get_by_role("button", name="Start agent run").is_visible()
         )
         self.assertTrue(header.locator("span.pill").first.is_visible())
 
-        for name in TABS[1:]:
+        for name, panel_key in zip(TABS[1:], ("ausgabe", "assistent", "einstellungen")):
             self.tab(name).click()
             self.wait_until(
-                lambda: self.panel(name.lower()).is_visible(),
+                lambda key=panel_key: self.panel(key).is_visible(),
                 message="Bereich %s wurde nicht geöffnet" % name,
             )
             self.assertTrue(
-                header.get_by_role("button", name="Agentenlauf starten").is_visible(),
+                header.get_by_role("button", name="Start agent run").is_visible(),
                 "Hauptaktion verschwand im Bereich %s" % name,
             )
             self.assertEqual(
                 header.locator("span.pill").first.inner_text().strip()
-                in ("läuft", "gestoppt"),
+                in ("running", "stopped"),
                 True,
                 "Laufzustand ist im Bereich %s nicht sichtbar" % name,
             )
