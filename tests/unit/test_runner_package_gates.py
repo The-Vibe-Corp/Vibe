@@ -192,7 +192,12 @@ class WorktreeIsolationTest(RunnerGateTestCase):
         state = self.project / ".vibe" / "tmp" / "next-package.json"
         self.assertTrue(state.is_file(), "projektlokaler Auswahlstand fehlt")
         self.assertEqual(self.worktrees(), [], "Arbeitskopie wurde nicht entfernt")
-        branches = support.git(self.project, "branch", "--list", "vibe/*").stdout
+        # B16: Paketbranches folgen dem Muster feature/{owner}/{id}
+        # (Fixture: feature/test/<id>). Die frühere Prüfung auf "vibe/*"
+        # war seit dem neuen Branch-Schema immer erfüllt und damit blind.
+        branches = support.git(
+            self.project, "branch", "--list", "feature/*"
+        ).stdout
         self.assertEqual(branches.strip(), "", "Paketbranch wurde nicht entfernt")
         self.assertEqual(
             support.git(self.project, "status", "--porcelain").stdout, ""

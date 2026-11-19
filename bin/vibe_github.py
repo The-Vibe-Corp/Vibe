@@ -8,8 +8,11 @@ Nutzerentscheidungen; die aktivierte Verknüpfung gilt seit AP9 als stehende
 Freigabe für die Läufer-Automatik: Vor jedem Arbeitspaket zieht der Läufer
 den Haupt-Branch (``pull_integration``, nur fetch + ff-only) und nach jedem
 abgeschlossenen Paket überträgt er den Paket-Branch automatisch nach origin
-und stellt einen Merge-Request (``complete_package``). Das Zusammenführen
-selbst bleibt manuell. Git läuft mit Argumentlisten (ohne Shell),
+und stellt einen Merge-Request (``complete_package``). Seit B16 ist dieser
+Abschluss eine echte Schranke: Bei divergiertem/veraltetem Integrationsstand
+oder einem fehlgeschlagenen Push/Merge-Request wird das Paket blockiert, ohne
+lokal zu mergen. Das Zusammenführen selbst bleibt manuell. Git läuft mit
+Argumentlisten (ohne Shell),
 GitHub-REST über die
 Standardbibliothek (urllib); die API-Basis ist konfigurierbar
 (``GITHUB_API``, Standard https://api.github.com), damit Prüfungen gegen
@@ -1032,26 +1035,104 @@ def pull_integration(project_path):
         return True, False, "Aktualisierung fehlgeschlagen: " + str(error)
 
 
+def integration_state(project_path):
+    """Prüft vor dem Abschluss die Integrationslage des aktuellen Branches (B16).
+
+    Liefert immer ``{"ok", "message", "ahead", "behind"}`` und wirft niemals.
+    Ein fehlgeschlagener Fetch, detached HEAD und ein zurückliegender Stand
+    (``behind > 0``) blockieren; eine Erstveröffentlichung ohne Fern-Branch
+    ist zulässig.
+    """
+    state = {"ok": False, "message": "", "ahead": 0, "behind": 0}
+    project = str(project_path)
+    # Bewusste Ausnahme (broad-exception-caught): Diese Prüfung ist eine
+    # Schranke und darf unter keiner Umständen einen Lauf mit einer Exception
+    # abbrechen; alle Befunde stehen im Ergebnisdict.
+    try:
+        branch = current_branch(project)
+        if not branch:
+            state["message"] = (
+                "Kein Branch ausgecheckt (detached HEAD): kein Abschluss "
+                "auf veraltetem Stand.")
+            return state
+        rc, out = git(project, "fetch", "origin")
+        if rc != 0:
+            # Ein Fetch kann auch an Zugangsdaten scheitern; die Guidance
+            # steht deshalb immer dabei, die URL bleibt maskiert.
+            detail = mask_embedded_credentials(out or "unbekannter Fehler")
+            state["message"] = _auth_guidance(
+                "Abruf von origin fehlgeschlagen: " + detail + "\n"
+                + _TOKEN_GUIDANCE)
+            return state
+        rc, _ = git(project, "rev-parse", "--verify", "--quiet",
+                    "origin/" + branch)
+        if rc != 0:
+            state["ok"] = True
+            state["message"] = (
+                "Branch " + branch + " ist noch nicht auf origin vorhanden "
+                "(Erstveröffentlichung).")
+            return state
+        rc, out = git(project, "rev-list", "--left-right", "--count",
+                      branch + "...origin/" + branch)
+        if rc != 0:
+            state["message"] = _auth_guidance(mask_embedded_credentials(
+                "Vergleich mit origin/" + branch + " nicht möglich: "
+                + (out or "unbekannter Fehler")))
+            return state
+        parts = out.split()
+        ahead, behind = int(parts[0]), int(parts[1])
+        state["ahead"], state["behind"] = ahead, behind
+        if behind == 0:
+            state["ok"] = True
+            state["message"] = (
+                "Integrationsstand aktuell (" + str(ahead)
+                + " ahead, 0 behind).")
+            return state
+        lage = "divergiert" if ahead > 0 else "veraltet"
+        state["message"] = (
+            "Integrationsbranch " + branch + " " + lage + " von origin: "
+            + str(ahead) + " ahead / " + str(behind) + " behind; "
+            "kein Abschluss auf veraltetem Stand.")
+        return state
+    except Exception as error:  # noqa: BLE001; pylint: disable=broad-exception-caught
+        state["message"] = ("Integrationsstand nicht prüfbar: "
+                            + mask_embedded_credentials(str(error)))
+        return state
+
+
 def complete_package(project_path, branch, package_id=None, title=None):
     """Überträgt einen abgeschlossenen Arbeitspaket-Branch und stellt den
-    Merge-Request (AP9): Push mit Upstream, dann Request auf die Basis
-    (explizit > GITHUB_BASE > Standard-Branch der origin).
+    Merge-Request (AP9, seit B16 eine echte Abschlussschranke): Erst wird die
+    Integrationslage geprüft, dann der Branch gepusht und danach der Request
+    auf die Basis gestellt (explizit > GITHUB_BASE > Standard der origin).
 
-    Ohne aktivierte Verknüpfung oder ohne origin: bewusster Skip. Fehler
-    liefern ``(True, False, Meldung)``; diese Funktion wirft niemals, damit
-    der Läufer das abgeschlossene Paket nicht blockiert."""
+    Ohne aktivierte Verknüpfung oder ohne origin: bewusster Skip. Sonst
+    liefert das 4-Tupel ``(performed, ok, message, result)`` mit ``result``
+    als Dict mit ``branch`` und ``pr_url``. Bei einer blockierten Integrations-
+    lage wird weder gepusht noch ein Merge-Request gestellt; Push- und
+    Request-Fehler melden ``ok=False``. Diese Funktion wirft niemals."""
     project = str(project_path)
+    result = {"branch": str(branch or "").strip(), "pr_url": ""}
+    # Bewusste Ausnahme (broad-exception-caught): Der Abschluss ist eine
+    # Schranke und darf niemals mit einer Exception abbrechen.
     try:
         config = read_config(os.path.join(project, ".vibe", "project.env"))
         if not config["enabled"]:
             return False, True, ("GitHub ist für dieses Projekt nicht aktiv: "
-                                 "Übertragung übersprungen")
+                                 "Übertragung übersprungen"), result
         if not any(r["name"] == "origin" for r in remotes(project)):
-            return False, True, "Kein Remote origin: Übertragung übersprungen"
+            return False, True, "Kein Remote origin: Übertragung übersprungen", result
         branch = branch_name(branch or current_branch(project))
+        result["branch"] = branch
+        # B16: Vor Push und Merge-Request blockieren, wenn der Integrations-
+        # stand zurückliegt oder divergiert — sonst würde ein veralteter Stand
+        # trotz Fehlschlag lokal weitergemergt (F32/AP19).
+        state = integration_state(project)
+        if not state["ok"]:
+            return True, False, state["message"], result
         ok, message = push(project, branch)
         if not ok:
-            return True, False, message
+            return True, False, message, result
         if not config["base"] and not default_base(project):
             # Bewusster, begrenzter Nachversuch: origin/HEAD versorgen, damit
             # der Merge-Request eine Basis kennt. set_head_default fragt den
@@ -1070,12 +1151,14 @@ def complete_package(project_path, branch, package_id=None, title=None):
                 token_required=False)
         except (GitHubError, ValueError) as error:
             return True, False, ("Branch " + branch + " übertragen; "
-                                 "Merge-Request fehlgeschlagen: " + str(error))
+                                 "Merge-Request fehlgeschlagen: " + str(error)), result
+        result["pr_url"] = request.get("url") or ""
         return True, True, ("Branch " + branch + " übertragen; Merge-Request #"
                             + str(request.get("number")) + ": "
-                            + (request.get("url") or ""))
-    except (OSError, ValueError) as error:
-        return True, False, "Übertragung fehlgeschlagen: " + str(error)
+                            + (request.get("url") or "")), result
+    except Exception as error:  # noqa: BLE001; pylint: disable=broad-exception-caught
+        return True, False, ("Übertragung fehlgeschlagen: "
+                             + mask_embedded_credentials(str(error))), result
 
 
 def clone(url, target_dir, timeout=TIMEOUT_GIT, branch=None):
