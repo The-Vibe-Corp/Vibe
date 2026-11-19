@@ -819,7 +819,7 @@ def assist_preflight(project, agents_dir, tester, reviewer, state_dir=None,
             return _assist_result(errors, "unavailable")
         print(
             "PREFLIGHT: Rückfrage " + qid + " gestellt; Antwort im Dashboard "
-            "oder mit: vibe answer " + qid
+            "oder mit: vibe answer --runtime " + runtime + " " + qid
             + " --option <1|2|3> oder --text \"Anweisung\""
         )
         try:
@@ -960,7 +960,7 @@ def assist_barrier(project, package_id, reason="", runtime=None,
         return _assist_result(errors, "unavailable")
     print(
         "BARRIER: Rückfrage " + qid + " gestellt; Antwort im Dashboard "
-        "oder mit: vibe answer " + qid
+        "oder mit: vibe answer --runtime " + runtime + " " + qid
         + " --option <1|2|3> oder --text \"Anweisung\""
     )
     try:

@@ -10,7 +10,9 @@ Die Tests laden ``bin/vibe`` als Modul (Muster ``tests/unit/test_questions.py``)
 mit einer isolierten Umgebung und rufen die Kommandofunktionen direkt auf. Es
 werden keine Modelle oder Netzdienste benutzt; alle Pfade liegen unter einem
 temporären Verzeichnis. Auch die vom Werkzeug ausgegebenen Fortsetzungsbefehle
-müssen den Laufzeitordner nennen (Review 1, Finding 2).
+müssen den Laufzeitordner nennen (Review 1, Finding 2). Das gilt ebenso für
+die Erzeugungsmeldung von ``cmd_ask`` sowie die PREFLIGHT-/BARRIER-Hinweise
+aus ``bin/vibe_packages.py`` (Review 2, Finding 1).
 
 Run:
 
@@ -31,6 +33,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[2]
 CLI = REPO / "bin" / "vibe"
 QUESTIONS = REPO / "bin" / "vibe_questions.py"
+PACKAGES = REPO / "bin" / "vibe_packages.py"
 
 ISOLATED_KEYS = (
     "VIBE",
@@ -169,7 +172,8 @@ class QuestionRuntimeTest(unittest.TestCase):
 
         Ohne ``--runtime`` in der Meldung würde ein Agent, der die Zeile
         wörtlich befolgt, den Produktivpfad aus seiner Konfiguration treffen.
-        Geprüft werden die Timeout-Meldung und die Autonomie-Meldung.
+        Geprüft werden die Timeout-Meldung, die Autonomie-Meldung und die
+        Erzeugungsmeldung einer ohne ``--wait`` angelegten Frage (Review 2).
         """
         qid = self.questions.create(
             self.runtime, project="proj", text="Welche Farbe?", options=["Rot"]
@@ -205,6 +209,89 @@ class QuestionRuntimeTest(unittest.TestCase):
             )
             self.assertIn(qid, autonomous_output)
             self.assertIn("--by agent", autonomous_output)
+
+        # Review 2/Medium: Die Meldung nach dem Anlegen einer Frage ohne
+        # ``--wait`` (Zeitlimit 0) muss den Antwortbefehl ebenfalls an den
+        # übergebenen Laufzeitordner binden.
+        created_output = self.run_cli(self.cli.cmd_ask, [
+            "--runtime", str(self.runtime),
+            "--project", "",
+            "--no-wait",
+            "Welche Farbe?",
+            "--option", "Rot",
+        ])
+        with self.subTest(hint="creation"):
+            lines = [
+                line for line in created_output.splitlines()
+                if "Antwort im Terminal:" in line
+            ]
+            self.assertEqual(len(lines), 1, created_output)
+            self.assertIn("vibe answer", lines[0])
+            self.assertIn(
+                "--runtime " + str(self.runtime), lines[0],
+                "Die Erzeugungsmeldung schickt den Agenten ohne Laufzeitordner",
+            )
+
+
+class PackageHintRuntimeTest(unittest.TestCase):
+    """Review 2/Medium: PREFLIGHT-/BARRIER-Hinweise nennen den Laufzeitordner.
+
+    ``assist_preflight`` und ``assist_barrier`` in ``bin/vibe_packages.py``
+    geben einen Antwortbefehl aus, den ein Agent wörtlich befolgen kann. Ohne
+    ``--runtime`` trifft dieser Befehl den Produktivpfad aus der
+    Nutzerkonfiguration statt den Laufzeitordner des Laufs. Geprüft werden die
+    Hinweiszeilen beider Funktionen; der Lauf endet über ``timeout=0`` sofort,
+    ohne auf eine Antwort zu warten.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        self.runtime = self.root / "pruef-runtime"
+        self.project = self.root / "proj"
+        self.project.mkdir()
+        self.packages = load_module("vibe_packages_b17_hints", PACKAGES)
+
+    def test_preflight_and_barrier_hints_name_the_given_runtime(self):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            result = self.packages.assist_preflight(
+                str(self.project),
+                str(self.root / "agents"),
+                "",
+                "",
+                runtime=str(self.runtime),
+                project_name="proj",
+                timeout=0,
+            )
+        self.assertEqual(result.get("action"), "timeout", result)
+        preflight_hint = out.getvalue()
+        with self.subTest(hint="preflight"):
+            self.assertIn("PREFLIGHT: Rückfrage", preflight_hint)
+            self.assertIn(
+                "--runtime " + str(self.runtime), preflight_hint,
+                "Der PREFLIGHT-Hinweis schickt den Agenten ohne Laufzeitordner",
+            )
+
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            result = self.packages.assist_barrier(
+                str(self.project),
+                "F1",
+                reason="Reparaturlimit erreicht.",
+                runtime=str(self.runtime),
+                project_name="proj",
+                timeout=0,
+            )
+        self.assertEqual(result.get("action"), "timeout", result)
+        barrier_hint = out.getvalue()
+        with self.subTest(hint="barrier"):
+            self.assertIn("BARRIER: Rückfrage", barrier_hint)
+            self.assertIn(
+                "--runtime " + str(self.runtime), barrier_hint,
+                "Der BARRIER-Hinweis schickt den Agenten ohne Laufzeitordner",
+            )
 
 
 if __name__ == "__main__":

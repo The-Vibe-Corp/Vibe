@@ -398,12 +398,19 @@ im Lauf grün; das Modul zeigte jedoch 5 Errors außerhalb dieses Falls
 Arbeitsstand definieren `ensure_test_agent`, auf das `mock.patch.object`
 zugreift. Sie wurden nicht verändert.
 
-### 5.8 Grünnachweis AK4 und Reviewfälle
+### 5.8 Grünnachweis AK4, Reviewfälle und Review-Runde 2
 
 Review Runde 1 (`docs/reviews/B17-review-1.md`) verlangte Nachbesserungen zu
 vier Befunden. Die drei neuen Testfälle wurden vor den Produktionsfixes
 geschrieben und auf `1ecfb1d` rot belegt. Alle Läufe mit dem Präfix aus 5.6 im
 Arbeitsverzeichnis der Arbeitskopie.
+
+Die Rotbelege 5.8.1-5.8.3 stammen aus der Rotphase `1ecfb1d`. Die dort
+zusätzlich dokumentierten Grünnachweise wurden nach der Umsetzung am Stand
+`f589acb` ausgeführt (Arbeitskopie `a1217fa`, das nur diesen Reviewbericht
+ergänzt). Review Runde 2 (`docs/reviews/B17-review-2.md`) verlangte zusätzlich
+die Erzeugungsmeldung von `cmd_ask` sowie die PREFLIGHT-/BARRIER-Hinweise; die
+Ergänzungen und ihr Rotbeleg stehen in 5.8.5.
 
 #### 5.8.1 Review Finding 1 (High) — Android-Abschlussprüfung
 
@@ -433,11 +440,31 @@ Rotursache: `final_verify` ruft den Android-Zweig mit
 `VIBE_CLEAN_ENV` und `VIBE_VERIFY_RUNTIME`. Genau das fehlende Verhalten wird
 geprüft; die drei Teilprüfungen belegen alle drei Aspekte unabhängig.
 
+Grünnachweis nach Implementierung (Stand `f589acb`):
+
+```bash
+env -u VIBE -u VIBE_PROFILE -u VIBE_INSTALL -u VIBE_STATE \
+    -u VIBE_RUNTIME -u VIBE_CONFIG_FILE -u VIBE_AGENTS_DIR \
+    python3 -m unittest tests.unit.test_b17_runner_isolation -v
+```
+
+```text
+test_android_final_verification_runs_in_the_sandbox_with_clean_environment
+Review 1/High: Auch der Android-Direktzweig läuft isoliert. ... ok
+...
+----------------------------------------------------------------------
+Ran 7 tests in 10.575s
+
+OK
+```
+
+Der Android-Fall ist darin enthalten; alle sieben Fälle des Moduls sind grün.
+
 #### 5.8.2 Review Finding 2 (Medium) — Fortsetzungsmeldungen
 
 | Punkt | Inhalt |
 |-------|--------|
-| Test | `QuestionRuntimeTest.test_timeout_and_autonomous_hints_name_the_given_runtime` (zwei `subTest`-Prüfungen) |
+| Test | `QuestionRuntimeTest.test_timeout_and_autonomous_hints_name_the_given_runtime` (Rotphase `1ecfb1d`: zwei `subTest`-Prüfungen; Review-2-Erweiterung siehe 5.8.5) |
 | Vorbedingung | Frage unter dem abweichenden `--runtime`; Umgebungs-Laufzeit zeigt auf einen anderen Ordner |
 | Aktion | `cmd_ask --runtime <pfad> --wait <id> --timeout 0.01` (Timeout) und derselbe Aufruf bei aktivem autonomen Modus |
 | Erwartetes Ergebnis | Timeout-Meldung nennt `vibe ask --wait <id>` und `--runtime <pfad>`; Autonomie-Meldung nennt `vibe answer`, `--runtime <pfad>`, die ID und `--by agent` |
@@ -458,6 +485,24 @@ FAIL … (hint='autonomous')
 Rotursache: `_ask_timeout` und `_ask_autonomous` in `bin/vibe` geben die
 Fortsetzungsbefehle ohne `--runtime` aus. `subTest` stellt sicher, dass beide
 Meldungen im selben Lauf geprüft und beide Rotursachen sichtbar werden.
+
+Grünnachweis nach Implementierung (Stand `f589acb`, vor den Ergänzungen aus
+Review 2):
+
+```bash
+env -u VIBE -u VIBE_PROFILE -u VIBE_INSTALL -u VIBE_STATE \
+    -u VIBE_RUNTIME -u VIBE_CONFIG_FILE -u VIBE_AGENTS_DIR \
+    python3 -m unittest tests.unit.test_b17_questions_runtime -v
+```
+
+```text
+test_timeout_and_autonomous_hints_name_the_given_runtime
+Review 1/Medium: Fortsetzungsbefehle nennen den Laufzeitordner. ... ok
+----------------------------------------------------------------------
+Ran 5 tests in 0.064s
+
+OK
+```
 
 #### 5.8.3 Review Finding 3 (Medium) — Guard bei explizitem `--install`
 
@@ -485,6 +530,23 @@ Rotursache: Der Guard in `scripts/setup-vibe.py` schließt mit `not options.inst
 jedes explizite `--install` aus, auch wenn es genau die erkannte laufende
 Installation ist. A3b war im Rotlauf bereits grün und bleibt der
 Autorisierungs-Gegencheck.
+
+Grünnachweis nach Implementierung (Stand `f589acb`):
+
+```bash
+env -u VIBE -u VIBE_PROFILE -u VIBE_INSTALL -u VIBE_STATE \
+    -u VIBE_RUNTIME -u VIBE_CONFIG_FILE -u VIBE_AGENTS_DIR \
+    python3 -m unittest tests.unit.test_b17_isolation -v
+```
+
+```text
+test_update_with_an_explicit_install_on_the_running_instance_is_refused
+Review 1/Medium: Ein explizites ``--install`` befreit den Guard nicht. ... ok
+----------------------------------------------------------------------
+Ran 12 tests in 0.095s
+
+OK
+```
 
 #### 5.8.4 AK4-Grünnachweis (Review Finding 4)
 
@@ -537,6 +599,74 @@ Sicherheitsstichprobe: Kein Lauf schrieb Produktivpfade. Die Zeitstempel von
 `~/.config/vibe/config.json` (07:43) und `~/vibe-toolchain` (neueste Datei
 10:54) blieben während der Läufe um 12:20 unverändert; der Rotfall A3a
 veränderte ausschließlich den Fake-Produktivbereich unter `tempfile`.
+
+#### 5.8.5 Review Runde 2 (Medium) — verbleibende Antwort-/Fortsetzungshinweise
+
+Review Runde 2 (`docs/reviews/B17-review-2.md`, Finding 1) beanstandete drei
+weiterhin `--runtime`-lose Meldungen: die Erzeugungsmeldung von `cmd_ask`
+(`bin/vibe:5600`) sowie den PREFLIGHT- und BARRIER-Hinweis in
+`bin/vibe_packages.py`. Beide Lücken sind jetzt mit Ausgabenachweis abgedeckt
+und auf dem aktuellen Stand (`a1217fa`, Produktionscode wie `f589acb`) rot
+belegt.
+
+| Punkt | Inhalt |
+|-------|--------|
+| Test A1 | `QuestionRuntimeTest.test_timeout_and_autonomous_hints_name_the_given_runtime`, dritter `subTest` `hint='creation'` |
+| Vorbedingung | Umgebungs-Laufzeit zeigt auf einen anderen Ordner als das übergebene `--runtime` |
+| Aktion | `cmd_ask --runtime <pfad> --project "" --no-wait "Welche Farbe?" --option Rot` (Zeitlimit 0) |
+| Erwartetes Ergebnis | Die Zeile `Antwort im Terminal: vibe answer <id> …` nennt zusätzlich `--runtime <pfad>` |
+| Test A2 | `PackageHintRuntimeTest.test_preflight_and_barrier_hints_name_the_given_runtime` (zwei `subTest`s) |
+| Vorbedingung | Leeres Projekt ohne Git-Repository, `runtime=<temp>/pruef-runtime`, kein autonomer Modus |
+| Aktion | `assist_preflight(..., timeout=0)` und `assist_barrier(..., timeout=0)` direkt, Ausgaben über `redirect_stdout` erfasst |
+| Erwartetes Ergebnis | `PREFLIGHT: Rückfrage …` und `BARRIER: Rückfrage …` nennen im Antwortbefehl `--runtime <pfad>`; beide Aufrufe enden als `timeout` |
+
+A2-Entscheidung: Es gibt keinen vorhandenen Test, der die Hinweiszeilen
+inhaltlich prüft. `test_b9_self_repair.AssistUnitFixture` ruft
+`assist_preflight` zwar direkt auf, prüft aber nur den Frage-Lebenszyklus und
+die Aktion; die Schrankenläufe in `test_ap10_gates` prüfen die Entscheidung,
+nicht den Meldungstext. Statt fremde B9-/AP10-Testdateien um eine
+B17-spezifische Assertion zu erweitern, liegt der Ausgabenachweis im
+B17-Modul (`PackageHintRuntimeTest`). Damit sind beide Meldungen echt
+abgedeckt und nicht nur im Bericht begründet.
+
+Rotbeleg (nach den Ergänzungen):
+
+```bash
+env -u VIBE -u VIBE_PROFILE -u VIBE_INSTALL -u VIBE_STATE \
+    -u VIBE_RUNTIME -u VIBE_CONFIG_FILE -u VIBE_AGENTS_DIR \
+    python3 -m unittest tests.unit.test_b17_questions_runtime -v
+```
+
+```text
+FAIL: … (hint='creation')
+  AssertionError: '--runtime /tmp/…/pruef-runtime' not found in
+  'Der Nutzer sieht sie im Dashboard; Antwort im Terminal: vibe answer <id> ...'
+FAIL: … (hint='preflight')
+  AssertionError: '--runtime /tmp/…/pruef-runtime' not found in
+  'PREFLIGHT: Rückfrage <id> gestellt; Antwort im Dashboard oder mit:
+  vibe answer <id> --option <1|2|3> oder --text "Anweisung"'
+FAIL: … (hint='barrier')
+  AssertionError: '--runtime /tmp/…/pruef-runtime' not found in
+  'BARRIER: Rückfrage <id> gestellt; Antwort im Dashboard oder mit:
+  vibe answer <id> --option <1|2|3> oder --text "Anweisung"'
+
+----------------------------------------------------------------------
+Ran 6 tests in 0.063s
+
+FAILED (failures=3)
+```
+
+Rotursache: `cmd_ask` gibt die Erzeugungsmeldung als
+`"… vibe answer " + qid + " ..."` aus; `assist_preflight` und
+`assist_barrier` setzen den Antwortbefehl analog ohne Laufzeitordner
+zusammen. Die vier übrigen, vorher grünen Fälle des Moduls bleiben grün (der
+Timeout-/Autonomie-Test scheitert ausschließlich im neuen `creation`-Teil).
+Die Zähler der unveränderten Module blieben gleich: `test_b17_runner_isolation`
+`Ran 7 tests`, `OK`; `test_b17_isolation` `Ran 12 tests`, `OK`.
+
+Sicherheitsstichprobe: Alle neuen Pfade liegen unter `tempfile`; die Aufrufe
+erzeugen Fragen ausschließlich im übergebenen `runtime`-Ordner, es wird kein
+Produktivpfad geschrieben oder gelesen.
 
 ## 6. Vorbestehende Baseline (nicht B17)
 

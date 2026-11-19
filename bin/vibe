@@ -5597,7 +5597,8 @@ def cmd_ask(args):
             ppath(project)
         qid = vibe_questions.create(runtime, project=project, text=text, options=options, free_text=free_text)
         print("Rückfrage " + qid + " gestellt: " + text)
-        print("Der Nutzer sieht sie im Dashboard; Antwort im Terminal: vibe answer " + qid + " ...")
+        print("Der Nutzer sieht sie im Dashboard; Antwort im Terminal: vibe answer --runtime "
+              + runtime + " " + qid + " ...")
         if timeout <= 0:
             return
         mode, answer = _ask_wait(qid, project, timeout, runtime)
