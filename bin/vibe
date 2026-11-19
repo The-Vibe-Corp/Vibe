@@ -5530,17 +5530,17 @@ def _ask_value(args, index, option):
 def _ask_answer_text(answer):
     return answer.get("option_text") or answer.get("text") or ""
 
-def _ask_timeout(qid, timeout, seconds):
+def _ask_timeout(qid, timeout, seconds, runtime):
     print("Rückfrage " + qid + " noch offen (keine Antwort innerhalb von " + f"{timeout:g}" + " s).")
-    print("Fortsetzen mit: vibe ask --wait " + qid + " --timeout " + f"{seconds:g}"
-          + "   (oder im Dashboard beantworten)")
+    print("Fortsetzen mit: vibe ask --wait " + qid + " --runtime " + runtime
+          + " --timeout " + f"{seconds:g}" + "   (oder im Dashboard beantworten)")
 
-def _ask_autonomous(qid, record=None):
+def _ask_autonomous(qid, record=None, runtime=LOGS):
     """Hinweis an den Agenten, wenn der autonome Modus die Antwort ersetzt."""
     print("Autonomer Modus aktiv: Der Nutzer ist nicht erreichbar.")
     choice = '--option <nummer> --text "..."' if record and record.get("options") else '--text "..."'
-    print("Entscheide selbst und dokumentiere die Entscheidung mit: vibe answer "
-          + qid + " " + choice + " --by agent")
+    print("Entscheide selbst und dokumentiere die Entscheidung mit: vibe answer --runtime "
+          + runtime + " " + qid + " " + choice + " --by agent")
 
 def _ask_wait(qid, project, timeout, runtime):
     """Wartet auf eine Antwort; der autonome Modus beendet das Warten sofort."""
@@ -5587,8 +5587,8 @@ def cmd_ask(args):
                 print("Antwort: " + _ask_answer_text(answer))
                 return
             if mode == "stop" or vibe_autonomous.is_enabled(runtime, record.get("project") or ""):
-                _ask_autonomous(wait_id, record); return
-            _ask_timeout(wait_id, timeout, ASK_DEFAULT_TIMEOUT); sys.exit(3)
+                _ask_autonomous(wait_id, record, runtime); return
+            _ask_timeout(wait_id, timeout, ASK_DEFAULT_TIMEOUT, runtime); sys.exit(3)
         if not text:
             sys.exit('Frage fehlt: vibe ask "Frage" [--option "A"] ...')
         if project is None:
@@ -5604,8 +5604,8 @@ def cmd_ask(args):
         if mode == "answer":
             print("Antwort: " + _ask_answer_text(answer)); return
         if mode == "stop" or vibe_autonomous.is_enabled(runtime, project):
-            _ask_autonomous(qid, vibe_questions.load(runtime, qid)); return
-        _ask_timeout(qid, timeout, ASK_DEFAULT_TIMEOUT); sys.exit(3)
+            _ask_autonomous(qid, vibe_questions.load(runtime, qid), runtime); return
+        _ask_timeout(qid, timeout, ASK_DEFAULT_TIMEOUT, runtime); sys.exit(3)
     except ValueError as error:
         sys.exit(str(error))
 

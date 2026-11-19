@@ -984,7 +984,7 @@
         "templates/web/AGENTS.md"
       ],
       "datum": "2026-11-19",
-      "grund": "Architektur: Entwicklung und Verifikation verändern die laufende Instanz nicht. setup.main nimmt environ= entgegen und löst alle Pfade (inkl. Konfigurationspfad) aus dieser Umgebung auf; --source autorisiert ein Update ausdrücklich und wird in version.json.source vermerkt; ein Guard verweigert --update auf die implizit aufgelöste, vorhandene Installation ohne --source oder --install vor jedem Schreibzugriff (dry-run erklärt nur). --skip-deps überspringt die Abhängigkeitsprüfung vollständig (fehlende Werkzeuge werden gemeldet, aber nicht mit Exit 2 bestraft), damit isolierte Läufe nicht von bewusst verborgenen Werkzeugen abhängen. install-vibe.sh nennt --source \"$KIT\". bin/vibe unterstützt --runtime für Rückfragen. bin/vibe_sandbox.py bietet extra_write_dirs/chdir und bindet autonomous.json nur lesend. bin/vibe-run.sh bereinigt die sieben VIBE_*-Pfade für Agenten und Prüfungen, setzt VIBE_VERIFY_RUNTIME nur für die Dauer eines Prüfaufrufs und wrappt bei SANDBOX=on auch Paket-/Abschlussprüfung. Neue, identische Regel im verwalteten GENERAL_RULES-Block in bin/vibe und allen fünf templates/*/AGENTS.md. Prüfsummen und Größen der zehn geänderten files-Einträge wurden aktualisiert; docs/betrieb.md liegt außerhalb der Manifest-Bereiche."
+      "grund": "Architektur: Entwicklung und Verifikation verändern die laufende Instanz nicht. setup.main nimmt environ= entgegen und löst alle Pfade (inkl. Konfigurationspfad) aus dieser Umgebung auf; --source autorisiert ein Update ausdrücklich und wird in version.json.source vermerkt; ein Guard verweigert --update auf die implizit aufgelöste, vorhandene Installation ohne --source oder --install vor jedem Schreibzugriff (dry-run erklärt nur). --skip-deps überspringt die Abhängigkeitsprüfung vollständig (fehlende Werkzeuge werden gemeldet, aber nicht mit Exit 2 bestraft), damit isolierte Läufe nicht von bewusst verborgenen Werkzeugen abhängen. install-vibe.sh nennt --source \"$KIT\". bin/vibe unterstützt --runtime für Rückfragen. bin/vibe_sandbox.py bietet extra_write_dirs/chdir und bindet autonomous.json nur lesend. bin/vibe-run.sh bereinigt die sieben VIBE_*-Pfade für Agenten und Prüfungen, setzt VIBE_VERIFY_RUNTIME nur für die Dauer eines Prüfaufrufs und wrappt bei SANDBOX=on auch Paket-/Abschlussprüfung. Neue, identische Regel im verwalteten GENERAL_RULES-Block in bin/vibe und allen fünf templates/*/AGENTS.md. Prüfsummen und Größen der zehn geänderten files-Einträge wurden aktualisiert; docs/betrieb.md liegt außerhalb der Manifest-Bereiche. Review Runde 1: Android-Abschlussprüfung über verify_run; Fortsetzungsmeldungen nennen --runtime; Guard greift auch bei explizitem --install auf die laufende Installation (VIBE_INSTALL aus environ)."
     }
   ],
   "files": [
@@ -999,14 +999,14 @@
       "sha256": "e5ae3183efcb76dace1e0bcbde9993be7afe82d93d7877da9ee39846cf45330a"
     },
     {
-      "bytes": 270936,
+      "bytes": 271047,
       "path": "bin/vibe",
-      "sha256": "5d95141fad15f1b652ec14c5131f777206f7968d85d006ad294e712859be54f2"
+      "sha256": "57356220190902bfc68cf0f802e9afbbf8803d59d83db5b89338fd31f5db88ab"
     },
     {
-      "bytes": 59395,
+      "bytes": 59425,
       "path": "bin/vibe-run.sh",
-      "sha256": "152b26a018489706c40a82e2ade4539a80df7bf00244268c29e169cb5032f433"
+      "sha256": "859086c0b2b9f5e949ce99be2079256a33157c6735abc2eb494a075db4316795"
     },
     {
       "bytes": 100884,
@@ -1259,9 +1259,9 @@
       "sha256": "a3a3f0f27ba60b26afdb8c1af9e5e2f1dc3a0b6e891317e169ce45c7825f8d8d"
     },
     {
-      "bytes": 72682,
+      "bytes": 73163,
       "path": "scripts/setup-vibe.py",
-      "sha256": "8bc2fc9249f2334f58d289dcb85e453fbb286aa72350eb30b765652b8ef8c705"
+      "sha256": "9b7bd82c94b94c2ef2125548a754a519cfb27c1e89ac81acb59453cb291ddcd5"
     },
     {
       "bytes": 377,

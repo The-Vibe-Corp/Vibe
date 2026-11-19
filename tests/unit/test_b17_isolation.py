@@ -19,7 +19,9 @@ Geprüfte Soll-Semantik:
 * ``setup.main(..., environ=...)`` nutzt für alle Pfadauflösungen
   ausschließlich das übergebene ``environ`` (``None`` bleibt ``os.environ``).
 * Ein ``--update`` auf die laufende Instanz wird ohne explizite autorisierte
-  Quelle ``--source`` verweigert; ``--dry-run`` bleibt erlaubt.
+  Quelle ``--source`` verweigert; ``--dry-run`` bleibt erlaubt. Das gilt auch,
+  wenn das laufende Ziel ausdrücklich als ``--install`` genannt wird
+  (Review 1, Finding 3).
 * Mit ``--source`` wird das benannte Verzeichnis als Kit verwendet und in
   ``version.json`` als ``source`` vermerkt.
 * Ein Test-Update schreibt ausschließlich unter den Temp-Root.
@@ -324,6 +326,43 @@ class UpdateGuardTest(B17Base):
         self.assert_prod_unchanged(before)
         self.assertFalse(temp_workspace.exists(),
                          "Trotz Verweigerung wurde ein Workspace angelegt")
+
+    def test_update_with_an_explicit_install_on_the_running_instance_is_refused(self):
+        """Review 1/Medium: Ein explizites ``--install`` befreit den Guard nicht.
+
+        Zeigt ``--install`` auf die erkannte laufende Installation, ist das
+        ebenso eine Aktualisierung der laufenden Instanz wie das implizit
+        aufgelöste Ziel. Ohne ``--source`` darf sie nichts schreiben.
+        """
+        before = snapshot(self.prod_root)
+
+        code, output = self.run_main([
+            "--vibe", str(self.fake_workspace), "--install", str(self.fake_install),
+            "--update", "--yes", "--skip-deps", "--no-launcher", "--no-register",
+        ])
+
+        self.assertEqual(code, 1, output)
+        self.assertIn("--source", output,
+                      "Die Verweigerung muss die autorisierte Quelle nennen")
+        self.assert_prod_unchanged(before)
+
+    def test_update_with_an_explicit_install_and_source_is_allowed(self):
+        """Gegenprobe: ``--source`` autorisiert dasselbe explizite Ziel."""
+        kit = make_kit(self.temp_root / "kit-quelle", version="9.9.9")
+
+        code, output = self.run_main([
+            "--vibe", str(self.fake_workspace), "--install", str(self.fake_install),
+            "--update", "--yes", "--skip-deps", "--no-launcher", "--no-register",
+            "--source", str(kit),
+        ])
+
+        self.assertEqual(code, 0, output)
+        recorded = json.loads(
+            (self.fake_install / "version.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(recorded["version"], "9.9.9",
+                         "Das autorisierte Update hat die Installation nicht aktualisiert")
+        self.assertEqual(Path(recorded["source"]), kit.resolve())
 
     def test_dry_run_on_the_running_instance_is_allowed_and_explains_the_guard(self):
         before = snapshot(self.prod_root)

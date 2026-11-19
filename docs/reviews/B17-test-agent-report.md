@@ -398,6 +398,146 @@ im Lauf grün; das Modul zeigte jedoch 5 Errors außerhalb dieses Falls
 Arbeitsstand definieren `ensure_test_agent`, auf das `mock.patch.object`
 zugreift. Sie wurden nicht verändert.
 
+### 5.8 Grünnachweis AK4 und Reviewfälle
+
+Review Runde 1 (`docs/reviews/B17-review-1.md`) verlangte Nachbesserungen zu
+vier Befunden. Die drei neuen Testfälle wurden vor den Produktionsfixes
+geschrieben und auf `1ecfb1d` rot belegt. Alle Läufe mit dem Präfix aus 5.6 im
+Arbeitsverzeichnis der Arbeitskopie.
+
+#### 5.8.1 Review Finding 1 (High) — Android-Abschlussprüfung
+
+| Punkt | Inhalt |
+|-------|--------|
+| Test | `SandboxWiringTest.test_android_final_verification_runs_in_the_sandbox_with_clean_environment` |
+| Vorbedingung | `TYPE=android`, `VERIFY_FULL=""`, `SANDBOX=on`; `<install>/verify/verify.sh` schreibt `env` und einen Marker, passende `schreibfuchs-verify.sha` für `check_hash` |
+| Aktion | Ein Paketlauf über den echten `bin/vibe-run.sh` mit Fake-Toolchain, Fake-`bwrap` und leerem `VERIFY_FULL` |
+| Erwartetes Ergebnis | Lauf endet mit 0; Marker existiert; `verify.sh` erscheint in einem `bwrap`-Aufruf; die sieben Produktivschlüssel fehlen im Prüfprozess; `VIBE_VERIFY_RUNTIME` ist gesetzt und nennt den Laufzeitordner |
+
+Rotbeleg:
+
+```text
+Ran 7 tests
+FAILED (failures=3)
+FAIL … (check='sandbox')
+  AssertionError: unexpectedly None : Die Android-Abschlussprüfung lief außerhalb der Sandbox
+FAIL … (check='cleaned-environment')
+  AssertionError: Lists differ: [] != ['VIBE', 'VIBE_PROFILE', 'VIBE_INSTALL',
+  'VIBE_STATE', 'VIBE_RUNTIME', 'VIBE_CONFIG_FILE', 'VIBE_AGENTS_DIR']
+FAIL … (check='verify-runtime')
+  AssertionError: False is not true : Die Android-Prüfung erhält kein VIBE_VERIFY_RUNTIME
+```
+
+Rotursache: `final_verify` ruft den Android-Zweig mit
+`bash "$V/verify.sh" "$P" full` direkt auf und umgeht damit Sandbox,
+`VIBE_CLEAN_ENV` und `VIBE_VERIFY_RUNTIME`. Genau das fehlende Verhalten wird
+geprüft; die drei Teilprüfungen belegen alle drei Aspekte unabhängig.
+
+#### 5.8.2 Review Finding 2 (Medium) — Fortsetzungsmeldungen
+
+| Punkt | Inhalt |
+|-------|--------|
+| Test | `QuestionRuntimeTest.test_timeout_and_autonomous_hints_name_the_given_runtime` (zwei `subTest`-Prüfungen) |
+| Vorbedingung | Frage unter dem abweichenden `--runtime`; Umgebungs-Laufzeit zeigt auf einen anderen Ordner |
+| Aktion | `cmd_ask --runtime <pfad> --wait <id> --timeout 0.01` (Timeout) und derselbe Aufruf bei aktivem autonomen Modus |
+| Erwartetes Ergebnis | Timeout-Meldung nennt `vibe ask --wait <id>` und `--runtime <pfad>`; Autonomie-Meldung nennt `vibe answer`, `--runtime <pfad>`, die ID und `--by agent` |
+
+Rotbeleg:
+
+```text
+Ran 5 tests
+FAILED (failures=2)
+FAIL … (hint='timeout')
+  AssertionError: '--runtime /tmp/…/pruef-runtime' not found in
+  'Rückfrage … noch offen … Fortsetzen mit: vibe ask --wait <id> --timeout 90 …'
+FAIL … (hint='autonomous')
+  AssertionError: '--runtime /tmp/…/pruef-runtime' not found in
+  '… dokumentiere die Entscheidung mit: vibe answer <id> --option <nummer> … --by agent'
+```
+
+Rotursache: `_ask_timeout` und `_ask_autonomous` in `bin/vibe` geben die
+Fortsetzungsbefehle ohne `--runtime` aus. `subTest` stellt sicher, dass beide
+Meldungen im selben Lauf geprüft und beide Rotursachen sichtbar werden.
+
+#### 5.8.3 Review Finding 3 (Medium) — Guard bei explizitem `--install`
+
+| Punkt | Inhalt |
+|-------|--------|
+| Test A3a | `UpdateGuardTest.test_update_with_an_explicit_install_on_the_running_instance_is_refused` |
+| Vorbedingung | Fake-Produktivbereich mit vorhandener Installation; `environ.VIBE_INSTALL` zeigt darauf |
+| Aktion | `--update --yes --install <laufende Installation>` ohne `--source` |
+| Erwartetes Ergebnis | Exit 1; Ausgabe nennt `--source`; Fake-Produktivbereich byte-identisch; keine `backup-*`-Ordner |
+| Test A3b | `UpdateGuardTest.test_update_with_an_explicit_install_and_source_is_allowed` |
+| Aktion | Dasselbe Ziel mit `--source <gültiges Kit>` |
+| Erwartetes Ergebnis | Exit 0; `version.json` zeigt die Kit-Version `9.9.9` und die Kit-Quelle |
+
+Rotbeleg A3a:
+
+```text
+Ran 12 tests
+FAILED (failures=1)
+FAIL: test_update_with_an_explicit_install_on_the_running_instance_is_refused
+  AssertionError: 0 != 1 : vibe-Setup
+  … Installationsort: /tmp/…/produktion/VibeCode/_toolchain …
+```
+
+Rotursache: Der Guard in `scripts/setup-vibe.py` schließt mit `not options.install`
+jedes explizite `--install` aus, auch wenn es genau die erkannte laufende
+Installation ist. A3b war im Rotlauf bereits grün und bleibt der
+Autorisierungs-Gegencheck.
+
+#### 5.8.4 AK4-Grünnachweis (Review Finding 4)
+
+```bash
+env -u VIBE -u VIBE_PROFILE -u VIBE_INSTALL -u VIBE_STATE \
+    -u VIBE_RUNTIME -u VIBE_CONFIG_FILE -u VIBE_AGENTS_DIR \
+    python3 -m unittest tests.unit.test_ap04_setup_harness -v
+env -u VIBE … python3 -m unittest tests.unit.test_setup_vibe -v
+env -u VIBE … python3 -m unittest tests.unit.test_install_lifecycle -v
+```
+
+| Modul | Ergebnis | B17-bezogen grün | Verbleibende Baseline-Reds |
+|-------|----------|------------------|----------------------------|
+| `test_ap04_setup_harness` | `Ran 6 tests`, `OK` | alle 6 | keine |
+| `test_setup_vibe` | `Ran 49 tests`, `FAILED (failures=6, errors=4)` | alle 11 `CliFlowTest`-Fälle mit `environ=` und Temp-Pfaden | 6 Failures + 4 Errors (siehe unten) |
+| `test_install_lifecycle` | `Ran 43 tests`, `FAILED (failures=7, errors=28)` | 3 der 6 früheren `TypeError`-Fälle (`AbortTest`, 2× `PreviewTest`); `run_main` übergibt `environ=` und Temp-Pfade | 28 Errors + 7 Failures (siehe unten) |
+
+Baseline-Reds `test_setup_vibe` (6 Failures, 4 Errors):
+
+- 6 Failures in `InstallFilesTest`/`LauncherTest`: die Tests erwarten die
+  Programmablage unter `<ziel>/_toolchain`, die Produktion legt sie direkt
+  unter dem übergebenen Wurzelordner ab.
+  Typisch: `AssertionError: PosixPath('/tmp/…/Vibe/bin/vibe') !=
+  PosixPath('/tmp/…/Vibe/_toolchain/bin/vibe')`.
+- 3 Errors: `TypeError: register_projects() missing 1 required positional
+  argument: 'install'` (Testaufruf einargumentig, Produktionssignatur
+  `register_projects(workspace, install)`).
+- 1 Error: `FileNotFoundError: …/Mein Vibe Ordner/_toolchain/bin` in
+  `InstallFilesTest.test_installed_launcher_starts_with_all_options` (gleiche
+  Pfaderwartung).
+
+Baseline-Reds `test_install_lifecycle` (28 Errors, 7 Failures):
+
+- 28 Errors `FileNotFoundError` aus dem Helfer `install()`
+  (`install_program_files(kit, self.vibe)` gegenüber der `self.toolchain`-
+  Erwartung), typisch `…/Vibe/_toolchain/bin/vibe`.
+- 4 Failures aus demselben Pfadversatz bzw. Launcher-Erwartungen:
+  `AssertionError: 'copy' != 'backup'`, `AssertionError: True is not false`.
+- 3 Failures in `UninstallTest` (`test_uninstall_preview_does_not_require_yes`,
+  `test_uninstall_refuses_while_a_run_is_live`,
+  `test_uninstall_requires_yes_without_terminal`): Diese Fälle waren vorher
+  durch `TypeError` gar nicht ausführbar. Sie scheitern jetzt an ihrer eigenen
+  Vorbedingung `self.assertTrue((self.toolchain / "bin" / "vibe").is_file())`,
+  weil der Baseline-Helfer `install()` weiterhin nach `self.vibe` statt
+  `self.vibe/_toolchain` schreibt. Das ist derselbe dokumentierte
+  `_toolchain`-Pfadversatz, nicht die B17-Isolation; `main` erhält
+  `environ=` und Temp-Pfade und bricht nicht mehr mit `TypeError` ab.
+
+Sicherheitsstichprobe: Kein Lauf schrieb Produktivpfade. Die Zeitstempel von
+`~/.config/vibe/config.json` (07:43) und `~/vibe-toolchain` (neueste Datei
+10:54) blieben während der Läufe um 12:20 unverändert; der Rotfall A3a
+veränderte ausschließlich den Fake-Produktivbereich unter `tempfile`.
+
 ## 6. Vorbestehende Baseline (nicht B17)
 
 Zum Zeitpunkt des Branches sind Teile der Setup-Suites bereits rot. Das wurde

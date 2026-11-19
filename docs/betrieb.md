@@ -191,14 +191,15 @@ nimmt `environ=` entgegen; alle Pfadauflösungen (Workspace, Installation,
 Laufzeit und Konfigurationspfad unter dessen `HOME`) erfolgen ausschließlich
 aus dieser Umgebung. Ohne Angabe bleibt die Prozessumgebung maßgeblich.
 
-- **Guard bei `--update`.** Trifft ein Update das implizit aus `environ` bzw.
-  Konfiguration aufgelöste Installationsziel und ist dort bereits eine
-  Installation vorhanden, wird es ohne autorisierte Quelle vor jedem
-  Schreibzugriff verweigert (Exit 1; die Meldung nennt `--source`).
-  `--dry-run` bleibt gefahrlos, schreibt nichts und erklärt die Autorisierung.
-  Ein ausdrücklich übergebenes `--install` gilt als bewusste Nutzung eines
-  eigenen Ziels (z. B. Temp-Pfad in Tests) und ist erlaubt; `--reuse` bleibt
-  unberührt.
+- **Guard bei `--update`.** Trifft ein Update die laufende Installation — sei es
+  das implizit aus `environ` bzw. Konfiguration aufgelöste Ziel mit vorhandener
+  Installation oder ein ausdrücklich übergebenes `--install`, das nach
+  Normalisierung auf `VIBE_INSTALL` derselben Installation zeigt — wird es ohne
+  autorisierte Quelle vor jedem Schreibzugriff verweigert (Exit 1; die Meldung
+  nennt `--source`). `--dry-run` bleibt gefahrlos, schreibt nichts und erklärt
+  die Autorisierung. Die Ausnahme gilt nur für `--install`-Ziele, die *nicht*
+  der laufenden Installation entsprechen (z. B. Temp-Pfade in Tests); `--reuse`
+  bleibt unberührt.
 - **Autorisierte Quelle `--source`.** `--source <verzeichnis>` benennt das Kit
   ausdrücklich, hat Vorrang vor einer injizierten Quelle und wird in
   `version.json` als `source` vermerkt. Ein unvollständiges Quellverzeichnis

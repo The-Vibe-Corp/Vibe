@@ -14,7 +14,8 @@ Geprüft wird:
   die bubblewrap-Attrappe. Der Agent erhält das Konfigurationsprojekt und die
   Paket-Arbeitskopie als zusätzliches Schreibverzeichnis sowie ``--chdir`` auf
   die Arbeitskopie — auch wenn die Arbeitskopie selbst keine ``.vibe`` enthält.
-  Die Prüfbefehle laufen mit bereinigter Umgebung.
+  Die Prüfbefehle laufen mit bereinigter Umgebung. Das gilt auch für den
+  Android-Direktzweig ohne ``VERIFY_FULL`` (Review 1, Finding 1).
 
 Es werden keine Modelle aufgerufen und keine echten Produktivpfade berührt;
 alle Pfade liegen unter ``tempfile``.
@@ -25,8 +26,10 @@ Run:
         -u VIBE_RUNTIME -u VIBE_CONFIG_FILE -u VIBE_AGENTS_DIR \
         python3 -m unittest tests.unit.test_b17_runner_isolation -v
 """
+import hashlib
 import json
 import os
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -188,6 +191,43 @@ class RunnerFixture(unittest.TestCase):
             "full_env": full_env,
             "full_marker": full_marker,
         }
+
+    def android_project(self, name="android"):
+        """Projekt mit ``TYPE=android`` und leerem ``VERIFY_FULL``.
+
+        Der Läufer wählt dann den Android-Direktzweig
+        ``bash "$V/verify.sh" "$P" full``. Das Prüfskript schreibt seine
+        Prozessumgebung und einen Marker; die Hash-Datei lässt ``check_hash``
+        den Lauf starten.
+        """
+        self.android_env = self.root / (name + "-verify.env")
+        self.android_marker = self.root / (name + "-verify.marker")
+        verify_dir = self.install / "verify"
+        verify_dir.mkdir(parents=True)
+        script = verify_dir / "verify.sh"
+        script.write_text(
+            "#!/usr/bin/env bash\n"
+            "env > " + shlex.quote(str(self.android_env)) + "\n"
+            "echo android > " + shlex.quote(str(self.android_marker)) + "\n",
+            encoding="utf-8",
+        )
+        script.chmod(0o755)
+        digest = hashlib.sha256(script.read_bytes()).hexdigest()
+        hash_file = self.home / ".config" / "schreibfuchs-verify.sha"
+        hash_file.parent.mkdir(parents=True, exist_ok=True)
+        hash_file.write_text(digest + "  verify.sh\n", encoding="utf-8")
+        env_text = (
+            "TYPE=android\n"
+            "AGENT=test-agent\n"
+            "TESTER=test-agent\n"
+            "REVIEWER=code-reviewer\n"
+            "MAX_RETRIES=1\n"
+            'VERIFY_PACKAGE="true"\n'
+            'VERIFY_FULL=""\n'
+            "SANDBOX=on\n"
+            'SANDBOX_TOOLS="git"\n'
+        )
+        return self.make_project(env_text, name=name, hide_vibe=True)
 
     def env(self, project, sandbox=False, **extra):
         env = os.environ.copy()
@@ -380,6 +420,47 @@ class SandboxWiringTest(RunnerFixture):
             self.assertEqual(
                 [], leaked,
                 "Die Prüfung erbte Produktivpfade: " + ", ".join(leaked),
+            )
+
+    def test_android_final_verification_runs_in_the_sandbox_with_clean_environment(self):
+        """Review 1/High: Auch der Android-Direktzweig läuft isoliert.
+
+        ``final_verify`` ruft bei leerem ``VERIFY_FULL`` das Abnahmeskript
+        direkt auf. Es muss über denselben Sandbox-/Clean-Env-Adapter laufen
+        wie die generische Abschlussprüfung und ``VIBE_VERIFY_RUNTIME``
+        erhalten.
+        """
+        project = self.android_project()
+
+        result = self.run_runner(project, sandbox=True)
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertTrue(
+            self.android_marker.is_file(),
+            "Die Android-Abschlussprüfung lief nicht:\n" + result.stdout,
+        )
+        values = read_env_file(self.android_env)
+        with self.subTest(check="sandbox"):
+            self.assertIsNotNone(
+                self.bwrap_invocation("verify.sh"),
+                "Die Android-Abschlussprüfung lief außerhalb der Sandbox:\n"
+                + result.stdout,
+            )
+        with self.subTest(check="cleaned-environment"):
+            leaked = [key for key in PRODUCTIVE_KEYS if key in values]
+            self.assertEqual(
+                [], leaked,
+                "Die Android-Prüfung erbte Produktivpfade: " + ", ".join(leaked),
+            )
+        with self.subTest(check="verify-runtime"):
+            self.assertTrue(
+                "VIBE_VERIFY_RUNTIME" in values,
+                "Die Android-Prüfung erhält kein VIBE_VERIFY_RUNTIME",
+            )
+            self.assertEqual(
+                os.path.realpath(self.runtime),
+                os.path.realpath(values.get("VIBE_VERIFY_RUNTIME", "")),
+                "VIBE_VERIFY_RUNTIME nennt nicht den Laufzeitordner des Laufs",
             )
 
     def test_verification_without_sandbox_is_unwrapped_but_cleaned(self):

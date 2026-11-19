@@ -9,7 +9,8 @@ geschrieben.
 Die Tests laden ``bin/vibe`` als Modul (Muster ``tests/unit/test_questions.py``)
 mit einer isolierten Umgebung und rufen die Kommandofunktionen direkt auf. Es
 werden keine Modelle oder Netzdienste benutzt; alle Pfade liegen unter einem
-temporären Verzeichnis.
+temporären Verzeichnis. Auch die vom Werkzeug ausgegebenen Fortsetzungsbefehle
+müssen den Laufzeitordner nennen (Review 1, Finding 2).
 
 Run:
 
@@ -162,6 +163,48 @@ class QuestionRuntimeTest(unittest.TestCase):
             "--runtime", str(self.runtime), "--wait", qid,
         ])
         self.assertIn("Autonomer Modus", output)
+
+    def test_timeout_and_autonomous_hints_name_the_given_runtime(self):
+        """Review 1/Medium: Fortsetzungsbefehle nennen den Laufzeitordner.
+
+        Ohne ``--runtime`` in der Meldung würde ein Agent, der die Zeile
+        wörtlich befolgt, den Produktivpfad aus seiner Konfiguration treffen.
+        Geprüft werden die Timeout-Meldung und die Autonomie-Meldung.
+        """
+        qid = self.questions.create(
+            self.runtime, project="proj", text="Welche Farbe?", options=["Rot"]
+        )
+
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            with self.assertRaises(SystemExit) as raised:
+                self.cli.cmd_ask([
+                    "--runtime", str(self.runtime),
+                    "--wait", qid,
+                    "--timeout", "0.01",
+                ])
+        timeout_output = out.getvalue()
+        self.assertEqual(raised.exception.code, 3)
+        with self.subTest(hint="timeout"):
+            self.assertIn("vibe ask --wait " + qid, timeout_output)
+            self.assertIn(
+                "--runtime " + str(self.runtime), timeout_output,
+                "Die Timeout-Meldung schickt den Agenten ohne Laufzeitordner",
+            )
+
+        self.cli.vibe_autonomous.set_enabled(self.runtime, "proj", True)
+        autonomous_output = self.run_cli(self.cli.cmd_ask, [
+            "--runtime", str(self.runtime), "--wait", qid,
+        ])
+        with self.subTest(hint="autonomous"):
+            self.assertIn("Autonomer Modus", autonomous_output)
+            self.assertIn("vibe answer", autonomous_output)
+            self.assertIn(
+                "--runtime " + str(self.runtime), autonomous_output,
+                "Die Autonomie-Meldung schickt den Agenten ohne Laufzeitordner",
+            )
+            self.assertIn(qid, autonomous_output)
+            self.assertIn("--by agent", autonomous_output)
 
 
 if __name__ == "__main__":

@@ -434,7 +434,10 @@ final_verify() {
     return 3
   fi
   if [ -n "$CMD" ]; then verify_run "$P" "$CMD"; return $?; fi
-  if [ "${TYPE:-}" = "android" ] && [ -f "$V/verify.sh" ]; then bash "$V/verify.sh" "$P" full; return $?; fi
+  if [ "${TYPE:-}" = "android" ] && [ -f "$V/verify.sh" ]; then
+    verify_run "$P" "bash \"$V/verify.sh\" \"$P\" full"
+    return $?
+  fi
   echo "FEHLT: keine VERIFY_FULL-Prüfung in .vibe/project.env definiert (und keine Android-Abnahme für TYPE=${TYPE:-generic})."
   return 3
 }

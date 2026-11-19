@@ -1432,13 +1432,21 @@ def main(argv=None, input_fn=None, output=print, which=None, runner=None,
     output(f"Installationsort: {target}")
     output(f"Logverzeichnis:   {logs_dir}")
 
-    # B17: Ein --update darf die laufende Instanz nicht verändern. Trifft das
-    # implizit aus environ/Konfiguration aufgelöste Installationsziel eine
-    # vorhandene Installation, braucht es eine ausdrücklich autorisierte
-    # Quelle (--source) oder ein explizites --install mit eigenem Ziel. Die
-    # Vorschau bleibt gefahrlos möglich und erklärt die Autorisierung.
-    if options.update and not options.source and not options.install \
-            and detect_existing(target)["toolchain"]:
+    # B17: Ein --update darf die laufende Instanz nicht verändern. Das gilt
+    # auch für ein ausdrückliches --install, wenn es auf dieselbe Installation
+    # zeigt (VIBE_INSTALL aus environ/Konfiguration). Nur Ziele außerhalb der
+    # laufenden Installation sind ohne --source erlaubt. Die Vorschau bleibt
+    # gefahrlos möglich und erklärt die Autorisierung.
+    # Nur der produktive Pfad aus der übergebenen Umgebung markiert die
+    # laufende Installation; ein zuvor in der Testkonfiguration gespeicherter
+    # Pfad ist gerade kein Produktivpfad.
+    running_install = environ.get("VIBE_INSTALL")
+    implicit_running = not options.install and detect_existing(target)["toolchain"]
+    explicit_running = bool(running_install) and (
+        Path(target).resolve(strict=False)
+        == Path(os.path.abspath(os.path.expanduser(str(running_install)))).resolve(strict=False)
+    )
+    if options.update and not options.source and (implicit_running or explicit_running):
         guard = (
             "Schutz der laufenden Instanz: Für --update auf dieses "
             "Installationsziel ist eine autorisierte Quelle nötig. "
