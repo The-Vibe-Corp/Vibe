@@ -946,6 +946,18 @@
       ],
       "datum": "2026-11-17",
       "grund": "Test-Suite-Effizienz (F31): Prüfmodus package in scripts/verify.py samt VERIFY_MODES-Menü in bin/vibe und API/Button in bin/vibe-web.py und bin/web/app.js; gestufte Prüfregeln in den Projektvorlagen (templates/*/AGENTS.md) und neuer paralleler Testläufer scripts/run-tests-parallel.py. Größe und SHA-256 der acht geänderten files-Einträge wurden aktualisiert und dadurch begründet. scripts/verify.py und scripts/run-tests-parallel.py liegen außerhalb der Manifest-Bereiche (unter scripts/ führt das Manifest nur setup-vibe.py), daher werden sie nicht als files-Einträge geführt; dies folgt dem vorhandenen Muster. Sprachangleichung: Der verwaltete Regelabschnitt „Effizienz der Prüfungen (verbindlich)“ trägt ab nun exakt die Marker der neuen Vorlagen-/Regeltests („betroffene Testmodule“, kleingeschriebenes „während der Bearbeitung“) in bin/vibe und allen fünf templates/*/AGENTS.md; die Aussage bleibt inhaltlich und verbindlich unverändert. Größe und SHA-256 dieser sechs Einträge wurden erneut aktualisiert und dadurch begründet. Bereinigung der Vorlagen: In templates/android/AGENTS.md und templates/docker/AGENTS.md stand ein zweites, unpaariges <!-- vibe:general-rules --> ohne schließenden Marker vor dem echten verwalteten Block (docker zusätzlich mit veraltetem android-dev-Text); erst nach dem Entfernen dieses veralteten Duplikat-Blocks liegt der verwaltete Block genau einmal als Markenpaar vor, damit ensure_general_rules ihn korrekt aktualisiert — bei belassenem Zustand wäre alles bis zum ersten schließenden Marker als verwalteter Block behandelt worden und ein Regel-Update hätte die projektspezifischen Kopfzeilen verschluckt."
+    },
+    {
+      "arbeitspaket": "AP19",
+      "dateien": [
+        "bin/vibe_runs.py",
+        "bin/vibe-run.sh",
+        "bin/vibe",
+        "bin/vibe-web.py",
+        "bin/web/app.js"
+      ],
+      "datum": "2026-11-18",
+      "grund": "Session Management: sessions.json-Register mit Zustandsableitung aus dem Laufregister, Erfassung der Hauptsession im Protokollfilter (Preflight ohne, Paketlauf mit Lauf-ID), CLI vibe sessions (list/limit/resume), Web-API GET/POST /api/sessions und Sessions-Karte im Dashboard; Fortsetzen weiterhin über die unveränderte AP14-Mechanik. Reviewkorrekturen: Projektauflösung über die Projektkarte im Projektfilter, Kürzung des Registers nach last_seen statt Einfügereihenfolge, überspringen beschädigter Zeitwerte in der Übersicht und korrekter Erfolgs-Toast bei abgelehntem Fortsetzen. Lint-Kommentarnachziehung: pylint protected-access an der AP19-Session-Fortsetzungsstelle in bin/vibe-web.py. Boolesche Zeitwerte gelten als unlesbar."
     }
   ],
   "files": [
@@ -960,19 +972,19 @@
       "sha256": "e5ae3183efcb76dace1e0bcbde9993be7afe82d93d7877da9ee39846cf45330a"
     },
     {
-      "bytes": 262056,
+      "bytes": 267857,
       "path": "bin/vibe",
-      "sha256": "931ff67e311c444e2b80ea138c54cca1b4f3b31a3c67271a46259f0932e65fc3"
+      "sha256": "9c1b9fe56d2ca16acceb451d04a00a0826ac5d4009638131102fc3a245496a4e"
     },
     {
-      "bytes": 56672,
+      "bytes": 57599,
       "path": "bin/vibe-run.sh",
-      "sha256": "226029e02fb2d4abf719ae8d26117264731b39263b9a63ba7e991dde51774cae"
+      "sha256": "ff57ee60a765d6fe424c5a6e54a026dbf706f0fcc54c3cbb2405652a7eb497c5"
     },
     {
-      "bytes": 95184,
+      "bytes": 98670,
       "path": "bin/vibe-web.py",
-      "sha256": "c5fd904d79d41daadae18c964306ac9a62559a319cd25ac790158855e3ef8235"
+      "sha256": "b6a9fade6bf537d0dac7ecd065f9b449c16d8f99bee7a3cf863540ebda9fee58"
     },
     {
       "bytes": 5189,
@@ -1035,9 +1047,9 @@
       "sha256": "9a4bb9a2a182977c276b04676b133d918c97ed4f0a957c4d6f0e72835848b5cd"
     },
     {
-      "bytes": 42660,
+      "bytes": 54960,
       "path": "bin/vibe_runs.py",
-      "sha256": "d3b2534ec7b00dc1e191b97c432cade05b4cc36d172af71972c66f9078d54e75"
+      "sha256": "d086689d67fc4fbe7023b06bf0da60a4ac001899c457a7f8bae3d7d267f25aae"
     },
     {
       "bytes": 28218,
@@ -1060,9 +1072,9 @@
       "sha256": "d49b2406f2c9837c63ed3c3dcb265938fe5702e78c5aeb0df07b9f349fd65594"
     },
     {
-      "bytes": 126168,
+      "bytes": 128337,
       "path": "bin/web/app.js",
-      "sha256": "d443e363e7b549ddb8f7e6ab24e4518be9c5bd9fd24001691bcd829be99f8169"
+      "sha256": "20deee63cf0dfcbd949bf14008273dd9ef470b2a6491256c8cc234f6fb20cdaa"
     },
     {
       "bytes": 588,
@@ -1246,6 +1258,6 @@
     "setup-vibe.cmd",
     "VERSION"
   ],
-  "stand": "2026-11-17",
+  "stand": "2026-11-18",
   "version": 1
 }

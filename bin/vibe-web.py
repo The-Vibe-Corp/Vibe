@@ -666,6 +666,20 @@ def start_continue(name):
     return vibe_services.capture(vibe.cmd_run, name, continue_session=session)
 
 
+def session_resume_supported():
+    """AP19: Fortsetzen ist eine Harness-Fähigkeit; Fehler gelten als "nein".
+
+    Dieselbe Fähigkeitsprüfung wie in ``start_continue``. Eine unlesbare oder
+    unbekannte Auswahl darf hier nicht still als opencode durchgehen: ohne
+    verlässliche Angabe wird konservativ ``False`` gemeldet.
+    """
+    try:
+        selected = vibe_harness.read_selection(PATHS.state)
+    except vibe_harness.HarnessError:
+        return False
+    return bool(vibe_harness.supports(selected, "continue"))
+
+
 def reload_ui_data():
     """Lädt ui.json nach einer security-Aktion neu; Erfolg als boolescher Wert.
 
@@ -970,6 +984,31 @@ class H(BaseHTTPRequestHandler):
             if u.path == "/api/run-state":
                 n = known(q["name"][0])
                 return self._send(200, {"running": run_is_active(n), "pause_after": vibe.pause_after_active(n)})
+            if u.path == "/api/sessions":
+                # AP19: Dieselben Limit- und Filterregeln wie in der CLI. Ein
+                # zu großer Parameter wird gedeckt, ein ungültiger ignoriert.
+                n = known(q.get("name", [""])[0])
+                raw_limit = q.get("limit", [""])[0]
+                limit = None
+                if raw_limit:
+                    try:
+                        parsed = int(raw_limit)
+                    except ValueError:
+                        parsed = None
+                    if parsed is not None and parsed >= 1:
+                        limit = min(parsed, vibe_runs.SESSION_LIMIT_MAX)
+                effective = (limit if limit is not None
+                             else vibe_runs.SessionRegistry(PATHS.runtime).limit())
+                entries = vibe_runs.session_overview(
+                    PATHS.runtime, project=vibe.ppath(n), limit=limit,
+                    text=q.get("text", [""])[0] or None)
+                return self._send(200, {
+                    "ok": True,
+                    "running": run_is_active(n),
+                    "resume_supported": session_resume_supported(),
+                    "limit": int(effective),
+                    "sessions": entries,
+                })
             if u.path == "/api/subagents":
                 n = known(q["name"][0])
                 state = subagents_of(n)
@@ -1179,7 +1218,7 @@ class H(BaseHTTPRequestHandler):
             return self._error(e.status, e.code, e.message)
         try:
             name = body.get("name", "")
-            if u.path in ("/api/run", "/api/stop", "/api/verify", "/api/feedback", "/api/ticket", "/api/init", "/api/rights", "/api/pause", "/api/sandbox", "/api/guide", "/api/agents_file", "/api/costs", "/api/autonomous", "/api/steer", "/api/continue", "/api/github", "/api/priority"):
+            if u.path in ("/api/run", "/api/stop", "/api/verify", "/api/feedback", "/api/ticket", "/api/init", "/api/rights", "/api/pause", "/api/sandbox", "/api/guide", "/api/agents_file", "/api/costs", "/api/autonomous", "/api/steer", "/api/continue", "/api/sessions", "/api/github", "/api/priority"):
                 known(name)
             extra = {}
             if u.path == "/api/security":
@@ -1225,6 +1264,34 @@ class H(BaseHTTPRequestHandler):
             elif u.path == "/api/continue":
                 # AP14: Letzten Lauf desselben Projekts fortsetzen.
                 ok, msg = start_continue(name)
+            elif u.path == "/api/sessions":
+                # AP19: Genau die gewählte Session fortsetzen — nie eine
+                # fremde oder während eines aktiven Laufs.
+                session = str(body.get("session") or "")
+                if body.get("action") != "continue":
+                    ok, msg = False, (
+                        "Unbekannte Aktion für /api/sessions: nur 'continue' "
+                        "wird unterstützt.")
+                else:
+                    entry = vibe_runs.SessionRegistry(PATHS.runtime).get(session)
+                    project = vibe._real(vibe.ppath(name))  # pylint: disable=protected-access
+                    if (not entry or os.path.realpath(
+                            str(entry.get("project") or "")) != project):
+                        ok, msg = False, (
+                            f"Session '{session}' ist für Projekt '{name}' "
+                            "nicht im Register.")
+                    elif run_is_active(name):
+                        ok, msg = False, (
+                            "Fortsetzen ist nur bei gestopptem Lauf möglich; "
+                            "für dieses Projekt läuft bereits ein Lauf.")
+                    elif not session_resume_supported():
+                        ok, msg = False, (
+                            "Fortsetzen ist bei Pi nicht möglich: Pi läuft im "
+                            "Print-Modus (--no-session) ohne fortsetzbare "
+                            "Session; es wurde nichts gestartet.")
+                    else:
+                        ok, msg = vibe_services.capture(
+                            vibe.cmd_run, name, continue_session=session)
             elif u.path == "/api/run":
                 ok, msg = vibe_services.capture(vibe.cmd_run, name, body.get("agent") or None, keep_changes=bool(body.get("keep_changes")))
             elif u.path == "/api/stop":

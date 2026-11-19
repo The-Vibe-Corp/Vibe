@@ -89,6 +89,9 @@ Bekannte Grenzen von Pi in vibe:
 - Pi-Sitzungen werden nicht fortgesetzt (`--no-session`); jeder Agentenlauf
   ist eigenständig, und der Läufer übergibt dem Pi-Zweig nie `--session`
   (AP14).
+- Die Session-Auflistung (AP19) listet keine Pi-Läufe, weil der Protokollfilter
+  deren flüchtige Kennung bewusst nicht erfasst; Fortsetzen wird in CLI, API
+  und Karte bei Pi nicht angeboten (Hinweis mit „Pi“ und „--no-session“).
 
 ## Geprüfte Version und Verfahren
 
