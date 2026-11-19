@@ -968,13 +968,30 @@
       ],
       "datum": "2026-11-19",
       "grund": "Subagenten-Parallelisierung: Agenten außer dem Vibe-Agenten können optional Subagenten ihres eigenen Typs erlauben (permission.task, Opt-in über die Agentenverwaltung, kein Standard); Hierarchieprüfung lässt Selbstaufruf zu, prüft Vibe-Rolle und eigenen Modus, Selbstkanten gelten nicht als Zyklus. Die Invariante gilt auch bei Rollenwechsel und Rohtext (zentrale Prüfung im Speicherpfad und in agent_role_set)."
+    },
+    {
+      "arbeitspaket": "B17",
+      "dateien": [
+        "install-vibe.sh",
+        "scripts/setup-vibe.py",
+        "bin/vibe",
+        "bin/vibe-run.sh",
+        "bin/vibe_sandbox.py",
+        "templates/android/AGENTS.md",
+        "templates/docker/AGENTS.md",
+        "templates/generic/AGENTS.md",
+        "templates/rebuild/AGENTS.md",
+        "templates/web/AGENTS.md"
+      ],
+      "datum": "2026-11-19",
+      "grund": "Architektur: Entwicklung und Verifikation verändern die laufende Instanz nicht. setup.main nimmt environ= entgegen und löst alle Pfade (inkl. Konfigurationspfad) aus dieser Umgebung auf; --source autorisiert ein Update ausdrücklich und wird in version.json.source vermerkt; ein Guard verweigert --update auf die implizit aufgelöste, vorhandene Installation ohne --source oder --install vor jedem Schreibzugriff (dry-run erklärt nur). --skip-deps überspringt die Abhängigkeitsprüfung vollständig (fehlende Werkzeuge werden gemeldet, aber nicht mit Exit 2 bestraft), damit isolierte Läufe nicht von bewusst verborgenen Werkzeugen abhängen. install-vibe.sh nennt --source \"$KIT\". bin/vibe unterstützt --runtime für Rückfragen. bin/vibe_sandbox.py bietet extra_write_dirs/chdir und bindet autonomous.json nur lesend. bin/vibe-run.sh bereinigt die sieben VIBE_*-Pfade für Agenten und Prüfungen, setzt VIBE_VERIFY_RUNTIME nur für die Dauer eines Prüfaufrufs und wrappt bei SANDBOX=on auch Paket-/Abschlussprüfung. Neue, identische Regel im verwalteten GENERAL_RULES-Block in bin/vibe und allen fünf templates/*/AGENTS.md. Prüfsummen und Größen der zehn geänderten files-Einträge wurden aktualisiert; docs/betrieb.md liegt außerhalb der Manifest-Bereiche."
     }
   ],
   "files": [
     {
-      "bytes": 370,
+      "bytes": 386,
       "path": "install-vibe.sh",
-      "sha256": "1f1379cda496e6adc5a981adf7263916af72e2f2c29aa6c20c1f863aa4e66ad3"
+      "sha256": "7f8450dcf34c6b6f94695720954e2072edeb60d69f70b29bb3924882ed6c0f21"
     },
     {
       "bytes": 4194,
@@ -982,14 +999,14 @@
       "sha256": "e5ae3183efcb76dace1e0bcbde9993be7afe82d93d7877da9ee39846cf45330a"
     },
     {
-      "bytes": 270415,
+      "bytes": 270936,
       "path": "bin/vibe",
-      "sha256": "78988203db513e672c801d909bcc419828b1c96d1323133fc125be95f7a988e9"
+      "sha256": "5d95141fad15f1b652ec14c5131f777206f7968d85d006ad294e712859be54f2"
     },
     {
-      "bytes": 57599,
+      "bytes": 59395,
       "path": "bin/vibe-run.sh",
-      "sha256": "ff57ee60a765d6fe424c5a6e54a026dbf706f0fcc54c3cbb2405652a7eb497c5"
+      "sha256": "152b26a018489706c40a82e2ade4539a80df7bf00244268c29e169cb5032f433"
     },
     {
       "bytes": 100884,
@@ -1062,9 +1079,9 @@
       "sha256": "d086689d67fc4fbe7023b06bf0da60a4ac001899c457a7f8bae3d7d267f25aae"
     },
     {
-      "bytes": 28218,
+      "bytes": 30134,
       "path": "bin/vibe_sandbox.py",
-      "sha256": "3edb8046ad3dd29bc65a3c3d4c0cc743d79648d8b09938b7057447972ca1fdfd"
+      "sha256": "e25ab1fcfbb0386ed8e6508f5f36f9900f9070352eedaf25ab8d94af585f377d"
     },
     {
       "bytes": 11226,
@@ -1107,9 +1124,9 @@
       "sha256": "b45ed5e95c842e67dbecf165bb6096ec9c513cc431ede7442cd4bbad9ed0e806"
     },
     {
-      "bytes": 4749,
+      "bytes": 4986,
       "path": "templates/android/AGENTS.md",
-      "sha256": "8543171b03983b55d7b13c72a0df045dd1ef5969601deed15e431e1560de284f"
+      "sha256": "d197361a09fcbd65f496bee1d3e040a73c99253d93f386f20f0ce78344cc1633"
     },
     {
       "bytes": 522,
@@ -1147,9 +1164,9 @@
       "sha256": "722919bbc27d3ec4bf3ccadaff4be18ff5cf6c9cb1e4666e6f080c467e48f1b7"
     },
     {
-      "bytes": 4363,
+      "bytes": 4600,
       "path": "templates/docker/AGENTS.md",
-      "sha256": "5a66cf698eb1ffd5c60e4caaaecc525b0f763db60fbd79c7cfc56ba3942e2288"
+      "sha256": "9d811b15ee86442170640b3bf9d77b0c3f29cf7653340a708c3f99e559e5131f"
     },
     {
       "bytes": 354,
@@ -1157,9 +1174,9 @@
       "sha256": "63c0ebab49aa870ae5e5f731890cce3f0ce2859364152c00b64cb89e3e6d9ae5"
     },
     {
-      "bytes": 4048,
+      "bytes": 4285,
       "path": "templates/generic/AGENTS.md",
-      "sha256": "0263bd39567f58d26c9e3c7acc241cc5f7ab46275546bc2ee1c631f53378cf3b"
+      "sha256": "3c8b5064d2e610f8b64053234d5aa00e139e1f67c02fc77139c9f48cc75cd291"
     },
     {
       "bytes": 670,
@@ -1212,9 +1229,9 @@
       "sha256": "db8026a75dd2f358a771be9e2fc2fd4ba88c6180f026078552c3259e5156360f"
     },
     {
-      "bytes": 7693,
+      "bytes": 7930,
       "path": "templates/rebuild/AGENTS.md",
-      "sha256": "e5e1f6daa8fa57d2ff8483c6efd5fce42c4763ee58fe8027e39df751652bb95e"
+      "sha256": "7f20cc9c15795674b91f1198dbb5ca1996c9bfefaf97aa92250e05666d75294a"
     },
     {
       "bytes": 1675,
@@ -1237,14 +1254,14 @@
       "sha256": "54b4975a06030dc63f299d0a0e2ef8249857b08d62e3e35e61bacb2205c8e1c4"
     },
     {
-      "bytes": 4413,
+      "bytes": 4650,
       "path": "templates/web/AGENTS.md",
-      "sha256": "e66a74e066237f76e64bd186dd34480b0baeee8d2230091a29c7db3218013f39"
+      "sha256": "a3a3f0f27ba60b26afdb8c1af9e5e2f1dc3a0b6e891317e169ce45c7825f8d8d"
     },
     {
-      "bytes": 70550,
+      "bytes": 72682,
       "path": "scripts/setup-vibe.py",
-      "sha256": "def52b1e2c595a4780e2ae07d55dc07def95e4a1e41df9aeda3aede933f47dcd"
+      "sha256": "8bc2fc9249f2334f58d289dcb85e453fbb286aa72350eb30b765652b8ef8c705"
     },
     {
       "bytes": 377,

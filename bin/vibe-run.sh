@@ -34,6 +34,12 @@ BIN="$INSTALL/bin"
 RUNS_PY="$BIN/vibe_runs.py"
 PACKAGES_PY="$BIN/vibe_packages.py"
 mkdir -p "$RUNTIME"
+# B17: Produktivpfade gehören ausschließlich in den UI-/Service-Prozess.
+# Agenten und Prüfungen erhalten eine bereinigte Umgebung; Laufsteuerung wie
+# VIBE_LOGNAME bleibt erhalten. Der Laufzeitordner wird dereferenziert, damit
+# Sandbox-Bindungen und der Rückfrage-Hinweis denselben Pfad nennen.
+VIBE_CLEAN_ENV=(env -u VIBE -u VIBE_PROFILE -u VIBE_INSTALL -u VIBE_STATE -u VIBE_RUNTIME -u VIBE_CONFIG_FILE -u VIBE_AGENTS_DIR)
+RUNTIME="$(cd "$RUNTIME" && pwd -P)"
 # F19: Der gemeinsame opencode-Server ist mit Basic-Auth geschützt. Das
 # Kennwort steht in der Laufzeitdatei und wird nur als Umgebungsvariable an
 # opencode und als curl-Anmeldedaten verwendet, nie als sichtbares Argument.
@@ -163,7 +169,7 @@ start_private_server() {
   port="$(private_free_port)" || return 1
   url="http://127.0.0.1:$port"
   if [ "$SANDBOX_STATE" = "on" ]; then
-    wrap=(python3 "$BIN/vibe_sandbox.py" "$dir" --)
+    wrap=(python3 "$BIN/vibe_sandbox.py" "$P" --runtime "$RUNTIME" --chdir "$dir" --write-dir "$dir" --)
   fi
   rm -f -- "$SERVER_JSON" "$SERVER_PID_FILE"
   : > "$SERVER_LOG"
@@ -171,7 +177,7 @@ start_private_server() {
   # Agenten-Subshells. Seine Ausgabe geht in die eigene Serverdatei.
   if command -v setsid > /dev/null 2>&1; then
     setsid --fork bash -c 'echo "$$" > "$1"; shift; exec "$@"' \
-      _ "$SERVER_PID_FILE" "${wrap[@]}" \
+      _ "$SERVER_PID_FILE" "${VIBE_CLEAN_ENV[@]}" "${wrap[@]}" \
       opencode serve --hostname 127.0.0.1 --port "$port" \
       >> "$SERVER_LOG" 2>&1 < /dev/null
   else
@@ -179,7 +185,7 @@ start_private_server() {
     # nicht sandboxierte Läufe dauerhaft. Die PID-Datei ermöglicht dennoch
     # ein sauberes Beenden.
     bash -c 'echo "$$" > "$1"; shift; exec "$@"' \
-      _ "$SERVER_PID_FILE" "${wrap[@]}" \
+      _ "$SERVER_PID_FILE" "${VIBE_CLEAN_ENV[@]}" "${wrap[@]}" \
       opencode serve --hostname 127.0.0.1 --port "$port" \
       >> "$SERVER_LOG" 2>&1 < /dev/null &
   fi
@@ -366,6 +372,10 @@ TRIES_PER_ITEM=$((MAXR + 1))
 # Ist der autonome Modus aktiv, entscheidet der Agent selbst (auch wenn der
 # Nutzer ihn während des Wartens einschaltet) und dokumentiert die Entscheidung.
 QUESTION_HINT='Wenn eine fachliche Entscheidung offen ist, stelle eine Rückfrage mit vibe ask "Frage" --option "A" --option "B"; sie erscheint im Dashboard. Ohne Antwort im Zeitlimit endet der Befehl mit Exit-Code 3, die Frage bleibt offen; setze danach mit vibe ask --wait <id> fort. Im autonomen Modus (vibe autonomous on <projekt>) oder wenn der Nutzer ihn während des Wartens einschaltet, entscheidest du selbst und dokumentierst die Entscheidung mit vibe answer <id> --text "..." --by agent.'
+# B17: Die Produktivpfade fehlen in der Agentenumgebung; der Laufzeitordner
+# wird deshalb ausdrücklich übergeben. Die Kurzform oben bleibt als Hinweis,
+# die folgende Form mit --runtime ist für diesen Lauf maßgeblich.
+QUESTION_HINT+=" Wichtig: In diesem Lauf immer vibe ask --runtime $RUNTIME \"Frage\" --option \"A\" verwenden und mit vibe ask --wait <id> --runtime $RUNTIME fortsetzen; Antworten mit vibe answer --runtime $RUNTIME <id> --text \"...\" --by agent dokumentieren."
 # Ein zu großes Protokoll wird vor dem Start rotiert (max. 5 MiB, 3 Archive).
 if [ -f "$RUNS_PY" ]; then
   python3 "$RUNS_PY" rotate "$LOG" >/dev/null 2>&1 || true
@@ -401,6 +411,20 @@ check_hash() {
   [ "${TYPE:-}" = "android" ] || return 0
   [ -f "$HASHFILE" ] && (cd "$V" && sha256sum -c "$HASHFILE" --quiet) || { echo "ABBRUCH: Abnahme-Dateien fehlen oder wurden verändert."; exit 3; }
 }
+# B17: Prüfungen laufen mit bereinigter Umgebung und bei SANDBOX=on in
+# derselben Sandbox wie der Agent. VIBE_VERIFY_RUNTIME ist die einzige
+# Prüfvariable für den laufsspezifischen Lauf-/Prüfordner: kein Produktivpfad,
+# gesetzt ausschließlich für die Dauer dieses Prüfaufrufs.
+verify_run() {
+  local dir="$1" cmd="$2"
+  local -a inner=("${VIBE_CLEAN_ENV[@]}" "VIBE_VERIFY_RUNTIME=$RUNTIME" bash -lc "$cmd")
+  if [ "$SANDBOX_STATE" = "on" ]; then
+    python3 "$BIN/vibe_sandbox.py" "$P" --runtime "$RUNTIME" \
+      --chdir "$dir" --write-dir "$dir" --write-dir "$P" -- "${inner[@]}"
+  else
+    ( cd "$dir" && "${inner[@]}" )
+  fi
+}
 # Typabhängiger Prüfadapter: eigener Befehl des Projekts, sonst die
 # Android-Abnahme — und die ausschließlich für Android-Projekte.
 final_verify() {
@@ -409,7 +433,7 @@ final_verify() {
     echo "ABBRUCH: VERIFY_FULL ist nur ein Platzhalter (TODO); es wird keine Prüfung ausgeführt."
     return 3
   fi
-  if [ -n "$CMD" ]; then bash -lc "$CMD"; return $?; fi
+  if [ -n "$CMD" ]; then verify_run "$P" "$CMD"; return $?; fi
   if [ "${TYPE:-}" = "android" ] && [ -f "$V/verify.sh" ]; then bash "$V/verify.sh" "$P" full; return $?; fi
   echo "FEHLT: keine VERIFY_FULL-Prüfung in .vibe/project.env definiert (und keine Android-Abnahme für TYPE=${TYPE:-generic})."
   return 3
@@ -492,7 +516,7 @@ run_agent_in() {
   local dir="$1" prompt="$2" title="${3:-$NAME $ID}"
   local wrap=() rc
   if [ "$SANDBOX_STATE" = "on" ]; then
-    wrap=(python3 "$BIN/vibe_sandbox.py" "$dir" --)
+    wrap=(python3 "$BIN/vibe_sandbox.py" "$P" --runtime "$RUNTIME" --chdir "$dir" --write-dir "$dir" --)
   fi
   # B11: Die Jobkontrolle stellt den Auftrag in eine eigene Prozessgruppe und
   # lässt den Signal-Trap schon während wait feuern. stdin bleibt wie bisher
@@ -516,7 +540,7 @@ run_agent_in() {
       local args=(python3 "$HARNESS_CLI" run --harness pi --json --project "$dir" --agent "$AGENT" --title "$title" --prompt "$prompt")
       [ -n "$MODEL" ] && args+=(--model "$MODEL")
       [ -n "${VIBE_AGENTS_DIR:-}" ] && args+=(--agents-dir "$VIBE_AGENTS_DIR")
-      "${wrap[@]}" "${args[@]}" 2>&1 | "${STREAM_FILTER[@]}" | tee -a "$LOG"
+      "${VIBE_CLEAN_ENV[@]}" "${wrap[@]}" "${args[@]}" 2>&1 | "${STREAM_FILTER[@]}" | tee -a "$LOG"
       exit "${PIPESTATUS[0]}"
     fi
     # F25: Ist eine Session aus einem unterbrochenen Versuch erfasst, wird
@@ -526,7 +550,7 @@ run_agent_in() {
     local args=(opencode run $SERVER_ARGS --format json --auto --thinking)
     [ -n "${RESUME_SESSION:-}" ] && args+=(--session "$RESUME_SESSION")
     args+=(--agent "$AGENT" "${MODEL_ARGS[@]}" --title "$title" "$prompt")
-    "${wrap[@]}" "${args[@]}" 2>&1 | "${STREAM_FILTER[@]}" | tee -a "$LOG"
+    "${VIBE_CLEAN_ENV[@]}" "${wrap[@]}" "${args[@]}" 2>&1 | "${STREAM_FILTER[@]}" | tee -a "$LOG"
     exit "${PIPESTATUS[0]}"
   ) </dev/null &
   AGENT_PID=$!
@@ -543,7 +567,7 @@ run_package_tests() {
   local cmd="${VERIFY_PACKAGE:-${VERIFY_FULL:-}}"
   echo "=== Paketprüfung für $ID ===" | tee -a "$LOG"
   local output
-  output="$( cd "$WT" && bash -lc "$cmd" 2>&1 )"
+  output="$( verify_run "$WT" "$cmd" 2>&1 )"
   local rc=$?
   printf '%s\n' "$output" >>"$LOG"
   PACKAGE_TEST_OUT="$output"
