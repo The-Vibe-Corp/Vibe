@@ -97,13 +97,16 @@ ob die Verbindungen wirklich funktionieren.
   origin` + `git merge --ff-only origin/<branch>` — der Refspec ist
   ausdrücklich, damit keine Upstream-Konfiguration Voraussetzung ist. Ein
   Fehlschlag (z. B. Divergenz, Exit 1) erzeugt einen HINWEIS und blockiert
-  das Paket nicht.
+  das Paket nicht. **(AP9-Semantik unverändert.)**
 - Nach grüner Abschlussschranke, vor dem lokalen Merge:
   `github-complete --project <P> --branch <B> --id <ID>` —
-  `complete_package(...)`: Push des Paket-Branchs mit Upstream, dann
-  automatischer Merge-Request auf die aufgelöste Basis. Ein Fehlschlag
-  (z. B. abgelehnter Request, kein Token) ist ein HINWEIS; der lokale
-  Merge läuft weiter, damit das Paket nicht an GitHub hängt.
+  `complete_package(...)`: Vorab prüft `integration_state` die
+  Integrationslage; danach Push des Paket-Branchs mit Upstream und
+  automatischer Merge-Request auf die aufgelöste Basis. **(seit B16
+  geändert)** Ein Fehlschlag — Push, Merge-Request oder Divergenz — ist
+  keine bloße Empfehlung mehr, sondern eine harte Abschlussschranke: kein
+  `[x]`, kein lokaler Merge, die Arbeitskopie bleibt zur Diagnose liegen.
+  Details in `docs/features/B16.md`.
 - Beide Subkommandos beenden sich mit 0 bei Erfolg/Skip und 1 bei
   Fehlschlag; Meldungen auf stdout/stderr. Die GitHub-Ebene wird träge
   geladen (`_github_module`), damit Teilinstallationen ohne

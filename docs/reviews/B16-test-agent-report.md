@@ -326,3 +326,74 @@ Ran 6 tests in 9.667s
 OK
 ```
 
+---
+
+## 8. Nachtrag Review Runde 1 (Testqualität)
+
+Der unabhängige Review (Runde 1) erhob zwei Befunde im Testbereich. Beide sind
+behoben; keine Produktionsdatei wurde geändert.
+
+### Befund 1 — erblindete Cleanup-Assertions
+
+**Stellen:** `tests/unit/test_runner_package_gates.py`
+(`WorktreeIsolationTest.test_agent_works_in_a_worktree_under_runtime_and_it_is_removed`)
+und `tests/unit/test_worknotes_sync.py`
+(`RunnerWorkNotesTest.test_runner_copies_notes_and_writes_the_proof_back`).
+
+**Grund:** Beide Tests prüften nach dem Lauf
+`git branch --list "vibe/*"` auf Leerheit. Seit B16 erzeugt der Läufer
+Paketbranches ausschließlich über `branch-name` (Standardmuster
+`feature/{owner}/{id}`, im Fixture `feature/test/<id>`). Die Prüfung auf
+`vibe/*` war damit immer erfüllt: Ein ausbleibendes `git branch -d` in
+`cleanup_worktree` wäre nicht mehr rot geworden.
+
+**Korrektur:** Beide Assertions prüfen jetzt `git branch --list "feature/*"`.
+In den Fixtures existieren keine anderen `feature/*`-Branches, die Erwartung
+bleibt also „leer“. Alle übrigen Assertions der Tests sind unverändert.
+
+**Negativnachweis (red capability):** In einem einmaligen Lauf außerhalb des
+Repos wurde im kopierten Test-Toolchain-Skript die Zeile
+`git -C "$P" branch -d "$BRANCH"` deaktiviert. Beide Tests wurden rot:
+
+```
+AssertionError: 'feature/test/f1' != ''  (Paketbranch wurde nicht entfernt)
+```
+
+Damit ist belegt, dass die Assertions einen nicht entfernten Paketbranch
+tatsächlich erkennen.
+
+### Befund 2 — Commit-Anteil der Berichtszeile ungetestet
+
+**Stelle:** `tests/unit/test_b16_runner_wiring.py`.
+
+**Grund:** Anforderung (d) verlangt im Abschlussbericht Branch, PR-URL **und**
+Commit (`bin/vibe-run.sh`: `..., Commit <kurzsha>, ...`). Geprüft wurden nur
+Branch und Merge-Request-Angabe.
+
+**Korrektur:** Im Erfolgsfall
+(`test_successful_run_pushes_feature_branch_and_opens_the_pr`) und im
+Skip-Fall (`test_report_without_github_names_branch_commit_and_keine`) wird
+nach dem Lauf `git rev-parse --short HEAD` im Projekt ermittelt und
+`assertIn(", Commit <sha>,", ...)` gegen **Report und Log** geprüft. Der
+Modul-Docstring nennt die zusätzliche Abdeckung. Bestehende Fälle wurden nicht
+abgeschwächt.
+
+**Negativnachweis (red capability):** In einem einmaligen Lauf außerhalb des
+Repos wurde im kopierten Test-Toolchain-Skript der Anteil
+`, Commit ${CLOSED_COMMIT[$i]}` aus der Berichtszeile entfernt. Beide Tests
+wurden rot:
+
+```
+AssertionError: ', Commit <sha>,' not found in 'Geschlossen: F1 — Branch
+feature/test/f1, Merge-Request ...'
+```
+
+### Erneute Läufe
+
+| Befehl | Ergebnis |
+| --- | --- |
+| `python3 -m unittest tests.unit.test_runner_package_gates -v` | 12 Tests **OK** (137 s) |
+| `python3 -m unittest tests.unit.test_worknotes_sync -v` | 19 Tests **OK** (3 s) |
+| `python3 -m unittest tests.unit.test_b16_runner_wiring -v` | 6 Tests **OK** (10 s) |
+
+Kein `discover`, kein Commit, kein Staging durch den Test-Agenten.

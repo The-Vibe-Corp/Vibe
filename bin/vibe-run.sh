@@ -1164,7 +1164,11 @@ $QUESTION_HINT"
       GH_COMPLETE_RC=$?
       printf '%s\n' "$GH_COMPLETE_OUT" >>"$LOG"
       if [ "$GH_COMPLETE_RC" -ne 0 ]; then
-        BLOCK_REASON="GitHub-Abschluss für $ID fehlgeschlagen (Push/Merge-Request): ${GH_COMPLETE_OUT%%$'\n'*}"
+        # Ohne stdout (z. B. SystemExit bei fehlendem vibe_github.py) stünde
+        # die Ursache nur im Protokoll; dann eine feste Ersatzursache nennen.
+        reason="${GH_COMPLETE_OUT%%$'\n'*}"
+        [ -n "$reason" ] || reason="keine Ausgabe des Unterbefehls (Details im Protokoll; fehlt vibe_github.py in der Installation?)"
+        BLOCK_REASON="GitHub-Abschluss für $ID fehlgeschlagen (Push/Merge-Request): $reason"
         record_block "$ID" "$BLOCK_REASON"
         echo "BLOCKIERT: $BLOCK_REASON" | tee -a "$LOG"
         STOP=1; break

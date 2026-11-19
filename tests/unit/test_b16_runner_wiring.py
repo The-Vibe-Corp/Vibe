@@ -15,7 +15,8 @@ einer Fake-Toolchain (Muster ``test_ap9_runner_wiring.py``):
 * Bei divergiertem ``dev`` blockiert der Abschluss mit ``divergiert``; der
   ``github-pull`` bleibt wie in AP9 ein HINWEIS.
 * Der Abschlussbericht nennt je geschlossenem Paket Branch, Commit und
-  Merge-Request-URL; ohne GitHub-Verknüpfung erscheint
+  Merge-Request-URL; der Commit-Anteil der Berichtszeile wird in Report und
+  Log gegen den Projekt-HEAD geprüft. Ohne GitHub-Verknüpfung erscheint
   ``Merge-Request: keine (GitHub nicht aktiv oder kein origin)``.
 * Nutzerbestätigung 19.11.2026: Die Prüfung ist nur verpflichtend, wenn
   GitHub für das Projekt aktiviert ist. Ein rein lokales Projekt ohne GitHub
@@ -134,6 +135,11 @@ class SuccessfulClosureTest(B16WiringFixture):
         self.assertIn("Geschlossen: F1 — Branch feature/test/f1", report)
         self.assertIn("Merge-Request http://127.0.0.1/pull/42", report)
         self.assertIn("Geschlossen: F1 — Branch feature/test/f1", log)
+        # Der Commit-Anteil der Berichtszeile muss den Projekt-HEAD nennen.
+        head_sha = git(project, "rev-parse", "--short", "HEAD").stdout.strip()
+        self.assertTrue(head_sha, "Projekt-HEAD nicht ermittelbar")
+        self.assertIn(", Commit " + head_sha + ",", report)
+        self.assertIn(", Commit " + head_sha + ",", log)
         # Der Merge ist erfolgt:
         self.assertEqual(0, git(project, "cat-file", "-e",
                                 "HEAD:impl-F1.txt").returncode)
@@ -271,6 +277,11 @@ class ReportWithoutGithubTest(B16WiringFixture):
         self.assertIn(
             "Merge-Request: keine (GitHub nicht aktiv oder kein origin)",
             report)
+        # Der Commit-Anteil der Berichtszeile muss den Projekt-HEAD nennen.
+        head_sha = git(project, "rev-parse", "--short", "HEAD").stdout.strip()
+        self.assertTrue(head_sha, "Projekt-HEAD nicht ermittelbar")
+        self.assertIn(", Commit " + head_sha + ",", report)
+        self.assertIn(", Commit " + head_sha + ",", self.log(project))
         self.assertEqual(0, git(project, "cat-file", "-e",
                                 "HEAD:impl-F1.txt").returncode)
 
