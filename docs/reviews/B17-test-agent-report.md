@@ -10,11 +10,23 @@ Rolle: unabhängiger Test-Agent (keine Produktionscode-Änderung, kein Commit, k
 Ziel war, die Abnahmefälle für B17 **vor** der Implementierung zu schreiben, die
 Rotphase zu belegen und die Fälle fachlich zu dokumentieren. Das ist erledigt:
 
-- 24 neue Testfälle in vier Dateien, die ausschließlich unter `tempfile` arbeiten.
+- Ursprünglich 24 neue Testfälle in vier Dateien, die ausschließlich unter
+  `tempfile` arbeiten. Nach den Reviewrunden 1–3 umfassen dieselben vier Module
+  jetzt **29 Tests** (Zählweise unten).
 - Drei bestehende Setup-Testmodule wurden für die neue `environ=`-Schnittstelle
   und explizite Temp-Pfade angepasst (keine Abschwächung von Assertions).
 - Rotphase je Anforderung mit Befehl und Auszug belegt (Abschnitt 5).
+- Alle 29 Tests laufen auf dem aktuellen Stand grün; der Nachweis des zuletzt
+  ergänzten Moduls steht in §5.8.5.
 - Keine Produktionsdatei bleibt verändert (siehe 3.1), kein Commit erstellt.
+
+Zählweise (Stand `c59de24`, Produktions- und Teststand wie `6eeb9a4`):
+`test_b17_isolation` 12 + `test_b17_questions_runtime` 6 +
+`test_b17_sandbox_argv` 4 + `test_b17_runner_isolation` 7 = **29**. Davon sind
+24 die ursprünglichen Abnahmefälle (#1–#24) und 5 Zusatzfälle aus den
+Reviewrunden: +2 in `test_b17_isolation` (§5.8.3), +2 in
+`test_b17_questions_runtime` (§5.8.2/§5.8.5) und +1 in
+`test_b17_runner_isolation` (§5.8.1).
 
 ## 2. Zuordnung der Anforderungen
 
@@ -107,6 +119,11 @@ Hinweis zu #3/#4: Der Guard setzt voraus, dass das Ziel implizit aus
 arbeiten bewusst in Temp-Pfaden). Diese Auslegung ist in Abschnitt 7 als
 Bestätigungspunkt vermerkt.
 
+Testumfang des Moduls: 12 Tests — die Fälle #1–#10 plus die beiden
+Guard-Fälle aus Review Runde 1 (`test_update_with_an_explicit_install_on_the_running_instance_is_refused`,
+`test_update_with_an_explicit_install_and_source_is_allowed`, dokumentiert in
+§5.8.3).
+
 ### 4.2 `tests/unit/test_b17_questions_runtime.py` — Rückfragen (AK7)
 
 Geladen wird das echte `bin/vibe` als Modul. `VIBE_RUNTIME` und
@@ -120,6 +137,18 @@ ist belegbar, ob `--runtime` wirklich verwendet wird.
 | 12 | `test_cmd_answer_uses_the_given_runtime` | Frage unter `<pruef>` | `cmd_answer --runtime <pruef> <id> --option 1` | Antwort in `<pruef>` gespeichert; `<env-runtime>/questions` entsteht nicht | AK7: Antworten werden am selben ausdrücklichen Ort gelesen/geschrieben |
 | 13 | `test_wait_reads_the_answer_from_the_given_runtime` | Frage unter `<pruef>` bereits beantwortet | `cmd_ask --runtime <pruef> --wait <id>` | Ausgabe enthält `Antwort`; `<pruef>/questions` existiert | AK7: `--wait` liest die Antwort aus dem angegebenen Laufzeitordner |
 | 14 | `test_autonomous_mode_is_read_from_the_given_runtime` | Autonomiemodus unter `<pruef>` aktiviert | `cmd_ask --runtime <pruef> --wait <id>` | Ausgabe enthält `Autonomer Modus`; `is_enabled(<env-runtime>)` bleibt falsch | AK7: Die Autonomieentscheidung wird aus dem Laufzeitordner des Laufs gelesen |
+
+Testumfang des Moduls: 6 Tests. Zusätzlich zu #11–#14 (die Nummern #1–#24
+bezeichnen weiterhin die ursprünglichen Abnahmefälle) enthält das Modul zwei
+Reviewfälle, die über ihre Testnamen geführt werden:
+
+- `QuestionRuntimeTest.test_timeout_and_autonomous_hints_name_the_given_runtime`
+  (Review 1/Medium, §5.8.2; von Review 2 um den `subTest` `hint='creation'`
+  erweitert, §5.8.5) — Timeout-, Autonomie- und Erzeugungsmeldung nennen den
+  übergebenen Laufzeitordner.
+- `PackageHintRuntimeTest.test_preflight_and_barrier_hints_name_the_given_runtime`
+  (Review 2, §5.8.5) — PREFLIGHT- und BARRIER-Hinweis nennen den übergebenen
+  Laufzeitordner.
 
 ### 4.3 `tests/unit/test_b17_sandbox_argv.py` — Sandbox-Argumente (AK8, AK9)
 
@@ -153,6 +182,10 @@ Fake-`bwrap` schreibt seine Argumente und führt den Befehl nach `--` aus.
 | 22 | `SandboxWiringTest.test_agent_runs_in_the_sandbox_with_config_project_and_worktree` | `SANDBOX=on`, Arbeitskopie ohne `.vibe` | Ein Paketlauf mit Fake-`bwrap` | Agent läuft über `bwrap`; `--chdir` = Arbeitskopie; Arbeitskopie und Konfigurationsprojekt schreibbar gebunden; `<projekt>/.vibe` schreibgeschützt gebunden | AK8: Sandbox gilt für den Agenten, auch wenn die Kopie keine `.vibe` enthält; Konfiguration kommt aus dem Projekt |
 | 23 | `SandboxWiringTest.test_package_and_final_verification_run_in_the_sandbox` | `SANDBOX=on`, `VERIFY_PACKAGE`/`VERIFY_FULL` schreiben Marker | Ein Paketlauf | Beide Marker entstehen; beide Prüfungen erscheinen als `bwrap`-Aufruf; das jeweilige `env` enthält keinen der sieben Produktivschlüssel | AK8: Paket- und Abschlussprüfung laufen in der Sandbox und mit bereinigter Umgebung |
 | 24 | `SandboxWiringTest.test_verification_without_sandbox_is_unwrapped_but_cleaned` | `SANDBOX=off` | Ein Paketlauf | Beide Marker entstehen; kein `bwrap`-Aufruf; `env` enthält keinen Produktivschlüssel | AK8: Auch ohne Sandbox laufen Prüfungen ohne Produktivpfade (fail-closed bleibt bei `on` unberührt) |
+
+Testumfang des Moduls: 7 Tests — die Fälle #19–#24 plus
+`SandboxWiringTest.test_android_final_verification_runs_in_the_sandbox_with_clean_environment`
+aus Review Runde 1 (§5.8.1).
 
 ### 4.5 Angepasste Bestandstests (AK4)
 
@@ -668,6 +701,40 @@ Sicherheitsstichprobe: Alle neuen Pfade liegen unter `tempfile`; die Aufrufe
 erzeugen Fragen ausschließlich im übergebenen `runtime`-Ordner, es wird kein
 Produktivpfad geschrieben oder gelesen.
 
+Grünnachweis nach der Umsetzung (Stand `6eeb9a4`; ausgeführt in der Arbeitskopie
+`c59de24`, die gegenüber `6eeb9a4` ausschließlich `docs/reviews/B17-review-3.md`
+ergänzt — Produktions- und Teststand sind identisch). Befehl mit dem
+`env -u`-Präfix aus 5.6 im Arbeitsverzeichnis der Arbeitskopie:
+
+```bash
+env -u VIBE -u VIBE_PROFILE -u VIBE_INSTALL -u VIBE_STATE \
+    -u VIBE_RUNTIME -u VIBE_CONFIG_FILE -u VIBE_AGENTS_DIR \
+    python3 -m unittest tests.unit.test_b17_questions_runtime -v
+```
+
+```text
+test_preflight_and_barrier_hints_name_the_given_runtime ... ok
+test_autonomous_mode_is_read_from_the_given_runtime ... ok
+test_cmd_answer_uses_the_given_runtime ... ok
+test_cmd_ask_writes_into_the_given_runtime ... ok
+test_timeout_and_autonomous_hints_name_the_given_runtime
+Review 1/Medium: Fortsetzungsbefehle nennen den Laufzeitordner. ... ok
+test_wait_reads_the_answer_from_the_given_runtime ... ok
+
+----------------------------------------------------------------------
+Ran 6 tests in 0.139s
+
+OK
+```
+
+Damit sind alle sechs Fälle des Moduls grün, einschließlich der drei
+`subTest`-Hinweise (`creation`, `timeout`, `autonomous`) und der beiden
+PREFLIGHT-/BARRIER-Prüfungen. Die drei übrigen B17-Module wurden mit demselben
+Präfix im selben Arbeitsstand geprüft und sind ebenfalls grün:
+`test_b17_isolation` `Ran 12 tests`, `OK`;
+`test_b17_sandbox_argv` `Ran 4 tests`, `OK`; `test_b17_runner_isolation`
+`Ran 7 tests`, `OK` — zusammen 29 Tests.
+
 ## 6. Vorbestehende Baseline (nicht B17)
 
 Zum Zeitpunkt des Branches sind Teile der Setup-Suites bereits rot. Das wurde
@@ -686,7 +753,7 @@ sie nicht in einem eigenen Arbeitspaket repariert werden. Sie dürfen nicht
 durch Abschwächen der B17-Tests „grün" gemacht werden. Für die B17-Abnahme
 zählen ausschließlich:
 
-- die 24 neuen Tests,
+- die 24 ursprünglichen Tests plus die 5 Reviewfälle (zusammen 29, siehe §1),
 - die `environ`/Pfad-Fälle der drei angepassten Setup-Module,
 - die beiden Anker (`test_questions` unverändert grün; `test_sandbox` nicht
   schlechter als die Baseline).
@@ -728,7 +795,8 @@ zählen ausschließlich:
 
 ## 8. Abnahmekriterien für die Implementierung
 
-1. Alle 24 neuen Testfälle sind grün.
+1. Alle 29 B17-Tests (24 ursprüngliche + 5 Reviewfälle) sind grün; die
+   Zuordnung steht in §1, die Einzelnachweise in §5.7–§5.8.
 2. Die `environ`/Temp-Pfad-Fälle in `test_ap04_setup_harness.py`,
    `test_setup_vibe.CliFlowTest` und den `run_main`-Fällen von
    `test_install_lifecycle.py` sind grün.
