@@ -671,8 +671,13 @@ class RunnerWorkNotesTest(WorkNotesTestCase):
         self.assertIn("F1: Nachweis", merged)
 
         self.assertEqual(self.worktree_dirs(), [], "Arbeitskopie blieb liegen")
+        # B16: Paketbranches folgen dem Muster feature/{owner}/{id}
+        # (Fixture: feature/test/<id>). Die frühere Prüfung auf "vibe/*"
+        # war seit dem neuen Branch-Schema immer erfüllt und damit blind.
         self.assertEqual(
-            support.git(self.project, "branch", "--list", "vibe/*").stdout.strip(),
+            support.git(
+                self.project, "branch", "--list", "feature/*"
+            ).stdout.strip(),
             "",
             "Paketbranch wurde nicht entfernt",
         )

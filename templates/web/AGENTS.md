@@ -22,6 +22,8 @@
 - Keine temporären Dateien, Protokolle, Build-Artefakte, Arbeitskopien oder Screenshots ohne Nachweiswert committen.
 - Fremde oder vorbestehende Änderungen nicht löschen, überschreiben, stashen oder mitcommitten.
 - Keine Historie umschreiben, keine Force-Pushes und kein Push ohne ausdrückliche Freigabe.
+- Paket-Branches folgen den Repository-Regeln (`feature/<owner>/<kennung>`); das Muster ist über `PACKAGE_BRANCH_PATTERN` konfigurierbar.
+- Bei aktivierter GitHub-Verknüpfung gilt ein Arbeitspaket erst mit gepushtem Branch und gestelltem Merge-Request als geschlossen; ohne Push und Merge-Request kein Häkchen und kein lokaler Merge.
 
 ## Laufende Instanz nicht verändern (verbindlich)
 
