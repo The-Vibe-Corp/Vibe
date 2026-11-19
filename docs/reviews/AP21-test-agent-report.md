@@ -755,3 +755,70 @@ abweichenden Stand sind die Läufe zu wiederholen. Nicht Teil dieses Auftrags
 und weiterhin außerhalb des Testbereichs: `test_ap8_checkout_ui.py`
 (`NameError: agent_note`) und `test_rebuild_project_ui.py`
 (Template-/Profil-Mismatch).
+
+---
+
+## 15. AP21 v2 — Rotphase der globalen Sprache (Implementierungs-Agent)
+
+- **Datum:** 2026-11-19
+- **Ausgangslage:** Der lose Test-Agent-Loop war wegen Provider-Limit nicht
+  verfügbar. Die neuen Abnahmetests für AP21 v2 wurden daher vom
+  Implementierungs-Agenten geschrieben. Abschnitt 1–14 dokumentieren die
+  ursprüngliche v1-Abnahme; dieser Abschnitt hält die **v2-Rotphase** fest,
+  bevor die Produktionsänderungen umgesetzt wurden (red–green–refactor).
+
+### 15.1 Neue/erweiterte Tests (aus dem Vertrag abgeleitet)
+
+`tests/unit/test_ap21_i18n.py` — neue Klassen:
+
+- `I18nMetaPriorityTest` (6 Fälle): Meta `vibe-language` > localStorage > `en`,
+  vollständige Validierung (ungültiges Meta wird ignoriert).
+- `UiConfigLanguageTest` (6 Fälle): `LANGUAGES`, `DEFAULT_LANGUAGE`,
+  `validate_language()`, `validate()` mit/ohne `language`.
+- `GlobalLanguageServerTest` (10 Fälle): echter `vibe-web`-Prozess mit
+  isoliertem `VIBE_*`-Root; `GET/POST /api/language` (Payload, Auth 403,
+  400 `invalid_language` ohne Dateiänderung, Erhalt anderer ui.json-Felder,
+  andere Projekte unberührt), HTML-Injektion von `<html lang>` und
+  `<meta name="vibe-language">`, ui.json-Roundtrip.
+
+`tests/browser/test_ap21_i18n_ui.py`: globaler Sprachumschalter
+(`[data-t='settings'] select[aria-label='Language']`), kein Select mehr im
+Projekt-Tab, EN→DE in Nav/Projektliste/vier Projekt-Tabs, Reload, ui.json,
+Toast+Rückfall bei POST-Fehler.
+
+### 15.2 Redphase — tatsächlich ausgeführter Befehl
+
+```
+$ PLAYWRIGHT_BROWSERS_PATH=/home/vibe/.cache/ms-playwright \
+    PYTHONDONTWRITEBYTECODE=1 python3 -m unittest \
+    tests.unit.test_ap21_i18n.I18nMetaPriorityTest \
+    tests.unit.test_ap21_i18n.UiConfigLanguageTest \
+    tests.unit.test_ap21_i18n.GlobalLanguageServerTest -v
+...
+Ran 21 tests in 1.621s
+FAILED (failures=12, errors=10)
+```
+
+Beobachtete, erwartete Fehlerbilder (Auszug):
+
+- `test_meta_language_wins_over_localstorage` /
+  `test_meta_language_en_overrides_localstorage_de`: `current()` blieb beim
+  localStorage-Wert, weil `i18n.js` das Meta-Feld noch nicht las.
+- `UiConfigLanguageTest.*`: `AttributeError: module 'vibe_ui_config' has no
+  attribute 'LANGUAGES'` bzw. `validate_language` fehlt; `validate()` liess
+  `language` noch als unbekanntes Feld fallen.
+- `GlobalLanguageServerTest.setUp`: `POST /api/language` lieferte
+  `404 {"error":{"code":"not_found"}}` — der Endpunkt existierte noch nicht.
+- `test_page_injects_default_language`: `index.html` enthielt noch kein
+  `<meta name="vibe-language">`.
+
+Damit ist die Rotphase für jede geforderte v2-Verhaltensweise nachgewiesen:
+die Tests scheitern am jeweils fehlenden Produktionsverhalten, nicht an einer
+defekten Testumgebung.
+
+### 15.3 Grünphase
+
+Nach den Änderungen A–F (siehe `docs/features/AP21.md`) wurden dieselben
+Suiten erneut ausgeführt: `tests.unit.test_ap21_i18n` → **29 Tests, OK**.
+Die Browser-Suite und die weiteren Prüfungen sind im Abschnitt
+„Verifikation“ von `docs/features/AP21.md` dokumentiert.

@@ -1384,15 +1384,37 @@
   var STORAGE_KEY = 'vibe_i18n_lang';
   var DEFAULT_LANG = 'en';
 
+  function isSupported(value) {
+    return typeof value === 'string'
+      && Object.prototype.hasOwnProperty.call(DICTS, value);
+  }
+
   function readStored() {
     try {
       var store = global.localStorage || (typeof localStorage !== 'undefined' ? localStorage : null);
       var value = store && store.getItem(STORAGE_KEY);
-      return value && Object.prototype.hasOwnProperty.call(DICTS, value) ? value : null;
+      return isSupported(value) ? value : null;
     } catch (error) { return null; }
   }
 
-  var lang = readStored() || DEFAULT_LANG;
+  /* AP21 v2: Der Server rendert die globale Sprache in
+     <meta name="vibe-language" content="…">. Dieses Meta-Feld hat Vorrang vor
+     localStorage, damit die Wahl in jedem Browser-Kontext gilt. Die Validierung
+     ist bewusst vollstaendig: nur exakte, unterstuetzte Codes werden
+     uebernommen; ein defektes oder fremdes Meta-Feld faellt auf den
+     localStorage-Wert bzw. 'en' zurueck. */
+  function readMeta() {
+    try {
+      var doc = global.document;
+      if (!doc || typeof doc.querySelector !== 'function') return null;
+      var node = doc.querySelector('meta[name="vibe-language"]');
+      var value = node && (node.getAttribute
+        ? node.getAttribute('content') : node.content);
+      return isSupported(value) ? value : null;
+    } catch (error) { return null; }
+  }
+
+  var lang = readMeta() || readStored() || DEFAULT_LANG;
 
   function available() { return Object.keys(DICTS); }
   function current() { return lang; }

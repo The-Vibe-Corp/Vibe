@@ -758,6 +758,23 @@ def security_data():
     }
 
 
+def language_data():
+    """Globale Sprache aus UI_DATA als Ansichtsobjekt (AP21 v2).
+
+    \u00dcber ui.json gesetzt und beim Start bzw. nach jedem Speichern in UI_DATA
+    geladen. Fehlt der Wert, gilt der englische Standard — genau wie beim
+    Rendern von index.html.
+    """
+    current = UI_DATA.get("language")
+    if current not in vibe_ui_config.LANGUAGES:
+        current = vibe_ui_config.DEFAULT_LANGUAGE
+    return {
+        "language": current,
+        "languages": list(vibe_ui_config.LANGUAGES),
+        "default": vibe_ui_config.DEFAULT_LANGUAGE,
+    }
+
+
 class RequestError(Exception):
     """Fehlerbearbeitung bei ungültiger Anfrage: HTTP-Status und Fehlercode."""
 
@@ -979,6 +996,9 @@ class H(BaseHTTPRequestHandler):
             # Kennwortstatus, Neustart-Markierung) — bewusst ohne Geheimnisse.
             if u.path == "/api/security":
                 return self._security_view()
+            if u.path == "/api/language":
+                # AP21 v2: globale Sprache (auth wie die uebrigen APIs).
+                return self._send(200, {"ok": True, **language_data()})
             if u.path == "/api/projects":
                 return self._send(200, [vibe_services.project_row(vibe, n) for n in vibe.projects()])
             if u.path == "/api/run-state":
@@ -1216,6 +1236,25 @@ class H(BaseHTTPRequestHandler):
             body = self._read_json()
         except RequestError as e:
             return self._error(e.status, e.code, e.message)
+        if u.path == "/api/language":
+            # AP21 v2: globale Sprache in ui.json persistieren. Die Validierung
+            # verhindert, dass eine ungueltige Wahl die Datei veraendert; danach
+            # neu laden, damit auch der naechste Seitenaufruf das Meta-Feld mit
+            # der neuen Sprache rendert.
+            value = body.get("language")
+            try:
+                vibe_ui_config.validate_language(value)
+            except vibe_ui_config.ConfigError:
+                return self._error(400, "invalid_language", "Ungueltige Sprache")
+            try:
+                vibe_ui_config.save(PATHS.state, {**UI_DATA, "language": value})
+            except vibe_ui_config.ConfigError as error:
+                return self._error(400, "invalid_language", str(error))
+            if not reload_ui_data():
+                return self._error(
+                    500, "internal_error", "ui.json ist nach dem Speichern nicht lesbar")
+            return self._send(200, {"ok": True, "language": value,
+                                    "message": "Sprache gespeichert"})
         try:
             name = body.get("name", "")
             if u.path in ("/api/run", "/api/stop", "/api/verify", "/api/feedback", "/api/ticket", "/api/init", "/api/rights", "/api/pause", "/api/sandbox", "/api/guide", "/api/agents_file", "/api/costs", "/api/autonomous", "/api/steer", "/api/continue", "/api/sessions", "/api/github", "/api/priority"):
@@ -1982,7 +2021,12 @@ def page():
     if page.cache is None:
         with open(os.path.join(HERE, "web", "index.html"), encoding="utf-8") as handle:
             page.cache = handle.read()
-    return page.cache.replace("__OPENCODE_URL__", vibe.OC_URL)
+    # AP21 v2: <html lang> und <meta name="vibe-language"> erhalten die global
+    # gespeicherte Sprache. Der Wert stammt aus der Whitelist LANGUAGES und ist
+    # damit fuer HTML-Attribute ungefaehrlich (kein Benutzer-Freitext).
+    language = language_data()["language"]
+    return (page.cache.replace("__OPENCODE_URL__", vibe.OC_URL)
+            .replace("__VIBE_LANG__", language))
 
 page.cache = None
 
