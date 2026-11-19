@@ -161,6 +161,7 @@ Keine echten Modellaufrufe, keine produktive Installation.
 """
 import json
 import os
+import re
 import socket
 import subprocess
 import sys
@@ -285,7 +286,7 @@ class _FakeOpenCodeHandler(BaseHTTPRequestHandler):
 OVERVIEW_JS = """() => {
   const panel = document.querySelector("[data-panel='ausgabe']");
   if (!panel) return {panel: false};
-  const overview = panel.querySelector(".bv-overview[aria-label='Aktive Agenten']");
+  const overview = panel.querySelector(".bv-overview[data-active-agents]");
   if (!overview) return {panel: true, present: false};
   const box = overview.getBoundingClientRect();
   const rows = Array.from(overview.querySelectorAll(".bv-overview-row")).map(row => {
@@ -608,13 +609,14 @@ class AP20BrowserTest(unittest.TestCase):
         row.wait_for(state="visible", timeout=20000)
         row.click()
         tabs = self.page.locator(
-            "[aria-label='Projektbereiche'] button[role=tab]")
+            "[role='tablist'] button[role=tab]")
         tabs.first.wait_for(state="visible", timeout=20000)
 
     def open_output(self):
         tabs = self.page.locator(
-            "[aria-label='Projektbereiche'] button[role=tab]")
-        out_tab = tabs.filter(has_text="Ausgabe").first
+            "[role='tablist'] button[role=tab]")
+        out_tab = self.page.locator(
+            "[role='tab'][aria-controls='panel-ausgabe']").first
         out_tab.click()
         self.panel().wait_for(state="visible", timeout=15000)
 
@@ -664,7 +666,7 @@ class AP20BrowserTest(unittest.TestCase):
         for index in range(buttons.count()):
             candidate = buttons.nth(index)
             label = (candidate.get_attribute("aria-label") or "").lower()
-            if "vergrö" in label or "verklein" in label:
+            if re.search(r"vergrö|verklein|expand|shrink", label):
                 return candidate
         self.fail(f"Kein Vergrößern-Knopf in der Karte {session} gefunden")
 
@@ -710,13 +712,13 @@ class AP20BrowserTest(unittest.TestCase):
         """Fokus-Knopf im Kopf der Hauptagentenansicht."""
         return self.panel().locator(
             "[data-agent-view][data-role='main'] "
-            "button[data-focus-session][aria-label*='fokussieren']")
+            "button[data-focus-session]")
 
     def main_overview_focus_button(self, session=MAIN_SESSION):
         """Fokus-Knopf der Übersichtszeile des Hauptagenten."""
         return self.panel().locator(
             f".bv-overview-row[data-overview-session='{session}'] "
-            "button[data-focus-session][aria-label*='fokussieren']")
+            "button[data-focus-session]")
 
     def is_main_enlarged(self):
         classes = (self.agent_view(role="main").first.get_attribute("class")
@@ -807,11 +809,11 @@ class ContractTest(AP20BrowserTest):
             "Nicht alle Agenten sind gleichzeitig im DOM: "
             + repr(sessions_in_dom))
 
-        select = self.panel().locator("select[aria-label='Ziel']")
+        select = self.panel().locator("select[aria-label='Target']")
         self.assertEqual(1, select.count(),
                          "Keine Zielauswahl (select[aria-label='Ziel'])")
         options = self.page.eval_on_selector_all(
-            "[data-panel='ausgabe'] select[aria-label='Ziel'] option",
+            "[data-panel='ausgabe'] select[aria-label='Target'] option",
             "nodes => nodes.map(node => node.value)")
         self.assertEqual(
             {MAIN_SESSION, *SESSIONS}, set(options),
@@ -819,10 +821,11 @@ class ContractTest(AP20BrowserTest):
 
         self.assertEqual(
             1, self.panel().locator(
-                "textarea[aria-label*='Zusatzanweisung']").count(),
+                "textarea[aria-label*='Additional instruction']").count(),
             "Keine Anweisungseingabe (aria-label „Zusatzanweisung“)")
         self.assertGreater(
-            self.panel().locator("button").filter(has_text="senden").count(),
+            self.panel().locator("button").filter(
+                has_text="Send instruction").count(),
             0, "Kein Senden-Knopf vorhanden")
 
         highlighted = self.page.eval_on_selector_all(
@@ -866,7 +869,7 @@ class ContractTest(AP20BrowserTest):
 
         self.register_run("finished")
         continue_button = self.panel().locator("button").filter(
-            has_text="Fortsetzen").first
+            has_text="Resume").first
         self.wait_until(
             lambda: continue_button.count() > 0
             and continue_button.is_visible(),
@@ -908,7 +911,7 @@ class OverviewTest(AP20BrowserTest):
             "Agent: " + repr([row["session"] for row in data["rows"]]))
 
         main_row = rows[MAIN_SESSION]
-        self.assertIn("Hauptagent", main_row["text"],
+        self.assertIn("Main agent", main_row["text"],
                       "Die Übersichtszeile der Hauptsession nennt den "
                       "Hauptagenten nicht: " + repr(main_row["text"]))
         self.assertTrue(main_row["hasPill"],
@@ -936,8 +939,8 @@ class OverviewTest(AP20BrowserTest):
                 session, row["focusSession"],
                 f"Der Fokus-Knopf der Zeile {session} trägt nicht "
                 f"data-focus-session='{session}': {row!r}")
-            self.assertIn(
-                "fokussieren", (row["focusLabel"] or "").lower(),
+            self.assertRegex(
+                (row["focusLabel"] or ""), re.compile(r"fokussieren|focus", re.I),
                 f"Der Fokus-Knopf der Zeile {session} ist nicht als "
                 f"„fokussieren“ beschriftet: {row!r}")
             self.assertLessEqual(
@@ -1299,7 +1302,7 @@ class FocusModeTest(AP20BrowserTest):
             "aria-expanded='true'")
 
         shrink = self.sub_view(target).locator("button").filter(
-            has_text="Verkleinern").first
+            has_text="Shrink").first
         if shrink.count() == 0:
             # Alternativ trägt der Knopf weiterhin sein aria-label.
             card_button.click()
@@ -1399,7 +1402,7 @@ class FocusModeTest(AP20BrowserTest):
         self.assertEqual(
             1, header_button.count(),
             "Im Kopf der Hauptagentenansicht fehlt der Fokus-Knopf "
-            "button[data-focus-session][aria-label*='fokussieren']")
+            "button[data-focus-session]")
         self.assertEqual(
             1, row_button.count(),
             "Die Übersichtszeile des Hauptagenten hat keinen Fokus-Knopf")
@@ -1532,7 +1535,7 @@ class FocusModeTest(AP20BrowserTest):
             "Die alte Hauptsession bleibt als verwaiste Zeile in der "
             "Übersicht: " + repr(rows))
         self.assertIn(
-            "Hauptagent", rows[NEW_MAIN_SESSION]["text"],
+            "Main agent", rows[NEW_MAIN_SESSION]["text"],
             "Die neue Hauptzeile nennt den Hauptagenten nicht: "
             + repr(rows[NEW_MAIN_SESSION]["text"]))
 

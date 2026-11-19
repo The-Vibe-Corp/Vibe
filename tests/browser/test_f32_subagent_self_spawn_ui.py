@@ -27,6 +27,7 @@ Es findet kein Modellaufruf und kein Netzzugriff außerhalb von Loopback statt.
 """
 import json
 import os
+import re
 import signal
 import socket
 import subprocess
@@ -274,25 +275,28 @@ class F32SubagentUiTest(unittest.TestCase):
 
     def open_agents(self):
         self.page.goto(self.base + "/#t=" + self.token)
-        self.page.get_by_role("button", name="Agenten & Modelle").click()
+        self.page.get_by_role("button", name="Agents & Models").click()
         self.page.locator("#agents").wait_for()
         self.page.locator('tr[data-agent="tester"]').wait_for()
 
     def reload_agents(self):
         self.page.reload(wait_until="load")
-        self.page.get_by_role("button", name="Agenten & Modelle").click()
+        self.page.get_by_role("button", name="Agents & Models").click()
         self.page.locator("#agents").wait_for()
         self.page.locator('tr[data-agent="tester"]').wait_for()
 
     def open_editor(self, name="tester"):
         self.page.locator(f'tr[data-agent="{name}"]').get_by_role(
-            "button", name="Bearbeiten"
+            "button", name="Edit"
         ).click()
-        self.page.get_by_label("Beschreibung", exact=True).wait_for()
+        self.page.get_by_label("Description", exact=True).wait_for()
 
     def own_checkbox(self):
         """Die F32-Checkbox über ihren zugänglichen Namen."""
-        return self.page.get_by_role("checkbox", name=OWN_LABEL)
+        return self.page.get_by_role(
+            "checkbox", name=re.compile(
+                r"Subagenten des eigenen Typs erlauben|allow subagents of the same type",
+                re.I))
 
     def subagents_box_text(self):
         return self.page.locator("[data-subagents]").inner_text().lower()
@@ -338,8 +342,8 @@ class F32SubagentUiTest(unittest.TestCase):
         """AK UI: Eigen-Checkbox ist standardmäßig aus, speichert und bleibt erhalten."""
         self.open_agents()
         self.open_editor("tester")
-        self.page.get_by_label("Subagenten-Rechte", exact=True).select_option(
-            label="ausgewählt"
+        self.page.get_by_label("Subagent permissions", exact=True).select_option(
+            value="ausgewählt"
         )
 
         own = self.own_checkbox()
@@ -350,7 +354,7 @@ class F32SubagentUiTest(unittest.TestCase):
         )
 
         own.check()
-        self.page.get_by_role("button", name="Speichern", exact=True).click()
+        self.page.get_by_role("button", name="Save", exact=True).click()
         self.wait_for_agent_text(
             "tester",
             lambda text: "tester: allow" in text,
@@ -365,7 +369,7 @@ class F32SubagentUiTest(unittest.TestCase):
         self.reload_agents()
         self.open_editor("tester")
         self.assertEqual(
-            self.page.get_by_label("Subagenten-Rechte", exact=True).input_value(),
+            self.page.get_by_label("Subagent permissions", exact=True).input_value(),
             "ausgewählt",
         )
         own = self.own_checkbox()
@@ -374,7 +378,7 @@ class F32SubagentUiTest(unittest.TestCase):
 
         # Abwählen und speichern entfernt den Eigennamen wieder.
         own.uncheck()
-        self.page.get_by_role("button", name="Speichern", exact=True).click()
+        self.page.get_by_role("button", name="Save", exact=True).click()
         self.wait_for_agent_text(
             "tester",
             lambda text: "task: deny" in text,
@@ -386,8 +390,8 @@ class F32SubagentUiTest(unittest.TestCase):
         """AK UI: Die Eigen-Checkbox ist fokussierbar und mit Space bedienbar."""
         self.open_agents()
         self.open_editor("tester")
-        self.page.get_by_label("Subagenten-Rechte", exact=True).select_option(
-            label="ausgewählt"
+        self.page.get_by_label("Subagent permissions", exact=True).select_option(
+            value="ausgewählt"
         )
         own = self.own_checkbox()
         own.wait_for()
@@ -406,8 +410,8 @@ class F32SubagentUiTest(unittest.TestCase):
         """AK UI: Der Vibe-Agent sieht einen Hinweis, keine Eigen-Checkbox."""
         self.open_agents()
         self.open_editor("vibe-agent")
-        self.page.get_by_label("Subagenten-Rechte", exact=True).select_option(
-            label="ausgewählt"
+        self.page.get_by_label("Subagent permissions", exact=True).select_option(
+            value="ausgewählt"
         )
 
         self.assertEqual(
@@ -417,9 +421,9 @@ class F32SubagentUiTest(unittest.TestCase):
         )
         text = self.subagents_box_text()
         self.assertIn("vibe", text, "Der Hinweis zum Vibe-Agenten fehlt")
-        self.assertIn(
-            "eigenen typs",
+        self.assertRegex(
             text,
+            r"eigenen typs|own type",
             "Der Hinweis muss den Selbstaufruf des eigenen Typs nennen",
         )
 
@@ -427,39 +431,41 @@ class F32SubagentUiTest(unittest.TestCase):
         """AK UI: mode primary blendet die Eigen-Checkbox aus und erklärt warum."""
         self.open_agents()
         self.open_editor("tester")
-        self.page.get_by_label("Subagenten-Rechte", exact=True).select_option(
-            label="ausgewählt"
+        self.page.get_by_label("Subagent permissions", exact=True).select_option(
+            value="ausgewählt"
         )
         self.own_checkbox().wait_for()
 
-        self.page.get_by_label("Modus", exact=True).select_option("primary")
+        self.page.get_by_label("Mode", exact=True).select_option("primary")
         self.assertEqual(
             self.own_checkbox().count(),
             0,
             "Bei mode primary darf keine Eigen-Checkbox erscheinen",
         )
         text = self.subagents_box_text()
-        self.assertIn("modus", text, "Der Hinweis zum erforderlichen Modus fehlt")
+        self.assertRegex(
+            text, r"modus|mode", "Der Hinweis zum erforderlichen Modus fehlt"
+        )
         self.assertIn("subagent", text)
         self.assertRegex(text, r"\ball\b")
 
         # Zurück auf subagent: Checkbox erscheint wieder (ausgeblendet, nicht
         # dauerhaft entfernt).
-        self.page.get_by_label("Modus", exact=True).select_option("subagent")
+        self.page.get_by_label("Mode", exact=True).select_option("subagent")
         self.own_checkbox().wait_for()
 
     def test_05_new_agent_offers_unchecked_own_checkbox(self):
         """AK UI: Auch neue Agenten können den Selbstaufruf wählen, aber nie als Standard."""
         self.open_agents()
-        self.page.get_by_role("button", name="Neuer Agent").click()
-        self.page.get_by_label("Beschreibung", exact=True).wait_for()
+        self.page.get_by_role("button", name="New agent").click()
+        self.page.get_by_label("Description", exact=True).wait_for()
 
         # Initial steht „keine“: keine Eigen-Checkbox.
         self.assertEqual(self.own_checkbox().count(), 0)
 
         self.page.get_by_label("Name", exact=True).fill("neu")
-        self.page.get_by_label("Subagenten-Rechte", exact=True).select_option(
-            label="ausgewählt"
+        self.page.get_by_label("Subagent permissions", exact=True).select_option(
+            value="ausgewählt"
         )
         own = self.own_checkbox()
         own.wait_for()
@@ -476,18 +482,18 @@ class F32SubagentUiTest(unittest.TestCase):
 
         # Ausgangsstand: 'task: allow' → „alle“.
         self.assertEqual(
-            self.page.get_by_label("Subagenten-Rechte", exact=True).input_value(),
+            self.page.get_by_label("Subagent permissions", exact=True).input_value(),
             "alle",
         )
         self.assertEqual(self.own_checkbox().count(), 0)
 
-        self.page.get_by_label("Subagenten-Rechte", exact=True).select_option(
-            label="keine"
+        self.page.get_by_label("Subagent permissions", exact=True).select_option(
+            value="keine"
         )
         self.assertEqual(self.own_checkbox().count(), 0)
 
-        self.page.get_by_label("Subagenten-Rechte", exact=True).select_option(
-            label="alle"
+        self.page.get_by_label("Subagent permissions", exact=True).select_option(
+            value="alle"
         )
         self.assertEqual(self.own_checkbox().count(), 0)
 
@@ -549,8 +555,8 @@ class F32SubagentUiTest(unittest.TestCase):
 
         self.open_agents()
         self.open_editor("tester")
-        self.page.get_by_label("Rolle", exact=True).select_option("vibe")
-        self.page.get_by_role("button", name="Speichern", exact=True).click()
+        self.page.get_by_label("Role", exact=True).select_option("vibe")
+        self.page.get_by_role("button", name="Save", exact=True).click()
 
         self.wait_for_toast(
             "eigenen typs",

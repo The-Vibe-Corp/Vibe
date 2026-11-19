@@ -63,6 +63,7 @@ Keine echten Modellaufrufe, keine produktive Installation.
 import base64
 import json
 import os
+import re
 import socket
 import subprocess
 import sys
@@ -346,13 +347,13 @@ class F30BrowserTest(unittest.TestCase):
         row.wait_for(state="visible", timeout=20000)
         row.click()
         tabs = self.page.locator(
-            "[aria-label='Projektbereiche'] button[role=tab]")
+            "[aria-label='Project sections'] button[role=tab]")
         tabs.first.wait_for(state="visible", timeout=20000)
 
     def open_output(self):
         tabs = self.page.locator(
-            "[aria-label='Projektbereiche'] button[role=tab]")
-        out_tab = tabs.filter(has_text="Ausgabe").first
+            "[aria-label='Project sections'] button[role=tab]")
+        out_tab = tabs.filter(has_text="Output").first
         out_tab.click()
         self.panel().wait_for(state="visible", timeout=15000)
 
@@ -437,7 +438,7 @@ class EnlargeTest(F30BrowserTest):
         for index in range(count):
             candidate = buttons.nth(index)
             label = candidate.get_attribute("aria-label") or ""
-            if "vergrö" in label.lower():
+            if re.search(r"vergr|expand|enlarge", label.lower()):
                 enlarge = candidate
                 break
         self.assertIsNotNone(
@@ -516,7 +517,7 @@ class PollingRefreshTest(F30BrowserTest):
         for index in range(buttons.count()):
             candidate = buttons.nth(index)
             label = candidate.get_attribute("aria-label") or ""
-            if "vergrö" in label.lower():
+            if re.search(r"vergr|expand|enlarge", label.lower()):
                 enlarge = candidate
                 break
         self.assertIsNotNone(enlarge, "Kein Vergrößern-Knopf gefunden")

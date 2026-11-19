@@ -67,6 +67,8 @@ class FeedbackCompletedBrowserTest(unittest.TestCase):
         cls.commit = init_git_repo(cls.root)
         cls.log_dir = cls.root / "_logs"
         cls.log_dir.mkdir()
+        cls.state_dir = cls.root / "_state"
+        cls.state_dir.mkdir()
         cls.port = free_port()
         env = os.environ.copy()
         env.update(
@@ -74,6 +76,17 @@ class FeedbackCompletedBrowserTest(unittest.TestCase):
                 "VIBE": str(cls.root),
                 "VIBE_NO_CONTAINER": "1",
                 "VIBE_UI_PORT": str(cls.port),
+                # Isolation: Ohne VIBE_RUNTIME würde die persönliche
+                # Konfiguration des Entwicklers einen Laufzeitordner
+                # außerhalb des Temp-Bereichs wählen (im Sandbox-Lauf
+                # schreibgeschützt).
+                "VIBE_RUNTIME": str(cls.log_dir),
+                # Isolation: Auch der Zustandsordner (vibe.json mit
+                # zusätzlichen Entwicklungsordnern) kommt aus der
+                # persönlichen Konfiguration. Ohne eigene VIBE_STATE listet
+                # die Oberfläche fremde Projekte, und "tr.row" mit
+                # Teiltreffer öffnet das falsche Projekt.
+                "VIBE_STATE": str(cls.state_dir),
             }
         )
         cls.proc = subprocess.Popen(
@@ -149,12 +162,12 @@ class FeedbackCompletedBrowserTest(unittest.TestCase):
         row = self.page.locator("tr.row", has_text="proj").first
         row.wait_for()
         row.click()
-        self.page.get_by_text("Feedback eintragen").wait_for()
+        self.page.get_by_text("Add feedback").wait_for()
         self.page.locator("#feedback").wait_for()
 
     def toggle(self):
         return self.page.locator("#feedback").get_by_role(
-            "button", name=re.compile("Abgeschlossene")
+            "button", name=re.compile(r"Abgeschlossene|completed", re.I)
         )
 
     def test_completed_entries_are_hidden_by_default_and_can_be_shown(self):
@@ -170,7 +183,9 @@ class FeedbackCompletedBrowserTest(unittest.TestCase):
             1,
             "offener Punkt F3 fehlt",
         )
-        self.assertIn("anzeigen (1)", self.toggle().inner_text())
+        self.assertRegex(
+            self.toggle().inner_text(),
+            r"anzeigen \(1\)|Show completed \(1\)")
 
         self.toggle().click()
 
@@ -178,7 +193,8 @@ class FeedbackCompletedBrowserTest(unittest.TestCase):
             lambda: self.page.locator('.fbentry[data-id="F1"]').count() == 1,
             message="abgeschlossener Punkt wurde nicht eingeblendet",
         )
-        self.assertIn("ausblenden", self.toggle().inner_text())
+        self.assertRegex(
+            self.toggle().inner_text(), r"ausblenden|Hide completed")
         self.assertEqual(self.page.locator('.fbentry[data-id="F1"]').count(), 1)
 
         self.toggle().click()
@@ -198,19 +214,19 @@ class FeedbackCompletedBrowserTest(unittest.TestCase):
 
         completed = self.page.locator('.fbentry[data-id="F1"]')
         self.assertEqual(
-            completed.get_by_role("button", name="Bearbeiten").count(),
+            completed.get_by_role("button", name="Edit").count(),
             0,
             "abgeschlossener Punkt lässt sich weiterhin bearbeiten",
         )
-        self.assertIn("nicht bearbeitbar", completed.inner_text())
+        self.assertRegex(completed.inner_text(), r"nicht bearbeitbar|read-only")
         self.assertEqual(
-            completed.get_by_role("button", name="Löschen").count(),
+            completed.get_by_role("button", name="Delete").count(),
             1,
             "Löschen abgeschlossener Punkte ist nicht mehr möglich",
         )
 
         open_entry = self.page.locator('.fbentry[data-id="F3"]')
-        self.assertEqual(open_entry.get_by_role("button", name="Bearbeiten").count(), 1)
+        self.assertEqual(open_entry.get_by_role("button", name="Edit").count(), 1)
 
     def test_checked_entry_without_proof_stays_visible_and_editable(self):
         self.open_detail()
@@ -221,7 +237,7 @@ class FeedbackCompletedBrowserTest(unittest.TestCase):
             1,
             "gesetzter Punkt ohne Nachweis wurde wie abgeschlossen ausgeblendet",
         )
-        self.assertEqual(unproven.get_by_role("button", name="Bearbeiten").count(), 1)
+        self.assertEqual(unproven.get_by_role("button", name="Edit").count(), 1)
 
 
 if __name__ == "__main__":

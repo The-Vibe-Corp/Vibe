@@ -359,7 +359,7 @@ class GitHubCardAP9UiTest(unittest.TestCase):
         self.page.goto(self.base + "/#t=" + self.token)
         self.page.wait_for_selector(".row")
         self.page.locator(".row").filter(has_text=name).first.click()
-        self.page.get_by_role("tab", name="Einstellungen").click()
+        self.page.get_by_role("tab", name="Settings").click()
         card = self.git_card()
         self.expand_optional("#github")
         return card
@@ -439,7 +439,7 @@ class GitHubCardAP9UiTest(unittest.TestCase):
     def connection_result_line(self, card):
         """Ergebniszeile des Verbindungstests („Verbindung: …“) — der
         Doppelpunkt unterscheidet sie vom Knopf „Verbindung testen“."""
-        line = card.locator("text=/Verbindung:/").last
+        line = card.locator("text=/Verbindung:|Connection:/").last
         line.wait_for(state="visible", timeout=20000)
         return line
 
@@ -450,7 +450,7 @@ class GitHubCardAP9UiTest(unittest.TestCase):
         card = self.open_project_settings("gh-ok")
 
         button = card.get_by_role(
-            "button", name=re.compile(r"Verbindung testen", re.I))
+            "button", name=re.compile(r"Verbindung testen|Test connection", re.I))
         self.assertEqual(button.count(), 1, "Knopf „Verbindung testen“ fehlt")
         button.click()
 
@@ -469,7 +469,7 @@ class GitHubCardAP9UiTest(unittest.TestCase):
         card = self.open_project_settings("gh-bad")
 
         button = card.get_by_role(
-            "button", name=re.compile(r"Verbindung testen", re.I))
+            "button", name=re.compile(r"Verbindung testen|Test connection", re.I))
         self.assertEqual(button.count(), 1)
         button.click()
 
@@ -477,7 +477,7 @@ class GitHubCardAP9UiTest(unittest.TestCase):
         text = line.inner_text()
         self.assertTrue(text.strip(), "Ergebniszeile braucht einen Text")
         self.assertRegex(
-            text, re.compile(r"Fehler|nicht|scheitert|fehl", re.I), text)
+            text, re.compile(r"Fehler|nicht|scheitert|fehl|ERROR|not|fail", re.I), text)
         # Farb-/Zustandskennung: die Fehlerkennung unterscheidet sich von der
         # Erfolgsdarstellung (eigene CSS-Klasse erwartet).
         classes = self.marking_of(line)
@@ -495,9 +495,12 @@ class GitHubCardAP9UiTest(unittest.TestCase):
 
         text = card.inner_text()
 
-        self.assertIn("für dieses Projekt gespeichert (verschlüsselt)", text,
-                      "Token-Zeile muss die projektspezifische verschlüsselte "
-                      "Ablage benennen; Karte: %r" % text[:400])
+        self.assertRegex(
+            text,
+            re.compile(r"(für dieses Projekt gespeichert \(verschlüsselt\)"
+                       r"|saved for this project \(encrypted\))"),
+            "Token-Zeile muss die projektspezifische verschlüsselte "
+            "Ablage benennen; Karte: %r" % text[:400])
         self.assertNotIn(PROJECT_TOKEN, text)
 
     def test_branch_rows_offer_wechseln_and_push_and_they_work(self):
@@ -506,7 +509,7 @@ class GitHubCardAP9UiTest(unittest.TestCase):
         branches = self.expand_details(card, "Branches")
 
         wechseln = branches.get_by_role(
-            "button", name=re.compile(r"^\s*Wechseln\s*$", re.I))
+            "button", name=re.compile(r"^\s*(Wechseln|Switch)\s*$", re.I))
         push = branches.get_by_role("button", name=re.compile(r"^\s*Push\s*$", re.I))
         self.assertGreaterEqual(wechseln.count(), 1,
                                 "Kein „Wechseln“-Knopf je Branch-Zeile")
@@ -514,7 +517,7 @@ class GitHubCardAP9UiTest(unittest.TestCase):
 
         # „Wechseln“ auf feature/arbeit wechselt den Arbeitsbaum wirklich:
         self.button_in_row(branches, "feature/arbeit",
-                           re.compile(r"^\s*Wechseln\s*$", re.I)).click()
+                           re.compile(r"^\s*(Wechseln|Switch)\s*$", re.I)).click()
         wait_for_toast(self.page, r"wechsel|Branch", timeout=15000)
         deadline = time.time() + 10
         while time.time() < deadline:
@@ -546,12 +549,13 @@ class GitHubCardAP9UiTest(unittest.TestCase):
 
         field = card.locator(
             "input[aria-label*='Basis-Branch'], "
+            "input[aria-label*='Base branch'], "
             "input[placeholder*='Basis-Branch']")
         self.assertEqual(field.count(), 1,
                          "Einstellungsfeld „Basis-Branch für Merge-Requests“ fehlt")
         field.fill("main")
 
-        card.get_by_role("button", name=re.compile("Speichern", re.I)).click()
+        card.get_by_role("button", name="Save", exact=True).click()
         self.assertTrue(
             wait_for_file_content(self.env_file, 'GITHUB_BASE="main"'),
             "GITHUB_BASE wurde nicht in die project.env gespeichert")

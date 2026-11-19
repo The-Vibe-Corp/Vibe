@@ -214,10 +214,10 @@ class Ap19SessionsUiTest(unittest.TestCase):
         self.page_errors = []
         self.dialogs = []
         self.get_payload = payload([
-            entry(FAILED, "failed", "fehlgeschlagen", last=NOW - 30),
-            entry(ABORTED, "aborted", "abgebrochen", last=NOW - 20),
-            entry(FINISHED, "finished", "abgeschlossen", last=NOW - 10),
-            entry(UNKNOWN, "unknown", "unbekannt", last=NOW),
+            entry(FAILED, "failed", "failed", last=NOW - 30),
+            entry(ABORTED, "aborted", "aborted", last=NOW - 20),
+            entry(FINISHED, "finished", "completed", last=NOW - 10),
+            entry(UNKNOWN, "unknown", "unknown", last=NOW),
         ])
         self.posts = []
         self.page = self.browser.new_page(
@@ -270,11 +270,11 @@ class Ap19SessionsUiTest(unittest.TestCase):
 
     def resume_button(self, session):
         return self.row(session).locator("button").filter(
-            has_text=re.compile(r"^Fortsetzen$"))
+            has_text=re.compile(r"^Resume$"))
 
     def visible_resume_buttons(self):
         buttons = self.card().locator("button").filter(
-            has_text=re.compile(r"^Fortsetzen$"))
+            has_text=re.compile(r"^Resume$"))
         result = []
         for index in range(buttons.count()):
             button = buttons.nth(index)
@@ -316,7 +316,7 @@ class Ap19SessionsUiTest(unittest.TestCase):
         for _ in range(max_steps):
             self.page.keyboard.press("Tab")
             active = self.active_element()
-            if active["text"] == "Fortsetzen" and active["session"] == session:
+            if active["text"] == "Resume" and active["session"] == session:
                 return
         self.fail(
             f"Der Fortsetzen-Knopf für {session} war per Tab nicht erreichbar")
@@ -330,10 +330,10 @@ class SessionsCardTest(Ap19SessionsUiTest):
         self.open_project()
 
         for session, label in (
-            (FAILED, "fehlgeschlagen"),
-            (ABORTED, "abgebrochen"),
-            (FINISHED, "abgeschlossen"),
-            (UNKNOWN, "unbekannt"),
+            (FAILED, "failed"),
+            (ABORTED, "aborted"),
+            (FINISHED, "completed"),
+            (UNKNOWN, "unknown"),
         ):
             row = self.row(session)
             self.assertTrue(row.is_visible(),
@@ -375,7 +375,7 @@ class SessionsCardTest(Ap19SessionsUiTest):
         self.open_project()
 
         card_text = self.card().inner_text()
-        self.assertIn("Noch keine erfassten Sessions.", card_text, card_text)
+        self.assertIn("No recorded sessions yet.", card_text, card_text)
         self.assert_clean_page()
 
 
@@ -403,7 +403,7 @@ class SessionsContinueUiTest(Ap19SessionsUiTest):
     def test_resume_is_not_offered_while_the_run_is_active(self):
         """Bei aktivem Lauf gibt es keinen betätigbaren Fortsetzen-Knopf."""
         self.get_payload = payload(
-            [entry(ABORTED, "aborted", "abgebrochen")], running=True)
+            [entry(ABORTED, "aborted", "aborted")], running=True)
 
         self.open_project()
 
@@ -415,7 +415,7 @@ class SessionsContinueUiTest(Ap19SessionsUiTest):
     def test_pi_shows_no_resume_button_and_explains_no_session(self):
         """Ohne Fortsetzen-Fähigkeit (Pi) erscheint kein Knopf, aber der Grund."""
         self.get_payload = payload(
-            [entry(ABORTED, "aborted", "abgebrochen", harness="pi")],
+            [entry(ABORTED, "aborted", "aborted", harness="pi")],
             resume_supported=False)
 
         self.open_project()

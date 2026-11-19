@@ -63,6 +63,12 @@ class RebuildProjectBrowserTest(unittest.TestCase):
                 "VIBE": str(cls.root),
                 "VIBE_NO_CONTAINER": "1",
                 "VIBE_UI_PORT": str(cls.port),
+                # Isolation: Laufzeit, Zustand und Toolchain stammen sonst aus
+                # der persönlichen Konfiguration (im Sandbox-Lauf teilweise
+                # schreibgeschützt). Der Test legt seine Toolchain selbst an.
+                "VIBE_RUNTIME": str(cls.log_dir),
+                "VIBE_INSTALL": str(toolchain),
+                "VIBE_STATE": str(cls.root / "_state"),
             }
         )
         cls.proc = subprocess.Popen(
@@ -116,11 +122,11 @@ class RebuildProjectBrowserTest(unittest.TestCase):
                 "() => [...document.querySelectorAll('#nf select option')].some(o => o.value === 'rebuild')"
             )
 
-            page.locator("#nf input[placeholder^='projektname']").fill("rebuild-ui")
+            page.locator("#nf input").first.fill("rebuild-ui")
             page.locator("#nf select").select_option("rebuild")
-            page.get_by_role("button", name="Anlegen und Assistent öffnen").click()
+            page.get_by_role("button", name="Create and open assistant").click()
 
-            page.get_by_role("tab", name="Arbeit", exact=True).wait_for()
+            page.get_by_role("tab", name="Work", exact=True).wait_for()
             project = self.root / "rebuild-ui"
             env = (project / ".vibe" / "project.env").read_text(encoding="utf-8")
             self.assertIn("TYPE=rebuild", env)

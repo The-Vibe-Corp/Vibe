@@ -171,7 +171,7 @@ class QuestionBrowserTest(unittest.TestCase):
     def open_dashboard(self):
         self.page.goto(self.base + "/#t=" + self.token)
         self.page.locator("table").first.wait_for()
-        self.page.get_by_role("button", name="Projekte").wait_for()
+        self.page.get_by_role("button", name="Projects").wait_for()
 
     def test_a_question_appears_with_options_and_is_answered(self):
         self.open_dashboard()
@@ -191,7 +191,7 @@ class QuestionBrowserTest(unittest.TestCase):
         self.assertEqual(options.nth(1).inner_text(), "Nein, grau")
 
         # Benachrichtigung: sichtbarer Hinweis und Zähler im Seitentitel.
-        self.page.locator("#toasts .toast", has_text="Rückfrage").wait_for(timeout=10000)
+        self.page.locator("#toasts .toast", has_text="Question").wait_for(timeout=10000)
         self.wait_until(
             lambda: "(1)" in self.page.title(),
             message="Der Seitentitel zeigt die offene Rückfrage nicht an",
@@ -226,9 +226,9 @@ class QuestionBrowserTest(unittest.TestCase):
 
         panel = self.page.locator('#questions [data-question="%s"]' % qid)
         panel.wait_for(timeout=10000)
-        field = panel.get_by_label("Eigene Antwort zu " + qid)
+        field = panel.get_by_label("Custom answer for " + qid)
         field.fill("Herzlich willkommen")
-        panel.get_by_role("button", name="Antwort senden", exact=True).click()
+        panel.get_by_role("button", name="Send answer", exact=True).click()
 
         self.wait_until(
             lambda: self.page.locator("#questions [data-question]").count() == 0,
@@ -250,7 +250,7 @@ class QuestionBrowserTest(unittest.TestCase):
 
         panel = self.page.locator('#questions [data-question="%s"]' % qid)
         panel.wait_for(timeout=10000)
-        panel.get_by_role("button", name="Autonom entscheiden", exact=True).click()
+        panel.get_by_role("button", name="Decide autonomously", exact=True).click()
 
         state = self.log_dir / "autonomous.json"
         self.wait_until(
@@ -258,9 +258,10 @@ class QuestionBrowserTest(unittest.TestCase):
             and json.loads(state.read_text(encoding="utf-8"))["projects"]["proj"]["enabled"],
             message="Der autonome Modus wurde nicht aktiviert",
         )
-        self.page.locator("#toasts .toast", has_text="Autonomer Modus").wait_for(
-            timeout=10000
-        )
+        self.page.locator(
+            "#toasts .toast",
+            has_text=re.compile(r"Autonomer Modus|Autonomous mode"),
+        ).wait_for(timeout=10000)
 
     def test_the_project_detail_switches_the_autonomous_mode(self):
         self.open_dashboard()
@@ -268,10 +269,10 @@ class QuestionBrowserTest(unittest.TestCase):
 
         card = self.page.locator("#autonomous")
         card.wait_for(timeout=10000)
-        self.assertIn("aus", card.inner_text())
-        card.get_by_role("button", name="Autonomen Modus einschalten").click()
+        self.assertIn("off", card.inner_text())
+        card.get_by_role("button", name="Turn on autonomous mode").click()
 
-        card.get_by_role("button", name="Autonomen Modus ausschalten").wait_for(
+        card.get_by_role("button", name="Turn off autonomous mode").wait_for(
             timeout=10000
         )
         state = self.log_dir / "autonomous.json"
@@ -279,8 +280,8 @@ class QuestionBrowserTest(unittest.TestCase):
             json.loads(state.read_text(encoding="utf-8"))["projects"]["proj"]["enabled"]
         )
 
-        card.get_by_role("button", name="Autonomen Modus ausschalten").click()
-        card.get_by_role("button", name="Autonomen Modus einschalten").wait_for(
+        card.get_by_role("button", name="Turn off autonomous mode").click()
+        card.get_by_role("button", name="Turn on autonomous mode").wait_for(
             timeout=10000
         )
         self.assertFalse(

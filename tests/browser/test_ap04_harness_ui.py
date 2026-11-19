@@ -159,7 +159,7 @@ class HarnessBrowserTest(unittest.TestCase):
     def open_env(self):
         self.page.goto(self.base + "/#t=" + self.token)
         self.page.wait_for_selector("nav button")
-        self.page.get_by_role("button", name="Umgebung").click()
+        self.page.get_by_role("button", name="Environment").click()
         self.page.wait_for_selector("#harness")
 
     def test_harness_is_visible_and_pi_can_be_selected(self):
@@ -183,7 +183,7 @@ class HarnessBrowserTest(unittest.TestCase):
 
         self.page.reload()
         self.page.wait_for_selector("nav button")
-        self.page.get_by_role("button", name="Umgebung").click()
+        self.page.get_by_role("button", name="Environment").click()
         self.page.wait_for_selector("#harness")
         self.assertEqual(self.page.locator("#harness-select").input_value(), "pi")
 

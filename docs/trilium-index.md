@@ -71,3 +71,4 @@ Zuordnung der Projekt-Dokumentation zu den Notizen in Trilium (Stand 2026-11-19)
 | vibe | Features | AP19 Session Management — Register, Erfassung, Auflistung und exaktes Fortsetzen | `bJEzUzTgBSHE` |
 | vibe | Features | F32 Subagenten-Parallelisierung: Selbstaufruf als Opt-in | `AxYQlwWQK6oX` |
 | vibe | Features | B16 Fertiggestellte APs für GitHub vorbereiten und als PR erstellen | `pYVo2QP0e19m` |
+| vibe | Features | AP21 Englische Sprache und i18n | `Vh6mV66XMgcm` |

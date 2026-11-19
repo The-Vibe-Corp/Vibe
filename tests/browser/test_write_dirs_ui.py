@@ -217,12 +217,12 @@ class WriteDirsBrowserTest(unittest.TestCase):
         row = self.page.locator("tr.row", has_text="proj").first
         row.wait_for()
         row.click()
-        self.page.get_by_role("tab", name="Einstellungen", exact=True).click()
-        self.page.get_by_text("Schreibrechte (Agenten)").wait_for()
+        self.page.get_by_role("tab", name="Settings", exact=True).click()
+        self.page.get_by_text("Write access (agents)").wait_for()
         self.expand_optional("#settings-rechte")
 
     def rights_card(self):
-        return self.page.locator(".card", has_text="Schreibrechte (Agenten)")
+        return self.page.locator(".card", has_text="Write access (agents)")
 
     def stored_dirs(self):
         path = self.project / ".vibe" / "permissions.json"
@@ -246,13 +246,15 @@ class WriteDirsBrowserTest(unittest.TestCase):
 
         card.get_by_text("/tmp/opencode", exact=True).wait_for()
         card.get_by_text(project_path, exact=True).wait_for()
-        self.assertIn("Standardliste aktiv.", card.inner_text())
-        self.assertIn("die Liste ist keine Sandbox", card.inner_text())
+        self.assertIn("Default list active.", card.inner_text())
+        self.assertRegex(
+            card.inner_text(),
+            r"die Liste ist keine Sandbox|the list is not a sandbox")
 
         extra = "/tmp/opencode/f3-ui"
         self.mark_card("#settings-rechte")
         card.get_by_placeholder("/absoluter/pfad").fill(extra)
-        card.get_by_role("button", name="Hinzufügen").click()
+        card.get_by_role("button", name="Add").click()
         self.wait_until(
             lambda: self.stored_dirs() is not None
             and os.path.realpath(extra) in self.stored_dirs(),
@@ -264,11 +266,11 @@ class WriteDirsBrowserTest(unittest.TestCase):
         )
         self.expand_optional("#settings-rechte")
         card.get_by_text(os.path.realpath(extra), exact=True).wait_for()
-        self.assertIn("Eigene Liste aktiv.", card.inner_text())
+        self.assertIn("Custom list active.", card.inner_text())
 
         row = card.locator(".bar", has_text=os.path.realpath(extra))
         self.mark_card("#settings-rechte")
-        row.get_by_role("button", name="Entfernen").click()
+        row.get_by_role("button", name="Remove").click()
         self.wait_until(
             lambda: self.stored_dirs() is not None
             and os.path.realpath(extra) not in self.stored_dirs(),
@@ -284,12 +286,12 @@ class WriteDirsBrowserTest(unittest.TestCase):
         )
         self.expand_optional("#settings-rechte")
         self.rights_card().get_by_role(
-            "button", name="Standard wiederherstellen").click()
+            "button", name="Restore defaults").click()
         self.rights_card().locator(".confirm").first.wait_for(
             state="visible", timeout=10000)
         self.mark_card("#settings-rechte")
         self.rights_card().locator(".confirm").get_by_role(
-            "button", name="Ja, zurücksetzen").click()
+            "button", name="Yes, reset").click()
         self.wait_until(
             lambda: self.stored_dirs() is None,
             message="Zurücksetzen entfernte die eigene Liste nicht",
@@ -302,16 +304,16 @@ class WriteDirsBrowserTest(unittest.TestCase):
             "Die Schreibrechte-Karte wurde nach dem Zurücksetzen nicht neu aufgebaut",
         )
         self.expand_optional("#settings-rechte")
-        card.get_by_text("Standardliste aktiv.").wait_for()
+        card.get_by_text("Default list active.").wait_for()
 
     def test_agent_editor_is_global_and_uses_open_write_rights(self):
         """AP03: Der Editor legt ausschließlich systemweite Agenten an."""
         self.page.goto(self.base + "/#t=" + self.token)
-        self.page.get_by_role("button", name="Agenten & Modelle").click()
-        self.page.get_by_role("button", name="Neuer Agent").click()
+        self.page.get_by_role("button", name="Agents & Models").click()
+        self.page.get_by_role("button", name="New agent").click()
 
-        form = self.page.locator(".card", has_text="Datei (Frontmatter + Prompt)")
-        geltung = form.get_by_label("Geltung", exact=True)
+        form = self.page.locator(".card", has_text="File (frontmatter + prompt)")
+        geltung = form.get_by_label("Scope", exact=True)
         geltung.wait_for()
         self.assertTrue(geltung.is_disabled())
         self.assertEqual(geltung.input_value(), "global")
@@ -320,8 +322,8 @@ class WriteDirsBrowserTest(unittest.TestCase):
             ["global"],
         )
 
-        form.get_by_label("Rechte", exact=True).select_option("voll")
-        form.get_by_role("button", name="Datei aus Eingaben erzeugen").click()
+        form.get_by_label("Permissions", exact=True).select_option("voll")
+        form.get_by_role("button", name="Generate file from inputs").click()
 
         raw = form.locator("textarea.raw")
         self.wait_until(
@@ -334,7 +336,7 @@ class WriteDirsBrowserTest(unittest.TestCase):
             f'"{os.path.realpath(self.project)}/**": allow', text
         )
         form.get_by_text(
-            "Global: volle Schreibrechte ohne Verzeichnisgrenze."
+            "Global: full write access without directory limit."
         ).wait_for()
 
     def test_apply_keeps_read_only_agent_unchanged(self):
@@ -345,7 +347,7 @@ class WriteDirsBrowserTest(unittest.TestCase):
         self.open_detail()
 
         self.rights_card().get_by_role(
-            "button", name="Auf Projektagenten anwenden"
+            "button", name="Apply to project agents"
         ).click()
 
         self.wait_until(
@@ -360,7 +362,7 @@ class WriteDirsBrowserTest(unittest.TestCase):
         card = self.rights_card()
         previous_card = card.element_handle()
 
-        card.get_by_role("button", name="Auf Projektagenten anwenden").click()
+        card.get_by_role("button", name="Apply to project agents").click()
         self.wait_until(
             lambda: '    "*": deny' in agent.read_text(encoding="utf-8"),
             message="Schreibrechte wurden nicht auf den Projektagenten angewendet",
@@ -381,7 +383,7 @@ class WriteDirsBrowserTest(unittest.TestCase):
         )
         shot_card = self.rights_card()
         self.expand_optional("#settings-rechte")
-        shot_card.get_by_text("Standardliste aktiv.").wait_for()
+        shot_card.get_by_text("Default list active.").wait_for()
 
         SHOT.parent.mkdir(parents=True, exist_ok=True)
         shot_card.screenshot(path=str(SHOT))

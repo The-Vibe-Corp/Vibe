@@ -394,13 +394,13 @@ class B14BrowserTest(unittest.TestCase):
         row.wait_for(state="visible", timeout=20000)
         row.click()
         tabs = self.page.locator(
-            "[aria-label='Projektbereiche'] button[role=tab]")
+            "[aria-label='Project sections'] button[role=tab]")
         tabs.first.wait_for(state="visible", timeout=20000)
 
     def open_output(self):
         tabs = self.page.locator(
-            "[aria-label='Projektbereiche'] button[role=tab]")
-        out_tab = tabs.filter(has_text="Ausgabe").first
+            "[aria-label='Project sections'] button[role=tab]")
+        out_tab = tabs.filter(has_text="Output").first
         out_tab.click()
         self.panel().wait_for(state="visible", timeout=15000)
 

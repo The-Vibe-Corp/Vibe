@@ -7,6 +7,7 @@ Zustand ohne Neuladen auf „gestoppt“ umstellen. Der Screenshot entsteht in
 diesem Test.
 """
 import os
+import re
 import socket
 import subprocess
 import sys
@@ -162,11 +163,11 @@ class RunAutostopBrowserTest(unittest.TestCase):
         self.open_detail()
         pill = self.pill()
         self.wait_until(
-            lambda: pill.inner_text().strip() == "läuft",
+            lambda: re.search(r"läuft|running", pill.inner_text().strip()),
             message="Laufender Agentenlauf wurde nicht als aktiv angezeigt",
         )
 
-        self.assertIn("aktiv", pill.get_attribute("title") or "")
+        self.assertRegex(pill.get_attribute("title") or "", r"aktiv|active")
         self.assertIn("run", pill.get_attribute("class") or "")
 
         self.assertEqual(
@@ -176,12 +177,13 @@ class RunAutostopBrowserTest(unittest.TestCase):
             0,
         )
         self.wait_until(
-            lambda: pill.inner_text().strip() == "gestoppt",
+            lambda: re.search(r"gestoppt|stopped", pill.inner_text().strip()),
             message="Projektdetail blieb nach dem Ende des Laufs auf aktiv",
         )
 
         self.assertNotIn("run", pill.get_attribute("class") or "")
-        self.assertIn("beendet", pill.get_attribute("title") or "")
+        self.assertRegex(
+            pill.get_attribute("title") or "", r"beendet|finished")
 
         SHOT.parent.mkdir(parents=True, exist_ok=True)
         self.page.screenshot(path=str(SHOT))

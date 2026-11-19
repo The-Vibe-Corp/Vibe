@@ -147,25 +147,25 @@ class VerifyPackageUiTest(unittest.TestCase):
         row = self.page.locator("tr.row", has_text="proj").first
         row.wait_for()
         row.click()
-        self.page.get_by_role("tab", name="Arbeit", exact=True).wait_for()
+        self.page.get_by_role("tab", name="Work", exact=True).wait_for()
 
     def test_package_button_runs_the_package_check_and_streams_its_output(self):
         self.open_detail()
         arbeit = self.page.locator('[role="tabpanel"][data-panel="arbeit"]')
 
         # Alle drei Prüfstufen bleiben nebeneinander erreichbar.
-        for label in ("Prüfung quick", "Prüfung package", "Prüfung full"):
+        for label in ("Check quick", "Check package", "Check full"):
             self.assertTrue(
                 arbeit.get_by_role("button", name=label).is_visible(),
                 f"Button {label!r} fehlt in der Projektansicht",
             )
 
-        arbeit.get_by_role("button", name="Prüfung package").click()
+        arbeit.get_by_role("button", name="Check package").click()
         self.wait_until(
             lambda: self.page.locator('[role="tab"][aria-selected="true"]')
             .inner_text()
             .strip()
-            == "Ausgabe",
+            == "Output",
             message="Prüfung package wechselte nicht zur Ausgabe",
         )
         self.assertTrue(

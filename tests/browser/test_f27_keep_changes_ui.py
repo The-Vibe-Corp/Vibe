@@ -17,6 +17,7 @@ Die Datei ``F27-trotz-aenderungen.png`` entsteht in diesem Test und zeigt die
 tatsächliche Oberfläche.
 """
 import json
+import re
 import os
 import socket
 import subprocess
@@ -50,6 +51,10 @@ import os
 import sys
 
 args = sys.argv[1:]
+# Lauf-Sockets kommen als "-L <socket>" vor dem Unterkommando; für die
+# Erkennung zählt das Unterkommando, nicht die Socket-Auswahl.
+if args[:1] == ["-L"]:
+    args = args[2:]
 path = os.environ.get("FAKE_TMUX_LOG")
 if path:
     with open(path, "a", encoding="utf-8") as handle:
@@ -244,7 +249,7 @@ class KeepChangesUiTest(unittest.TestCase):
         row = self.page.locator("tr.row", has_text=name).first
         row.wait_for()
         row.click()
-        self.page.get_by_role("button", name="← zurück").wait_for()
+        self.page.get_by_role("button", name="← Back").wait_for()
 
     def new_sessions(self):
         if not self.tmux_log.exists():
@@ -263,7 +268,7 @@ class KeepChangesUiTest(unittest.TestCase):
     def test_dirty_project_offers_keep_changes_with_confirmation_and_files(self):
         self.open_detail("dirtyproj")
         button = self.page.get_by_role(
-            "button", name="Trotz Änderungen starten"
+            "button", name=re.compile(r"Trotz Änderungen starten|Start anyway")
         )
         button.wait_for()
         self.assertTrue(button.is_visible())
@@ -281,7 +286,7 @@ class KeepChangesUiTest(unittest.TestCase):
             group = None
         confirmed = bool(group is not None and group.count())
         if confirmed:
-            yes = group.get_by_role("button").filter(has_not_text="Abbrechen")
+            yes = group.get_by_role("button").filter(has_not_text="Cancel")
             self.assertGreater(
                 yes.count(), 0, "Bestätigung bot keine Zustimmung an"
             )
@@ -296,10 +301,23 @@ class KeepChangesUiTest(unittest.TestCase):
         toasts = self.page.locator("#toasts .toast").filter(
             has_text="unfertig.txt"
         )
-        self.wait_until(
-            lambda: toasts.count() > 0,
-            message="Die Rückmeldung nannte die zurückbehaltene Datei nicht",
-        )
+        observed = []
+        def toast_named_file():
+            texts = []
+            for toast in self.page.locator("#toasts .toast").all():
+                try:
+                    texts.append(toast.inner_text())
+                except Exception:  # noqa: BLE001 - Toast kann verschwinden
+                    pass
+            observed[:] = texts
+            return any("unfertig.txt" in text for text in texts)
+        try:
+            self.wait_until(
+                toast_named_file,
+                message="Die Rückmeldung nannte die zurückbehaltene Datei nicht",
+            )
+        except AssertionError as error:
+            raise AssertionError(str(error) + "; Toasts: " + repr(observed)) from None
         sessions = self.new_sessions()
         self.assertEqual(len(sessions), 1, sessions)
         self.assertIn("VIBE_KEEP_CHANGES=1", sessions[0])
@@ -310,10 +328,10 @@ class KeepChangesUiTest(unittest.TestCase):
 
     def test_clean_project_does_not_offer_an_enabled_keep_changes_action(self):
         self.open_detail("cleanproj")
-        self.page.get_by_role("tab", name="Arbeit", exact=True).wait_for()
+        self.page.get_by_role("tab", name="Work", exact=True).wait_for()
 
         button = self.page.get_by_role(
-            "button", name="Trotz Änderungen starten"
+            "button", name=re.compile(r"Trotz Änderungen starten|Start anyway")
         )
         if button.count():
             self.assertFalse(

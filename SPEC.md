@@ -2,7 +2,7 @@
 
 Status: Verbindliche Zielbeschreibung
 Ausgangsbasis: installierter vibe-v5-Stand plus vorhandener Desktop-Starter
-Sprache der Oberfläche und Dokumentation: Deutsch
+Sprache der Web-Oberfläche: Englisch (Standard; Deutsch auswählbar, weitere Sprachen über Wörterbücher ergänzbar — AP21). Sprache der Dokumentation: Deutsch.
 
 ## Produktziel
 

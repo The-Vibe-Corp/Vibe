@@ -339,13 +339,13 @@ class B11OutputBrowserTest(unittest.TestCase):
         row.wait_for(state="visible", timeout=20000)
         row.click()
         tabs = self.page.locator(
-            "[aria-label='Projektbereiche'] button[role=tab]")
+            "[aria-label='Project sections'] button[role=tab]")
         tabs.first.wait_for(state="visible", timeout=20000)
 
     def open_output(self):
         tabs = self.page.locator(
-            "[aria-label='Projektbereiche'] button[role=tab]")
-        out_tab = tabs.filter(has_text="Ausgabe").first
+            "[aria-label='Project sections'] button[role=tab]")
+        out_tab = tabs.filter(has_text="Output").first
         out_tab.click()
         self.panel().wait_for(state="visible", timeout=15000)
 
@@ -359,19 +359,19 @@ class B11OutputBrowserTest(unittest.TestCase):
         return view.first
 
     def target_select(self):
-        select = self.panel().locator("select[aria-label='Ziel']")
+        select = self.panel().locator("select[aria-label='Target']")
         self.assertGreater(
             select.count(), 0,
-            "Keine Zielauswahl (select[aria-label='Ziel']) gefunden")
+            "Keine Zielauswahl (select[aria-label='Target']) gefunden")
         return select.first
 
     def target_sessions(self):
         return self.page.eval_on_selector_all(
-            "[data-panel='ausgabe'] select[aria-label='Ziel'] option",
+            "[data-panel='ausgabe'] select[aria-label='Target'] option",
             "options => options.map(option => option.value)")
 
     def steer_textarea(self):
-        area = self.panel().locator("textarea[aria-label*='Zusatzanweisung']")
+        area = self.panel().locator("textarea[aria-label*='Zusatzanweisung'], textarea[aria-label*='Additional instruction']")
         self.assertGreater(
             area.count(), 0,
             "Keine Anweisungseingabe (textarea mit aria-label "
@@ -380,14 +380,14 @@ class B11OutputBrowserTest(unittest.TestCase):
 
     def steer_send_button(self):
         button = self.panel().locator("button").filter(
-            has_text=re.compile("senden", re.I)).first
+            has_text=re.compile("senden|Send", re.I)).first
         self.assertGreater(
             button.count(), 0, "Kein Senden-Knopf gefunden")
         return button
 
     def continue_button(self):
         return self.panel().locator("button").filter(
-            has_text=re.compile(r"^Fortsetzen$")).first
+            has_text=re.compile(r"^Resume$")).first
 
     def intercept(self, endpoint):
         records = []

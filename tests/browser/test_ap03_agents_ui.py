@@ -261,15 +261,15 @@ class Ap03AgentsBrowserTest(unittest.TestCase):
 
     def open_agents(self):
         self.page.goto(self.base + "/#t=" + self.token)
-        self.page.get_by_role("button", name="Agenten & Modelle").click()
+        self.page.locator("button[data-t='agents']").click()
         self.page.locator("#agents").wait_for()
         self.page.locator('tr[data-agent="tester"]').wait_for()
 
     def open_editor(self, name="tester"):
         self.page.locator(f'tr[data-agent="{name}"]').get_by_role(
-            "button", name="Bearbeiten"
+            "button", name="Edit"
         ).click()
-        self.page.get_by_label("Beschreibung", exact=True).wait_for()
+        self.page.get_by_label("Description", exact=True).wait_for()
 
     def open_project_settings(self):
         self.page.goto(self.base + "/#t=" + self.token)
@@ -277,7 +277,7 @@ class Ap03AgentsBrowserTest(unittest.TestCase):
         row = self.page.locator("tr.row", has_text="proj").first
         row.wait_for()
         row.click()
-        self.page.get_by_role("tab", name="Einstellungen", exact=True).click()
+        self.page.locator("[role='tab'][aria-controls='panel-einstellungen']").click()
         self.page.locator("#project-agents").wait_for()
         self.page.locator('tr[data-project-agent="vibe-agent"]').wait_for()
 
@@ -319,7 +319,7 @@ class Ap03AgentsBrowserTest(unittest.TestCase):
         status = self.page.locator("#vibe-status")
         status.wait_for()
         status_text = status.inner_text()
-        self.assertIn("Vibe-Agent", status_text)
+        self.assertIn("Vibe agent", status_text)
         self.assertIn("vibe-agent", status_text)
         self.assertIn("opencode/vibe-modell", status_text)
 
@@ -334,7 +334,7 @@ class Ap03AgentsBrowserTest(unittest.TestCase):
             self.page.locator('td[data-ergebnis="tester"]').inner_text(),
         )
         self.assertIn(
-            "alle", self.page.locator('td[data-erlaubt="tester"]').inner_text()
+            "all", self.page.locator('td[data-erlaubt="tester"]').inner_text()
         )
         self.assertIn(
             "opencode/tester-modell",
@@ -346,11 +346,11 @@ class Ap03AgentsBrowserTest(unittest.TestCase):
 
         # Der Editor ist über „Neuer Agent“ erreichbar und bietet die
         # AP03-Felder an.
-        self.page.get_by_role("button", name="Neuer Agent").click()
-        self.page.get_by_label("Beschreibung", exact=True).wait_for()
-        self.page.get_by_label("Rolle", exact=True).wait_for()
-        self.page.get_by_label("Ergebnis", exact=True).wait_for()
-        self.page.get_by_label("Subagenten-Rechte", exact=True).wait_for()
+        self.page.get_by_role("button", name="New agent").click()
+        self.page.get_by_label("Description", exact=True).wait_for()
+        self.page.get_by_label("Role", exact=True).wait_for()
+        self.page.get_by_label("Result", exact=True).wait_for()
+        self.page.get_by_label("Subagent permissions", exact=True).wait_for()
 
     def test_02_role_change_updates_profiles_json_and_is_shown(self):
         """AK Rollen: select[data-role] schreibt profiles.json und bleibt sichtbar."""
@@ -393,17 +393,17 @@ class Ap03AgentsBrowserTest(unittest.TestCase):
         self.open_agents()
         self.open_editor()
 
-        self.page.get_by_label("Ergebnis", exact=True).fill("Fertiger Prüfbericht")
-        self.page.get_by_label("Rolle", exact=True).select_option(label="reviewer")
-        self.page.get_by_label("Subagenten-Rechte", exact=True).select_option(
-            label="ausgewählt"
+        self.page.get_by_label("Result", exact=True).fill("Fertiger Prüfbericht")
+        self.page.get_by_label("Role", exact=True).select_option(label="reviewer")
+        self.page.get_by_label("Subagent permissions", exact=True).select_option(
+            label="selected"
         )
 
         checkbox = self.page.locator('input[data-subagent="helper"]')
         checkbox.wait_for()
         self.assertEqual(checkbox.get_attribute("aria-label"), "Subagent helper")
         checkbox.check()
-        self.page.get_by_role("button", name="Speichern", exact=True).click()
+        self.page.get_by_role("button", name="Save", exact=True).click()
 
         self.wait_until(
             lambda: self.roles().get("tester") == "reviewer",
@@ -421,17 +421,17 @@ class Ap03AgentsBrowserTest(unittest.TestCase):
         self.assertIn("description: Testet die Anwendung gründlich", saved)
 
         # Der Editor bleibt nach dem Speichern offen und zeigt den neuen Stand.
-        self.assertTrue(self.page.get_by_label("Ergebnis", exact=True).is_visible())
+        self.assertTrue(self.page.get_by_label("Result", exact=True).is_visible())
         self.wait_until(
-            lambda: self.page.get_by_label("Ergebnis", exact=True).input_value()
+            lambda: self.page.get_by_label("Result", exact=True).input_value()
             == "Fertiger Prüfbericht",
             message="Der Editor zeigt das gespeicherte Ergebnis nicht",
         )
         self.assertEqual(
-            self.page.get_by_label("Rolle", exact=True).input_value(), "reviewer"
+            self.page.get_by_label("Role", exact=True).input_value(), "reviewer"
         )
         self.assertEqual(
-            self.page.get_by_label("Subagenten-Rechte", exact=True).input_value(),
+            self.page.get_by_label("Subagent permissions", exact=True).input_value(),
             "ausgewählt",
         )
         self.assertTrue(
@@ -439,8 +439,8 @@ class Ap03AgentsBrowserTest(unittest.TestCase):
         )
 
         # Ein erneutes Speichern ist ohne erneutes Öffnen möglich.
-        self.page.get_by_label("Ergebnis", exact=True).fill("Zweiter Stand")
-        self.page.get_by_role("button", name="Speichern", exact=True).click()
+        self.page.get_by_label("Result", exact=True).fill("Zweiter Stand")
+        self.page.get_by_role("button", name="Save", exact=True).click()
         self.wait_until(
             lambda: self.result("tester") == "Zweiter Stand",
             message="Ein zweites Speichern im offenen Editor war nicht möglich",
@@ -451,9 +451,9 @@ class Ap03AgentsBrowserTest(unittest.TestCase):
         self.open_agents()
         self.open_editor()
 
-        self.page.get_by_label("Beschreibung", exact=True).fill("Prüft die Anwendung")
-        self.page.get_by_label("Ergebnis", exact=True).fill("Prüfbericht")
-        self.page.get_by_role("button", name="Prompt-Gerüst").click()
+        self.page.get_by_label("Description", exact=True).fill("Prüft die Anwendung")
+        self.page.get_by_label("Result", exact=True).fill("Prüfbericht")
+        self.page.get_by_role("button", name="Prompt scaffold").click()
 
         prompt = self.page.get_by_label("Prompt", exact=True)
         self.wait_until(
@@ -489,7 +489,7 @@ class Ap03AgentsBrowserTest(unittest.TestCase):
         toggle = self.page.locator('input[data-toggle="unconfigured"]')
         self.assertEqual(
             toggle.get_attribute("aria-label"),
-            "Nicht konfigurierte Agenten anzeigen",
+            "Show unconfigured agents",
         )
         toggle.check()
         self.wait_until(
@@ -511,13 +511,13 @@ class Ap03AgentsBrowserTest(unittest.TestCase):
         self.assertIn(
             "Bericht vorhanden", row.locator("td[data-ergebnis]").inner_text()
         )
-        self.assertIn("alle", row.locator("td[data-erlaubt]").inner_text())
+        self.assertIn("all", row.locator("td[data-erlaubt]").inner_text())
         self.assertIn(
             "opencode/tester-modell", row.locator("td[data-wirksam]").inner_text()
         )
 
         model = self.page.locator('select[data-model-override="tester"]')
-        self.assertEqual(model.get_attribute("aria-label"), "Modell für tester")
+        self.assertEqual(model.get_attribute("aria-label"), "Model for tester")
 
         # Eine Modellüberschreibung wirkt unabhängig von der Auswahl und
         # verändert ausschließlich die Projekteinstellungen.
@@ -542,7 +542,7 @@ class Ap03AgentsBrowserTest(unittest.TestCase):
         self.reveal_unconfigured()
         configure = self.page.locator('input[data-configure="tester"]')
         self.assertEqual(
-            configure.get_attribute("aria-label"), "Agent tester konfigurieren"
+            configure.get_attribute("aria-label"), "Agent tester configure"
         )
         configure.check()
         self.wait_until(

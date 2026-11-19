@@ -190,7 +190,9 @@ class CostsRefreshBrowserTest(unittest.TestCase):
 
     def open_costs(self):
         self.page.goto(self.base + "/#t=" + self.token)
-        self.page.get_by_role("button", name="Kosten", exact=True).click()
+        nav = self.page.get_by_role("button", name="Costs", exact=True)
+        nav.wait_for()
+        nav.click()
         self.page.locator("#costs").wait_for()
 
     def open_detail(self):
@@ -204,7 +206,7 @@ class CostsRefreshBrowserTest(unittest.TestCase):
         self.page.locator('tr[data-project="proj"]').wait_for()
         self.page.locator('tr[data-project="proj2"]').wait_for()
         self.assertNotIn(
-            "1.200.000",
+            "1,200,000",
             self.page.locator('tr[data-project="proj"]').inner_text(),
             "Ausgangswert ist bereits vorhanden; der Test würde nichts prüfen",
         )
@@ -215,7 +217,7 @@ class CostsRefreshBrowserTest(unittest.TestCase):
         self.add_session("ses_new", self.proj, "proj F1", input_tokens=100000)
 
         self.wait_until(
-            lambda: "1.200.000" in self.page.locator('tr[data-project="proj"]').inner_text(),
+            lambda: "1,200,000" in self.page.locator('tr[data-project="proj"]').inner_text(),
             message="Die Projektzeile wurde ohne Klick nicht aktualisiert",
         )
         self.assertTrue(
@@ -240,7 +242,7 @@ class CostsRefreshBrowserTest(unittest.TestCase):
         self.add_session("ses_new", self.proj, "proj F1", input_tokens=100000)
 
         self.wait_until(
-            lambda: "1.200.000" in self.page.locator("#cost-detail").inner_text(),
+            lambda: "1,200,000" in self.page.locator("#cost-detail").inner_text(),
             message="Die Paketzeile wurde ohne Klick nicht aktualisiert",
         )
         self.assertTrue(
@@ -280,8 +282,8 @@ class CostsRefreshBrowserTest(unittest.TestCase):
         row = self.page.locator('tr[data-project="proj2"]')
         row.wait_for()
         text = row.inner_text()
-        self.assertIn("700.000", text, "Alias-Sitzung fehlt in der Projektzeile")
-        self.assertIn("70.000", text, "Alias-Ausgabe fehlt in der Projektzeile")
+        self.assertIn("700,000", text, "Alias-Sitzung fehlt in der Projektzeile")
+        self.assertIn("70,000", text, "Alias-Ausgabe fehlt in der Projektzeile")
 
 
 if __name__ == "__main__":

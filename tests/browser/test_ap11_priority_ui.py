@@ -297,31 +297,32 @@ class Ap11PriorityBrowserTest(unittest.TestCase):
             time.sleep(0.05)
         self.fail(message)
 
-    def open_project(self, tab="Arbeit"):
+    def open_project(self, tab="arbeit"):
         """Vorbedingung einstellen: Projekt „proj“ öffnen, Register wählen."""
         self.page.goto("about:blank")
         self.page.goto(self.base + "/#t=" + self.token)
         row = self.page.locator("tr.row", has_text="proj").first
         row.wait_for()
         row.click()
-        if tab != "Arbeit":
-            self.page.get_by_role("tab", name=tab, exact=True).click()
-        panel = self.page.locator("#panel-" + tab.lower())
+        if tab != "arbeit":
+            self.page.locator(
+                f"[role='tab'][aria-controls='panel-{tab}']").click()
+        panel = self.page.locator("#panel-" + tab)
         panel.wait_for()
         self.assertTrue(panel.is_visible(),
                         "Panel „%s“ ist nicht sichtbar" % tab)
         return panel
 
     def open_settings(self):
-        return self.open_project(tab="Einstellungen")
+        return self.open_project(tab="einstellungen")
 
     def open_work(self):
-        return self.open_project(tab="Arbeit")
+        return self.open_project(tab="arbeit")
 
     def items_card(self):
         """Die Karte „Offene Arbeitspakete“ in der Maske „Arbeit“."""
         card = self.page.locator("#panel-arbeit .card",
-                                 has_text="Offene Arbeitspakete").first
+                                 has_text="Open work packages").first
         card.wait_for(timeout=10000)
         return card
 
@@ -346,12 +347,12 @@ class Ap11PriorityBrowserTest(unittest.TestCase):
         return self.items_card().locator("[data-drag-handle]")
 
     def save_button(self):
-        return self.items_card().get_by_role("button", name="Speichern",
+        return self.items_card().get_by_role("button", name="Save",
                                              exact=True).first
 
     def clear_button(self):
         return self.items_card().get_by_role(
-            "button", name=re.compile("Leeren", re.I)).first
+            "button", name=re.compile("Clear", re.I)).first
 
     def handle_of(self, identifier):
         """Der Handle des Pakets mit der Kennung ``identifier``."""
@@ -377,8 +378,10 @@ class Ap11PriorityBrowserTest(unittest.TestCase):
 
         panel = self.page.locator("#panel-einstellungen")
         self.assertEqual(
-            0, panel.locator("details", has_text="Priorisierung").count(),
-            "Einstellungs-Tab enthält noch einen Abschnitt „Priorisierung“")
+            0, panel.locator(
+                "details",
+                has_text=re.compile("Priorisierung|Prioritization")).count(),
+            "Einstellungs-Tab enthält noch einen Priorisierungs-Abschnitt")
         self.assertEqual(
             0, panel.locator('[data-goto*="prioris" i]').count(),
             "Einstellungs-Tab enthält noch den Sprungchip „Priorisierung“")
@@ -410,7 +413,7 @@ class Ap11PriorityBrowserTest(unittest.TestCase):
         for index in range(handles.count()):
             label = handles.nth(index).get_attribute("aria-label") or ""
             self.assertTrue(
-                "verschieben" in label.lower(),
+                re.search(r"verschieben|move", label, re.I),
                 "Handle %d ist nicht als solches erkennbar (aria-label=%r)"
                 % (index, label))
 
@@ -587,13 +590,13 @@ class Ap11PriorityBrowserTest(unittest.TestCase):
             ".item", has_text="T0").first.inner_text()
         self.assertIn("BLOCKIERT", blocked_text,
                       "T0-Zeile ohne BLOCKIERT-Pille: " + blocked_text)
-        self.assertIn("priorisiert", blocked_text,
+        self.assertIn("prioritized", blocked_text,
                       "T0-Zeile ohne „priorisiert“-Pille: " + blocked_text)
         open_text = self.items_card().locator(
             ".item", has_text="T1").first.inner_text()
         # „Speichern“ legt die gesamte sichtbare Zeilenreihenfolge ab,
         # daher ist T1 Teil von PACKAGE_ORDER und priorisiert.
-        self.assertIn("priorisiert", open_text,
+        self.assertIn("prioritized", open_text,
                       "T1-Zeile ist nicht als priorisiert gekennzeichnet: "
                       + open_text)
 
@@ -619,10 +622,10 @@ class Ap11PriorityBrowserTest(unittest.TestCase):
         self.assertIn("XX9", card_text,
                       "die Karte nennt die unbekannte Kennung nicht: "
                       + card_text)
-        self.assertIn("Unbekannte Kennungen", card_text,
+        self.assertIn("Unknown IDs", card_text,
                       "kein Hinweistext zur unbekannten Kennung: "
                       + card_text)
-        self.assertIn("entfernt", card_text,
+        self.assertIn("removed", card_text,
                       "der Hinweis kündigt die Entfernung nicht an: "
                       + card_text)
         self.assertNotIn(
@@ -822,7 +825,7 @@ class Ap11PriorityBrowserTest(unittest.TestCase):
                     "FEEDBACK): " + ", ".join(self.item_ids()))
         for identifier in ("T2", "T1", "F1"):
             self.assertIn(
-                "Standardordnung", self.row_text(identifier),
+                "Default order", self.row_text(identifier),
                 "Zeile %s trägt nicht die „Standardordnung“-Pille: %r"
                 % (identifier, self.row_text(identifier)))
 
@@ -896,7 +899,7 @@ class Ap11PriorityBrowserTest(unittest.TestCase):
             "Standardordnung: " + ", ".join(self.item_ids()))
         for identifier in ("T2", "T1", "F1"):
             self.assertIn(
-                "priorisiert", self.row_text(identifier),
+                "prioritized", self.row_text(identifier),
                 "Zeile %s ist nach dem Speichern nicht als priorisiert "
                 "gekennzeichnet: %r"
                 % (identifier, self.row_text(identifier)))
@@ -930,7 +933,7 @@ class Ap11PriorityBrowserTest(unittest.TestCase):
             "BLOCKIERT", blocked_text,
             "T0-Zeile ohne BLOCKIERT-Pille: " + blocked_text)
         self.assertIn(
-            "Standardordnung", blocked_text,
+            "Default order", blocked_text,
             "T0-Zeile ohne „Standardordnung“-Pille: " + blocked_text)
 
         self.save_button().click()
@@ -955,7 +958,7 @@ class Ap11PriorityBrowserTest(unittest.TestCase):
             "T0-Zeile ohne BLOCKIERT-Pille nach dem Speichern: "
             + blocked_text)
         self.assertIn(
-            "priorisiert", blocked_text,
+            "prioritized", blocked_text,
             "T0-Zeile ist nach dem Speichern nicht als priorisiert "
             "gekennzeichnet: " + blocked_text)
 

@@ -207,7 +207,9 @@ class CostsBrowserTest(unittest.TestCase):
 
     def open_costs(self):
         self.page.goto(self.base + "/#t=" + self.token)
-        self.page.get_by_role("button", name="Kosten", exact=True).click()
+        nav = self.page.get_by_role("button", name="Costs", exact=True)
+        nav.wait_for()
+        nav.click()
         self.page.locator("#costs").wait_for()
 
     def open_detail(self):
@@ -231,11 +233,11 @@ class CostsBrowserTest(unittest.TestCase):
         card = self.page.locator("#costs")
         text = card.inner_text()
         self.assertIn("proj", text)
-        self.assertIn("1.000.000", text)
-        self.assertIn("600.000", text)
-        self.assertIn("500.000", text)
-        self.assertIn("0,0000 €", text)
-        self.assertIn("Gesamt", text)
+        self.assertIn("1,000,000", text)
+        self.assertIn("600,000", text)
+        self.assertIn("500,000", text)
+        self.assertIn("0.0000 €", text)
+        self.assertIn("Total", text)
 
     def test_detail_shows_packages_models_and_unknown_prices(self):
         self.open_detail()
@@ -244,23 +246,23 @@ class CostsBrowserTest(unittest.TestCase):
         self.assertIn("F1", text)
         self.assertIn("coding-agent", text)
         self.assertIn("opencode/model-a", text)
-        self.assertIn("1.000.000", text)
-        self.assertIn("600.000", text)
-        self.assertIn("500.000", text)
-        self.assertIn("Preis unbekannt", text)
+        self.assertIn("1,000,000", text)
+        self.assertIn("600,000", text)
+        self.assertIn("500,000", text)
+        self.assertIn("Price unknown", text)
 
     def test_entered_prices_override_unknown_costs_and_persist(self):
         self.open_detail()
 
         self.fill_prices("2", "0.5", "4")
-        self.page.get_by_role("button", name="Preise speichern").click()
+        self.page.get_by_role("button", name="Save prices").click()
 
         self.wait_until(
-            lambda: "3,1000" in self.page.locator("#cost-detail").inner_text(),
+            lambda: "3.1000" in self.page.locator("#cost-detail").inner_text(),
             message="Kosten wurden nach dem Speichern nicht neu berechnet",
         )
         self.assertIn(
-            "eigener Preis", self.page.locator("#cost-prices").inner_text()
+            "custom price", self.page.locator("#cost-prices").inner_text()
         )
         stored = json.loads(
             (self.root / "_toolchain" / "costs.json").read_text(encoding="utf-8")
@@ -278,12 +280,12 @@ class CostsBrowserTest(unittest.TestCase):
         )
 
         self.page.reload()
-        self.page.get_by_role("button", name="Kosten", exact=True).click()
+        self.page.get_by_role("button", name="Costs", exact=True).click()
         self.page.locator("#costs").wait_for()
         self.page.locator('tr.row[data-project="proj"]').click()
         self.page.locator("#cost-detail").wait_for()
         self.assertIn(
-            "3,1000",
+            "3.1000",
             self.page.locator("#cost-detail").inner_text(),
             "gespeicherte Preise gelten nach dem Neuladen nicht",
         )
@@ -292,13 +294,15 @@ class CostsBrowserTest(unittest.TestCase):
         self.open_detail()
 
         self.fill_prices("2", "0.5", "")
-        self.page.get_by_role("button", name="Preise speichern").click()
+        self.page.get_by_role("button", name="Save prices").click()
 
         toast = self.page.locator("#toasts")
         toast.wait_for()
-        self.assertIn("Bitte für opencode/model-a", toast.inner_text())
+        self.assertRegex(
+            toast.inner_text(),
+            r"Bitte für opencode/model-a|Please enter opencode/model-a")
         self.assertFalse((self.root / "_toolchain" / "costs.json").exists())
-        self.assertIn("0,0000", self.page.locator("#cost-detail").inner_text())
+        self.assertIn("0.0000", self.page.locator("#cost-detail").inner_text())
 
 
 if __name__ == "__main__":

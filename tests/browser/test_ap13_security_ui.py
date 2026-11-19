@@ -234,7 +234,8 @@ class Ap13SecurityBrowserTest(unittest.TestCase):
     def login_card(self, page=None):
         """Die Anmeldekarte: Behälter mit Eingabe plus Knopf „Anmelden“."""
         page = page or self.page
-        button = page.get_by_role("button", name=re.compile("anmelden", re.I))
+        button = page.get_by_role(
+            "button", name=re.compile(r"anmelden|sign in|log in", re.I))
         button.wait_for()
         card = page.locator("div.card").filter(has=button)
         card.wait_for()
@@ -247,7 +248,8 @@ class Ap13SecurityBrowserTest(unittest.TestCase):
         page = page or self.page
         card = self.login_card(page)
         card.locator("input").first.fill(secret)
-        card.get_by_role("button", name=re.compile("anmelden", re.I)).first.click()
+        card.get_by_role(
+            "button", name=re.compile(r"anmelden|sign in|log in", re.I)).first.click()
         self.wait_until(
             lambda: self.project_list_visible(page),
             timeout=10,
@@ -258,7 +260,7 @@ class Ap13SecurityBrowserTest(unittest.TestCase):
         return (page or self.page).locator("tr.row").first.is_visible()
 
     def open_security_card(self):
-        self.page.get_by_text("Zugriffssicherheit", exact=False).first.click()
+        self.page.get_by_text("Access security", exact=False).first.click()
         # Warten auf das konkrete Karten-Merkmal (Review-Minor 6): Der
         # Nav-Knopf trägt denselben Text wie die Karte und wäre schon vor
         # dem Karten-Render sichtbar; div#security existiert erst mit der
@@ -270,7 +272,8 @@ class Ap13SecurityBrowserTest(unittest.TestCase):
 
     def security_card(self):
         return self.page.locator(
-            "xpath=//*[contains(text(),'Zugriffssicherheit')]"
+            "xpath=//*[contains(text(),'Zugriffssicherheit') or "
+            "contains(text(),'Access security')]"
             "/ancestor-or-self::*[self::section or self::details or "
             "self::div][1]"
         ).first
@@ -341,7 +344,7 @@ class Ap13SecurityBrowserTest(unittest.TestCase):
         self.assertIn(str(self.port), card_text, "Karte nennt den Port nicht")
         self.assertIn("127.0.0.1", card_text, "Karte nennt die Bind-Adresse nicht")
         self.assertTrue(
-            re.search(r"passwort", card_text, re.I),
+            re.search(r"passwort|password", card_text, re.I),
             "Karte zeigt keinen Passwortstatus",
         )
 
@@ -360,9 +363,11 @@ class Ap13SecurityBrowserTest(unittest.TestCase):
         port_field = card.locator("input").first
         new_port = free_port()
         port_field.fill(str(new_port))
-        card.get_by_role("button", name=re.compile("speichern|ändern|setzen", re.I)).first.click()
+        card.get_by_role(
+            "button", name=re.compile(r"^\s*(Speichern|Save)\s*$", re.I)).first.click()
         self.wait_until(
-            lambda: "neustart" in self.page.inner_text("body").lower(),
+            lambda: re.search(r"neustart|restart",
+                             self.page.inner_text("body"), re.I),
             timeout=10,
             message="Kein Hinweis auf Neustart nach dem Speichern",
         )
@@ -386,7 +391,7 @@ class Ap13SecurityBrowserTest(unittest.TestCase):
         password_field = card.locator("input[type=password]").first
         password_field.fill("ap13-ui-paswort-42")
         card.get_by_role(
-            "button", name=re.compile("passwort|speichern|setzen", re.I)
+            "button", name=re.compile(r"passwort|speichern|setzen|password|save|set", re.I)
         ).first.click()
         # Wirksamer Sync-Punkt (Review-Minor 5): Die frühere Bedingung
         # („ap13-ui-paswort-42 nicht in inner_text") konnte nie fehlschlagen,
@@ -394,7 +399,9 @@ class Ap13SecurityBrowserTest(unittest.TestCase):
         # Der Server bestätigt das Setzen mit der Toast-Meldung
         # „Kennwort gesetzt“; darauf warten wir.
         self.wait_until(
-            lambda: "kennwort gesetzt" in self.page.inner_text("body").lower(),
+            lambda: re.search(
+                r"kennwort gesetzt|password set",
+                self.page.inner_text("body"), re.I),
             timeout=10,
             message="Keine Bestätigung „Kennwort gesetzt“ nach dem Speichern",
         )
@@ -413,7 +420,7 @@ class Ap13SecurityBrowserTest(unittest.TestCase):
         self.page.reload()
         self.wait_until(
             lambda: self.page.get_by_role(
-                "button", name=re.compile("anmelden", re.I)
+                "button", name=re.compile(r"anmelden|sign in|log in", re.I)
             ).count() > 0,
             timeout=10,
             message="Ohne Cookies erschien keine Anmeldekarte",
@@ -469,7 +476,7 @@ class Ap13SecurityBrowserTest(unittest.TestCase):
         )
 
         zulassen = card.get_by_role(
-            "button", name=re.compile("alle clients zulassen", re.I)
+            "button", name=re.compile(r"alle clients zulassen|allow all clients", re.I)
         )
         self.wait_until(
             lambda: zulassen.count() > 0,
@@ -490,11 +497,11 @@ class Ap13SecurityBrowserTest(unittest.TestCase):
             "Bestätigungsdialog warnt nicht vor dem Zugriff aller Clients",
         )
         self.assertRegex(
-            dialog_text, re.compile("netz", re.I),
+            dialog_text, re.compile(r"netz|network", re.I),
             "Bestätigungsdialog warnt nicht vor dem Zugriff im Netz",
         )
         yes = confirm.first.locator("button").filter(
-            has_not_text=re.compile("abbrechen", re.I)
+            has_not_text=re.compile(r"abbrechen|cancel", re.I)
         )
         self.assertEqual(
             yes.count(), 1,
@@ -503,7 +510,8 @@ class Ap13SecurityBrowserTest(unittest.TestCase):
         yes.click()
 
         self.wait_until(
-            lambda: "alle Clients erlaubt" in self.security_card().inner_text(),
+            lambda: re.search(r"alle Clients erlaubt|all clients allowed",
+                             self.security_card().inner_text()),
             timeout=10,
             message="Fakt-Zeile zeigt nach dem Bestätigen nicht "
                     "„alle Clients erlaubt“",
@@ -551,19 +559,22 @@ class Ap13SecurityBrowserTest(unittest.TestCase):
             lambda: card.count() == 1, timeout=5,
             message="Karte „Zugriffssicherheit“ (id=security) nicht gerendert",
         )
-        allow_input = card.locator('input[aria-label="IP-Allowlist"]')
+        allow_input = card.locator('input[aria-label="IP-Allowlist"], '
+                     'input[aria-label="IP allowlist"]')
         self.wait_until(
             lambda: allow_input.count() == 1, timeout=5,
             message="Allowlist-Eingabe (aria-label „IP-Allowlist“) nicht gefunden",
         )
         placeholder = allow_input.get_attribute("placeholder") or ""
-        self.assertNotIn(
-            "(leer = alle Clients)", placeholder,
+        self.assertNotRegex(
+            placeholder,
+            r"(leer = alle Clients)|\(empty = all clients\)",
             "Platzhalter suggeriert weiterhin, ein leeres Feld setze die "
             "Allowlist auf alle Clients",
         )
-        self.assertIn(
-            "(leer = unverändert)", placeholder,
+        self.assertRegex(
+            placeholder,
+            r"(leer = unverändert)|\(empty = unchanged\)",
             "Platzhalter sagt nicht, dass ein leeres Feld die Allowlist "
             "unverändert lässt",
         )

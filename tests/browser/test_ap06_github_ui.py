@@ -364,7 +364,7 @@ class GitHubCardUiTest(unittest.TestCase):
         self.page.goto(self.base + "/#t=" + self.token)
         self.page.wait_for_selector(".row")
         self.page.locator(".row").filter(has_text=name).first.click()
-        self.page.get_by_role("tab", name="Einstellungen").click()
+        self.page.locator("[role='tab'][aria-controls='panel-einstellungen']").click()
         card = self.git_card()
         self.expand_optional("#github")
         return card
@@ -400,11 +400,11 @@ class GitHubCardUiTest(unittest.TestCase):
         project = make_project(self.root, "gh-dot")
         env_file = project / ".vibe" / "project.env"
         card = self.open_project_settings("gh-dot")
-        repo = card.locator("input[aria-label*='Repository']").first
+        repo = card.locator("input[placeholder='owner/name']").first
 
         repo.fill("owner/my.repo")
-        card.get_by_role("button", name=re.compile(r"Mit GitHub verkn", re.I)).click()
-        wait_for_toast(self.page, r"Verknüpfung gespeichert")
+        card.get_by_role("button", name=re.compile(r"Link with GitHub", re.I)).click()
+        wait_for_toast(self.page, r"Verknüpfung (gespeichert|saved)")
 
         self.assertTrue(
             wait_for_file_content(env_file, 'GITHUB_REPO="owner/my.repo"'),
@@ -420,7 +420,7 @@ class GitHubCardUiTest(unittest.TestCase):
         repo = self.input_with_value(card, "owner/name")
 
         repo.fill("owner/renamed")
-        card.get_by_role("button", name=re.compile("Speichern", re.I)).click()
+        card.get_by_role("button", name=re.compile(r"^Save$", re.I)).click()
         self.assertTrue(
             wait_for_file_content(self.env_file, 'GITHUB_REPO="owner/renamed"'),
             "Einstellung wurde nicht ohne manuelles Nachladen gespeichert",
@@ -461,12 +461,12 @@ class GitHubCardUiTest(unittest.TestCase):
         group.wait_for(state="visible", timeout=5000)
         self.assertEqual(self.github.pr_posts, [])
         texts = group.get_by_role("button").all_inner_texts()
-        self.assertTrue(any(re.search(r"Ja|Bestätigen", t, re.I) for t in texts), texts)
-        self.assertTrue(any(re.search(r"Abbrechen", t, re.I) for t in texts), texts)
+        self.assertTrue(any(re.search(r"^Yes", t, re.I) for t in texts), texts)
+        self.assertTrue(any(re.search(r"Cancel", t, re.I) for t in texts), texts)
         self.assertEqual(self.page.locator(".toast").count(), 0)
 
         # Cancel sends nothing at all.
-        group.get_by_role("button", name=re.compile(r"Abbrechen", re.I)).click()
+        group.get_by_role("button", name=re.compile(r"Cancel", re.I)).click()
         self.assertEqual(card.locator(".confirm, [role='group']").count(), 0)
         self.assertEqual(self.github.pr_posts, [])
         self.assertEqual(self.page.locator(".toast").count(), 0)
@@ -475,10 +475,10 @@ class GitHubCardUiTest(unittest.TestCase):
         pr_button.click()
         group = card.locator(".confirm, [role='group']").first
         group.wait_for(state="visible", timeout=5000)
-        group.get_by_role("button", name=re.compile(r"Ja|Bestätigen", re.I)).first.click()
+        group.get_by_role("button", name=re.compile(r"^Yes", re.I)).first.click()
         toast = self.page.locator(".toast").first
         toast.wait_for(state="visible", timeout=15000)
-        self.assertRegex(toast.inner_text(), re.compile(r"Kein GitHub|Fehler", re.I))
+        self.assertRegex(toast.inner_text(), re.compile(r"Kein GitHub|Fehler|Error", re.I))
         self.assertEqual(self.github.pr_posts, [])
         self.assertTrue(self.git_card().is_visible())
 
@@ -529,7 +529,7 @@ class GitHubCardUiTest(unittest.TestCase):
         toast = self.page.locator(".toast").first
         toast.wait_for(state="visible", timeout=15000)
         message = toast.inner_text()
-        self.assertRegex(message, re.compile("übertragen", re.I), message)
+        self.assertRegex(message, re.compile(r"übertragen|pushed|transferred", re.I), message)
         self.assertRegex(message, re.compile(r"origin", re.I), message)
 
         # The transfer is real: origin references the local head now.
@@ -538,8 +538,14 @@ class GitHubCardUiTest(unittest.TestCase):
 
         # The card and its push button survive the successful action.
         self.assertTrue(self.git_card().is_visible())
+        deadline = time.time() + 15
+        while (time.time() < deadline and
+               card.get_by_role(
+                   "button", name=re.compile(r"Push", re.I)).count() != 1):
+            time.sleep(0.1)
         self.assertEqual(
-            card.get_by_role("button", name=re.compile(r"Push", re.I)).count(), 1
+            card.get_by_role("button", name=re.compile(r"Push", re.I)).count(), 1,
+            "Der Push-Knopf fehlt nach dem erfolgreichen Push",
         )
 
 
@@ -675,7 +681,7 @@ class LinkOnlyMergeRequestUiTest(unittest.TestCase):
         self.page.goto(self.base + "/#t=" + self.token)
         self.page.wait_for_selector(".row")
         self.page.locator(".row").filter(has_text=name).first.click()
-        self.page.get_by_role("tab", name="Einstellungen").click()
+        self.page.locator("[role='tab'][aria-controls='panel-einstellungen']").click()
         card = self.page.locator(".card").filter(has_text="Git & GitHub").first
         card.wait_for(state="visible", timeout=15000)
         self.expand_optional("#github")
@@ -693,9 +699,9 @@ class LinkOnlyMergeRequestUiTest(unittest.TestCase):
         card = self.open_project_settings("gh-linkonly")
 
         # settings: Repo, API-Basis (lokaler Fake-Server).
-        card.locator("input[aria-label*='Repository']").first.fill("owner/name")
+        card.locator("input[placeholder='owner/name']").first.fill("owner/name")
         card.locator("input[aria-label*='API-Basis']").first.fill(self.github.base)
-        card.get_by_role("button", name=re.compile("Speichern", re.I)).click()
+        card.get_by_role("button", name=re.compile(r"^Save$", re.I)).click()
         self.assertTrue(
             wait_for_file_content(self.env_file, 'GITHUB_API="' + self.github.base + '"'),
             "Einstellungen wurden nicht gespeichert",
@@ -737,7 +743,7 @@ class LinkOnlyMergeRequestUiTest(unittest.TestCase):
         group = card.locator(".confirm, [role='group']").first
         group.wait_for(state="visible", timeout=5000)
         self.assertEqual(self.github.pr_posts, [])
-        group.get_by_role("button", name=re.compile(r"Ja|Bestätigen", re.I)).first.click()
+        group.get_by_role("button", name=re.compile(r"^Yes", re.I)).first.click()
 
         seen = []
         deadline = time.time() + 15

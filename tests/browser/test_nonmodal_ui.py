@@ -140,7 +140,7 @@ class NonModalBrowserTest(unittest.TestCase):
         row = self.page.locator("tr.row", has_text="proj").first
         row.wait_for()
         row.click()
-        self.page.get_by_text("Feedback eintragen").wait_for()
+        self.page.get_by_text("Add feedback").wait_for()
         self.page.locator("#feedback").wait_for()
 
     def assert_no_browser_dialog(self):
@@ -154,10 +154,10 @@ class NonModalBrowserTest(unittest.TestCase):
         self.assertEqual(box.get_attribute("role"), "status")
         self.assertEqual(box.get_attribute("aria-live"), "polite")
 
-        form = self.page.locator(".card", has_text="Feedback eintragen")
+        form = self.page.locator(".card", has_text="Add feedback")
         form.locator("input").fill("Neuer Punkt aus der Oberfläche")
         form.locator("textarea").fill("Beschreibung aus der Oberfläche")
-        form.get_by_role("button", name="Eintragen").click()
+        form.get_by_role("button", name="Add").click()
 
         message = self.page.locator("#toasts .toast", has_text="F3 eingetragen")
         message.wait_for()
@@ -174,11 +174,11 @@ class NonModalBrowserTest(unittest.TestCase):
         self.assertTrue(TOAST_SHOT.exists() and TOAST_SHOT.stat().st_size > 0)
 
         # Die Meldung darf die Bedienung nicht blockieren.
-        self.page.get_by_role("button", name="Umgebung").click()
-        self.page.get_by_text("Umgebungsprüfung").wait_for()
+        self.page.get_by_role("button", name="Environment").click()
+        self.page.get_by_text("Environment check").wait_for()
         self.assert_no_browser_dialog()
 
-        message.get_by_role("button", name="Meldung schließen").click()
+        message.get_by_role("button", name="Dismiss message").click()
         self.wait_until(
             lambda: self.page.locator("#toasts .toast", has_text="F3 eingetragen").count() == 0,
             message="Meldung ließ sich nicht schließen",
@@ -191,12 +191,12 @@ class NonModalBrowserTest(unittest.TestCase):
         entry = self.page.locator('.fbentry[data-id="F2"]')
         # exact=True: sonst trifft der Locator auch „Ja, löschen“ aus der
         # Bestätigung, sobald diese sichtbar ist.
-        delete = entry.get_by_role("button", name="Löschen", exact=True)
+        delete = entry.get_by_role("button", name="Delete", exact=True)
 
         delete.click()
         question = entry.locator(".confirm")
         question.wait_for()
-        self.assertIn("wirklich löschen", question.inner_text())
+        self.assertRegex(question.inner_text(), r"wirklich löschen|really delete")
         self.assertFalse(delete.is_visible(), "Löschen-Schaltfläche bleibt daneben aktiv")
         self.assert_no_browser_dialog()
         self.assertIn("F2 Zweiter Punkt", self.feedback.read_text(encoding="utf-8"))
@@ -205,7 +205,7 @@ class NonModalBrowserTest(unittest.TestCase):
         self.page.screenshot(path=str(CONFIRM_SHOT))
         self.assertTrue(CONFIRM_SHOT.exists() and CONFIRM_SHOT.stat().st_size > 0)
 
-        question.get_by_role("button", name="Abbrechen").click()
+        question.get_by_role("button", name="Cancel").click()
         self.wait_until(
             lambda: entry.locator(".confirm").count() == 0,
             message="Inline-Bestätigung wurde nicht geschlossen",
@@ -219,7 +219,7 @@ class NonModalBrowserTest(unittest.TestCase):
         question.wait_for()
         self.assertEqual(
             self.page.evaluate("document.activeElement.textContent"),
-            "Ja, löschen",
+            "Yes, delete",
             "Fokus liegt nicht auf der Bestätigung",
         )
         self.page.keyboard.press("Escape")
@@ -232,7 +232,7 @@ class NonModalBrowserTest(unittest.TestCase):
         self.assert_no_browser_dialog()
 
         delete.click()
-        entry.locator(".confirm").get_by_role("button", name="Ja, löschen").click()
+        entry.locator(".confirm").get_by_role("button", name="Yes, delete").click()
         self.wait_until(
             lambda: "F2 Zweiter Punkt" not in self.feedback.read_text(encoding="utf-8"),
             message="Bestätigtes Löschen hat den Punkt nicht entfernt",
@@ -242,23 +242,23 @@ class NonModalBrowserTest(unittest.TestCase):
 
     def test_shutdown_asks_inline_and_cancel_keeps_the_dashboard_running(self):
         self.open_detail()
-        quit_button = self.page.get_by_role("button", name="Dashboard beenden")
+        quit_button = self.page.get_by_role("button", name="Stop dashboard")
         quit_button.click()
 
         question = self.page.locator("header .confirm")
         question.wait_for()
-        self.assertIn("laufen weiter", question.inner_text())
+        self.assertRegex(question.inner_text(), r"laufen weiter|continue")
         self.assert_no_browser_dialog()
         self.assertIsNone(self.proc.poll(), "Dashboard wurde vor der Bestätigung beendet")
 
-        question.get_by_role("button", name="Abbrechen").click()
+        question.get_by_role("button", name="Cancel").click()
         self.wait_until(
             lambda: self.page.locator("header .confirm").count() == 0,
             message="Inline-Bestätigung wurde nicht geschlossen",
         )
         self.assertTrue(quit_button.is_visible())
         self.assertIsNone(self.proc.poll(), "Abbrechen hat das Dashboard beendet")
-        self.page.get_by_text("Feedback eintragen").wait_for()
+        self.page.get_by_text("Add feedback").wait_for()
 
 
 if __name__ == "__main__":

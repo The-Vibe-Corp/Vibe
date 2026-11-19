@@ -198,7 +198,7 @@ class SandboxBrowserTest(unittest.TestCase):
         row = self.page.locator("tr.row", has_text="proj").first
         row.wait_for()
         row.click()
-        self.page.get_by_role("tab", name="Einstellungen", exact=True).click()
+        self.page.get_by_role("tab", name="Settings", exact=True).click()
         self.page.locator("#sandbox").wait_for()
         self.expand_optional("#sandbox")
 
@@ -225,14 +225,16 @@ class SandboxBrowserTest(unittest.TestCase):
             self.sandbox_card().locator("> summary").inner_text(),
             "Der Sandbox-Abschnitt trägt den erwarteten Aufklapp-Titel nicht",
         )
-        self.assertIn("aus", card.inner_text())
-        self.assertIn(
-            "Ohne Sandbox bleiben Shell-Befehle (bash) außerhalb der Liste möglich.",
+        self.assertIn("off", card.inner_text())
+        self.assertRegex(
             card.inner_text(),
+            r"Ohne Sandbox bleiben Shell-Befehle \(bash\) außerhalb der Liste "
+            r"möglich\.|Without the sandbox, shell commands \(bash\) remain "
+            r"possible outside the list\.",
         )
 
         self.mark_card("#sandbox")
-        card.get_by_role("button", name="Sandbox einschalten").click()
+        card.get_by_role("button", name="Turn on sandbox").click()
         self.wait_until(
             lambda: self.env_values().get("SANDBOX") == "on",
             message="Sandbox wurde nicht eingeschaltet",
@@ -242,7 +244,7 @@ class SandboxBrowserTest(unittest.TestCase):
             "Die Sandbox-Karte wurde nach dem Einschalten nicht neu aufgebaut",
         )
         self.wait_until(
-            lambda: self.sandbox_card().get_by_text("bereit", exact=True).count() == 1,
+            lambda: self.sandbox_card().get_by_text("ready", exact=True).count() == 1,
             message="Karte zeigt nach dem Einschalten nicht bereit",
         )
         self.assertEqual(self.env_values().get("SANDBOX_TOOLS"), "git python3")
@@ -253,22 +255,27 @@ class SandboxBrowserTest(unittest.TestCase):
         self.expand_optional("#settings-rechte")
         card = self.sandbox_card()
         self.assertEqual(
-            card.get_by_label("Build-Werkzeuge").input_value(), "git python3"
+            card.get_by_label("Build tools").input_value(), "git python3"
         )
-        self.assertIn("Sandbox aktiv", self.page.locator("body").inner_text())
-        self.assertIn(
-            "Schreibwerkzeug (edit) und Shell-Befehle (bash) können nur",
+        self.assertRegex(
             self.page.locator("body").inner_text(),
+            r"Sandbox aktiv|Sandbox active")
+        self.assertRegex(
+            self.page.locator("body").inner_text(),
+            r"Schreibwerkzeug \(edit\) und Shell-Befehle \(bash\) können nur"
+            r"|the write tool \(edit\) and shell commands \(bash\) can only write",
         )
-        self.assertIn(
-            "Die Sandbox-Konfiguration (.vibe/project.env, .vibe/permissions.json) "
-            "ist im Lauf schreibgeschützt.",
+        self.assertRegex(
             card.inner_text(),
+            r"Die Sandbox-Konfiguration \(\.vibe/project\.env, "
+            r"\.vibe/permissions\.json\) ist im Lauf schreibgeschützt\."
+            r"|The sandbox configuration \(\.vibe/project\.env, "
+            r"\.vibe/permissions\.json\) is read-only during a run\.",
         )
 
-        card.get_by_label("Build-Werkzeuge").fill("git, python3")
+        card.get_by_label("Build tools").fill("git, python3")
         self.mark_card("#sandbox")
-        card.get_by_role("button", name="Werkzeuge speichern").click()
+        card.get_by_role("button", name="Save tools").click()
         self.wait_until(
             lambda: self.env_values().get("SANDBOX_TOOLS") == "git python3",
             message="Werkzeugliste wurde nicht gespeichert",
@@ -284,7 +291,7 @@ class SandboxBrowserTest(unittest.TestCase):
         card = self.sandbox_card()
         self.expand_optional("#sandbox")
         card = self.sandbox_card()
-        card.get_by_role("button", name="Prüfen").click()
+        card.get_by_role("button", name="Check").click()
         self.wait_until(
             lambda: any("Sandbox bereit" in m for m in self.toasts()),
             message="Prüfung meldete keinen bereiten Zustand: "
@@ -298,7 +305,7 @@ class SandboxBrowserTest(unittest.TestCase):
         self.assertTrue(SHOT.exists() and SHOT.stat().st_size > 0)
 
         self.mark_card("#sandbox")
-        self.sandbox_card().get_by_role("button", name="Sandbox ausschalten").click()
+        self.sandbox_card().get_by_role("button", name="Turn off sandbox").click()
         self.wait_until(
             lambda: self.env_values().get("SANDBOX") == "off",
             message="Sandbox wurde nicht ausgeschaltet",
@@ -309,7 +316,7 @@ class SandboxBrowserTest(unittest.TestCase):
         )
         self.expand_optional("#sandbox")
         self.wait_until(
-            lambda: self.sandbox_card().get_by_text("aus", exact=True).count() == 1,
+            lambda: self.sandbox_card().get_by_text("off", exact=True).count() == 1,
             message="Karte zeigt nach dem Ausschalten nicht aus",
         )
 

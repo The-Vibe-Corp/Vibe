@@ -6,6 +6,7 @@ Feedback-Punkte, Pause/Fortsetzen der Live-Ausgabe sowie die Höhe und die
 Vergrößerung der Live-Ausgabe.
 """
 import os
+import re
 import socket
 import subprocess
 import sys
@@ -52,6 +53,8 @@ class FeedbackBrowserTest(unittest.TestCase):
         )
         cls.log_dir = cls.root / "_logs"
         cls.log_dir.mkdir()
+        cls.state_dir = cls.root / "_state"
+        cls.state_dir.mkdir()
         cls.port = free_port()
         env = os.environ.copy()
         env.update(
@@ -59,6 +62,17 @@ class FeedbackBrowserTest(unittest.TestCase):
                 "VIBE": str(cls.root),
                 "VIBE_NO_CONTAINER": "1",
                 "VIBE_UI_PORT": str(cls.port),
+                # Isolation: Ohne VIBE_RUNTIME würde die persönliche
+                # Konfiguration des Entwicklers einen Laufzeitordner
+                # außerhalb des Temp-Bereichs wählen (im Sandbox-Lauf
+                # schreibgeschützt).
+                "VIBE_RUNTIME": str(cls.log_dir),
+                # Isolation: Auch der Zustandsordner (vibe.json mit
+                # zusätzlichen Entwicklungsordnern) kommt aus der
+                # persönlichen Konfiguration. Ohne eigene VIBE_STATE listet
+                # die Oberfläche fremde Projekte, und "tr.row" mit
+                # Teiltreffer öffnet das falsche Projekt.
+                "VIBE_STATE": str(cls.state_dir),
             }
         )
         cls.proc = subprocess.Popen(
@@ -127,21 +141,21 @@ class FeedbackBrowserTest(unittest.TestCase):
         row = self.page.locator("tr.row", has_text="proj").first
         row.wait_for()
         row.click()
-        self.page.get_by_text("Feedback eintragen").wait_for()
-        self.page.get_by_role("tab", name="Arbeit", exact=True).wait_for()
+        self.page.get_by_text("Add feedback").wait_for()
+        self.page.get_by_role("tab", name="Work", exact=True).wait_for()
 
     def open_log(self):
-        self.page.get_by_role("tab", name="Ausgabe", exact=True).click()
+        self.page.get_by_role("tab", name="Output", exact=True).click()
         self.page.locator("#log").wait_for()
 
     def test_edit_and_delete_existing_feedback_entries(self):
         self.open_detail()
 
         first = self.page.locator('.fbentry[data-id="F1"]')
-        first.get_by_role("button", name="Bearbeiten").click()
+        first.get_by_role("button", name="Edit").click()
         first.locator("input").fill("Geänderter Titel")
         first.locator("textarea").fill("Geänderte Beschreibung")
-        first.get_by_role("button", name="Speichern").click()
+        first.get_by_role("button", name="Save").click()
 
         self.wait_until(
             lambda: "Geänderter Titel" in self.feedback_text(),
@@ -153,9 +167,18 @@ class FeedbackBrowserTest(unittest.TestCase):
         self.assertIn("- [ ] F2 Zweiter Punkt", text)
         self.assertIn("F99 Kurztitel", text)
 
+        # Die Karte lädt nach dem Speichern neu. Erst wenn der neue Titel in
+        # der Oberfläche steht, ist der Re-Render abgeschlossen; sonst würde
+        # der folgende Klick auf einem veralteten Knoten landen.
+        self.wait_until(
+            lambda: "Geänderter Titel"
+            in self.page.locator('.fbentry[data-id="F1"]').first.inner_text(),
+            message="Die Karte zeigt den gespeicherten Titel nicht",
+        )
+
         second = self.page.locator('.fbentry[data-id="F2"]')
-        second.get_by_role("button", name="Löschen").click()
-        second.locator(".confirm").get_by_role("button", name="Ja, löschen").click()
+        second.get_by_role("button", name="Delete").click()
+        second.locator(".confirm").get_by_role("button", name="Yes, delete").click(force=True)
         self.wait_until(
             lambda: "F2 Zweiter Punkt" not in self.feedback_text(),
             message="Feedback-Punkt wurde nicht gelöscht",
@@ -176,7 +199,7 @@ class FeedbackBrowserTest(unittest.TestCase):
         self.page.get_by_role("button", name="Pause", exact=True).click()
         self.wait_until(
             lambda: self.page.get_by_role(
-                "button", name="Fortsetzen", exact=True
+                "button", name=re.compile(r"Fortsetzen|Resume"), exact=True
             ).count()
             == 1,
             message="Pause-Knopf wechselte nicht auf Fortsetzen",
@@ -191,7 +214,7 @@ class FeedbackBrowserTest(unittest.TestCase):
             "Pausierte Ausgabe wurde trotzdem angezeigt",
         )
 
-        self.page.get_by_role("button", name="Fortsetzen", exact=True).click()
+        self.page.get_by_role("button", name="Resume", exact=True).click()
         self.wait_until(
             lambda: "Während der Pause" in log.inner_text(),
             message="Fortgesetzte Ausgabe zeigte die gepufferten Zeilen nicht",
@@ -214,7 +237,7 @@ class FeedbackBrowserTest(unittest.TestCase):
             "Live-Ausgabe endet nicht am unteren Rand",
         )
 
-        self.page.get_by_role("button", name="Vergrößern", exact=True).click()
+        self.page.get_by_role("button", name="Expand", exact=True).click()
         card = self.page.locator(".logcard")
         self.wait_until(
             lambda: card.bounding_box()["width"] >= viewport["width"] - 30,
@@ -226,7 +249,7 @@ class FeedbackBrowserTest(unittest.TestCase):
         self.assertGreaterEqual(box["width"], viewport["width"] - 30)
         self.assertGreaterEqual(box["height"], viewport["height"] - 30)
         self.assertEqual(
-            self.page.get_by_role("button", name="Verkleinern", exact=True).count(),
+            self.page.get_by_role("button", name="Shrink", exact=True).count(),
             1,
         )
 

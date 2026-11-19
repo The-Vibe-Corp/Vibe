@@ -120,47 +120,52 @@ class PauseBrowserTest(unittest.TestCase):
         row = self.page.locator("tr.row", has_text="proj").first
         row.wait_for()
         row.click()
-        self.page.get_by_text("Arbeitspaket-Pause").wait_for()
+        self.page.get_by_text("Work package pause").wait_for()
 
     def pause_card(self):
-        return self.page.locator(".card", has_text="Arbeitspaket-Pause")
+        return self.page.locator(".card", has_text="Work package pause")
 
     def test_pause_is_requested_without_stopping_the_run_and_can_be_released(self):
         self.open_detail()
         card = self.pause_card()
-        self.assertIn("keine Pause", card.inner_text())
-        self.assertIn("Der laufende Agent wird nicht unterbrochen.", card.inner_text())
+        self.assertIn("no pause", card.inner_text())
+        self.assertRegex(
+            card.inner_text(),
+            r"Der laufende Agent wird nicht unterbrochen\."
+            r"|The running agent is not interrupted\.")
         self.assertFalse(self.flag.exists())
 
-        card.get_by_role("button", name="Nach aktuellem Paket anhalten").click()
+        card.get_by_role("button", name="Stop after current package").click()
         self.wait_until(
             lambda: self.flag.is_file(),
             message="Pause-Markierung wurde nicht geschrieben",
         )
         reloaded = self.pause_card()
-        reloaded.get_by_text("Pause angefordert").wait_for()
-        self.assertIn("Nach dem aktuellen Arbeitspaket", reloaded.inner_text())
-        reloaded.get_by_role("button", name="Pause aufheben").wait_for()
+        reloaded.get_by_text("pause requested").wait_for()
+        self.assertRegex(
+            reloaded.inner_text(),
+            r"Nach dem aktuellen Arbeitspaket|After the current work package")
+        reloaded.get_by_role("button", name="Clear pause").wait_for()
 
         SHOT.parent.mkdir(parents=True, exist_ok=True)
         reloaded.screenshot(path=str(SHOT))
         self.assertTrue(SHOT.exists() and SHOT.stat().st_size > 0)
 
-        reloaded.get_by_role("button", name="Pause aufheben").click()
+        reloaded.get_by_role("button", name="Clear pause").click()
         self.wait_until(
             lambda: not self.flag.exists(),
             message="Pause-Markierung wurde nicht entfernt",
         )
-        self.pause_card().get_by_text("keine Pause").wait_for()
+        self.pause_card().get_by_text("no pause").wait_for()
 
     def test_project_list_marks_a_requested_pause(self):
         self.open_detail()
         self.pause_card().get_by_role(
-            "button", name="Nach aktuellem Paket anhalten"
+            "button", name="Stop after current package"
         ).click()
         self.wait_until(lambda: self.flag.is_file(), message="Pause fehlt")
 
-        self.page.get_by_role("button", name="← zurück").click()
+        self.page.get_by_role("button", name="← Back").click()
         row = self.page.locator("tr.row", has_text="proj").first
         row.wait_for()
         row.get_by_text("Pause").wait_for()
