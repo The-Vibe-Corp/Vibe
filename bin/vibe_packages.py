@@ -4,7 +4,8 @@
 Der Läufer benutzt dieses Modul, damit Auswahl, Vorabprüfung, Bewertung des
 Agentenergebnisses und Abschlussbericht versioniert und testbar sind. Die
 Datei arbeitet ansonsten ausschließlich lokal: keine Modellaufrufe, keine
-Netzverbindung. Ausnahme seit AP9: Die Unterbefehle ``github-pull``
+Netzverbindung. Seit B16 liefert ``branch-name`` den Branch-Namen eines Pakets
+nach den Repository-Regeln. Ausnahme seit AP9: Die Unterbefehle ``github-pull``
 (Aktualisierung des Haupt-Branches vor einem Arbeitspaket) und
 ``github-complete`` (Push und Merge-Request nach dem Abschluss) nutzen die
 GitHub-Ebene aus ``vibe_github`` — nur wenn das Projekt dies ausdrücklich
@@ -419,6 +420,15 @@ def priority(block):
 ORDER_KEY = "PACKAGE_ORDER"
 ORDER_SPLIT = re.compile(r"[,;\s]+")
 
+# B16: Paket-Branches folgen den Repository-Regeln. Das Muster kommt aus
+# .vibe/project.env (PACKAGE_BRANCH_PATTERN), der Standard gilt ohne Eintrag.
+DEFAULT_PACKAGE_BRANCH_PATTERN = "feature/{owner}/{id}"
+PACKAGE_BRANCH_PATTERN_KEY = "PACKAGE_BRANCH_PATTERN"
+BRANCH_PLACEHOLDER_RE = re.compile(r"\{([^{}]*)\}")
+MAX_BRANCH_LENGTH = 200
+MAX_BRANCH_COLLISIONS = 100
+BRANCH_SEGMENT_RE = re.compile(r"^[a-z0-9-]+$")
+
 
 def package_order(project):
     """Je Projekt konfigurierte Priorisierung, Dubletten in Eintragsreihenfolge.
@@ -452,6 +462,89 @@ def collect_blocks(project):
         ("TICKETS.md", read_blocks(project / "TICKETS.md")),
         ("FEEDBACK.md", read_blocks(project / "FEEDBACK.md")),
     ]
+
+
+def _kebab(value):
+    """Kleinbuchstaben; jeder Lauf von Nicht-[a-z0-9] wird ein Bindestrich."""
+    return re.sub(r"[^a-z0-9]+", "-", str(value or "").lower()).strip("-")
+
+
+def _package_title(project, pid):
+    """Tickettitel des Blocks mit der Kennung pid; leerer Wert wenn unbekannt."""
+    for _, blocks in collect_blocks(project):
+        for block in blocks:
+            if block_id(block) == pid:
+                return block_title(block)
+    return ""
+
+
+def _validate_branch_name(name):
+    """Prüft einen Branch-Namen gegen die Repository-Regeln (B16)."""
+    if not name or len(name) > MAX_BRANCH_LENGTH:
+        raise ValueError(
+            "Branch-Name ist leer oder länger als " + str(MAX_BRANCH_LENGTH)
+            + " Zeichen: " + repr(name))
+    if ".." in name or name.endswith(".lock"):
+        raise ValueError("Branch-Name enthält unerlaubte Zeichenfolgen: " + name)
+    segments = name.split("/")
+    if any(not segment for segment in segments):
+        raise ValueError("Branch-Name enthält ein leeres Segment: " + name)
+    if any(not BRANCH_SEGMENT_RE.match(segment) for segment in segments):
+        raise ValueError(
+            "Branch-Name darf nur Kleinbuchstaben, Ziffern und Bindestriche "
+            "enthalten ('/' trennt Segmente): " + name)
+    if any(segment.startswith("-") or segment.endswith("-")
+           for segment in segments):
+        raise ValueError(
+            "Branch-Segment darf nicht mit einem Bindestrich beginnen oder "
+            "enden: " + name)
+
+
+def package_branch_name(project, pid, pattern=None):
+    """Branch-Name eines Pakets nach dem konfigurierten Muster (B16).
+
+    Platzhalter sind ``{owner}`` (lokales ``git config user.name``,
+    Fallback ``vibe``), ``{id}`` und ``{slug}`` (Tickettitel, auf 24 Zeichen
+    gekürzt). Ein ungültiges Muster oder Ergebnis wirft ``ValueError``; lokale
+    Kollisionen werden mit ``-2``, ``-3``, ... aufgelöst.
+    """
+    if pattern is None:
+        values = read_env(Path(project) / ".vibe" / "project.env")
+        pattern = values.get(PACKAGE_BRANCH_PATTERN_KEY) or \
+            DEFAULT_PACKAGE_BRANCH_PATTERN
+    if not str(pattern).strip():
+        raise ValueError("Ungültiges Branch-Muster: Muster ist leer.")
+
+    owner = _kebab(run_git(project, "config", "--get", "user.name").stdout.strip()) \
+        or "vibe"
+    slug = _kebab(_package_title(project, pid))[:24].rstrip("-") or "paket"
+    replacements = {
+        "owner": owner,
+        "id": _kebab(pid),
+        "slug": slug,
+    }
+
+    def substitute(match):
+        key = match.group(1)
+        if key not in ("owner", "id", "slug"):
+            raise ValueError("Unbekanntes Platzhalter-Muster im Branch-Muster: "
+                             + "{" + key + "}")
+        return replacements[key]
+
+    name = BRANCH_PLACEHOLDER_RE.sub(substitute, str(pattern))
+    _validate_branch_name(name)
+
+    for attempt in range(1, MAX_BRANCH_COLLISIONS + 1):
+        candidate = name if attempt == 1 else name + "-" + str(attempt)
+        if len(candidate) > MAX_BRANCH_LENGTH:
+            break
+        exists = run_git(project, "rev-parse", "--verify", "--quiet",
+                         "refs/heads/" + candidate).returncode == 0
+        if not exists:
+            return candidate
+    raise ValueError(
+        "Kein freier Branch-Name für " + name + " nach "
+        + str(MAX_BRANCH_COLLISIONS) + " Versuchen gefunden.")
 
 
 def done_ids(project):
@@ -1351,6 +1444,21 @@ def command_sync_proof(args):
     return EXIT_OK
 
 
+def command_branch_name(args):
+    """Befehl ``branch-name``: gibt den Paket-Branch nach Repository-Regeln aus.
+
+    Nur der Name geht auf stdout; ein ungültiges Muster oder Ergebnis meldet
+    ``FEHLT: <Grund>`` und endet mit Exit 1 (B16).
+    """
+    try:
+        name = package_branch_name(args.project, args.id)
+    except ValueError as error:
+        print("FEHLT: " + str(error))
+        return EXIT_NONE
+    print(name)
+    return EXIT_OK
+
+
 def command_gate(args):
     """Befehl ``gate``: prüft die Abschlussschranke eines Pakets."""
     errors = gate_errors(args.project, args.id, args.base)
@@ -1432,12 +1540,15 @@ def command_github_pull(args):
 def command_github_complete(args):
     """Befehl ``github-complete``: Branch pushen und Merge-Request stellen.
 
-    Der Läufer ruft dies nach der grünen Abschlussschranke auf; ein
-    Fehlschlag (Exit 1) blockiert das Paket nicht, der Läufer meldet ihn
-    nur als Hinweis."""
-    performed, ok, message = _github_module().complete_package(
+    Seit B16 ist ein Fehlschlag eine echte Abschlussschranke: Der Läufer
+    blockiert das Paket (Exit 1) statt einen bloßen Hinweis zu melden. Die
+    letzte Ausgabezeile nennt immer Branch und Merge-Request-URL."""
+    performed, ok, message, result = _github_module().complete_package(
         args.project, args.branch, package_id=args.id)
     print(("GitHub: " if performed else "Skip: ") + message)
+    branch = result.get("branch") or args.branch
+    pr_url = result.get("pr_url") or "keine"
+    print("ABGABE: Branch " + str(branch) + ", Merge-Request " + str(pr_url))
     return EXIT_OK if ok else EXIT_NONE
 
 
@@ -1506,6 +1617,13 @@ def build_parser():
     gate.add_argument("--id", required=True)
     gate.add_argument("--base", required=True)
     gate.set_defaults(handler=command_gate)
+
+    branch_name_parser = subparsers.add_parser(
+        "branch-name", help="Branch-Name eines Pakets nach Repository-Regeln (B16)"
+    )
+    branch_name_parser.add_argument("--project", required=True)
+    branch_name_parser.add_argument("--id", required=True)
+    branch_name_parser.set_defaults(handler=command_branch_name)
 
     copy_notes = subparsers.add_parser(
         "copy-notes", help="Arbeitsnotizen in die Arbeitskopie übernehmen"
