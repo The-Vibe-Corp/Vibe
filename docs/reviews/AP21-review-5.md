@@ -11,7 +11,7 @@
 - High: 0
 - Medium: 0
 - Minor: 0
-- **Verdict: PASS**
+- Verdict: PASS
 
 ## Prüfgegenstand
 
