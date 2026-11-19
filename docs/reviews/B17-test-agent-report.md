@@ -344,6 +344,60 @@ Temp-Bereiche: `~/.config/vibe/config.json` (07:43) und
 11:23–11:24 unverändert. `git status` blieb leer; es wurde kein Commit
 erstellt und keine Produktionsdatei geändert.
 
+### 5.7 Fixture-Anpassungen an den Verify-Vertrag (VIBE_VERIFY_RUNTIME)
+
+Nach dem Einsetzen der Implementierung gilt: Agenten- und Verify-Umgebung
+enthalten keinen Produktivpfad `VIBE_RUNTIME` mehr; Prüfaufrufe erhalten für
+ihre Dauer ausschließlich `VIBE_VERIFY_RUNTIME`. Zwei Fixture-Stellen lasen
+noch `$VIBE_RUNTIME` und wurden minimal angepasst.
+
+| Datei:Zeile | Alte Referenz | Neue Referenz | Begründung |
+|-------------|---------------|---------------|------------|
+| `tests/unit/test_b9_self_repair.py:72` | `"$VIBE_RUNTIME/final-ran"` | `"$VIBE_VERIFY_RUNTIME/final-ran"` | Die Abschlussprüfung läuft mit bereinigter Umgebung; nur `VIBE_VERIFY_RUNTIME` steht dort bereit. Der Marker bleibt am selben Laufzeitort, keine Assertion wurde verändert. |
+| `tests/unit/runner_support.py:410` | `os.environ["VIBE_RUNTIME"]` | `os.environ["FAKE_RUNTIME"]` | Der nachgebildete Agent erhält bewusst keinen Produktivpfad. `FAKE_RUNTIME` ist eine reine Fixture-Variable im Prüfkontext und überlebt die Bereinigung, die nur `VIBE*` entfernt. |
+| `tests/unit/test_pause_after_package.py:355` | — | `"FAKE_RUNTIME": str(self.root / "_logs")` | Setzt die Fixture-Variable für den Pause-Marker. Der Pfad ist derselbe Laufzeitordner wie zuvor, aber nicht als Produktivvariable. |
+
+Attribution Auftrag 2: Vor der Anpassung lief
+`tests.unit.test_pause_after_package` mit `Ran 16 tests`,
+`FAILED (failures=3)`. Alle drei Fehlschläge zeigten im nachgebildeten Agenten
+`KeyError: 'VIBE_RUNTIME'` (`runner_support.py`, Pause-Marker); die Folgefehler
+im Wiederholungsversuch (`git commit` schlägt fehl) sind Nachwirkungen desselben
+Abbruchs. Die übrigen 13 Tests des Moduls waren grün. Auf `8b07828` las der
+gleiche Fixture-Code `VIBE_RUNTIME`, und die damalige `bin/vibe-run.sh` gab die
+Variable unverändert an den Agenten weiter; erst die B17-Bereinigung entfernt
+sie. Es handelt sich damit um eine B17-Folge, nicht um ein vorbestehendes
+Baseline-Muster (in Abschnitt 6 nicht gelistet). Nach der Anpassung:
+`Ran 16 tests`, `OK`.
+
+Ausgeführte Läufe (jeweils mit dem `env -u`-Präfix aus 5.6 im
+Arbeitsverzeichnis der Arbeitskopie):
+
+| Modul | Ergebnis |
+|-------|----------|
+| `tests.unit.test_b9_self_repair` | `Ran 18 tests`, `OK` |
+| `tests.unit.test_pause_after_package` (vorher) | `Ran 16 tests`, `FAILED (failures=3)` — `KeyError: 'VIBE_RUNTIME'` |
+| `tests.unit.test_pause_after_package` (nachher) | `Ran 16 tests`, `OK` |
+| `tests.unit.test_b17_isolation` | `Ran 10 tests`, `OK` |
+| `tests.unit.test_b17_questions_runtime` | `Ran 4 tests`, `OK` |
+| `tests.unit.test_b17_sandbox_argv` | `Ran 4 tests`, `OK` |
+| `tests.unit.test_b17_runner_isolation` | `Ran 6 tests`, `OK` |
+| `tests.unit.test_questions` | `Ran 35 tests`, `OK` |
+| `tests.unit.test_runner_package_gates` | `Ran 12 tests`, `OK` (nicht angepasst) |
+
+Hinweis zur Wiederholung: Der erste Lauf von `tests.unit.test_questions`
+scheiterte mit 1 Failure (`'vibe ask "' not found`), weil der parallel
+arbeitende Coding-Agent `bin/vibe-run.sh` während des Laufs aktualisierte
+(`QUESTION_HINT` um 11:59:52). Die Wiederholung nach der Aktualisierung ergab
+`Ran 35 tests`, `OK`.
+
+`tests.unit.test_f27_keep_changes` wurde nicht angepasst. Der genannte Fall
+`test_final_verification_still_blocks_a_dirty_integration_tree` (Zeile 476) war
+im Lauf grün; das Modul zeigte jedoch 5 Errors außerhalb dieses Falls
+(`AttributeError: … does not have the attribute 'ensure_test_agent'` in
+`bin/vibe`). Diese sind vorbestehend: Weder `8b07828` noch der aktuelle
+Arbeitsstand definieren `ensure_test_agent`, auf das `mock.patch.object`
+zugreift. Sie wurden nicht verändert.
+
 ## 6. Vorbestehende Baseline (nicht B17)
 
 Zum Zeitpunkt des Branches sind Teile der Setup-Suites bereits rot. Das wurde

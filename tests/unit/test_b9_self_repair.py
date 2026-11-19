@@ -69,7 +69,7 @@ FEEDBACK_TWO = (
 )
 
 FINAL_VERIFY_ENV = (
-    'VERIFY_FULL=\'echo final > "$VIBE_RUNTIME/final-ran"\''
+    'VERIFY_FULL=\'echo final > "$VIBE_VERIFY_RUNTIME/final-ran"\''
 )
 
 OPTIONS = ["Erneut prüfen", "Lauf abbrechen", "Agent behebt die Befunde"]

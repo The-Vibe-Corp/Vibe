@@ -404,7 +404,10 @@ dirty = os.environ.get("FAKE_DIRTY_INTEGRATION")
 if dirty and counter == 0:
     pathlib.Path(dirty, "dirty.txt").write_text("x\n", encoding="utf-8")
 if os.environ.get("FAKE_PAUSE_AFTER_FIRST") and counter == 0:
-    runtime = pathlib.Path(os.environ["VIBE_RUNTIME"])
+    # B17: Der Agent erhält bewusst keinen Produktivpfad VIBE_RUNTIME.
+    # FAKE_RUNTIME ist eine reine Fixture-Variable des Tests im Prüfkontext
+    # und wird unverändert an den nachgebildeten Agenten vererbt.
+    runtime = pathlib.Path(os.environ["FAKE_RUNTIME"])
     name = os.environ.get("VIBE_LOGNAME", "proj")
     (runtime / (name + ".pause-after")).touch()
 sys.exit(0)

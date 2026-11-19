@@ -350,6 +350,9 @@ class RunnerPauseTest(unittest.TestCase):
                 "VIBE_RETRY_DELAY": "0",
                 "FAKE_CALLS": str(self.calls),
                 "FAKE_COUNTER": str(self.counter),
+                # B17: Der Agent erhält keinen Produktivpfad VIBE_RUNTIME;
+                # die Pause-Markierung entsteht über diese Fixture-Variable.
+                "FAKE_RUNTIME": str(self.root / "_logs"),
             }
         )
         if pause_during_first_package:
