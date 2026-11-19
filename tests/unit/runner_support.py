@@ -62,6 +62,10 @@ def install_runner(install):
         "vibe_questions.py",
         "vibe_autonomous.py",
         "vibe_storage.py",
+        # B16: github-complete ist eine echte Abschlussschranke. Ohne dieses
+        # Modul würde das Subkommando in jeder Fake-Toolchain mit
+        # SystemExit(1) fehlschlagen und alle Läufer-Tests blockieren.
+        "vibe_github.py",
     ):
         shutil.copy(BIN / name, bin_dir / name)
     # V-027: Das Limitverhalten kann als eigenes Modul vorliegen. Ältere
