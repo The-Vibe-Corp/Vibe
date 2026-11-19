@@ -968,6 +968,23 @@
       ],
       "datum": "2026-11-19",
       "grund": "Subagenten-Parallelisierung: Agenten außer dem Vibe-Agenten können optional Subagenten ihres eigenen Typs erlauben (permission.task, Opt-in über die Agentenverwaltung, kein Standard); Hierarchieprüfung lässt Selbstaufruf zu, prüft Vibe-Rolle und eigenen Modus, Selbstkanten gelten nicht als Zyklus. Die Invariante gilt auch bei Rollenwechsel und Rohtext (zentrale Prüfung im Speicherpfad und in agent_role_set)."
+    },
+    {
+      "arbeitspaket": "B16",
+      "datum": "2026-11-19",
+      "dateien": [
+        "bin/vibe",
+        "bin/vibe-run.sh",
+        "bin/vibe_packages.py",
+        "bin/vibe_github.py",
+        "bin/web/app.js",
+        "templates/android/AGENTS.md",
+        "templates/docker/AGENTS.md",
+        "templates/generic/AGENTS.md",
+        "templates/rebuild/AGENTS.md",
+        "templates/web/AGENTS.md"
+      ],
+      "grund": "GitHub-Abschluss als echte Schranke: Ausschließlich gültige, konfigurierbare Paket-Branches (branch-name, PACKAGE_BRANCH_PATTERN) und Abschluss nur mit gepushtem Branch und Merge-Request. integration_state blockiert vor Push/PR bei Divergenz oder veraltetem Stand; complete_package liefert ein 4-Tupel mit ABGABE-Zeile, der Läufer merget bei Fehlschlag nicht und lässt die Arbeitskopie liegen. Neue Regeln in GENERAL_RULES und allen fünf Vorlagen, ehrlicher Text in der GitHub-Karte. Größen und SHA-256 der zehn geänderten Manifest-Dateien wurden aktualisiert."
     }
   ],
   "files": [
@@ -982,14 +999,14 @@
       "sha256": "e5ae3183efcb76dace1e0bcbde9993be7afe82d93d7877da9ee39846cf45330a"
     },
     {
-      "bytes": 270415,
+      "bytes": 270752,
       "path": "bin/vibe",
-      "sha256": "78988203db513e672c801d909bcc419828b1c96d1323133fc125be95f7a988e9"
+      "sha256": "1465b3ec0bf3a948d0603902446cdb55a80421e88a90a489695fb7c90ee4eefb"
     },
     {
-      "bytes": 57599,
+      "bytes": 59048,
       "path": "bin/vibe-run.sh",
-      "sha256": "ff57ee60a765d6fe424c5a6e54a026dbf706f0fcc54c3cbb2405652a7eb497c5"
+      "sha256": "f4e70cc685d3417576a93a0ad7b0d589fbaa95c76e6bba52b4ae7c27931b02ed"
     },
     {
       "bytes": 100884,
@@ -1007,9 +1024,9 @@
       "sha256": "0f6d9c2c9d72ff1400ba0c2e8173217102ac9f163a41191c34367dd5f81f5778"
     },
     {
-      "bytes": 56538,
+      "bytes": 60761,
       "path": "bin/vibe_github.py",
-      "sha256": "0a9058f16d4e7aaf683e1196fb5910120c3c0399eb3401529b0f9ded2ec0357e"
+      "sha256": "a4e7e249c934c5a99edd6ea37058635ea4c9ecd73cbca3e2f19931dd261a421b"
     },
     {
       "bytes": 27530,
@@ -1042,9 +1059,9 @@
       "sha256": "ac3b26da4208a087a09c67c389238c82802d7c1bd50b10d9bcd9492a07050462"
     },
     {
-      "bytes": 61017,
+      "bytes": 65934,
       "path": "bin/vibe_packages.py",
-      "sha256": "1f16efa0008595695973d86ddf11d06124c546fe84c283fb7f6b5fa1368fb25b"
+      "sha256": "1438b2f54fa84bf582ddf46b707f3e522a6b792203d6bf60ff2bb1924b0e5dd0"
     },
     {
       "bytes": 20789,
@@ -1082,9 +1099,9 @@
       "sha256": "d49b2406f2c9837c63ed3c3dcb265938fe5702e78c5aeb0df07b9f349fd65594"
     },
     {
-      "bytes": 129531,
+      "bytes": 129539,
       "path": "bin/web/app.js",
-      "sha256": "dffc82ca74e36501e380725abab79733be3bd44be5273bc59f1dd948304d739d"
+      "sha256": "644f45dd5cb8e6b69252e8aedb1b6eeb8186feaec7b04b80042dabb9b3b83863"
     },
     {
       "bytes": 588,
@@ -1107,9 +1124,9 @@
       "sha256": "b45ed5e95c842e67dbecf165bb6096ec9c513cc431ede7442cd4bbad9ed0e806"
     },
     {
-      "bytes": 4749,
+      "bytes": 5086,
       "path": "templates/android/AGENTS.md",
-      "sha256": "8543171b03983b55d7b13c72a0df045dd1ef5969601deed15e431e1560de284f"
+      "sha256": "944b8cab2b8ff0c627119c79b406fa376a7fdcb1ea85fa47c3e547ecd890e113"
     },
     {
       "bytes": 522,
@@ -1147,9 +1164,9 @@
       "sha256": "722919bbc27d3ec4bf3ccadaff4be18ff5cf6c9cb1e4666e6f080c467e48f1b7"
     },
     {
-      "bytes": 4363,
+      "bytes": 4700,
       "path": "templates/docker/AGENTS.md",
-      "sha256": "5a66cf698eb1ffd5c60e4caaaecc525b0f763db60fbd79c7cfc56ba3942e2288"
+      "sha256": "8b2be99631f3b75dc427950863c4792b3aa8e0cdafcaa1c7fba1b029cb5dc730"
     },
     {
       "bytes": 354,
@@ -1157,9 +1174,9 @@
       "sha256": "63c0ebab49aa870ae5e5f731890cce3f0ce2859364152c00b64cb89e3e6d9ae5"
     },
     {
-      "bytes": 4048,
+      "bytes": 4385,
       "path": "templates/generic/AGENTS.md",
-      "sha256": "0263bd39567f58d26c9e3c7acc241cc5f7ab46275546bc2ee1c631f53378cf3b"
+      "sha256": "41d24c9fc4451cdc5e2778b35daff6a27e5b3fca01e6661ab497620bb15f067e"
     },
     {
       "bytes": 670,
@@ -1212,9 +1229,9 @@
       "sha256": "db8026a75dd2f358a771be9e2fc2fd4ba88c6180f026078552c3259e5156360f"
     },
     {
-      "bytes": 7693,
+      "bytes": 8030,
       "path": "templates/rebuild/AGENTS.md",
-      "sha256": "e5e1f6daa8fa57d2ff8483c6efd5fce42c4763ee58fe8027e39df751652bb95e"
+      "sha256": "9ec25e1d14bba5fd79478636a109b416713f88c69c404f24063a417f410d8ae7"
     },
     {
       "bytes": 1675,
@@ -1237,9 +1254,9 @@
       "sha256": "54b4975a06030dc63f299d0a0e2ef8249857b08d62e3e35e61bacb2205c8e1c4"
     },
     {
-      "bytes": 4413,
+      "bytes": 4750,
       "path": "templates/web/AGENTS.md",
-      "sha256": "e66a74e066237f76e64bd186dd34480b0baeee8d2230091a29c7db3218013f39"
+      "sha256": "74e5ef395135a1453579b1461659ca39dd3f62b483bf029faabfaceb6a0f7c10"
     },
     {
       "bytes": 70550,

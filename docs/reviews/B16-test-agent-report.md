@@ -285,3 +285,44 @@ müssen vor einer Gesamtabnahme separat geklärt werden.
   Regel-Suiten haben vorbestehende, B16-unabhängige Fehler (siehe Abschnitt 4).
 - Der lokale Skip-Pfad ist durch zwei ausdrückliche Läufer-Tests als
   Soll-Semantik abgesichert (**Nutzerbestätigung 19.11.2026**).
+
+---
+
+## 7. Nachtrag Grünphase (Fixture-Korrektur nach Implementierung)
+
+Nach der B16-Implementierung war in `tests/unit/test_ap9_runner_wiring.py`
+genau ein Test rot:
+
+`PullWiringTest.test_a_successful_pull_updates_the_base_before_the_worktree`
+nutzte `GITHUB_API="http://127.0.0.1:9"` (bewusst toter Port). Diese Fixture
+setzte die alte AP9-Hinweis-Semantik voraus: Damals war ein fehlgeschlagener
+Merge-Request nur ein HINWEIS. Unter B16 blockiert die harte Schranke zu
+Recht, weil ohne erreichbaren Merge-Request-Endpunkt kein Abschluss möglich
+ist. Der fachliche Kern des Tests (erfolgreicher `github-pull` zieht den
+Fernstand **vor** Arbeitskopie/Paketbase; Elternteil des ältesten
+F1-Commits == gezogener Fernstand) war davon unberührt.
+
+**Korrektur:** Der Test startet jetzt einen `RestFakeServer`
+(`from tests.unit.test_ap9_runner_github import RestFakeServer`) mit
+`self.addCleanup(server.close)` und setzt `GITHUB_API=<server.base>` statt des
+toten Ports. Alle ursprünglichen Assertions bleiben unverändert: keine
+`HINWEIS: GitHub-Pull`-Zeile und Paketbase-Elternteil == gezogener
+Fernstand. Keine Schranke wurde abgeschwächt; der Abschluss läuft mit Push
+und Merge-Request erfolgreich durch (Exit 0).
+
+**Erneuter Lauf:**
+
+```
+python3 -m unittest tests.unit.test_ap9_runner_wiring -v
+Ran 3 tests in 20.052s
+OK
+```
+
+**Nachweis, dass die B16-Abnahme unberührt bleibt:**
+
+```
+python3 -m unittest tests.unit.test_b16_runner_wiring -v
+Ran 6 tests in 9.667s
+OK
+```
+

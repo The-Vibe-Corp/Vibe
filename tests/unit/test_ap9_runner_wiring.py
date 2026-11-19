@@ -41,6 +41,10 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import runner_support as support
 
+# B16: Ein erreichbarer Merge-Request-Endpunkt ist für erfolgreiche
+# Abschlüsse nötig; die harte Schranke blockiert sonst zu Recht.
+from tests.unit.test_ap9_runner_github import RestFakeServer
+
 PROJECT_ENV = """TYPE=generic
 AGENT=test-agent
 TESTER=test-agent
@@ -250,9 +254,13 @@ class PullWiringTest(AP9WiringFixture):
             "Die blockierte Arbeitskopie wurde entfernt")
 
     def test_a_successful_pull_updates_the_base_before_the_worktree(self):
+        # B16: Die harte GitHub-Schranke verlangt einen erreichbaren
+        # Merge-Request-Endpunkt; der REST-Fake liefert ihn für den Abschluss.
+        server = RestFakeServer().start()
+        self.addCleanup(server.close)
         project = self.make_project(
             env_extra=('GITHUB_ENABLED="1"\nGITHUB_REPO="owner/name"\n'
-                       'GITHUB_BASE="main"\nGITHUB_API="%s"\n' % DEAD_API))
+                       'GITHUB_BASE="main"\nGITHUB_API="%s"\n' % server.base))
         bare = self.empty_bare("aktuell")
         self.link_origin(project, bare)
         # Projektstand auf origin bringen; der Fernstand ist danach um einen

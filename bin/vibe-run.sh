@@ -446,8 +446,19 @@ create_worktree() {
   safe_id="$(printf '%s' "$ID" | tr -c 'A-Za-z0-9_.-' '-')"
   WT_ROOT="$RUNTIME/worktrees"
   mkdir -p "$WT_ROOT" || return 1
+  # B16: Der Branch-Name kommt aus dem Repository-Muster (Subkommando
+  # branch-name), nicht mehr aus vibe/<...>. Er steht vor mktemp fest, damit
+  # ein Fehlschlag keine halbe Arbeitskopie zurücklässt. Die FEHLT-Meldung
+  # des Subkommandos landet im Protokoll.
+  if ! BRANCH="$(python3 "$PACKAGES_PY" branch-name --project "$P" --id "$ID" 2>>"$LOG")"; then
+    printf '%s\n' "$BRANCH" >>"$LOG"
+    return 1
+  fi
+  if [ -z "$BRANCH" ]; then
+    echo "FEHLT: branch-name lieferte keinen Branch-Namen für $ID." >>"$LOG"
+    return 1
+  fi
   WT="$(mktemp -d "$WT_ROOT/${safe_name}-${safe_id}-XXXXXX")" || return 1
-  BRANCH="vibe/${safe_name}-${safe_id}-$(date +%s%N)-$$-${RANDOM}"
   if ! git -C "$P" worktree add --quiet -b "$BRANCH" "$WT" "$PACKAGE_BASE" >>"$LOG" 2>&1; then
     # Keine halbe Arbeitskopie zurücklassen, wenn das Anlegen scheitert.
     rm -rf -- "$WT"
@@ -940,7 +951,8 @@ elif [ "$PRIVATE_SERVER" = 1 ]; then RUN_MODE="privater opencode-Server"
 else RUN_MODE="$SERVER_ARGS"; fi
 echo "Lauf: ${RUN_ID:-ohne Register}, Harness: $HARNESS, Modus: $RUN_MODE, Agent: $AGENT, Sandbox: $SANDBOX_STATE, höchstens $MAXP Pakete, höchstens $MAXR Wiederholungen je Paket" | tee -a "$LOG"
 PAUSED=0; LAST_ID=""; STOP=0; PACKAGES=0; SKIP=""
-CLOSED=(); BLOCKED_IDS=(); BLOCKED_REPORT=(); BLOCK_REASON=""
+CLOSED=(); CLOSED_BRANCH=(); CLOSED_COMMIT=(); CLOSED_PR=()
+BLOCKED_IDS=(); BLOCKED_REPORT=(); BLOCK_REASON=""
 record_block() {
   BLOCKED_IDS+=("$1")
   BLOCKED_REPORT+=("$1 ($2)")
@@ -986,7 +998,14 @@ for key in ("open", "blocked", "done"):
     if [ "${#CLOSED[@]}" -eq 0 ]; then
       echo "Geschlossen: keine"
     else
-      for id in "${CLOSED[@]}"; do echo "Geschlossen: $id"; done
+      for i in "${!CLOSED[@]}"; do
+        id="${CLOSED[$i]}"
+        if [ -n "${CLOSED_PR[$i]:-}" ]; then
+          echo "Geschlossen: $id — Branch ${CLOSED_BRANCH[$i]}, Commit ${CLOSED_COMMIT[$i]}, Merge-Request ${CLOSED_PR[$i]}"
+        else
+          echo "Geschlossen: $id — Branch ${CLOSED_BRANCH[$i]}, Commit ${CLOSED_COMMIT[$i]}, Merge-Request: keine (GitHub nicht aktiv oder kein origin)"
+        fi
+      done
     fi
     if [ "${#BLOCKED_REPORT[@]}" -eq 0 ]; then
       echo "Blockiert: keine"
@@ -1036,7 +1055,7 @@ while [ "$PACKAGES" -lt "$MAXP" ] && [ "$STOP" = 0 ]; do
   PACKAGE_BASE="$(git -C "$P" rev-parse HEAD)"
   echo "=== [$NAME] Arbeitspaket $ID, Durchgang $PACKAGES/$MAXP  $(date +%T) ===" | tee -a "$LOG"
   if ! create_worktree; then
-    BLOCK_REASON="Arbeitskopie für $ID konnte nicht angelegt werden."
+    BLOCK_REASON="Arbeitskopie/Branch für $ID konnte nicht angelegt werden."
     record_block "$ID" "$BLOCK_REASON"
     echo "BLOCKIERT: $BLOCK_REASON" | tee -a "$LOG"
     STOP=1; break
@@ -1137,14 +1156,23 @@ $QUESTION_HINT"
         echo "BLOCKIERT: $BLOCK_REASON" | tee -a "$LOG"
         STOP=1; break
       fi
-      # AP9: Nach grüner Schranke Push des Paket-Branchs nach origin und
-      # Merge-Request auf den Basis-Branch (sofern GitHub konfiguriert).
-      # Ein Fehlschlag erzeugt nur einen Hinweis; der lokale Merge läuft
-      # weiter, damit das Paket nicht an GitHub hängt.
-      if ! python3 "$PACKAGES_PY" github-complete --project "$P" \
-          --branch "$BRANCH" --id "$ID" >>"$LOG" 2>&1; then
-        echo "HINWEIS: GitHub-Abschluss für $ID (Push/Merge-Request) fehlgeschlagen; das Paket wird lokal gemergt." | tee -a "$LOG"
+      # B16: Nach grüner Schranke ist der GitHub-Abschluss (Push und
+      # Merge-Request) eine echte Schranke. Bei Fehlschlag wird nicht lokal
+      # gemergt, das Ticket bleibt offen und die Arbeitskopie bleibt liegen.
+      GH_COMPLETE_OUT="$(python3 "$PACKAGES_PY" github-complete --project "$P" \
+          --branch "$BRANCH" --id "$ID" 2>>"$LOG")"
+      GH_COMPLETE_RC=$?
+      printf '%s\n' "$GH_COMPLETE_OUT" >>"$LOG"
+      if [ "$GH_COMPLETE_RC" -ne 0 ]; then
+        BLOCK_REASON="GitHub-Abschluss für $ID fehlgeschlagen (Push/Merge-Request): ${GH_COMPLETE_OUT%%$'\n'*}"
+        record_block "$ID" "$BLOCK_REASON"
+        echo "BLOCKIERT: $BLOCK_REASON" | tee -a "$LOG"
+        STOP=1; break
       fi
+      # Die ABGABE-Zeile nennt den Merge-Request; "keine" bedeutet bewusster
+      # Skip (GitHub nicht aktiv oder kein origin).
+      PR_URL="$(printf '%s\n' "$GH_COMPLETE_OUT" | sed -n 's/^ABGABE: .*, Merge-Request //p')"
+      [ "$PR_URL" = "keine" ] && PR_URL=""
       if ! merge_package; then
         BLOCK_REASON="Merge für $ID fehlgeschlagen."
         record_block "$ID" "$BLOCK_REASON"
@@ -1162,6 +1190,9 @@ $QUESTION_HINT"
       fi
       cleanup_worktree
       CLOSED+=("$ID")
+      CLOSED_BRANCH+=("$BRANCH")
+      CLOSED_COMMIT+=("$(git -C "$P" rev-parse --short HEAD)")
+      CLOSED_PR+=("$PR_URL")
       PACKAGE_DONE=1
       break
     fi
