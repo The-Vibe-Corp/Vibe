@@ -1025,9 +1025,9 @@
       "sha256": "0f6d9c2c9d72ff1400ba0c2e8173217102ac9f163a41191c34367dd5f81f5778"
     },
     {
-      "bytes": 56538,
+      "bytes": 60761,
       "path": "bin/vibe_github.py",
-      "sha256": "0a9058f16d4e7aaf683e1196fb5910120c3c0399eb3401529b0f9ded2ec0357e"
+      "sha256": "a4e7e249c934c5a99edd6ea37058635ea4c9ecd73cbca3e2f19931dd261a421b"
     },
     {
       "bytes": 27530,
