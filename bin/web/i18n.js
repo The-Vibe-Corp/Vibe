@@ -9,7 +9,9 @@
   'use strict';
   var DICTS = {
     en: {
-        "ui.language.hint": "Choose the language of the web interface. English is the default.",
+        "ui.language.hint": "Whole vibe interface; English is the default.",
+        "Sprache gespeichert": "Language saved",
+        "Sprache konnte nicht gespeichert werden: ": "Could not save the language: ",
         "Fehler": "Error",
         "Standardliste": "Default list",
         " Verzeichnisse": " directories",
@@ -694,7 +696,9 @@
         "entfernt": "removed"
     },
     de: {
-        "ui.language.hint": "Sprache der Weboberfläche wählen. Englisch ist der Standard.",
+        "ui.language.hint": "Die gesamte vibe-Oberfläche; Englisch ist der Standard.",
+        "Sprache gespeichert": "Sprache gespeichert",
+        "Sprache konnte nicht gespeichert werden: ": "Sprache konnte nicht gespeichert werden: ",
         "Fehler": "Fehler",
         "Standardliste": "Standardliste",
         " Verzeichnisse": " Verzeichnisse",

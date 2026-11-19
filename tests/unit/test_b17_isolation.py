@@ -70,7 +70,7 @@ PROGRAM_FILES = (
     "vibe_github.py",
     "fritz-reconnect.py",
 )
-WEB_FILES = ("index.html", "styles.css", "app.js")
+WEB_FILES = ("index.html", "styles.css", "app.js", "i18n.js")
 
 # Variablen, die im Vorfall Produktivpfade trugen. Ein Test darf sie nie aus
 # dem Prozess erben; die Vorfall-Umgebung wird nur als ``environ`` übergeben.

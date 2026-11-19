@@ -46,7 +46,7 @@ PROGRAM_FILES = (
     "vibe_github.py",
     "fritz-reconnect.py",
 )
-WEB_FILES = ("index.html", "styles.css", "app.js")
+WEB_FILES = ("index.html", "styles.css", "app.js", "i18n.js")
 
 
 def launcher_sibling_modules():
@@ -281,6 +281,20 @@ class InstallFilesTest(unittest.TestCase):
 
     def tearDown(self):
         self.tmp.cleanup()
+
+    def test_web_files_cover_all_shipped_web_files(self):
+        """WEB_FILES installiert sämtliche Dateien aus ``bin/web``.
+
+        AP21 v2: ``i18n.js`` muss Teil des Installationssatzes sein — ohne
+        diesen fehlt ``/static/i18n.js`` im Dashboard und der Sprachumschalter
+        reagiert nicht. Der Vergleich ist auf den Verzeichnisinhalt von
+        ``bin/web`` (kein Datei fällt unter den Mangel).
+        """
+        shipped = sorted(p.name for p in (REPO / "bin" / "web").iterdir()
+                         if p.is_file())
+        self.assertEqual(shipped, sorted(WEB_FILES),
+                         "WEB_FILES stimmt nicht mit den Dateien von bin/web überein: "
+                         + repr((shipped, WEB_FILES)))
 
     def test_fresh_install_copies_programs_templates_and_catalog(self):
         result = setup.install_program_files(self.kit, self.vibe, mode="update", timestamp="20261026-120000")
