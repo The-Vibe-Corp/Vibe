@@ -34,11 +34,15 @@ pre#log .hl-str,.bv-log .hl-str{color:#a5d6a7}
 pre#log .hl-path,.bv-log .hl-path{color:#9ecbff}
 pre#log .hl-sha,.bv-log .hl-sha{color:#c3a6ff}
 pre#log .hl-num,.bv-log .hl-num{color:#f0a66a}
-/* B11: Ausgabeansicht — Hauptagent und alle laufenden Subagenten gleichzeitig.
-   Das Panel nutzt die verfügbare Höhe; die Hauptfläche bleibt mindestens 40 %
-   des Viewports hoch und endet im sichtbaren Bereich. */
+/* B11/AP20: Ausgabeansicht — Hauptagent und alle laufenden Subagenten
+   gleichzeitig. AP20: kompakte Übersicht, ein panelweiter Scrollbereich,
+   umbrechendes Kartenraster und geteilter Fokus-Modus ohne verschachtelte
+   Scrollbars. */
 [role=tabpanel][data-panel=ausgabe].bv-agent:not([hidden]){display:flex;flex-direction:column;height:calc(100vh - 210px);min-height:65vh;overflow:hidden;padding:0}
-.bv-root{display:flex;flex-direction:column;gap:8px;height:100%;min-height:0;overflow-y:auto}
+.bv-root{display:flex;flex-direction:column;gap:8px;height:100%;min-height:0;overflow-y:auto;overflow-x:hidden;scrollbar-width:thin;scrollbar-color:#3a414d transparent}
+.bv-root::-webkit-scrollbar,.bv-log::-webkit-scrollbar{width:8px;height:8px}
+.bv-root::-webkit-scrollbar-thumb,.bv-log::-webkit-scrollbar-thumb{background:#3a414d;border-radius:4px}
+.bv-root::-webkit-scrollbar-track,.bv-log::-webkit-scrollbar-track{background:transparent}
 .bv-controls{flex:0 0 auto;margin:0;padding:10px 12px}
 .bv-bar{display:flex;gap:8px;align-items:center;margin:4px 0}
 .bv-label{color:var(--mut);font-size:12px;flex:0 0 auto}
@@ -46,20 +50,32 @@ pre#log .hl-num,.bv-log .hl-num{color:#f0a66a}
 .bv-bar textarea{margin:0;font:12px/1.4 ui-monospace,monospace;resize:vertical}
 .bv-view{display:flex;flex-direction:column;min-height:0;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:#0d0f12}
 .bv-root .bv-main{flex:1 1 auto;min-height:40vh}
-.bv-head{display:flex;gap:10px;align-items:center;justify-content:space-between;padding:6px 10px;border-bottom:1px solid var(--line);background:#181b20;flex:0 0 auto}
-.bv-head b{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bv-head{display:flex;gap:10px;align-items:center;justify-content:space-between;padding:6px 10px;border-bottom:1px solid var(--line);background:#181b20;flex:0 0 auto;min-width:0}
+.bv-head b{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
 .bv-head-actions{display:flex;gap:8px;align-items:center;flex:0 0 auto}
-.bv-log{margin:0;padding:10px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.4 ui-monospace,monospace;flex:1 1 auto;min-height:0;background:#0d0f12}
-/* F30: Die Subagentenausgabe ist die eigentliche Arbeitsfläche; jede Karte
-   startet bei 300 px Höhe und lässt sich über den Knopf im Kopf nahezu
-   ansichtsfüllend vergrößern. Der Kasten scrollt bei Bedarf im Panel. */
-.bv-subs{display:flex;gap:8px;overflow-x:auto;flex:0 0 auto}
+/* AP20: Normalmodus clippt die Ausgabe; gescrollt wird nur panelweit. */
+.bv-log{margin:0;padding:10px;overflow:hidden;white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.4 ui-monospace,monospace;flex:1 1 auto;min-height:0;background:#0d0f12}
+/* AP20: kompakte Statusübersicht über alle aktiven Agenten. */
+.bv-overview{flex:0 0 auto;margin:0;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:#181b20;overflow:hidden}
+.bv-overview-head{display:flex;gap:10px;align-items:center;margin-bottom:6px}
+.bv-overview-head b{font-size:13px}
+.bv-overview-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:6px}
+.bv-overview-row{display:flex;gap:8px;align-items:center;min-width:0;padding:4px 8px;border:1px solid var(--line);border-radius:6px;background:#0d0f12;overflow:hidden}
+.bv-ov-name{flex:0 0 auto;max-width:14ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
+.bv-ov-desc{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--mut)}
+.bv-overview-row .pill{flex:0 0 auto}
+.bv-focus-btn{flex:0 0 auto;white-space:nowrap}
+.bv-overview-empty{color:var(--mut);font-size:13px}
+/* AP20: umbrechendes Raster statt einer horizontalen Kartenleiste. */
+.bv-subs{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:8px;overflow:visible;flex:0 0 auto;padding:0 10px 10px}
 .bv-subs[hidden]{display:none}
-.bv-sub{flex:0 0 min(560px,60%);height:300px}
+.bv-sub{min-width:0;height:300px}
 .bv-sub .bv-log{height:100%}
-.bv-sub.enlarged{position:fixed;inset:8px;z-index:120;height:auto;flex-basis:auto;box-shadow:0 0 0 1px var(--line),0 12px 40px #000a}
-.bv-sub.enlarged .bv-log{height:auto}
-@media(max-width:900px){.bv-sub{flex-basis:80%}}
+/* AP20: Fokus-Modus — genau eine Karte füllt den Viewport, ihr Log scrollt,
+   der panelweite Container ist dann gesperrt. */
+.bv-sub.enlarged,.bv-main.enlarged{position:fixed;inset:8px;z-index:120;height:auto;width:auto;max-width:none;flex-basis:auto;margin:0;box-shadow:0 0 0 1px var(--line),0 12px 40px #000a}
+.bv-sub.enlarged .bv-log,.bv-main.enlarged .bv-log{height:auto;overflow-y:auto;scrollbar-width:thin;scrollbar-color:#3a414d transparent}
+.bv-root.bv-focusing{overflow:hidden}
 .fbentry{border-top:1px solid var(--line);padding:8px 0}.fbentry:first-child{border-top:0}.fbdesc{white-space:pre-wrap;margin:2px 0 6px}.fbentry .bar{margin:4px 0 0}
 .toasts{position:fixed;right:16px;bottom:16px;z-index:200;display:flex;flex-direction:column;gap:8px;width:min(460px,calc(100vw - 32px))}
 .toast{display:flex;gap:10px;align-items:flex-start;background:#232830;border:1px solid var(--line);border-left:3px solid var(--ac);border-radius:8px;padding:10px 12px;box-shadow:0 8px 24px #0008}

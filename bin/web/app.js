@@ -495,16 +495,29 @@ function logView(d,onRun){
   clear:()=>{pre.replaceChildren();totalChars=0;logBuf=''},
   feed:text=>{if(logPaused){logBuf=(logBuf+text).slice(-80000);return}append(text)}}
 }
-/* B11: Die Ausgabeansicht ist vollständig neu gebaut. Hauptagent und jeder
-   laufende Subagent haben eine eigene, gleichzeitig sichtbare Live-Fläche;
-   beendete Subagenten verschwinden. Die Anweisungseingabe nennt ihr Ziel
-   sichtbar und sendet die gewählte Session; Fortsetzen erscheint nur bei
-   einem gestoppten Lauf mit bekannter Session. */
+/* B11/AP20: Die Ausgabeansicht zeigt Hauptagent und jeden laufenden
+   Subagenten gleichzeitig. AP20 ergänzt eine kompakte Übersicht, einen
+   einzigen panelweiten Scrollbereich, ein umbrechendes Kartenraster und
+   einen geteilten Fokus-Modus. Der B11/F30-Vertrag bleibt unverändert:
+   Zielauswahl, Anweisung, Senden/Fortsetzen, DOM-only-Highlighter und
+   Vergrößerung. */
 function outputView(name,d,isPi){
  const mainPre=el('pre',{class:'bv-log','aria-label':'Ausgabe des Hauptagenten'});
  const mainState=el('span',{class:'pill mut'},'gestoppt');
+ /* AP20: Der Fokus-Knopf des Hauptagenten teilt denselben Zustand wie die
+    Übersichts- und Karten-Knöpfe. Er bleibt dauerhaft „fokussieren“ benannt;
+    der Zustand steht in aria-expanded. */
+ const mainToggle=el('button',{class:'b bv-focus-btn',type:'button','data-focus-session':'','aria-label':'Hauptagent fokussieren','aria-expanded':'false'},'Fokus');
  const mainView=el('section',{class:'bv-view bv-main','data-agent-view':'','data-role':'main','data-session':'',role:'log','aria-label':'Hauptagent'},
-  el('div',{class:'bv-head'},el('b',{},'Hauptagent'),mainState),mainPre);
+  el('div',{class:'bv-head'},el('b',{},'Hauptagent'),el('div',{class:'bv-head-actions'},mainState,mainToggle)),mainPre);
+ /* AP20: Kompakte Statusübersicht über alle aktiven Agenten (Hauptagent
+    eingeschlossen). Keine Tabliste, kein Modal — nur Zeilen mit Name,
+    gekürzter Beschreibung, Status-Pille und Fokus-Knopf. */
+ const overview=el('section',{class:'bv-overview','aria-label':'Aktive Agenten','data-active-agents':'0'});
+ const overviewCount=el('span',{class:'pill mut'},'0 Subagenten');
+ const overviewList=el('div',{class:'bv-overview-list'});
+ const overviewEmpty=el('div',{class:'bv-overview-empty'},'Keine laufenden Subagenten.');
+ overview.append(el('div',{class:'bv-overview-head'},el('b',{},'Aktive Agenten'),overviewCount),overviewList,overviewEmpty);
  const subsBox=el('div',{class:'bv-subs','aria-label':'Laufende Subagenten'});
  const select=el('select',{'aria-label':'Ziel'});
  const ta=el('textarea',{rows:'2',maxlength:'4000','aria-label':'Zusatzanweisung für den gewählten Agenten',placeholder:'Zusatzanweisung …'});
@@ -517,10 +530,10 @@ function outputView(name,d,isPi){
   el('div',{class:'bv-bar'},el('span',{class:'bv-label'},'Ziel'),select),
   el('div',{class:'bv-bar'},ta),
   el('div',{class:'bv-bar'},send,cont,hint));
- const card=el('div',{class:'bv-root'},controls,mainView,subsBox);
+ const card=el('div',{class:'bv-root'},overview,controls,mainView,subsBox);
  let mainText=(d.tail||[]).join('\n')||'(noch keine Ausgabe)';
- let lastRunning=false,optionKey='';
- const children=new Map();
+ let lastRunning=false,optionKey='',rowKey='',focusedSession=null;
+ const children=new Map(),rows=new Map();
  /* AP16: Die Ausgabeansicht nutzt denselben F19-Highlighter wie das
     Lauf-Log (renderLogChunk, DOM-only). Der Text bleibt unverändert; die
     Hervorhebung ist reine Darstellung. */
@@ -533,26 +546,46 @@ function outputView(name,d,isPi){
   const near=node.pre.scrollHeight-node.pre.scrollTop-node.pre.clientHeight<70;
   node.pre.replaceChildren(renderLogChunk(text||'(noch keine Ausgabe)'));
   if(near)node.pre.scrollTop=node.pre.scrollHeight}
+ /* AP20: Ein einziger Fokus-Zustand für Karten-, Haupt- und
+    Übersichts-Knöpfe. Klick auf denselben Knopf oder Escape hebt ihn auf. */
+ function toggleFocus(session){focusedSession=focusedSession===session?null:session;applyFocus()}
+ /* AP20: Der Fokus-Knopf des Hauptagenten schaltet exakt denselben
+    geteilten Zustand wie Karten- und Übersichts-Knöpfe (Session des
+    Hauptagenten zum Zeitpunkt des Klicks). */
+ mainToggle.addEventListener('click',()=>toggleFocus(mainView.getAttribute('data-session')||''));
+ function applyFocus(){
+  card.classList.toggle('bv-focusing',!!focusedSession);
+  const mainOn=!!focusedSession&&focusedSession===mainView.getAttribute('data-session');
+  mainView.classList.toggle('enlarged',mainOn);
+  mainToggle.textContent=mainOn?'Fokus beenden':'Fokus';
+  mainToggle.setAttribute('aria-label','Hauptagent fokussieren');
+  mainToggle.setAttribute('aria-expanded',mainOn?'true':'false');
+  for(const[id,node]of children){const on=focusedSession===id;
+   node.view.classList.toggle('enlarged',on);
+   node.toggle.textContent=on?'Verkleinern':'Vergrößern';
+   node.toggle.setAttribute('aria-label',on?'Subagent verkleinern':'Subagent vergrößern');
+   node.toggle.setAttribute('aria-expanded',on?'true':'false')}
+  for(const[id,row]of rows)row.focus.setAttribute('aria-expanded',focusedSession===id?'true':'false')}
  function makeChild(entry){
   const pre=el('pre',{class:'bv-log'});
   const state=el('span',{class:'pill run'},'läuft');
-  /* F30: Jede laufende Karte lässt sich per Knopf nahezu ansichtsfüllend
-     vergrößern und mit demselben Knopf wieder herstellen. Der Zustand lebt
-     nur am Kartenelement; beim Entfernen des Subagenten verschwindet er mit. */
+  /* F30/AP20: Der Knopf im Kartenkopf und der Übersichts-Knopf schalten
+     denselben Zustand. Beim Entfernen des Subagenten verschwindet er mit. */
   const toggle=el('button',{class:'b',type:'button','aria-label':'Subagent vergrößern','aria-expanded':'false'},'Vergrößern');
   const view=el('section',{class:'bv-view bv-sub','data-agent-view':'','data-role':'subagent','data-session':String(entry.session||''),role:'log','aria-label':nameOf(entry)},
    el('div',{class:'bv-head'},el('b',{},nameOf(entry)),el('div',{class:'bv-head-actions'},state,toggle)),pre);
-  let enlarged=false;
-  const setEnlarged=on=>{
-   enlarged=on;
-   view.classList.toggle('enlarged',on);
-   toggle.textContent=on?'Verkleinern':'Vergrößern';
-   toggle.setAttribute('aria-label',on?'Subagent verkleinern':'Subagent vergrößern');
-   toggle.setAttribute('aria-expanded',on?'true':'false')};
-  toggle.addEventListener('click',()=>setEnlarged(!enlarged));
-  const node={view,pre,state,text:'',loading:false};
+  toggle.addEventListener('click',()=>toggleFocus(String(entry.session||'')));
+  const node={view,pre,state,toggle,text:'',loading:false};
   setText(node,String(entry.output||''));
   return node}
+ function makeRow(){
+  const focus=el('button',{class:'b bv-focus-btn',type:'button','data-focus-session':'','aria-label':'fokussieren','aria-expanded':'false'},'Fokus');
+  const label=el('span',{class:'bv-ov-name'});
+  const desc=el('span',{class:'bv-ov-desc'});
+  const state=el('span',{class:'pill mut'});
+  const row=el('div',{class:'bv-overview-row','data-overview-session':''},label,desc,state,focus);
+  focus.addEventListener('click',()=>toggleFocus(String(row.getAttribute('data-overview-session')||'')));
+  return {row,label,desc,state,focus}}
  async function loadChild(node,entry){
   if(node.loading)return;
   node.loading=true;
@@ -566,16 +599,43 @@ function outputView(name,d,isPi){
   lastRunning=running;
   mainView.setAttribute('data-session',session);
   mainView.setAttribute('aria-label','Hauptagent'+(session?' '+session:''));
+  mainToggle.setAttribute('data-focus-session',session);
   mainState.textContent=running?'läuft':'gestoppt';
   mainState.className='pill '+(running?'run':'mut');
   const subs=((data&&data.subagents)||[]).filter(s=>s&&s.session&&s.status==='running');
-  const entries=[{session,label:'Hauptagent'}].concat(subs.map(s=>({session:String(s.session),label:nameOf(s)}))).filter(e=>e.session);
+  const entries=[{session,label:'Hauptagent',agent:'Hauptagent',description:'Live-Ausgabe des Hauptagenten'}]
+   .concat(subs.map(s=>({session:String(s.session),label:nameOf(s),agent:String(s.agent||'Subagent'),description:String(s.description||'')})))
+   .filter(e=>e.session);
+  /* Ein Sessionwechsel des Hauptagenten darf keinen verwaisten Fokus lassen. */
+  if(focusedSession&&focusedSession!==session&&!children.has(focusedSession))focusedSession=null;
   const key=entries.map(e=>e.session).join('|');
   if(key!==optionKey){optionKey=key;select.replaceChildren(...entries.map(e=>el('option',{value:e.session},e.label)))}
   const values=new Set([...select.options].map(o=>o.value));
   select.value=values.has(select.value)?select.value:(values.has(session)?session:(entries[0]?entries[0].session:''));
+  /* Übersicht: genau eine Zeile je laufendem Agenten, bei Sessionwechsel
+     mitgezogen und ohne Duplikate. */
+  for(const[id,row]of [...rows]){if(!entries.some(e=>e.session===id)){row.row.remove();rows.delete(id)}}
+  entries.forEach(entry=>{
+   const id=entry.session;let row=rows.get(id);
+   if(!row){row=makeRow();rows.set(id,row)}
+   row.row.setAttribute('data-overview-session',id);
+   /* AP20: Die Zeile kürzt die Beschreibung per Ellipsis; der volle Text
+      bleibt als Tooltip (Hover/Tastatur) ohne innerHTML verfügbar. */
+   row.row.setAttribute('title',entry.agent+(entry.description?' — '+entry.description:''));
+   row.label.textContent=entry.agent;
+   row.desc.textContent=entry.description||'—';
+   row.state.textContent=entry.session===session&&!running?'gestoppt':'läuft';
+   row.state.className='pill '+(entry.session===session&&!running?'mut':'run');
+   row.focus.setAttribute('data-focus-session',id);
+   row.focus.setAttribute('aria-label',entry.agent+' fokussieren')});
+  if(key!==rowKey){rowKey=key;overviewList.replaceChildren(...entries.map(e=>rows.get(e.session).row))}
+  overviewCount.textContent=subs.length+' Subagenten';
+  overview.setAttribute('data-active-agents',String(subs.length));
+  /* Der Leerzustand bezieht sich auf Subagenten: Der Hauptagent bleibt auch
+     ohne Subagenten als Zeile sichtbar. */
+  overviewEmpty.hidden=subs.length>0;
   const wanted=new Set(subs.map(s=>String(s.session)));
-  for(const[id,node]of [...children]){if(!wanted.has(id)){node.view.remove();children.delete(id)}}
+  for(const[id,node]of [...children]){if(!wanted.has(id)){if(focusedSession===id)focusedSession=null;node.view.remove();children.delete(id)}}
   subs.forEach(s=>{const id=String(s.session);let node=children.get(id);
    if(!node){node=makeChild(s);children.set(id,node)}
    node.view.setAttribute('data-session',id);
@@ -587,7 +647,9 @@ function outputView(name,d,isPi){
   subsBox.hidden=!subs.length;
   cont.hidden=!(session&&!running);
   send.disabled=isPi||!running;
-  ta.disabled=isPi||!running}
+  ta.disabled=isPi||!running;
+  applyFocus()}
+ card.addEventListener('keydown',e=>{if(e.key==='Escape'&&focusedSession){e.preventDefault();toggleFocus(focusedSession)}});
  async function sendNow(){
   if(isPi){toast('Bei Pi ist das Steuern nicht möglich: Pi läuft im Print-Modus (--no-session) ohne fortsetzbare Session.');return}
   const text=ta.value.trim();
