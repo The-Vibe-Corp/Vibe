@@ -1011,14 +1011,14 @@
       "sha256": "e5ae3183efcb76dace1e0bcbde9993be7afe82d93d7877da9ee39846cf45330a"
     },
     {
-      "bytes": 271087,
+      "bytes": 271661,
       "path": "bin/vibe",
-      "sha256": "38e8df896891ac7adfa9bc46c1daf83628c5e45f45e1783178e0262535bc9a70"
+      "sha256": "155588c025000ad7074180ed8c1dd52a9b4f20695babf26ddeae2b10ec976507"
     },
     {
-      "bytes": 59425,
+      "bytes": 61189,
       "path": "bin/vibe-run.sh",
-      "sha256": "859086c0b2b9f5e949ce99be2079256a33157c6735abc2eb494a075db4316795"
+      "sha256": "6f7f169479842777ad6369420590c8646ae3d4391174bbfa43d12f93c4aea4ae"
     },
     {
       "bytes": 100884,
@@ -1036,9 +1036,9 @@
       "sha256": "0f6d9c2c9d72ff1400ba0c2e8173217102ac9f163a41191c34367dd5f81f5778"
     },
     {
-      "bytes": 56538,
+      "bytes": 60761,
       "path": "bin/vibe_github.py",
-      "sha256": "0a9058f16d4e7aaf683e1196fb5910120c3c0399eb3401529b0f9ded2ec0357e"
+      "sha256": "a4e7e249c934c5a99edd6ea37058635ea4c9ecd73cbca3e2f19931dd261a421b"
     },
     {
       "bytes": 27530,
@@ -1071,9 +1071,9 @@
       "sha256": "ac3b26da4208a087a09c67c389238c82802d7c1bd50b10d9bcd9492a07050462"
     },
     {
-      "bytes": 61069,
+      "bytes": 65986,
       "path": "bin/vibe_packages.py",
-      "sha256": "e238f45be10aa148bc6d1e9f3e9f3d1e4c4335de49ffb6c2e12d07707b4c46a6"
+      "sha256": "68c1c2afe869cb3a4e2807ba360d83b514bf01076baf7b0209e08c3e88cd3219"
     },
     {
       "bytes": 20789,
@@ -1111,9 +1111,9 @@
       "sha256": "d49b2406f2c9837c63ed3c3dcb265938fe5702e78c5aeb0df07b9f349fd65594"
     },
     {
-      "bytes": 134181,
+      "bytes": 134189,
       "path": "bin/web/app.js",
-      "sha256": "9b82fafa1ed7309e4f4a4bcc416595afe0e5926c77561575a5a06e3a6919ade3"
+      "sha256": "7582556ce1559bf297e6dbc006dec23d34ef4b91da0e9825b57ba513de6c317c"
     },
     {
       "bytes": 588,
@@ -1136,9 +1136,9 @@
       "sha256": "b45ed5e95c842e67dbecf165bb6096ec9c513cc431ede7442cd4bbad9ed0e806"
     },
     {
-      "bytes": 4986,
+      "bytes": 5560,
       "path": "templates/android/AGENTS.md",
-      "sha256": "d197361a09fcbd65f496bee1d3e040a73c99253d93f386f20f0ce78344cc1633"
+      "sha256": "7543f714eb752afba5671a784058ec9382572d089d0dc1f8ac41f62b6c8b06a8"
     },
     {
       "bytes": 522,
@@ -1176,9 +1176,9 @@
       "sha256": "722919bbc27d3ec4bf3ccadaff4be18ff5cf6c9cb1e4666e6f080c467e48f1b7"
     },
     {
-      "bytes": 4600,
+      "bytes": 5174,
       "path": "templates/docker/AGENTS.md",
-      "sha256": "9d811b15ee86442170640b3bf9d77b0c3f29cf7653340a708c3f99e559e5131f"
+      "sha256": "6f3af2a80fecbdaa8333b8d81ba5e78abc80c29739f8908f23ccdcacbedf45e6"
     },
     {
       "bytes": 354,
@@ -1186,9 +1186,9 @@
       "sha256": "63c0ebab49aa870ae5e5f731890cce3f0ce2859364152c00b64cb89e3e6d9ae5"
     },
     {
-      "bytes": 4285,
+      "bytes": 4859,
       "path": "templates/generic/AGENTS.md",
-      "sha256": "3c8b5064d2e610f8b64053234d5aa00e139e1f67c02fc77139c9f48cc75cd291"
+      "sha256": "bade55d11b0ea5f960c4ea310bd53bb0bea65dfe5648a764a841a8c61eb8eb53"
     },
     {
       "bytes": 670,
@@ -1241,9 +1241,9 @@
       "sha256": "db8026a75dd2f358a771be9e2fc2fd4ba88c6180f026078552c3259e5156360f"
     },
     {
-      "bytes": 7930,
+      "bytes": 8504,
       "path": "templates/rebuild/AGENTS.md",
-      "sha256": "7f20cc9c15795674b91f1198dbb5ca1996c9bfefaf97aa92250e05666d75294a"
+      "sha256": "b27f5f5b9c6f9e4f70d628d3d7354638858d674c903787d6e6546f2a8a3414e2"
     },
     {
       "bytes": 1675,
@@ -1266,9 +1266,9 @@
       "sha256": "54b4975a06030dc63f299d0a0e2ef8249857b08d62e3e35e61bacb2205c8e1c4"
     },
     {
-      "bytes": 4650,
+      "bytes": 5224,
       "path": "templates/web/AGENTS.md",
-      "sha256": "a3a3f0f27ba60b26afdb8c1af9e5e2f1dc3a0b6e891317e169ce45c7825f8d8d"
+      "sha256": "9520567769e7ec56057f9a10a8fd4f2a44f66403c15a06a10069b5df857c9516"
     },
     {
       "bytes": 73163,

@@ -809,7 +809,7 @@ function githubBody(d,name){
    el('button',{class:'b',on:{click:async()=>{const r=await post({name,action:'checkout',branch:b.name});if(r.ok)refresh()}}},'Wechseln'),
    el('button',{class:'b',on:{click:async()=>{const r=await post({name,action:'push',branch:b.name});if(r.ok)refresh()}}},'Push'))));
  const conn=el('div',{},
-   el('div',{class:'mut'},'GitHub ist optional je Projekt. Die Einstellungen gelten nur für dieses Projekt; die Knöpfe bleiben bewusste Aktionen. Bei aktiver Verknüpfung zieht der Läufer vor jedem Arbeitspaket den Haupt-Branch (pull) und überträgt nach jedem abgeschlossenen Paket den Paket-Branch automatisch nach origin und stellt einen Merge-Request — das Zusammenführen bleibt manuell.'),
+   el('div',{class:'mut'},'GitHub ist optional je Projekt. Die Einstellungen gelten nur für dieses Projekt; die Knöpfe bleiben bewusste Aktionen. Bei aktiver Verknüpfung überträgt der Läufer nach jedem abgeschlossenen Paket den Paket-Branch und stellt einen Merge-Request — ohne Push und Merge-Request blockiert der Abschluss (kein Häkchen, kein lokaler Merge); das Zusammenführen bleibt manuell.'),
    authLine,
    el('div',{class:'bar'},tokenIn,tokenSave,tokenClear),
    el('label',{class:'inline'},enabled,' GitHub-Verknüpfung aktiv'),

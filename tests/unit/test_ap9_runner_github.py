@@ -11,10 +11,11 @@ unabhängig von einer Implementierung:
   aktuellen Integrationsbranches; Fehler liefern (True, False, Meldung),
   werfen aber niemals.
 * ``complete_package(project_path, branch, package_id=None) -> (performed,
-  ok, message)``: nach AP-Abschluss Push des Branches (mit Upstream) und
-  Merge-Request auf den Basis-Branch (explizit > GITHUB_BASE >
+  ok, message, result)``: nach AP-Abschluss Push des Branches (mit Upstream)
+  und Merge-Request auf den Basis-Branch (explizit > GITHUB_BASE >
   origin/HEAD). Nicht konfiguriert/kein origin → Skip; Fehler liefern
-  (True, False, Meldung), werfen niemals.
+  (True, False, Meldung, result), werfen niemals. Seit B16 enthält
+  ``result`` die Schlüssel ``branch`` und ``pr_url``.
 * Subkommandos des Läufers: ``vibe_packages.py github-pull --project`` und
   ``github-complete --project --branch [--id]`` beenden mit 0 bei Erfolg
   oder Skip und 1 bei Fehlschlag; Meldungen auf stdout/stderr.
@@ -358,23 +359,26 @@ class CompletePackageTest(AP9RunnerCase):
                                with_origin=bare_url)
         self.work_on_branch(project, "feature/skip")
 
-        performed, ok, message = self.gh.complete_package(
+        performed, ok, message, result = self.gh.complete_package(
             project, "feature/skip", package_id="AP9")
 
         self.assertFalse(performed)
         self.assertTrue(ok)
         self.assertTrue(str(message).strip(), "Skip-Meldung erwartet")
+        self.assertEqual("", result["pr_url"])
 
     def test_complete_package_skips_without_an_origin_remote(self):
         project = make_project(self.base, "paket-ohne-fremd",
                                env_extra=project_env("paket-ohne-fremd"))
         self.work_on_branch(project, "feature/ohne")
 
-        performed, ok, message = self.gh.complete_package(project, "feature/ohne")
+        performed, ok, message, result = self.gh.complete_package(
+            project, "feature/ohne")
 
         self.assertFalse(performed)
         self.assertTrue(ok)
         self.assertTrue(str(message).strip())
+        self.assertEqual("", result["pr_url"])
 
     def test_complete_package_pushes_and_opens_the_merge_request(self):
         server = RestFakeServer().start()
@@ -383,11 +387,13 @@ class CompletePackageTest(AP9RunnerCase):
         self.work_on_branch(project, "feature/ap9")
         tip = real_git_out(project, "rev-parse", "HEAD")
 
-        performed, ok, message = self.gh.complete_package(
+        performed, ok, message, result = self.gh.complete_package(
             project, "feature/ap9", package_id="AP9")
 
         self.assertTrue(performed, message)
         self.assertTrue(ok, message)
+        self.assertEqual("feature/ap9", result["branch"])
+        self.assertTrue(result["pr_url"], "PR-URL im Ergebnis erwartet")
         remote_tip = real_git_out(project, "ls-remote", "origin",
                                   "refs/heads/feature/ap9").split()[0]
         self.assertEqual(tip, remote_tip, "Der Zweig muss gepusht werden")
@@ -416,7 +422,8 @@ class CompletePackageTest(AP9RunnerCase):
         real_git(project, "remote", "set-head", "origin", "--auto", check=False)
         self.work_on_branch(project, "feature/kopf")
 
-        performed, ok, message = self.gh.complete_package(project, "feature/kopf")
+        performed, ok, message, result = self.gh.complete_package(
+            project, "feature/kopf")
 
         self.assertTrue(ok, message)
         posts = [post for post in server.posts
@@ -432,11 +439,13 @@ class CompletePackageTest(AP9RunnerCase):
         self.work_on_branch(project, "feature/fehler")
         os.environ["GITHUB_TOKEN"] = FAKE_TOKEN
 
-        performed, ok, message = self.gh.complete_package(project, "feature/fehler")
+        performed, ok, message, result = self.gh.complete_package(
+            project, "feature/fehler")
 
         self.assertTrue(performed)
         self.assertFalse(ok, "Ein abgelehnter Merge-Request ist kein Erfolg")
         self.assertTrue(str(message).strip(), "Meldung erwartet")
+        self.assertEqual("", result["pr_url"])
         self.not_disclosed(message)
 
     def test_complete_package_never_raises(self):
@@ -447,8 +456,10 @@ class CompletePackageTest(AP9RunnerCase):
             result = self.gh.complete_package(project, "feature/nie")
         except Exception as error:  # noqa: BLE001 - genau das ist der Befund
             self.fail("complete_package darf niemals werfen: %r" % (error,))
-        self.assertEqual(3, len(tuple(result)),
-                         "(performed, ok, message) erwartet")
+        self.assertEqual(4, len(tuple(result)),
+                         "(performed, ok, message, result) erwartet")
+        self.assertIn("branch", tuple(result)[3])
+        self.assertIn("pr_url", tuple(result)[3])
 
 
 # ----------------------------------------------- Subkommandos des Läufers

@@ -1,4 +1,4 @@
-"""Abnahme AP9: Verkabelung der GitHub-Subkommandos im Paketläufer.
+"""Abnahme AP9/B16: Verkabelung der GitHub-Subkommandos im Paketläufer.
 
 Geprüft wird die fachliche Verkabelung in ``bin/vibe-run.sh`` (nicht die
 Subkommandos selbst — die deckt ``test_ap9_runner_github.py`` ab):
@@ -8,11 +8,18 @@ Subkommandos selbst — die deckt ``test_ap9_runner_github.py`` ab):
   einen HINWEIS und blockiert das Paket nicht (AP9: „Vor jedem neuen AP
   den Haupt-Branch aktualisieren").
 * ``github-complete`` läuft erst nach grüner Abschlussschranke und vor
-  ``merge_package``; ein Fehlschlag erzeugt nur einen HINWEIS, das Paket
-  wird trotzdem lokal gemergt (AP9: „Nach AP-Abschluss automatisch einen
-  Merge-Request stellen, ohne das Paket an GitHub zu hängen").
+  ``merge_package``. **B16 ersetzt hier die AP9-Semantik:** Ein Fehlschlag
+  der GitHub-Abschlussschranke (Push oder Merge-Request) ist keine bloße
+  Empfehlung mehr, sondern blockiert das Paket. Es wird nicht lokal gemergt,
+  das Ticket bleibt offen, und die Arbeitskopie bleibt zur Diagnose liegen.
+  Der Pull-Fehlschlag bleibt dagegen ein HINWEIS (AP9).
 * Ein erfolgreicher github-pull läuft unsichtbar weiter (keine HINWEIS-
   Zeile, kein Block).
+
+Der Modul-Docstring hält die bewusste Semantikänderung fest: Die Tests in
+``test_ap9_runner_wiring.py`` prüfen AP9-Verhalten, soweit B16 es nicht
+ausdrücklich ersetzt. Die vollständige B16-Abnahme liegt in
+``tests/unit/test_b16_runner_wiring.py``.
 
 Der echte Läufer läuft in einer Fake-Toolchain (Muster
 ``tests/unit/test_b9_self_repair.py`` / ``test_runner_package_gates.py``):
@@ -33,6 +40,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import runner_support as support
+
+# B16: Ein erreichbarer Merge-Request-Endpunkt ist für erfolgreiche
+# Abschlüsse nötig; die harte Schranke blockiert sonst zu Recht.
+from tests.unit.test_ap9_runner_github import RestFakeServer
 
 PROJECT_ENV = """TYPE=generic
 AGENT=test-agent
@@ -73,13 +84,9 @@ class AP9WiringFixture(unittest.TestCase):
         self.tool_bin = support.install_runner(self.install)
         (self.tool_bin / "vibe").write_text(support.FAKE_VIBE, encoding="utf-8")
         (self.tool_bin / "vibe").chmod(0o755)
-        # install_runner kennt die GitHub-Verkabelung nicht; das Subkommando-
-        # Modul gehört trotzdem in die Fake-Toolchain, damit der Läufer die
-        # zu prüfenden Aufrufe wirklich ausführen kann (Muster: B6-Test,
-        # der die Harness-Module nachkopiert).
-        (self.tool_bin / "vibe_github.py").write_text(
-            (support.BIN / "vibe_github.py").read_text(encoding="utf-8"),
-            encoding="utf-8")
+        # B16: ``install_runner`` kopiert ``vibe_github.py`` inzwischen mit;
+        # ohne dieses Modul würde die harte GitHub-Abschlussschranke jede
+        # Fake-Toolchain blockieren.
         self.runtime = self.root / "_logs"
         self.state = self.root / "state"
         self.state.mkdir()
@@ -189,7 +196,14 @@ class AP9WiringFixture(unittest.TestCase):
 class PullWiringTest(AP9WiringFixture):
     """github-pull: Reihenfolge nach Auswahl, vor der Arbeitskopie."""
 
-    def test_a_failing_github_pull_is_only_a_hint_and_does_not_block(self):
+    def test_a_failing_github_pull_is_a_hint_but_completion_blocks(self):
+        """B16 ersetzt die AP9-Abschlusssemantik.
+
+        Der fehlgeschlagene ``github-pull`` bleibt ein HINWEIS (AP9). Der
+        anschließende GitHub-Abschluss ist dagegen eine echte Schranke: Weil
+        origin nicht erreichbar ist, darf das Paket nicht lokal gemergt
+        werden, das Ticket bleibt offen und die Arbeitskopie bleibt liegen.
+        """
         project = self.make_project(
             env_extra=('GITHUB_ENABLED="1"\nGITHUB_REPO="owner/name"\n'
                        'GITHUB_BASE="main"\n'))
@@ -199,15 +213,16 @@ class PullWiringTest(AP9WiringFixture):
 
         result = self.run_runner(project)
 
-        self.assertEqual(0, result.returncode,
-                         "Ein GitHub-Fehlschlag darf den Lauf nicht abbrechen:\n"
-                         + result.stdout + result.stderr)
+        self.assertNotEqual(0, result.returncode,
+                            "Die fehlgeschlagene GitHub-Schranke muss den "
+                            "Lauf blockieren:\n" + result.stdout + result.stderr)
         log = self.log(project)
         hint_pull = self.log_index(
             log, "HINWEIS: GitHub-Pull des Haupt-Branchs vor F1 fehlgeschlagen")
         header = self.log_index(log, "Arbeitspaket F1, Durchgang")
-        hint_complete = self.log_index(
-            log, "HINWEIS: GitHub-Abschluss für F1")
+        blocked = self.log_index(
+            log, "BLOCKIERT: GitHub-Abschluss für F1 fehlgeschlagen "
+                 "(Push/Merge-Request):")
         fertig = self.log_index(log, "FERTIG")
 
         self.assertGreaterEqual(hint_pull, 0,
@@ -215,25 +230,37 @@ class PullWiringTest(AP9WiringFixture):
         # Reihenfolge: HINWEIS vor dem Paketkopf — der Pull läuft nach der
         # Auswahl (er kennt F1) und vor dem Erfassen des Paketbases.
         self.assertLess(hint_pull, header, log)
-        self.assertGreaterEqual(hint_complete, 0,
-                                "Fehlender Abschluss erzeugt keinen HINWEIS:\n"
-                                + log)
-        self.assertLess(hint_complete, fertig,
-                        "Der Merge läuft nach dem GitHub-Abschluss weiter:\n"
-                        + log)
-        self.assertNotIn("BLOCKIERT", log,
-                         "Ein GitHub-Fehlschlag darf das Paket nicht "
-                         "blockieren:\n" + log)
-        # Das Paket ist trotzdem lokal gemergt:
-        self.assertEqual(0, git(project, "cat-file", "-e",
-                                "HEAD:impl-F1.txt").returncode,
-                         "Das Paket wurde nicht in den Integrationsstand "
-                         "gemergt:\n" + log)
+        self.assertGreaterEqual(blocked, 0,
+                                "Der GitHub-Abschluss blockiert nicht:\n" + log)
+        self.assertEqual(-1, fertig,
+                         "Ein blockiertes Paket darf nicht FERTIG melden:\n"
+                         + log)
+        # Das Paket ist NICHT lokal gemergt:
+        self.assertNotEqual(
+            0, git(project, "cat-file", "-e", "HEAD:impl-F1.txt").returncode,
+            "Das Paket wurde trotz fehlgeschlagener GitHub-Schranke "
+            "gemergt:\n" + log)
+        # Das Ticket bleibt offen:
+        self.assertIn("- [ ] F1", (project / "FEEDBACK.md").read_text(
+            encoding="utf-8"))
+        report = (self.runtime / (project.name + ".report.txt")).read_text(
+            encoding="utf-8")
+        self.assertIn("Blockiert: F1", report)
+        self.assertNotIn("Geschlossen: F1", report)
+        # Die blockierte Arbeitskopie bleibt zur Diagnose liegen.
+        worktree_root = self.runtime / "worktrees"
+        self.assertTrue(
+            worktree_root.exists() and any(worktree_root.iterdir()),
+            "Die blockierte Arbeitskopie wurde entfernt")
 
     def test_a_successful_pull_updates_the_base_before_the_worktree(self):
+        # B16: Die harte GitHub-Schranke verlangt einen erreichbaren
+        # Merge-Request-Endpunkt; der REST-Fake liefert ihn für den Abschluss.
+        server = RestFakeServer().start()
+        self.addCleanup(server.close)
         project = self.make_project(
             env_extra=('GITHUB_ENABLED="1"\nGITHUB_REPO="owner/name"\n'
-                       'GITHUB_BASE="main"\nGITHUB_API="%s"\n' % DEAD_API))
+                       'GITHUB_BASE="main"\nGITHUB_API="%s"\n' % server.base))
         bare = self.empty_bare("aktuell")
         self.link_origin(project, bare)
         # Projektstand auf origin bringen; der Fernstand ist danach um einen
