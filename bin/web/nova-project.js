@@ -22,12 +22,14 @@ NV.views.project = function project(context, token) {
     if (!selected) panel.setAttribute('hidden', '');
     panel.append(el('h3', {}, tr(tab === 'overview' ? 'Überblick' : tab === 'work' ? 'Arbeit' :
       tab === 'output' ? 'Ausgabe' : tab === 'assistant' ? 'Assistent' : 'Einstellungen')),
-      el('p', {class: 'nv-muted'}, tr('Dieser Bereich wird im nächsten Meilenstein gebaut.')));
+      el('p', {class: 'nv-muted'}, tr('Dieser Bereich wird gerade aufgebaut. Deine Projekte und Arbeitspakete sind sicher — nichts geht verloren.')),
+      el('div', {class: 'nv-skeleton', 'aria-hidden': 'true'}),
+      el('div', {class: 'nv-skeleton nv-skeleton-short', 'aria-hidden': 'true'}));
     panels.push(panel);
   });
 
   document.getElementById('nv-main').replaceChildren(
-    el('div', {class: 'nv-row'}, el('h2', {'data-nv-project-title': ''}, name)),
+    el('div', {class: 'nv-row'}, el('h2', {class: 'nv-page-title', 'data-nv-project-title': ''}, name)),
     tabBar, ...panels);
   NV.refreshBell();
 };

@@ -36,64 +36,69 @@ NV.views.home = async function home(context, token) {
   if (NV.stale(token)) return;
 
   var main = document.getElementById('nv-main');
-  var cards = [];
 
-  /* Einstiegshinweis: einmal schließen, dauerhaft im Browser merken. */
-  if (!localStorage.getItem('nv-guide-dismissed')) {
-    var guide = el('section', {class: 'nv-card nv-guide', 'data-nv-guide': ''},
-      el('h2', {}, tr('Erste Schritte')),
-      el('ol', {},
-        el('li', {}, tr('Projektordner verbinden')),
-        el('li', {}, tr('Projekt anlegen oder öffnen')),
-        el('li', {}, tr('Arbeit starten'))),
-      el('button', {class: 'nv-btn nv-ghost', type: 'button', 'data-nv-guide-dismiss': '',
-        on: {click: function () {
-          localStorage.setItem('nv-guide-dismissed', '1');
-          guide.remove();
-        }}}, tr('Hinweis schließen')));
-    cards.push(guide);
-  }
-
-  /* Schnellaktionen: wenige Klicks zu den häufigsten Zielen. */
-  cards.push(el('section', {class: 'nv-card', 'data-nv-quick': ''},
-    el('h2', {}, tr('Schnellaktionen')),
-    el('div', {class: 'nv-row'},
-      el('button', {class: 'nv-btn nv-primary', type: 'button', on: {click: function () {
-        var input = main.querySelector('[data-nv-new-project] input[data-nv-field="name"]');
-        if (input) { input.focus(); input.scrollIntoView({block: 'center'}); }
-      }}}, tr('Neues Projekt')),
-      el('button', {class: 'nv-btn', type: 'button',
-        on: {click: function () { NV.navigate('#/agents'); }}}, tr('Neuer Agent')),
-      el('button', {class: 'nv-btn', type: 'button',
-        on: {click: function () { NV.navigate('#/activity'); }}}, tr('Fragen beantworten')))));
-
-  /* Projektliste. */
+  /* Projektliste zuerst, direkt unter der Seitenüberschrift (IA-Fundstück). */
   var grid = el('div', {class: 'nv-grid', 'data-nv-projects': ''});
   projects.forEach(function (row) {
     var name = String(row.name || '');
     var state = row.running ? 'running' : 'stopped';
     var label = row.running ? tr('läuft') : tr('gestoppt');
-    var card = el('article', {class: 'nv-card nv-project', 'data-nv-project': name},
+    var open = function () { NV.navigate('#/project/' + encodeURIComponent(name)); };
+    var card = el('article', {class: 'nv-card nv-project', 'data-nv-project': name,
+      on: {click: open}},
       el('div', {class: 'nv-row'},
-        el('h3', {class: 'nv-project-name', on: {click: function () {
-          NV.navigate('#/project/' + encodeURIComponent(name));
-        }}}, name),
+        el('h3', {class: 'nv-project-name'}, name),
         el('span', {class: 'nv-pill', 'data-nv-run-state': '', 'data-state': state}, label),
         el('span', {class: 'nv-pill nv-type', 'data-nv-type': ''}, String(row.type || ''))),
-      el('div', {class: 'nv-row nv-muted'},
-        el('span', {}, tr('Offene Pakete') + ': '),
+      el('div', {class: 'nv-row nv-muted nv-project-meta'},
+        el('span', {}, tr('Offene Arbeitspakete') + ': '),
         el('span', {'data-nv-open-count': ''}, String(row.open == null ? 0 : row.open))),
       row.pause_after ? el('span', {class: 'nv-pill nv-warn', 'data-nv-pause-badge': ''}, tr(' Pause')) : null,
-      el('a', {class: 'nv-btn nv-primary', 'data-nv-action': 'open-project',
+      el('a', {class: 'nv-btn nv-secondary', 'data-nv-action': 'open-project',
         href: '#/project/' + encodeURIComponent(name)}, tr('Öffnen')));
     grid.append(card);
   });
   if (!projects.length) {
     grid.append(el('p', {class: 'nv-muted'}, tr('Keine Projekte gefunden. Entwicklungsordner unten hinzufügen.')));
   }
-  cards.push(el('section', {class: 'nv-section'}, el('h2', {}, tr('Projekte')), grid));
+  var projectsCard = el('section', {class: 'nv-section nv-projects-section'},
+    el('h2', {}, tr('Projekte')), grid);
 
-  /* Neuanlage: Typen kommen aus /api/types, danach geht es in den Assistenten. */
+  /* Einstiegshinweis: kompaktes Banner mit Schritt-Chips, dauerhaft schließbar
+     über einen echten kleinen Knopf (nicht über einen Text-Link). */
+  var guideCard = null;
+  if (!localStorage.getItem('nv-guide-dismissed')) {
+    guideCard = el('section', {class: 'nv-card nv-guide', 'data-nv-guide': ''},
+      el('span', {class: 'nv-guide-label'}, tr('Erste Schritte')),
+      el('div', {class: 'nv-guide-steps'},
+        el('span', {class: 'nv-chip'}, tr('Projektordner verbinden')),
+        el('span', {class: 'nv-chip'}, tr('Projekt anlegen oder öffnen')),
+        el('span', {class: 'nv-chip'}, tr('Arbeit starten'))),
+      el('button', {class: 'nv-btn nv-ghost nv-close', type: 'button', 'data-nv-guide-dismiss': '',
+        'aria-label': tr('Hinweis schließen'), title: tr('Hinweis schließen'),
+        on: {click: function () {
+          localStorage.setItem('nv-guide-dismissed', '1');
+          if (guideCard) guideCard.remove();
+        }}}, '×'));
+  }
+
+  /* Schnellaktionen: unter den Projekten und bewusst secondary gehalten,
+     damit die Neuanlage der einzige primäre Knopf der Seite bleibt. */
+  var quickCard = el('section', {class: 'nv-card nv-card-secondary nv-quick', 'data-nv-quick': ''},
+    el('h2', {}, tr('Schnellaktionen')),
+    el('div', {class: 'nv-row'},
+      el('button', {class: 'nv-btn nv-secondary', type: 'button', on: {click: function () {
+        var input = main.querySelector('[data-nv-new-project] input[data-nv-field="name"]');
+        if (input) { input.focus(); input.scrollIntoView({block: 'center'}); }
+      }}}, tr('Neues Projekt')),
+      el('button', {class: 'nv-btn nv-ghost', type: 'button',
+        on: {click: function () { NV.navigate('#/agents'); }}}, tr('Neuer Agent')),
+      el('button', {class: 'nv-btn nv-ghost', type: 'button',
+        on: {click: function () { NV.navigate('#/activity'); }}}, tr('Fragen beantworten'))));
+
+  /* Neuanlage: Typen kommen aus /api/types, danach geht es in den Assistenten.
+     Das Formular bleibt sichtbar (die Tests lesen das Typ-Feld direkt), steht
+     aber in einer deutlich untergeordneten Karte. */
   var nameInput = el('input', {'data-nv-field': 'name',
     placeholder: tr('projektname (a-z, 0-9, -)'), 'aria-label': tr('Name')});
   var typeSelect = el('select', {'data-nv-field': 'type', 'aria-label': tr('Typ')});
@@ -124,13 +129,14 @@ NV.views.home = async function home(context, token) {
         createButton.disabled = false;
       }
     }}}, tr('Anlegen'));
-  cards.push(el('section', {class: 'nv-card', 'data-nv-new-project': ''},
+  var newProjectCard = el('section', {class: 'nv-card nv-card-secondary', 'data-nv-new-project': ''},
     el('h2', {}, tr('Neues Projekt (im Standardordner)')),
     el('label', {}, tr('Name')), nameInput,
     el('label', {}, tr('Typ')), typeSelect,
-    el('div', {class: 'nv-row'}, createButton), newError));
+    el('div', {class: 'nv-row'}, createButton), newError);
 
   /* Auschecken ist technisch und bleibt hinter dem Feature github verborgen. */
+  var cloneCard = null;
   if (NV.feature('github')) {
     var urlInput = el('input', {'data-nv-field': 'url',
       placeholder: tr('GitHub-Adresse zum Auschecken'), 'aria-label': tr('GitHub-Adresse zum Auschecken')});
@@ -153,13 +159,15 @@ NV.views.home = async function home(context, token) {
           cloneButton.disabled = false;
         }
       }}}, tr('Auschecken'));
-    cards.push(el('section', {class: 'nv-card', 'data-nv-clone': ''},
+    cloneCard = el('section', {class: 'nv-card nv-card-secondary', 'data-nv-clone': ''},
       el('h2', {}, tr('Aus GitHub auschecken')),
       el('label', {}, tr('GitHub-Adresse zum Auschecken')), urlInput,
-      el('div', {class: 'nv-row'}, cloneButton), cloneError));
+      el('div', {class: 'nv-row'}, cloneButton), cloneError);
   }
 
-  /* Entwicklungsordner: Zeilen mit Entfernen, Eingabe und Neu-einlesen. */
+  /* Entwicklungsordner: Zeilen mit Entfernen, Eingabe und Neu-einlesen.
+     Lange Pfade werden auf den Ordnernamen gekürzt; der volle Pfad steht im
+     title-Attribut und bleibt als <code> markierbar. */
   var rootError = nvErrorBox();
   var rootInput = el('input', {'data-nv-field': 'root',
     placeholder: tr('/var/mnt/data/.../mein-entwicklungsordner'), 'aria-label': tr('Entwicklungsordner')});
@@ -167,9 +175,14 @@ NV.views.home = async function home(context, token) {
   function drawRoots(rows) {
     rootList.replaceChildren.apply(rootList, rows.map(function (row) {
       var path = String(row.path || '');
-      return el('div', {class: 'nv-row', 'data-nv-root': path},
-        el('span', {}, path + (row.fixed ? ' (' + tr('Standardliste') + ')' : '')),
-        el('button', {class: 'nv-btn nv-ghost', type: 'button', 'data-nv-action': 'root-remove',
+      var parts = path.split('/').filter(Boolean);
+      var base = parts.length ? parts[parts.length - 1] : path;
+      var shown = parts.length > 1 ? '…/' + base : base;
+      return el('div', {class: 'nv-root-row', 'data-nv-root': path},
+        el('code', {class: 'nv-root-path', title: path}, shown),
+        row.fixed ? el('span', {class: 'nv-pill nv-type'}, tr('Standardliste')) : null,
+        el('button', {class: 'nv-btn nv-ghost nv-compact', type: 'button',
+          'data-nv-action': 'root-remove', 'aria-label': tr('entfernen'), title: tr('entfernen'),
           on: {click: async function () {
             try {
               var result = await api('/api/roots', {action: 'remove', path: path});
@@ -199,12 +212,17 @@ NV.views.home = async function home(context, token) {
         else nvShowError(rootError, bt(result.message));
       } catch (error) { nvShowError(rootError, String(error && error.message || error)); }
     }}}, tr('Neu einlesen'));
-  cards.push(el('section', {class: 'nv-card', 'data-nv-roots': ''},
+  var rootsCard = el('section', {class: 'nv-card nv-card-secondary', 'data-nv-roots': ''},
     el('h2', {}, tr('Entwicklungsordner')),
     rootList,
     el('label', {}, tr('Ordner hinzufügen')), rootInput,
-    el('div', {class: 'nv-row'}, addRoot, scanRoots), rootError));
+    el('div', {class: 'nv-row'}, addRoot, scanRoots), rootError);
 
-  main.replaceChildren(el('h2', {}, tr('Start')), ...cards);
+  var ordered = [projectsCard];
+  if (guideCard) ordered.push(guideCard);
+  ordered.push(quickCard, newProjectCard);
+  if (cloneCard) ordered.push(cloneCard);
+  ordered.push(rootsCard);
+  main.replaceChildren(el('h2', {class: 'nv-page-title'}, tr('Start')), ...ordered);
   NV.refreshBell();
 };

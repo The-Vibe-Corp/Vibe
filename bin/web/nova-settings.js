@@ -9,6 +9,33 @@ var NV_FEATURES = [
   'gates', 'env', 'sandbox', 'writeaccess', 'agentsfile', 'priority', 'runs'
 ];
 
+/* Drei verständliche Gruppen statt 14 ungeordneter Zeilen. Die Reihenfolge
+   ist bewusst nach Nutzerinteresse, nicht nach Interna gewählt. */
+var NV_FEATURE_GROUPS = [
+  {title: 'Git & Code', ids: ['github', 'agentsfile', 'writeaccess']},
+  {title: 'Modelle & Agenten-Extras', ids: ['models', 'profiles', 'mcp', 'costs', 'harness']},
+  {title: 'Infrastruktur & Diagnose', ids: ['limits', 'gates', 'env', 'sandbox', 'priority', 'runs']}
+];
+
+/* Ein kurzer, laienverständlicher Hilfesatz je Schalter (deutsche
+   Quellschlüssel, en/de im Wörterbuch). */
+var NV_FEATURE_HELP = {
+  github: 'GitHub verbinden und Projekte von dort auschecken.',
+  agentsfile: 'Die AGENTS.md eines Projekts bearbeiten.',
+  writeaccess: 'Schreibrechte für jedes Projekt festlegen.',
+  models: 'Modellkatalog und Modellauswahl anzeigen.',
+  profiles: 'Gespeicherte Profile ansehen und übernehmen.',
+  mcp: 'Zusätzliche MCP-Werkzeuge verwalten.',
+  costs: 'Kostenübersicht und Preise anzeigen.',
+  harness: 'Harness-Status und Auswahl anzeigen.',
+  limits: 'Grenzen für Agentenläufe festlegen.',
+  gates: 'Qualitäts-Schranken global und je Projekt setzen.',
+  env: 'Umgebung prüfen und Dienste wie Emulator oder Server steuern.',
+  sandbox: 'Sandbox-Optionen für Projekte anzeigen.',
+  priority: 'Arbeitspakete nach Wichtigkeit sortieren.',
+  runs: 'Run-Register ansehen und bereinigen.'
+};
+
 function settingsErrorBox() {
   return el('div', {class: 'nv-form-error', 'data-nv-form-error': '', hidden: ''});
 }
@@ -34,12 +61,13 @@ NV.views.settings = async function settings(context, token) {
   [['light', 'Hell'], ['dark', 'Dunkel'], ['auto', 'System']].forEach(function (option) {
     themeSelect.append(el('option', {value: option[0]}, tr(option[1])));
   });
-  themeSelect.value = localStorage.getItem('nv-theme') || 'light';
+  // Der Select zeigt die Präferenz, NV.setTheme hält ihn bei Header-Wechsel
+  // aktuell; data-theme bleibt der aufgelöste Wert.
+  themeSelect.value = NV.themePreference();
   themeSelect.addEventListener('change', function () { NV.setTheme(themeSelect.value); });
   cards.push(el('section', {class: 'nv-card', 'data-nv-ssection': 'appearance'},
     el('h2', {}, tr('Erscheinung')),
-    el('label', {}, tr('Darstellung')), themeSelect,
-    el('p', {class: 'nv-muted'}, tr('Der Animations-Schalter liegt in der Kopfleiste.'))));
+    el('label', {}, tr('Darstellung')), themeSelect));
 
   /* ---------- Sprache (global, serverseitig wie im Bestand) ---------- */
   var langSelect = el('select', {'aria-label': 'Language'});
@@ -70,7 +98,7 @@ NV.views.settings = async function settings(context, token) {
     el('h2', {}, tr('Sprache')),
     el('p', {class: 'nv-muted'}, tr('ui.language.hint')), langSelect));
 
-  /* ---------- Zugriff ---------- */
+  /* ---------- Zugriff: Anmeldung prominent, Netzwerk untergeordnet ---------- */
   var password = el('input', {type: 'password', 'data-nv-field': 'password',
     placeholder: tr('neues Passwort (mind. 8 Zeichen)'), 'aria-label': tr('Neues Passwort')});
   var repeat = el('input', {type: 'password', 'data-nv-field': 'password-repeat',
@@ -106,7 +134,7 @@ NV.views.settings = async function settings(context, token) {
         toast(bt(result.message) || tr('Kennwort entfernt'));
       } catch (error) { settingsError(accessError, String(error && error.message || error)); }
     }}}, tr('Passwort entfernen'));
-  var securitySave = el('button', {class: 'nv-btn nv-primary', type: 'button',
+  var securitySave = el('button', {class: 'nv-btn nv-secondary', type: 'button',
     'data-nv-action': 'security-save', on: {click: async function () {
       settingsError(accessError, '');
       var update = {action: 'save'};
@@ -132,21 +160,34 @@ NV.views.settings = async function settings(context, token) {
     }}}, tr('Speichern'));
   var logout = el('button', {class: 'nv-btn', type: 'button',
     'data-nv-action': 'logout', on: {click: function () { NV.logout(); }}}, tr('Abmelden'));
-  cards.push(el('section', {class: 'nv-card', 'data-nv-ssection': 'access'},
-    el('h2', {}, tr('Zugriffssicherheit')),
+
+  var signIn = el('div', {class: 'nv-access-signin'},
+    el('h3', {}, tr('Anmeldung')),
     el('label', {}, tr('Neues Passwort')), password,
     el('label', {}, tr('Passwort wiederholen')), repeat,
-    el('div', {class: 'nv-row'}, passwordSet, passwordClear),
+    el('div', {class: 'nv-row'}, passwordSet, passwordClear, logout));
+  var network = el('div', {class: 'nv-access-network'},
+    el('h3', {}, tr('Netzwerk (erweitert)')),
+    el('p', {class: 'nv-note'}, tr('Netzwerk-Hinweis')),
     el('label', {}, 'Port'), portInput,
     el('label', {}, tr('Bind-Adresse')), bindInput,
     el('label', {}, tr('IP-Allowlist')), allowInput,
-    el('div', {class: 'nv-row'}, securitySave, logout), note, accessError));
+    el('div', {class: 'nv-row'}, securitySave), note);
+  cards.push(el('section', {class: 'nv-card', 'data-nv-ssection': 'access'},
+    el('h2', {}, tr('Zugriffssicherheit')), signIn, network, accessError));
 
   /* ---------- Feature-Schalter (alle standardmäßig aus) ---------- */
-  var featureRows = NV_FEATURES.map(function (id) {
-    var box = el('input', {type: 'checkbox', 'data-nv-feature': id, checked: NV.feature(id)});
-    box.addEventListener('change', function () { NV.setFeature(id, box.checked); });
-    return el('label', {class: 'nv-switch-row'}, box, el('span', {}, id));
+  var featureRows = NV_FEATURE_GROUPS.map(function (group) {
+    var rows = group.ids.map(function (id) {
+      var box = el('input', {type: 'checkbox', 'data-nv-feature': id, checked: NV.feature(id)});
+      box.addEventListener('change', function () { NV.setFeature(id, box.checked); });
+      return el('label', {class: 'nv-switch-row'}, box,
+        el('span', {class: 'nv-feature-text'},
+          el('strong', {}, id),
+          el('small', {}, tr(NV_FEATURE_HELP[id] || id))));
+    });
+    return el('div', {class: 'nv-feature-group'},
+      el('h3', {}, tr(group.title)), ...rows);
   });
   cards.push(el('section', {class: 'nv-card', 'data-nv-ssection': 'features'},
     el('h2', {}, tr('Funktionen')),
@@ -191,7 +232,7 @@ NV.views.settings = async function settings(context, token) {
     var gateProject = el('input', {'data-nv-field': 'gates-project',
       placeholder: tr('Projekt (optional)'), 'aria-label': tr('Projekt (optional)')});
     var gateError = settingsErrorBox();
-    var gateSave = el('button', {class: 'nv-btn nv-primary', type: 'button',
+    var gateSave = el('button', {class: 'nv-btn nv-secondary', type: 'button',
       'data-nv-action': 'gates-save', on: {click: async function () {
         settingsError(gateError, '');
         var body = {key: gateKey.value, value: String(gateValue.value || '')};
@@ -217,7 +258,7 @@ NV.views.settings = async function settings(context, token) {
   cards.push(el('p', {}, el('a', {class: 'nv-link', 'data-nv-classic-link': '', href: '/classic'},
     tr('Klassische Oberfläche öffnen'))));
 
-  main.replaceChildren(el('h2', {}, tr('Einstellungen')), ...cards);
+  main.replaceChildren(el('h2', {class: 'nv-page-title'}, tr('Einstellungen')), ...cards);
   NV.refreshBell();
 };
 

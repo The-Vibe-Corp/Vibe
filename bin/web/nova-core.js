@@ -156,14 +156,22 @@ function resolvedTheme(preference) {
   return query && query.matches ? 'dark' : 'light';
 }
 
+/* Der Select in den Einstellungen zeigt die gespeicherte Präferenz (light,
+   dark, auto), data-theme dagegen immer den aufgelösten Wert. Beide Controls
+   bleiben so in beide Richtungen synchron. */
+NV.themePreference = function () {
+  return localStorage.getItem('nv-theme') || 'light';
+};
+
 function applyTheme() {
-  var stored = localStorage.getItem('nv-theme') || 'light';
-  document.documentElement.setAttribute('data-theme', resolvedTheme(stored));
+  document.documentElement.setAttribute('data-theme', resolvedTheme(NV.themePreference()));
 }
 
 NV.setTheme = function (preference) {
   localStorage.setItem('nv-theme', preference);
   applyTheme();
+  var select = document.querySelector('[data-nv-theme-select]');
+  if (select) select.value = preference;
 };
 
 NV.toggleTheme = function () {
@@ -227,6 +235,8 @@ NV.navigate = function (hash) { location.hash = hash; };
 
 function render() {
   return Promise.resolve().then(function () {
+    // Die Glocke darf nicht über einen Routenwechsel hinweg offen bleiben.
+    closeBellPanel();
     if (!authorized) { showLogin(); return; }
     var context = route();
     RENDER_TOKEN++;
@@ -260,6 +270,7 @@ function initChrome() {
   if (toggle) {
     setTx(toggle, '☰');
     setAttrTx(toggle, 'aria-label', 'Menü');
+    setAttrTx(toggle, 'title', 'Menü');
     toggle.addEventListener('click', function () {
       var open = toggle.getAttribute('aria-expanded') === 'true';
       toggle.setAttribute('aria-expanded', open ? 'false' : 'true');
@@ -276,6 +287,7 @@ function initChrome() {
   if (animToggle) {
     animToggle.checked = document.documentElement.getAttribute('data-animations') !== 'off';
     setAttrTx(animToggle.parentNode, 'aria-label', 'Animationen');
+    setAttrTx(animToggle.parentNode, 'title', 'Animationen');
     animToggle.addEventListener('change', function () {
       NV.setAnimations(animToggle.checked);
     });
@@ -284,16 +296,47 @@ function initChrome() {
   if (themeToggle) {
     setTx(themeToggle, '◐');
     setAttrTx(themeToggle, 'aria-label', 'Darstellung wechseln');
+    setAttrTx(themeToggle, 'title', 'Darstellung wechseln');
     themeToggle.addEventListener('click', function () { NV.toggleTheme(); });
   }
   var bell = document.querySelector('[data-nv-bell]');
   if (bell) {
     setAttrTx(bell, 'aria-label', 'Benachrichtigungen');
-    bell.addEventListener('click', function () {
+    setAttrTx(bell, 'title', 'Benachrichtigungen');
+    bell.addEventListener('click', function (event) {
+      event.stopPropagation();
       var panel = document.querySelector('[data-nv-bell-panel]');
-      if (panel) panel.hidden = !panel.hidden;
+      if (!panel) return;
+      var shouldOpen = panel.hidden;
+      closeBellPanel();
+      if (shouldOpen) {
+        panel.hidden = false;
+        bell.setAttribute('aria-expanded', 'true');
+        bell.classList.add('is-open');
+      }
     });
+    var panel = document.querySelector('[data-nv-bell-panel]');
+    if (panel) {
+      // Der Schließen-Knopf wird bei jedem Refresh neu gebaut → Delegation.
+      panel.addEventListener('click', function (event) {
+        if (event.target.closest('[data-nv-bell-close]')) {
+          closeBellPanel();
+          bell.focus();
+        }
+      });
+    }
   }
+  // Klick außerhalb und Escape schließen die Glocke zuverlässig.
+  document.addEventListener('click', function (event) {
+    var panel = document.querySelector('[data-nv-bell-panel]');
+    if (!panel || panel.hidden) return;
+    var wrap = document.querySelector('.nv-bell-wrap');
+    if (wrap && wrap.contains(event.target)) return;
+    closeBellPanel();
+  });
+  document.addEventListener('keydown', function (event) {
+    if (event.key === 'Escape') closeBellPanel();
+  });
   window.addEventListener('hashchange', function () { render(); });
   window.addEventListener('vibe:langchange', function () {
     retranslateDOM();
@@ -356,6 +399,20 @@ NV.logout = function () {
   });
 };
 
+/* Die Glocke hat genau einen offenen Zustand: Panel sichtbar, aria-expanded
+   und Marker am Knopf. Alles andere (Route, Außenklick, Escape, Schließen)
+   ruft diesen einen Reset — damit bleibt kein Zustand zurück. */
+function closeBellPanel() {
+  var panel = document.querySelector('[data-nv-bell-panel]');
+  var bell = document.querySelector('[data-nv-bell]');
+  if (panel) panel.hidden = true;
+  if (bell) {
+    bell.removeAttribute('aria-expanded');
+    bell.classList.remove('is-open');
+  }
+}
+NV.closeBellPanel = closeBellPanel;
+
 /* Glocke: offene Fragen + laufende Läufe. Weitere Quellen (blockierte Pakete,
    fehlgeschlagene Läufe) kommen in Meilenstein B hinzu — die Liste ist dafür
    schon als Einträge mit Link aufgebaut. */
@@ -383,8 +440,17 @@ async function refreshBell() {
         rows.push(el('a', {class: 'nv-bell-item', href: '#/project/' + encodeURIComponent(row.name) + '/output'},
           tr('Lauf läuft') + ': ' + String(row.name)));
       });
-      if (!rows.length) rows.push(el('div', {class: 'nv-muted'}, tr('Keine neuen Meldungen.')));
-      panel.replaceChildren(el('div', {class: 'nv-drawer-title'}, tr('Benachrichtigungen')), rows);
+      if (!rows.length) {
+        rows.push(el('p', {class: 'nv-muted nv-bell-empty'}, tr('Keine Benachrichtigungen gerade')));
+      }
+      var head = el('div', {class: 'nv-drawer-head'},
+        el('span', {class: 'nv-drawer-title'}, tr('Benachrichtigungen')),
+        el('button', {class: 'nv-btn nv-ghost nv-close', type: 'button',
+          'data-nv-bell-close': '', 'aria-label': tr('Benachrichtigungen schließen'),
+          title: tr('Benachrichtigungen schließen')}, '×'));
+      // Wichtig: replaceChildren flacht Arrays nicht. Das frühere Übergeben des
+      // rows-Arrays erzeugte "[object HTMLDivElement]" im Panel.
+      panel.replaceChildren.apply(panel, [head].concat(rows));
     }
   } catch (error) {
     if (error && error.status === 403) showLogin();
