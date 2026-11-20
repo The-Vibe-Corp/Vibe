@@ -1127,9 +1127,9 @@
       "sha256": "ac3b26da4208a087a09c67c389238c82802d7c1bd50b10d9bcd9492a07050462"
     },
     {
-      "bytes": 65986,
+      "bytes": 66434,
       "path": "bin/vibe_packages.py",
-      "sha256": "68c1c2afe869cb3a4e2807ba360d83b514bf01076baf7b0209e08c3e88cd3219"
+      "sha256": "9f59944d599161676af32c53027dfc4a82bc06201331da938ae01719ebacb1ac"
     },
     {
       "bytes": 20789,
