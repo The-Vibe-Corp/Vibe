@@ -1021,6 +1021,18 @@
       ],
       "datum": "2026-11-19",
       "grund": "AP21 v2: Sprache ist eine GLOBALE vibe-Einstellung (ui.json `language`, Default `en`): neue globale Navigationsseite Settings mit `select[aria-label='Language']`, `GET/POST /api/language` + `<html lang>`/`<meta name=\"vibe-language\">` in `page()`; Sprachumschalter von Projekt-Einstellungs-Tab entfernt (es gibt keine per-Projekt-Einstellungen); `bin/vibe_ui_config.py`: LANGUAGES/DEFAULT_LANGUAGE/validate_language; `scripts/setup-vibe.py` liefert `bin/web/i18n.js` (Installation-Lücke); Render-Renn-Schutz in app.js (RENDER_TOKEN, renderStale-Guards in setTab/rerenderView/detail/settings/projects/agents/mcp/env/costs/security); Sprach-Texte in dictionaries (`Sprache gespeichert`, `Could not save the language:`, `(noch kein Commit)`); Tests: test_ap21_i18n.py (29 Fälle: Meta-Vorrang, /api/language, HTML-Injektion, ui_ui.json-Roundtrip), test_ap21_i18n_ui.py (25 Fälle: globale Sprachwahl, Persistenz über Reload/neuen Context, kein Projekt-Sprachschalter, POST-Fehler-Rückfall), Installation-Vollständigkeit (WEB_FILES == bin/web-Dateien incl. i18n.js; test_setup_vibe/test_install_lifecycle/test_b17_isolation/test_ap16_syntax_highlighting aktualisiert)."
+    },
+    {
+      "arbeitspaket": "AP1",
+      "dateien": [
+        "bin/vibe-run.sh",
+        "bin/vibe_sandbox.py",
+        "docs/features/AP1.md",
+        "docs/import-manifest.json",
+        "TICKETS.md"
+      ],
+      "datum": "2026-11-20",
+      "grund": "AP1: Der private opencode-Server merkt sich das Zielverzeichnis (realpath) in <log>.server.json; eine gesunde, aber für ein anderes Verzeichnis gestartete Instanz wird beendet und neu gestartet. Damit schreibt der Paketagent nach Preflight-Assistenz ($P) und beim Wechsel zwischen Arbeitskopien ($WT) in die richtige Sandbox. Die opencode-DB der Sandbox wird vor dem bwrap-Aufbau aus der Host-DB (XDG_DATA_HOME oder ~/.local/share/opencode) nur lesend vorbereitet: Schema aller Tabellen/Indizes sowie Zeilen aus credential, account, account_state, control_account und migration; keine Sitzungen, Nachrichten, Blobs oder kv-Modelle. Bestehende Sandbox-DB mit credential-Zeilen bleibt unverändert, eine leere credential-Tabelle wird in einer Transaktion ergänzt. Die Legacy-auth.json-Bindung bleibt erhalten. Größe und SHA-256 von bin/vibe-run.sh und bin/vibe_sandbox.py wurden aktualisiert und begründet."
     }
   ],
   "files": [
@@ -1040,9 +1052,9 @@
       "sha256": "e9b8d701228bd30348a016f6e9687aee5147c731869181c0276633c92ca996e0"
     },
     {
-      "bytes": 61189,
+      "bytes": 62211,
       "path": "bin/vibe-run.sh",
-      "sha256": "6f7f169479842777ad6369420590c8646ae3d4391174bbfa43d12f93c4aea4ae"
+      "sha256": "601fcda3b1ac2c155c1efe276d113dd35a9c1b9c1948bc241357f20e126acbae"
     },
     {
       "bytes": 103123,
@@ -1115,9 +1127,9 @@
       "sha256": "d086689d67fc4fbe7023b06bf0da60a4ac001899c457a7f8bae3d7d267f25aae"
     },
     {
-      "bytes": 30134,
+      "bytes": 36700,
       "path": "bin/vibe_sandbox.py",
-      "sha256": "e25ab1fcfbb0386ed8e6508f5f36f9900f9070352eedaf25ab8d94af585f377d"
+      "sha256": "139d0130ba41510f210f5cf28035535a9afe5e021961b83f9b474fbfc1a84bfe"
     },
     {
       "bytes": 11226,

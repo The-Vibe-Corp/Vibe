@@ -15,6 +15,16 @@ Die Sandbox begrenzt Schreibzugriffe auf:
   Unterordner; Token, Protokolle und Laufregister bleiben unerreichbar) und
 - die technisch notwendigen Caches für MCP-Laufzeiten,
 - ``/tmp/opencode`` für den opencode-Zustand und
+- eine sandbox-lokale opencode-Datenbank mit Schema und nur den Zugangsdaten
+  (AP1): Quelle ist die Host-DB aus ``$XDG_DATA_HOME/opencode/opencode.db``
+  oder ``~/.local/share/opencode/opencode.db`` (jeweils vor dem Setzen des
+  Sandbox-``XDG_DATA_HOME`` gesehen). Kopiert werden ``credential``,
+  ``account``, ``account_state``, ``control_account`` und ``migration``;
+  Sitzungen, Nachrichten, Blobs und der kv-Katalog bleiben außen vor. Hat die
+  Sandbox-DB schon Zugangsdaten, bleibt sie unberührt; ist ``credential``
+  leer, werden nur die Zugangszeilen nachgezogen. Die Quelle wird nur lesend
+  geöffnet; ein Fehler führt zu einer Warnung, nicht zum Abbruch, und die
+  Legacy-``auth.json``-Bindung bleibt unverändert.
 - der eigene, beschreibbare Pi-Agentenordner über ``PI_CODING_AGENT_DIR``
   (Bug B4: Pi liest und schreibt ``~/.pi/agent`` unabhängig von XDG_* —
   auch mit ``--no-session``, zum Beispiel die Sperrdatei
@@ -49,8 +59,12 @@ import os
 import re
 import shlex
 import shutil
+import sqlite3
 import subprocess
 import sys
+import tempfile
+from contextlib import closing
+from urllib.parse import quote
 
 WRITE_DIRS_DEFAULT = "/tmp/opencode"
 SANDBOX_ROOT = "/tmp/opencode/vibe-sandbox"
@@ -354,6 +368,147 @@ def _ensure_dir(path):
         return f"Verzeichnis nicht anlegbar ({path}): {error}"
 
 
+# AP1: Nur diese Tabellen dürfen Zeilen aus der Host-DB übernehmen. Das
+# Schema aller Tabellen/Indizes wird kopiert, damit opencode seine DB öffnen
+# kann, ohne dass Sitzungen oder der Modellkatalog wandern.
+AUTH_TABLES = (
+    "credential", "account", "account_state", "control_account", "migration",
+)
+
+
+def _sql_name(name):
+    """Identifikator für eine SQLite-Anfrage quotieren (kein Wert)."""
+    return '"' + str(name).replace('"', '""') + '"'
+
+
+def _opencode_source_db():
+    """Host-DB vor dem Sandbox-XDG_DATA_HOME; nur als Lesequelle."""
+    base = os.environ.get("XDG_DATA_HOME")
+    if base:
+        candidate = os.path.join(
+            os.path.expanduser(base), "opencode", "opencode.db")
+        if os.path.isfile(candidate):
+            return candidate
+    return os.path.expanduser("~/.local/share/opencode/opencode.db")
+
+
+def _apply_auth_schema(connection, schema, existing):
+    """Legt fehlende Tabellen/Indizes an; sqlite_*-Objekte entstehen selbst."""
+    for kind, name, sql in schema:
+        if name.startswith("sqlite_") or name in existing:
+            continue
+        connection.execute(sql)
+
+
+def _apply_auth_rows(connection, payload):
+    """Fügt nur Zugangszeilen ein; vorhandene Zeilen bleiben erhalten."""
+    for table, (columns, rows) in payload.items():
+        if not rows:
+            continue
+        names = ", ".join(_sql_name(column) for column in columns)
+        placeholders = ", ".join("?" for _column in columns)
+        connection.executemany(
+            "INSERT OR IGNORE INTO " + _sql_name(table)
+            + " (" + names + ") VALUES (" + placeholders + ")",
+            rows,
+        )
+
+
+def _seed_opencode_credentials(data_home):
+    """Kopiert Zugangsdaten in die sandbox-lokale opencode-DB (AP1).
+
+    Neue DB: atomar über Tempdatei mit Modus 0600. Bestehende DB: wird nie
+    überschrieben; sind schon credential-Zeilen vorhanden, geschieht nichts,
+    sonst werden die Zugangszeilen in einer Transaktion nachgezogen. Alle
+    Fehler werden auf stderr gemeldet; die Sandbox läuft ohne Zugangsdaten
+    weiter (der Agent sieht dann nur die frei verfügbaren Modelle).
+    """
+    target_dir = os.path.join(data_home, "opencode")
+    problem = _ensure_dir(target_dir)
+    if problem:
+        print("Warnung: opencode-Zugangsdaten nicht kopiert: " + problem,
+              file=sys.stderr)
+        return
+    target = os.path.join(target_dir, "opencode.db")
+    source = _opencode_source_db()
+    if not os.path.isfile(source):
+        return
+    source_uri = (
+        "file:" + quote(os.path.realpath(source)) + "?mode=ro&immutable=1"
+    )
+    try:
+        with closing(sqlite3.connect(source_uri, uri=True)) as src:
+            schema = src.execute(
+                "SELECT type, name, sql FROM sqlite_master "
+                "WHERE sql IS NOT NULL AND TRIM(sql) <> ''"
+            ).fetchall()
+            # Tabellen zuerst, dann Indizes; sqlite_autoindex entsteht beim
+            # Anlegen der Tabelle automatisch und hat ohnehin kein SQL.
+            schema.sort(key=lambda row: 0 if row[0] == "table" else 1)
+            table_names = {
+                row[0] for row in src.execute(
+                    "SELECT name FROM sqlite_master WHERE type = 'table'")
+            }
+            payload = {}
+            for table in AUTH_TABLES:
+                if table not in table_names:
+                    continue
+                columns = [
+                    row[1] for row in src.execute(
+                        "PRAGMA table_info(" + _sql_name(table) + ")")
+                ]
+                if not columns:
+                    continue
+                selected = ", ".join(_sql_name(column) for column in columns)
+                payload[table] = (
+                    columns,
+                    src.execute(
+                        "SELECT " + selected + " FROM " + _sql_name(table)
+                    ).fetchall(),
+                )
+
+        if os.path.isfile(target):
+            with closing(sqlite3.connect(target)) as dst:
+                existing = {
+                    row[0] for row in dst.execute("SELECT name FROM sqlite_master")
+                }
+                if "credential" in existing and dst.execute(
+                        "SELECT 1 FROM \"credential\" LIMIT 1").fetchone():
+                    return
+                dst.execute("BEGIN")
+                try:
+                    _apply_auth_schema(dst, schema, existing)
+                    _apply_auth_rows(dst, payload)
+                    dst.commit()
+                except Exception:
+                    dst.rollback()
+                    raise
+            return
+
+        descriptor, temporary = tempfile.mkstemp(
+            prefix="opencode.db.", suffix=".tmp", dir=target_dir)
+        os.close(descriptor)
+        os.chmod(temporary, 0o600)
+        try:
+            with closing(sqlite3.connect(temporary)) as dst:
+                dst.execute("BEGIN")
+                try:
+                    _apply_auth_schema(dst, schema, set())
+                    _apply_auth_rows(dst, payload)
+                    dst.commit()
+                except Exception:
+                    dst.rollback()
+                    raise
+            os.replace(temporary, target)
+        finally:
+            if os.path.exists(temporary):
+                os.unlink(temporary)
+    except Exception as error:
+        # Best effort: Die Sandbox läuft auch ohne zusätzliche Zugangsdaten.
+        print("Warnung: opencode-Zugangsdaten konnten nicht kopiert werden: "
+              + str(error), file=sys.stderr)
+
+
 def check(project):
     """Prüft Konfiguration, bubblewrap und die konfigurierten Werkzeuge."""
     state = status(project)
@@ -516,6 +671,9 @@ def bwrap_argv(project, command, bwrap=None, runtime=None,
         problem = _ensure_dir(directory)
         if problem:
             raise ValueError(problem)
+    # AP1: Vor dem bwrap-Aufbau die sandbox-lokale opencode-DB vorbereiten.
+    # Die Host-DB bleibt readonly; die Sandbox schreibt in ihre eigene Kopie.
+    _seed_opencode_credentials(data_home)
 
     argv = [
         executable,
