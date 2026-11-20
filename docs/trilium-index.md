@@ -72,3 +72,4 @@ Zuordnung der Projekt-Dokumentation zu den Notizen in Trilium (Stand 2026-11-19)
 | vibe | Features | F32 Subagenten-Parallelisierung: Selbstaufruf als Opt-in | `AxYQlwWQK6oX` |
 | vibe | Features | B16 Fertiggestellte APs für GitHub vorbereiten und als PR erstellen | `pYVo2QP0e19m` |
 | vibe | Features | AP21 Englische Sprache und i18n (global, UI-API) | `Vh6mV66XMgcm` |
+| vibe | Features | B20 Vorschaufenster scrollbar, Autoscroll an den Fuße, einheitliche Fokus-Toggles | `pi5Hxh82FLwa` |

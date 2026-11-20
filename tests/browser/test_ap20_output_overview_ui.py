@@ -5,7 +5,7 @@ Ausgabe-Panel mit mehrfach verschachtelten Scrollbars und einer
 unübersichtlichen horizontalen Reihe von Subagent-Karten. Ziel ist ein
 Neuaufbau der Ansicht:
 
-* höchstens **ein** Scrollbereich je Modus,
+* scrollbare Ausgabeflächen ohne zusätzlich verschachtelte Scrollbereiche,
 * eine kompakte Statusübersicht über alle aktiven Agenten,
 * ein umbrechendes Kartenraster statt einer einseitig herausgeschnittenen
   Leiste,
@@ -24,8 +24,9 @@ Verbindlicher UI-Vertrag dieser Abnahme:
    sichtbar; ``select[aria-label='Ziel']``, ``textarea`` mit
    ``aria-label*='Zusatzanweisung'``, Senden-Knopf, Fortsetzen-Knopf,
    ``.bv-log`` mit Highlighter-Spans (``hl-*``), ``.bv-subs``,
-   ``.bv-sub``-Karten ≥ 300 px, Vergrößern-Knopf (``aria-label`` enthält
-   „vergrö“), Vergrößerung ≥ 70 % Viewporthöhe und ≥ 60 % Viewportbreite,
+   ``.bv-sub``-Karten ≥ 300 px, Fokus-Knopf im Kartenkopf (``aria-label``
+   enthält „fokussieren“), Vergrößerung ≥ 70 % Viewporthöhe und
+   ≥ 60 % Viewportbreite,
    kein Modal und keine ``role='tablist'`` im Ausgabebereich.
 2. **Übersicht:** ``[data-panel='ausgabe'] .bv-overview[aria-label='Aktive
    Agenten'][data-active-agents='6']`` mit sichtbarem Zählertext, der „6“
@@ -33,24 +34,25 @@ Verbindlicher UI-Vertrag dieser Abnahme:
    ``.bv-overview-row[data-overview-session='<session>']`` mit Agentenname,
    gekürzter Beschreibung, Status-Pille und Fokus-Knopf
    ``button[data-focus-session='<session>'][aria-label*='fokussieren']``.
-3. **Scrollbar-Abnahme (Kern des Tickets):** ``.bv-subs`` hat keinen
-   horizontalen Overflow (``scrollWidth <= clientWidth + 2``) bei sechs
-   Karten und 1400 px sowie 900 px Viewport. Jedes
-   ``[data-agent-view] .bv-log`` hat im Normalmodus berechnetes
-   ``overflow-y: hidden``. Im Panel existiert höchstens ein tatsächlich
-   scrollbarer Bereich (``overflow-y`` ``auto``/``scroll`` **und**
-   ``scrollHeight > clientHeight``) – der panelweite Container. Kein Element
-   hat horizontalen scrollbaren Overflow.
+3. **Scrollbar-Abnahme (Kern des Tickets, B20-Vertrag):** ``.bv-subs`` hat
+   keinen horizontalen Overflow (``scrollWidth <= clientWidth + 2``) bei
+   sechs Karten und 1400 px sowie 900 px Viewport. Jedes
+   ``[data-agent-view] .bv-log`` ist im Normalmodus selbst scrollbar
+   (berechnetes ``overflow-y: auto``, bei überlangem Inhalt
+   ``scrollHeight > clientHeight``) und zeigt damit seine letzten Zeilen.
+   Scrollbar sind nur die Ausgabeflächen selbst und der panelweite
+   Container; innerhalb einer Ausgabefläche entsteht kein weiterer
+   Scrollbereich. Kein Element hat horizontalen scrollbaren Overflow.
 4. **Raster:** Die sechs Subagent-Karten liegen in mindestens zwei Zeilen
    (unterschiedliche ``y``-Werte) und vollständig innerhalb der Panelbreite
    (rechte Kante ≤ Panel rechts + 2).
-5. **Fokus-Modus:** Der Fokus-Knopf der Übersicht, der Vergrößern-Knopf
-   jeder Karte und der Fokus-Knopf im Kopf des Hauptagenten schalten
-   denselben Zustand: genau eine Ansicht (``enlarged``, ≥ 70 % vh /
-   ≥ 60 % vw), deren ``.bv-log`` berechnetes ``overflow-y: auto`` und der
-   einzige Scrollbereich ist; die Live-Ausgabe aktualisiert sich weiter;
-   Escape und ein zweiter Klick stellen die Normalgröße wieder her. Der
-   Zustand steht an allen Fokus-Knöpfen und an der zugehörigen
+5. **Fokus-Modus:** Der Fokus-Knopf der Übersicht, der Fokus-Knopf jeder
+   Karte und der Fokus-Knopf im Kopf des Hauptagenten schalten denselben
+   Zustand: genau eine Ansicht (``enlarged``, ≥ 70 % vh / ≥ 60 % vw), deren
+   ``.bv-log`` scrollbar bleibt (``overflow-y: auto`` und
+   ``scrollHeight > clientHeight``); die Live-Ausgabe aktualisiert sich
+   weiter; Escape und ein zweiter Klick stellen die Normalgröße wieder her.
+   Der Zustand steht an allen Fokus-Knöpfen und an der zugehörigen
    Übersichtszeile in ``aria-expanded``.
 6. **Regression:** Die bestehenden Suiten bleiben unverändert gültig.
 
@@ -63,8 +65,8 @@ Testfälle (12):
    Erwartung: Panel, sieben Agentenansichten (Haupt + 6) gleichzeitig sichtbar
    und Live-Regionen, Zielauswahl mit sieben Optionen, Anweisungseingabe,
    Senden-Knopf, Highlighter-Spans, ``.bv-subs``, Kartenhöhe ≥ 300 px,
-   Vergrößern-Knopf in jeder Karte, kein Modal, keine Tabliste; bei
-   gestopptem Lauf erscheint „Fortsetzen“.
+   Fokus-Knopf in jeder Karte, kein Modal, keine Tabliste; bei gestopptem
+   Lauf erscheint „Fortsetzen“.
    Fehlerfall: Der Neuaufbau bricht den bestehenden Vertrag.
 2. test_overview_lists_all_agents_with_compact_rows          [AK2]
    Vorbedingung: wie 1.
@@ -77,13 +79,15 @@ Testfälle (12):
    Vorbedingung: sechs Karten, Viewport 1400×900.
    Aktion: Layout messen.
    Erwartung: ``.bv-subs`` ohne horizontalen Overflow; jedes ``.bv-log``
-   ``overflow-y: hidden``; höchstens ein scrollbarer Bereich (panelweit);
-   kein horizontaler Scrollbereich.
-   Fehlerfall: Innere Scrollleisten (Ticket-Screenshot).
+   ``overflow-y: auto`` und mit überlangem Inhalt scrollbar; scrollbar sind
+   nur Ausgabeflächen und der panelweite Container; kein horizontaler
+   Scrollbereich.
+   Fehlerfall: Innere Scrollleisten (Ticket-Screenshot) oder abgeschnittene
+   Ausgaben ohne eigene Scrollbar.
 4. test_narrow_viewport_has_no_horizontal_overflow_at_900    [AK3]
    Vorbedingung: wie 3, Viewport 900×900.
-   Erwartung: ``.bv-subs`` ohne horizontalen Overflow; höchstens ein
-   scrollbarer Bereich; kein horizontaler Scrollbereich.
+   Erwartung: ``.bv-subs`` ohne horizontalen Overflow; jedes ``.bv-log``
+   ``overflow-y: auto``; kein horizontaler Scrollbereich.
    Fehlerfall: Kartenleiste wird bei schmalem Viewport seitlich abgeschnitten.
 5. test_subagent_cards_wrap_into_rows_within_the_panel       [AK4]
    Vorbedingung: wie 3.
@@ -94,28 +98,29 @@ Testfälle (12):
    Aktion: Fokus-Knopf der Übersicht für Session A klicken; Zustandsdatei mit
    neuem Marker überschreiben; Fokus ausschließlich per Escape beenden.
    Erwartung: Nur Karte A ``enlarged`` und ≥ 70 % vh / ≥ 60 % vw; ihr
-   ``.bv-log`` ``overflow-y: auto`` und einziger Scrollbereich; neuer Marker
-   erscheint; ``aria-expanded`` an Karten- und Übersichts-Knopf ist ``true``
-   und nach Escape wieder ``false``; nach dem Beenden normale Größe und
-   ``overflow-y: hidden``.
+   ``.bv-log`` bleibt scrollbar (``overflow-y: auto``, Inhalt überläuft);
+   neuer Marker erscheint; ``aria-expanded`` an Karten- und Übersichts-Knopf
+   ist ``true`` und nach Escape wieder ``false``; nach dem Beenden normale
+   Größe und weiterhin ``overflow-y: auto``.
    Fehlerfall: Kein Fokus, falsche Karte, eingefrorene Ausgabe, fehlender
-   Escape-Handler oder verschachtelte Scrollbereiche.
+   Escape-Handler oder abgeschnittene Ausgabe.
 7. test_second_focus_click_restores_normal_mode              [AK5]
    Vorbedingung: Fokus auf Karte A ist aktiv.
    Aktion: Derselbe Übersichts-Fokus-Knopf ein zweites Mal auslösen (ohne
    Escape).
-   Erwartung: Karte A ist wieder normal groß, ``overflow-y: hidden``,
-   ``aria-expanded`` wieder ``false``, höchstens ein Scrollbereich.
+   Erwartung: Karte A ist wieder normal groß, ``overflow-y: auto`` (weiterhin
+   scrollbar), ``aria-expanded`` wieder ``false``.
    Fehlerfall: Der zweite Klick hebt den Fokus nicht auf.
 8. test_card_button_and_overview_focus_share_the_same_state  [AK5]
    Vorbedingung: wie 3.
-   Aktion: Karten-Vergrößern-Knopf von A; Übersichts-Fokus-Knopf von A
+   Aktion: Karten-Fokus-Knopf von A; Übersichts-Fokus-Knopf von A
    (programmatischer Klick, da die vergrößerte Karte die Übersicht überdeckt);
    danach Fokus erneut über die Übersicht; dann den Karten-Knopf
-   „Verkleinern“.
+   „Fokus beenden“.
    Erwartung: Jeder Weg hebt den Zustand des anderen auf; die Karte ist
    jeweils genau einmal vergrößert bzw. normal; ``aria-expanded`` an beiden
-   Knöpfen folgt dem Zustand.
+   Knöpfen folgt dem Zustand; der Karten-Knopf heißt im Fokus „Fokus
+   beenden“ (nicht „Verkleinern“).
    Fehlerfall: Zwei getrennte Zustände – der eine Knopf hebt den anderen
    nicht auf.
 9. test_main_agent_header_focus_button_enlarges_main_view    [AK5]
@@ -123,19 +128,19 @@ Testfälle (12):
    Aktion: Fokus-Knopf im Kopf des Hauptagenten klicken; per Escape beenden;
    erneut fokussieren und per zweitem Klick beenden.
    Erwartung: Hauptansicht ``enlarged`` und ≥ 70 % vh / ≥ 60 % vw; ihr
-   ``.bv-log`` ``overflow-y: auto`` und einziger Scrollbereich; danach
-   normale Größe und ``overflow-y: hidden``. ``aria-expanded`` an diesem
-   Knopf und an der Übersichtszeile des Hauptagenten ist jeweils ``true``
-   bzw. ``false``.
+   ``.bv-log`` bleibt scrollbar (``overflow-y: auto``); danach normale Größe
+   und weiterhin ``overflow-y: auto``. ``aria-expanded`` an diesem Knopf und
+   an der Übersichtszeile des Hauptagenten ist jeweils ``true`` bzw.
+   ``false``.
    Fehlerfall: Der Knopf im Hauptkopf ist ohne Funktion (belegter Bug im
    aktuellen Arbeitsbaum).
 10. test_session_switch_with_active_focus_keeps_no_orphan_state [AK6]
     Vorbedingung: Fokus auf Subagent A; sechs laufende Subagenten.
     Aktion: Hauptsession in der Zustandsdatei auf eine neue Kennung setzen.
     Erwartung: Kein verwaister Fokus und keine ``enlarged``-Hauptansicht der
-    alten Session; genau ein Scrollbereich (Karte A); die Übersichtszeile der
-    Hauptsession folgt der neuen Kennung, die alte Zeile verschwindet;
-    ``aria-expanded`` bleibt konsistent.
+    alten Session; Karte A bleibt die fokussierte scrollbare Ausgabefläche;
+    die Übersichtszeile der Hauptsession folgt der neuen Kennung, die alte
+    Zeile verschwindet; ``aria-expanded`` bleibt konsistent.
     Fehlerfall: Alter Fokus/Zustand bleibt hängen oder die Übersicht führt
     weiter die alte Hauptsession.
 11. test_zero_running_subagents_shows_empty_overview         [AK2/AK3]
@@ -143,7 +148,7 @@ Testfälle (12):
     Aktion: Ausgabe öffnen und Übersicht auslesen.
     Erwartung: ``.bv-overview[data-active-agents='0']`` mit sichtbarem
     Leerzustandstext; ``.bv-subs`` ausgeblendet; genau eine Agentenansicht
-    (Hauptagent); höchstens ein Scrollbereich; keine JS-Fehler.
+    (Hauptagent); kein unerwarteter Scrollbereich; keine JS-Fehler.
     Fehlerfall: Leerzustand fehlt, Subagentenbereich bleibt sichtbar oder die
     Ansicht erzeugt Fehler.
 12. test_finished_subagent_leaves_overview_and_view           [AK2]
@@ -227,8 +232,8 @@ def long_output(session, marker):
     """Umfangreiche Ausgabe mit Highlighter-Zeilen (``hl-*``).
 
     Deutlich mehr Zeilen als in eine 300-px-Karte oder in den Hauptbereich
-    passen: Nur so ist im Basisstand tatsächlich eine innere Scrollleiste
-    vorhanden und die Abnahme „höchstens ein Scrollbereich“ aussagekräftig.
+    passen: Nur so ist die Abnahme „das Vorschaufenster ist selbst scrollbar
+    und zeigt seine letzten Zeilen“ aussagekräftig.
     """
     tag = TAGS[session]
     lines = [
@@ -662,13 +667,34 @@ class AP20BrowserTest(unittest.TestCase):
             f"button[data-focus-session='{session}']")
 
     def card_enlarge_button(self, session):
-        buttons = self.sub_view(session).locator("button")
+        """Karten-Umschalter (Fokus) im Kopf der Subagenten-Karte.
+
+        B20: Der Knopf heißt einheitlich „Fokus“/„Fokus beenden“ und wird
+        über den Kartenkopf ``.bv-head button`` sowie sein ``aria-label``
+        („… fokussieren“) gefunden. Der alte Name „Vergrößern/Verkleinern“
+        ist nicht mehr Teil des Vertrags.
+        """
+        buttons = self.sub_view(session).locator(".bv-head button")
         for index in range(buttons.count()):
             candidate = buttons.nth(index)
             label = (candidate.get_attribute("aria-label") or "").lower()
-            if re.search(r"vergrö|verklein|expand|shrink", label):
+            if re.search(r"fokus|focus", label):
                 return candidate
-        self.fail(f"Kein Vergrößern-Knopf in der Karte {session} gefunden")
+        self.fail(f"Kein Fokus-Knopf in der Karte {session} gefunden "
+                  f"({buttons.count()} Knöpfe im Kartenkopf)")
+
+    def scroll_sessions(self, layout):
+        """Sessions der tatsächlich scrollbaren Ausgabeflächen."""
+        return {entry["session"] for entry in layout["scrollable"]
+                if "bv-log" in entry["node"]}
+
+    def assert_only_logs_scroll(self, layout, message="Scrollbereiche"):
+        """B20: Scrollen dürfen nur Ausgabeflächen und der panelweite Container."""
+        for entry in layout["scrollable"]:
+            self.assertTrue(
+                "bv-log" in entry["node"] or entry["panelWide"],
+                f"{message}: Unerwarteter scrollbarer Bereich (weder "
+                f"Ausgabefläche noch panelweit): {entry!r}")
 
     def sizes(self, locator):
         return locator.bounding_box() or {
@@ -777,7 +803,7 @@ class ContractTest(AP20BrowserTest):
         Erwartung: Panel; Hauptagent + 6 Subagenten gleichzeitig im DOM und
         sichtbar mit ``role='log'``; Zielauswahl mit 7 Optionen;
         Anweisungseingabe, Senden-Knopf, ``.bv-log`` mit ``hl-*``-Spans,
-        ``.bv-subs``, Karten ≥ 300 px, Vergrößern-Knopf in jeder Karte, kein
+        ``.bv-subs``, Karten ≥ 300 px, Fokus-Knopf in jeder Karte, kein
         Modal, keine Tabliste; bei gestopptem Lauf erscheint „Fortsetzen“.
         Fehlerfall: Der Neuaufbau bricht den bestehenden Vertrag.
         """
@@ -1007,16 +1033,17 @@ class OverviewTest(AP20BrowserTest):
 
 class ScrollbarTest(AP20BrowserTest):
     def test_normal_mode_has_no_nested_scrollbars_at_1400(self):
-        """AK3: Im Normalmodus gibt es keine verschachtelten Scrollleisten.
+        """AK3: Im Normalmodus scrollen nur die Ausgabeflächen selbst.
 
         Vorbedingung: sechs laufende Subagenten, Viewport 1400×900.
         Aktion: Panel, ``.bv-subs`` und jede Agenten-Ausgabefläche messen.
         Erwartung: ``.bv-subs`` ohne horizontalen Overflow
         (``scrollWidth <= clientWidth + 2``); jedes ``[data-agent-view]
-        .bv-log`` mit berechnetem ``overflow-y: hidden``; höchstens ein
-        tatsächlich scrollbarer Bereich im Panel, und dieser ist panelweit
-        (enthält alle Agentenansichten); kein horizontal scrollbarer
-        Bereich.
+        .bv-log`` mit berechnetem ``overflow-y: auto`` und mit überlangem
+        Inhalt tatsächlich scrollbar (``scrollHeight > clientHeight``);
+        scrollbar sind nur Ausgabeflächen und der panelweite Container, also
+        kein weiterer verschachtelter Scrollbereich; kein horizontal
+        scrollbarer Bereich.
         Fehlerfall (Ticket-Screenshot): mehrere verschachtelte Scrollbars und
         eine seitlich scrollende Kartenleiste.
         """
@@ -1034,20 +1061,20 @@ class ScrollbarTest(AP20BrowserTest):
 
         for log in layout["logs"]:
             self.assertEqual(
-                "hidden", log["overflowY"],
+                "auto", log["overflowY"],
                 f"Die Ausgabefläche von {log['role']}/{log['session']} hat "
                 f"im Normalmodus overflow-y={log['overflowY']!r} "
-                "(erwartet: hidden)")
+                "(erwartet: auto)")
 
-        self.assertLessEqual(
-            len(layout["scrollable"]), 1,
-            "Im Ausgabepanel existieren mehrere scrollbare Bereiche: "
-            + repr(layout["scrollable"]))
-        if layout["scrollable"]:
-            self.assertTrue(
-                layout["scrollable"][0]["panelWide"],
-                "Der einzige scrollbare Bereich ist nicht der panelweite "
-                "Container: " + repr(layout["scrollable"][0]))
+        self.assert_only_logs_scroll(layout)
+        scrolling = self.scroll_sessions(layout)
+        for session in SESSIONS:
+            self.assertIn(
+                session, scrolling,
+                f"Die Ausgabefläche von {session} ist mit überlangem Inhalt "
+                "nicht scrollbar; die letzten Zeilen wären abgeschnitten: "
+                + repr(layout["logs"]))
+
         self.assertEqual(
             [], layout["horizontal"],
             "Elemente mit horizontalem scrollbaren Overflow: "
@@ -1059,8 +1086,8 @@ class ScrollbarTest(AP20BrowserTest):
 
         Vorbedingung: sechs laufende Subagenten; Viewport 900×900.
         Aktion: Viewport verkleinern und messen.
-        Erwartung: ``.bv-subs`` ohne horizontalen Overflow; höchstens ein
-        scrollbarer Bereich; kein horizontal scrollbarer Bereich.
+        Erwartung: ``.bv-subs`` ohne horizontalen Overflow; jedes ``.bv-log``
+        ``overflow-y: auto``; kein horizontal scrollbarer Bereich.
         Fehlerfall: Die Kartenleiste wird seitlich abgeschnitten und muss
         horizontal gescrollt werden.
         """
@@ -1077,20 +1104,17 @@ class ScrollbarTest(AP20BrowserTest):
             subs["scrollWidth"], subs["clientWidth"] + 2,
             f".bv-subs hat bei 900 px horizontalen Overflow: scrollWidth="
             f"{subs['scrollWidth']} px, clientWidth={subs['clientWidth']} px")
-        self.assertLessEqual(
-            len(layout["scrollable"]), 1,
-            "Im Ausgabepanel existieren bei 900 px mehrere scrollbare "
-            "Bereiche: " + repr(layout["scrollable"]))
         self.assertEqual(
             [], layout["horizontal"],
             "Bei 900 px existieren horizontal scrollbare Bereiche: "
             + repr(layout["horizontal"]))
         for log in layout["logs"]:
             self.assertEqual(
-                "hidden", log["overflowY"],
+                "auto", log["overflowY"],
                 f"Die Ausgabefläche von {log['role']}/{log['session']} hat "
                 f"bei 900 px overflow-y={log['overflowY']!r} "
-                "(erwartet: hidden)")
+                "(erwartet: auto)")
+        self.assert_only_logs_scroll(layout, "Bei 900 px")
         self.assert_clean_page()
 
 
@@ -1144,13 +1168,14 @@ class FocusModeTest(AP20BrowserTest):
         Zustandsdatei von A mit einem neuen Marker überschreiben; Fokus
         ausschließlich per Escape beenden.
         Erwartung: Genau Karte A trägt ``enlarged`` und ist ≥ 70 % vh /
-        ≥ 60 % vw; ihr ``.bv-log`` hat berechnetes ``overflow-y: auto`` und
-        ist der einzige scrollbare Bereich; der neue Marker erscheint ohne
-        Neuladen; ``aria-expanded`` an Karten- und Übersichts-Knopf ist
-        ``true`` und nach Escape wieder ``false``; danach ist die Karte
-        normal groß und die Ausgabefläche wieder ``overflow-y: hidden``.
+        ≥ 60 % vw; ihr ``.bv-log`` bleibt scrollbar (``overflow-y: auto``,
+        Inhalt überläuft) und gehört zu den scrollbaren Ausgabeflächen; der
+        neue Marker erscheint ohne Neuladen; ``aria-expanded`` an Karten- und
+        Übersichts-Knopf ist ``true`` und nach Escape wieder ``false``;
+        danach ist die Karte normal groß und die Ausgabefläche weiterhin
+        ``overflow-y: auto``.
         Fehlerfall: Kein Fokus, falsche Karte, eingefrorene Ausgabe, ein
-        fehlender Escape-Handler oder verschachtelte Scrollbereiche.
+        fehlender Escape-Handler oder abgeschnittene Ausgabe.
         """
         self.open_six_running()
         self.wait_for_overview(active=6)
@@ -1192,14 +1217,15 @@ class FocusModeTest(AP20BrowserTest):
             "auto", target_log["overflowY"],
             "Die Ausgabefläche der fokussierten Karte hat overflow-y="
             f"{target_log['overflowY']!r} (erwartet: auto)")
-        self.assertEqual(
-            1, len(layout["scrollable"]),
-            "Im Fokus-Modus muss genau ein Bereich scrollbar sein: "
-            + repr(layout["scrollable"]))
-        self.assertEqual(
-            target, layout["scrollable"][0]["session"],
-            "Der einzige scrollbare Bereich gehört nicht zur fokussierten "
-            "Karte: " + repr(layout["scrollable"][0]))
+        self.assertGreater(
+            target_log["scrollHeight"], target_log["clientHeight"] + 4,
+            "Die Ausgabefläche der fokussierten Karte ist nicht scrollbar: "
+            + repr(target_log))
+        self.assertIn(
+            target, self.scroll_sessions(layout),
+            "Die Ausgabefläche der fokussierten Karte gehört nicht zu den "
+            "scrollbaren Bereichen: " + repr(layout["scrollable"]))
+        self.assert_only_logs_scroll(layout, "Im Fokus-Modus")
 
         new_marker = live_marker(target)
         subs = [self.sub(session) for session in SESSIONS]
@@ -1230,27 +1256,25 @@ class FocusModeTest(AP20BrowserTest):
         target_log = next(
             (log for log in layout["logs"] if log["session"] == target), None)
         self.assertEqual(
-            "hidden", target_log["overflowY"],
-            "Nach dem Beenden des Fokus bleibt die Ausgabefläche scrollbar: "
-            + repr(target_log))
-        self.assertLessEqual(
-            len(layout["scrollable"]), 1,
-            "Nach dem Beenden des Fokus existieren mehrere scrollbare "
-            "Bereiche: " + repr(layout["scrollable"]))
+            "auto", target_log["overflowY"],
+            "Nach dem Beenden des Fokus ist die Ausgabefläche nicht mehr "
+            "scrollbar: " + repr(target_log))
+        self.assert_only_logs_scroll(layout, "Nach dem Beenden des Fokus")
         self.assert_clean_page()
 
     def test_card_button_and_overview_focus_share_the_same_state(self):
         """AK5: Karten-Knopf und Übersichts-Fokus teilen denselben Zustand.
 
         Vorbedingung: sechs laufende Subagenten; Karte A normal groß.
-        Aktion: Karten-Vergrößern-Knopf von A klicken; dann den
+        Aktion: Karten-Fokus-Knopf von A klicken; dann den
         Übersichts-Fokus-Knopf von A (programmatischer Klick, weil die
         vergrößerte Karte die Übersicht überdeckt); dann Fokus erneut über
-        die Übersicht; schließlich den Karten-Knopf „Verkleinern“.
+        die Übersicht; schließlich den Karten-Knopf „Fokus beenden“.
         Erwartung: Jeder Weg hebt den Zustand des anderen auf; nach dem
         Karten-Knopf ist A vergrößert und ein Klick auf den Fokus-Knopf
         stellt die Normalgröße her; umgekehrt hebt der Karten-Knopf den
-        Übersichts-Fokus auf.
+        Übersichts-Fokus auf. Der Karten-Knopf heißt im Fokus einheitlich
+        „Fokus beenden“ (nicht „Verkleinern“).
         Fehlerfall: Zwei getrennte Zustände, sodass der eine Knopf den
         anderen nicht aufhebt.
         """
@@ -1301,13 +1325,13 @@ class FocusModeTest(AP20BrowserTest):
             "Der Karten-Knopf spiegelt den Übersichts-Fokus nicht in "
             "aria-expanded='true'")
 
-        shrink = self.sub_view(target).locator("button").filter(
-            has_text="Shrink").first
-        if shrink.count() == 0:
-            # Alternativ trägt der Knopf weiterhin sein aria-label.
-            card_button.click()
-        else:
-            shrink.click()
+        shrink = self.card_enlarge_button(target)
+        self.assertIn(
+            shrink.inner_text().strip(), ("Fokus beenden", "End focus"),
+            "Der Karten-Knopf heißt im Fokus nicht „Fokus beenden“ "
+            "(B20: „Verkleinern“ entfällt): "
+            + repr(shrink.inner_text()))
+        shrink.click()
         self.wait_normal(target)
         self.assertEqual(
             "false", overview_button.get_attribute("aria-expanded"),
@@ -1330,9 +1354,9 @@ class FocusModeTest(AP20BrowserTest):
         Vorbedingung: Fokus auf Karte A ist aktiv (über den Übersichts-Knopf).
         Aktion: Derselbe Übersichts-Fokus-Knopf wird ein zweites Mal
         ausgelöst; Escape wird bewusst nicht verwendet.
-        Erwartung: Karte A ist wieder normal groß, ihr ``.bv-log`` hat
-        ``overflow-y: hidden``, ``aria-expanded`` an Übersichts- und
-        Karten-Knopf ist wieder ``false`` und es existiert höchstens ein
+        Erwartung: Karte A ist wieder normal groß, ihr ``.bv-log`` bleibt
+        scrollbar (``overflow-y: auto``), ``aria-expanded`` an Übersichts- und
+        Karten-Knopf ist wieder ``false`` und es existiert kein unerwarteter
         Scrollbereich.
         Fehlerfall: Der zweite Klick hebt den Fokus nicht auf.
         """
@@ -1368,13 +1392,10 @@ class FocusModeTest(AP20BrowserTest):
         self.assertIsNotNone(target_log,
                              f"Keine Ausgabefläche für Karte {target}")
         self.assertEqual(
-            "hidden", target_log["overflowY"],
-            "Nach dem zweiten Klick bleibt die Ausgabefläche scrollbar: "
-            + repr(target_log))
-        self.assertLessEqual(
-            len(layout["scrollable"]), 1,
-            "Nach dem zweiten Klick existieren mehrere scrollbare Bereiche: "
-            + repr(layout["scrollable"]))
+            "auto", target_log["overflowY"],
+            "Nach dem zweiten Klick ist die Ausgabefläche nicht mehr "
+            "scrollbar: " + repr(target_log))
+        self.assert_only_logs_scroll(layout, "Nach dem zweiten Klick")
         self.assert_clean_page()
 
     def test_main_agent_header_focus_button_enlarges_main_view(self):
@@ -1387,13 +1408,13 @@ class FocusModeTest(AP20BrowserTest):
         Fokus per Escape beenden; erneut fokussieren und per zweitem Klick
         beenden.
         Erwartung: Hauptansicht ``enlarged`` und ≥ 70 % vh / ≥ 60 % vw; ihr
-        ``.bv-log`` hat ``overflow-y: auto`` und ist der einzige
-        Scrollbereich; danach normale Größe und ``overflow-y: hidden``.
+        ``.bv-log`` bleibt scrollbar (``overflow-y: auto``); danach normale
+        Größe und weiterhin ``overflow-y: auto``.
         ``aria-expanded`` an diesem Knopf und an der Übersichtszeile des
         Hauptagenten ist ``true`` bzw. ``false``.
         Fehlerfall: Der Knopf im Hauptkopf ist ohne Funktion (belegter Bug im
-        aktuellen Arbeitsbaum), der Fokus gilt der falschen Ansicht oder es
-        entstehen mehrere Scrollbereiche.
+        aktuellen Arbeitsbaum), der Fokus gilt der falschen Ansicht oder die
+        Ausgabe wird abgeschnitten.
         """
         self.open_six_running(main_lines=self.long_main_log())
         self.wait_for_overview(active=6)
@@ -1439,18 +1460,15 @@ class FocusModeTest(AP20BrowserTest):
             "auto", main_log["overflowY"],
             "Die Ausgabefläche des fokussierten Hauptagenten hat overflow-y="
             f"{main_log['overflowY']!r} (erwartet: auto)")
-        self.assertEqual(
-            1, len(layout["scrollable"]),
-            "Im Haupt-Fokus muss genau ein Bereich scrollbar sein: "
-            + repr(layout["scrollable"]))
-        self.assertEqual(
-            "main", layout["scrollable"][0]["role"],
-            "Der einzige scrollbare Bereich gehört nicht zur Hauptansicht: "
-            + repr(layout["scrollable"][0]))
-        self.assertEqual(
-            MAIN_SESSION, layout["scrollable"][0]["session"],
-            "Der einzige scrollbare Bereich gehört nicht zur Hauptsession: "
-            + repr(layout["scrollable"][0]))
+        self.assertGreater(
+            main_log["scrollHeight"], main_log["clientHeight"] + 4,
+            "Die Ausgabefläche des fokussierten Hauptagenten ist nicht "
+            "scrollbar: " + repr(main_log))
+        self.assertIn(
+            MAIN_SESSION, self.scroll_sessions(layout),
+            "Die Ausgabefläche des Hauptagenten gehört nicht zu den "
+            "scrollbaren Bereichen: " + repr(layout["scrollable"]))
+        self.assert_only_logs_scroll(layout, "Im Haupt-Fokus")
 
         self.page.keyboard.press("Escape")
         self.wait_main_normal(timeout=8)
@@ -1466,13 +1484,11 @@ class FocusModeTest(AP20BrowserTest):
         main_log = next(
             (log for log in layout["logs"] if log["role"] == "main"), None)
         self.assertEqual(
-            "hidden", main_log["overflowY"],
-            "Nach dem Beenden des Haupt-Fokus bleibt die Ausgabefläche "
-            "scrollbar: " + repr(main_log))
-        self.assertLessEqual(
-            len(layout["scrollable"]), 1,
-            "Nach dem Beenden des Haupt-Fokus existieren mehrere scrollbare "
-            "Bereiche: " + repr(layout["scrollable"]))
+            "auto", main_log["overflowY"],
+            "Nach dem Beenden des Haupt-Fokus ist die Ausgabefläche nicht "
+            "mehr scrollbar: " + repr(main_log))
+        self.assert_only_logs_scroll(layout, "Nach dem Beenden des "
+                                            "Haupt-Fokus")
 
         # Zweiter Klick auf denselben Haupt-Fokus-Knopf beendet den Fokus
         # ebenfalls, ohne Escape.
@@ -1502,11 +1518,12 @@ class FocusModeTest(AP20BrowserTest):
         Aktion: Hauptsession in der Zustandsdatei auf ``NEW_MAIN_SESSION``
         setzen und den Zustand neu laden lassen.
         Erwartung: Kein verwaister Fokus und keine ``enlarged``-Hauptansicht
-        der alten Session; weiterhin genau ein Scrollbereich (Karte A); die
-        Übersichtszeile der Hauptsession folgt der neuen Kennung und die alte
-        Zeile verschwindet; ``aria-expanded`` bleibt konsistent.
+        der alten Session; die Karte A bleibt die fokussierte scrollbare
+        Ausgabefläche; die Übersichtszeile der Hauptsession folgt der neuen
+        Kennung und die alte Zeile verschwindet; ``aria-expanded`` bleibt
+        konsistent.
         Fehlerfall: Der alte Fokus oder die alte Hauptsession bleibt hängen,
-        oder es entstehen zwei Scrollbereiche.
+        oder die Ausgabeflächen sind nicht mehr scrollbar.
         """
         self.open_six_running()
         self.wait_for_overview(active=6)
@@ -1547,14 +1564,11 @@ class FocusModeTest(AP20BrowserTest):
             "Der gültige Fokus auf Subagent A ging beim Hauptsession-Wechsel "
             "verloren")
         layout = self.layout()
-        self.assertEqual(
-            1, len(layout["scrollable"]),
-            "Beim Hauptsession-Wechsel entstand ein zweiter Scrollbereich: "
-            + repr(layout["scrollable"]))
-        self.assertEqual(
-            target, layout["scrollable"][0]["session"],
-            "Der einzige Scrollbereich gehört nicht zum fokussierten "
-            "Subagenten: " + repr(layout["scrollable"][0]))
+        self.assertIn(
+            target, self.scroll_sessions(layout),
+            "Beim Hauptsession-Wechsel ist die fokussierte Ausgabefläche "
+            "nicht mehr scrollbar: " + repr(layout["scrollable"]))
+        self.assert_only_logs_scroll(layout, "Beim Hauptsession-Wechsel")
         self.assertEqual(
             "true", self.focus_button(target).first.get_attribute(
                 "aria-expanded"),
@@ -1574,7 +1588,7 @@ class FocusModeTest(AP20BrowserTest):
         Aktion: Ausgabe öffnen und Übersicht auslesen.
         Erwartung: ``.bv-overview[data-active-agents='0']`` mit sichtbarem
         Leerzustandstext; ``.bv-subs`` ist ausgeblendet; genau eine
-        Agentenansicht (Hauptagent); höchstens ein Scrollbereich; keine
+        Agentenansicht (Hauptagent); kein unerwarteter Scrollbereich; keine
         JS-Fehler.
         Fehlerfall: Der Leerzustand fehlt, der Subagentenbereich bleibt
         sichtbar oder die Ansicht erzeugt JavaScript-Fehler.
@@ -1622,10 +1636,7 @@ class FocusModeTest(AP20BrowserTest):
             "Der Leerzustand der Übersicht enthält keinen Text")
 
         layout = self.layout()
-        self.assertLessEqual(
-            len(layout["scrollable"]), 1,
-            "Ohne Subagenten existieren mehrere scrollbare Bereiche: "
-            + repr(layout["scrollable"]))
+        self.assert_only_logs_scroll(layout, "Ohne Subagenten")
         self.assert_clean_page()
 
 

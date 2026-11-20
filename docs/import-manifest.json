@@ -1023,6 +1023,16 @@
       "grund": "AP21 v2: Sprache ist eine GLOBALE vibe-Einstellung (ui.json `language`, Default `en`): neue globale Navigationsseite Settings mit `select[aria-label='Language']`, `GET/POST /api/language` + `<html lang>`/`<meta name=\"vibe-language\">` in `page()`; Sprachumschalter von Projekt-Einstellungs-Tab entfernt (es gibt keine per-Projekt-Einstellungen); `bin/vibe_ui_config.py`: LANGUAGES/DEFAULT_LANGUAGE/validate_language; `scripts/setup-vibe.py` liefert `bin/web/i18n.js` (Installation-Lücke); Render-Renn-Schutz in app.js (RENDER_TOKEN, renderStale-Guards in setTab/rerenderView/detail/settings/projects/agents/mcp/env/costs/security); Sprach-Texte in dictionaries (`Sprache gespeichert`, `Could not save the language:`, `(noch kein Commit)`); Tests: test_ap21_i18n.py (29 Fälle: Meta-Vorrang, /api/language, HTML-Injektion, ui_ui.json-Roundtrip), test_ap21_i18n_ui.py (25 Fälle: globale Sprachwahl, Persistenz über Reload/neuen Context, kein Projekt-Sprachschalter, POST-Fehler-Rückfall), Installation-Vollständigkeit (WEB_FILES == bin/web-Dateien incl. i18n.js; test_setup_vibe/test_install_lifecycle/test_b17_isolation/test_ap16_syntax_highlighting aktualisiert)."
     },
     {
+      "arbeitspaket": "B20",
+      "dateien": [
+        "bin/web/app.js",
+        "bin/web/styles.css",
+        "bin/web/i18n.js"
+      ],
+      "datum": "2026-11-20",
+      "grund": "Ausgabeansicht: Vorschaufenster (Haupt + Subs) in der Standardansicht scrollbar (overflow-y: auto), Autoscroll an den Fuße; Sub-Agenten-Toggles einheitlich 'Fokus'/'Fokus beenden' (Decision A); i18n-Schlüssel 'Subagent fokussieren' en/de; bewusste Contrakt-Änderung per B20 (AP20: Normalmodus clippt)."
+    },
+    {
       "arbeitspaket": "AP1",
       "dateien": [
         "bin/vibe-run.sh",
@@ -1147,9 +1157,9 @@
       "sha256": "43805dba175b11e01392b376bc12f931d82c06c8ab82dfc60474b9e9170cdd0f"
     },
     {
-      "bytes": 152463,
+      "bytes": 152799,
       "path": "bin/web/app.js",
-      "sha256": "183ad98ea6745805bb03e57d7e78571366874ed5676885a988a5db1668752f4d"
+      "sha256": "2f183ded46b9ef67675c56562e23f34167ba3e1ccd7cda9e97ee54a058d36488"
     },
     {
       "bytes": 688,
@@ -1157,9 +1167,9 @@
       "sha256": "19ea677f5c3dc3579279fd9b5bf7584612967654b8ec0bbde3818576c78b46b5"
     },
     {
-      "bytes": 12445,
+      "bytes": 12751,
       "path": "bin/web/styles.css",
-      "sha256": "fd94deaa5cd4d8679352e533ccd719ad482abdd8b397feff98ec1df35eaa68aa"
+      "sha256": "daac654a2a524dd49561ba2580419bad6209ed8646670e993409b88f5cb0bb1e"
     },
     {
       "bytes": 34162,
@@ -1322,9 +1332,9 @@
       "sha256": "f5e9382967c9833066a55808829f3750fc8e1181b170cafd222c37048bb49a77"
     },
     {
-      "bytes": 111210,
+      "bytes": 111316,
       "path": "bin/web/i18n.js",
-      "sha256": "e7fedfc9fd4d6dd7ab31db06e67b2295db83e3f349e389a86722aa3230f3405a"
+      "sha256": "dd9f848b9ea81152ccafc7816f02a47acb280005fc40b71a305ca78e4aea8845"
     }
   ],
   "hinweis": "SHA-256 der übernommenen Programmdateien. Beabsichtigte Änderungen an diesen Dateien sind nur zulässig, wenn dieser Eintrag im selben Arbeitspaket aktualisiert und begründet wird. Laufzeitdaten, Sicherungen und Geheimnisse sind nicht Bestandteil des Imports.",
@@ -1338,6 +1348,6 @@
     "setup-vibe.cmd",
     "VERSION"
   ],
-  "stand": "2026-11-19",
+  "stand": "2026-11-20",
   "version": 1
 }
