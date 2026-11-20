@@ -91,6 +91,10 @@ VERDICT_PATTERN = re.compile(
 # Abschlussschranke blockieren. Die Arbeitskopie erhält eine Kopie; nach dem
 # Merge wird der Paketnachweis gezielt in den Projektordner zurückgeschrieben.
 WORK_NOTE_FILES = ("TICKETS.md", "FEEDBACK.md")
+# Projekt-spezifische Regeldatei: Sie ist nicht immer versioniert, soll aber
+# wie die Arbeitsnotizen in die Paket-Arbeitskopie übernommen werden (B2).
+PROJECT_RULES_FILE = "AGENTS.md"
+WORK_COPY_FILES = WORK_NOTE_FILES + (PROJECT_RULES_FILE,)
 PROOF_KEYS = ("Commit", "Test", "Datei", "Review", "Doku")
 PROOF_LINE = re.compile(r"^\s*(?:" + "|".join(PROOF_KEYS) + r")\s*:")
 
@@ -155,7 +159,10 @@ def is_work_note_path(path):
         value = value.split(" -> ", 1)[1].strip().strip('"')
     # Nur die Dateien am Projektstamm; gleichnamige Dateien in Unterordnern
     # sind normale Projektdateien und zählen weiterhin als Änderung.
-    return value in WORK_NOTE_FILES
+    # Die projekt-spezifische Regeldatei AGENTS.md gehört wie die
+    # Arbeitsnotizen zu dieser Gruppe (B2): sie ist nicht immer versioniert
+    # und darf Preflight/Abschlussschranke nicht blockieren.
+    return value in WORK_COPY_FILES
 
 
 def dirty_report(project):
@@ -174,7 +181,7 @@ def copy_work_notes(project, worktree):
     """Kopiert vorhandene Arbeitsnotizen in die Paket-Arbeitskopie."""
     project, worktree = Path(project), Path(worktree)
     copied = []
-    for name in WORK_NOTE_FILES:
+    for name in WORK_COPY_FILES:
         source = project / name
         if not source.is_file():
             continue
@@ -659,7 +666,7 @@ def ensure_project_exclude(project):
     exclude.parent.mkdir(parents=True, exist_ok=True)
     lines = read_text(exclude).splitlines()
     missing = [
-        entry for entry in (".vibe/tmp/",) + WORK_NOTE_FILES
+        entry for entry in (".vibe/tmp/",) + WORK_COPY_FILES
         if entry not in lines
     ]
     if missing:
