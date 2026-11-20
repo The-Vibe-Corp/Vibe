@@ -1013,6 +1013,7 @@
         "Global": "Global",
         "Löschen fehlgeschlagen.": "Deletion failed.",
         "Token entfernt": "Token removed",
+        "Für dieses Projekt sind keine Sitzungen aufgezeichnet.": "No sessions recorded for this project.",
     },
     de: {
         "ui.language.hint": "Die gesamte vibe-Oberfläche; Englisch ist der Standard.",
@@ -2018,6 +2019,7 @@
         "Global": "Global",
         "Löschen fehlgeschlagen.": "Löschen fehlgeschlagen.",
         "Token entfernt": "Token entfernt",
+        "Für dieses Projekt sind keine Sitzungen aufgezeichnet.": "Für dieses Projekt sind keine Sitzungen aufgezeichnet.",
     }
 
   };

@@ -1140,6 +1140,16 @@
         "tests/browser/test_ap22_agents_ui.py"
       ],
       "grund": "AP22 Review-Fix-Runde (5 Medium-Befunde aus docs/reviews/AP22-review-1.md, Testfirst mit dokumentierter Rotphase): Git-&-GitHub-Bereich vollstaendig (Aktivierung, Token speichern/loeschen mit maskiertem Status, Verbindungs-pruefung, Branchliste mit Checkout, Pull ff-only, Push mit Quell-/Ziel-Branch, Issues, Label-gefilterter Import, Merge-Request mit zweistufiger Bestaetigung — Spiegel der klassischen UI-Payloads); Glocke listet jetzt alle drei Vertragsquellen (offene Fragen, blockierte Pakete, fehlgeschlagene Läufe) mit Ziel-Links; Aktivitaet erhaelt Zusammenfassungs-Kacheln (running/questions/blocked) und zeilenlokales Stoppen; Agentenverwaltung ist Scope-faehig (Karten-Badges global/projekt, Editor-Route #/agents/<scope>/<name>, Laden/Speichern/Loeschen/Kopieren im gewaehlten Geltungsbereich, Karten-Loeschknopf mit Bestaetigung) — kein globaler Agent wird mehr bei projektbezogener Arbeit ueberschrieben. Alle 17 neuen Faelle gruen, alle 85 Bestandsfaelle unveraendert gruen; i18n ohne Duplikate (999 Schluessel je Sprache)."
+    },
+    {
+      "arbeitspaket": "AP22",
+      "datum": "2026-11-20",
+      "dateien": [
+        "bin/web/nova.css",
+        "bin/web/nova-activity.js",
+        "bin/web/i18n.js"
+      ],
+      "grund": "AP22 letzte Kosmetik-Runde nach visueller Bestaetigung: Agenten-Kopfzeile mit 16px Abstand, Ticket-ID und Status-Badge auf gemeinsamer Baseline (8px Gap), konditionale Session-Beschriftung (Neue Key ' Fuer dieses Projekt sind keine Sitzungen aufgezeichnet.'), Agentenname mit Ellipsis und nicht umbrechenden Badges, Board-Spalten min 280px (Mobil einspaltig unveraendert), Wizard-Schrittanzeige als CSS-Fuellbalken, Kachelzahlen mit vollem Kontrast/Gewicht, Scrim auf 0.55. Alle betroffenen Suiten gruen (70 Faelle), i18n ohne Duplikate (999/999)."
     }
   ],
   "files": [
@@ -1429,9 +1439,9 @@
       "sha256": "f5e9382967c9833066a55808829f3750fc8e1181b170cafd222c37048bb49a77"
     },
     {
-      "bytes": 147824,
+      "bytes": 148059,
       "path": "bin/web/i18n.js",
-      "sha256": "a345fab1c5b8cc9a52abf7b5ac2202bacd71a9e8b82c3d19d5a21e4768d0966f"
+      "sha256": "2c1d9999fe2f52e376488e2ec03abb60332798494c03b8d4eed86129e8d7ec63"
     },
     {
       "bytes": 688,
@@ -1439,9 +1449,9 @@
       "sha256": "19ea677f5c3dc3579279fd9b5bf7584612967654b8ec0bbde3818576c78b46b5"
     },
     {
-      "bytes": 20345,
+      "bytes": 22418,
       "path": "bin/web/nova.css",
-      "sha256": "05472efd212d3ba1ebcd56a49c6d372a84743d8e52363af6157f5247c43172a9"
+      "sha256": "a7a3b1d7e89c5ffe71ea302a621a0ad52525519a52335035b9f9619cf6541bbe"
     },
     {
       "bytes": 21560,
@@ -1469,9 +1479,9 @@
       "sha256": "4bdb9dc747513a3437d2dd2abfabacce5a1569581b8f711988cdd10c2317b086"
     },
     {
-      "bytes": 11747,
+      "bytes": 11903,
       "path": "bin/web/nova-activity.js",
-      "sha256": "e41f7aa1e7afcc4ac7c45e0c2de9c57156336f62d0074b4bc19ff808639876e1"
+      "sha256": "9d4e6cc42dd93472f032cc171cf855fb8692d9534e7b43ed732b4efd156239a0"
     },
     {
       "bytes": 44549,

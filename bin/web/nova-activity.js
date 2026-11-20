@@ -159,7 +159,9 @@ NV.views.activity = function activity(context, token) {
       var entries = (data && data.sessions) || [];
       limitField.value = String((data && data.limit) || 5);
       var list = el('div', {class: 'nv-session-list'});
-      if (!entries.length) list.append(nvActivityEmpty(tr('Projekt wählen, um seine Sitzungen zu sehen.')));
+      /* Projekt ist gewählt: hier gehört die Leeraussage hin, nicht der
+         Hinweis „Projekt wählen“ (der gilt nur ohne Auswahl). */
+      if (!entries.length) list.append(nvActivityEmpty(tr('Für dieses Projekt sind keine Sitzungen aufgezeichnet.')));
       var canResume = !!(data && data.resume_supported) && !(data && data.running);
       entries.forEach(function (entry) {
         var resume = null;

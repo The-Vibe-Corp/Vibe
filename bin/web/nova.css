@@ -236,13 +236,24 @@ a { color: var(--nv-primary); }
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap: var(--nv-space-3);
 }
+/* AP22: die Zahl ist die Hauptinformation einer Kachel — kräftig und im
+   kontrastreichsten Texttoken, das Label bleibt bewusst zurückhaltend. */
+.nv-tile-num { font-size: 1.75rem; font-weight: 700; line-height: 1.1; color: var(--nv-text); }
+.nv-tile-label { font-size: 0.875rem; color: var(--nv-muted); }
 .nv-board {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: var(--nv-space-3);
   align-items: start;
 }
 .nv-row { display: flex; align-items: center; flex-wrap: wrap; gap: var(--nv-space-2); margin-bottom: var(--nv-space-2); }
+/* AP22: Agentenkopf — Titel links, Aktion rechts, mit echtem Abstand zur Liste. */
+.nv-agent-head { justify-content: space-between; gap: var(--nv-space-4); margin-bottom: var(--nv-space-5); }
+/* Ein langer Name kürzt sich mit Ellipse; die Badges bleiben rechts auf einer
+   Zeile und drücken sich gegenseitig nicht um. */
+.nv-agent .nv-row:first-child { flex-wrap: nowrap; }
+.nv-agent-name { flex: 1 1 auto; min-width: 0; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nv-agent .nv-row:first-child .nv-pill { flex: 0 0 auto; white-space: nowrap; }
 .nv-list { display: flex; flex-direction: column; gap: var(--nv-space-2); margin-bottom: var(--nv-space-3); }
 .nv-muted { color: var(--nv-muted); }
 .nv-note { color: var(--nv-muted); font-size: 0.8125rem; padding: var(--nv-space-2); background: var(--nv-surface-2); border-radius: var(--nv-radius-sm); }
@@ -257,14 +268,34 @@ a { color: var(--nv-primary); }
 .nv-kv-row dt { color: var(--nv-muted); min-width: 4.5rem; }
 .nv-kv-row dd { margin: 0; overflow-wrap: anywhere; }
 .nv-ticket { display: flex; flex-direction: column; gap: var(--nv-space-2); }
-.nv-ticket-head { display: flex; align-items: center; justify-content: space-between; gap: var(--nv-space-2); }
+/* Kennung und Statusbadge teilen eine Grundlinie; baseline verhindert, dass
+   das kleinere Pilli optisch höher steht als die ID. */
+.nv-ticket-head { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: nowrap; gap: var(--nv-space-2); }
 .nv-ticket-title, .nv-feedback-title { font-weight: 600; }
 .nv-ticket-actions { margin-top: auto; }
 .nv-feedback-item { display: flex; flex-direction: column; gap: var(--nv-space-2); }
 .nv-empty { padding: var(--nv-space-2) 0; }
 .nv-loading { padding: var(--nv-space-2) 0; }
 .nv-wizard-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--nv-space-3); }
-.nv-step-indicator { color: var(--nv-muted); font-size: 0.875rem; white-space: nowrap; }
+.nv-step-indicator { color: var(--nv-muted); font-size: 0.875rem; white-space: nowrap; --nv-step-fill: 1; }
+/* AP22: vier kleine Balken, gefüllt bis zum aktuellen Schritt — rein CSS und
+   ohne neue Hooks: die vorhandenen [data-nv-step]-Sektionen liefern über
+   :has() den Wert für --nv-step-fill (1…4). */
+.nv-wizard:has([data-nv-step="1"]:not([hidden])) .nv-step-indicator { --nv-step-fill: 1; }
+.nv-wizard:has([data-nv-step="2"]:not([hidden])) .nv-step-indicator { --nv-step-fill: 2; }
+.nv-wizard:has([data-nv-step="3"]:not([hidden])) .nv-step-indicator { --nv-step-fill: 3; }
+.nv-wizard:has([data-nv-step="4"]:not([hidden])) .nv-step-indicator { --nv-step-fill: 4; }
+.nv-step-indicator::after {
+  content: "";
+  display: block;
+  width: 76px;
+  height: 4px;
+  margin-top: var(--nv-space-2);
+  border-radius: 2px;
+  background:
+    repeating-linear-gradient(to right, var(--nv-primary) 0 16px, transparent 16px 20px) left top / calc(var(--nv-step-fill) * 20px) 100% no-repeat,
+    repeating-linear-gradient(to right, var(--nv-border) 0 16px, transparent 16px 20px) left top / 100% 100% no-repeat;
+}
 
 /* ---------- Kompakte Bausteine ---------- */
 /* Kopfzeile und Chip-Zeile sind getrennt: die Chips dürfen umbrechen, das ×
@@ -517,7 +548,7 @@ html[data-animations="on"] .nv-drawer { animation: nv-fade-in var(--nv-speed) ea
     position: fixed;
     inset: 0;
     z-index: -1;
-    background: rgba(12, 18, 28, 0.45);
+    background: rgba(12, 18, 28, 0.55);
   }
   [data-nv-nav-toggle][aria-expanded="true"] ~ .nv-nav-scrim { display: block; }
   .nv-nav button { min-height: 44px; text-align: left; justify-content: flex-start; }
