@@ -15,6 +15,7 @@ Regeln (werden maschinell geprüft):
   Beschreibung: The orchestrator agent tried to spawn a subagent and it tried on of the models in the global config and not the one in the project config (.vibe/agents.json).
   Commit: b55fcc6; Test: tests/unit/test_b1_project_agent_models.py (15/15), tests.unit.test_project_agents.RunnerModelTest (3/3), B13-Regressionsausschnitt (9/9), `bash -n bin/vibe-run.sh`, `python3 scripts/check-import-manifest.py`, `bash scripts/verify.sh quick` (Exit 0), `bash scripts/verify.sh package` (48/50; 2 vorbestehende Baselinefehler von test_project_agents)
 
-- [ ] B2 AGENTS.md not available
+- [x] B2 AGENTS.md not available
   Art: Bug
   Beschreibung: Subagents seem to have issues finding the AGENTS.md file. It is not always necessarily committed in the repo. Make sure the project-specific one is available in the worktree (like the ticket) and also that the global one in the ~/.config/opencode dir is discovered.
+  Commit: 5c5e986; Test: tests/unit/test_worknotes_sync (19/19), tests.unit.test_import_manifest (8/8), tests.unit.test_package_gates (33/33), python3 scripts/check-import-manifest.py (OK), python3 scripts/check-syntax.py (OK), python3 scripts/check-no-secrets.py (OK); Datei: docs/features/B2.md, docs/reviews/B2-review-1.md
