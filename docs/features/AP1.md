@@ -2,8 +2,10 @@
 
 Stand: 2026-11-20
 Ticket: TICKETS.md AP1 („Fix bugs preventing opencode-go models from being available in sandbox, and sandbox write permissions“)
-Arbeitsbranch: `feature/korbat-vibe-dev-bot/ap1-3`
-Basiscommit: `1de016b`
+Ursprünglicher Arbeitsbranch: `feature/korbat-vibe-dev-bot/ap1-3`
+Ursprünglicher Basiscommit: `1de016b`
+Revalidierungsbranch: `feature/korbat/ap1`
+Revalidierungsbasis: `8f26a85` (AP1 bereits durch Squash-Commit `976228b` enthalten)
 Nachweis (Commit/Test): siehe TICKETS.md, Eintrag AP1.
 
 ## Ziel
@@ -210,3 +212,81 @@ Weitere tatsächlich ausgeführte Prüfungen:
   die Serverdatei geschrieben und beim Zielwechsel neu gestartet; die
   Dateisystem-Schreibgrenze kommt dort weiterhin vom Prozess selbst, nicht
   von AP1.
+
+## Revalidierung im Paketlauf `feature/korbat/ap1`
+
+Der Paketlauf begann auf `8f26a85`; die technische AP1-Umsetzung war bereits
+über den Squash-Commit `976228b` in der Basis enthalten. Zwischen `976228b`
+und dieser Basis änderten sich weder `bin/vibe-run.sh` noch
+`bin/vibe_sandbox.py` noch die AP1-Testdateien. Deshalb erfolgte keine
+erneute, inhaltsgleiche Codeänderung. Dieser Paketstand ergänzt nur die
+erneute unabhängige Prüfung und deren Nachweise.
+
+### Erneut ausgeführte Fokus- und Pflichtprüfungen
+
+Folgende Prüfungen wurden auf dem Revalidierungsstand tatsächlich ausgeführt:
+
+- `python3 -m unittest tests.unit.test_ap1_sandbox_credentials -v`:
+  **6/6 Tests OK**.
+- `python3 -m unittest
+  tests.unit.test_b13_private_server_runner.PreflightWriteDirChangeTest -v`:
+  **1/1 Test OK**; zwei Serverstarts mit Wechsel `$P` → `$WT` und Stop dazwischen.
+- `python3 -m unittest tests.unit.test_b17_sandbox_argv -v`: **4/4 Tests OK**.
+- `python3 -m unittest tests.unit.test_ap1_sandbox_credentials
+  tests.unit.test_b13_private_server_runner tests.unit.test_b17_sandbox_argv -v`:
+  **19/20 Tests OK**. Der einzige Fehlschlag bleibt der oben genannte reale
+  bwrap-Test wegen fehlender Kernelberechtigung für User-Namespaces; die
+  übrigen neun B13-Tests, sechs AP1-DB-Tests und vier Sandbox-Argv-Tests
+  bestehen.
+- `env -u SANDBOX bash scripts/verify.sh quick --project <Worktree>`: **Exit 0**;
+  Manifest (58 Dateien), Syntax (195 Python-, 8 Bash-, 3 JSON-Dateien) und
+  Secret-Check bestanden.
+- `env -u SANDBOX bash scripts/verify.sh package --project <Worktree>`:
+  **Exit 0**, **11/11 Tests OK**.
+
+Für diese Prüfmodi liegt nur im isolierten Projekt-Worktree eine ignorierte
+`.vibe/project.env` mit echten Prüfbefehlen. Die Produktivkonfiguration und der
+Integrationsstand blieben unverändert.
+
+`env -u SANDBOX bash scripts/verify.sh full --project <Worktree>` wurde gestartet,
+aber der Tool-/Verify-Prozess wurde mit SIGTERM (Exit 143) getrennt. Der verwaiste
+parallele Testläufer wurde kontrolliert beendet; die Logdatei enthielt nur den
+Prüfkopf. **Kein abgeschlossener Volltest und keine vollständig grüne Suite
+werden behauptet.** Ein versehentlich zusätzlich gestarteter zweiter
+Verify-Prozess wurde sofort kontrolliert beendet (SIGTERM, Exit 143); die
+isolierten Prüfumgebungen und deren OpenCode-Dienste wurden aufgeräumt. Gemäß
+der ausdrücklichen Nutzeranweisung „Lauf war schon durch … einfach beenden“
+wurde kein erneuter Volltest gestartet.
+
+Die unabhängige Test-Agenten-Reproduktion der AP1-Fokusfälle steht in
+`docs/reviews/AP1-test-agent-report.md`. Die produktiven Dateien sind gegenüber
+dem ursprünglichen unabhängigen Review `docs/reviews/AP1-review-1.md` unverändert;
+das erneute Review des revalidierten Bestands steht in
+`docs/reviews/AP1-review-2.md`.
+
+### DB-Entscheidung und Grenzen dieser Runde
+
+Die Rückfrage `qace263c176a1` und die Antwort des Nutzers vom 20.11.2026 wurden
+direkt aus dem Laufzeitbestand verifiziert. Die Entscheidung bleibt **A: Kopie
+nur der Zugangsdaten**. Die genannten Vor-/Nachteile, der Ablageort und die
+Sicherheitsgrenzen oben gelten unverändert. Da sich die Faktenlage nicht
+geändert hat, wurde keine zweite DB-Rückfrage gestellt.
+
+Ein auth-only Refresh nach Token-Rotation ist als mögliche spätere Verbesserung
+denkbar, aber kein neuer AP1-Defekt: Das Nichtüberschreiben bestehender
+Zugangsdaten ist ausdrücklich durch AK2 und die ursprüngliche Entscheidung
+festgelegt. Diese Grenze wird nicht durch eine nicht abgestimmte Änderung des
+Persistenzmodells umgangen.
+
+### Externe Abschlussgrenzen
+
+Die Projektregeln verlangen grundsätzlich eine verifizierte
+Trilium-Dokumentation. In dieser Sitzung meldet `opencode mcp list`
+**„No MCP servers configured“**, und die verfügbare MCP-Ressourcenabfrage ist
+leer. Auf die daraufhin gestellte Abschlussrückfrage `qfc1fe3f5fc77` wählte der
+Nutzer ausdrücklich die **lokale Ausnahme ohne Trilium/Push/PR und ohne
+Integrationsmerge**. Auf die komplementäre Rückfrage `q419e128a8b14`
+präzisierte er: **„Trilium nicht benötigt, Lauf war schon durch. Wenn alles
+passt, einfach beenden.“** Deshalb wird in diesem Folgelauf weder eine
+Trilium-Synchronisation noch ein GitHub-/Integrationsvorgang ausgeführt; die
+lokalen Paketkriterien sind maßgeblich.
