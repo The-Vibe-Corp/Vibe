@@ -311,7 +311,15 @@ function tile(k,v,tone){return el('div',{class:'tile'},el('div',{class:'k'},k),e
 function tabPanel(key,...c){return el('section',{class:'tabpanel',role:'tabpanel',id:'panel-'+key,'data-panel':key,'aria-labelledby':'tab-'+key,hidden:''},...c)}
 function showDetailTab(key,panels,btns,focus){DTAB=key;
  DTABS.forEach(([k])=>{const on=k===key;btns[k].setAttribute('aria-selected',on?'true':'false');btns[k].tabIndex=on?0:-1;panels[k].hidden=!on});
- if(key!=='ausgabe')exitLogFull();if(key==='ausgabe'&&LOG&&LOG.card.isConnected)LOG.fit();if(focus&&btns[key])btns[key].focus()}
+ if(key!=='ausgabe')exitLogFull();
+ /* B20: Beim Öffnen der Ansicht die Vorschaufenster an den Fuß setzen. Die
+    Logs können gefüllt worden sein, während das Panel noch verborgen war;
+    dann war scrollHeight=0 und die Autoscroll-Logik in setText/feedMain
+    konnte nicht zum Fuß scrollen. */
+ if(key==='ausgabe'){
+  if(LOG&&LOG.card.isConnected)LOG.fit();
+  panels[key].querySelectorAll('[data-agent-view] .bv-log').forEach(p=>{p.scrollTop=p.scrollHeight})}
+ if(focus&&btns[key])btns[key].focus()}
 function detailTabs(panels){const btns={},list=el('div',{class:'tabs',role:'tablist','aria-label':tr('Projektbereiche')});
  DTABS.forEach(([k,label])=>{const b=el('button',{type:'button',role:'tab',id:'tab-'+k,'aria-controls':'panel-'+k},tr(label));
   b.addEventListener('click',()=>showDetailTab(k,panels,btns));btns[k]=b;list.append(b)});
@@ -808,8 +816,8 @@ function outputView(name,d,isPi){
   mainToggle.setAttribute('aria-expanded',mainOn?'true':'false');
   for(const[id,node]of children){const on=focusedSession===id;
    node.view.classList.toggle('enlarged',on);
-   node.toggle.textContent=on?tr('Verkleinern'):tr('Vergrößern');
-   node.toggle.setAttribute('aria-label',on?tr('Subagent verkleinern'):tr('Subagent vergrößern'));
+   node.toggle.textContent=on?tr('Fokus beenden'):tr('Fokus');
+   node.toggle.setAttribute('aria-label',tr('Subagent fokussieren'));
    node.toggle.setAttribute('aria-expanded',on?'true':'false')}
   for(const[id,row]of rows)row.focus.setAttribute('aria-expanded',focusedSession===id?'true':'false')}
  function makeChild(entry){
@@ -817,7 +825,7 @@ function outputView(name,d,isPi){
   const state=el('span',{class:'pill run'},tr('läuft'));
   /* F30/AP20: Der Knopf im Kartenkopf und der Übersichts-Knopf schalten
      denselben Zustand. Beim Entfernen des Subagenten verschwindet er mit. */
-  const toggle=el('button',{class:'b',type:'button','aria-label':tr('Subagent vergrößern'),'aria-expanded':'false'},tr('Vergrößern'));
+  const toggle=el('button',{class:'b',type:'button','aria-label':tr('Subagent fokussieren'),'aria-expanded':'false'},tr('Fokus'));
   const view=el('section',{class:'bv-view bv-sub','data-agent-view':'','data-role':'subagent','data-session':String(entry.session||''),role:'log','aria-label':nameOf(entry)},
    el('div',{class:'bv-head'},el('b',{},nameOf(entry)),el('div',{class:'bv-head-actions'},state,toggle)),pre);
   toggle.addEventListener('click',()=>toggleFocus(String(entry.session||'')));

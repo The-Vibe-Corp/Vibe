@@ -17,9 +17,10 @@ UI-Vertrag dieser Abnahme (bewusst schlank, damit die Umsetzung frei bleibt):
   ``data-agent-view``, ``data-role='subagent'`` und ``data-session``.
 * Die Karte ist in der Standarddarstellung mindestens 300 px hoch und der
   Kasten ``.bv-subs`` passt seine Höhe entsprechend an (keine 160-px-Deckel).
-* Jede laufende Karte bietet einen Vergrößern-Knopf (ein ``<button>`` in der
-  Karte mit nicht-leerem ``aria-label``, das „vergrö“ enthält). Der Knopf
-  ist per Tastatur bedienbar: Fokus + Enter vergrößert die Karte nahezu
+* Jede laufende Karte bietet im Kartenkopf (``.bv-head``) einen
+  Fokus-Knopf (ein ``<button>`` mit ``aria-label``, das „fokussieren“
+  enthält; B20: einheitlich „Fokus“ statt „Vergrößern“). Der Knopf ist per
+  Tastatur bedienbar: Fokus + Enter vergrößert die Karte nahezu
   ansichtsfüllend (≥ 70 % der Viewporthöhe und ≥ 60 % der Viewportbreite),
   ein zweites Enter stellt die Standardgröße wieder her.
 * Der Kartenkörper zeigt den Text, den ``/api/subagent-output`` liefert, und
@@ -37,8 +38,8 @@ Testfälle:
    Fehlerfall (aktueller Zustand): Karte bleibt bei ~150 px.
 2. test_running_card_can_be_enlarged_and_restored_by_keyboard [AK6]
    Vorbedingung: wie 1.
-   Aktion: Vergrößern-Knopf per Tastatur (Fokus + Enter) betätigen; danach
-   erneut Enter.
+   Aktion: Fokus-Knopf im Kartenkopf per Tastatur (Fokus + Enter)
+   betätigen; danach erneut Enter.
    Erwartung: Nach dem ersten Enter ist die Karte nahezu ansichtsfüllend;
    nach dem zweiten Enter wieder Standardgröße.
    Fehlerfall: Kein Knopf (aktueller Zustand), keine Reaktion oder keine
@@ -52,7 +53,7 @@ Testfälle:
    Fehlerfall (aktueller Zustand): Karte friert beim statischen Ersttext.
 4. test_enlarged_card_keeps_showing_refreshed_output       [AK6, AK7]
    Vorbedingung: wie 1.
-   Aktion: Karte vergrößern, dann Live-Text ändern.
+   Aktion: Karte über den Fokus-Knopf vergrößern, dann Live-Text ändern.
    Erwartung: Auch die vergrößerte Karte zeigt den neuen Text.
    Fehlerfall: Vergrößerung friert die Aktualisierung ein.
 
@@ -341,6 +342,24 @@ class F30BrowserTest(unittest.TestCase):
             "[data-agent-view][data-role='subagent']"
             f"[data-session='{CHILD_SESSION}']")
 
+    def focus_toggle(self):
+        """Fokus-Knopf im Kartenkopf (B20: einheitlich „Fokus“).
+
+        Gesucht wird ein ``<button>`` in ``.bv-head`` mit ``aria-label``, das
+        „fokussieren“/„focus“ enthält. Der frühere Name „Vergrößern“ ist
+        nicht mehr Teil des Vertrags.
+        """
+        buttons = self.sub_view().locator(".bv-head button")
+        for index in range(buttons.count()):
+            candidate = buttons.nth(index)
+            label = (candidate.get_attribute("aria-label") or "").lower()
+            if re.search(r"fokus|focus", label):
+                return candidate
+        self.fail(
+            "Kein Fokus-Knopf (button im Kartenkopf mit aria-label "
+            "„… fokussieren“) in der Subagent-Karte gefunden; "
+            f"{buttons.count()} Knöpfe im Kopf vorhanden")
+
     def open_detail(self):
         self.page.goto(self.base + "/#t=" + self.token)
         row = self.page.locator("tr.row", has_text="proj").first
@@ -421,30 +440,18 @@ class EnlargeTest(F30BrowserTest):
         """AK6: Vergrößern per Tastatur, Rückkehr mit zweitem Enter.
 
         Vorbedingung: aktiver Lauf mit einer laufenden Subagent-Karte.
-        Aktion: Den in der Karte befindlichen Vergrößern-Knopf (ein
-        <button> mit aria-label, das „vergrö“ enthält) per Fokus + Enter
-        betätigen; danach erneut Enter.
+        Aktion: Den Fokus-Knopf im Kartenkopf (``.bv-head button`` mit
+        ``aria-label``, das „fokussieren“ enthält; B20: einheitlich „Fokus“)
+        per Fokus + Enter betätigen; danach erneut Enter.
         Erwartung: Nach dem ersten Enter ist die Karte nahezu ansichtsfüllend
         (≥ 70 % der Viewporthöhe und ≥ 60 % der Viewportbreite); nach dem
         zweiten Enter wieder Standardgröße (< 450 px hoch).
-        Fehlerfall: Kein Knopf (aktueller Zustand), keine Reaktion oder die
-        Standardgröße wird nicht wiederhergestellt.
+        Fehlerfall: Kein Fokus-Knopf, keine Reaktion oder die Standardgröße
+        wird nicht wiederhergestellt.
         """
         card = self.open_output_with_running_subagent()
         original = self.sizes(card)
-        buttons = self.sub_view().locator("button")
-        count = buttons.count()
-        enlarge = None
-        for index in range(count):
-            candidate = buttons.nth(index)
-            label = candidate.get_attribute("aria-label") or ""
-            if re.search(r"vergr|expand|enlarge", label.lower()):
-                enlarge = candidate
-                break
-        self.assertIsNotNone(
-            enlarge,
-            f"Kein Vergrößern-Knopf (button mit aria-label „vergrö…“) in der "
-            f"Subagent-Karte gefunden; {count} Knöpfe vorhanden")
+        enlarge = self.focus_toggle()
         enlarge.focus()
         self.page.keyboard.press("Enter")
         self.wait_until(
@@ -503,8 +510,8 @@ class PollingRefreshTest(F30BrowserTest):
 
         Vorbedingung: laufende Subagent-Karte; opencode-Attrappe liefert
         LIVE-A-4711.
-        Aktion: Karte über den Vergrößern-Knopf vergrößern; danach die
-        Attrappe auf LIVE-B-4711 umstellen.
+        Aktion: Karte über den Fokus-Knopf im Kartenkopf vergrößern; danach
+        die Attrappe auf LIVE-B-4711 umstellen.
         Erwartung: Die vergrößerte Karte zeigt LIVE-B-4711.
         Fehlerfall: Die Vergrößerung friert die Aktualisierung ein.
         """
@@ -512,15 +519,7 @@ class PollingRefreshTest(F30BrowserTest):
         self.wait_until(
             lambda: "LIVE-A-4711" in card.inner_text(),
             message="Die Karte zeigt nicht die Live-Ausgabe (LIVE-A-4711)")
-        buttons = self.sub_view().locator("button")
-        enlarge = None
-        for index in range(buttons.count()):
-            candidate = buttons.nth(index)
-            label = candidate.get_attribute("aria-label") or ""
-            if re.search(r"vergr|expand|enlarge", label.lower()):
-                enlarge = candidate
-                break
-        self.assertIsNotNone(enlarge, "Kein Vergrößern-Knopf gefunden")
+        enlarge = self.focus_toggle()
         enlarge.focus()
         self.page.keyboard.press("Enter")
         self.wait_until(
