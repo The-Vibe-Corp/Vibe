@@ -169,7 +169,7 @@ class QuestionBrowserTest(unittest.TestCase):
         return sorted(folder.glob("*.answer.json")) if folder.exists() else []
 
     def open_dashboard(self):
-        self.page.goto(self.base + "/#t=" + self.token)
+        self.page.goto(self.base + "/classic#t=" + self.token)
         self.page.locator("table").first.wait_for()
         self.page.get_by_role("button", name="Projects").wait_for()
 

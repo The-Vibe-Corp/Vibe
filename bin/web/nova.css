@@ -1,0 +1,561 @@
+/* AP22 — Design-System der neuen Oberfläche.
+ * Reines CSS ohne Fremd-Schriften oder CDN. Alle Farben und Abstände kommen
+ * aus Custom Properties; der Dark-Mode überschreibt nur die Tokens. Motion
+ * wird ausschließlich bei data-animations="on" eingeschaltet und zusätzlich
+ * durch die System-Präferenz begrenzt.
+ */
+
+/* ---------- Tokens: heller Standard ---------- */
+:root {
+  --nv-font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --nv-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --nv-space-1: 0.25rem;
+  --nv-space-2: 0.5rem;
+  --nv-space-3: 0.75rem;
+  --nv-space-4: 1rem;
+  --nv-space-5: 1.5rem;
+  --nv-space-6: 2rem;
+  --nv-radius-sm: 10px;
+  --nv-radius: 10px;
+  --nv-radius-lg: 14px;
+  --nv-border: #d8dee6;
+  --nv-bg: #f5f7fa;
+  --nv-surface: #ffffff;
+  --nv-surface-2: #eef2f7;
+  --nv-text: #1d2430;
+  --nv-muted: #5b6675;
+  --nv-primary: #2457c5;
+  --nv-primary-text: #ffffff;
+  --nv-primary-hover: #1a45a3;
+  /* Primärknopf eigene Tokens: hell bleibt unverändert, dunkel ist eine
+     echte blaue Fläche (siehe Dark-Mode-Kommentar). */
+  --nv-btn-primary-bg: #2457c5;
+  --nv-btn-primary-fg: #ffffff;
+  --nv-btn-primary-border: #2457c5;
+  --nv-btn-primary-hover: #1a45a3;
+  --nv-danger: #b4232c;
+  --nv-danger-text: #ffffff;
+  --nv-warn-bg: #fff1cf;
+  --nv-warn-text: #7a5600;
+  --nv-ok-bg: #dcf3e4;
+  --nv-ok-text: #166534;
+  --nv-info-bg: #e6eefc;
+  --nv-error-bg: #fde8e9;
+  --nv-error-text: #9b1c22;
+  --nv-shadow: 0 2px 8px rgba(20, 32, 55, 0.08);
+  --nv-top-bg: #ffffff;
+  --nv-focus: #1d4ed8;
+  --nv-speed: 200ms;
+  /* AP22/F19: Farben der Protokoll-Hervorhebung (Semantik wie die klassische
+     Ansicht, an die helle Nova-Palette angepasst). */
+  --nv-hl-head: #2457c5;
+  --nv-hl-tool: #6d28d9;
+  --nv-hl-sub: #0f766e;
+  --nv-hl-code: #8a5a00;
+  --nv-hl-code-bg: #fff1cf;
+  --nv-hl-str: #166534;
+  --nv-hl-path: #1d4ed8;
+  --nv-hl-sha: #6d28d9;
+  --nv-hl-num: #b45309;
+}
+
+/* ---------- Tokens: dunkel ---------- */
+html[data-theme="dark"] {
+  --nv-border: #3b4655;
+  --nv-bg: #141922;
+  --nv-surface: #1e2530;
+  --nv-surface-2: #273140;
+  --nv-text: #e8edf5;
+  --nv-muted: #a2adc0;
+  --nv-primary: #6f9dff;
+  --nv-primary-text: #101624;
+  --nv-primary-hover: #8bb2ff;
+  /* Sichtbare Primärfläche statt Ghost-Optik: Weiß auf #3b6fe0 ≈ 4.6:1,
+     der dunklere Hover #2f63d6 liegt darüber (beide ≥ 4.5:1). */
+  --nv-btn-primary-bg: #3b6fe0;
+  --nv-btn-primary-fg: #ffffff;
+  --nv-btn-primary-border: #3b6fe0;
+  --nv-btn-primary-hover: #2f63d6;
+  --nv-danger: #ff7a7f;
+  --nv-danger-text: #2a0d0f;
+  --nv-warn-bg: #4a3a12;
+  --nv-warn-text: #ffe6a1;
+  --nv-ok-bg: #173d29;
+  --nv-ok-text: #a7f3c2;
+  --nv-info-bg: #213354;
+  --nv-error-bg: #4a1c20;
+  --nv-error-text: #ffc9cc;
+  --nv-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+  --nv-top-bg: #1e2530;
+  --nv-focus: #9dbaff;
+  /* AP22/F19: dunkle Entsprechung der Hervorhebungsfarben. */
+  --nv-hl-head: #8ab4f8;
+  --nv-hl-tool: #c9a7ff;
+  --nv-hl-sub: #7fd1c1;
+  --nv-hl-code: #e8c07d;
+  --nv-hl-code-bg: #232830;
+  --nv-hl-str: #a5d6a7;
+  --nv-hl-path: #9ecbff;
+  --nv-hl-sha: #c3a6ff;
+  --nv-hl-num: #f0a66a;
+}
+
+/* ---------- Grundlagen und Typografie ---------- */
+*, *::before, *::after { box-sizing: border-box; }
+html { color-scheme: light; }
+html[data-theme="dark"] { color-scheme: dark; }
+body {
+  margin: 0;
+  background: var(--nv-bg);
+  color: var(--nv-text);
+  font-family: var(--nv-font);
+  font-size: 15px;
+  line-height: 1.5;
+}
+[hidden] { display: none !important; }
+h1, h2, h3 { margin: 0 0 var(--nv-space-3); line-height: 1.25; }
+h1, .nv-page-title { font-size: 1.75rem; }
+h2 { font-size: 1.125rem; }
+h3 { font-size: 1rem; }
+p { margin: 0 0 var(--nv-space-3); }
+code, pre { font-family: var(--nv-mono); }
+
+/* AP22/AK4: Syntaxhervorhebung der Live-Ausgabe wie in der klassischen UI.
+   nova-output.js setzt die Klassen DOM-only; der Text bleibt wörtlich. */
+.nv-log .hl-head { color: var(--nv-hl-head); font-weight: 600; }
+.nv-log .hl-err, .nv-log .hl-del { color: var(--nv-error-text); }
+.nv-log .hl-tool { color: var(--nv-hl-tool); }
+.nv-log .hl-sub { color: var(--nv-hl-sub); }
+.nv-log .hl-think { color: var(--nv-muted); font-style: italic; }
+.nv-log .hl-cmd { color: var(--nv-warn-text); }
+.nv-log .hl-add { color: var(--nv-ok-text); }
+.nv-log .hl-code { color: var(--nv-hl-code); background: var(--nv-hl-code-bg); border-radius: 3px; }
+.nv-log .hl-str { color: var(--nv-hl-str); }
+.nv-log .hl-path { color: var(--nv-hl-path); }
+.nv-log .hl-sha { color: var(--nv-hl-sha); }
+.nv-log .hl-num { color: var(--nv-hl-num); }
+
+a { color: var(--nv-primary); }
+:focus-visible { outline: 2px solid var(--nv-focus); outline-offset: 2px; }
+
+/* Skip-Link: nur beim Fokussieren sichtbar. */
+.nv-skip {
+  position: absolute;
+  left: var(--nv-space-3);
+  top: -100px;
+  z-index: 100;
+  padding: var(--nv-space-2) var(--nv-space-3);
+  background: var(--nv-surface);
+  border: 1px solid var(--nv-border);
+  border-radius: var(--nv-radius-sm);
+}
+.nv-skip:focus { top: var(--nv-space-2); }
+
+/* ---------- Kopfleiste und Navigation ---------- */
+.nv-top {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: var(--nv-space-4);
+  padding: var(--nv-space-3) var(--nv-space-5);
+  background: var(--nv-top-bg);
+  border-bottom: 1px solid var(--nv-border);
+  box-shadow: var(--nv-shadow);
+}
+.nv-brand { margin: 0; font-weight: 700; letter-spacing: 0.04em; }
+.nv-nav { display: flex; align-items: center; gap: var(--nv-space-1); }
+.nv-nav button {
+  border: 0;
+  border-left: 3px solid transparent;
+  background: transparent;
+  color: var(--nv-muted);
+  padding: var(--nv-space-2) var(--nv-space-3);
+  border-radius: var(--nv-radius-sm);
+  font: inherit;
+  cursor: pointer;
+}
+.nv-nav button[aria-current="page"] {
+  color: var(--nv-primary);
+  background: var(--nv-info-bg);
+  font-weight: 600;
+}
+.nv-nav-toggle {
+  display: none;
+  min-width: 44px;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--nv-border);
+  background: var(--nv-surface);
+  color: var(--nv-text);
+  border-radius: var(--nv-radius-sm);
+  font-size: 1.375rem;
+  cursor: pointer;
+}
+.nv-top-actions { display: flex; align-items: center; gap: var(--nv-space-1); margin-left: auto; }
+.nv-anim-switch {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.15rem;
+  min-width: 44px;
+  min-height: 44px;
+  margin: 0;
+  padding: 0 var(--nv-space-2);
+  border-radius: var(--nv-radius-sm);
+  cursor: pointer;
+}
+.nv-anim-switch:hover { background: var(--nv-surface-2); }
+.nv-anim-glyph { font-size: 1.25rem; line-height: 1; color: var(--nv-primary); }
+.nv-icon-btn { min-width: 44px; min-height: 44px; padding: 0; font-size: 1.375rem; line-height: 1; }
+.nv-icon-btn.is-open { background: var(--nv-info-bg); color: var(--nv-primary); }
+.nv-bell-wrap { position: relative; }
+.nv-badge { position: absolute; top: 2px; right: 0; }
+
+/* ---------- Karten, Raster, Kacheln ---------- */
+.nv-main { max-width: 1200px; margin: 0 auto; padding: var(--nv-space-5); }
+.nv-section { margin-bottom: var(--nv-space-5); }
+.nv-card {
+  background: var(--nv-surface);
+  border: 1px solid var(--nv-border);
+  border-radius: var(--nv-radius-lg);
+  box-shadow: var(--nv-shadow);
+  padding: var(--nv-space-6);
+  margin-bottom: var(--nv-space-4);
+}
+.nv-card-secondary { background: var(--nv-surface-2); box-shadow: none; }
+.nv-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: var(--nv-space-4);
+}
+.nv-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: var(--nv-space-3);
+}
+/* AP22: die Zahl ist die Hauptinformation einer Kachel — kräftig und im
+   kontrastreichsten Texttoken, das Label bleibt bewusst zurückhaltend. */
+.nv-tile-num { font-size: 1.75rem; font-weight: 700; line-height: 1.1; color: var(--nv-text); }
+.nv-tile-label { font-size: 0.875rem; color: var(--nv-muted); }
+.nv-board {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: var(--nv-space-3);
+  align-items: start;
+}
+.nv-row { display: flex; align-items: center; flex-wrap: wrap; gap: var(--nv-space-2); margin-bottom: var(--nv-space-2); }
+/* AP22: Agentenkopf — Titel links, Aktion rechts, mit echtem Abstand zur Liste. */
+.nv-agent-head { justify-content: space-between; gap: var(--nv-space-4); margin-bottom: var(--nv-space-5); }
+/* Ein langer Name kürzt sich mit Ellipse; die Badges bleiben rechts auf einer
+   Zeile und drücken sich gegenseitig nicht um. */
+.nv-agent .nv-row:first-child { flex-wrap: nowrap; }
+.nv-agent-name { flex: 1 1 auto; min-width: 0; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nv-agent .nv-row:first-child .nv-pill { flex: 0 0 auto; white-space: nowrap; }
+.nv-list { display: flex; flex-direction: column; gap: var(--nv-space-2); margin-bottom: var(--nv-space-3); }
+.nv-muted { color: var(--nv-muted); }
+.nv-note { color: var(--nv-muted); font-size: 0.8125rem; padding: var(--nv-space-2); background: var(--nv-surface-2); border-radius: var(--nv-radius-sm); }
+.nv-link { text-decoration: underline; }
+.nv-project-name { margin: 0; }
+.nv-project { cursor: pointer; }
+.nv-project-meta { margin-bottom: var(--nv-space-3); }
+
+/* AP22-Feinschliff: klare Zeilen statt zusammenlaufender Inline-Texte. */
+.nv-kv-list { display: flex; flex-direction: column; gap: var(--nv-space-2); margin: 0 0 var(--nv-space-3); }
+.nv-kv-row { display: flex; align-items: baseline; gap: var(--nv-space-3); }
+.nv-kv-row dt { color: var(--nv-muted); min-width: 4.5rem; }
+.nv-kv-row dd { margin: 0; overflow-wrap: anywhere; }
+.nv-ticket { display: flex; flex-direction: column; gap: var(--nv-space-2); }
+/* Kennung und Statusbadge teilen eine Grundlinie; baseline verhindert, dass
+   das kleinere Pilli optisch höher steht als die ID. */
+.nv-ticket-head { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: nowrap; gap: var(--nv-space-2); }
+.nv-ticket-title, .nv-feedback-title { font-weight: 600; }
+.nv-ticket-actions { margin-top: auto; }
+.nv-feedback-item { display: flex; flex-direction: column; gap: var(--nv-space-2); }
+.nv-empty { padding: var(--nv-space-2) 0; }
+.nv-loading { padding: var(--nv-space-2) 0; }
+.nv-wizard-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--nv-space-3); }
+.nv-step-indicator { color: var(--nv-muted); font-size: 0.875rem; white-space: nowrap; --nv-step-fill: 1; }
+/* AP22: vier kleine Balken, gefüllt bis zum aktuellen Schritt — rein CSS und
+   ohne neue Hooks: die vorhandenen [data-nv-step]-Sektionen liefern über
+   :has() den Wert für --nv-step-fill (1…4). */
+.nv-wizard:has([data-nv-step="1"]:not([hidden])) .nv-step-indicator { --nv-step-fill: 1; }
+.nv-wizard:has([data-nv-step="2"]:not([hidden])) .nv-step-indicator { --nv-step-fill: 2; }
+.nv-wizard:has([data-nv-step="3"]:not([hidden])) .nv-step-indicator { --nv-step-fill: 3; }
+.nv-wizard:has([data-nv-step="4"]:not([hidden])) .nv-step-indicator { --nv-step-fill: 4; }
+.nv-step-indicator::after {
+  content: "";
+  display: block;
+  width: 76px;
+  height: 4px;
+  margin-top: var(--nv-space-2);
+  border-radius: 2px;
+  background:
+    repeating-linear-gradient(to right, var(--nv-primary) 0 16px, transparent 16px 20px) left top / calc(var(--nv-step-fill) * 20px) 100% no-repeat,
+    repeating-linear-gradient(to right, var(--nv-border) 0 16px, transparent 16px 20px) left top / 100% 100% no-repeat;
+}
+
+/* ---------- Kompakte Bausteine ---------- */
+/* Kopfzeile und Chip-Zeile sind getrennt: die Chips dürfen umbrechen, das ×
+   bleibt rechts in der Kopfzeile und rutscht nie allein in eine neue Zeile. */
+.nv-guide { padding: var(--nv-space-3) var(--nv-space-4); }
+.nv-guide-head { display: flex; align-items: center; gap: var(--nv-space-3); }
+.nv-guide-head .nv-guide-close { margin-left: auto; }
+.nv-guide-label { color: var(--nv-primary); font-weight: 600; font-size: 0.875rem; }
+.nv-guide-steps { display: flex; flex-wrap: wrap; gap: var(--nv-space-2); margin-top: var(--nv-space-3); }
+.nv-chip {
+  display: inline-block;
+  padding: 0.15rem 0.6rem;
+  border-radius: 999px;
+  background: var(--nv-info-bg);
+  color: var(--nv-text);
+  font-size: 0.8125rem;
+}
+.nv-quick { border-style: dashed; }
+.nv-root-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--nv-space-2);
+  padding: var(--nv-space-2) 0;
+  border-bottom: 1px solid var(--nv-border);
+}
+.nv-root-path {
+  min-width: 0;
+  padding: 0.1rem 0.4rem;
+  border-radius: var(--nv-radius-sm);
+  background: var(--nv-surface-2);
+  font-size: 0.8125rem;
+  /* Standardmäßig einzeilig mit Ellipse; der volle Pfad steht im title.
+     anywhere greift nur, falls ein Umbruch unvermeidbar ist. */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.nv-compact { min-width: 36px; padding: 0.25rem 0.5rem; }
+.nv-root-row > .nv-compact { flex: 0 0 auto; margin-left: auto; }
+
+/* Zugriff: Anmeldung vorn, Netzwerk als klar abgegrenzter Unterblock. */
+.nv-access-signin, .nv-access-network { margin-bottom: var(--nv-space-4); }
+.nv-access-signin h3, .nv-access-network h3 { margin-bottom: var(--nv-space-2); }
+.nv-access-network {
+  padding: var(--nv-space-3);
+  border: 1px dashed var(--nv-border);
+  border-radius: var(--nv-radius);
+  background: var(--nv-surface-2);
+}
+
+/* Feature-Schalter in Gruppen mit Kurzhilfe. */
+.nv-feature-group { margin-bottom: var(--nv-space-4); }
+.nv-feature-group h3 { color: var(--nv-muted); margin-bottom: var(--nv-space-2); }
+.nv-feature-text { display: flex; flex-direction: column; line-height: 1.3; }
+.nv-feature-text strong { font-size: 0.875rem; }
+.nv-feature-text small { color: var(--nv-muted); font-size: 0.8125rem; }
+
+/* Reine CSS-Platzhalter für die noch kommenden Bereiche. */
+.nv-skeleton {
+  height: 0.85rem;
+  max-width: 34rem;
+  margin-bottom: var(--nv-space-2);
+  border-radius: var(--nv-radius-sm);
+  background: var(--nv-surface-2);
+}
+.nv-skeleton-short { max-width: 18rem; }
+html[data-animations="on"] .nv-skeleton {
+  background: linear-gradient(90deg, var(--nv-surface-2), var(--nv-info-bg), var(--nv-surface-2));
+  background-size: 200% 100%;
+  animation: nv-shimmer 1.8s ease-in-out infinite;
+}
+
+/* ---------- Formulare ---------- */
+.nv-card label { display: block; margin: var(--nv-space-3) 0 var(--nv-space-1); font-weight: 600; font-size: 0.875rem; }
+.nv-input, .nv-select, .nv-card input:not([type="checkbox"]), .nv-card select, .nv-card textarea {
+  width: 100%;
+  padding: var(--nv-space-2) var(--nv-space-3);
+  border: 1px solid var(--nv-border);
+  border-radius: var(--nv-radius-sm);
+  background: var(--nv-surface);
+  color: var(--nv-text);
+  font: inherit;
+}
+.nv-card textarea { min-height: 6rem; resize: vertical; }
+.nv-switch-row { display: flex !important; align-items: flex-start !important; gap: var(--nv-space-2); font-weight: 400 !important; margin: var(--nv-space-2) 0 !important; }
+.nv-form-error {
+  margin-top: var(--nv-space-2);
+  padding: var(--nv-space-2) var(--nv-space-3);
+  border-radius: var(--nv-radius-sm);
+  background: var(--nv-error-bg);
+  color: var(--nv-error-text);
+}
+
+/* ---------- Buttons ---------- */
+.nv-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--nv-space-2);
+  padding: var(--nv-space-2) var(--nv-space-4);
+  border: 1px solid var(--nv-border);
+  border-radius: var(--nv-radius-sm);
+  background: var(--nv-surface-2);
+  color: var(--nv-text);
+  font: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+.nv-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+.nv-btn.nv-primary {
+  background: var(--nv-btn-primary-bg);
+  color: var(--nv-btn-primary-fg);
+  border-color: var(--nv-btn-primary-border);
+  font-weight: 600;
+}
+.nv-btn.nv-primary:hover:not(:disabled) { background: var(--nv-btn-primary-hover); }
+.nv-btn.nv-secondary { background: var(--nv-surface); color: var(--nv-primary); border-color: var(--nv-border); }
+.nv-btn.nv-danger { background: var(--nv-danger); color: var(--nv-danger-text); border-color: var(--nv-danger); }
+.nv-btn.nv-ghost { background: transparent; border-color: transparent; padding: var(--nv-space-2); }
+.nv-btn.nv-close { padding: 0 var(--nv-space-2); font-size: 1.25rem; }
+
+/* ---------- Pillen, Status und Abzeichen ---------- */
+.nv-pill, .nv-badge {
+  display: inline-block;
+  padding: 0.1rem 0.55rem;
+  border-radius: 999px;
+  background: var(--nv-surface-2);
+  color: var(--nv-muted);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+.nv-pill[data-state="running"] { background: var(--nv-ok-bg); color: var(--nv-ok-text); }
+.nv-pill[data-state="stopped"] { background: var(--nv-surface-2); }
+.nv-pill.nv-type { background: var(--nv-info-bg); color: var(--nv-primary); }
+.nv-pill.nv-warn { background: var(--nv-warn-bg); color: var(--nv-warn-text); }
+.nv-badge {
+  min-width: 1.2rem;
+  text-align: center;
+  background: var(--nv-danger);
+  color: var(--nv-danger-text);
+  margin-left: 0;
+}
+
+/* ---------- Tabs und Panel ---------- */
+.nv-tabs { display: flex; flex-wrap: wrap; gap: var(--nv-space-1); border-bottom: 1px solid var(--nv-border); margin-bottom: var(--nv-space-4); }
+.nv-tab {
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--nv-muted);
+  padding: var(--nv-space-2) var(--nv-space-3);
+  font: inherit;
+  cursor: pointer;
+}
+.nv-tab[aria-selected="true"] { color: var(--nv-primary); border-bottom-color: var(--nv-primary); font-weight: 600; }
+
+/* ---------- Toasts und Benachrichtigungs-Schublade ---------- */
+.nv-toasts { position: fixed; right: var(--nv-space-4); bottom: var(--nv-space-4); z-index: 60; display: flex; flex-direction: column; gap: var(--nv-space-2); max-width: min(380px, 90vw); }
+.nv-toast {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--nv-space-3);
+  padding: var(--nv-space-3);
+  background: var(--nv-surface);
+  border: 1px solid var(--nv-border);
+  border-left: 4px solid var(--nv-primary);
+  border-radius: var(--nv-radius-sm);
+  box-shadow: var(--nv-shadow);
+  word-break: break-word;
+}
+.nv-toast-close { margin-left: auto; border: 0; background: transparent; color: var(--nv-muted); cursor: pointer; font-size: 1.1rem; }
+.nv-drawer {
+  position: absolute;
+  right: 0;
+  top: calc(100% + var(--nv-space-2));
+  width: min(360px, 88vw);
+  max-height: 60vh;
+  overflow: auto;
+  padding: var(--nv-space-3);
+  background: var(--nv-surface);
+  border: 1px solid var(--nv-border);
+  border-radius: var(--nv-radius);
+  box-shadow: var(--nv-shadow);
+  z-index: 50;
+}
+.nv-drawer-head { display: flex; align-items: center; justify-content: space-between; gap: var(--nv-space-2); margin-bottom: var(--nv-space-2); }
+.nv-drawer-title { font-weight: 700; font-size: 1rem; }
+.nv-drawer-head .nv-close { min-width: 44px; min-height: 44px; }
+.nv-bell-item { display: block; padding: var(--nv-space-2) 0; border-bottom: 1px solid var(--nv-border); text-decoration: none; color: var(--nv-text); }
+.nv-bell-empty { margin: var(--nv-space-2) 0; font-size: 0.875rem; }
+
+/* ---------- Animationen (nur bei data-animations="on") ---------- */
+html[data-animations="on"] .nv-card,
+html[data-animations="on"] .nv-toast { animation: nv-slide-in var(--nv-speed) ease-out both; }
+html[data-animations="on"] .nv-btn,
+html[data-animations="on"] .nv-nav button,
+html[data-animations="on"] .nv-tab { transition: background-color var(--nv-speed) ease, color var(--nv-speed) ease, transform var(--nv-speed) ease; }
+html[data-animations="on"] .nv-btn:hover:not(:disabled),
+html[data-animations="on"] .nv-tab:hover { transform: translateY(-1px); }
+html[data-animations="on"] .nv-drawer { animation: nv-fade-in var(--nv-speed) ease-out both; }
+@keyframes nv-slide-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes nv-fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes nv-shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+@media (prefers-reduced-motion: reduce) {
+  html[data-animations="on"] .nv-card,
+  html[data-animations="on"] .nv-toast,
+  html[data-animations="on"] .nv-drawer,
+  html[data-animations="on"] .nv-skeleton { animation: none; }
+  html[data-animations="on"] .nv-btn,
+  html[data-animations="on"] .nv-nav button,
+  html[data-animations="on"] .nv-tab { transition: none; transform: none; }
+}
+
+/* ---------- Responsiv: Desktop / Tablet / Mobil ---------- */
+@media (max-width: 1023px) {
+  .nv-top { padding: var(--nv-space-3) var(--nv-space-4); }
+  .nv-main { max-width: 768px; padding: var(--nv-space-5) var(--nv-space-4); }
+  .nv-card { padding: var(--nv-space-5); }
+}
+@media (max-width: 639px) {
+  /* Die Navigation wird als Overlay unter der Kopfzeile eingeblendet; die
+     Aktions-Icons bleiben in der Headerzeile und wandern nicht mit. */
+  .nv-top { flex-wrap: nowrap; gap: var(--nv-space-2); padding: var(--nv-space-2) var(--nv-space-3); }
+  .nv-brand { font-size: 1.25rem; }
+  .nv-nav-toggle { display: inline-flex; }
+  .nv-nav {
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    z-index: 19;
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--nv-space-1);
+    padding: var(--nv-space-2) var(--nv-space-3) var(--nv-space-3);
+    background: var(--nv-top-bg);
+    border-bottom: 1px solid var(--nv-border);
+    box-shadow: var(--nv-shadow);
+  }
+  [data-nv-nav-toggle][aria-expanded="true"] ~ .nv-nav { display: flex; }
+  /* Dimmer, solange das Menü offen ist: innerhalb der Kopfzeile (z-index 20)
+     negativ gestapelt → über dem Inhalt, aber unter Kopfzeile und Navigation.
+     Tippen auf den Dimmer schließt das Menü (siehe nova-core.js). */
+  .nv-nav-scrim {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    background: rgba(12, 18, 28, 0.55);
+  }
+  [data-nv-nav-toggle][aria-expanded="true"] ~ .nv-nav-scrim { display: block; }
+  .nv-nav button { min-height: 44px; text-align: left; justify-content: flex-start; }
+  .nv-nav button[aria-current="page"] { border-left-color: var(--nv-primary); }
+  .nv-top-actions { margin-left: auto; gap: 0; }
+  .nv-main { padding: var(--nv-space-4) var(--nv-space-3); }
+  .nv-card { padding: var(--nv-space-4); }
+  .nv-grid, .nv-tiles, .nv-board { grid-template-columns: 1fr; }
+  .nv-toasts { right: var(--nv-space-2); bottom: var(--nv-space-2); }
+}

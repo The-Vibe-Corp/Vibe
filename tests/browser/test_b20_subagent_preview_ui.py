@@ -460,7 +460,7 @@ class B20BrowserTest(unittest.TestCase):
             f"[data-session='{CHILD_SESSION}']")
 
     def open_detail(self):
-        self.page.goto(self.base + "/#t=" + self.token)
+        self.page.goto(self.base + "/classic#t=" + self.token)
         row = self.page.locator("tr.row", has_text="proj").first
         row.wait_for(state="visible", timeout=20000)
         row.click()

@@ -356,7 +356,7 @@ class GitHubCardAP9UiTest(unittest.TestCase):
                     "%s ließ sich nicht aufklappen" % selector
 
     def open_project_settings(self, name):
-        self.page.goto(self.base + "/#t=" + self.token)
+        self.page.goto(self.base + "/classic#t=" + self.token)
         self.page.wait_for_selector(".row")
         self.page.locator(".row").filter(has_text=name).first.click()
         self.page.get_by_role("tab", name="Settings").click()

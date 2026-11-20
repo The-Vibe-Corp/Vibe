@@ -116,7 +116,7 @@ class RebuildProjectBrowserTest(unittest.TestCase):
     def test_rebuild_type_is_selectable_and_creates_the_profile(self):
         page = self.browser.new_page(viewport={"width": 1400, "height": 1000})
         try:
-            page.goto(self.base + "/#t=" + self.token)
+            page.goto(self.base + "/classic#t=" + self.token)
             page.locator("#nf select").wait_for()
             page.wait_for_function(
                 "() => [...document.querySelectorAll('#nf select option')].some(o => o.value === 'rebuild')"

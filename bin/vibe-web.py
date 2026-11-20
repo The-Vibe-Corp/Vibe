@@ -14,6 +14,7 @@ import http.client
 import importlib.util
 import importlib.machinery
 import ipaddress
+import subprocess
 from http.cookies import SimpleCookie, CookieError
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs, quote
@@ -39,6 +40,8 @@ import vibe_harness  # pylint: disable=wrong-import-position
 import vibe_github  # pylint: disable=wrong-import-position
 import vibe_packages  # pylint: disable=wrong-import-position
 import vibe_services  # pylint: disable=wrong-import-position
+import vibe_limits  # pylint: disable=wrong-import-position
+import vibe_gates  # pylint: disable=wrong-import-position
 
 try:
     PATHS = vibe_paths.resolve()
@@ -797,6 +800,181 @@ def known_scope(s):
         known(s)
     return s
 
+
+# ---------- AP22: Paritäts-Endpunkte über den bestehenden Diensten ----------
+# Die neuen Endpunkte lesen und schreiben ausschließlich über vibe_limits,
+# vibe_gates, das Laufregister und die bestehende Projekt-/Emulatorlogik. Sie
+# ändern kein bestehendes Verhalten; Fachfehler kommen als 200 {"ok": false,
+# "message": …} zurück (wie /api/ticket), damit die neue UI sie einheitlich
+# behandeln kann.
+
+def _limits_view():
+    """AP22: wirksames Limitverhalten (global, ohne Projekt)."""
+    mode, problem = vibe_limits.load(PATHS.state)
+    return {
+        "ok": True,
+        "mode": mode,
+        "problem": problem or None,
+        "lines": [vibe_limits.describe(PATHS.state)],
+    }
+
+
+def _limits_set(action):
+    """AP22: Limitverhalten speichern; unbekannte Aktion schreibt nichts."""
+    if action not in vibe_limits.MODES:
+        return {"ok": False, "message": "Unbekannte Aktion"}
+    try:
+        vibe_limits.save(PATHS.state, action)
+    except (ValueError, OSError) as error:
+        return {"ok": False, "message": str(error)}
+    return _limits_view()
+
+
+def _gates_view(project=None):
+    """AP22: wirksame Schranken, global oder im Projektkontext."""
+    folder = vibe.ppath(project) if project else None
+    result = vibe_gates.effective(PATHS.state, folder)
+    answer = {
+        "ok": True,
+        "project": project,
+        "gates": result["gates"],
+        "lines": vibe_gates.describe(PATHS.state, folder),
+    }
+    if result["problems"]:
+        answer["problems"] = result["problems"]
+    return answer
+
+
+def _gates_set(key, value, project=None):
+    """AP22: Schranke setzen — global oder als Projekt-Override.
+
+    Erst prüfen, dann schreiben: eine unbekannte Schranke oder ein ungültiger
+    Wert lässt both die globale Datei als auch project.env unverändert. Ein
+    leerer Wert mit Projekt entfernt die Zeile (Rückfall auf Voreinstellung).
+    """
+    raw = "" if value is None else str(value)
+    if key not in vibe_gates.DEFAULTS:
+        return {"ok": False, "message": "Unbekannte Schranke: " + str(key)}
+    removing = bool(project) and not raw.strip()
+    parsed = None
+    if not removing:
+        try:
+            parsed = vibe_gates.validate(key, raw)
+        except ValueError as error:
+            return {"ok": False, "message": str(error)}
+    try:
+        if project:
+            # known() nur bei angegebenem Projekt: ungültige Namen dürfen
+            # keine project.env eines fremden oder erfundenen Projekts schreiben.
+            known(project)
+            env_key = vibe_gates.PROJECT_ENV_KEYS[key]
+            vibe.set_env_values(project, {env_key: parsed if not removing else None}, quote=False)
+        else:
+            vibe_gates.save(PATHS.state, key, parsed)
+    except (AssertionError, ValueError, OSError) as error:
+        return {"ok": False, "message": str(error)}
+    return _gates_view(project or None)
+
+
+def _runs_view():
+    """AP22: Registerzeilen, neueste zuerst (Rückgabe der Registry unverändert)."""
+    return {"ok": True, "records": list(reversed(vibe.run_registry().all()))}
+
+
+def _runs_prune():
+    """AP22: Spiegel von cmd_runs('prune') — nur das Register aufräumen.
+
+    Eine tmux-Sitzung wird niemals beendet. Nur verwaiste Live-Einträge
+    (Sitzung nachweislich beendet) werden über registry.finish abgeschlossen;
+    nicht prüfbare und laufende Sitzungen bleiben unverändert. Die Zeilen
+    entsprechen wörtlich den CLI-Meldungen.
+    """
+    registry = vibe.run_registry()
+    ended = running = unknown = 0
+    lines = []
+    for record in registry.all():
+        if record.get("state") not in vibe_runs.LIVE_STATES:
+            continue
+        run_id = record.get("id") or "?"
+        session = str(record.get("session") or "")
+        if not session:
+            lines.append(f"Unverändert: {run_id} (keine Sitzungsangabe, nicht prüfbar)")
+            unknown += 1
+            continue
+        live = vibe.tmux_session_state(session, own_socket=True)
+        if live is None:
+            lines.append(f"Unverändert: {run_id} (Sitzung {session} nicht prüfbar)")
+            unknown += 1
+            continue
+        if live:
+            lines.append(f"Läuft weiter: {run_id} (Sitzung {session})")
+            running += 1
+            continue
+        registry.finish(run_id, exit_code=None, state="ended")
+        lines.append(f"Verwaist beendet: {run_id} (Sitzung {session} fehlt)")
+        ended += 1
+    lines.append(
+        f"{ended} verwaiste Einträge beendet, {running} laufen weiter, "
+        f"{unknown} nicht prüfbar.")
+    return {"ok": True, "ended": ended, "running": running,
+            "unknown": unknown, "lines": lines}
+
+
+def _sessions_set(action, limit):
+    """AP22: Sitzungslimit setzen — Parität zur CLI ``vibe sessions limit N``.
+
+    Erst prüfen, dann schreiben: ein ungültiger Wert lässt sessions.json
+    unverändert. ``SessionRegistry.set_limit`` validiert selbst inklusiv
+    (1..SESSION_LIMIT_MAX); die Vorprüfung liefert nur eine deutsche Meldung,
+    statt einen ValueError in eine 400 zu übersetzen. Der 'continue'-Pfad
+    bleibt bewusst unangetastet im Generic-Handler weiter unten.
+    """
+    if action != "limit":
+        return {"ok": False, "message": (
+            "Unbekannte Aktion für /api/sessions: 'continue' oder 'limit' "
+            "erwartet.")}
+    if (isinstance(limit, bool) or not isinstance(limit, int)
+            or not 1 <= limit <= vibe_runs.SESSION_LIMIT_MAX):
+        return {"ok": False, "message": (
+            f"Session-Limit muss 1 bis {vibe_runs.SESSION_LIMIT_MAX} sein: "
+            f"{limit!r}")}
+    try:
+        value = vibe_runs.SessionRegistry(PATHS.runtime).set_limit(limit)
+    except (ValueError, OSError) as error:
+        return {"ok": False, "message": str(error)}
+    return {"ok": True, "limit": int(value),
+            "message": f"Session-Limit auf {value} gesetzt"}
+
+
+def _emu(action):
+    """AP22: Emulator-Skript eines Android-Projekts im Hintergrund starten.
+
+    Der Skriptpfad wird aus dem Projektpfad abgeleitet, nie aus dem Request;
+    Popen bekommt eine Argumentliste, es wird keine Shell-Zeichenkette aus
+    Benutzerdaten gebaut (dieselbe Disziplin wie vibe_services.verify_bg).
+    """
+    if action not in ("start", "stop"):
+        return False, "Unbekannte Emulator-Aktion (start|stop)"
+    project = next((n for n in vibe.projects() if vibe.ptype(n) == "android"), None)
+    if not project:
+        return False, "Kein Android-Projekt vorhanden"
+    folder = vibe.ppath(project)
+    script = os.path.join(folder, "scripts", "emulator-" + action + ".sh")
+    if not os.path.isfile(script):
+        return False, "Emulator-Skript fehlt: " + script
+    log_path = os.path.join(PATHS.runtime, "emulator-" + project + ".log")
+    try:
+        # Bewusster Hintergrundstart: die Antwort wartet nicht auf das Skript.
+        with open(log_path, "a", encoding="utf-8") as log:
+            log.write("$ bash " + script + "\n")
+            log.flush()
+            subprocess.Popen(  # pylint: disable=consider-using-with
+                ["bash", script], cwd=folder, stdout=log, stderr=subprocess.STDOUT)
+    except OSError as error:
+        return False, "Emulator konnte nicht gestartet werden: " + str(error)
+    return True, ("Emulator gestartet" if action == "start" else "Emulator gestoppt")
+
+
 def shutdown_server(delay=0.2):
     """Beendet den Annahme-Loop aus einem eigenen Thread.
 
@@ -982,6 +1160,11 @@ class H(BaseHTTPRequestHandler):
             return None
         if u.path == "/":
             return self._send(200, page(), "text/html")
+        if u.path == "/classic":
+            # AP22: die alte Oberfläche bleibt dauerhaft erreichbar; gleiche
+            # Platzhalter und derselbe Host-Guard wie unter / (liegt daher vor
+            # der Tokenpflicht). Unbekannte Pfade bleiben 404.
+            return self._send(200, classic_page(), "text/html")
         if u.path.startswith("/static/"):
             data, ctype = static_asset(u.path)
             if data is None:
@@ -1155,6 +1338,21 @@ class H(BaseHTTPRequestHandler):
                 data = vibe_harness.status(PATHS.state)
                 data["supported"] = vibe_harness.harness_ids()
                 return self._send(200, data)
+            # AP22: neue Paritäts-Endpunkte. Sie liegen hinter derselben
+            # Tokenpflicht wie alle übrigen /api-Lesendzugriffe.
+            if u.path == "/api/limits":
+                return self._send(200, _limits_view())
+            if u.path == "/api/gates":
+                name = q.get("name", [""])[0]
+                if name:
+                    known(name)
+                return self._send(200, _gates_view(name or None))
+            if u.path == "/api/runs":
+                return self._send(200, _runs_view())
+            if u.path == "/api/paths":
+                # Schreibfreie Auflösung: as_dict() enthält nur Pfade, Ports
+                # und die opencode-URL, keine Tokens oder Kennwörter.
+                return self._send(200, {"ok": True, "paths": PATHS.as_dict()})
             if u.path == "/api/server":
                 h = vibe.server_health()
                 try:
@@ -1255,6 +1453,30 @@ class H(BaseHTTPRequestHandler):
                     500, "internal_error", "ui.json ist nach dem Speichern nicht lesbar")
             return self._send(200, {"ok": True, "language": value,
                                     "message": "Sprache gespeichert"})
+        if u.path == "/api/sessions" and body.get("action") != "continue":
+            # AP22: CLI-Parität zu `vibe sessions limit N`. 'continue' läuft
+            # unverändert im Generic-Handler; alles andere (limit samt
+            # Validierung, unbekannte Aktion) antwortet als 200 {"ok": …}.
+            known(body.get("name", ""))
+            return self._send(200, _sessions_set(
+                body.get("action"), body.get("limit")))
+        # AP22: neue schreibende Paritäts-Endpunkte. Fachfehler werden bewusst
+        # als 200 {"ok": false, "message": …} geliefert (Vertrag der neuen UI),
+        # ohne den Generic-Pfad darunter zu verändern (dort bedeutet ok:false
+        # weiterhin HTTP 400).
+        if u.path in ("/api/limits", "/api/gates", "/api/runs", "/api/emu"):
+            if u.path == "/api/limits":
+                result = _limits_set(body.get("action"))
+            elif u.path == "/api/gates":
+                result = _gates_set(
+                    body.get("key"), body.get("value"), body.get("project") or None)
+            elif u.path == "/api/runs":
+                result = ({"ok": False, "message": "Unbekannte Aktion"}
+                          if body.get("action") != "prune" else _runs_prune())
+            else:
+                started, msg = _emu(body.get("action"))
+                result = {"ok": started, "message": msg}
+            return self._send(200, result)
         try:
             name = body.get("name", "")
             if u.path in ("/api/run", "/api/stop", "/api/verify", "/api/feedback", "/api/ticket", "/api/init", "/api/rights", "/api/pause", "/api/sandbox", "/api/guide", "/api/agents_file", "/api/costs", "/api/autonomous", "/api/steer", "/api/continue", "/api/sessions", "/api/github", "/api/priority"):
@@ -2008,6 +2230,16 @@ STATIC_FILES = {
     "/static/styles.css": ("web/styles.css", "text/css"),
     "/static/i18n.js": ("web/i18n.js", "application/javascript"),
     "/static/app.js": ("web/app.js", "application/javascript"),
+    # AP22: Design-System und Ansichtsdateien der neuen Oberfläche. Die
+    # Freigabeliste bleibt ausdrücklich — es gibt keinen Wildcard-Zugriff.
+    "/static/nova.css": ("web/nova.css", "text/css"),
+    "/static/nova-core.js": ("web/nova-core.js", "application/javascript"),
+    "/static/nova-home.js": ("web/nova-home.js", "application/javascript"),
+    "/static/nova-project.js": ("web/nova-project.js", "application/javascript"),
+    "/static/nova-output.js": ("web/nova-output.js", "application/javascript"),
+    "/static/nova-agents.js": ("web/nova-agents.js", "application/javascript"),
+    "/static/nova-activity.js": ("web/nova-activity.js", "application/javascript"),
+    "/static/nova-settings.js": ("web/nova-settings.js", "application/javascript"),
 }
 
 def page():
@@ -2029,6 +2261,20 @@ def page():
             .replace("__VIBE_LANG__", language))
 
 page.cache = None
+
+
+def classic_page():
+    """AP22: alte Shell aus web/classic.html (eigener Cache, gleiche Platzhalter)."""
+    if classic_page.cache is None:
+        with open(os.path.join(HERE, "web", "classic.html"), encoding="utf-8") as handle:
+            classic_page.cache = handle.read()
+    language = language_data()["language"]
+    return (classic_page.cache.replace("__OPENCODE_URL__", vibe.OC_URL)
+            .replace("__VIBE_LANG__", language))
+
+
+classic_page.cache = None
+
 
 def static_asset(path):
     """Liest ausschließlich die freigegebenen statischen Dateien."""

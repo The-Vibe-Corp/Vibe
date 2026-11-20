@@ -213,7 +213,7 @@ class WriteDirsBrowserTest(unittest.TestCase):
         )
 
     def open_detail(self):
-        self.page.goto(self.base + "/#t=" + self.token)
+        self.page.goto(self.base + "/classic#t=" + self.token)
         row = self.page.locator("tr.row", has_text="proj").first
         row.wait_for()
         row.click()
@@ -308,7 +308,7 @@ class WriteDirsBrowserTest(unittest.TestCase):
 
     def test_agent_editor_is_global_and_uses_open_write_rights(self):
         """AP03: Der Editor legt ausschließlich systemweite Agenten an."""
-        self.page.goto(self.base + "/#t=" + self.token)
+        self.page.goto(self.base + "/classic#t=" + self.token)
         self.page.get_by_role("button", name="Agents & Models").click()
         self.page.get_by_role("button", name="New agent").click()
 

@@ -63,7 +63,13 @@ PROGRAM_FILES = (
     "vibe_github.py",
     "fritz-reconnect.py",
 )
-WEB_FILES = ("index.html", "styles.css", "app.js", "i18n.js")
+WEB_FILES = (
+    "index.html", "styles.css", "app.js", "i18n.js",
+    # AP22: neue Standard-UI plus die dauerhaft erreichbare klassische Shell.
+    "classic.html", "nova.css", "nova-core.js", "nova-home.js",
+    "nova-project.js", "nova-output.js", "nova-agents.js",
+    "nova-activity.js", "nova-settings.js",
+)
 RUNTIME_FILES = ("vibe.json", "models.json", "profiles.json", "fritz.json", "costs.json")
 VERSION_FILE = "VERSION"
 VERSION_META = "version.json"

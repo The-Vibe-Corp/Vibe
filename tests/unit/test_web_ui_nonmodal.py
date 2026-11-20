@@ -13,7 +13,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
 WEB_FILES = (
-    REPO / "bin" / "web" / "index.html",
+    REPO / "bin" / "web" / "classic.html",
     REPO / "bin" / "web" / "styles.css",
     REPO / "bin" / "web" / "app.js",
 )

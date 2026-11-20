@@ -1053,13 +1053,120 @@
       ],
       "datum": "2026-11-20",
       "grund": "B1 'Models in project config are ignored': bin/vibe-run.sh liest jetzt alle Modellüberschreibungen aus <Projekt>/.vibe/agents.json (modelle) und überträgt sie als OPENCODE_CONFIG_CONTENT an opencode run und den privaten opencode serve, damit auch vom Orchestrator gestartete Subagenten die Projektmodelle statt ihrer globalen Frontmatter-Modelle verwenden. Vorhandene JSON-/JSONC-Inline-Konfiguration wird semantisch erhalten (Kommentare und Trailing Commas zulässig, Strings mit '//' bleiben unangetastet); Projektmodelle gewinnen auch bei vorhandener agents-Map, das Legacy-Schema agent bleibt kompatibel. Ohne Projektmodelle bleiben OPENCODE_CONFIG_CONTENT und die bisherige Shared-Server-Wahl exakt unverändert; mit Projektmodellen wird kein gemeinsamer Server ohne Laufkonfiguration weiterverwendet (--standalone ohne Kennwortdatei, privater Server mit Kennwortdatei). Ungültige Projekt- oder Inline-Konfiguration scheitert verständlich vor dem Agentenstart, ohne Konfigurationsinhalte oder Geheimnisse zu protokollieren. Hauptagent --model, Pi, globale Agentendateien und agents.json bleiben unverändert; kein eval, keine neue Dependency und keine neue Installationsdatei. Review Runde 2: Nur FileNotFoundError gilt als 'keine Projektmodelle', ein sonst nicht lesbarer Projektpfad bricht verständlich ab; der Trailing-Comma-Lookahead überliest Kommentare (Kommentare werden beim Entfernen als Whitespace ersetzt), und ein nicht abgeschlossener /*-Blockkommentar bricht fail-closed ab statt bis zum Dateiende entfernt zu werden. Größe und SHA-256 von bin/vibe-run.sh wurden erneut aktualisiert und begründet."
+    },
+    {
+      "arbeitspaket": "AP22",
+      "dateien": [
+        "bin/vibe-web.py",
+        "bin/web/classic.html",
+        "bin/web/i18n.js",
+        "bin/web/index.html",
+        "bin/web/nova-activity.js",
+        "bin/web/nova-agents.js",
+        "bin/web/nova-core.js",
+        "bin/web/nova-home.js",
+        "bin/web/nova-output.js",
+        "bin/web/nova-project.js",
+        "bin/web/nova-settings.js",
+        "bin/web/nova.css",
+        "scripts/setup-vibe.py",
+        "tests/browser/test_ap22_home_ui.py",
+        "tests/browser/test_ap22_settings_ui.py",
+        "tests/browser/test_ap22_shell_ui.py",
+        "tests/unit/test_ap21_i18n.py",
+        "tests/unit/test_ap22_web_routes.py",
+        "tests/unit/test_b17_isolation.py",
+        "tests/unit/test_install_lifecycle.py",
+        "tests/unit/test_setup_vibe.py",
+        "tests/unit/test_web_modularization.py",
+        "tests/unit/test_web_ui_nonmodal.py",
+        "tests/unit/web_page.py"
+      ],
+      "datum": "2026-11-20",
+      "grund": "Neue Standard-UI unter / mit den nova-Dateien (Shell, Designsystem und Ansichten); die alte UI bleibt vollständig unter /classic erreichbar. Neue Paritäts-Endpunkte /api/limits, /api/gates, /api/runs, /api/emu und /api/paths über die bestehenden Dienste. WEB_FILES und Importmanifest ergänzt, Bestandstests auf /classic umgestellt."
+    },
+    {
+      "arbeitspaket": "AP22",
+      "datum": "2026-11-20",
+      "dateien": [
+        "bin/web/index.html",
+        "bin/web/nova.css",
+        "bin/web/nova-core.js",
+        "bin/web/nova-home.js",
+        "bin/web/nova-settings.js",
+        "bin/web/nova-project.js",
+        "bin/web/nova-activity.js",
+        "bin/web/nova-output.js",
+        "bin/web/nova-agents.js",
+        "bin/web/i18n.js",
+        "docs/import-manifest.json"
+      ],
+      "grund": "AP22 Design-Fix-Runde nach visueller Abnahme (website-vision): Glocken-Popover zeigte [object HTMLDivElement] (Knotenbau-Korrektur, echter Leerzustand, Schließen per Knopf/Escape, schließt bei Seitenwechsel, Marker-Reset); Theme-Umschalter und Einstellungs-Auswahl sind jetzt beidseitig synchron (auch auto); Primärknöpfe im Dunkelmodus tragen eigene Theme-Tokens und erreichen messbaren Kontrast (8,14:1) statt der früheren hellen Fläche; Mobile-Navigation als eigenes Overlay mit linksbündigen Einträgen und Akzentbalken statt der gebrochenen Vollzeile; Kopfleisten-Ziele >= 44px mit Beschriftung; Startseite zeigt Projekte zuerst, Einstiegshinweise als kompakte Chips, genau eine Primäraktion, Klartext 'Offene Arbeitspakete', Pfade gekürzt mit Vollpfad im Titel; Zugriffssicherheit trennt Anmeldung (prominent) von Netzwerk (experts, mit Neustart-Warnung); Feature-Schalter in drei Gruppen mit je einer Laien-Erklärung; Typo-/Radius-/Abstands-Skala vereinheitlicht, Fokus-Ringe in beiden Themes; Stub-Ansichten mit ehrlichem Leerzustand und Skeleton statt Meilenstein-Jargon. Sprache unveraendert (Englisch Standard, global umschaltbar, AP21). Alle A-Suites bleiben gruen (19 + 12 + 6 + 10); verify quick nach Manifest-Aktualisierung gruen."
+    },
+    {
+      "arbeitspaket": "AP22",
+      "datum": "2026-11-20",
+      "dateien": [
+        "bin/vibe-web.py",
+        "bin/web/i18n.js",
+        "bin/web/index.html",
+        "bin/web/nova-activity.js",
+        "bin/web/nova-agents.js",
+        "bin/web/nova-core.js",
+        "bin/web/nova-output.js",
+        "bin/web/nova-project.js",
+        "bin/web/nova-settings.js",
+        "bin/web/nova.css",
+        "tests/unit/test_ap22_web_routes.py"
+      ],
+      "grund": "AP22 Meilenstein B/C + Polier-Runde: vollstaendige Projektansicht (Held mit Laufsteuerung, Uebersicht, Arbeit-Board in vier Statusspalten, Assistent, Projekteinstellungen mit Team-Zuordnung und Feature-gefuhrten Bereichen), Live-Ausgabe mit Haupt-/Subagenten, Steuern, Fortsetzen und DOM-only-Syntaxhervorhebung (hl-*), Aktivitaet mit Laeufen/Sessions/Fragen, Agentenverwaltung mit 4-Schritt-Wizard und Ein-Seiten-Editor inkl. Rohmodus/Sicherungen/Projektzuordnung, erweiterte Einstellungen (Modellkatalog, Profile mit Vorschau, MCP mit maskierten Geheimnissen, Kosten, Harness, Umgebung mit Doctor/Pfaden/Fritz/Emulator/Server, Laufregister mit Prune). Session-Limit erhaelt CLI-Paritaet: POST /api/sessions action=limit (Validierung vor Schreibvorgang, SessionRegistry.set_limit). Shell-Chrome-Texte laufen ueber tr(), i18n-Duplikate bereinigt. Alle neun AP22-Browser-Suiten (85 Faelle) und die Unit-Routen gruen; verify quick nach Manifest-Aktualisierung gruen."
+    },
+    {
+      "arbeitspaket": "AP22",
+      "datum": "2026-11-20",
+      "dateien": [
+        "bin/web/index.html",
+        "bin/web/nova.css",
+        "bin/web/nova-core.js",
+        "bin/web/nova-home.js",
+        "bin/web/nova-project.js",
+        "bin/web/nova-agents.js",
+        "bin/web/nova-activity.js",
+        "bin/web/i18n.js"
+      ],
+      "grund": "AP22 Kosmetik-Runde nach visueller Endabnahme: Karten trennen Titel/Beschreibung sauber (Board/Feedback, Basics als Definitionsliste), leere Held-Badges versteckt (Verzweigung/Typ erst mit Wert), Uebersicht-Ladeskeleton statt leerem Bereich, Wizard-Schrittindikator (Schritt X von 4) mit deaktiviertem Zurueck und sekundaerem Abbrechen, freundliche Leerzustaende der Aktivitaet, Dunkel-Primarknopf als echte Flaeche (Weiss auf #3b6fe0, ~4,6:1), Guide-Schliessen in der Kopfzeile, Ordnerpfade mit Ellipsis (Vollpfad im Titel), Mobile-Scrim hinter der Navigation. Vier neue i18n-Schluessel, Duplikat-Scan 0. Alle Suiten gruen (21 Unit + 28 + 31 + 26 Browser), validiert in einem sauberen Referenz-Worktree."
+    },
+    {
+      "arbeitspaket": "AP22",
+      "datum": "2026-11-20",
+      "dateien": [
+        "bin/web/nova-project.js",
+        "bin/web/nova-core.js",
+        "bin/web/nova-agents.js",
+        "bin/web/nova-activity.js",
+        "bin/web/i18n.js",
+        "tests/browser/test_ap22_project_ui.py",
+        "tests/browser/test_ap22_activity_ui.py",
+        "tests/browser/test_ap22_agents_ui.py"
+      ],
+      "grund": "AP22 Review-Fix-Runde (5 Medium-Befunde aus docs/reviews/AP22-review-1.md, Testfirst mit dokumentierter Rotphase): Git-&-GitHub-Bereich vollstaendig (Aktivierung, Token speichern/loeschen mit maskiertem Status, Verbindungs-pruefung, Branchliste mit Checkout, Pull ff-only, Push mit Quell-/Ziel-Branch, Issues, Label-gefilterter Import, Merge-Request mit zweistufiger Bestaetigung — Spiegel der klassischen UI-Payloads); Glocke listet jetzt alle drei Vertragsquellen (offene Fragen, blockierte Pakete, fehlgeschlagene Läufe) mit Ziel-Links; Aktivitaet erhaelt Zusammenfassungs-Kacheln (running/questions/blocked) und zeilenlokales Stoppen; Agentenverwaltung ist Scope-faehig (Karten-Badges global/projekt, Editor-Route #/agents/<scope>/<name>, Laden/Speichern/Loeschen/Kopieren im gewaehlten Geltungsbereich, Karten-Loeschknopf mit Bestaetigung) — kein globaler Agent wird mehr bei projektbezogener Arbeit ueberschrieben. Alle 17 neuen Faelle gruen, alle 85 Bestandsfaelle unveraendert gruen; i18n ohne Duplikate (999 Schluessel je Sprache)."
+    },
+    {
+      "arbeitspaket": "AP22",
+      "datum": "2026-11-20",
+      "dateien": [
+        "bin/web/nova.css",
+        "bin/web/nova-activity.js",
+        "bin/web/i18n.js"
+      ],
+      "grund": "AP22 letzte Kosmetik-Runde nach visueller Bestaetigung: Agenten-Kopfzeile mit 16px Abstand, Ticket-ID und Status-Badge auf gemeinsamer Baseline (8px Gap), konditionale Session-Beschriftung (Neue Key ' Fuer dieses Projekt sind keine Sitzungen aufgezeichnet.'), Agentenname mit Ellipsis und nicht umbrechenden Badges, Board-Spalten min 280px (Mobil einspaltig unveraendert), Wizard-Schrittanzeige als CSS-Fuellbalken, Kachelzahlen mit vollem Kontrast/Gewicht, Scrim auf 0.55. Alle betroffenen Suiten gruen (70 Faelle), i18n ohne Duplikate (999/999)."
     }
   ],
   "files": [
     {
-      "bytes": 386,
-      "path": "install-vibe.sh",
-      "sha256": "7f8450dcf34c6b6f94695720954e2072edeb60d69f70b29bb3924882ed6c0f21"
+      "bytes": 7,
+      "path": "VERSION",
+      "sha256": "f5e9382967c9833066a55808829f3750fc8e1181b170cafd222c37048bb49a77"
     },
     {
       "bytes": 4194,
@@ -1077,9 +1184,9 @@
       "sha256": "c9ed031a0863f3e36264422996c01d08f03f5f35dee91e3650f12fbd0ecaa243"
     },
     {
-      "bytes": 103123,
+      "bytes": 114369,
       "path": "bin/vibe-web.py",
-      "sha256": "04420e100100f23c3990b238c3141fde3cdafe22eb16cf9c8f5b46828ed09ebd"
+      "sha256": "223710eb7fd30921d699954eeeb7c92ac685067604a7c877a9cc3bf3f0b20fa3"
     },
     {
       "bytes": 5189,
@@ -1173,8 +1280,58 @@
     },
     {
       "bytes": 688,
-      "path": "bin/web/index.html",
+      "path": "bin/web/classic.html",
       "sha256": "19ea677f5c3dc3579279fd9b5bf7584612967654b8ec0bbde3818576c78b46b5"
+    },
+    {
+      "bytes": 148059,
+      "path": "bin/web/i18n.js",
+      "sha256": "2c1d9999fe2f52e376488e2ec03abb60332798494c03b8d4eed86129e8d7ec63"
+    },
+    {
+      "bytes": 2207,
+      "path": "bin/web/index.html",
+      "sha256": "40050caa0fea3f2fd42934ed5eb2b2064ab7ab433ff7601f80733c82a11987ad"
+    },
+    {
+      "bytes": 11903,
+      "path": "bin/web/nova-activity.js",
+      "sha256": "9d4e6cc42dd93472f032cc171cf855fb8692d9534e7b43ed732b4efd156239a0"
+    },
+    {
+      "bytes": 27801,
+      "path": "bin/web/nova-agents.js",
+      "sha256": "4bdb9dc747513a3437d2dd2abfabacce5a1569581b8f711988cdd10c2317b086"
+    },
+    {
+      "bytes": 21560,
+      "path": "bin/web/nova-core.js",
+      "sha256": "8f521d6ca005e923e670b347ce3a66bc02e50298751ca7b299bfd5f71ea194c9"
+    },
+    {
+      "bytes": 11448,
+      "path": "bin/web/nova-home.js",
+      "sha256": "1dcb7d926c65d12d884a38c641a77ebcd8e5e62a1f6b9f05a0a19c6db1065c2d"
+    },
+    {
+      "bytes": 16315,
+      "path": "bin/web/nova-output.js",
+      "sha256": "8c56aa9e89ece8d02ea76f5d1b11e43ff8466b1d3becb8956a98ae0f6036895b"
+    },
+    {
+      "bytes": 46101,
+      "path": "bin/web/nova-project.js",
+      "sha256": "446e5ca4cb353ea2ba8d39428c05c7b1399b7ef7d342e446da6b2efdd2db1875"
+    },
+    {
+      "bytes": 44549,
+      "path": "bin/web/nova-settings.js",
+      "sha256": "13da8aba0256919ffc46c33d0460dbcd58327d2ba1f3aaff8f5a8324dbbfa896"
+    },
+    {
+      "bytes": 22418,
+      "path": "bin/web/nova.css",
+      "sha256": "a7a3b1d7e89c5ffe71ea302a621a0ad52525519a52335035b9f9619cf6541bbe"
     },
     {
       "bytes": 12751,
@@ -1185,6 +1342,21 @@
       "bytes": 34162,
       "path": "data/models.json",
       "sha256": "abdbe9d9b2c0896d6a632a5a8140c38bf7b61e9bf9b64a7cca03bd33a5ea6751"
+    },
+    {
+      "bytes": 386,
+      "path": "install-vibe.sh",
+      "sha256": "7f8450dcf34c6b6f94695720954e2072edeb60d69f70b29bb3924882ed6c0f21"
+    },
+    {
+      "bytes": 73426,
+      "path": "scripts/setup-vibe.py",
+      "sha256": "e143a668a4312a6f9cc69b66c8bc5ea61a2ada952ba8e7076d8b659b98aa9658"
+    },
+    {
+      "bytes": 377,
+      "path": "setup-vibe.cmd",
+      "sha256": "eba97b935ea1d943c402c41cac96872d782a0f62e724f0e96f29e9e16a500c52"
     },
     {
       "bytes": 359,
@@ -1325,26 +1497,6 @@
       "bytes": 5461,
       "path": "templates/web/AGENTS.md",
       "sha256": "c1e4a3d830f4c8791e00c3aa053f348d2159c286303405f0f34db867845c10d4"
-    },
-    {
-      "bytes": 73174,
-      "path": "scripts/setup-vibe.py",
-      "sha256": "0eb4f5d9c48fc89edfddaae16ef2a82e5187032db639f3a085c5295f731c23a4"
-    },
-    {
-      "bytes": 377,
-      "path": "setup-vibe.cmd",
-      "sha256": "eba97b935ea1d943c402c41cac96872d782a0f62e724f0e96f29e9e16a500c52"
-    },
-    {
-      "bytes": 7,
-      "path": "VERSION",
-      "sha256": "f5e9382967c9833066a55808829f3750fc8e1181b170cafd222c37048bb49a77"
-    },
-    {
-      "bytes": 111316,
-      "path": "bin/web/i18n.js",
-      "sha256": "dd9f848b9ea81152ccafc7816f02a47acb280005fc40b71a305ca78e4aea8845"
     }
   ],
   "hinweis": "SHA-256 der übernommenen Programmdateien. Beabsichtigte Änderungen an diesen Dateien sind nur zulässig, wenn dieser Eintrag im selben Arbeitspaket aktualisiert und begründet wird. Laufzeitdaten, Sicherungen und Geheimnisse sind nicht Bestandteil des Imports.",

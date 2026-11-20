@@ -39,7 +39,12 @@ PROGRAM_FILES = (
     "vibe_github.py",
     "fritz-reconnect.py",
 )
-WEB_FILES = ("index.html", "styles.css", "app.js", "i18n.js")
+WEB_FILES = (
+    "index.html", "styles.css", "app.js", "i18n.js",
+    "classic.html", "nova.css", "nova-core.js", "nova-home.js",
+    "nova-project.js", "nova-output.js", "nova-agents.js",
+    "nova-activity.js", "nova-settings.js",
+)
 
 setup = None
 

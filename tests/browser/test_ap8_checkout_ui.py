@@ -284,7 +284,7 @@ class CheckoutUiTest(unittest.TestCase):
 
     # ------------------------------------------------------- helpers
     def open_project_list(self):
-        self.page.goto(self.base + "/#t=" + self.token)
+        self.page.goto(self.base + "/classic#t=" + self.token)
         self.page.wait_for_selector(".row", timeout=20000)
         return self.new_project_card()
 

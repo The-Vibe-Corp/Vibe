@@ -242,7 +242,7 @@ class HarnessUiBase(unittest.TestCase):
         self.page.close()
 
     def open_dashboard(self):
-        self.page.goto(self.base + "/#t=" + self.token)
+        self.page.goto(self.base + "/classic#t=" + self.token)
         self.page.wait_for_selector("nav button")
 
     def open_detail(self):

@@ -165,7 +165,7 @@ class Ap7SettingsBrowserTest(unittest.TestCase):
 
     def open_settings(self):
         # Vorbedingung einstellen: Projekt öffnen, Register „Einstellungen“.
-        self.page.goto(self.base + "/#t=" + self.token)
+        self.page.goto(self.base + "/classic#t=" + self.token)
         row = self.page.locator("tr.row", has_text="proj").first
         row.wait_for()
         row.click()

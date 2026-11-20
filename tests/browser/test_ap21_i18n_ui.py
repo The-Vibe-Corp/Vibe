@@ -585,7 +585,7 @@ class AP21BrowserTest(unittest.TestCase):
     def open_settings(self):
         """Oeffnet die globale Navigationsseite 'Settings' (ohne Projekt)."""
         if self.page.locator("#nav button[data-t]").count() == 0:
-            self.page.goto(self.base + "/#t=" + self.token)
+            self.page.goto(self.base + "/classic#t=" + self.token)
         nav_btn = self.page.locator("[data-t='settings']")
         self.assertEqual(1, nav_btn.count(),
                          "Der globale Nav-Tab [data-t='settings'] fehlt")
@@ -650,7 +650,7 @@ class AP21BrowserTest(unittest.TestCase):
             self.page.route(
                 "**/api/run-state*",
                 lambda route: self._fulfill_run_state(route, run_state))
-        self.page.goto(self.base + "/#t=" + self.token)
+        self.page.goto(self.base + "/classic#t=" + self.token)
         row = self.page.locator("tr.row", has_text="proj").first
         row.wait_for(state="visible", timeout=20000)
         row.click()
@@ -894,7 +894,7 @@ class GlobalLanguageBrowserTest(AP21BrowserTest):
 
     def test_global_settings_tab_exists_last_without_open_project(self):
         """AC1: 'Settings' ist letzter Nav-Tab und ohne Projekt erreichbar."""
-        self.page.goto(self.base + "/#t=" + self.token)
+        self.page.goto(self.base + "/classic#t=" + self.token)
         keys = self.page.locator("#nav button[data-t]").evaluate_all(
             "nodes => nodes.map(n => n.getAttribute('data-t'))")
         self.assertEqual("settings", keys[-1],
@@ -968,7 +968,7 @@ class GlobalLanguageBrowserTest(AP21BrowserTest):
         context = self.browser.new_context()
         try:
             fresh = context.new_page()
-            fresh.goto(self.base + "/#t=" + self.token)
+            fresh.goto(self.base + "/classic#t=" + self.token)
             fresh.wait_for_function(
                 "() => !!(window.VIBE_I18N || window.I18N)")
             lang = fresh.evaluate("() => document.documentElement.lang")
@@ -1020,7 +1020,7 @@ class I18nApiTest(AP21BrowserTest):
         Fehlerfall: i18n.js fehlt, wird nach app.js geladen oder die API ist
         unvollständig.
         """
-        self.page.goto(self.base + "/#t=" + self.token)
+        self.page.goto(self.base + "/classic#t=" + self.token)
         self.wait_for_i18n()
         data = self.i18n()
 
@@ -1053,7 +1053,7 @@ class I18nApiTest(AP21BrowserTest):
         Erwartung: exakt der Key als Rückgabe.
         Fehlerfall: ``undefined``, leerer String oder Exception.
         """
-        self.page.goto(self.base + "/#t=" + self.token)
+        self.page.goto(self.base + "/classic#t=" + self.token)
         self.wait_for_i18n()
         value = self.page.evaluate(
             "() => { const api = window.VIBE_I18N "
@@ -1112,7 +1112,7 @@ class I18nApiTest(AP21BrowserTest):
         Erwartung: Ergebnis enthält ``Vibe`` und kein ``{{``.
         Fehlerfall: Platzhalter bleibt stehen oder die Interpolation wirft.
         """
-        self.page.goto(self.base + "/#t=" + self.token)
+        self.page.goto(self.base + "/classic#t=" + self.token)
         self.wait_for_i18n()
         value = self.page.evaluate(
             "() => { const api = window.VIBE_I18N "
@@ -2359,7 +2359,7 @@ class ReviewRound3Test(AP21BrowserTest):
         boxed ``tr()``-Strings die Klasse ``mut``.
         """
         self.seed_mcp_config()
-        self.page.goto(self.base + "/#t=" + self.token)
+        self.page.goto(self.base + "/classic#t=" + self.token)
         self.wait_for_i18n()
         self.set_language("en")
         self.assert_language("en")

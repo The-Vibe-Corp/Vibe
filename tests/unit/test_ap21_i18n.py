@@ -10,7 +10,7 @@ entspricht dem Browser-Global, ohne einen Browser zu starten.
 Verbindlicher Vertrag (aus dem Ticket abgeleitet):
 
 * ``bin/web/i18n.js`` existiert und lädt **vor** ``app.js``
-  (``index.html``).
+  (``classic.html``; die alte Oberfläche liegt seit AP22 unter ``/classic``).
 * Global ``window.VIBE_I18N`` mit Alias ``I18N`` und den Funktionen
   ``available()``, ``current()``, ``set(lang)``, ``t(key, vars?)``.
 * ``available()`` enthält ``en`` und ``de`` (weitere Sprachen ergänzbar),
@@ -31,8 +31,8 @@ Testfälle (8):
    Funktionen vorhanden.
    Fehlerfall: Datei fehlt, Global fehlt oder API unvollständig.
 
-2. ``test_index_html_loads_i18n_before_app``
-   Vorbedingung: ``bin/web/index.html``.
+2. ``test_classic_html_loads_i18n_before_app``
+   Vorbedingung: ``bin/web/classic.html``.
    Aktion: Reihenfolge der ``<script src=…>``-Tags prüfen.
    Erwartung: ``/static/i18n.js`` steht vor ``/static/app.js``.
    Fehlerfall: Skript fehlt oder wird nach ``app.js`` geladen.
@@ -95,7 +95,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
 I18N_JS = REPO / "bin" / "web" / "i18n.js"
-INDEX_HTML = REPO / "bin" / "web" / "index.html"
+CLASSIC_HTML = REPO / "bin" / "web" / "classic.html"
 NODE = shutil.which("node")
 
 HARNESS = r"""
@@ -280,22 +280,22 @@ class I18nModuleTest(unittest.TestCase):
             "Die i18n-API ist unvollständig: "
             + repr(data.get("functions")))
 
-    def test_index_html_loads_i18n_before_app(self):
-        """Fall 2: index.html lädt /static/i18n.js vor /static/app.js."""
+    def test_classic_html_loads_i18n_before_app(self):
+        """Fall 2: classic.html lädt /static/i18n.js vor /static/app.js."""
         self.assertTrue(
-            INDEX_HTML.is_file(), "bin/web/index.html fehlt")
-        html = INDEX_HTML.read_text(encoding="utf-8")
+            CLASSIC_HTML.is_file(), "bin/web/classic.html fehlt")
+        html = CLASSIC_HTML.read_text(encoding="utf-8")
         i18n_pos = html.find('/static/i18n.js')
         app_pos = html.find('/static/app.js')
         self.assertNotEqual(
             -1, i18n_pos,
-            "index.html lädt /static/i18n.js nicht")
+            "classic.html lädt /static/i18n.js nicht")
         self.assertNotEqual(
             -1, app_pos,
-            "index.html lädt /static/app.js nicht")
+            "classic.html lädt /static/app.js nicht")
         self.assertLess(
             i18n_pos, app_pos,
-            "index.html lädt i18n.js erst nach app.js: "
+            "classic.html lädt i18n.js erst nach app.js: "
             + repr(html[max(0, min(i18n_pos, app_pos) - 40):
                         max(i18n_pos, app_pos) + 40]))
 
@@ -699,14 +699,16 @@ class GlobalLanguageServerTest(unittest.TestCase):
     def test_page_injects_default_language(self):
         status, html, _ = self.request("GET", "/")
         self.assertEqual(200, status)
-        self.assertIn('<html lang="en">', html)
+        # AP22: die neue Shell trägt zusätzlich Theme/Animations-Attribute am
+        # <html>-Element; die Sprachplatzhalter bleiben unverändert wirksam.
+        self.assertIn('<html lang="en" data-theme="light" data-animations="on">', html)
         self.assertIn('<meta name="vibe-language" content="en">', html)
 
     def test_page_injects_saved_language(self):
         self.request("POST", "/api/language", {"language": "de"}, self.token)
         status, html, _ = self.request("GET", "/")
         self.assertEqual(200, status)
-        self.assertIn('<html lang="de">', html)
+        self.assertIn('<html lang="de" data-theme="light" data-animations="on">', html)
         self.assertIn('<meta name="vibe-language" content="de">', html)
 
     def test_ui_json_roundtrip_language_survives_save(self):

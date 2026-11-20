@@ -300,7 +300,7 @@ class Ap11PriorityBrowserTest(unittest.TestCase):
     def open_project(self, tab="arbeit"):
         """Vorbedingung einstellen: Projekt „proj“ öffnen, Register wählen."""
         self.page.goto("about:blank")
-        self.page.goto(self.base + "/#t=" + self.token)
+        self.page.goto(self.base + "/classic#t=" + self.token)
         row = self.page.locator("tr.row", has_text="proj").first
         row.wait_for()
         row.click()

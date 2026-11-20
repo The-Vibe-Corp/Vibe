@@ -379,7 +379,7 @@ class GitHubAuthUiTest(unittest.TestCase):
                     "%s ließ sich nicht aufklappen" % selector
 
     def open_project_settings(self, name):
-        self.page.goto(self.base + "/#t=" + self.web_token)
+        self.page.goto(self.base + "/classic#t=" + self.web_token)
         self.page.wait_for_selector(".row")
         self.page.locator(".row").filter(has_text=name).first.click()
         self.page.get_by_role("tab", name="Settings").click()
@@ -650,7 +650,7 @@ class GitHubAuthUiTest(unittest.TestCase):
         page = self.browser.new_page(viewport={"width": 1400, "height": 1000})
         try:
             base_url = f"http://127.0.0.1:{port}"
-            page.goto(base_url + "/#t=" + login_token)
+            page.goto(base_url + "/classic#t=" + login_token)
             page.wait_for_selector(".row")
             page.locator(".row").filter(has_text="gh-b7-demo").first.click()
             page.get_by_role("tab", name="Settings").click()
