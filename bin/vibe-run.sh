@@ -766,6 +766,210 @@ cleanup_worktree() {
   fi
   return 0
 }
+# B1: Projektmodelle aus $P/.vibe/agents.json erreichen opencode. Sie werden
+# als Inline-Konfiguration OPENCODE_CONFIG_CONTENT an opencode run und den
+# privaten Server übergeben, damit auch vom Orchestrator gestartete Subagenten
+# die Projektmodelle statt ihrer globalen Frontmatter-Modelle verwenden. Pi
+# kennt keine OPENCODE_CONFIG_CONTENT und bleibt unverändert.
+HAS_PROJECT_MODELS=0
+if [ "$HARNESS" = "opencode" ]; then
+  MERGED_CONFIG="$(python3 - "$P/.vibe/agents.json" <<'PY' 2>>"$LOG"
+import json
+import os
+import re
+import sys
+
+config_path = sys.argv[1]
+
+def fail(message):
+    # Verständliche Meldung ohne Konfigurationsinhalte oder Geheimnisse.
+    sys.stderr.write(message + "\n")
+    sys.exit(2)
+
+def _strip_comments(text):
+    """Entfernt //- und /* */-Kommentare außerhalb von Zeichenketten.
+
+    Zeilenkommentare enden am (erhaltenen) Zeilenumbruch; Blockkommentare
+    werden durch ein Leerzeichen ersetzt, damit benachbarte Token nicht
+    zusammenkleben. Ein nicht abgeschlossener Blockkommentar löst ValueError
+    aus (fail-closed), statt bis zum Dateiende entfernt zu werden."""
+    result = []
+    i = 0
+    n = len(text)
+    in_string = False
+    while i < n:
+        ch = text[i]
+        if in_string:
+            result.append(ch)
+            if ch == "\\" and i + 1 < n:
+                result.append(text[i + 1])
+                i += 1
+            elif ch == '"':
+                in_string = False
+            i += 1
+            continue
+        if ch == '"':
+            in_string = True
+            result.append(ch)
+            i += 1
+            continue
+        if ch == "/" and i + 1 < n and text[i + 1] == "/":
+            i += 2
+            while i < n and text[i] not in "\r\n":
+                i += 1
+            continue
+        if ch == "/" and i + 1 < n and text[i + 1] == "*":
+            i += 2
+            while i + 1 < n and not (text[i] == "*" and text[i + 1] == "/"):
+                i += 1
+            if i + 1 >= n:
+                raise ValueError("Nicht abgeschlossener Blockkommentar in der Inline-Konfiguration.")
+            i += 2
+            result.append(" ")
+            continue
+        result.append(ch)
+        i += 1
+    return "".join(result)
+
+
+def _strip_trailing_commas(text):
+    """Entfernt Kommas, die unmittelbar vor } oder ] stehen (Trailing Commas).
+
+    Kommentare sind hier bereits entfernt; der Lookahead muss daher nur noch
+    Whitespace überspringen."""
+    result = []
+    i = 0
+    n = len(text)
+    in_string = False
+    while i < n:
+        ch = text[i]
+        if in_string:
+            result.append(ch)
+            if ch == "\\" and i + 1 < n:
+                result.append(text[i + 1])
+                i += 1
+            elif ch == '"':
+                in_string = False
+            i += 1
+            continue
+        if ch == '"':
+            in_string = True
+            result.append(ch)
+            i += 1
+            continue
+        if ch == ",":
+            j = i + 1
+            while j < n and text[j] in " \t\r\n":
+                j += 1
+            if j < n and text[j] in "}]":
+                i += 1
+                continue
+        result.append(ch)
+        i += 1
+    return "".join(result)
+
+
+def jsonc_to_json(text):
+    """Entfernt Kommentare und Trailing Commas; der Inhalt von Zeichenketten
+    (auch '//') bleibt unangetastet."""
+    return _strip_trailing_commas(_strip_comments(text))
+
+MODEL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/@+-]*$")
+
+# 1) Projektdatei lesen; fehlt sie, gibt es keine Projektmodelle.
+try:
+    with open(config_path, encoding="utf-8") as handle:
+        raw = handle.read()
+except FileNotFoundError:
+    # Nur eine tatsächlich fehlende Datei bedeutet "keine Projektmodelle".
+    sys.exit(0)
+except OSError:
+    fail("Die Agentenauswahl " + config_path + " ist nicht lesbar.")
+
+try:
+    project = json.loads(raw)
+except ValueError:
+    fail("Die Agentenauswahl in " + config_path + " ist kein gültiges JSON.")
+if not isinstance(project, dict):
+    fail("Die Agentenauswahl muss ein JSON-Objekt sein.")
+models = project.get("modelle", {})
+if not isinstance(models, dict):
+    fail("'modelle' in der Agentenauswahl muss ein Objekt mit Agentenname und Modell sein.")
+clean = {}
+for agent, model in models.items():
+    if not isinstance(agent, str) or not agent:
+        fail("Ungültiger Agentenname in 'modelle' der Agentenauswahl.")
+    if not isinstance(model, str):
+        fail("Das Modell in der Agentenauswahl muss eine Zeichenkette sein.")
+    value = model.strip()
+    if not value:
+        continue
+    if not MODEL_RE.match(value):
+        fail("Das Modell in der Agentenauswahl darf keine Leerzeichen enthalten.")
+    clean[agent] = value
+
+if not clean:
+    # Keine wirksamen Projektmodelle: bestehende Konfiguration und Serverwahl
+    # bleiben exakt unverändert.
+    sys.exit(0)
+
+# 2) Vorhandene Inline-Konfiguration (JSON/JSONC) semantisch erhalten.
+merged = {}
+existing = os.environ.get("OPENCODE_CONFIG_CONTENT", "")
+if existing.strip():
+    try:
+        merged = json.loads(jsonc_to_json(existing))
+    except ValueError:
+        fail("OPENCODE_CONFIG_CONTENT ist keine mergefähige Inline-Konfiguration.")
+    if not isinstance(merged, dict):
+        fail("OPENCODE_CONFIG_CONTENT muss ein JSON-Objekt sein.")
+
+# 3) Projektmodelle konsistent in vorhandene Maps einsetzen. v2.3.0 akzeptiert
+#    'agent' (legacy) und 'agents' (aktuell); sind beide vorhanden, gewinnt
+#    'agents' für model. Ohne vorhandene Map wird 'agent' für die Kompatibilität
+#    mit dem Projektprofil 2.1.4 angelegt.
+def ensure_map(config, key):
+    entry = config.get(key)
+    if entry is None:
+        entry = {}
+        config[key] = entry
+    elif not isinstance(entry, dict):
+        fail("OPENCODE_CONFIG_CONTENT: '" + key + "' muss ein Objekt sein.")
+    return entry
+
+if "agent" in merged or "agents" in merged:
+    agent_map = ensure_map(merged, "agent") if "agent" in merged else None
+    agents_map = ensure_map(merged, "agents") if "agents" in merged else None
+else:
+    agent_map = ensure_map(merged, "agent")
+    agents_map = None
+
+for agent, model in clean.items():
+    for mapping in (agent_map, agents_map):
+        if mapping is None:
+            continue
+        entry = mapping.get(agent)
+        if entry is None:
+            entry = {}
+            mapping[agent] = entry
+        elif not isinstance(entry, dict):
+            fail("OPENCODE_CONFIG_CONTENT: Eintrag für '" + agent + "' muss ein Objekt sein.")
+        entry["model"] = model
+
+print(json.dumps(merged, ensure_ascii=False))
+PY
+)"
+  rc=$?
+  if [ "$rc" != 0 ]; then
+    echo "ABBRUCH: Projektmodelle konnten nicht angewendet werden; Details im Protokoll $LOG." | tee -a "$LOG"
+    exit 2
+  fi
+  if [ -n "$MERGED_CONFIG" ]; then
+    HAS_PROJECT_MODELS=1
+    OPENCODE_CONFIG_CONTENT="$MERGED_CONFIG"
+    export OPENCODE_CONFIG_CONTENT
+  fi
+fi
 SERVER_ARGS="--standalone"
 SANDBOX_STATE=off
 # B13: Ohne erreichbaren gemeinsamen Server startet der Lauf einen eigenen
@@ -801,7 +1005,7 @@ if [ "$SANDBOX_STATE" = "on" ]; then
     echo "ABBRUCH: Sandbox ist eingeschaltet, aber nicht startbar. Der Agent läuft nicht ohne Sandbox." | tee -a "$LOG"
     exit 2
   fi
-elif server_is_up; then SERVER_ARGS="--server http://127.0.0.1:$OPENCODE_PORT"; fi
+elif [ "$HAS_PROJECT_MODELS" != 1 ] && server_is_up; then SERVER_ARGS="--server http://127.0.0.1:$OPENCODE_PORT"; fi
 # B13: In der Sandbox führt ein gemeinsamer Server die Werkzeuge außerhalb der
 # Sandbox aus; dort gilt deshalb immer der private Server. Außerhalb der
 # Sandbox nur, wenn kein gemeinsamer Server erreichbar ist. Pi kennt keinen
