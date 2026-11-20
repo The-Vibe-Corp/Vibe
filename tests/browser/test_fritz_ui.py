@@ -143,7 +143,7 @@ class FritzBrowserTest(unittest.TestCase):
         return self.page.locator(".card", has_text="FRITZ!Box reconnect")
 
     def test_automation_and_manual_reconnect_are_controllable(self):
-        self.page.goto(self.base + "/#t=" + self.token)
+        self.page.goto(self.base + "/classic#t=" + self.token)
         self.page.get_by_role("button", name="Environment").click()
         card = self.fritz_card()
         card.wait_for()

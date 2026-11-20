@@ -29,7 +29,9 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[2]
 WEB = REPO / "bin" / "vibe-web.py"
 SERVICES = REPO / "bin" / "vibe_services.py"
-HTML = REPO / "bin" / "web" / "index.html"
+# AP22: die klassische Oberfläche liegt unter /classic, die neue unter /.
+CLASSIC = REPO / "bin" / "web" / "classic.html"
+INDEX = REPO / "bin" / "web" / "index.html"
 CSS = REPO / "bin" / "web" / "styles.css"
 JS = REPO / "bin" / "web" / "app.js"
 
@@ -189,7 +191,9 @@ class WebFixture(unittest.TestCase):
 
 class StaticAssetsTest(WebFixture):
     def test_page_is_delivered_from_separate_static_files(self):
-        status, body, headers = self.request("GET", "/", token=False)
+        # AP22: die klassische Oberfläche liegt unter /classic; ihre Verdrahtung
+        # (styles.css/app.js) bleibt unverändert und wird hier weitergeprüft.
+        status, body, headers = self.request("GET", "/classic", token=False)
         self.assertEqual(status, 200, body)
         self.assertIn("text/html", headers.get("Content-Type", ""))
         self.assertIn('href="/static/styles.css"', body)
@@ -199,6 +203,16 @@ class StaticAssetsTest(WebFixture):
         # aus getrennten Dateien, die der Server einzeln ausliefert.
         self.assertNotIn("<style>", body)
         self.assertNotIn("<script>", body)
+
+    def test_new_shell_is_delivered_from_nova_files(self):
+        # AP22: die neue Standard-UI unter / lädt das Nova-Design-System und
+        # den Nova-Kern aus getrennten statischen Dateien.
+        status, body, headers = self.request("GET", "/", token=False)
+        self.assertEqual(status, 200, body)
+        self.assertIn("text/html", headers.get("Content-Type", ""))
+        self.assertIn('href="/static/nova.css"', body)
+        self.assertIn('src="/static/nova-core.js"', body)
+        self.assertIn('name="vibe-opencode-url"', body)
 
     def test_styles_and_scripts_are_served_without_token(self):
         status, css, headers = self.request("GET", "/static/styles.css", token=False)

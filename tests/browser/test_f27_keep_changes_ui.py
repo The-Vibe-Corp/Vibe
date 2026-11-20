@@ -245,7 +245,7 @@ class KeepChangesUiTest(unittest.TestCase):
         self.fail(message)
 
     def open_detail(self, name):
-        self.page.goto(self.base + "/#t=" + self.token)
+        self.page.goto(self.base + "/classic#t=" + self.token)
         row = self.page.locator("tr.row", has_text=name).first
         row.wait_for()
         row.click()

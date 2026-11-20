@@ -165,7 +165,7 @@ class CentralWorkflowBrowserTest(unittest.TestCase):
         return (self.project / "TICKETS.md").read_text(encoding="utf-8")
 
     def open_list(self):
-        self.page.goto(self.base + "/#t=" + self.token)
+        self.page.goto(self.base + "/classic#t=" + self.token)
         self.page.locator("tr.row", has_text="proj").first.wait_for()
 
     def test_central_flow_lists_opens_creates_and_verifies(self):

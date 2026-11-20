@@ -250,7 +250,7 @@ class AgentsBrowserTest(unittest.TestCase):
         self.fail(message)
 
     def open_agents(self):
-        self.page.goto(self.base + "/#t=" + self.token)
+        self.page.goto(self.base + "/classic#t=" + self.token)
         self.page.get_by_role("button", name="Agents & Models").click()
         self.page.locator("#agents").wait_for()
         self.page.locator('tr[data-agent="tester"]').wait_for()

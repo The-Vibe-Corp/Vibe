@@ -260,7 +260,7 @@ class Ap03AgentsBrowserTest(unittest.TestCase):
         self.fail(message)
 
     def open_agents(self):
-        self.page.goto(self.base + "/#t=" + self.token)
+        self.page.goto(self.base + "/classic#t=" + self.token)
         self.page.locator("button[data-t='agents']").click()
         self.page.locator("#agents").wait_for()
         self.page.locator('tr[data-agent="tester"]').wait_for()
@@ -272,7 +272,7 @@ class Ap03AgentsBrowserTest(unittest.TestCase):
         self.page.get_by_label("Description", exact=True).wait_for()
 
     def open_project_settings(self):
-        self.page.goto(self.base + "/#t=" + self.token)
+        self.page.goto(self.base + "/classic#t=" + self.token)
         self.page.reload(wait_until="load")
         row = self.page.locator("tr.row", has_text="proj").first
         row.wait_for()

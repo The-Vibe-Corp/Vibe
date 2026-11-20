@@ -291,7 +291,7 @@ class Ap13SecurityBrowserTest(unittest.TestCase):
         Aktion: Dashboard öffnen. Erwartet: Eingabe + Knopf „Anmelden“
         sichtbar, Projektliste nicht sichtbar.
         """
-        self.page.goto(self.base + "/")
+        self.page.goto(self.base + "/classic")
 
         self.login_card()
         self.assertFalse(
@@ -304,7 +304,7 @@ class Ap13SecurityBrowserTest(unittest.TestCase):
         Aktion: ``/#t=<token>`` öffnen. Erwartet: Oberfläche sichtbar,
         location.hash leer, sessionStorage.t leer, kein Token in der URL.
         """
-        self.page.goto(self.base + "/#t=" + self.token)
+        self.page.goto(self.base + "/classic#t=" + self.token)
 
         self.wait_until(
             lambda: self.project_list_visible(),
@@ -336,7 +336,7 @@ class Ap13SecurityBrowserTest(unittest.TestCase):
         laufenden Port, die Bind-Adresse 127.0.0.1 und den Passwortstatus
         (nicht gesetzt).
         """
-        self.page.goto(self.base + "/#t=" + self.token)
+        self.page.goto(self.base + "/classic#t=" + self.token)
         self.wait_until(lambda: self.project_list_visible(), timeout=10)
 
         self.open_security_card()
@@ -354,7 +354,7 @@ class Ap13SecurityBrowserTest(unittest.TestCase):
         Aktion: Port auf einen anderen freien Port ändern, speichern.
         Erwartet: Hinweis „Neustart“ sichtbar; ui.json enthält ui_port.
         """
-        self.page.goto(self.base + "/#t=" + self.token)
+        self.page.goto(self.base + "/classic#t=" + self.token)
         self.wait_until(lambda: self.project_list_visible(), timeout=10)
         self.assertIsNone(self.ui_json(), "Vorab existierte schon ui.json")
 
@@ -383,7 +383,7 @@ class Ap13SecurityBrowserTest(unittest.TestCase):
         Erwartet: Anmeldung gelingt; ohne Cookies erscheint die
         Anmeldekarte wieder.
         """
-        self.page.goto(self.base + "/#t=" + self.token)
+        self.page.goto(self.base + "/classic#t=" + self.token)
         self.wait_until(lambda: self.project_list_visible(), timeout=10)
 
         self.open_security_card()
@@ -410,7 +410,7 @@ class Ap13SecurityBrowserTest(unittest.TestCase):
         fresh = self.browser.new_context(viewport={"width": 1400, "height": 1000})
         fresh_page = fresh.new_page()
         try:
-            fresh_page.goto(self.base + "/")
+            fresh_page.goto(self.base + "/classic")
             self.login("ap13-ui-paswort-42", page=fresh_page)
         finally:
             fresh.close()
@@ -438,7 +438,7 @@ class Ap13SecurityBrowserTest(unittest.TestCase):
         „alle Clients erlaubt“, ui.json ohne Allowlist-Einträge,
         GET /api/security (gleiche Session) ohne Allowlist.
         """
-        self.page.goto(self.base + "/#t=" + self.token)
+        self.page.goto(self.base + "/classic#t=" + self.token)
         self.wait_until(lambda: self.project_list_visible(), timeout=10)
 
         # Vorbedingung: Allowlist-Eintrag über die gleiche Session setzen
@@ -550,7 +550,7 @@ class Ap13SecurityBrowserTest(unittest.TestCase):
         aria-label „IP-Allowlist“ lesen. Erwartet: Er enthält
         „(leer = unverändert)“ und nicht „(leer = alle Clients)“.
         """
-        self.page.goto(self.base + "/#t=" + self.token)
+        self.page.goto(self.base + "/classic#t=" + self.token)
         self.wait_until(lambda: self.project_list_visible(), timeout=10)
         self.open_security_card()
 

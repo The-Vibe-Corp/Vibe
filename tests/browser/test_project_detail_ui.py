@@ -183,7 +183,7 @@ class ProjectDetailUiTest(unittest.TestCase):
         self.fail(message)
 
     def open_detail(self):
-        self.page.goto(self.base + "/#t=" + self.token)
+        self.page.goto(self.base + "/classic#t=" + self.token)
         row = self.page.locator("tr.row", has_text="proj").first
         row.wait_for()
         row.click()
@@ -385,7 +385,7 @@ class ProjectDetailUiTest(unittest.TestCase):
             self.assertEqual(panel.get_attribute("aria-labelledby"), tab.get_attribute("id"))
 
     def test_new_project_opens_the_assistant_area(self):
-        self.page.goto(self.base + "/#t=" + self.token)
+        self.page.goto(self.base + "/classic#t=" + self.token)
         form = self.page.locator("#nf")
         form.wait_for()
         form.locator("input").first.fill("neu")

@@ -1,0 +1,319 @@
+/* AP22 — Design-System der neuen Oberfläche.
+ * Reines CSS ohne Fremd-Schriften oder CDN. Alle Farben und Abstände kommen
+ * aus Custom Properties; der Dark-Mode überschreibt nur die Tokens. Motion
+ * wird ausschließlich bei data-animations="on" eingeschaltet und zusätzlich
+ * durch die System-Präferenz begrenzt.
+ */
+
+/* ---------- Tokens: heller Standard ---------- */
+:root {
+  --nv-font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --nv-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --nv-space-1: 0.25rem;
+  --nv-space-2: 0.5rem;
+  --nv-space-3: 0.75rem;
+  --nv-space-4: 1rem;
+  --nv-space-5: 1.5rem;
+  --nv-space-6: 2rem;
+  --nv-radius: 10px;
+  --nv-radius-sm: 6px;
+  --nv-border: #d8dee6;
+  --nv-bg: #f5f7fa;
+  --nv-surface: #ffffff;
+  --nv-surface-2: #eef2f7;
+  --nv-text: #1d2430;
+  --nv-muted: #5b6675;
+  --nv-primary: #2457c5;
+  --nv-primary-text: #ffffff;
+  --nv-primary-hover: #1a45a3;
+  --nv-danger: #b4232c;
+  --nv-danger-text: #ffffff;
+  --nv-warn-bg: #fff1cf;
+  --nv-warn-text: #7a5600;
+  --nv-ok-bg: #dcf3e4;
+  --nv-ok-text: #166534;
+  --nv-info-bg: #e6eefc;
+  --nv-error-bg: #fde8e9;
+  --nv-error-text: #9b1c22;
+  --nv-shadow: 0 2px 8px rgba(20, 32, 55, 0.08);
+  --nv-top-bg: #ffffff;
+  --nv-focus: #1d4ed8;
+  --nv-speed: 200ms;
+}
+
+/* ---------- Tokens: dunkel ---------- */
+html[data-theme="dark"] {
+  --nv-border: #3b4655;
+  --nv-bg: #141922;
+  --nv-surface: #1e2530;
+  --nv-surface-2: #273140;
+  --nv-text: #e8edf5;
+  --nv-muted: #a2adc0;
+  --nv-primary: #6f9dff;
+  --nv-primary-text: #101624;
+  --nv-primary-hover: #8bb2ff;
+  --nv-danger: #ff7a7f;
+  --nv-danger-text: #2a0d0f;
+  --nv-warn-bg: #4a3a12;
+  --nv-warn-text: #ffe6a1;
+  --nv-ok-bg: #173d29;
+  --nv-ok-text: #a7f3c2;
+  --nv-info-bg: #213354;
+  --nv-error-bg: #4a1c20;
+  --nv-error-text: #ffc9cc;
+  --nv-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+  --nv-top-bg: #1e2530;
+  --nv-focus: #9dbaff;
+}
+
+/* ---------- Grundlagen ---------- */
+*, *::before, *::after { box-sizing: border-box; }
+html { color-scheme: light; }
+html[data-theme="dark"] { color-scheme: dark; }
+body {
+  margin: 0;
+  background: var(--nv-bg);
+  color: var(--nv-text);
+  font-family: var(--nv-font);
+  font-size: 15px;
+  line-height: 1.5;
+}
+[hidden] { display: none !important; }
+h1, h2, h3 { margin: 0 0 var(--nv-space-3); line-height: 1.25; }
+h1 { font-size: 1.5rem; }
+h2 { font-size: 1.25rem; }
+h3 { font-size: 1.05rem; }
+p { margin: 0 0 var(--nv-space-3); }
+code, pre { font-family: var(--nv-mono); }
+a { color: var(--nv-primary); }
+:focus-visible { outline: 3px solid var(--nv-focus); outline-offset: 2px; }
+
+/* Skip-Link: nur beim Fokussieren sichtbar. */
+.nv-skip {
+  position: absolute;
+  left: var(--nv-space-3);
+  top: -100px;
+  z-index: 100;
+  padding: var(--nv-space-2) var(--nv-space-3);
+  background: var(--nv-surface);
+  border: 1px solid var(--nv-border);
+  border-radius: var(--nv-radius-sm);
+}
+.nv-skip:focus { top: var(--nv-space-2); }
+
+/* ---------- Kopfleiste und Navigation ---------- */
+.nv-top {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: var(--nv-space-4);
+  padding: var(--nv-space-3) var(--nv-space-5);
+  background: var(--nv-top-bg);
+  border-bottom: 1px solid var(--nv-border);
+  box-shadow: var(--nv-shadow);
+}
+.nv-brand { margin: 0; font-weight: 700; letter-spacing: 0.04em; }
+.nv-nav { display: flex; align-items: center; gap: var(--nv-space-1); }
+.nv-nav button {
+  border: 0;
+  background: transparent;
+  color: var(--nv-muted);
+  padding: var(--nv-space-2) var(--nv-space-3);
+  border-radius: var(--nv-radius-sm);
+  font: inherit;
+  cursor: pointer;
+}
+.nv-nav button[aria-current="page"] {
+  color: var(--nv-primary);
+  background: var(--nv-info-bg);
+  font-weight: 600;
+}
+.nv-nav-toggle {
+  display: none;
+  border: 1px solid var(--nv-border);
+  background: var(--nv-surface);
+  color: var(--nv-text);
+  border-radius: var(--nv-radius-sm);
+  padding: var(--nv-space-1) var(--nv-space-3);
+  font-size: 1.1rem;
+  cursor: pointer;
+}
+.nv-top-actions { display: flex; align-items: center; gap: var(--nv-space-2); margin-left: auto; }
+.nv-anim-switch { display: inline-flex; align-items: center; margin: 0; }
+.nv-bell-wrap { position: relative; }
+
+/* ---------- Karten, Raster, Kacheln ---------- */
+.nv-main { max-width: 1200px; margin: 0 auto; padding: var(--nv-space-5); }
+.nv-section { margin-bottom: var(--nv-space-5); }
+.nv-card {
+  background: var(--nv-surface);
+  border: 1px solid var(--nv-border);
+  border-radius: var(--nv-radius);
+  box-shadow: var(--nv-shadow);
+  padding: var(--nv-space-4);
+  margin-bottom: var(--nv-space-4);
+}
+.nv-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: var(--nv-space-4);
+}
+.nv-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: var(--nv-space-3);
+}
+.nv-board {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: var(--nv-space-3);
+  align-items: start;
+}
+.nv-row { display: flex; align-items: center; flex-wrap: wrap; gap: var(--nv-space-2); margin-bottom: var(--nv-space-2); }
+.nv-list { display: flex; flex-direction: column; gap: var(--nv-space-2); margin-bottom: var(--nv-space-3); }
+.nv-muted { color: var(--nv-muted); }
+.nv-note { color: var(--nv-muted); font-size: 0.9rem; padding: var(--nv-space-2); background: var(--nv-surface-2); border-radius: var(--nv-radius-sm); }
+.nv-link { text-decoration: underline; }
+.nv-project-name { margin: 0; cursor: pointer; }
+
+/* ---------- Formulare ---------- */
+.nv-card label { display: block; margin: var(--nv-space-3) 0 var(--nv-space-1); font-weight: 600; font-size: 0.9rem; }
+.nv-input, .nv-select, .nv-card input:not([type="checkbox"]), .nv-card select, .nv-card textarea {
+  width: 100%;
+  padding: var(--nv-space-2) var(--nv-space-3);
+  border: 1px solid var(--nv-border);
+  border-radius: var(--nv-radius-sm);
+  background: var(--nv-surface);
+  color: var(--nv-text);
+  font: inherit;
+}
+.nv-card textarea { min-height: 6rem; resize: vertical; }
+.nv-switch-row { display: flex !important; align-items: center; gap: var(--nv-space-2); font-weight: 400 !important; }
+.nv-form-error {
+  margin-top: var(--nv-space-2);
+  padding: var(--nv-space-2) var(--nv-space-3);
+  border-radius: var(--nv-radius-sm);
+  background: var(--nv-error-bg);
+  color: var(--nv-error-text);
+}
+
+/* ---------- Buttons ---------- */
+.nv-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--nv-space-2);
+  padding: var(--nv-space-2) var(--nv-space-4);
+  border: 1px solid var(--nv-border);
+  border-radius: var(--nv-radius-sm);
+  background: var(--nv-surface-2);
+  color: var(--nv-text);
+  font: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+.nv-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+.nv-btn.nv-primary { background: var(--nv-primary); color: var(--nv-primary-text); border-color: var(--nv-primary); font-weight: 600; }
+.nv-btn.nv-secondary { background: var(--nv-info-bg); color: var(--nv-primary); }
+.nv-btn.nv-danger { background: var(--nv-danger); color: var(--nv-danger-text); border-color: var(--nv-danger); }
+.nv-btn.nv-ghost { background: transparent; border-color: transparent; padding: var(--nv-space-2); }
+.nv-btn.nv-close { padding: 0 var(--nv-space-2); }
+
+/* ---------- Pillen, Status und Abzeichen ---------- */
+.nv-pill, .nv-badge {
+  display: inline-block;
+  padding: 0.1rem 0.55rem;
+  border-radius: 999px;
+  background: var(--nv-surface-2);
+  color: var(--nv-muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+.nv-pill[data-state="running"] { background: var(--nv-ok-bg); color: var(--nv-ok-text); }
+.nv-pill[data-state="stopped"] { background: var(--nv-surface-2); }
+.nv-pill.nv-type { background: var(--nv-info-bg); color: var(--nv-primary); }
+.nv-pill.nv-warn { background: var(--nv-warn-bg); color: var(--nv-warn-text); }
+.nv-badge { min-width: 1.2rem; text-align: center; background: var(--nv-danger); color: var(--nv-danger-text); margin-left: var(--nv-space-1); }
+
+/* ---------- Tabs und Panel ---------- */
+.nv-tabs { display: flex; flex-wrap: wrap; gap: var(--nv-space-1); border-bottom: 1px solid var(--nv-border); margin-bottom: var(--nv-space-4); }
+.nv-tab {
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--nv-muted);
+  padding: var(--nv-space-2) var(--nv-space-3);
+  font: inherit;
+  cursor: pointer;
+}
+.nv-tab[aria-selected="true"] { color: var(--nv-primary); border-bottom-color: var(--nv-primary); font-weight: 600; }
+
+/* ---------- Toasts und Benachrichtigungs-Schublade ---------- */
+.nv-toasts { position: fixed; right: var(--nv-space-4); bottom: var(--nv-space-4); z-index: 60; display: flex; flex-direction: column; gap: var(--nv-space-2); max-width: min(380px, 90vw); }
+.nv-toast {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--nv-space-3);
+  padding: var(--nv-space-3);
+  background: var(--nv-surface);
+  border: 1px solid var(--nv-border);
+  border-left: 4px solid var(--nv-primary);
+  border-radius: var(--nv-radius-sm);
+  box-shadow: var(--nv-shadow);
+  word-break: break-word;
+}
+.nv-toast-close { margin-left: auto; border: 0; background: transparent; color: var(--nv-muted); cursor: pointer; font-size: 1.1rem; }
+.nv-drawer {
+  position: absolute;
+  right: 0;
+  top: calc(100% + var(--nv-space-2));
+  width: min(360px, 88vw);
+  max-height: 60vh;
+  overflow: auto;
+  padding: var(--nv-space-3);
+  background: var(--nv-surface);
+  border: 1px solid var(--nv-border);
+  border-radius: var(--nv-radius);
+  box-shadow: var(--nv-shadow);
+  z-index: 50;
+}
+.nv-drawer-title { font-weight: 700; margin-bottom: var(--nv-space-2); }
+.nv-bell-item { display: block; padding: var(--nv-space-2) 0; border-bottom: 1px solid var(--nv-border); text-decoration: none; color: var(--nv-text); }
+
+/* ---------- Animationen (nur bei data-animations="on") ---------- */
+html[data-animations="on"] .nv-card,
+html[data-animations="on"] .nv-toast { animation: nv-slide-in var(--nv-speed) ease-out both; }
+html[data-animations="on"] .nv-btn,
+html[data-animations="on"] .nv-nav button,
+html[data-animations="on"] .nv-tab { transition: background-color var(--nv-speed) ease, color var(--nv-speed) ease, transform var(--nv-speed) ease; }
+html[data-animations="on"] .nv-btn:hover:not(:disabled),
+html[data-animations="on"] .nv-tab:hover { transform: translateY(-1px); }
+html[data-animations="on"] .nv-drawer { animation: nv-fade-in var(--nv-speed) ease-out both; }
+@keyframes nv-slide-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes nv-fade-in { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  html[data-animations="on"] .nv-card,
+  html[data-animations="on"] .nv-toast,
+  html[data-animations="on"] .nv-drawer { animation: none; }
+  html[data-animations="on"] .nv-btn,
+  html[data-animations="on"] .nv-nav button,
+  html[data-animations="on"] .nv-tab { transition: none; transform: none; }
+}
+
+/* ---------- Responsiv: Desktop / Tablet / Mobil ---------- */
+@media (max-width: 1023px) {
+  .nv-top { padding: var(--nv-space-3) var(--nv-space-4); }
+  .nv-main { padding: var(--nv-space-4); }
+}
+@media (max-width: 639px) {
+  .nv-top { flex-wrap: wrap; gap: var(--nv-space-2); padding: var(--nv-space-2) var(--nv-space-3); }
+  .nv-nav-toggle { display: inline-flex; }
+  .nv-nav { display: none; width: 100%; flex-direction: column; align-items: stretch; }
+  [data-nv-nav-toggle][aria-expanded="true"] ~ .nv-nav { display: flex; }
+  .nv-top-actions { margin-left: auto; }
+  .nv-main { padding: var(--nv-space-3); }
+  .nv-grid, .nv-tiles, .nv-board { grid-template-columns: 1fr; }
+  .nv-toasts { right: var(--nv-space-2); bottom: var(--nv-space-2); }
+}

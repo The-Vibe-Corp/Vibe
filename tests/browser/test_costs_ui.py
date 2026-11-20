@@ -206,7 +206,7 @@ class CostsBrowserTest(unittest.TestCase):
         self.fail(message)
 
     def open_costs(self):
-        self.page.goto(self.base + "/#t=" + self.token)
+        self.page.goto(self.base + "/classic#t=" + self.token)
         nav = self.page.get_by_role("button", name="Costs", exact=True)
         nav.wait_for()
         nav.click()

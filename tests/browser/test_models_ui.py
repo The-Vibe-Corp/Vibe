@@ -217,7 +217,7 @@ class ModelsBrowserTest(unittest.TestCase):
 
     def setUp(self):
         self.page = self.browser.new_page(viewport={"width": 1500, "height": 1100})
-        self.page.goto(self.base + "/#t=" + self.token)
+        self.page.goto(self.base + "/classic#t=" + self.token)
         self.page.get_by_role("button", name="Agents & Models").click()
         self.page.get_by_role("button", name="New agent").wait_for()
         self.page.locator("#models > details > summary").wait_for()

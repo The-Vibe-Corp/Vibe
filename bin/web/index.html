@@ -1,7 +1,42 @@
-<!doctype html><html lang="__VIBE_LANG__"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<!doctype html>
+<html lang="__VIBE_LANG__" data-theme="light" data-animations="on">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="vibe-opencode-url" content="__OPENCODE_URL__">
 <meta name="vibe-language" content="__VIBE_LANG__">
-<title>vibe</title><link rel="stylesheet" href="/static/styles.css">
-</head><body>
-<header><h1>vibe</h1><nav id="nav"></nav><span id="srv" style="margin-left:auto;display:flex;gap:8px;align-items:center"></span></header><div id="questions" class="qwrap" role="region" aria-label="Questions" aria-live="polite" hidden></div><main id="main"></main>
-<script src="/static/i18n.js"></script><script src="/static/app.js"></script></body></html>
+<title>vibe</title>
+<link rel="stylesheet" href="/static/nova.css">
+</head>
+<body data-nv-app>
+<a class="nv-skip" href="#nv-main">Zum Inhalt springen</a>
+<header class="nv-top">
+<h1 class="nv-brand">vibe</h1>
+<button type="button" class="nv-nav-toggle" data-nv-nav-toggle aria-expanded="false" aria-label="Menü">☰</button>
+<nav class="nv-nav" data-nv-navs aria-label="Navigation">
+<button type="button" data-nv-nav="home"></button>
+<button type="button" data-nv-nav="agents"></button>
+<button type="button" data-nv-nav="activity"></button>
+<button type="button" data-nv-nav="settings"></button>
+</nav>
+<div class="nv-top-actions">
+<label class="nv-anim-switch" aria-label="Animationen"><input type="checkbox" data-nv-anim-toggle checked></label>
+<button type="button" class="nv-btn nv-ghost" data-nv-theme-toggle aria-label="Darstellung wechseln"></button>
+<div class="nv-bell-wrap">
+<button type="button" class="nv-btn nv-ghost" data-nv-bell aria-label="Benachrichtigungen">🔔<span class="nv-badge" data-nv-bell-count hidden>0</span></button>
+<div class="nv-drawer" data-nv-bell-panel hidden></div>
+</div>
+</div>
+</header>
+<main id="nv-main" data-nv-view="home" class="nv-main"></main>
+<div id="nv-toasts" class="nv-toasts" aria-live="polite"></div>
+<script src="/static/i18n.js"></script>
+<script src="/static/nova-core.js"></script>
+<script src="/static/nova-home.js"></script>
+<script src="/static/nova-project.js"></script>
+<script src="/static/nova-output.js"></script>
+<script src="/static/nova-agents.js"></script>
+<script src="/static/nova-activity.js"></script>
+<script src="/static/nova-settings.js"></script>
+</body>
+</html>

@@ -1043,6 +1043,37 @@
       ],
       "datum": "2026-11-20",
       "grund": "AP1: Der private opencode-Server merkt sich das Zielverzeichnis (realpath) in <log>.server.json; eine gesunde, aber für ein anderes Verzeichnis gestartete Instanz wird beendet und neu gestartet. Damit schreibt der Paketagent nach Preflight-Assistenz ($P) und beim Wechsel zwischen Arbeitskopien ($WT) in die richtige Sandbox. Die opencode-DB der Sandbox wird vor dem bwrap-Aufbau aus der Host-DB (XDG_DATA_HOME oder ~/.local/share/opencode) nur lesend vorbereitet: Schema aller Tabellen/Indizes sowie Zeilen aus credential, account, account_state, control_account und migration; keine Sitzungen, Nachrichten, Blobs oder kv-Modelle. Bestehende Sandbox-DB mit credential-Zeilen bleibt unverändert, eine leere credential-Tabelle wird in einer Transaktion ergänzt. Die Legacy-auth.json-Bindung bleibt erhalten. Größe und SHA-256 von bin/vibe-run.sh und bin/vibe_sandbox.py wurden aktualisiert und begründet."
+    },
+    {
+      "arbeitspaket": "AP22",
+      "dateien": [
+        "bin/vibe-web.py",
+        "bin/web/classic.html",
+        "bin/web/i18n.js",
+        "bin/web/index.html",
+        "bin/web/nova-activity.js",
+        "bin/web/nova-agents.js",
+        "bin/web/nova-core.js",
+        "bin/web/nova-home.js",
+        "bin/web/nova-output.js",
+        "bin/web/nova-project.js",
+        "bin/web/nova-settings.js",
+        "bin/web/nova.css",
+        "scripts/setup-vibe.py",
+        "tests/browser/test_ap22_home_ui.py",
+        "tests/browser/test_ap22_settings_ui.py",
+        "tests/browser/test_ap22_shell_ui.py",
+        "tests/unit/test_ap21_i18n.py",
+        "tests/unit/test_ap22_web_routes.py",
+        "tests/unit/test_b17_isolation.py",
+        "tests/unit/test_install_lifecycle.py",
+        "tests/unit/test_setup_vibe.py",
+        "tests/unit/test_web_modularization.py",
+        "tests/unit/test_web_ui_nonmodal.py",
+        "tests/unit/web_page.py"
+      ],
+      "datum": "2026-11-20",
+      "grund": "Neue Standard-UI unter / mit den nova-Dateien (Shell, Designsystem und Ansichten); die alte UI bleibt vollständig unter /classic erreichbar. Neue Paritäts-Endpunkte /api/limits, /api/gates, /api/runs, /api/emu und /api/paths über die bestehenden Dienste. WEB_FILES und Importmanifest ergänzt, Bestandstests auf /classic umgestellt."
     }
   ],
   "files": [
@@ -1067,9 +1098,9 @@
       "sha256": "601fcda3b1ac2c155c1efe276d113dd35a9c1b9c1948bc241357f20e126acbae"
     },
     {
-      "bytes": 103123,
+      "bytes": 112698,
       "path": "bin/vibe-web.py",
-      "sha256": "04420e100100f23c3990b238c3141fde3cdafe22eb16cf9c8f5b46828ed09ebd"
+      "sha256": "270318c5a97dc6522d2936dbf76d795d5cf9b18fa193f9bbe16f1b79ec15e9c6"
     },
     {
       "bytes": 5189,
@@ -1162,9 +1193,9 @@
       "sha256": "2f183ded46b9ef67675c56562e23f34167ba3e1ccd7cda9e97ee54a058d36488"
     },
     {
-      "bytes": 688,
+      "bytes": 1935,
       "path": "bin/web/index.html",
-      "sha256": "19ea677f5c3dc3579279fd9b5bf7584612967654b8ec0bbde3818576c78b46b5"
+      "sha256": "d57e2f18ebeda479f6e84f08509610b9939c58da768f11bec33f8ff7fa8e51bb"
     },
     {
       "bytes": 12751,
@@ -1317,9 +1348,9 @@
       "sha256": "c1e4a3d830f4c8791e00c3aa053f348d2159c286303405f0f34db867845c10d4"
     },
     {
-      "bytes": 73174,
+      "bytes": 73426,
       "path": "scripts/setup-vibe.py",
-      "sha256": "0eb4f5d9c48fc89edfddaae16ef2a82e5187032db639f3a085c5295f731c23a4"
+      "sha256": "e143a668a4312a6f9cc69b66c8bc5ea61a2ada952ba8e7076d8b659b98aa9658"
     },
     {
       "bytes": 377,
@@ -1332,9 +1363,54 @@
       "sha256": "f5e9382967c9833066a55808829f3750fc8e1181b170cafd222c37048bb49a77"
     },
     {
-      "bytes": 111316,
+      "bytes": 117957,
       "path": "bin/web/i18n.js",
-      "sha256": "dd9f848b9ea81152ccafc7816f02a47acb280005fc40b71a305ca78e4aea8845"
+      "sha256": "2bb86553596ead7e0596005b9de87f0290534a1f2580c27de5dd5504727b2f35"
+    },
+    {
+      "bytes": 688,
+      "path": "bin/web/classic.html",
+      "sha256": "19ea677f5c3dc3579279fd9b5bf7584612967654b8ec0bbde3818576c78b46b5"
+    },
+    {
+      "bytes": 11769,
+      "path": "bin/web/nova.css",
+      "sha256": "1652ec769c79408525f4fcc0cb17c2252b1975a87a559aa93a32f335df900be4"
+    },
+    {
+      "bytes": 16221,
+      "path": "bin/web/nova-core.js",
+      "sha256": "9e2f4192ca5ae256439174e42f8f382e525a9a7ac05b892c0abbdbcdb2df1c2d"
+    },
+    {
+      "bytes": 9968,
+      "path": "bin/web/nova-home.js",
+      "sha256": "ac2af89b213602f6d12a1e3517936514c3d67312aceb081a38c58a22836ab831"
+    },
+    {
+      "bytes": 1726,
+      "path": "bin/web/nova-project.js",
+      "sha256": "514e58dc7c0f77871f630918d9070c3feefd59f92ddc52bbddf1e6f82d82fb60"
+    },
+    {
+      "bytes": 456,
+      "path": "bin/web/nova-output.js",
+      "sha256": "22bdc1c413c4f5db9f8ca3d5098c6ee83574d63e2ac886c439f5b097965c016d"
+    },
+    {
+      "bytes": 429,
+      "path": "bin/web/nova-agents.js",
+      "sha256": "d59ecfe6d79257ab77b3e00bc44ee04242d1878072b2d4189a1cb0214010d52d"
+    },
+    {
+      "bytes": 505,
+      "path": "bin/web/nova-activity.js",
+      "sha256": "9daff4cc2f7e4f2a8c83f2c14efd290d22900bc87c7557eee108446aee3bbdda"
+    },
+    {
+      "bytes": 11844,
+      "path": "bin/web/nova-settings.js",
+      "sha256": "52803f127b4d3d64be3e2c8a617825181a52653b9e466eb009148b095764c88c"
     }
   ],
   "hinweis": "SHA-256 der übernommenen Programmdateien. Beabsichtigte Änderungen an diesen Dateien sind nur zulässig, wenn dieser Eintrag im selben Arbeitspaket aktualisiert und begründet wird. Laufzeitdaten, Sicherungen und Geheimnisse sind nicht Bestandteil des Imports.",
