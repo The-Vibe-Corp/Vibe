@@ -1092,6 +1092,24 @@
         "docs/import-manifest.json"
       ],
       "grund": "AP22 Design-Fix-Runde nach visueller Abnahme (website-vision): Glocken-Popover zeigte [object HTMLDivElement] (Knotenbau-Korrektur, echter Leerzustand, Schließen per Knopf/Escape, schließt bei Seitenwechsel, Marker-Reset); Theme-Umschalter und Einstellungs-Auswahl sind jetzt beidseitig synchron (auch auto); Primärknöpfe im Dunkelmodus tragen eigene Theme-Tokens und erreichen messbaren Kontrast (8,14:1) statt der früheren hellen Fläche; Mobile-Navigation als eigenes Overlay mit linksbündigen Einträgen und Akzentbalken statt der gebrochenen Vollzeile; Kopfleisten-Ziele >= 44px mit Beschriftung; Startseite zeigt Projekte zuerst, Einstiegshinweise als kompakte Chips, genau eine Primäraktion, Klartext 'Offene Arbeitspakete', Pfade gekürzt mit Vollpfad im Titel; Zugriffssicherheit trennt Anmeldung (prominent) von Netzwerk (experts, mit Neustart-Warnung); Feature-Schalter in drei Gruppen mit je einer Laien-Erklärung; Typo-/Radius-/Abstands-Skala vereinheitlicht, Fokus-Ringe in beiden Themes; Stub-Ansichten mit ehrlichem Leerzustand und Skeleton statt Meilenstein-Jargon. Sprache unveraendert (Englisch Standard, global umschaltbar, AP21). Alle A-Suites bleiben gruen (19 + 12 + 6 + 10); verify quick nach Manifest-Aktualisierung gruen."
+    },
+    {
+      "arbeitspaket": "AP22",
+      "datum": "2026-11-20",
+      "dateien": [
+        "bin/vibe-web.py",
+        "bin/web/i18n.js",
+        "bin/web/index.html",
+        "bin/web/nova-activity.js",
+        "bin/web/nova-agents.js",
+        "bin/web/nova-core.js",
+        "bin/web/nova-output.js",
+        "bin/web/nova-project.js",
+        "bin/web/nova-settings.js",
+        "bin/web/nova.css",
+        "tests/unit/test_ap22_web_routes.py"
+      ],
+      "grund": "AP22 Meilenstein B/C + Polier-Runde: vollstaendige Projektansicht (Held mit Laufsteuerung, Uebersicht, Arbeit-Board in vier Statusspalten, Assistent, Projekteinstellungen mit Team-Zuordnung und Feature-gefuhrten Bereichen), Live-Ausgabe mit Haupt-/Subagenten, Steuern, Fortsetzen und DOM-only-Syntaxhervorhebung (hl-*), Aktivitaet mit Laeufen/Sessions/Fragen, Agentenverwaltung mit 4-Schritt-Wizard und Ein-Seiten-Editor inkl. Rohmodus/Sicherungen/Projektzuordnung, erweiterte Einstellungen (Modellkatalog, Profile mit Vorschau, MCP mit maskierten Geheimnissen, Kosten, Harness, Umgebung mit Doctor/Pfaden/Fritz/Emulator/Server, Laufregister mit Prune). Session-Limit erhaelt CLI-Paritaet: POST /api/sessions action=limit (Validierung vor Schreibvorgang, SessionRegistry.set_limit). Shell-Chrome-Texte laufen ueber tr(), i18n-Duplikate bereinigt. Alle neun AP22-Browser-Suiten (85 Faelle) und die Unit-Routen gruen; verify quick nach Manifest-Aktualisierung gruen."
     }
   ],
   "files": [
@@ -1116,9 +1134,9 @@
       "sha256": "601fcda3b1ac2c155c1efe276d113dd35a9c1b9c1948bc241357f20e126acbae"
     },
     {
-      "bytes": 112698,
+      "bytes": 114369,
       "path": "bin/vibe-web.py",
-      "sha256": "270318c5a97dc6522d2936dbf76d795d5cf9b18fa193f9bbe16f1b79ec15e9c6"
+      "sha256": "223710eb7fd30921d699954eeeb7c92ac685067604a7c877a9cc3bf3f0b20fa3"
     },
     {
       "bytes": 5189,
@@ -1211,9 +1229,9 @@
       "sha256": "2f183ded46b9ef67675c56562e23f34167ba3e1ccd7cda9e97ee54a058d36488"
     },
     {
-      "bytes": 2106,
+      "bytes": 2137,
       "path": "bin/web/index.html",
-      "sha256": "8afac3efdbc3325b9cb44f75ea1b20b0065297513df639e1e3dd26907d61327c"
+      "sha256": "dee6f674e352863a31b280fa6423d00df2928be30bbb6a2de41b516d3f735637"
     },
     {
       "bytes": 12751,
@@ -1381,9 +1399,9 @@
       "sha256": "f5e9382967c9833066a55808829f3750fc8e1181b170cafd222c37048bb49a77"
     },
     {
-      "bytes": 122205,
+      "bytes": 143725,
       "path": "bin/web/i18n.js",
-      "sha256": "911189729ce385686b4e14ed9623ce73ce7ec33e2c2f2cf08acca4e230799618"
+      "sha256": "6a0a6e9ebfa97de75b567c06478c798398f08f754c94a74e785660130ee8bd8e"
     },
     {
       "bytes": 688,
@@ -1391,14 +1409,14 @@
       "sha256": "19ea677f5c3dc3579279fd9b5bf7584612967654b8ec0bbde3818576c78b46b5"
     },
     {
-      "bytes": 16791,
+      "bytes": 18255,
       "path": "bin/web/nova.css",
-      "sha256": "b1ec172931b33aca4398329194f51a67d981175fd0aed51517d0925fc5cfce66"
+      "sha256": "99ee12aeb4d7c139e750577deb24d927c90b8abb7c45f484e4f9292d96027884"
     },
     {
-      "bytes": 19000,
+      "bytes": 19114,
       "path": "bin/web/nova-core.js",
-      "sha256": "23ee541460be7671866f4c5c53b577b2d40ffade242e1a17d76383d7da3b952d"
+      "sha256": "b3857be3b7b26b596e25ea68262c25eb117fd91850de198e54c6aad830a47178"
     },
     {
       "bytes": 11366,
@@ -1406,29 +1424,29 @@
       "sha256": "98604c2af26570e28bc3a4dd2df9fbb3eaee0c9767f3e96318040c367a300f9e"
     },
     {
-      "bytes": 1952,
+      "bytes": 36585,
       "path": "bin/web/nova-project.js",
-      "sha256": "ad98c85897ea65402aaa1b84cb7005e6f3119a784a00bd6073e4a42e2409dda6"
+      "sha256": "73c6ed7a6fd116bdf24321f8a61cb0ee41a0b3c654f352498ce52659e22dc064"
     },
     {
-      "bytes": 744,
+      "bytes": 16315,
       "path": "bin/web/nova-output.js",
-      "sha256": "42b97870879a1e523101a8069a57acd64e1500f3337279adfea9c0f7389e42b9"
+      "sha256": "8c56aa9e89ece8d02ea76f5d1b11e43ff8466b1d3becb8956a98ae0f6036895b"
     },
     {
-      "bytes": 717,
+      "bytes": 25006,
       "path": "bin/web/nova-agents.js",
-      "sha256": "1259802a6f04fe2d702894dec966775dd4c6237bde4f4017cf9a533ad8a3f97d"
+      "sha256": "db7443a5a644b2cd0a2f2dd70bf6602f609f533b5c9f1688c96a4680dc862b0b"
     },
     {
-      "bytes": 793,
+      "bytes": 9793,
       "path": "bin/web/nova-activity.js",
-      "sha256": "09c60e89db3f4cf001ef4c0dbc88916fcf591ebedfa6f467123dfef8d2f3ff53"
+      "sha256": "da76df7fe234d05c676f63176e98135a4d3c9cdeb733a74f806f706d942301d0"
     },
     {
-      "bytes": 13867,
+      "bytes": 44549,
       "path": "bin/web/nova-settings.js",
-      "sha256": "d341ad61059bc8d7a8b9559cbdbe15a137bc05d965da73ad066c2996d6a9523e"
+      "sha256": "13da8aba0256919ffc46c33d0460dbcd58327d2ba1f3aaff8f5a8324dbbfa896"
     }
   ],
   "hinweis": "SHA-256 der übernommenen Programmdateien. Beabsichtigte Änderungen an diesen Dateien sind nur zulässig, wenn dieser Eintrag im selben Arbeitspaket aktualisiert und begründet wird. Laufzeitdaten, Sicherungen und Geheimnisse sind nicht Bestandteil des Imports.",

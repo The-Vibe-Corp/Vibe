@@ -106,6 +106,16 @@ function setAttrTx(node, name, key) {
   node.__i18nAttrs[name] = {key: key, vars: undefined};
 }
 
+/* Shell-Chrome: das Markup ist sprachneutral (leere Attribute), die deutschen
+   Quellschlüssel hier sind die einzige Textquelle. setTx/setAttrTx merken sich
+   den Key, damit retranslateDOM() ihn beim Sprachwechsel neu übersetzt. */
+function setChromeLabel(node, key, glyph) {
+  if (!node) return;
+  if (glyph) setTx(node, glyph);
+  setAttrTx(node, 'aria-label', key);
+  setAttrTx(node, 'title', key);
+}
+
 /* Backend-Antworten bleiben im Deutschen (API-Vertrag); die Zuordnung liegt
    clientseitig. Im deutschen Modus wird der Originaltext unverändert gezeigt. */
 var NEWS_PHRASES = [
@@ -268,9 +278,7 @@ function initChrome() {
   if (skip) setTx(skip, tr('Zum Inhalt springen'));
   var toggle = document.querySelector('[data-nv-nav-toggle]');
   if (toggle) {
-    setTx(toggle, '☰');
-    setAttrTx(toggle, 'aria-label', 'Menü');
-    setAttrTx(toggle, 'title', 'Menü');
+    setChromeLabel(toggle, 'Menü', '☰');
     toggle.addEventListener('click', function () {
       var open = toggle.getAttribute('aria-expanded') === 'true';
       toggle.setAttribute('aria-expanded', open ? 'false' : 'true');
@@ -286,23 +294,19 @@ function initChrome() {
   var animToggle = document.querySelector('[data-nv-anim-toggle]');
   if (animToggle) {
     animToggle.checked = document.documentElement.getAttribute('data-animations') !== 'off';
-    setAttrTx(animToggle.parentNode, 'aria-label', 'Animationen');
-    setAttrTx(animToggle.parentNode, 'title', 'Animationen');
+    setChromeLabel(animToggle.parentNode, 'Animationen');
     animToggle.addEventListener('change', function () {
       NV.setAnimations(animToggle.checked);
     });
   }
   var themeToggle = document.querySelector('[data-nv-theme-toggle]');
   if (themeToggle) {
-    setTx(themeToggle, '◐');
-    setAttrTx(themeToggle, 'aria-label', 'Darstellung wechseln');
-    setAttrTx(themeToggle, 'title', 'Darstellung wechseln');
+    setChromeLabel(themeToggle, 'Darstellung wechseln', '◐');
     themeToggle.addEventListener('click', function () { NV.toggleTheme(); });
   }
   var bell = document.querySelector('[data-nv-bell]');
   if (bell) {
-    setAttrTx(bell, 'aria-label', 'Benachrichtigungen');
-    setAttrTx(bell, 'title', 'Benachrichtigungen');
+    setChromeLabel(bell, 'Benachrichtigungen');
     bell.addEventListener('click', function (event) {
       event.stopPropagation();
       var panel = document.querySelector('[data-nv-bell-panel]');

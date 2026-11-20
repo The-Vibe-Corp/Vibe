@@ -223,3 +223,233 @@ Die Suiten wurden nicht vollständig ausgeführt (sie sind bis zur
   Testumfang).
 - Barrierefreiheit/Responsive nur über die genannten Attribute
   (`aria-current`, `aria-expanded`, Sichtbarkeit), kein Screenreader-Test.
+
+## Meilenstein B — Rotphase
+
+Vier Browsersuiten für den Projektarbeitsbereich, zusammen **31 Fälle**
+(9 + 8 + 6 + 8), laufen am Stand `a651321` (`feature/m0p/ap22`). Der Stand
+enthält nur Platzhalter: `bin/web/nova-project.js` (35 Zeilen: Projekttitel,
+fünf Tabs und leere Skelett-Paneele), `bin/web/nova-output.js` (14 Zeilen)
+und `bin/web/nova-activity.js` (15 Zeilen) rendern ausschließlich
+„Dieser Bereich wird gerade aufgebaut“. Alle Fehlschläge sind deshalb
+**beabsichtigte Rotphase** (fehlende Implementierung), **keine
+Harness-Fehler**. Beleg: `boot()` und die Navigation warten erfolgreich auf
+`main#nv-main[data-nv-view='home|project|activity']` und auf die
+Stub-Paneele; die Timeouts setzen erst beim ersten nicht implementierten
+`data-nv-*`-Hook ein. Im Projektlauf besteht außerdem
+`test_tabs_switch_panels_and_expose_aria` (die Tabs sind im Stub schon
+implementiert). `python3 -m py_compile` über alle vier Dateien war ohne
+Befund, es musste nichts korrigiert werden.
+
+| Datei | Fälle | Ergebnis |
+| --- | --- | --- |
+| `tests/browser/test_ap22_project_ui.py` | 9 | 7 Fehlschläge, 9 Fehler (darunter 10 SubTest-Einträge: 5 je Art) |
+| `tests/browser/test_ap22_work_ui.py` | 8 | 1 Fehlschlag, 7 Fehler |
+| `tests/browser/test_ap22_output_ui.py` | 6 | 1 Fehlschlag, 5 Fehler |
+| `tests/browser/test_ap22_activity_ui.py` | 8 | 1 Fehlschlag, 7 Fehler |
+
+### `tests/browser/test_ap22_project_ui.py`
+
+Befehl: `PLAYWRIGHT_BROWSERS_PATH=/home/vibe/.cache/ms-playwright python3 -m unittest tests.browser.test_ap22_project_ui -v`
+
+```
+Ran 9 tests in 199.699s
+FAILED (failures=7, errors=9)
+```
+
+7 Fehlschläge, 9 Fehler; grün ist nur der Tab-Fall. Die Fehlschläge sind
+fünf SubTests von `test_project_settings_sections_and_hidden_features`
+(`psection` fehlt komplett) plus `test_basics_has_init_button` und
+`test_checks_buttons_and_quick_verify_started`; die Fehler sind fünf
+SubTests der Übersichtskacheln plus Held, Pause, Team und Assistent.
+
+Repräsentativ (Held ohne Lauf-Pille):
+
+```
+ERROR: test_open_project_from_home_shows_hero (tests.browser.test_ap22_project_ui.ProjectHeroTest.test_open_project_from_home_shows_hero)
+playwright._impl._errors.TimeoutError: Locator.wait_for: Timeout 20000ms exceeded.
+Call log:
+  - waiting for locator("[data-nv-run-state]").first to be visible
+```
+
+und (Einstellungssektion):
+
+```
+AssertionError: 1 != 0 : Projekteinstellung 'team' fehlt
+```
+
+Einordnung: Die Projektansicht liefert bereits `data-nv-project-title` und
+die fünf Tabs, aber weder Held-Aktionen, Kacheln, Board, Ausgabe, Assistent
+noch `[data-nv-psection]`. Kein Harness-Fehler: Der Held-Fall scheitert erst
+nach erfolgreicher Prüfung von Sichtbarkeit und Projekttitel.
+
+### `tests/browser/test_ap22_work_ui.py`
+
+Befehl: `PLAYWRIGHT_BROWSERS_PATH=/home/vibe/.cache/ms-playwright python3 -m unittest tests.browser.test_ap22_work_ui -v`
+
+```
+Ran 8 tests in 200.500s
+FAILED (failures=1, errors=7)
+```
+
+1 Fehlschlag, 7 Fehler, kein grüner Fall.
+
+Repräsentativ:
+
+```
+FAIL: test_columns_and_tickets_follow_the_fixture_states (tests.browser.test_ap22_work_ui.BoardTest.test_columns_and_tickets_follow_the_fixture_states)
+AssertionError: 1 != 0 : Board-Spalte 'open' fehlt
+```
+
+sowie für die Formulare:
+
+```
+playwright._impl._errors.TimeoutError: Locator.click: Timeout 30000ms exceeded.
+Call log:
+  - waiting for locator("[data-nv-action='new-package']").first
+```
+
+Einordnung: Das leere Arbeits-Paneel enthält keine Spalten, Karten,
+Feedback-Liste, Formulare oder Priorisierung. Die Fehler treten erst nach
+`section[data-nv-ppanel='work']` (Stub) auf; Fixtures (`TICKETS.md`,
+`FEEDBACK.md`, Feature-Schalter) sind angelegt.
+
+### `tests/browser/test_ap22_output_ui.py`
+
+Befehl: `PLAYWRIGHT_BROWSERS_PATH=/home/vibe/.cache/ms-playwright python3 -m unittest tests.browser.test_ap22_output_ui -v`
+
+```
+Ran 6 tests in 132.844s
+FAILED (failures=1, errors=5)
+```
+
+1 Fehlschlag, 5 Fehler, kein grüner Fall.
+
+Repräsentativ:
+
+```
+FAIL: test_output_without_live_run_shows_log_tail (tests.browser.test_ap22_output_ui.LegacyLogTest.test_output_without_live_run_shows_log_tail)
+AssertionError: Die Ausgabe ohne laufenden Lauf zeigt die Protokollzeilen nicht
+```
+
+und:
+
+```
+playwright._impl._errors.TimeoutError: Locator.wait_for: Timeout 20000ms exceeded.
+Call log:
+  - waiting for locator("[data-nv-out-overview]") to be visible
+```
+
+Einordnung: Die Ausgabe ist ein reiner Platzhalter ohne Übersichtsleiste,
+`role="log"`, Subagentenkarten, Steuern, Fortsetzen oder Stop. Lauf,
+Zustandsdatei, Protokoll und tmux-Sitzung werden im Fixture erfolgreich
+angelegt (sonst wäre `setUp`/`seed_live` gescheitert, nicht der Hook).
+
+### `tests/browser/test_ap22_activity_ui.py`
+
+Befehl: `PLAYWRIGHT_BROWSERS_PATH=/home/vibe/.cache/ms-playwright python3 -m unittest tests.browser.test_ap22_activity_ui -v`
+
+```
+Ran 8 tests in 147.050s
+FAILED (failures=1, errors=7)
+```
+
+1 Fehlschlag, 7 Fehler, kein grüner Fall.
+
+Repräsentativ:
+
+```
+FAIL: test_activity_sections_render (tests.browser.test_ap22_activity_ui.ActivitySectionsTest.test_activity_sections_render)
+AssertionError: 1 != 0 : Bereich [data-nv-runs] fehlt
+```
+
+und:
+
+```
+playwright._impl._errors.TimeoutError: Locator.wait_for: Timeout 20000ms exceeded.
+Call log:
+  - waiting for locator("[data-nv-sessions] select[data-nv-sessions-project]") to be visible
+```
+
+Einordnung: `#/activity` rendert nur Überschrift und Skelett. Die
+Rückfrage-JSON liegt vor dem Serverstart im Laufzeitordner, Läufe/Sessions
+stehen in den echten Registern — die Fehler betreffen ausschließlich die
+fehlenden Anzeige-Hooks.
+
+### Vertragsunklarheiten aus den Testdateien
+
+In den Modul-Docstrings der vier Dateien festgehalten und bewusst so geprüft;
+zur Entscheidung durch den Koordinator:
+
+- **Kachel-Zählung** (`project`): Der Vertrag sagt nicht, ob `open` auch
+  Feedback-Einträge zählt. Die Fixtures vermeiden die Mehrdeutigkeit
+  (`open=2` in beiden Lesarten); `feedback` zählt die Einträge in
+  `FEEDBACK.md`.
+- **Feedback in der Nachweis-Spalte** (`project`, `work`): „ohne Nachweis“
+  entsteht laut Backend nur bei `FEEDBACK.md`; die Fixtures legen deshalb
+  Feedback-Einträge mit ungültigem Commit an und erwarten sie als
+  Board-Karten in `proof`.
+- **Lauf-Pille** (`project`): kein Wert-Hook im Vertrag. Geprüft wird
+  `data-state` mit Rückfall auf den sichtbaren Text, erlaubt sind nur
+  `running`/`stopped`.
+- **Modell-Override** (`project`): kein Speichern-Knopf im Vertrag; erwartet
+  wird die unmittelbare Wirkung des `change`-Ereignisses über
+  `/api/project-agents`.
+- **Autonom-Schalter** (`project`): kein Elementtyp genannt; gelesen werden
+  `checked`, `aria-checked` oder `data-on`.
+- **Art-Badge** (`work`): kein eigener Hook; geprüft wird der sichtbare Text
+  `Bug` bzw. `Feedback` in `article[data-nv-feedback-item]`.
+- **Spaltenbeschriftung** (`work`): Wortlaut nicht festgelegt; geprüft
+  werden die vier Hooks, `lang="en"` und eine nichtleere Beschriftung.
+- **Priorisierungszeilen** (`work`): kein Zeilen-Hook; die Zeile wird über
+  Pakettext und den enthaltenen `priority-up`-Knopf gefunden.
+- **Löschbestätigung** (`work`, `output`): Format nicht genannt; nativer
+  Dialog wird akzeptiert, eine eingebettete Bestätigung wird geklickt.
+- **Fokus-Merkmal** (`output`): kein Zustands-Hook; die Karte gilt als
+  fokussiert bei Klasse/`data-*` mit `focus` im Namen oder
+  `aria-expanded="true"` am Fokus-Knopf — genau eine Karte darf es tragen.
+- **„N Subagenten“** (`output`): als Zahl werden die laufenden Subagenten
+  erwartet, nicht der Hauptagent.
+- **Steuern-Ziel** (`output`): kein Ziel-Select genannt; geprüft werden nur
+  Projekt und Text im POST, `session` ist optional.
+- **Legacy-Ansicht** (`output`): kein eigener Hook; geprüft wird das
+  sichtbare `section[data-nv-ppanel="output"]` samt Protokollzeilen.
+- **Glocken-Inhalt** (`activity`): Vertrag nennt Fragen, blockierte Pakete
+  und fehlgeschlagene Läufe; Beauftragung und Stand nennen Frage plus
+  laufenden Lauf. Geprüft wird die Beauftragung.
+- **Läufe-Zeilen** (`activity`): kein Zeilen-Hook; geprüft werden
+  Projektname und ein Link/Knopf in die Projekt-/Ausgabeansicht.
+- **Sessions-Limit** (`activity`): POST-Form nicht genannt; geprüft wird die
+  Persistenz über `GET /api/sessions` und den Reload.
+- **Optionsnummer** (`activity`): `[data-nv-answer="<nr>"]` ist 1-basiert,
+  das Backend erwartet den 0-basierten Index; Klick auf `1` muss
+  `option=0` erzeugen.
+- **Leerzustand Läufe** (`activity`): Wortlaut nicht festgelegt; geprüft
+  wird ein nichtleerer, sichtbarer Bereich ohne Projektlink.
+
+### Nicht geprüft / Grenzen (Meilenstein B)
+
+- **Live-Streaming.** Die Ausgabe liegt aus der Zustandsdatei
+  `proj.log.state.json` vor; `/api/stream` (SSE), Chunk-Timing und
+  Nachladen während eines echten Laufs sind ohne Modellaufruf nicht
+  abgedeckt.
+- **Übersicht-Zusatzfelder.** Prüfstatus (`verify_cmd`), letzter Commit und
+  die Fortsetzen-Knöpfe `[data-nv-action="session-resume"]` werden nicht
+  geprüft; die Übersichtsuite deckt nur die fünf Kacheln ab.
+- **Aktive Feature-Sektionen.** `github`, `writeaccess`, `sandbox`,
+  `agentsfile` werden nur auf vollständiges Fehlen bei ausgeschalteten
+  Schaltern geprüft; ihr Inhalt bei aktivem Feature gehört zu Meilenstein C.
+- **Aktivität-Zusammenfassung.** Die im Vertrag genannten
+  Zusammenfassungs-Kacheln, Stop aus der Läufe-Liste und „Fortsetzen“ aus
+  den Sessions sind nicht Teil der acht Fälle.
+- **Glocken-Sonderfälle.** Blockierte Pakete und fehlgeschlagene Läufe als
+  Glocken-Einträge sind nicht geseedet (bewusst: Beauftragung nennt Frage
+  und laufenden Lauf).
+- **Pause-Rückweg.** Geprüft werden Pause-Datei und Abzeichen; das
+  Fortsetzen nach Pause ist nicht abgedeckt.
+- **Barrierefreiheit/Responsive.** Nur Rollen/ARIA der Tabs, `role="log"`
+  und Sichtbarkeit; kein Screenreader-, Tastatur- oder Mobile-Test des
+  Boards (der Vertrag nennt für Meilenstein B keine Breakpoint-Hooks).
+- **i18n der neuen Paneele.** Die Suiten laufen mit `lang="en"` und prüfen
+  nur einzelne Beschriftungen; eine vollständige Übersetzungsprüfung der
+  neuen Bereiche fehlt (AP21 deckt die Shell ab).

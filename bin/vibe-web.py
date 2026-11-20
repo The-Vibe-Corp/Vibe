@@ -920,6 +920,32 @@ def _runs_prune():
             "unknown": unknown, "lines": lines}
 
 
+def _sessions_set(action, limit):
+    """AP22: Sitzungslimit setzen — Parität zur CLI ``vibe sessions limit N``.
+
+    Erst prüfen, dann schreiben: ein ungültiger Wert lässt sessions.json
+    unverändert. ``SessionRegistry.set_limit`` validiert selbst inklusiv
+    (1..SESSION_LIMIT_MAX); die Vorprüfung liefert nur eine deutsche Meldung,
+    statt einen ValueError in eine 400 zu übersetzen. Der 'continue'-Pfad
+    bleibt bewusst unangetastet im Generic-Handler weiter unten.
+    """
+    if action != "limit":
+        return {"ok": False, "message": (
+            "Unbekannte Aktion für /api/sessions: 'continue' oder 'limit' "
+            "erwartet.")}
+    if (isinstance(limit, bool) or not isinstance(limit, int)
+            or not 1 <= limit <= vibe_runs.SESSION_LIMIT_MAX):
+        return {"ok": False, "message": (
+            f"Session-Limit muss 1 bis {vibe_runs.SESSION_LIMIT_MAX} sein: "
+            f"{limit!r}")}
+    try:
+        value = vibe_runs.SessionRegistry(PATHS.runtime).set_limit(limit)
+    except (ValueError, OSError) as error:
+        return {"ok": False, "message": str(error)}
+    return {"ok": True, "limit": int(value),
+            "message": f"Session-Limit auf {value} gesetzt"}
+
+
 def _emu(action):
     """AP22: Emulator-Skript eines Android-Projekts im Hintergrund starten.
 
@@ -1427,6 +1453,13 @@ class H(BaseHTTPRequestHandler):
                     500, "internal_error", "ui.json ist nach dem Speichern nicht lesbar")
             return self._send(200, {"ok": True, "language": value,
                                     "message": "Sprache gespeichert"})
+        if u.path == "/api/sessions" and body.get("action") != "continue":
+            # AP22: CLI-Parität zu `vibe sessions limit N`. 'continue' läuft
+            # unverändert im Generic-Handler; alles andere (limit samt
+            # Validierung, unbekannte Aktion) antwortet als 200 {"ok": …}.
+            known(body.get("name", ""))
+            return self._send(200, _sessions_set(
+                body.get("action"), body.get("limit")))
         # AP22: neue schreibende Paritäts-Endpunkte. Fachfehler werden bewusst
         # als 200 {"ok": false, "message": …} geliefert (Vertrag der neuen UI),
         # ohne den Generic-Pfad darunter zu verändern (dort bedeutet ok:false

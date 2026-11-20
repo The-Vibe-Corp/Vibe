@@ -46,6 +46,17 @@
   --nv-top-bg: #ffffff;
   --nv-focus: #1d4ed8;
   --nv-speed: 200ms;
+  /* AP22/F19: Farben der Protokoll-Hervorhebung (Semantik wie die klassische
+     Ansicht, an die helle Nova-Palette angepasst). */
+  --nv-hl-head: #2457c5;
+  --nv-hl-tool: #6d28d9;
+  --nv-hl-sub: #0f766e;
+  --nv-hl-code: #8a5a00;
+  --nv-hl-code-bg: #fff1cf;
+  --nv-hl-str: #166534;
+  --nv-hl-path: #1d4ed8;
+  --nv-hl-sha: #6d28d9;
+  --nv-hl-num: #b45309;
 }
 
 /* ---------- Tokens: dunkel ---------- */
@@ -75,6 +86,16 @@ html[data-theme="dark"] {
   --nv-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
   --nv-top-bg: #1e2530;
   --nv-focus: #9dbaff;
+  /* AP22/F19: dunkle Entsprechung der Hervorhebungsfarben. */
+  --nv-hl-head: #8ab4f8;
+  --nv-hl-tool: #c9a7ff;
+  --nv-hl-sub: #7fd1c1;
+  --nv-hl-code: #e8c07d;
+  --nv-hl-code-bg: #232830;
+  --nv-hl-str: #a5d6a7;
+  --nv-hl-path: #9ecbff;
+  --nv-hl-sha: #c3a6ff;
+  --nv-hl-num: #f0a66a;
 }
 
 /* ---------- Grundlagen und Typografie ---------- */
@@ -96,6 +117,22 @@ h2 { font-size: 1.125rem; }
 h3 { font-size: 1rem; }
 p { margin: 0 0 var(--nv-space-3); }
 code, pre { font-family: var(--nv-mono); }
+
+/* AP22/AK4: Syntaxhervorhebung der Live-Ausgabe wie in der klassischen UI.
+   nova-output.js setzt die Klassen DOM-only; der Text bleibt wörtlich. */
+.nv-log .hl-head { color: var(--nv-hl-head); font-weight: 600; }
+.nv-log .hl-err, .nv-log .hl-del { color: var(--nv-error-text); }
+.nv-log .hl-tool { color: var(--nv-hl-tool); }
+.nv-log .hl-sub { color: var(--nv-hl-sub); }
+.nv-log .hl-think { color: var(--nv-muted); font-style: italic; }
+.nv-log .hl-cmd { color: var(--nv-warn-text); }
+.nv-log .hl-add { color: var(--nv-ok-text); }
+.nv-log .hl-code { color: var(--nv-hl-code); background: var(--nv-hl-code-bg); border-radius: 3px; }
+.nv-log .hl-str { color: var(--nv-hl-str); }
+.nv-log .hl-path { color: var(--nv-hl-path); }
+.nv-log .hl-sha { color: var(--nv-hl-sha); }
+.nv-log .hl-num { color: var(--nv-hl-num); }
+
 a { color: var(--nv-primary); }
 :focus-visible { outline: 2px solid var(--nv-focus); outline-offset: 2px; }
 

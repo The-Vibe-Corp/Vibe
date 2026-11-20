@@ -18,6 +18,12 @@ vollständig isolierten VIBE_*/HOME-Pfaden (Muster
   ``/api/paths``. Alle verlangen eine Berechtigung (ohne Token 403
   ``unauthorized``), Fachfehler sind ``200 {"ok": false, "message": …}`` und
   dürfen keinen Schreibvorgang auslösen.
+* ``POST /api/sessions`` kennt neben ``continue`` die Aktion ``limit``
+  (CLI-Parität zu ``vibe sessions limit N``). Gültig ist ein ganzzahliger
+  Wert von 1 bis ``vibe_runs.SESSION_LIMIT_MAX``; gespeichert wird über
+  ``vibe_runs.SessionRegistry(<runtime>).set_limit``, und ein anschließendes
+  ``GET /api/sessions`` ohne ``limit``-Parameter meldet den Wert. Ungültige
+  Werte und unbekannte Aktionen antworten ``ok:false`` ohne Schreibvorgang.
 
 Vertragsdetails, die hier festgehalten werden:
 
@@ -67,6 +73,15 @@ Testfälle (Kurzfassung; Details in den Methoden)
     Vorbedingung: frisches Laufregister. Aktion: GET/POST ``/api/runs``.
     Erwartung: ``records: []``; Prune meldet 0/0/0 und beendet nichts;
     unbekannte Aktion → ``ok:false``.
+``SessionsApiTest.test_sessions_limit_post_persists_and_is_reported``
+``SessionsApiTest.test_sessions_limit_invalid_values_change_nothing``
+    Vorbedingung: kein ``sessions.json`` (Standardlimit). Aktion: POST
+    ``/api/sessions`` mit ``action:"limit"``. Erwartung: 7 landet über
+    ``SessionRegistry.set_limit`` im Register und wird von
+    ``GET /api/sessions`` ohne ``limit``-Parameter gemeldet (auch der
+    Grenzwert ``SESSION_LIMIT_MAX`` gilt); 0, ``"abc"``, ein Wert über dem
+    Maximum und eine unbekannte Aktion antworten ``ok:false`` ohne
+    Dateiänderung; ohne Token 403.
 ``EmuApiTest.test_emu_without_android_project_is_rejected``
     Vorbedingung: nur ein generisches Projekt. Aktion: POST ``/api/emu``
     ``{"action":"start"}``. Erwartung: ``ok:false`` mit Meldung „Android“;
@@ -97,6 +112,7 @@ if str(BIN) not in sys.path:
 
 import vibe_gates  # noqa: E402
 import vibe_limits  # noqa: E402
+import vibe_runs  # noqa: E402
 
 ISOLATED_ENV = (
     "VIBE",
@@ -676,6 +692,130 @@ class RunsApiTest(DashboardFixture):
         self.assertTrue(str(data.get("message") or "").strip(), body)
         status, body, _ = self.request("GET", "/api/runs", token=self.token)
         self.assertEqual([], json.loads(body)["records"], body)
+
+
+class SessionsApiTest(DashboardFixture):
+    """POST /api/sessions: CLI-Parität für ``vibe sessions limit N``."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.start_server()
+
+    def registry(self):
+        """Register im isolierten Laufzeitordner (``VIBE_RUNTIME``)."""
+        return vibe_runs.SessionRegistry(str(self.log_dir))
+
+    def test_sessions_limit_post_persists_and_is_reported(self):
+        """Vorbedingung: kein ``sessions.json`` (Standardlimit greift).
+
+        Aktion: POST ohne Token; dann POST ``{"name":"proj",
+        "action":"limit","limit":7}`` und GET ``/api/sessions?name=proj``
+        ohne ``limit``-Parameter; zuletzt der Grenzwert
+        ``vibe_runs.SESSION_LIMIT_MAX``.
+
+        Erwartung: ohne Token 403 ``unauthorized`` ohne Datei; mit Token
+        200 ``ok:true`` mit ``limit`` und demselben Wert im Register
+        (``SessionRegistry.limit``/``sessions.json``) sowie in der
+        Listenantwort; der Grenzwert wird ebenfalls angenommen.
+        """
+        sessions_file = self.log_dir / "sessions.json"
+        sessions_file.unlink(missing_ok=True)
+        self.assertEqual(
+            vibe_runs.SESSION_LIMIT_DEFAULT, self.registry().limit(),
+            "Vorbedingung: ohne sessions.json gilt das Standardlimit")
+
+        status, body, _ = self.request(
+            "POST", "/api/sessions",
+            body={"name": "proj", "action": "limit", "limit": 7},
+            token=None,
+            origin=f"http://127.0.0.1:{self.port}",
+            extra_headers={"Sec-Fetch-Site": "same-origin"})
+        self.assertEqual(403, status, body)
+        self.assertEqual(
+            "unauthorized", json.loads(body)["error"]["code"], body)
+        self.assertFalse(
+            sessions_file.exists(),
+            "POST ohne Token legte sessions.json an")
+
+        status, body, _ = self.post(
+            "/api/sessions",
+            {"name": "proj", "action": "limit", "limit": 7})
+        self.assertEqual(200, status, body)
+        data = json.loads(body)
+        self.assertTrue(data["ok"], body)
+        self.assertEqual(7, data.get("limit"), body)
+
+        self.assertEqual(
+            7, self.registry().limit(),
+            "Das Limit wurde nicht über SessionRegistry.set_limit gespeichert")
+        stored = json.loads(sessions_file.read_text(encoding="utf-8"))
+        self.assertEqual(7, stored.get("limit"),
+                         "sessions.json enthält das Limit 7 nicht: " + body)
+        self.assertEqual([], stored.get("sessions"),
+                         "Das Setzen des Limits erfasste Sessions: " + body)
+
+        status, body, _ = self.request(
+            "GET", "/api/sessions?name=proj", token=self.token)
+        self.assertEqual(200, status, body)
+        self.assertEqual(
+            7, json.loads(body).get("limit"),
+            "GET /api/sessions meldet das gespeicherte Limit nicht: " + body)
+
+        status, body, _ = self.post(
+            "/api/sessions",
+            {"name": "proj", "action": "limit",
+             "limit": vibe_runs.SESSION_LIMIT_MAX})
+        self.assertEqual(200, status, body)
+        data = json.loads(body)
+        self.assertTrue(data["ok"], body)
+        self.assertEqual(
+            vibe_runs.SESSION_LIMIT_MAX, data.get("limit"), body)
+        self.assertEqual(
+            vibe_runs.SESSION_LIMIT_MAX, self.registry().limit(),
+            "Der Grenzwert SESSION_LIMIT_MAX wurde nicht gespeichert")
+
+    def test_sessions_limit_invalid_values_change_nothing(self):
+        """Vorbedingung: gespeichertes Limit 7.
+
+        Aktion: POST ``action:"limit"`` mit ``0``, ``"abc"``, einem Wert über
+        ``SESSION_LIMIT_MAX`` und mit unbekannter Aktion.
+
+        Erwartung: je 200 ``ok:false`` mit Meldung; ``sessions.json`` bleibt
+        byte-gleich und das Register behält 7 (kein Schreibvorgang). Die
+        unbekannte Aktion bleibt ebenfalls ``ok:false``.
+        """
+        sessions_file = self.log_dir / "sessions.json"
+        status, body, _ = self.post(
+            "/api/sessions",
+            {"name": "proj", "action": "limit", "limit": 7})
+        self.assertEqual(200, status, body)
+        self.assertTrue(json.loads(body)["ok"], body)
+        before = sessions_file.read_bytes()
+
+        for invalid in (0, "abc", vibe_runs.SESSION_LIMIT_MAX + 1):
+            with self.subTest(limit=invalid):
+                status, body, _ = self.post(
+                    "/api/sessions",
+                    {"name": "proj", "action": "limit", "limit": invalid})
+                self.assertEqual(200, status, body)
+                data = json.loads(body)
+                self.assertFalse(data["ok"], body)
+                self.assertTrue(
+                    str(data.get("message") or "").strip(), body)
+                self.assertEqual(
+                    before, sessions_file.read_bytes(),
+                    "Ungültiges Limit veränderte sessions.json")
+                self.assertEqual(7, self.registry().limit(), body)
+
+        status, body, _ = self.post(
+            "/api/sessions", {"name": "proj", "action": "weiter"})
+        self.assertEqual(200, status, body)
+        data = json.loads(body)
+        self.assertFalse(data["ok"], body)
+        self.assertTrue(str(data.get("message") or "").strip(), body)
+        self.assertEqual(
+            before, sessions_file.read_bytes(),
+            "Unbekannte Aktion veränderte sessions.json")
 
 
 class EmuApiTest(DashboardFixture):
