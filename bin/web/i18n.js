@@ -982,6 +982,11 @@
         /* AP22: Etikett des Netzwerk-Portfeldes (deutscher Quellschlüssel).
            Die Shell-Chrome-Schlüssel stehen weiter oben im Wörterbuch. */
         "Port": "Port",
+        /* AP22-Feinschliff: Schrittzähler und ruhige Leerzustände. */
+        "Schritt {{n}} von 4": "Step {{n}} of 4",
+        "Gerade läuft keine Arbeit.": "No running work right now.",
+        "Projekt wählen, um seine Sitzungen zu sehen.": "Pick a project to see its sessions.",
+        "Keine offenen Fragen — nichts wartet auf deine Antwort.": "No open questions — nothing waits for your answer.",
     },
     de: {
         "ui.language.hint": "Die gesamte vibe-Oberfläche; Englisch ist der Standard.",
@@ -1956,6 +1961,11 @@
         "Antwort gespeichert": "Antwort gespeichert",
         /* AP22: Etikett des Netzwerk-Portfeldes. */
         "Port": "Port",
+        /* AP22-Feinschliff: Schrittzähler und ruhige Leerzustände. */
+        "Schritt {{n}} von 4": "Schritt {{n}} von 4",
+        "Gerade läuft keine Arbeit.": "Gerade läuft keine Arbeit.",
+        "Projekt wählen, um seine Sitzungen zu sehen.": "Projekt wählen, um seine Sitzungen zu sehen.",
+        "Keine offenen Fragen — nichts wartet auf deine Antwort.": "Keine offenen Fragen — nichts wartet auf deine Antwort.",
     }
 
   };

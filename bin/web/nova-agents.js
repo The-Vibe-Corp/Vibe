@@ -145,6 +145,10 @@ function nvAgentWizard(data, token, onCancel) {
   var step = 1;
   var errorBox = nvAgentErrorBox();
   var wizard;
+  /* Der Schrittzähler steht im Kopf und wird bei jedem Schritt neu gesetzt;
+     setTx merkt sich Key und Variablen für einen Sprachwechsel. */
+  var stepLabel = el('span', {class: 'nv-step-indicator'},
+    tr('Schritt {{n}} von 4', {n: step}));
 
   var name = el('input', {'data-nv-field': 'name', 'aria-label': tr('Name'),
     placeholder: tr('z. B. coder')});
@@ -261,6 +265,10 @@ function nvAgentWizard(data, token, onCancel) {
     [1, 2, 3, 4].forEach(function (number) {
       sections[number].hidden = number !== step;
     });
+    setTx(stepLabel, tr('Schritt {{n}} von 4', {n: step}));
+    /* Auf Schritt 1 gibt es kein Zurück — der Knopf ist dann wirklich
+       deaktiviert, nicht nur wirkungslos. */
+    back.disabled = step === 1;
     if (step === 4) drawReview();
   }
 
@@ -279,13 +287,14 @@ function nvAgentWizard(data, token, onCancel) {
     }}}, tr('Weiter'));
 
   wizard = el('section', {class: 'nv-card nv-wizard', 'data-nv-wizard': '', hidden: ''},
-    el('h2', {class: 'nv-page-title'}, tr('Neuer Agent')),
+    el('div', {class: 'nv-wizard-head'},
+      el('h2', {class: 'nv-page-title'}, tr('Neuer Agent')), stepLabel),
     el('p', {class: 'nv-muted'}, tr('In vier kurzen Schritten zu einem neuen Agenten.')),
     sections[1], sections[2], sections[3], sections[4],
     errorBox,
     el('div', {class: 'nv-row nv-wizard-nav'}, back, next,
-      el('button', {class: 'nv-btn nv-ghost', type: 'button', on: {click: onCancel}},
-        tr('Abbrechen'))));
+      el('button', {class: 'nv-btn nv-secondary', type: 'button',
+        'data-nv-wizard-cancel': '', on: {click: onCancel}}, tr('Abbrechen'))));
   showStep();
   return wizard;
 }

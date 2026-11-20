@@ -1110,6 +1110,21 @@
         "tests/unit/test_ap22_web_routes.py"
       ],
       "grund": "AP22 Meilenstein B/C + Polier-Runde: vollstaendige Projektansicht (Held mit Laufsteuerung, Uebersicht, Arbeit-Board in vier Statusspalten, Assistent, Projekteinstellungen mit Team-Zuordnung und Feature-gefuhrten Bereichen), Live-Ausgabe mit Haupt-/Subagenten, Steuern, Fortsetzen und DOM-only-Syntaxhervorhebung (hl-*), Aktivitaet mit Laeufen/Sessions/Fragen, Agentenverwaltung mit 4-Schritt-Wizard und Ein-Seiten-Editor inkl. Rohmodus/Sicherungen/Projektzuordnung, erweiterte Einstellungen (Modellkatalog, Profile mit Vorschau, MCP mit maskierten Geheimnissen, Kosten, Harness, Umgebung mit Doctor/Pfaden/Fritz/Emulator/Server, Laufregister mit Prune). Session-Limit erhaelt CLI-Paritaet: POST /api/sessions action=limit (Validierung vor Schreibvorgang, SessionRegistry.set_limit). Shell-Chrome-Texte laufen ueber tr(), i18n-Duplikate bereinigt. Alle neun AP22-Browser-Suiten (85 Faelle) und die Unit-Routen gruen; verify quick nach Manifest-Aktualisierung gruen."
+    },
+    {
+      "arbeitspaket": "AP22",
+      "datum": "2026-11-20",
+      "dateien": [
+        "bin/web/index.html",
+        "bin/web/nova.css",
+        "bin/web/nova-core.js",
+        "bin/web/nova-home.js",
+        "bin/web/nova-project.js",
+        "bin/web/nova-agents.js",
+        "bin/web/nova-activity.js",
+        "bin/web/i18n.js"
+      ],
+      "grund": "AP22 Kosmetik-Runde nach visueller Endabnahme: Karten trennen Titel/Beschreibung sauber (Board/Feedback, Basics als Definitionsliste), leere Held-Badges versteckt (Verzweigung/Typ erst mit Wert), Uebersicht-Ladeskeleton statt leerem Bereich, Wizard-Schrittindikator (Schritt X von 4) mit deaktiviertem Zurueck und sekundaerem Abbrechen, freundliche Leerzustaende der Aktivitaet, Dunkel-Primarknopf als echte Flaeche (Weiss auf #3b6fe0, ~4,6:1), Guide-Schliessen in der Kopfzeile, Ordnerpfade mit Ellipsis (Vollpfad im Titel), Mobile-Scrim hinter der Navigation. Vier neue i18n-Schluessel, Duplikat-Scan 0. Alle Suiten gruen (21 Unit + 28 + 31 + 26 Browser), validiert in einem sauberen Referenz-Worktree."
     }
   ],
   "files": [
@@ -1229,9 +1244,9 @@
       "sha256": "2f183ded46b9ef67675c56562e23f34167ba3e1ccd7cda9e97ee54a058d36488"
     },
     {
-      "bytes": 2137,
+      "bytes": 2207,
       "path": "bin/web/index.html",
-      "sha256": "dee6f674e352863a31b280fa6423d00df2928be30bbb6a2de41b516d3f735637"
+      "sha256": "40050caa0fea3f2fd42934ed5eb2b2064ab7ab433ff7601f80733c82a11987ad"
     },
     {
       "bytes": 12751,
@@ -1399,9 +1414,9 @@
       "sha256": "f5e9382967c9833066a55808829f3750fc8e1181b170cafd222c37048bb49a77"
     },
     {
-      "bytes": 143725,
+      "bytes": 144571,
       "path": "bin/web/i18n.js",
-      "sha256": "6a0a6e9ebfa97de75b567c06478c798398f08f754c94a74e785660130ee8bd8e"
+      "sha256": "4c88cc8f7019e0c685e1e432b6283180f807377b488d577bbc636e77277bdb9f"
     },
     {
       "bytes": 688,
@@ -1409,24 +1424,24 @@
       "sha256": "19ea677f5c3dc3579279fd9b5bf7584612967654b8ec0bbde3818576c78b46b5"
     },
     {
-      "bytes": 18255,
+      "bytes": 20345,
       "path": "bin/web/nova.css",
-      "sha256": "99ee12aeb4d7c139e750577deb24d927c90b8abb7c45f484e4f9292d96027884"
+      "sha256": "05472efd212d3ba1ebcd56a49c6d372a84743d8e52363af6157f5247c43172a9"
     },
     {
-      "bytes": 19114,
+      "bytes": 19457,
       "path": "bin/web/nova-core.js",
-      "sha256": "b3857be3b7b26b596e25ea68262c25eb117fd91850de198e54c6aad830a47178"
+      "sha256": "c32fd9c0704f753aa3e8a92b4dedd0b8707ec7da445693cd62502f8e1c71ec1b"
     },
     {
-      "bytes": 11366,
+      "bytes": 11448,
       "path": "bin/web/nova-home.js",
-      "sha256": "98604c2af26570e28bc3a4dd2df9fbb3eaee0c9767f3e96318040c367a300f9e"
+      "sha256": "1dcb7d926c65d12d884a38c641a77ebcd8e5e62a1f6b9f05a0a19c6db1065c2d"
     },
     {
-      "bytes": 36585,
+      "bytes": 37977,
       "path": "bin/web/nova-project.js",
-      "sha256": "73c6ed7a6fd116bdf24321f8a61cb0ee41a0b3c654f352498ce52659e22dc064"
+      "sha256": "33979bb1d7e4ebfeb0487a838a57b2e89318e2ad012a6ddac4ee1ddb92c3f35c"
     },
     {
       "bytes": 16315,
@@ -1434,14 +1449,14 @@
       "sha256": "8c56aa9e89ece8d02ea76f5d1b11e43ff8466b1d3becb8956a98ae0f6036895b"
     },
     {
-      "bytes": 25006,
+      "bytes": 25555,
       "path": "bin/web/nova-agents.js",
-      "sha256": "db7443a5a644b2cd0a2f2dd70bf6602f609f533b5c9f1688c96a4680dc862b0b"
+      "sha256": "3fbed7c8bd86bbcfa605a7b620330a7affd74fd106c47fb3ced2aca989bf2590"
     },
     {
-      "bytes": 9793,
+      "bytes": 10295,
       "path": "bin/web/nova-activity.js",
-      "sha256": "da76df7fe234d05c676f63176e98135a4d3c9cdeb733a74f806f706d942301d0"
+      "sha256": "6b0236f4865702e82e0331cb72ec8c9ea5260457ac60c73c8d1930b9706aecb1"
     },
     {
       "bytes": 44549,

@@ -8,6 +8,12 @@
  */
 'use strict';
 
+/* Einheitlicher Leerzustand: eine kurze, freundliche Zeile pro Bereich —
+   auch schon während des Ladens, damit die Karten nicht unfertig wirken. */
+function nvActivityEmpty(message) {
+  return el('p', {class: 'nv-muted nv-empty'}, message);
+}
+
 function nvQuestionCard(question, token, reload) {
   var id = String(question.id || '');
 
@@ -68,9 +74,12 @@ function nvQuestionCard(question, token, reload) {
 NV.views.activity = function activity(context, token) {
   if (NV.stale(token)) return;
 
-  var runsBody = el('div', {class: 'nv-runs-body'});
-  var sessionsBody = el('div', {class: 'nv-sessions-body'});
-  var questionsBody = el('div', {class: 'nv-questions-body'});
+  var runsBody = el('div', {class: 'nv-runs-body'},
+    nvActivityEmpty(tr('Gerade läuft keine Arbeit.')));
+  var sessionsBody = el('div', {class: 'nv-sessions-body'},
+    nvActivityEmpty(tr('Projekt wählen, um seine Sitzungen zu sehen.')));
+  var questionsBody = el('div', {class: 'nv-questions-body'},
+    nvActivityEmpty(tr('Keine offenen Fragen — nichts wartet auf deine Antwort.')));
 
   var projectSelect = el('select', {'data-nv-sessions-project': '',
     'aria-label': tr('Projekt auswählen')});
@@ -96,7 +105,7 @@ NV.views.activity = function activity(context, token) {
     var running = (rows || []).filter(function (row) { return row && row.running; });
     var list = el('div', {class: 'nv-run-list'});
     if (!running.length) {
-      list.append(el('p', {class: 'nv-muted'}, tr('Keine laufenden Läufe.')));
+      list.append(nvActivityEmpty(tr('Gerade läuft keine Arbeit.')));
     }
     running.forEach(function (row) {
       list.append(el('div', {class: 'nv-run-row'},
@@ -113,13 +122,13 @@ NV.views.activity = function activity(context, token) {
 
   /* ---------- Sessions ---------- */
   function loadSessionsFor(name, limitField) {
-    if (!name) { sessionsBody.replaceChildren(el('p', {class: 'nv-muted'}, tr('Keine Sessions erfasst.'))); return; }
+    if (!name) { sessionsBody.replaceChildren(nvActivityEmpty(tr('Projekt wählen, um seine Sitzungen zu sehen.'))); return; }
     api('/api/sessions?name=' + encodeURIComponent(name)).then(function (data) {
       if (NV.stale(token)) return;
       var entries = (data && data.sessions) || [];
       limitField.value = String((data && data.limit) || 5);
       var list = el('div', {class: 'nv-session-list'});
-      if (!entries.length) list.append(el('p', {class: 'nv-muted'}, tr('Keine Sessions erfasst.')));
+      if (!entries.length) list.append(nvActivityEmpty(tr('Projekt wählen, um seine Sitzungen zu sehen.')));
       var canResume = !!(data && data.resume_supported) && !(data && data.running);
       entries.forEach(function (entry) {
         var resume = null;
@@ -165,7 +174,7 @@ NV.views.activity = function activity(context, token) {
       projectSelect.value = names[0];
       loadSessionsFor(names[0], limitInput);
     } else {
-      sessionsBody.replaceChildren(el('p', {class: 'nv-muted'}, tr('Keine Sessions erfasst.')));
+      sessionsBody.replaceChildren(nvActivityEmpty(tr('Projekt wählen, um seine Sitzungen zu sehen.')));
     }
   }).catch(function (error) {
     if (!NV.stale(token)) sessionsBody.replaceChildren(
@@ -199,7 +208,7 @@ NV.views.activity = function activity(context, token) {
     var list = ((data && data.questions) || []).map(function (question) {
       return nvQuestionCard(question, token, paintQuestions);
     });
-    if (!list.length) list.push(el('p', {class: 'nv-muted'}, tr('Keine offenen Rückfragen.')));
+    if (!list.length) list.push(nvActivityEmpty(tr('Keine offenen Fragen — nichts wartet auf deine Antwort.')));
     questionsBody.replaceChildren.apply(questionsBody, list);
   }
   api('/api/questions').then(function (data) {

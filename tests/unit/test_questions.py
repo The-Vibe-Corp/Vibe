@@ -28,7 +28,7 @@ CLI = REPO / "bin" / "vibe"
 WEB = REPO / "bin" / "vibe-web.py"
 # Seit V-019 besteht die ausgelieferte Seite aus getrennten Dateien. Der Test
 # liest HTML und Skript zusammen, damit die Zusagen unverändert geprüft werden.
-WEB_PAGE_FILES = (REPO / "bin" / "web" / "index.html", REPO / "bin" / "web" / "app.js")
+WEB_PAGE_FILES = (REPO / "bin" / "web" / "classic.html", REPO / "bin" / "web" / "app.js")
 QUESTIONS = REPO / "bin" / "vibe_questions.py"
 RUNNER = REPO / "bin" / "vibe-run.sh"
 
@@ -798,7 +798,10 @@ class ServedPageTest(unittest.TestCase):
         )
 
         self.assertIn('id="questions"', text)
-        self.assertIn("aria-label=\"Rückfragen\"", text)
+        # Seit AP21 ist Englisch Standard: die Classic-Shell traegt das
+        # woertliche aria-label="Questions"; das deutsche Literal existiert
+        # nur noch als tr()-Quellschluessel in app.js/i18n.js.
+        self.assertIn("aria-label=\"Questions\"", text)
         self.assertIn("/api/questions", text)
         self.assertIn("pollQuestions", text)
         self.assertIn("'Neue Rückfrage'", text)

@@ -69,17 +69,19 @@ NV.views.home = async function home(context, token) {
   var guideCard = null;
   if (!localStorage.getItem('nv-guide-dismissed')) {
     guideCard = el('section', {class: 'nv-card nv-guide', 'data-nv-guide': ''},
-      el('span', {class: 'nv-guide-label'}, tr('Erste Schritte')),
+      el('div', {class: 'nv-guide-head'},
+        el('span', {class: 'nv-guide-label'}, tr('Erste Schritte')),
+        el('button', {class: 'nv-btn nv-ghost nv-close nv-guide-close', type: 'button',
+          'data-nv-guide-dismiss': '',
+          'aria-label': tr('Hinweis schließen'), title: tr('Hinweis schließen'),
+          on: {click: function () {
+            localStorage.setItem('nv-guide-dismissed', '1');
+            if (guideCard) guideCard.remove();
+          }}}, '×')),
       el('div', {class: 'nv-guide-steps'},
         el('span', {class: 'nv-chip'}, tr('Projektordner verbinden')),
         el('span', {class: 'nv-chip'}, tr('Projekt anlegen oder öffnen')),
-        el('span', {class: 'nv-chip'}, tr('Arbeit starten'))),
-      el('button', {class: 'nv-btn nv-ghost nv-close', type: 'button', 'data-nv-guide-dismiss': '',
-        'aria-label': tr('Hinweis schließen'), title: tr('Hinweis schließen'),
-        on: {click: function () {
-          localStorage.setItem('nv-guide-dismissed', '1');
-          if (guideCard) guideCard.remove();
-        }}}, '×'));
+        el('span', {class: 'nv-chip'}, tr('Arbeit starten'))));
   }
 
   /* Schnellaktionen: unter den Projekten und bewusst secondary gehalten,

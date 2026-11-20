@@ -27,8 +27,8 @@
   --nv-primary: #2457c5;
   --nv-primary-text: #ffffff;
   --nv-primary-hover: #1a45a3;
-  /* Primärknopf eigene Tokens: hell bleibt unverändert, dunkel bekommt eine
-     dunkle Fläche mit hellem Akzenttext (Kontrast weit über 4.5:1). */
+  /* Primärknopf eigene Tokens: hell bleibt unverändert, dunkel ist eine
+     echte blaue Fläche (siehe Dark-Mode-Kommentar). */
   --nv-btn-primary-bg: #2457c5;
   --nv-btn-primary-fg: #ffffff;
   --nv-btn-primary-border: #2457c5;
@@ -70,10 +70,12 @@ html[data-theme="dark"] {
   --nv-primary: #6f9dff;
   --nv-primary-text: #101624;
   --nv-primary-hover: #8bb2ff;
-  --nv-btn-primary-bg: #1f2937;
-  --nv-btn-primary-fg: #93c5fd;
-  --nv-btn-primary-border: #60a5fa;
-  --nv-btn-primary-hover: #2b3849;
+  /* Sichtbare Primärfläche statt Ghost-Optik: Weiß auf #3b6fe0 ≈ 4.6:1,
+     der dunklere Hover #2f63d6 liegt darüber (beide ≥ 4.5:1). */
+  --nv-btn-primary-bg: #3b6fe0;
+  --nv-btn-primary-fg: #ffffff;
+  --nv-btn-primary-border: #3b6fe0;
+  --nv-btn-primary-hover: #2f63d6;
   --nv-danger: #ff7a7f;
   --nv-danger-text: #2a0d0f;
   --nv-warn-bg: #4a3a12;
@@ -249,16 +251,29 @@ a { color: var(--nv-primary); }
 .nv-project { cursor: pointer; }
 .nv-project-meta { margin-bottom: var(--nv-space-3); }
 
+/* AP22-Feinschliff: klare Zeilen statt zusammenlaufender Inline-Texte. */
+.nv-kv-list { display: flex; flex-direction: column; gap: var(--nv-space-2); margin: 0 0 var(--nv-space-3); }
+.nv-kv-row { display: flex; align-items: baseline; gap: var(--nv-space-3); }
+.nv-kv-row dt { color: var(--nv-muted); min-width: 4.5rem; }
+.nv-kv-row dd { margin: 0; overflow-wrap: anywhere; }
+.nv-ticket { display: flex; flex-direction: column; gap: var(--nv-space-2); }
+.nv-ticket-head { display: flex; align-items: center; justify-content: space-between; gap: var(--nv-space-2); }
+.nv-ticket-title, .nv-feedback-title { font-weight: 600; }
+.nv-ticket-actions { margin-top: auto; }
+.nv-feedback-item { display: flex; flex-direction: column; gap: var(--nv-space-2); }
+.nv-empty { padding: var(--nv-space-2) 0; }
+.nv-loading { padding: var(--nv-space-2) 0; }
+.nv-wizard-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--nv-space-3); }
+.nv-step-indicator { color: var(--nv-muted); font-size: 0.875rem; white-space: nowrap; }
+
 /* ---------- Kompakte Bausteine ---------- */
-.nv-guide {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--nv-space-3);
-  padding: var(--nv-space-3) var(--nv-space-4);
-}
+/* Kopfzeile und Chip-Zeile sind getrennt: die Chips dürfen umbrechen, das ×
+   bleibt rechts in der Kopfzeile und rutscht nie allein in eine neue Zeile. */
+.nv-guide { padding: var(--nv-space-3) var(--nv-space-4); }
+.nv-guide-head { display: flex; align-items: center; gap: var(--nv-space-3); }
+.nv-guide-head .nv-guide-close { margin-left: auto; }
 .nv-guide-label { color: var(--nv-primary); font-weight: 600; font-size: 0.875rem; }
-.nv-guide-steps { display: flex; flex-wrap: wrap; gap: var(--nv-space-2); flex: 1 1 auto; }
+.nv-guide-steps { display: flex; flex-wrap: wrap; gap: var(--nv-space-2); margin-top: var(--nv-space-3); }
 .nv-chip {
   display: inline-block;
   padding: 0.15rem 0.6rem;
@@ -282,11 +297,16 @@ a { color: var(--nv-primary); }
   border-radius: var(--nv-radius-sm);
   background: var(--nv-surface-2);
   font-size: 0.8125rem;
+  /* Standardmäßig einzeilig mit Ellipse; der volle Pfad steht im title.
+     anywhere greift nur, falls ein Umbruch unvermeidbar ist. */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   overflow-wrap: anywhere;
-  word-break: break-all;
   user-select: text;
 }
 .nv-compact { min-width: 36px; padding: 0.25rem 0.5rem; }
+.nv-root-row > .nv-compact { flex: 0 0 auto; margin-left: auto; }
 
 /* Zugriff: Anmeldung vorn, Netzwerk als klar abgegrenzter Unterblock. */
 .nv-access-signin, .nv-access-network { margin-bottom: var(--nv-space-4); }
@@ -489,6 +509,17 @@ html[data-animations="on"] .nv-drawer { animation: nv-fade-in var(--nv-speed) ea
     box-shadow: var(--nv-shadow);
   }
   [data-nv-nav-toggle][aria-expanded="true"] ~ .nv-nav { display: flex; }
+  /* Dimmer, solange das Menü offen ist: innerhalb der Kopfzeile (z-index 20)
+     negativ gestapelt → über dem Inhalt, aber unter Kopfzeile und Navigation.
+     Tippen auf den Dimmer schließt das Menü (siehe nova-core.js). */
+  .nv-nav-scrim {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    background: rgba(12, 18, 28, 0.45);
+  }
+  [data-nv-nav-toggle][aria-expanded="true"] ~ .nv-nav-scrim { display: block; }
   .nv-nav button { min-height: 44px; text-align: left; justify-content: flex-start; }
   .nv-nav button[aria-current="page"] { border-left-color: var(--nv-primary); }
   .nv-top-actions { margin-left: auto; gap: 0; }

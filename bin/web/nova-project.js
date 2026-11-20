@@ -140,6 +140,8 @@ function nvpBoardColumn(name, column, rows, token) {
         el('span', {class: 'nv-ticket-id'}, id),
         el('span', {class: 'nv-pill nv-state'}, nvpStateLabel(row.state))),
       el('div', {class: 'nv-ticket-title'}, title),
+      String(row.description || '')
+        ? el('div', {class: 'nv-muted nv-ticket-desc'}, String(row.description || '')) : null,
       el('div', {class: 'nv-row nv-ticket-actions'},
         el('button', {class: 'nv-btn nv-ghost nv-compact', type: 'button',
           'data-nv-action': 'ticket-edit', on: {click: function () {
@@ -452,11 +454,16 @@ function nvpBasicsSection(name, token, data) {
     nvpPost(name, '/api/init', {type: typeSelect.value}, 'Vorbereitung gestartet', token)
       .then(function () { if (!NV.stale(token)) NV.render(); });
   }, 'nv-primary');
+  /* Ein Feld pro Zeile: Beschriftung links, Wert rechts. Als Definitionsliste
+     bleibt die Zuweisung auch bei langen Pfaden eindeutig. */
   return nvpSection('basics', tr('Grundlagen'), [
-    el('div', {class: 'nv-kv'},
-      el('span', {}, tr('Pfad') + ': '), el('code', {}, String(data.path || '')),
-      el('span', {}, tr('Typ') + ': '), el('span', {}, type || '-'),
-      el('span', {}, '.vibe' + ': '), el('span', {}, String(data.init ? tr('Vorhanden') : tr('Fehlt')))),
+    el('dl', {class: 'nv-kv nv-kv-list'},
+      el('div', {class: 'nv-kv-row'}, el('dt', {}, tr('Pfad')),
+        el('dd', {}, el('code', {}, String(data.path || '')))),
+      el('div', {class: 'nv-kv-row'}, el('dt', {}, tr('Typ')),
+        el('dd', {}, String(type || '-'))),
+      el('div', {class: 'nv-kv-row'}, el('dt', {}, '.vibe'),
+        el('dd', {}, String(data.init ? tr('Vorhanden') : tr('Fehlt'))))),
     nvpLabel(tr('Typ'), typeSelect),
     el('div', {class: 'nv-row'}, init), error
   ]);
@@ -607,8 +614,10 @@ NV.views.project = async function project(context, token) {
      von der Netzwerkantwort ab. */
   var pill = el('span', {class: 'nv-pill nv-run', 'data-nv-run-state': '',
     'data-state': 'stopped'}, tr('gestoppt'));
-  var branch = el('span', {class: 'nv-pill nv-branch', 'data-nv-branch': ''}, '');
-  var typeBadge = el('span', {class: 'nv-pill nv-type', 'data-nv-project-type': ''}, '');
+  /* Leere Pillen bleiben im DOM (die Hooks werden gezählt), sind aber bis zum
+     Vorliegen eines echten Werts ausgeblendet — sonst stehen graue Striche. */
+  var branch = el('span', {class: 'nv-pill nv-branch', 'data-nv-branch': '', hidden: ''}, '');
+  var typeBadge = el('span', {class: 'nv-pill nv-type', 'data-nv-project-type': '', hidden: ''}, '');
   var stopButton = el('button', {class: 'nv-btn', type: 'button', hidden: '',
     'data-nv-action': 'stop', on: {click: function () {
       nvpPost(name, '/api/stop', {}, 'Gestoppt', token)
@@ -656,7 +665,14 @@ NV.views.project = async function project(context, token) {
     panel.setAttribute('hidden', '');
     panels[tab] = panel;
   });
-  document.getElementById('nv-main').replaceChildren(hero, tabBar,
+  /* Lade-Platzhalter liegt außerhalb der Panels: so füllt er sofort die Fläche
+     unter den Tabs, ohne das Versprechen zu brechen, dass ein sichtbares Panel
+     auch schon seine echten Inhalte trägt. */
+  var loading = el('div', {class: 'nv-loading', 'aria-hidden': 'true'},
+    el('div', {class: 'nv-skeleton'}),
+    el('div', {class: 'nv-skeleton nv-skeleton-short'}),
+    el('div', {class: 'nv-skeleton'}));
+  document.getElementById('nv-main').replaceChildren(hero, tabBar, loading,
     panels.overview, panels.work, panels.output, panels.assistant, panels.settings);
 
   /* Feature-Bereiche stehen mit ihren Hook-Karten sofort im DOM (auch bevor
@@ -698,19 +714,29 @@ NV.views.project = async function project(context, token) {
     if (NV.feature('agentsfile')) view.agents_file = results[cursor++];
   } catch (error) {
     if (NV.stale(token)) return;
+    loading.remove();
     panels.overview.append(el('p', {class: 'nv-form-error', 'data-nv-form-error': ''},
       tr('Daten konnten nicht geladen werden: ') + String(error && error.message || error)));
     panels[active].removeAttribute('hidden');
     return;
   }
 
+  loading.remove();
   var data = view.data;
   var running = !!(view.run && view.run.running) || !!data.running;
   pill.setAttribute('data-state', running ? 'running' : 'stopped');
   pill.textContent = String(running ? tr('läuft') : tr('gestoppt'));
   stopButton.hidden = !running;
-  branch.textContent = String(data.branch || '-');
-  typeBadge.textContent = String(data.type || '');
+  var branchValue = String(data.branch || '').trim();
+  if (branchValue && branchValue !== '-') {
+    branch.textContent = branchValue;
+    branch.removeAttribute('hidden');
+  }
+  var typeValue = String(data.type || '').trim();
+  if (typeValue) {
+    typeBadge.textContent = typeValue;
+    typeBadge.removeAttribute('hidden');
+  }
   nvpStartRunPoll(name, token, pill, stopButton);
 
   /* ---- Overview ---- */
@@ -787,11 +813,12 @@ NV.views.project = async function project(context, token) {
   }
   feedback.forEach(function (row) {
     var isBug = nvpFeedbackKind(row) === 'bug';
+    /* Drei Zeilen mit Abstand statt drei Inline-Spans: Art, Titel, Details. */
     feedbackBox.append(el('article', {class: 'nv-card nv-feedback-item',
       'data-nv-feedback-item': String(row.id || '')},
-      el('span', {class: 'nv-pill nv-kind'}, tr(isBug ? 'Bug' : 'Feedback')),
-      el('span', {class: 'nv-feedback-title'}, String(row.title || row.id || '')),
-      el('span', {class: 'nv-muted'}, String(row.description || ''))));
+      el('div', {}, el('span', {class: 'nv-pill nv-kind'}, tr(isBug ? 'Bug' : 'Feedback'))),
+      el('div', {class: 'nv-feedback-title'}, String(row.title || row.id || '')),
+      el('div', {class: 'nv-muted nv-feedback-desc'}, String(row.description || ''))));
   });
   panels.work.append(feedbackBox);
 

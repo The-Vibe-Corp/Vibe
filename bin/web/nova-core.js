@@ -283,6 +283,12 @@ function initChrome() {
       var open = toggle.getAttribute('aria-expanded') === 'true';
       toggle.setAttribute('aria-expanded', open ? 'false' : 'true');
     });
+    /* Der Dimmer ist nur mobil sichtbar; ein Tippen darauf schließt das Menü
+       über genau dasselbe Attribut, das auch seine Sichtbarkeit steuert. */
+    var scrim = document.querySelector('[data-nv-nav-scrim]');
+    if (scrim) scrim.addEventListener('click', function () {
+      toggle.setAttribute('aria-expanded', 'false');
+    });
   }
   var nav = document.querySelector('[data-nv-navs]');
   if (nav) setAttrTx(nav, 'aria-label', 'Navigation');
