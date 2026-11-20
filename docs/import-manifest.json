@@ -1045,6 +1045,16 @@
       "grund": "AP1: Der private opencode-Server merkt sich das Zielverzeichnis (realpath) in <log>.server.json; eine gesunde, aber für ein anderes Verzeichnis gestartete Instanz wird beendet und neu gestartet. Damit schreibt der Paketagent nach Preflight-Assistenz ($P) und beim Wechsel zwischen Arbeitskopien ($WT) in die richtige Sandbox. Die opencode-DB der Sandbox wird vor dem bwrap-Aufbau aus der Host-DB (XDG_DATA_HOME oder ~/.local/share/opencode) nur lesend vorbereitet: Schema aller Tabellen/Indizes sowie Zeilen aus credential, account, account_state, control_account und migration; keine Sitzungen, Nachrichten, Blobs oder kv-Modelle. Bestehende Sandbox-DB mit credential-Zeilen bleibt unverändert, eine leere credential-Tabelle wird in einer Transaktion ergänzt. Die Legacy-auth.json-Bindung bleibt erhalten. Größe und SHA-256 von bin/vibe-run.sh und bin/vibe_sandbox.py wurden aktualisiert und begründet."
     },
     {
+      "arbeitspaket": "B1",
+      "dateien": [
+        "bin/vibe-run.sh",
+        "docs/features/B1.md",
+        "docs/import-manifest.json"
+      ],
+      "datum": "2026-11-20",
+      "grund": "B1 'Models in project config are ignored': bin/vibe-run.sh liest jetzt alle Modellüberschreibungen aus <Projekt>/.vibe/agents.json (modelle) und überträgt sie als OPENCODE_CONFIG_CONTENT an opencode run und den privaten opencode serve, damit auch vom Orchestrator gestartete Subagenten die Projektmodelle statt ihrer globalen Frontmatter-Modelle verwenden. Vorhandene JSON-/JSONC-Inline-Konfiguration wird semantisch erhalten (Kommentare und Trailing Commas zulässig, Strings mit '//' bleiben unangetastet); Projektmodelle gewinnen auch bei vorhandener agents-Map, das Legacy-Schema agent bleibt kompatibel. Ohne Projektmodelle bleiben OPENCODE_CONFIG_CONTENT und die bisherige Shared-Server-Wahl exakt unverändert; mit Projektmodellen wird kein gemeinsamer Server ohne Laufkonfiguration weiterverwendet (--standalone ohne Kennwortdatei, privater Server mit Kennwortdatei). Ungültige Projekt- oder Inline-Konfiguration scheitert verständlich vor dem Agentenstart, ohne Konfigurationsinhalte oder Geheimnisse zu protokollieren. Hauptagent --model, Pi, globale Agentendateien und agents.json bleiben unverändert; kein eval, keine neue Dependency und keine neue Installationsdatei. Review Runde 2: Nur FileNotFoundError gilt als 'keine Projektmodelle', ein sonst nicht lesbarer Projektpfad bricht verständlich ab; der Trailing-Comma-Lookahead überliest Kommentare (Kommentare werden beim Entfernen als Whitespace ersetzt), und ein nicht abgeschlossener /*-Blockkommentar bricht fail-closed ab statt bis zum Dateiende entfernt zu werden. Größe und SHA-256 von bin/vibe-run.sh wurden erneut aktualisiert und begründet."
+    },
+    {
       "arbeitspaket": "AP22",
       "dateien": [
         "bin/vibe-web.py",
@@ -1154,9 +1164,9 @@
   ],
   "files": [
     {
-      "bytes": 386,
-      "path": "install-vibe.sh",
-      "sha256": "7f8450dcf34c6b6f94695720954e2072edeb60d69f70b29bb3924882ed6c0f21"
+      "bytes": 7,
+      "path": "VERSION",
+      "sha256": "f5e9382967c9833066a55808829f3750fc8e1181b170cafd222c37048bb49a77"
     },
     {
       "bytes": 4194,
@@ -1169,9 +1179,9 @@
       "sha256": "e9b8d701228bd30348a016f6e9687aee5147c731869181c0276633c92ca996e0"
     },
     {
-      "bytes": 62211,
+      "bytes": 69107,
       "path": "bin/vibe-run.sh",
-      "sha256": "601fcda3b1ac2c155c1efe276d113dd35a9c1b9c1948bc241357f20e126acbae"
+      "sha256": "c9ed031a0863f3e36264422996c01d08f03f5f35dee91e3650f12fbd0ecaa243"
     },
     {
       "bytes": 114369,
@@ -1224,9 +1234,9 @@
       "sha256": "ac3b26da4208a087a09c67c389238c82802d7c1bd50b10d9bcd9492a07050462"
     },
     {
-      "bytes": 65986,
+      "bytes": 66434,
       "path": "bin/vibe_packages.py",
-      "sha256": "68c1c2afe869cb3a4e2807ba360d83b514bf01076baf7b0209e08c3e88cd3219"
+      "sha256": "9f59944d599161676af32c53027dfc4a82bc06201331da938ae01719ebacb1ac"
     },
     {
       "bytes": 20789,
@@ -1269,9 +1279,59 @@
       "sha256": "2f183ded46b9ef67675c56562e23f34167ba3e1ccd7cda9e97ee54a058d36488"
     },
     {
+      "bytes": 688,
+      "path": "bin/web/classic.html",
+      "sha256": "19ea677f5c3dc3579279fd9b5bf7584612967654b8ec0bbde3818576c78b46b5"
+    },
+    {
+      "bytes": 148059,
+      "path": "bin/web/i18n.js",
+      "sha256": "2c1d9999fe2f52e376488e2ec03abb60332798494c03b8d4eed86129e8d7ec63"
+    },
+    {
       "bytes": 2207,
       "path": "bin/web/index.html",
       "sha256": "40050caa0fea3f2fd42934ed5eb2b2064ab7ab433ff7601f80733c82a11987ad"
+    },
+    {
+      "bytes": 11903,
+      "path": "bin/web/nova-activity.js",
+      "sha256": "9d4e6cc42dd93472f032cc171cf855fb8692d9534e7b43ed732b4efd156239a0"
+    },
+    {
+      "bytes": 27801,
+      "path": "bin/web/nova-agents.js",
+      "sha256": "4bdb9dc747513a3437d2dd2abfabacce5a1569581b8f711988cdd10c2317b086"
+    },
+    {
+      "bytes": 21560,
+      "path": "bin/web/nova-core.js",
+      "sha256": "8f521d6ca005e923e670b347ce3a66bc02e50298751ca7b299bfd5f71ea194c9"
+    },
+    {
+      "bytes": 11448,
+      "path": "bin/web/nova-home.js",
+      "sha256": "1dcb7d926c65d12d884a38c641a77ebcd8e5e62a1f6b9f05a0a19c6db1065c2d"
+    },
+    {
+      "bytes": 16315,
+      "path": "bin/web/nova-output.js",
+      "sha256": "8c56aa9e89ece8d02ea76f5d1b11e43ff8466b1d3becb8956a98ae0f6036895b"
+    },
+    {
+      "bytes": 46101,
+      "path": "bin/web/nova-project.js",
+      "sha256": "446e5ca4cb353ea2ba8d39428c05c7b1399b7ef7d342e446da6b2efdd2db1875"
+    },
+    {
+      "bytes": 44549,
+      "path": "bin/web/nova-settings.js",
+      "sha256": "13da8aba0256919ffc46c33d0460dbcd58327d2ba1f3aaff8f5a8324dbbfa896"
+    },
+    {
+      "bytes": 22418,
+      "path": "bin/web/nova.css",
+      "sha256": "a7a3b1d7e89c5ffe71ea302a621a0ad52525519a52335035b9f9619cf6541bbe"
     },
     {
       "bytes": 12751,
@@ -1282,6 +1342,21 @@
       "bytes": 34162,
       "path": "data/models.json",
       "sha256": "abdbe9d9b2c0896d6a632a5a8140c38bf7b61e9bf9b64a7cca03bd33a5ea6751"
+    },
+    {
+      "bytes": 386,
+      "path": "install-vibe.sh",
+      "sha256": "7f8450dcf34c6b6f94695720954e2072edeb60d69f70b29bb3924882ed6c0f21"
+    },
+    {
+      "bytes": 73426,
+      "path": "scripts/setup-vibe.py",
+      "sha256": "e143a668a4312a6f9cc69b66c8bc5ea61a2ada952ba8e7076d8b659b98aa9658"
+    },
+    {
+      "bytes": 377,
+      "path": "setup-vibe.cmd",
+      "sha256": "eba97b935ea1d943c402c41cac96872d782a0f62e724f0e96f29e9e16a500c52"
     },
     {
       "bytes": 359,
@@ -1422,71 +1497,6 @@
       "bytes": 5461,
       "path": "templates/web/AGENTS.md",
       "sha256": "c1e4a3d830f4c8791e00c3aa053f348d2159c286303405f0f34db867845c10d4"
-    },
-    {
-      "bytes": 73426,
-      "path": "scripts/setup-vibe.py",
-      "sha256": "e143a668a4312a6f9cc69b66c8bc5ea61a2ada952ba8e7076d8b659b98aa9658"
-    },
-    {
-      "bytes": 377,
-      "path": "setup-vibe.cmd",
-      "sha256": "eba97b935ea1d943c402c41cac96872d782a0f62e724f0e96f29e9e16a500c52"
-    },
-    {
-      "bytes": 7,
-      "path": "VERSION",
-      "sha256": "f5e9382967c9833066a55808829f3750fc8e1181b170cafd222c37048bb49a77"
-    },
-    {
-      "bytes": 148059,
-      "path": "bin/web/i18n.js",
-      "sha256": "2c1d9999fe2f52e376488e2ec03abb60332798494c03b8d4eed86129e8d7ec63"
-    },
-    {
-      "bytes": 688,
-      "path": "bin/web/classic.html",
-      "sha256": "19ea677f5c3dc3579279fd9b5bf7584612967654b8ec0bbde3818576c78b46b5"
-    },
-    {
-      "bytes": 22418,
-      "path": "bin/web/nova.css",
-      "sha256": "a7a3b1d7e89c5ffe71ea302a621a0ad52525519a52335035b9f9619cf6541bbe"
-    },
-    {
-      "bytes": 21560,
-      "path": "bin/web/nova-core.js",
-      "sha256": "8f521d6ca005e923e670b347ce3a66bc02e50298751ca7b299bfd5f71ea194c9"
-    },
-    {
-      "bytes": 11448,
-      "path": "bin/web/nova-home.js",
-      "sha256": "1dcb7d926c65d12d884a38c641a77ebcd8e5e62a1f6b9f05a0a19c6db1065c2d"
-    },
-    {
-      "bytes": 46101,
-      "path": "bin/web/nova-project.js",
-      "sha256": "446e5ca4cb353ea2ba8d39428c05c7b1399b7ef7d342e446da6b2efdd2db1875"
-    },
-    {
-      "bytes": 16315,
-      "path": "bin/web/nova-output.js",
-      "sha256": "8c56aa9e89ece8d02ea76f5d1b11e43ff8466b1d3becb8956a98ae0f6036895b"
-    },
-    {
-      "bytes": 27801,
-      "path": "bin/web/nova-agents.js",
-      "sha256": "4bdb9dc747513a3437d2dd2abfabacce5a1569581b8f711988cdd10c2317b086"
-    },
-    {
-      "bytes": 11903,
-      "path": "bin/web/nova-activity.js",
-      "sha256": "9d4e6cc42dd93472f032cc171cf855fb8692d9534e7b43ed732b4efd156239a0"
-    },
-    {
-      "bytes": 44549,
-      "path": "bin/web/nova-settings.js",
-      "sha256": "13da8aba0256919ffc46c33d0460dbcd58327d2ba1f3aaff8f5a8324dbbfa896"
     }
   ],
   "hinweis": "SHA-256 der übernommenen Programmdateien. Beabsichtigte Änderungen an diesen Dateien sind nur zulässig, wenn dieser Eintrag im selben Arbeitspaket aktualisiert und begründet wird. Laufzeitdaten, Sicherungen und Geheimnisse sind nicht Bestandteil des Imports.",
