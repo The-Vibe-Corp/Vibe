@@ -1008,6 +1008,19 @@
       ],
       "datum": "2026-11-19",
       "grund": "Vollständige Übersetzung der Web-UI auf Englisch und i18n-Infrastruktur: Neue Datei bin/web/i18n.js mit den Wörterbüchern en/de (englischer Standard, deutsch auswählbar, weitere Sprachen durch zusätzliches Wörterbuchobjekt ergänzbar), API available()/current()/set()/t()/locale() plus Formatierer; index.html lädt i18n.js vor app.js und startet mit lang=\"en\"; bin/web/app.js nutzt tr() mit German-Source-Keys für alle sichtbaren Strings, neuer Sprachabschnitt im Einstellungs-Tab mit select[aria-label=\"Language\"], sprachabhängige Zahlen-/Währungsformatierung und synchrone Neübersetzung des DOM bei set() ohne Reload; bin/vibe-web.py liefert /static/i18n.js aus. Die Panels und data-Attribute des AP20-Vertrags bleiben unverändert. Review-Nachbesserung: alle verbleibenden sichtbaren deutschen Restliterale in app.js nachgezogen; clientseitige Zuordnungen STATE_LABELS/DOCTOR_LABELS/MESSAGE_MAP/MESSAGE_PHRASES und bt() für Backend-Meldungen, Sitzungszustände, Doctor-Texte und Kataloghinweise (Server-API unverändert); markerbasierte Übersetzung nur an von tr() stammenden Knoten (el() markiert Text/Attribute), danach gezieltes Neu-Rendern der aktiven Ansicht inklusive zusammengesetzter Texte; CURRENT_PROJECT-Korrektur; DTABS/COSTS_HEAD/PACKAGE_HEAD ohne zwischengespeicherte tr()-Werte; Sprachoptionen aus I18N.available(); sessionTime() mit Intl.DateTimeFormat(I18N.locale()); Test-Key aus den Produktionswörterbüchern entfernt. Prüfsummen/Größen von app.js und i18n.js erneut aktualisiert. Review-Runde 3: Projektassistent (Titel/Fragen/Hilfen/Status aus bin/vibe_guide.py) wird ueber GUIDE_TEXT/gt() englisch dargestellt, Statusvergleiche gegen Rohwerte (gefuellt/offen/fehlt, unbekannt) statt uebersetzter Texte; dynamische Doctor-Labels ueber DOCTOR_PATTERNS/MESSAGE_PHRASES (Präfix- und Musterzuordnung) in bt(); rohe r.message-Toasts und weitere Platzhalter/aria-labels ueber tr()/bt(); Doku-Zahl der Browserfaelle auf 14 korrigiert. Prüfsummen/Größen von app.js und i18n.js erneut aktualisiert. Review-Runde 4: Modellbewertungen/Werte und -labels ueber Woerterbuch in en/de (sehr schnell->very fast, hoch->high, bedingt->conditional, aufwand->effort, daten->data usw.), modelLabel() mit tr()-Text, badge() tolle Verhalten auf Rohwert undAnzeige uebersetzt, zustand.rechte und mcp badge nutzen Rohkonstanten statt boxed Strings, MCP-Toasts ueber bt(), Doku-Zahl Browserfaelle auf 15 und Trilium-Notiz ID korrigiert. Pruefsummen/Größen von app.js und i18n.js erneut aktualisiert. Review-Runde 4: Modellbewertungen und Detail-Labels ueber tr()/Woerterbuch (ASSESSMENT-Werte wie sehr schnell/gut/bedingt, Aufwand/Daten/Bild/coder/reviewer/Staerken/Schwaechen, composite \" Aufwand, Daten \"); badge() erzeugt Pill-Ton aus Rohwert und Anzeige uebersetzt; boxed-String-Vergleiche (zustand.rechte, mcp ja/nein) auf Rohkonstanten umgestellt; MCP-Toasts ueber bt(); Doku auf 15 Browserfaelle und Trilium-Notiz Vh6mV66XMgcm korrigiert. Pruefsummen/Größen von app.js und i18n.js erneut aktualisiert. Review-Runde 5: Schreibrechte-Chip nutzt parametrierten Key {{count}} Verzeichnisse (EN \"N directories\", DE \"N Verzeichnisse\", auch beim Sprachwechsel ohne Reload); ID-Status-Werte bestaetigt/entfernt ueber Woerterbuch (confirmed/removed) mit unveraenderten Rohvergleichen; MESSAGE_PHRASES um testnamensspezifische und doppelte Eintraege bereinigt. Pruefsummen/Größen von app.js und i18n.js erneut aktualisiert. Review-Runde 5: Die DETAILZEILE \"Als entfernt geführt seit ...\" wurde als zusammengesetzter Textknoten beim Sprachwechsel nicht übersetzt; sie ist jetzt in einzelne von tr() markierte Textknoten zerlegt (Als entfernt geführt / seit / Quelle), sodass retranslateDOM sie ohne Neuladen korrekt umschaltet. Prüfsumme/Größe von app.js aktualisiert."
+    },
+    {
+      "arbeitspaket": "AP21",
+      "dateien": [
+        "bin/vibe-web.py",
+        "bin/vibe_ui_config.py",
+        "bin/web/app.js",
+        "bin/web/index.html",
+        "bin/web/i18n.js",
+        "scripts/setup-vibe.py"
+      ],
+      "datum": "2026-11-19",
+      "grund": "AP21 v2: Sprache ist eine GLOBALE vibe-Einstellung (ui.json `language`, Default `en`): neue globale Navigationsseite Settings mit `select[aria-label='Language']`, `GET/POST /api/language` + `<html lang>`/`<meta name=\"vibe-language\">` in `page()`; Sprachumschalter von Projekt-Einstellungs-Tab entfernt (es gibt keine per-Projekt-Einstellungen); `bin/vibe_ui_config.py`: LANGUAGES/DEFAULT_LANGUAGE/validate_language; `scripts/setup-vibe.py` liefert `bin/web/i18n.js` (Installation-Lücke); Render-Renn-Schutz in app.js (RENDER_TOKEN, renderStale-Guards in setTab/rerenderView/detail/settings/projects/agents/mcp/env/costs/security); Sprach-Texte in dictionaries (`Sprache gespeichert`, `Could not save the language:`, `(noch kein Commit)`); Tests: test_ap21_i18n.py (29 Fälle: Meta-Vorrang, /api/language, HTML-Injektion, ui_ui.json-Roundtrip), test_ap21_i18n_ui.py (25 Fälle: globale Sprachwahl, Persistenz über Reload/neuen Context, kein Projekt-Sprachschalter, POST-Fehler-Rückfall), Installation-Vollständigkeit (WEB_FILES == bin/web-Dateien incl. i18n.js; test_setup_vibe/test_install_lifecycle/test_b17_isolation/test_ap16_syntax_highlighting aktualisiert)."
     }
   ],
   "files": [
@@ -1032,9 +1045,9 @@
       "sha256": "6f7f169479842777ad6369420590c8646ae3d4391174bbfa43d12f93c4aea4ae"
     },
     {
-      "bytes": 100950,
+      "bytes": 103123,
       "path": "bin/vibe-web.py",
-      "sha256": "dc2be04e6bd98fb7fb7b574ec9a94900a485a7298616ea6939058ed0068c56a3"
+      "sha256": "04420e100100f23c3990b238c3141fde3cdafe22eb16cf9c8f5b46828ed09ebd"
     },
     {
       "bytes": 5189,
@@ -1117,19 +1130,19 @@
       "sha256": "7b6aa4118259dc3440b37eaeec5eaa96eac7d928e6e704b2310946490bd25fbb"
     },
     {
-      "bytes": 10156,
+      "bytes": 11206,
       "path": "bin/vibe_ui_config.py",
-      "sha256": "d49b2406f2c9837c63ed3c3dcb265938fe5702e78c5aeb0df07b9f349fd65594"
+      "sha256": "43805dba175b11e01392b376bc12f931d82c06c8ab82dfc60474b9e9170cdd0f"
     },
     {
-      "bytes": 150090,
+      "bytes": 152463,
       "path": "bin/web/app.js",
-      "sha256": "327c8b5cdd574f7eacca7093f9b6cf59829955c88cd1e58213422e0c0e8326b9"
+      "sha256": "183ad98ea6745805bb03e57d7e78571366874ed5676885a988a5db1668752f4d"
     },
     {
-      "bytes": 625,
+      "bytes": 688,
       "path": "bin/web/index.html",
-      "sha256": "1a86c54de15e2e02a02ef5d4a4ee9951c5f48bec2654cb7107b39a8a1c81976a"
+      "sha256": "19ea677f5c3dc3579279fd9b5bf7584612967654b8ec0bbde3818576c78b46b5"
     },
     {
       "bytes": 12445,
@@ -1282,9 +1295,9 @@
       "sha256": "c1e4a3d830f4c8791e00c3aa053f348d2159c286303405f0f34db867845c10d4"
     },
     {
-      "bytes": 73163,
+      "bytes": 73174,
       "path": "scripts/setup-vibe.py",
-      "sha256": "9b7bd82c94b94c2ef2125548a754a519cfb27c1e89ac81acb59453cb291ddcd5"
+      "sha256": "0eb4f5d9c48fc89edfddaae16ef2a82e5187032db639f3a085c5295f731c23a4"
     },
     {
       "bytes": 377,
@@ -1297,9 +1310,9 @@
       "sha256": "f5e9382967c9833066a55808829f3750fc8e1181b170cafd222c37048bb49a77"
     },
     {
-      "bytes": 110043,
+      "bytes": 111210,
       "path": "bin/web/i18n.js",
-      "sha256": "664da2278b037f3a7a3f2ff888b1b02ed100125121debf411a4949b326ce9e99"
+      "sha256": "e7fedfc9fd4d6dd7ab31db06e67b2295db83e3f349e389a86722aa3230f3405a"
     }
   ],
   "hinweis": "SHA-256 der übernommenen Programmdateien. Beabsichtigte Änderungen an diesen Dateien sind nur zulässig, wenn dieser Eintrag im selben Arbeitspaket aktualisiert und begründet wird. Laufzeitdaten, Sicherungen und Geheimnisse sind nicht Bestandteil des Imports.",

@@ -18,10 +18,9 @@ import unittest
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
-WEB_FILES = (
-    REPO / "bin" / "web" / "index.html",
-    REPO / "bin" / "web" / "styles.css",
-    REPO / "bin" / "web" / "app.js",
+WEB_FILES = tuple(
+    REPO / "bin" / "web" / name
+    for name in ("index.html", "styles.css", "app.js", "i18n.js")
 )
 # Echte Injektionsaufrufe; der erläuternde F19-Kommentar („kein innerHTML“)
 # soll nicht als Treffer zählen.

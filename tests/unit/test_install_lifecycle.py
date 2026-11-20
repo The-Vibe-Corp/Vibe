@@ -39,7 +39,7 @@ PROGRAM_FILES = (
     "vibe_github.py",
     "fritz-reconnect.py",
 )
-WEB_FILES = ("index.html", "styles.css", "app.js")
+WEB_FILES = ("index.html", "styles.css", "app.js", "i18n.js")
 
 setup = None
 

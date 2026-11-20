@@ -755,3 +755,107 @@ abweichenden Stand sind die Läufe zu wiederholen. Nicht Teil dieses Auftrags
 und weiterhin außerhalb des Testbereichs: `test_ap8_checkout_ui.py`
 (`NameError: agent_note`) und `test_rebuild_project_ui.py`
 (Template-/Profil-Mismatch).
+
+---
+
+## 15. AP21 v2 — Rotphase der globalen Sprache (Implementierungs-Agent)
+
+- **Datum:** 2026-11-19
+- **Ausgangslage:** Der lose Test-Agent-Loop war wegen Provider-Limit nicht
+  verfügbar. Die neuen Abnahmetests für AP21 v2 wurden daher vom
+  Implementierungs-Agenten geschrieben. Abschnitt 1–14 dokumentieren die
+  ursprüngliche v1-Abnahme; dieser Abschnitt hält die **v2-Rotphase** fest,
+  bevor die Produktionsänderungen umgesetzt wurden (red–green–refactor).
+
+### 15.1 Neue/erweiterte Tests (aus dem Vertrag abgeleitet)
+
+`tests/unit/test_ap21_i18n.py` — neue Klassen:
+
+- `I18nMetaPriorityTest` (6 Fälle): Meta `vibe-language` > localStorage > `en`,
+  vollständige Validierung (ungültiges Meta wird ignoriert).
+- `UiConfigLanguageTest` (6 Fälle): `LANGUAGES`, `DEFAULT_LANGUAGE`,
+  `validate_language()`, `validate()` mit/ohne `language`.
+- `GlobalLanguageServerTest` (10 Fälle): echter `vibe-web`-Prozess mit
+  isoliertem `VIBE_*`-Root; `GET/POST /api/language` (Payload, Auth 403,
+  400 `invalid_language` ohne Dateiänderung, Erhalt anderer ui.json-Felder,
+  andere Projekte unberührt), HTML-Injektion von `<html lang>` und
+  `<meta name="vibe-language">`, ui.json-Roundtrip.
+
+`tests/browser/test_ap21_i18n_ui.py`: globaler Sprachumschalter
+(`[data-t='settings'] select[aria-label='Language']`), kein Select mehr im
+Projekt-Tab, EN→DE in Nav/Projektliste/vier Projekt-Tabs, Reload, ui.json,
+Toast+Rückfall bei POST-Fehler.
+
+### 15.2 Redphase — tatsächlich ausgeführter Befehl
+
+```
+$ PLAYWRIGHT_BROWSERS_PATH=/home/vibe/.cache/ms-playwright \
+    PYTHONDONTWRITEBYTECODE=1 python3 -m unittest \
+    tests.unit.test_ap21_i18n.I18nMetaPriorityTest \
+    tests.unit.test_ap21_i18n.UiConfigLanguageTest \
+    tests.unit.test_ap21_i18n.GlobalLanguageServerTest -v
+...
+Ran 21 tests in 1.621s
+FAILED (failures=12, errors=10)
+```
+
+Beobachtete, erwartete Fehlerbilder (Auszug):
+
+- `test_meta_language_wins_over_localstorage` /
+  `test_meta_language_en_overrides_localstorage_de`: `current()` blieb beim
+  localStorage-Wert, weil `i18n.js` das Meta-Feld noch nicht las.
+- `UiConfigLanguageTest.*`: `AttributeError: module 'vibe_ui_config' has no
+  attribute 'LANGUAGES'` bzw. `validate_language` fehlt; `validate()` liess
+  `language` noch als unbekanntes Feld fallen.
+- `GlobalLanguageServerTest.setUp`: `POST /api/language` lieferte
+  `404 {"error":{"code":"not_found"}}` — der Endpunkt existierte noch nicht.
+- `test_page_injects_default_language`: `index.html` enthielt noch kein
+  `<meta name="vibe-language">`.
+
+Damit ist die Rotphase für jede geforderte v2-Verhaltensweise nachgewiesen:
+die Tests scheitern am jeweils fehlenden Produktionsverhalten, nicht an einer
+defekten Testumgebung.
+
+### 15.3 Grünphase
+
+Nach den Änderungen A–F (siehe `docs/features/AP21.md`) wurden dieselben
+Suiten erneut ausgeführt: `tests.unit.test_ap21_i18n` → **29 Tests, OK**.
+Die Browser-Suite und die weiteren Prüfungen sind im Abschnitt
+„Verifikation“ von `docs/features/AP21.md` dokumentiert.
+
+## 15.4 AP21 v2 — Rote Phase gegen `c496a65` (v1-Stand + Upgrade)
+
+Vor der v2-Implementierung wurde gegen den Stand `c496a65` (v1: i18n-
+Infrastruktur, Projekt-Sprachschalter) rot gemacht — die neuen v2-Verträge
+lassen sich an v1 nicht erfüllen, z. B.:
+
+- `GlobalLanguageServerTest` (GET/POST `/api/language`, HTML-Injektion,
+  ui.json-Roundtrip) – `404 not_found`, `vibe_ui_config` ohne `LANGUAGES`.
+- `test_meta_language_en_overrides_localstorage_de` – `i18n.js` fragt das
+  Meta-Feld `vibe-language` nicht ab; `readMeta` existiert nicht.
+- `test_web_files_cover_all_shipped_web_files` (Instal­lationsvollständigkeit)
+  – `WEB_FILES` in `scripts/setup-vibe.py` schließt `i18n.js` aus (Live-
+  Problem: `/static/i18n.js` liefert 404 in `vibe-toolchain/bin/web`).
+
+## 15.5 Die Schritte E/F der Implementierung (Rennfix, Syntaxfix, Typo)
+
+Korrekturen, die in die v2-Suiten eingehen (nach Dokumentation von
+`docs/features/AP21.md` „Render-Renn-Schutz“ und „Sprachumschalter“):
+
+- **Rennfix (Appen `bin/web/app.js`):** `RENDER_TOKEN` in `setTab`,
+  `rerenderView`, `detail`, `settings`; `renderStale(token)`-Guards vor
+  `main.replaceChildren` in `projects`, `agents`, `mcp`, `env`, `costs`,
+  `security`. Ausgangssituation: in `ReviewRound3Test.test_models_table_and_
+  select_are_english_and_german_reverses` blieb nach dem Umschalten auf DE die
+  GLOBALE „Agenten & Modelle“-Seite sichtbar und `select[data-model-override=
+  'ap21-modell-probe']` wurde nie angehängt — das in-Flight `agents()`-Render
+  (aus `open_models_card()` → `setTab('agents')`) ging nach der Navigation
+  in die Projektdetail über und wäschte die Detailansicht weg
+  (`panels: []`, `main` = globale Agentenpage). Nach dem Fix grün:
+  **25/25 Browser-Tests OK** (62 s).
+- **Syntaxfix:** `el('div',{class:'card',id='settings-language'},` hatte
+  `id='…'` statt `id:'…'` (ungültiges Objektliteral) — `node --check`
+  meldete „SyntaxError: Invalid shorthand property initializer“. Nach
+  Korrektur ist `node --check bin/web/app.js bin/web/i18n.js` OK.
+- **Konsistenz:** `settings()` für globale Nav-Tab und `MESSAGE_MAP`
+  (`Sprache gespeichert`), `(noch kein Commit)`-Mapping in `MESSAGE_PHRASES`.

@@ -49,6 +49,13 @@ except ImportError:
 FILENAME = "ui.json"
 PBKDF2_ITERATIONS = 200000
 
+# AP21 v2: Die Sprache ist eine GLOBALE Einstellung (eine pro Installation,
+# nicht pro Projekt). Sie liegt in <state>/ui.json unter "language"; der
+# Standard ist Englisch. Weitere Sprachen ergänzen LANGUAGES und die i18n-
+# Wörterbücher in bin/web/i18n.js.
+LANGUAGES = ("en", "de")
+DEFAULT_LANGUAGE = "en"
+
 
 class ConfigError(ValueError):
     """Die Dashboard-Konfiguration (ui.json) ist ungültig."""
@@ -111,6 +118,22 @@ def _allowlist_entry(entry):
     return str(network)
 
 
+def validate_language(value):
+    """Prüft einen Sprachcode; nur Werte aus LANGUAGES sind gültig (AP21 v2).
+
+    Streng getippt: kein Leerzeichen-Trimming, keine Groß-/Kleinschreibung,
+    keine anderen Typen. Ein unbekannter Code muss die Datei unverändert
+    lassen (der Aufrufer meldet ihn als ``invalid_language``), weil sonst eine
+    still auf ``en`` zurückgefallene Wahl die Oberfläche unerwartet umstellen
+    würde.
+    """
+    if not isinstance(value, str) or value not in LANGUAGES:
+        raise ConfigError(
+            f"language muss einer der Werte {', '.join(LANGUAGES)} sein"
+        )
+    return value
+
+
 def validate(data):
     """Prüft ui.json-Inhalt und liefert ein bereinigtes Objekt ohne Unbekanntes.
 
@@ -121,6 +144,8 @@ def validate(data):
     if not isinstance(data, dict):
         raise ConfigError(f"{FILENAME} muss ein JSON-Objekt enthalten")
     cleaned = {}
+    if data.get("language") is not None:
+        cleaned["language"] = validate_language(data["language"])
     if data.get("ui_port") is not None:
         cleaned["ui_port"] = vibe_paths.validate_port(data["ui_port"])
     if data.get("ui_bind") is not None:

@@ -27,6 +27,16 @@ function setTx(node,value){node.textContent=value;
  if(value&&value.__i18n){node.__i18n=value.__i18n;node.__i18nOwn=true}}
 let CURRENT_PROJECT=null;
 
+/* AP21 v2: Rendering-Renns. Asynchrone globale Renderer ersetzen main();
+   ein Render, das zuerst terminiert, darf nicht einen neueren Render
+   kaputtmachen (Beispiel: ein Agents-Render, das nach einem schnellen
+   Navigationswechsel in die Projektdetail rendert und das Detail wegwischt).
+   RENDER_TOKEN wird bei jedem Start eines Renderers/setTab/rerenderView
+   erhöht; Renderer prüfen vor dem main.replaceChildren, ob sie noch aktuell
+   sind — ist ein neueres Render gestartet, wird dieses Rendering übersprungen. */
+let RENDER_TOKEN=0;
+function renderStale(token){return token!==RENDER_TOKEN}
+
 /* AP21: Backend-Texte (Meldungen, Sitzungszustaende, Doctor-Labels) kommen
    weiterhin unverändert aus der API; die Zuordnung erfolgt hier clientseitig,
    ohne den Server-API-Vertrag zu ändern. */
@@ -121,7 +131,8 @@ const MESSAGE_PHRASES=[
  ['Bezeichnung','name'],
  ['löschen','delete'],
  ['gesperrt','disabled'],
- ['erlaubt','allowed']];
+ ['erlaubt','allowed'],
+ ['(noch kein Commit)','(no commit yet)']];
 
 const DOCTOR_PATTERNS=[
  [/^VIBE-Ordner beschreibbar /,'VIBE folder writable '],
@@ -194,13 +205,14 @@ const MESSAGE_MAP={
  'Preise gespeichert':'Prices saved',
  'Entwurf übernommen':'Draft applied',
  'Erfolgreich gespeichert':'Saved successfully',
+ 'Sprache gespeichert':'Language saved',
  'Ungültige Eingabe':'Invalid input',
  'Zugriff verweigert':'Access denied',
  'Nicht gefunden':'Not found'};
 
-const NAV_TABS=[['projects','Projekte'],['agents','Agenten & Modelle'],['mcp','MCP-Tools'],['env','Umgebung'],['costs','Kosten'],['security','Zugriffssicherheit']];
+const NAV_TABS=[['projects','Projekte'],['agents','Agenten & Modelle'],['mcp','MCP-Tools'],['env','Umgebung'],['costs','Kosten'],['security','Zugriffssicherheit'],['settings','Einstellungen']];
 function showErr(e){main.replaceChildren(el('div',{class:'card err'},el('b',{class:'bad'},tr('Fehler: ')),String(e&&e.message||e)),el('button',{class:'b',on:{click:()=>setTab('projects')}},tr('← zur Projektliste')))}
-function setTab(t){exitLogFull();LOG=null;DTAB='arbeit';tab=t;CURRENT_PROJECT=null;if(es){es.close();es=null}clearInterval(timer);[...nav.children].forEach(b=>b.classList.toggle('on',b.dataset.t===t));Promise.resolve(({projects,agents,mcp,env,costs,security}[t])()).catch(showErr);header()}
+function setTab(t){RENDER_TOKEN++;exitLogFull();LOG=null;DTAB='arbeit';tab=t;CURRENT_PROJECT=null;if(es){es.close();es=null}clearInterval(timer);[...nav.children].forEach(b=>b.classList.toggle('on',b.dataset.t===t));Promise.resolve(({projects,agents,mcp,env,costs,security,settings}[t])()).catch(showErr);header()}
 NAV_TABS.forEach(([k,l])=>nav.append(el('button',{'data-t':k,on:{click:()=>setTab(k)}},tr(l))));
 const toastBox=el('div',{id:'toasts',class:'toasts',role:'status','aria-live':'polite','aria-atomic':'false'});
 document.body.append(toastBox);
@@ -273,6 +285,7 @@ async function rootsCard(){const rs=await api('/api/roots');const inp=el('input'
   el('div',{class:'bar'},inp,el('button',{class:'b p',on:{click:async()=>{const r=await api('/api/roots',{action:'add',path:inp.value});toast(bt(r.message));setTab('projects')}}},tr('Einlesen')),
    el('button',{class:'b',on:{click:async()=>{await api('/api/roots',{action:'scan'});setTab('projects')}}},tr('Neu einlesen'))))}
 async function projects(){
+ const token=RENDER_TOKEN;
  // AP13: Kein clientseitiger Token-Zwang mehr. Die Berechtigung prüft der
  // Server (Session-Cookie oder Token); ohne Berechtigung entscheidet boot()
  // über die Anmeldekarte, und die Anfrage scheitert strukturiert.
@@ -281,7 +294,8 @@ async function projects(){
   ps.forEach(p=>tb.append(el('tr',{class:'row',on:{click:()=>detail(p.name).catch(showErr)}},el('td',{},p.name,p.init?null:el('span',{class:'warn'},' ●')),el('td',{},p.type),el('td',{},p.branch),
    el('td',{class:p.open?'warn':'ok'},p.open),el('td',{},p.dirty),el('td',{},el('span',{class:'pill '+(p.running?'run':'')},p.running?tr('läuft'):'-'),p.pause_after?el('span',{class:'pill warn',title:tr('Nach dem aktuellen Arbeitspaket wird kein neues gestartet')},tr(' Pause')):null),el('td',{class:'mut'},p.last))));
   const rc=await rootsCard();
-  main.replaceChildren(el('div',{class:'card'},ps.length?tb:el('span',{class:'mut'},tr('Keine Projekte gefunden. Entwicklungsordner unten hinzufügen.')),ps.some(p=>!p.init)?el('div',{class:'warn',style:'margin-top:8px'},tr('● = noch nicht für vibe vorbereitet (Projekt öffnen → „Für vibe vorbereiten“)')):null),rc,newForm())};
+  if(renderStale(token))return;
+ main.replaceChildren(el('div',{class:'card'},ps.length?tb:el('span',{class:'mut'},tr('Keine Projekte gefunden. Entwicklungsordner unten hinzufügen.')),ps.some(p=>!p.init)?el('div',{class:'warn',style:'margin-top:8px'},tr('● = noch nicht für vibe vorbereitet (Projekt öffnen → „Für vibe vorbereiten“)')):null),rc,newForm())};
  await render();timer=setInterval(()=>{if(tab==='projects'&&!document.activeElement.matches('input,textarea,select'))render().catch(()=>{})},5000)}
 function newForm(){const types=el('select',{});api('/api/types').then(t=>t.forEach(x=>types.append(el('option',{},x))));
  const nm=el('input',{placeholder:tr('projektname (a-z, 0-9, -)')}),tp=el('input',{placeholder:tr('nur Android: Vorlage aus "android create --list"')});
@@ -308,6 +322,7 @@ function detailTabs(panels){const btns={},list=el('div',{class:'tabs',role:'tabl
  showDetailTab(DTAB in panels?DTAB:'arbeit',panels,btns);
  return {list,btns}}
 async function detail(name){
+ RENDER_TOKEN++;const token=RENDER_TOKEN;
  CURRENT_PROJECT=name;
  clearInterval(timer);if(es){es.close();es=null}exitLogFull();LOG=null;window.scrollTo(0,0);
  const d=await api('/api/project?name='+encodeURIComponent(name));
@@ -362,6 +377,7 @@ async function detail(name){
   einstellungen:tabPanel('einstellungen',settingsPanel(d,name,isPi))};
  const tabs=detailTabs(panels);
  openTab=k=>showDetailTab(k,panels,tabs.btns);
+ if(renderStale(token))return;
  main.replaceChildren(...[head,initCard,tabs.list,panels.arbeit,panels.ausgabe,panels.assistent,panels.einstellungen].filter(Boolean));
  setOutputMode('legacy');
  let streamKind='run';
@@ -433,19 +449,43 @@ function sandboxStatus(s){
  const state=!active?tr('aus'):(s.error?tr('Fehler'):(!s.bwrap?tr('bubblewrap fehlt'):(missing.length?tr('Werkzeuge fehlen'):tr('bereit'))));
  const tone=!active?'mut':(s.error||!s.bwrap||missing.length?'bad':'ok');
  return {state,tone}}
-/* AP21: Der Sprachumschalter liegt im Einstellungs-Tab. Der aria-label bleibt
-   sprachunabhängig 'Language', damit der Selektor stabil bleibt. */
-function languageSection(){
+/* AP21 v2: Die Sprache ist eine GLOBALE Einstellung (ui.json), keine
+   Projekt-Einstellung. Der Umschalter steht deshalb auf der eigenen
+   Navigationsseite 'Settings' (letzter Nav-Tab) und nicht mehr im Projekt-
+   Einstellungs-Tab. Der aria-label bleibt bewusst sprachunabhängig 'Language',
+   damit der Selektor stabil bleibt. */
+async function settings(){
+ RENDER_TOKEN++;const token=RENDER_TOKEN;
+ let data;
+ try{data=await api('/api/language')}catch(e){data={language:'en',languages:['en','de']}}
+ const apiObj=window.VIBE_I18N||window.I18N;
+ const currentLang=()=>apiObj&&typeof apiObj.current==='function'?apiObj.current():(data.language||'en');
  const select=el('select',{'aria-label':'Language',on:{change:e=>{
-   const api=window.VIBE_I18N||window.I18N;
-   if(api&&typeof api.set==='function')api.set(e.target.value)}}});
- const api=window.VIBE_I18N||window.I18N;
+   const next=e.target.value,previous=currentLang();
+   if(next===previous)return;
+   /* Optimistisch sofort lokal umstellen (I18N.set feuert vibe:langchange),
+      dann serverseitig persistieren. Bei einem Fehler wird die vorherige
+      Sprache wiederhergestellt und ein sichtbarer Toast angezeigt. */
+   if(apiObj&&typeof apiObj.set==='function')apiObj.set(next);
+   select.disabled=true;
+   api('/api/language',{language:next}).then(r=>{
+    if(!r.ok)throw new Error(errText(r,500));
+    toast(bt(r.message||tr('Sprache gespeichert')));
+    settings();
+   }).catch(err=>{
+    if(apiObj&&typeof apiObj.set==='function')apiObj.set(previous);
+    select.value=previous;
+    toast(tr('Sprache konnte nicht gespeichert werden: ')+String(err&&err.message||err));
+   }).finally(()=>{select.disabled=false});
+  }}});
  const names={en:'English',de:'Deutsch'};
- (api&&typeof api.available==='function'?api.available():['en','de'])
-   .forEach(code=>select.append(el('option',{value:code},names[code]||code)));
- select.value=(api&&typeof api.current==='function'&&api.current())||'en';
- return settingsSection('settings-language',tr('Language'),true,
-   el('div',{},el('div',{class:'mut'},tr('ui.language.hint')),select))}
+ const codes=(apiObj&&typeof apiObj.available==='function'&&apiObj.available())||data.languages||['en','de'];
+ codes.forEach(code=>select.append(el('option',{value:code},names[code]||code)));
+ select.value=data.language||currentLang();
+ if(renderStale(token))return;
+ main.replaceChildren(el('div',{class:'card',id:'settings-language'},
+   el('b',{},tr('Language')),
+   el('div',{class:'mut'},tr('ui.language.hint')),select))}
 function settingsPanel(d,name,isPi){
  const g=d.github||{enabled:false};
  const sandbox=sandboxStatus(d.sandbox);
@@ -478,7 +518,7 @@ function settingsPanel(d,name,isPi){
  sections.agenten=agentsSec;sections.rechte=rechteSec;sections.sandbox=sandboxSec;sections.github=githubSec;
  return el('div',{class:'settingsstack'},
   el('div',{class:'settings-nav','aria-label':tr('Einstellungsbereiche')},...Object.values(chips)),
-  languageSection(),agentsSec,rechteSec,sandboxSec,githubSec)}
+  agentsSec,rechteSec,sandboxSec,githubSec)}
 function projectAgentsCard(name,onPill){
  const body=el('div',{},el('span',{class:'mut'},tr('Lade Agenten …')));
  let showUnconfigured=false;
@@ -1178,6 +1218,7 @@ function fillPackageTotal(row,total){
  row.replaceChildren(el('td',{},el('b',{},tr('Summe Projekt'))),el('td',{class:'num'},fmtN(total.sessions)),...tokenCells(total.tokens),el('td',{class:'num'},el('b',{},fmtEUR(total.cost))))
 }
 async function costs(){
+ const token=RENDER_TOKEN;
  clearInterval(timer);timer=null;
  const warning=el('div',{class:'warn',hidden:''});
  const empty=el('span',{class:'mut',hidden:''},tr('Keine Projekte gefunden.'));
@@ -1220,6 +1261,7 @@ async function costs(){
  };
  const initial=await api('/api/costs');
  render(initial);
+ if(renderStale(token))return;
  main.replaceChildren(el('div',{class:'card',id:'costs'},el('div',{class:'bar'},el('b',{},tr('Kosten je Projekt')),el('span',{class:'mut'},tr('EUR je 1 Mio. Tokens'))),
   warning,empty,table,sourceNote,
   el('div',{class:'bar'},updated,el('button',{class:'b',on:{click:()=>costs().catch(showErr)}},tr('Aktualisieren')))));
@@ -1333,7 +1375,7 @@ function allowedLabel(agent){
  if(agent.task_mode==='custom'&&agent.allowed_agents&&agent.allowed_agents.length)return agent.allowed_agents.join(', ');
  return tr('keine');
 }
-async function agents(){AG=await api('/api/agents');const d=AG;
+async function agents(){const token=RENDER_TOKEN;AG=await api('/api/agents');const d=AG;
  const isPi=(await harnessSelected())==='pi';
  // AP03: Die allgemeine Verwaltung zeigt und ändert ausschließlich
  // systemweite Agenten. Projektmodelle werden nur in den Projekteinstellungen
@@ -1366,6 +1408,7 @@ async function agents(){AG=await api('/api/agents');const d=AG;
    el('td',{class:'mut','data-modell':a.name},a.model_missing?tr('— nicht gesetzt —'):a.model),
    el('td',{},el('button',{class:'b',type:'button',on:{click:()=>agentForm('global',a.name).catch(showErr)}},tr('Bearbeiten')))));
  });
+ if(renderStale(token))return;
  main.replaceChildren(el('div',{class:'card',id:'agents'},
    el('div',{class:'bar'},el('b',{},tr('Agenten')),el('button',{class:'b p',type:'button',on:{click:()=>agentForm(null,null).catch(showErr)}},tr('Neuer Agent'))),
    status,
@@ -1568,7 +1611,7 @@ async function agentForm(scope,name){const d=AG||await api('/api/agents');const 
     isNew?null:backupBtn,delAgent)),
   isNew?null:el('div',{class:'card'},el('b',{},tr('Sicherungen')),el('div',{class:'mut'},tr('Vor jedem Speichern wird der bisherige Stand gesichert. Die Wiederherstellung sichert zuerst den aktuellen Stand.')),backupBox))}
 /* ---------- MCP-Tools ---------- */
-async function mcp(){const d=await api('/api/mcp');
+async function mcp(){const token=RENDER_TOKEN;const d=await api('/api/mcp');
  const isPi=(await harnessSelected())==='pi';
  const tb=el('table',{},el('tr',{},...[tr('Name'),tr('Geltung'),tr('Typ'),tr('Ziel'),tr('aktiv'),''].map(h=>el('th',{},h))));
  d.servers.forEach(s=>{ if(s.error){tb.append(el('tr',{},el('td',{colspan:'6',class:'bad'},s.scope+tr(': Konfiguration nicht lesbar: ')+s.error)));return}
@@ -1577,6 +1620,7 @@ async function mcp(){const d=await api('/api/mcp');
     el('button',{class:'b',on:{click:()=>mcpForm(s.scope,s.name).catch(showErr)}},tr('Bearbeiten')),
     el('button',{class:'b',on:{click:async()=>{const r=await api('/api/mcp',{action:'toggle',scope:s.scope,name:s.name});toast(s.name+' '+bt(r.message));mcp().catch(showErr)}}},s.enabled?tr('Ausschalten'):tr('Einschalten'))))))});
  const layouts=[...new Set(d.servers.filter(s=>s.layout).map(s=>s.scope+': '+s.layout+' → '+s.path))];
+ if(renderStale(token))return;
  main.replaceChildren(el('div',{class:'card'},el('div',{class:'bar'},el('b',{},tr('MCP-Server (Model Context Protocol)')),el('button',{class:'b p',on:{click:()=>mcpForm(null,null).catch(showErr)}},tr('Neuer MCP-Server'))),
   d.servers.length?tb:el('span',{class:'mut'},tr('Keine MCP-Server konfiguriert.')),
   el('div',{class:'mut',style:'margin-top:8px'},tr('MCP-Server geben dem Agenten zusätzliche Werkzeuge (z. B. Notizen, Datenbanken, Dokumentation). Die Werkzeuge belegen Kontext und kosten dadurch Tokens: nur aktivieren, was gebraucht wird. Geheimnisse (Token, Schlüssel) werden hier maskiert; beim Speichern bleiben sie unverändert.')),
@@ -1642,8 +1686,9 @@ function harnessCard(hs){
   el('div',{class:'bar'},el('label',{style:'margin:0'},el('span',{},tr(' Aktiver Harness ')),sel),use),result,
   el('div',{class:'mut'},tr('Die Auswahl gilt für neue Agentenläufe; laufende Prozesse werden nicht umgestellt. Ohne gespeicherte Auswahl bleibt opencode der Standard.')),
   ...entries)}
-async function env(){const d=await api('/api/doctor');const f=await api('/api/fritz');const rel=await api('/api/health');const hs=await api('/api/harness');
+async function env(){const token=RENDER_TOKEN;const d=await api('/api/doctor');const f=await api('/api/fritz');const rel=await api('/api/health');const hs=await api('/api/harness');
  const origin=rel.release_origin==='installation'?'Installation':rel.release_origin==='quelle'?tr('Quelle'):tr('unbekannt');
+ if(renderStale(token))return;
  main.replaceChildren(el('div',{class:'card'},el('b',{},'Release'),el('div',{},tr('Version ')+rel.version+(rel.commit?tr(' · Commit ')+rel.commit:'')+' · '+origin)),
   harnessCard(hs),
   el('div',{class:'card'},el('b',{},tr('Umgebungsprüfung')),...d.map(c=>el('div',{},el('span',{class:c.ok?'ok':'bad'},c.ok?'OK   ':tr('FEHL ')),bt(c.label),c.ok||!c.hint?null:el('span',{class:'mut'},'  → '+bt(c.hint))))),fritzCard(f))}
@@ -1709,6 +1754,7 @@ async function doLogin(inp){
    periodischen Pollings: Nach jeder Aktion wird die Ansicht einmalig neu
    geladen. Die Ansicht enthält keine Kennwort- oder Hash-Auskunft. */
 async function security(){
+ const token=RENDER_TOKEN;
  let s=await api('/api/security');
  const fact=(k,v)=>el('div',{class:'factrow'},el('span',{class:'mut'},k),el('span',{},String(v)));
  const facts=el('div',{});
@@ -1758,6 +1804,7 @@ async function security(){
   catch(e){toast(tr('Zulassen fehlgeschlagen: ')+String(e&&e.message||e))}
   await refresh()})}},tr('Alle Clients zulassen'));
  draw();
+ if(renderStale(token))return;
  main.replaceChildren(el('div',{class:'card',id:'security'},el('b',{},tr('Zugriffssicherheit')),facts,
   el('div',{class:'mut'},tr('Änderungen an Port, Bind-Adresse und Allowlist werden in ui.json im Zustandsordner gespeichert und wirken erst nach einem Neustart des Dashboards. Ohne Allowlist sind alle Clients zugelassen; der lokale Rechner (Loopback) bleibt immer zugelassen.')),
   warn,
@@ -1790,10 +1837,10 @@ function retranslateDOM(){
 }
 function rerenderView(){
  if(RERENDER_BUSY)return;
- RERENDER_BUSY=true;
+ RERENDER_BUSY=true;RENDER_TOKEN++;
  try{
   if(CURRENT_PROJECT)Promise.resolve(detail(CURRENT_PROJECT)).catch(()=>{});
-  else if(tab)Promise.resolve(({projects,agents,mcp,env,costs,security}[tab])()).catch(()=>{});
+  else if(tab)Promise.resolve(({projects,agents,mcp,env,costs,security,settings}[tab])()).catch(()=>{});
  }finally{setTimeout(()=>{RERENDER_BUSY=false},0)}
 }
 window.addEventListener('vibe:langchange',()=>{
