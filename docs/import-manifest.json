@@ -1125,6 +1125,21 @@
         "bin/web/i18n.js"
       ],
       "grund": "AP22 Kosmetik-Runde nach visueller Endabnahme: Karten trennen Titel/Beschreibung sauber (Board/Feedback, Basics als Definitionsliste), leere Held-Badges versteckt (Verzweigung/Typ erst mit Wert), Uebersicht-Ladeskeleton statt leerem Bereich, Wizard-Schrittindikator (Schritt X von 4) mit deaktiviertem Zurueck und sekundaerem Abbrechen, freundliche Leerzustaende der Aktivitaet, Dunkel-Primarknopf als echte Flaeche (Weiss auf #3b6fe0, ~4,6:1), Guide-Schliessen in der Kopfzeile, Ordnerpfade mit Ellipsis (Vollpfad im Titel), Mobile-Scrim hinter der Navigation. Vier neue i18n-Schluessel, Duplikat-Scan 0. Alle Suiten gruen (21 Unit + 28 + 31 + 26 Browser), validiert in einem sauberen Referenz-Worktree."
+    },
+    {
+      "arbeitspaket": "AP22",
+      "datum": "2026-11-20",
+      "dateien": [
+        "bin/web/nova-project.js",
+        "bin/web/nova-core.js",
+        "bin/web/nova-agents.js",
+        "bin/web/nova-activity.js",
+        "bin/web/i18n.js",
+        "tests/browser/test_ap22_project_ui.py",
+        "tests/browser/test_ap22_activity_ui.py",
+        "tests/browser/test_ap22_agents_ui.py"
+      ],
+      "grund": "AP22 Review-Fix-Runde (5 Medium-Befunde aus docs/reviews/AP22-review-1.md, Testfirst mit dokumentierter Rotphase): Git-&-GitHub-Bereich vollstaendig (Aktivierung, Token speichern/loeschen mit maskiertem Status, Verbindungs-pruefung, Branchliste mit Checkout, Pull ff-only, Push mit Quell-/Ziel-Branch, Issues, Label-gefilterter Import, Merge-Request mit zweistufiger Bestaetigung — Spiegel der klassischen UI-Payloads); Glocke listet jetzt alle drei Vertragsquellen (offene Fragen, blockierte Pakete, fehlgeschlagene Läufe) mit Ziel-Links; Aktivitaet erhaelt Zusammenfassungs-Kacheln (running/questions/blocked) und zeilenlokales Stoppen; Agentenverwaltung ist Scope-faehig (Karten-Badges global/projekt, Editor-Route #/agents/<scope>/<name>, Laden/Speichern/Loeschen/Kopieren im gewaehlten Geltungsbereich, Karten-Loeschknopf mit Bestaetigung) — kein globaler Agent wird mehr bei projektbezogener Arbeit ueberschrieben. Alle 17 neuen Faelle gruen, alle 85 Bestandsfaelle unveraendert gruen; i18n ohne Duplikate (999 Schluessel je Sprache)."
     }
   ],
   "files": [
@@ -1414,9 +1429,9 @@
       "sha256": "f5e9382967c9833066a55808829f3750fc8e1181b170cafd222c37048bb49a77"
     },
     {
-      "bytes": 144571,
+      "bytes": 147824,
       "path": "bin/web/i18n.js",
-      "sha256": "4c88cc8f7019e0c685e1e432b6283180f807377b488d577bbc636e77277bdb9f"
+      "sha256": "a345fab1c5b8cc9a52abf7b5ac2202bacd71a9e8b82c3d19d5a21e4768d0966f"
     },
     {
       "bytes": 688,
@@ -1429,9 +1444,9 @@
       "sha256": "05472efd212d3ba1ebcd56a49c6d372a84743d8e52363af6157f5247c43172a9"
     },
     {
-      "bytes": 19457,
+      "bytes": 21560,
       "path": "bin/web/nova-core.js",
-      "sha256": "c32fd9c0704f753aa3e8a92b4dedd0b8707ec7da445693cd62502f8e1c71ec1b"
+      "sha256": "8f521d6ca005e923e670b347ce3a66bc02e50298751ca7b299bfd5f71ea194c9"
     },
     {
       "bytes": 11448,
@@ -1439,9 +1454,9 @@
       "sha256": "1dcb7d926c65d12d884a38c641a77ebcd8e5e62a1f6b9f05a0a19c6db1065c2d"
     },
     {
-      "bytes": 37977,
+      "bytes": 46101,
       "path": "bin/web/nova-project.js",
-      "sha256": "33979bb1d7e4ebfeb0487a838a57b2e89318e2ad012a6ddac4ee1ddb92c3f35c"
+      "sha256": "446e5ca4cb353ea2ba8d39428c05c7b1399b7ef7d342e446da6b2efdd2db1875"
     },
     {
       "bytes": 16315,
@@ -1449,14 +1464,14 @@
       "sha256": "8c56aa9e89ece8d02ea76f5d1b11e43ff8466b1d3becb8956a98ae0f6036895b"
     },
     {
-      "bytes": 25555,
+      "bytes": 27801,
       "path": "bin/web/nova-agents.js",
-      "sha256": "3fbed7c8bd86bbcfa605a7b620330a7affd74fd106c47fb3ced2aca989bf2590"
+      "sha256": "4bdb9dc747513a3437d2dd2abfabacce5a1569581b8f711988cdd10c2317b086"
     },
     {
-      "bytes": 10295,
+      "bytes": 11747,
       "path": "bin/web/nova-activity.js",
-      "sha256": "6b0236f4865702e82e0331cb72ec8c9ea5260457ac60c73c8d1930b9706aecb1"
+      "sha256": "e41f7aa1e7afcc4ac7c45e0c2de9c57156336f62d0074b4bc19ff808639876e1"
     },
     {
       "bytes": 44549,

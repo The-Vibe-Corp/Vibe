@@ -51,6 +51,18 @@ Testfälle (Kurzfassung; Details in den Methoden)
     aus ``/api/guide``; ``/api/autonomous`` meldet ``enabled=true``, der
     Schalter bleibt nach dem Reload an.
 
+Review-Fix AP22 (Runde 1)
+-------------------------
+Die Klasse ``GithubParityTest`` bindet die Review-Feststellung „GitHub bleibt
+hinter der CLI zurück“. Sie prüft Aktivierung, Token-Ablage (maskiert),
+Verbindungstest, Branch-Liste inklusive Auschecken, Pull (``--ff-only``), Push
+mit Quelle/Ziel, Issue-Import mit Label-Filter und den Merge-Request **mit
+Bestätigung**. Alle Git-Aufrufe gehen gegen ein lokales Bare-Repository
+(``file://``), alle REST-Aufrufe gegen eine Attrappe auf ``127.0.0.1``; ein
+echter github.com-Kontakt ist ausgeschlossen. Die in dieser Runde
+verbindlichen DOM-Hooks stehen im Klassen-Docstring von ``GithubParityTest``
+und werden hier bewusst nicht wiederholt.
+
 Vertragsunklarheiten (bewusst so geprüft und dokumentiert)
 ----------------------------------------------------------
 1. **Kachel-Zählung.** Der Vertrag nennt die Kacheln, aber nicht, ob
@@ -76,6 +88,7 @@ import http.client
 import json
 import os
 import re
+import shutil
 import socket
 import subprocess
 import sys
@@ -190,6 +203,52 @@ TILE_EXPECTED = {
 HIDDEN_SECTIONS = ("github", "writeaccess", "sandbox", "agentsfile")
 VISIBLE_SECTIONS = ("team", "basics", "checks", "pause", "sessions")
 
+# Review-Fix AP22: lokaler GitHub-REST-Ersatz und lokales Git-Remote.
+# Es gibt keinen Netzzugriff außerhalb von Loopback; die API-Basis steht in
+# der project.env und wird ausschließlich von bewussten Aktionen kontaktiert.
+GITHUB_TOKEN = "ap22-review-token-4711"
+GITHUB_ISSUES = [
+    {
+        "number": 7,
+        "title": "Sandbox für Import einschränken",
+        "state": "open",
+        "html_url": "http://127.0.0.1/owner/name/issues/7",
+        "labels": [{"name": "vibe"}],
+    },
+    {
+        "number": 8,
+        "title": "Bug im Label-Filter",
+        "state": "open",
+        "html_url": "http://127.0.0.1/owner/name/issues/8",
+        "labels": [{"name": "bug"}],
+    },
+]
+
+GIT_IDENTITY = {
+    "GIT_AUTHOR_NAME": "Test",
+    "GIT_AUTHOR_EMAIL": "test@example.invalid",
+    "GIT_COMMITTER_NAME": "Test",
+    "GIT_COMMITTER_EMAIL": "test@example.invalid",
+    "GIT_AUTHOR_DATE": "2005-04-07T22:13:13Z",
+    "GIT_COMMITTER_DATE": "2005-04-07T22:13:13Z",
+    "GIT_CONFIG_GLOBAL": os.devnull,
+    "GIT_CONFIG_SYSTEM": os.devnull,
+    "GIT_CONFIG_NOSYSTEM": "1",
+}
+
+
+def git(cwd, *argv, check=True):
+    env = {key: value for key, value in os.environ.items()
+           if not key.startswith("GIT_")}
+    env.update(GIT_IDENTITY)
+    return subprocess.run(
+        ["git", *argv], cwd=str(cwd), env=env, check=check,
+        capture_output=True, text=True, timeout=60)
+
+
+def git_out(cwd, *argv):
+    return git(cwd, *argv).stdout.strip()
+
 
 def free_port():
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
@@ -213,6 +272,75 @@ class _FakeOpenCodeHandler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         self._send_json(200, {"data": []})
+
+
+class _FakeGithubHandler(BaseHTTPRequestHandler):
+    """GitHub-REST-Attrappe: nur Loopback, keine echten GitHub-Aufrufe."""
+
+    def log_message(self, *args):
+        return
+
+    def _send_json(self, status, payload):
+        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_GET(self):
+        self.server.requests.append({"method": "GET", "path": self.path})
+        if self.path.startswith("/repos/owner/name/issues"):
+            self._send_json(200, self.server.issues)
+        elif self.path.startswith("/repos/owner/name"):
+            self._send_json(200, {"full_name": "owner/name"})
+        else:
+            self._send_json(404, {"message": "Not Found"})
+
+    def do_POST(self):
+        length = int(self.headers.get("Content-Length") or 0)
+        body = self.rfile.read(length) if length else b""
+        self.server.requests.append({"method": "POST", "path": self.path})
+        if self.path.startswith("/repos/owner/name/pulls"):
+            self.server.pr_posts.append({
+                "path": self.path,
+                "body": body.decode("utf-8") if body else "",
+            })
+            self._send_json(201, {
+                "number": 42,
+                "html_url": "http://127.0.0.1/owner/name/pull/42",
+            })
+        else:
+            self._send_json(404, {"message": "Not Found"})
+
+
+class FakeGithubServer:
+    """Lokaler GitHub-REST-Ersatz mit Aufzeichnung aller Anfragen."""
+
+    def __init__(self):
+        self.requests = []
+        self.pr_posts = []
+        self.issues = list(GITHUB_ISSUES)
+        self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), _FakeGithubHandler)
+        self.httpd.daemon_threads = True
+        self.httpd.requests = self.requests
+        self.httpd.pr_posts = self.pr_posts
+        self.httpd.issues = self.issues
+        self.thread = threading.Thread(target=self.httpd.serve_forever)
+        self.thread.daemon = True
+
+    @property
+    def base(self):
+        return "http://127.0.0.1:%d" % self.httpd.server_address[1]
+
+    def start(self):
+        self.thread.start()
+        return self
+
+    def stop(self):
+        self.httpd.shutdown()
+        self.httpd.server_close()
+        self.thread.join(timeout=5)
 
 
 class AP22ProjectBrowserTest(unittest.TestCase):
@@ -246,6 +374,21 @@ class AP22ProjectBrowserTest(unittest.TestCase):
         fake.write_text(FAKE_OPENCODE, encoding="utf-8")
         fake.chmod(0o755)
         cls.fake_bin = fake_bin
+
+        # Review-Fix AP22: lokales Git-Remote und GitHub-REST-Attrappe.
+        # Beides entsteht vor dem Serverstart; alle Aufrufe bleiben auf
+        # Loopback beziehungsweise file:// beschränkt.
+        cls.github = FakeGithubServer().start()
+        bare = cls.root / "_origin.git"
+        bare.mkdir()
+        git(bare, "init", "-q", "--bare", "-b", "main")
+        git(cls.project, "init", "-q", "-b", "main")
+        git(cls.project, "commit", "--allow-empty", "-q", "-m", "init")
+        git(cls.project, "remote", "add", "origin", "file://" + str(bare))
+        git(cls.project, "push", "-q", "-u", "origin", "main")
+        git(cls.project, "branch", "feature/arbeit")
+        cls.bare = bare
+        cls.write_project_env()
 
         cls.port = free_port()
         cls.oc_port = free_port()
@@ -305,6 +448,22 @@ class AP22ProjectBrowserTest(unittest.TestCase):
         cls.browser = cls.playwright.chromium.launch(headless=True)
 
     @classmethod
+    def write_project_env(cls, enabled=False, api=None, base="main"):
+        """Schreibt die Projektkonfiguration inklusive Git-&-GitHub-Schlüssel."""
+        keys = [
+            "TYPE=generic",
+            "AGENT=tester",
+            'VERIFY_QUICK="true"',
+            'GITHUB_ENABLED="%s"' % ("1" if enabled else ""),
+            'GITHUB_REPO="owner/name"',
+            'GITHUB_LABEL="vibe"',
+            'GITHUB_API="%s"' % (api or cls.github.base),
+            'GITHUB_BASE="%s"' % base,
+        ]
+        (cls.project / ".vibe" / "project.env").write_text(
+            "\n".join(keys) + "\n", encoding="utf-8")
+
+    @classmethod
     def tearDownClass(cls):
         try:
             cls.browser.close()
@@ -314,6 +473,10 @@ class AP22ProjectBrowserTest(unittest.TestCase):
                 cls._fake_http.shutdown()
                 cls._fake_http.server_close()
                 cls._fake_thread.join(timeout=5)
+            except Exception:
+                pass
+            try:
+                cls.github.stop()
             except Exception:
                 pass
             if cls.proc.poll() is None:
@@ -341,6 +504,15 @@ class AP22ProjectBrowserTest(unittest.TestCase):
             self.log_dir / f"{PROJECT}.verify.log",
         ):
             path.unlink(missing_ok=True)
+        self.write_project_env()
+        shutil.rmtree(self.state_dir / "github-tokens", ignore_errors=True)
+        for token_file in (self.state_dir / "github-token.key",
+                           self.state_dir / "github-token"):
+            Path(token_file).unlink(missing_ok=True)
+        try:
+            git(self.project, "checkout", "-q", "-f", "main")
+        except subprocess.CalledProcessError:
+            pass
         self.post_language("en")
         self.page_errors = []
         self.context = self.browser.new_context(
@@ -757,6 +929,401 @@ class AssistantTest(AP22ProjectBrowserTest):
         self.assertTrue(
             self.toggle_state("[data-nv-autonomous]"),
             "Der autonome Modus ging beim Reload verloren")
+        self.assert_clean_page()
+
+
+class GithubParityTest(AP22ProjectBrowserTest):
+    """Review-Fix AP22: Git & GitHub deckt die zugesagte CLI-Parität ab.
+
+    Verbindliche DOM-Hooks dieser Runde (der Vertrag nennt die Aktionen, aber
+    keine Elementnamen; die Fix-Runde setzt genau diese Namen um)::
+
+        input[data-nv-field="github-enabled"]        Aktivierung (Checkbox)
+        [data-nv-action="github-settings-save"]      Einstellungen speichern
+        input[data-nv-field="github-token"]          Token-Eingabe
+        [data-nv-action="github-token-save"]         Token speichern
+        [data-nv-action="github-token-clear"]        Token löschen
+        [data-nv-github-auth]                        maskierte Token-Zeile
+        [data-nv-action="github-connection"]         Verbindung prüfen
+        [data-nv-github-connection][data-nv-ok]      strukturiertes Ergebnis
+        [data-nv-github-branch="<branch>"]           Branch-Zeile
+        [data-nv-action="github-checkout"]           Branch auschecken
+        input[data-nv-field="github-push-branch"]    Push: Quelle
+        input[data-nv-field="github-push-target"]    Push: Ziel
+        [data-nv-action="github-push"]               Push ausführen
+        [data-nv-action="github-pull"]               Pull (--ff-only)
+        [data-nv-action="github-issues"]             Issues laden
+        [data-nv-github-issues][data-nv-ok]           Issue-Ergebnis
+        [data-nv-action="github-import"]             Issues importieren
+        [data-nv-action="github-pr"]                 Merge-Request anfragen
+        [data-nv-github-pr-confirm]                  Bestätigungsbereich
+        [data-nv-action="github-pr-confirm"]         Merge-Request bestätigen
+        [data-nv-github-pr-result]                   Ergebnis des Versuchs
+
+    Alle Git-Aufrufe laufen gegen ein lokales Bare-Repository (``file://``),
+    die GitHub-REST-Ebene gegen eine Attrappe auf 127.0.0.1. Ein echter
+    github.com-Kontakt ist ausgeschlossen.
+    """
+
+    def enable_github_feature(self):
+        """Schaltet den Feature-Schalter ``github`` über #/settings ein."""
+        self.boot()
+        self.page.locator("[data-nv-nav='settings']").click()
+        self.page.locator("main#nv-main[data-nv-view='settings']").wait_for(
+            state="visible", timeout=25000)
+        box = self.page.locator("input[data-nv-feature='github']")
+        box.wait_for(state="visible", timeout=20000)
+        if not box.is_checked():
+            box.check()
+        self.wait_until(lambda: box.is_checked(), timeout=20,
+                        message="Der Feature-Schalter github blieb aus")
+
+    def reload_github_section(self):
+        self.page.goto(self.base + "/#/project/proj/settings")
+        self.page.locator("main#nv-main[data-nv-view='project']").wait_for(
+            state="visible", timeout=25000)
+        section = self.page.locator("[data-nv-psection='github']")
+        section.wait_for(state="visible", timeout=25000)
+        return section
+
+    def open_github_section(self):
+        self.enable_github_feature()
+        return self.reload_github_section()
+
+    def activate_github(self):
+        """Aktiviert die Projektverknüpfung über die Oberfläche."""
+        self.write_project_env(enabled=False)
+        section = self.open_github_section()
+        box = section.locator("input[data-nv-field='github-enabled']")
+        box.wait_for(state="visible", timeout=20000)
+        if not box.is_checked():
+            box.check()
+        section.locator("[data-nv-action='github-settings-save']").first.click()
+        self.wait_api(
+            f"/api/project?name={PROJECT}",
+            lambda data: data.get("github", {}).get("enabled") is True,
+            message="Die GitHub-Aktivierung wurde nicht gespeichert")
+        return self.reload_github_section()
+
+    def save_token(self):
+        section = self.reload_github_section()
+        field = section.locator("input[data-nv-field='github-token']")
+        field.wait_for(state="visible", timeout=20000)
+        field.fill(GITHUB_TOKEN)
+        section.locator("[data-nv-action='github-token-save']").first.click()
+        self.wait_api(
+            f"/api/project?name={PROJECT}",
+            lambda data: data.get("github", {}).get("auth", {}).get("set") is True,
+            message="Der GitHub-Token wurde nicht gespeichert")
+        return self.reload_github_section()
+
+    def remote_tip(self, branch):
+        out = git_out(self.project, "ls-remote", "origin",
+                      f"refs/heads/{branch}")
+        return out.split()[0] if out else ""
+
+    def test_github_section_offers_every_parity_action(self):
+        """Vorbedingung: Feature ``github`` ist über #/settings eingeschaltet.
+
+        Erwartung: Der Projektbereich ``[data-nv-psection="github"]`` bietet
+        Aktivierung, Token speichern/löschen, Verbindungstest, Branch-Zeilen
+        mit Auschecken, Pull, Push mit Quelle/Ziel, Issues, Import und
+        Merge-Request samt Bestätigung.
+        """
+        section = self.open_github_section()
+        controls = [
+            "input[data-nv-field='github-enabled']",
+            "[data-nv-action='github-settings-save']",
+            "input[data-nv-field='github-token']",
+            "[data-nv-action='github-token-save']",
+            "[data-nv-action='github-token-clear']",
+            "[data-nv-action='github-connection']",
+            "input[data-nv-field='github-push-branch']",
+            "input[data-nv-field='github-push-target']",
+            "[data-nv-action='github-push']",
+            "[data-nv-action='github-pull']",
+            "[data-nv-action='github-issues']",
+            "[data-nv-action='github-import']",
+            "[data-nv-action='github-pr']",
+        ]
+        for selector in controls:
+            with self.subTest(control=selector):
+                self.assertEqual(
+                    1, section.locator(selector).count(),
+                    f"GitHub-Bedienelement {selector!r} fehlt")
+        main_row = section.locator("[data-nv-github-branch='main']")
+        self.assertEqual(
+            1, main_row.count(),
+            "Die Branch-Zeile [data-nv-github-branch='main'] fehlt")
+        self.assertEqual(
+            1, main_row.locator("[data-nv-action='github-checkout']").count(),
+            "Der Auschecken-Knopf der Branch-Zeile fehlt")
+        self.assert_clean_page()
+
+    def test_github_activation_toggle_persists_enable_and_disable(self):
+        """Vorbedingung: Projekt mit ``GITHUB_ENABLED=""``.
+
+        Aktion: Schalter ``github-enabled`` einschalten und speichern, danach
+        ausschalten und speichern.
+        Erwartung: ``/api/project`` meldet ``github.enabled`` wahr bzw. falsch;
+        die project.env enthält nach dem Einschalten ``GITHUB_ENABLED="1"``.
+        """
+        self.write_project_env(enabled=False)
+        section = self.open_github_section()
+        toggle = section.locator("input[data-nv-field='github-enabled']")
+        toggle.wait_for(state="visible", timeout=20000)
+        self.assertFalse(toggle.is_checked(),
+                         "Die Verknüpfung ist ohne Zutun bereits aktiv")
+        toggle.check()
+        section.locator("[data-nv-action='github-settings-save']").first.click()
+        self.wait_api(
+            f"/api/project?name={PROJECT}",
+            lambda data: data.get("github", {}).get("enabled") is True,
+            message="Das Einschalten der GitHub-Verknüpfung wurde nicht "
+                    "gespeichert")
+        env_text = (self.project / ".vibe" / "project.env").read_text(
+            encoding="utf-8")
+        self.assertIn('GITHUB_ENABLED="1"', env_text,
+                      "Die project.env wurde nicht aktiviert")
+
+        section = self.reload_github_section()
+        toggle = section.locator("input[data-nv-field='github-enabled']")
+        self.assertTrue(toggle.is_checked(),
+                        "Der Aktiv-Schalter zeigt den gespeicherten Zustand "
+                        "nicht")
+        toggle.uncheck()
+        section.locator("[data-nv-action='github-settings-save']").first.click()
+        self.wait_api(
+            f"/api/project?name={PROJECT}",
+            lambda data: data.get("github", {}).get("enabled") is False,
+            message="Das Ausschalten der GitHub-Verknüpfung wurde nicht "
+                    "gespeichert")
+        self.assert_clean_page()
+
+    def test_github_token_save_masks_status_and_clear_removes_it(self):
+        """Vorbedingung: Feature github aktiv, kein Token hinterlegt.
+
+        Aktion: Token über die Oberfläche speichern, danach löschen.
+        Erwartung: Die Projekt-API meldet ``auth.set=true`` mit Quelle
+        ``projekt``; die Statuszeile ``[data-nv-github-auth]`` enthält den
+        Token nicht. Nach dem Löschen ist ``auth.set=false``.
+        """
+        self.activate_github()
+        section = self.save_token()
+        auth_line = section.locator("[data-nv-github-auth]")
+        auth_line.wait_for(state="visible", timeout=20000)
+        self.assertNotIn(GITHUB_TOKEN, section.inner_text(),
+                         "Der Token steht unmaskiert im DOM")
+        self.assertRegex(
+            auth_line.inner_text(), r"(?i)gespeichert|projekt|verschlüsselt",
+            "Die Statuszeile nennt die gespeicherte Projektablage nicht")
+        self.assertTrue(
+            self.api_json(f"/api/project?name={PROJECT}")["github"]["auth"]["set"],
+            "Der Token ist serverseitig nicht gesetzt")
+        self.assertEqual(
+            "projekt",
+            self.api_json(f"/api/project?name={PROJECT}")["github"]["auth"]["source"],
+            "Der Token wurde nicht als Projekt-Token abgelegt")
+
+        section.locator("[data-nv-action='github-token-clear']").first.click()
+        self.wait_api(
+            f"/api/project?name={PROJECT}",
+            lambda data: data.get("github", {}).get("auth", {}).get("set") is False,
+            message="Der Token wurde nicht entfernt")
+        self.assertNotIn(GITHUB_TOKEN, section.inner_text(),
+                         "Der gelöschte Token steht weiterhin im DOM")
+        self.assert_clean_page()
+
+    def test_github_connection_check_shows_a_structured_result(self):
+        """Vorbedingung: aktive Verknüpfung, gespeicherter Projekt-Token,
+        lokale GitHub-Attrappe und lokales Bare-Remote.
+
+        Aktion: ``[data-nv-action="github-connection"]`` klicken.
+        Erwartung: ``[data-nv-github-connection][data-nv-ok="true"]`` ist
+        sichtbar und nennt ein Ergebnis; es wird kein externes Netz berührt.
+        """
+        self.activate_github()
+        section = self.save_token()
+        section.locator("[data-nv-action='github-connection']").first.click()
+        result = section.locator("[data-nv-github-connection]")
+        result.wait_for(state="visible", timeout=20000)
+        self.assertEqual("true", result.get_attribute("data-nv-ok"),
+                         "Die Verbindungsprüfung meldet keinen Erfolg: "
+                         + repr(result.inner_text()))
+        self.assertTrue((result.inner_text() or "").strip(),
+                        "Die Verbindungsprüfung zeigt keinen Text")
+        self.assert_clean_page()
+
+    def test_github_branch_list_and_checkout_switches_the_worktree(self):
+        """Vorbedingung: lokales Repository mit den Branches main und
+        feature/arbeit; Verknüpfung aktiv.
+
+        Aktion: Branch-Zeile ``feature/arbeit`` prüfen und auschecken.
+        Erwartung: Beide Branch-Zeilen existieren; der Arbeitsbaum steht
+        danach auf ``feature/arbeit``.
+        """
+        self.activate_github()
+        section = self.reload_github_section()
+        self.assertEqual(
+            1, section.locator("[data-nv-github-branch='main']").count(),
+            "Die Branch-Zeile main fehlt")
+        row = section.locator("[data-nv-github-branch='feature/arbeit']")
+        row.wait_for(state="visible", timeout=20000)
+        row.locator("[data-nv-action='github-checkout']").first.click()
+        self.wait_until(
+            lambda: git_out(self.project, "rev-parse", "--abbrev-ref", "HEAD")
+            == "feature/arbeit",
+            timeout=25,
+            message="Der Branch wurde nicht ausgecheckt")
+        self.assert_clean_page()
+
+    def test_github_pull_fast_forwards_the_current_branch(self):
+        """Vorbedingung: lokaler Branch ``review-pull`` ist hinter origin.
+
+        Aktion: ``[data-nv-action="github-pull"]`` klicken.
+        Erwartung: Der Branch wird per ff-only auf den Fernstand gebracht;
+        die lokale Spitze entspricht danach der Fernspitze.
+        """
+        self.activate_github()
+        git(self.project, "push", "origin", "--delete", "review-pull",
+            check=False)
+        git(self.project, "checkout", "-q", "-B", "review-pull", "main")
+        probe = self.project / "pull-probe.txt"
+        probe.write_text("Fernänderung\n", encoding="utf-8")
+        git(self.project, "add", "pull-probe.txt")
+        git(self.project, "commit", "-q", "-m", "Review-Fix Pull-Probe")
+        git(self.project, "push", "-q", "-u", "origin", "review-pull")
+        remote = git_out(self.project, "rev-parse", "HEAD")
+        git(self.project, "reset", "--hard", "-q", "HEAD~1")
+        self.assertNotEqual(
+            remote, git_out(self.project, "rev-parse", "HEAD"),
+            "Die Vorbedingung 'hinter origin' wurde nicht hergestellt")
+
+        section = self.reload_github_section()
+        section.locator("[data-nv-action='github-pull']").first.click()
+        self.wait_until(
+            lambda: git_out(self.project, "rev-parse", "HEAD") == remote,
+            timeout=25,
+            message="Der Pull hat den Branch nicht aufgeholt")
+        self.assert_clean_page()
+
+    def test_github_push_uses_source_and_target(self):
+        """Vorbedingung: lokaler Branch ``feature/arbeit`` mit einem Commit,
+        der auf origin noch fehlt.
+
+        Aktion: Quelle ``feature/arbeit`` und Ziel ``review-target`` in die
+        Push-Felder eintragen, ``[data-nv-action="github-push"]`` klicken.
+        Erwartung: ``origin/review-target`` zeigt auf die lokale Spitze.
+        """
+        self.activate_github()
+        git(self.project, "push", "origin", "--delete", "review-target",
+            check=False)
+        git(self.project, "checkout", "-q", "-B", "feature/arbeit", "main")
+        probe = self.project / "push-probe.txt"
+        probe.write_text("Browser-Push-Probe\n", encoding="utf-8")
+        git(self.project, "add", "push-probe.txt")
+        git(self.project, "commit", "-q", "-m", "Review-Fix Push-Probe")
+        head = git_out(self.project, "rev-parse", "HEAD")
+
+        section = self.reload_github_section()
+        section.locator(
+            "input[data-nv-field='github-push-branch']").fill("feature/arbeit")
+        section.locator(
+            "input[data-nv-field='github-push-target']").fill("review-target")
+        section.locator("[data-nv-action='github-push']").first.click()
+        self.wait_until(
+            lambda: self.remote_tip("review-target") == head,
+            timeout=25,
+            message="Der Push hat origin/review-target nicht auf die lokale "
+                    "Spitze gebracht")
+        self.assert_clean_page()
+
+    def test_github_issues_reports_a_structured_network_error(self):
+        """Vorbedingung: aktive Verknüpfung, API-Basis auf einer geschlossenen
+        Loopback-Adresse (kein Dienst, kein externes Netz).
+
+        Aktion: ``[data-nv-action="github-issues"]`` klicken.
+        Erwartung: ``[data-nv-github-issues][data-nv-ok="false"]`` zeigt die
+        strukturierte Fehlermeldung; die Oberfläche bleibt bedienbar.
+        """
+        self.activate_github()
+        closed_port = free_port()
+        self.write_project_env(
+            enabled=True, api=f"http://127.0.0.1:{closed_port}")
+        section = self.reload_github_section()
+        section.locator("[data-nv-action='github-issues']").first.click()
+        result = section.locator("[data-nv-github-issues]")
+        result.wait_for(state="visible", timeout=25000)
+        self.assertEqual("false", result.get_attribute("data-nv-ok"),
+                         "Der Issue-Fehler ist nicht als Fehler markiert: "
+                         + repr(result.inner_text()))
+        self.assertRegex(
+            result.inner_text(), r"(?i)nicht erreichbar|github|fehler|verbindung",
+            "Die Fehlermeldung ist nicht verständlich: "
+            + repr(result.inner_text()))
+        self.assert_clean_page()
+
+    def test_github_import_adds_only_matching_issues_to_tickets(self):
+        """Vorbedingung: lokale GitHub-Attrappe liefert GH-7 (Label vibe) und
+        GH-8 (Label bug).
+
+        Aktion: ``[data-nv-action="github-import"]`` klicken.
+        Erwartung: TICKETS.md enthält ``- [ ] GH-7``, aber nicht GH-8.
+        """
+        self.activate_github()
+        section = self.reload_github_section()
+        section.locator("[data-nv-action='github-import']").first.click()
+        tickets = self.project / "TICKETS.md"
+        self.wait_until(
+            lambda: "- [ ] GH-7" in tickets.read_text(encoding="utf-8"),
+            timeout=25,
+            message="GH-7 wurde nicht importiert")
+        text = tickets.read_text(encoding="utf-8")
+        self.assertNotIn("GH-8", text,
+                         "Das Issue mit fremdem Label wurde importiert")
+        self.assertIn("Sandbox für Import einschränken", text)
+        self.assert_clean_page()
+
+    def test_github_merge_request_requires_confirmation_then_attempts(self):
+        """Vorbedingung: aktive Verknüpfung, kein Token (der Projekt-Token
+        wird bewusst nie an eine fremde API-Basis gesendet).
+
+        Aktion: Merge-Request anfordern, dann im Bestätigungsbereich
+        bestätigen.
+        Erwartung: Vor der Bestätigung erscheint nur der Bestätigungsbereich
+        und es wird kein Pull-Request gesendet. Nach der Bestätigung wird die
+        Aktion ausgeführt und ihr Ergebnis in ``[data-nv-github-pr-result]``
+        angezeigt (hier die ehrliche Token-Ablehnung); es gibt keinen
+        externen Netzaufruf.
+        """
+        self.activate_github()
+        section = self.reload_github_section()
+        before = len(self.github.pr_posts)
+        section.locator("[data-nv-action='github-pr']").first.click()
+        confirm = section.locator("[data-nv-github-pr-confirm]")
+        confirm.wait_for(state="visible", timeout=20000)
+        self.assertRegex(
+            confirm.inner_text(),
+            r"(?i)bestät|bestaetig|fortfahren|wirklich|confirm",
+            "Der Bestätigungsbereich erklärt die Aktion nicht")
+        self.assertEqual(
+            before, len(self.github.pr_posts),
+            "Ohne Bestätigung wurde bereits ein Pull-Request gesendet")
+
+        section.locator("[data-nv-action='github-pr-confirm']").first.click()
+        result = section.locator("[data-nv-github-pr-result]")
+        result.wait_for(state="visible", timeout=25000)
+        self.assertTrue(
+            (result.inner_text() or "").strip(),
+            "Der bestätigte Merge-Request zeigt kein Ergebnis")
+        self.assertRegex(
+            result.inner_text(),
+            r"(?i)token|zugang|fehler|nicht|bestät|bestaetig",
+            "Das Ergebnis des Merge-Request-Versuchs ist nicht verständlich: "
+            + repr(result.inner_text()))
+        self.assertEqual(
+            before, len(self.github.pr_posts),
+            "Der Projekt-Token wurde an eine fremde API-Basis gesendet")
         self.assert_clean_page()
 
 

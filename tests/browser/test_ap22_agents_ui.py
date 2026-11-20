@@ -48,6 +48,12 @@ Hook                             Bedeutung
 ``[data-nv-action="agent-delete"]``  Löschen (Vertrag)
 ``[data-nv-raw"]``/``[data-nv-raw-text"]``  Rohmodus (Vertrag)
 ``[data-nv-assign="<projekt>"]``     Projektzuordnung, Schalter (Vertrag)
+``article[data-nv-agent][data-nv-agent-scope="global|<projekt>"]``
+                                    Geltungsbereich der Listenkarte
+``[data-nv-agent-scope-badge]``      sichtbare Geltungsbereichs-Markierung
+``[data-nv-agent-editor][data-nv-agent-scope="global|<projekt>"]``
+                                    Geltungsbereich des Editors
+``#/agents/<scope>/<name>``          Route des geltungsbereichsgenauen Editors
 ===============================  ==========================================
 
 Der Rollen-Katalog des Wizard ist im Vertrag nur als „Rollen-Select aus
@@ -77,6 +83,20 @@ Testfälle (Kurzfassung; Details in den Methoden)
 ``EditorTest.test_copy_creates_a_copy_that_appears_in_the_list``
 ``EditorTest.test_delete_removes_the_agent_file``
 ``AssignmentTest.test_project_toggle_and_model_override_are_saved``
+``ProjectScopeTest.test_list_shows_scope_badges_for_same_named_agents``
+``ProjectScopeTest.test_project_card_edit_opens_project_scoped_editor``
+``ProjectScopeTest.test_save_project_agent_keeps_global_file_unchanged``
+``ProjectScopeTest.test_card_delete_removes_project_agent_but_keeps_global``
+
+Review-Fix AP22 (Runde 1)
+-------------------------
+Die vier ``ProjectScopeTest``-Fälle binden die Review-Feststellung
+„projektbezogene Agenten bearbeiten“: Gleichnamige Agenten in ``global`` und
+einem Projekt müssen in Liste und Editor über ihren Geltungsbereich
+unterscheidbar sein; Speichern und Löschen dürfen ausschließlich die gemeinte
+Datei treffen. Der Löschfall verlangt den Löschknopf
+``[data-nv-action="agent-delete"]`` ausdrücklich **auf der Karte**
+(Review-Befund 7). Die verbindlichen Hooks stehen in der Tabelle oben.
 """
 import http.client
 import json
@@ -149,6 +169,27 @@ mode: quatsch
 ---
 
 Defekter Prompt.
+"""
+
+# Review-Fix AP22: derselbe Name in beiden Geltungsbereichen mit
+# unterschiedlicher Beschreibung. Der Editor darf niemals den globalen Agenten
+# laden oder überschreiben, wenn der projektbezogene gemeint ist.
+SHARED_GLOBAL_AGENT = """---
+description: Globaler geteilter Agent
+mode: subagent
+model: opencode/vibe-modell
+---
+
+Globaler geteilter Prompt.
+"""
+
+SHARED_PROJECT_AGENT = """---
+description: Projektgebundener Agent
+mode: subagent
+model: opencode/test-modell
+---
+
+Projektgebundener Prompt.
 """
 
 CATALOG = {
@@ -311,6 +352,8 @@ class Ap22AgentsBrowserTest(unittest.TestCase):
             VIBE_AGENT, encoding="utf-8")
         (self.agents_dir / "defekt.md").write_text(
             BROKEN_AGENT, encoding="utf-8")
+        (self.agents_dir / "shared.md").write_text(
+            SHARED_GLOBAL_AGENT, encoding="utf-8")
         (self.state / "profiles.json").write_text(
             json.dumps({"rollen": {"vibe-agent": "vibe", "tester": "coder"}},
                        ensure_ascii=False), encoding="utf-8")
@@ -326,6 +369,11 @@ class Ap22AgentsBrowserTest(unittest.TestCase):
         if project_agents.exists():
             for item in project_agents.glob("*.md"):
                 item.unlink()
+        project_agents.mkdir(parents=True, exist_ok=True)
+        # Review-Fix AP22: gleicher Name wie der globale Agent, aber eigener
+        # Geltungsbereich und eigene Beschreibung.
+        (project_agents / "shared.md").write_text(
+            SHARED_PROJECT_AGENT, encoding="utf-8")
 
     def wait_until(self, predicate, timeout=20,
                    message="Bedingung nicht erfüllt"):
@@ -352,6 +400,16 @@ class Ap22AgentsBrowserTest(unittest.TestCase):
         self.page.goto(self.base + f"/#/agents/{name}")
         self.page.locator("[data-nv-agent-editor]").wait_for(
             state="visible", timeout=25000)
+
+    def open_scoped_editor(self, scope, name):
+        """Öffnet den Editor eines Geltungsbereichs (Review-Fix AP22)."""
+        self.boot()
+        self.page.goto(self.base + f"/#/agents/{scope}/{name}")
+        self.page.locator("[data-nv-agent-editor]").wait_for(
+            state="visible", timeout=20000)
+
+    def project_agent_file(self, name):
+        return self.project / ".opencode" / "agents" / f"{name}.md"
 
     def open_wizard(self):
         """Öffnet die Agentenliste und stellt den Wizard sicher."""
@@ -961,6 +1019,208 @@ class AssignmentTest(Ap22AgentsBrowserTest):
             editor.locator(
                 "select[data-nv-assign-model='proj']").input_value(),
             "Nach dem Reload fehlt die Modellüberschreibung")
+
+
+class ProjectScopeTest(Ap22AgentsBrowserTest):
+    """Review-Fix AP22: Projekt-Agenten sind nicht die globalen Agenten.
+
+    ``shared`` liegt bewusst zweimal vor — global und projektbezogen in
+    ``proj`` — und trägt unterschiedliche Beschreibungen. Die Oberfläche muss
+    beide Karten unterscheidbar machen, beim Bearbeiten den richtigen
+    Geltungsbereich adressieren und beim Speichern/Löschen ausschließlich die
+    gemeinte Datei verändern.
+    """
+
+    def test_list_shows_scope_badges_for_same_named_agents(self):
+        """Vorbedingung: ``shared`` existiert global und in Projekt ``proj``
+        mit unterschiedlicher Beschreibung.
+
+        Aktion: ``#/agents`` öffnen. Erwartung: Je eine Karte
+        ``article[data-nv-agent="shared"]`` mit
+        ``data-nv-agent-scope="global"`` bzw. ``"proj"``; jede Karte trägt
+        genau eine Geltungsbereichs-Markierung
+        ``[data-nv-agent-scope-badge]`` (global vs. Projekt) und die eigene
+        Beschreibung.
+        """
+        self.open_agents()
+        global_card = self.page.locator(
+            "article[data-nv-agent='shared'][data-nv-agent-scope='global']")
+        project_card = self.page.locator(
+            "article[data-nv-agent='shared'][data-nv-agent-scope='proj']")
+
+        def both_scoped():
+            return (global_card.count() == 1 and project_card.count() == 1
+                    and global_card.first.is_visible()
+                    and project_card.first.is_visible())
+
+        self.wait_until(
+            both_scoped, timeout=20,
+            message="Gleichnamige globale und projektbezogene Agenten sind "
+                    "in der Liste nicht über ihren Geltungsbereich "
+                    "unterscheidbar")
+
+        global_badge = global_card.locator("[data-nv-agent-scope-badge]")
+        project_badge = project_card.locator("[data-nv-agent-scope-badge]")
+        self.assertEqual(
+            1, global_badge.count(),
+            "Der globalen Karte fehlt die Geltungsbereichs-Markierung")
+        self.assertEqual(
+            1, project_badge.count(),
+            "Der projektbezogenen Karte fehlt die "
+            "Geltungsbereichs-Markierung")
+        self.assertRegex(
+            (global_badge.inner_text() or "").strip(), r"(?i)global",
+            "Die globale Karte ist nicht als global markiert")
+        self.assertRegex(
+            (project_badge.inner_text() or "").strip(),
+            r"(?i)proj|projekt",
+            "Die projektbezogene Karte ist nicht als Projekt-Agent markiert")
+
+        self.assertIn(
+            "Globaler geteilter Agent", global_card.inner_text(),
+            "Die globale Karte zeigt nicht die globale Beschreibung")
+        self.assertIn(
+            "Projektgebundener Agent", project_card.inner_text(),
+            "Die projektbezogene Karte zeigt nicht die "
+            "projektbezogene Beschreibung")
+
+    def test_project_card_edit_opens_project_scoped_editor(self):
+        """Vorbedingung: ``shared`` global und in ``proj``.
+
+        Aktion: Auf der projektbezogenen Karte
+        ``[data-nv-action="agent-edit"]`` klicken. Erwartung: Die Route ist
+        ``#/agents/proj/shared``, der Editor trägt
+        ``data-nv-agent-scope="proj"`` und zeigt die projektbezogene
+        Beschreibung sowie das projektbezogene Modell — nicht den globalen
+        Agenten.
+        """
+        self.open_agents()
+        project_card = self.page.locator(
+            "article[data-nv-agent='shared'][data-nv-agent-scope='proj']")
+        self.wait_until(
+            lambda: project_card.count() == 1,
+            timeout=20,
+            message="Die projektbezogene Karte des Agenten shared fehlt")
+        project_card.locator("[data-nv-action='agent-edit']").click()
+
+        self.wait_until(
+            lambda: self.page.url.endswith("#/agents/proj/shared"),
+            timeout=20,
+            message="Der Projekt-Agent wird nicht über den "
+                    "projektbezogenen Pfad geöffnet: " + self.page.url)
+        editor = self.page.locator("[data-nv-agent-editor]")
+        editor.wait_for(state="visible", timeout=20000)
+        self.assertEqual(
+            "proj", editor.get_attribute("data-nv-agent-scope"),
+            "Der Editor weist den projektbezogenen Geltungsbereich nicht aus")
+        self.assertEqual(
+            "Projektgebundener Agent",
+            editor.locator(
+                "input[data-nv-field='description']").input_value(),
+            "Der Editor zeigt die Beschreibung des globalen Agenten statt "
+            "der projektbezogenen")
+        self.assertEqual(
+            "opencode/test-modell",
+            editor.locator("select[data-nv-field='model']").input_value(),
+            "Der Editor zeigt das Modell des globalen Agenten statt des "
+            "projektbezogenen")
+        self.assertIn(
+            "Projektgebundener Prompt.",
+            editor.locator("textarea[data-nv-field='prompt']").input_value(),
+            "Der Editor zeigt den globalen Prompt statt des "
+            "projektbezogenen")
+
+    def test_save_project_agent_keeps_global_file_unchanged(self):
+        """Vorbedingung: ``shared`` global und in ``proj``.
+
+        Aktion: Projekt-Editor ``#/agents/proj/shared`` öffnen, Beschreibung
+        auf ``Projekt geändert`` setzen und speichern. Erwartung: Nur
+        ``proj/.opencode/agents/shared.md`` ändert sich; die globale Datei
+        ``~/.config/opencode/agents/shared.md`` bleibt byte-gleich.
+        """
+        self.open_scoped_editor("proj", "shared")
+        editor = self.page.locator("[data-nv-agent-editor]")
+        editor.locator("input[data-nv-field='description']").fill(
+            "Projekt geändert")
+        editor.locator("[data-nv-action='agent-save']").click()
+
+        project_file = self.project_agent_file("shared")
+        global_file = self.agents_dir / "shared.md"
+        self.wait_until(
+            lambda: "Projekt geändert" in project_file.read_text(
+                encoding="utf-8"),
+            timeout=20,
+            message="Die Änderung wurde nicht in die projektbezogene "
+                    "Agentendatei geschrieben")
+        self.assertEqual(
+            SHARED_GLOBAL_AGENT, global_file.read_text(encoding="utf-8"),
+            "Das Speichern des Projekt-Agenten überschrieb die globale "
+            "Agentendatei")
+        project_text = project_file.read_text(encoding="utf-8")
+        self.assertIn(
+            "Projektgebundener Prompt.", project_text,
+            "Die projektbezogene Agentendatei wurde nicht gezielt geändert")
+        self.assertNotIn(
+            "Globaler geteilter Prompt.", project_text,
+            "Die projektbezogene Datei enthält den globalen Prompt")
+
+    def test_card_delete_removes_project_agent_but_keeps_global(self):
+        """Vorbedingung: ``shared`` global und in ``proj``.
+
+        Aktion: Auf der projektbezogenen Karte
+        ``article[data-nv-agent="shared"][data-nv-agent-scope="proj"]``
+        ``[data-nv-action="agent-delete"]`` ausführen (Dialog oder inline
+        angebotene Bestätigung wird angenommen). Erwartung: Der Löschknopf
+        liegt auf der Karte (Review-Befund 7); nur die projektbezogene Datei
+        ist entfernt, die globale bleibt bestehen; die Liste zeigt danach nur
+        noch die globale Karte ``data-nv-agent-scope="global"``.
+        """
+        self.open_agents()
+        project_card = self.page.locator(
+            "article[data-nv-agent='shared'][data-nv-agent-scope='proj']")
+        self.wait_until(
+            lambda: project_card.count() == 1,
+            timeout=20,
+            message="Die projektbezogene Karte des Agenten shared fehlt")
+        delete = project_card.locator("[data-nv-action='agent-delete']")
+        self.assertEqual(
+            1, delete.count(),
+            "Die Agentenkarte bietet keinen Löschknopf "
+            "[data-nv-action='agent-delete']")
+        project_file = self.project_agent_file("shared")
+        global_file = self.agents_dir / "shared.md"
+        delete.first.click()
+        self.page.wait_for_timeout(300)
+        # Der Bestätigungsweg ist nicht vorgeschrieben: Dialog (wird in
+        # setUp angenommen) oder sichtbarer Inline-Knopf in Karte/Seite.
+        for root in (project_card, self.page.locator("[data-nv-confirm]"),
+                     self.page.locator("[role='dialog']"), self.page):
+            if self.click_confirm_if_shown(root):
+                break
+        self.wait_until(
+            lambda: not project_file.exists(), timeout=20,
+            message="Der Projekt-Agent wurde nicht gelöscht")
+        self.assertTrue(
+            global_file.exists(),
+            "Das Löschen des Projekt-Agenten entfernte die globale Datei")
+        self.assertEqual(
+            SHARED_GLOBAL_AGENT, global_file.read_text(encoding="utf-8"),
+            "Das Löschen des Projekt-Agenten veränderte die globale Datei")
+
+        self.page.goto(self.base + "/#/agents")
+        self.page.locator("[data-nv-agent-list]").wait_for(
+            state="visible", timeout=20000)
+        self.assertEqual(
+            1, self.page.locator(
+                "article[data-nv-agent='shared']"
+                "[data-nv-agent-scope='global']").count(),
+            "Nach dem Löschen fehlt die globale Karte des Agenten shared")
+        self.assertEqual(
+            0, self.page.locator(
+                "article[data-nv-agent='shared']"
+                "[data-nv-agent-scope='proj']").count(),
+            "Die gelöschte projektbezogene Karte steht weiterhin in der "
+            "Liste")
 
 
 if __name__ == "__main__":

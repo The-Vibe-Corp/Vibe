@@ -37,15 +37,31 @@ Testfälle (Kurzfassung; Details in den Methoden)
     Zähler sichtbar (≥ 1), Ausklapp nennt Frage und Lauf mit Links; nach
     der Antwort sinkt der Zähler oder verschwindet.
 
+Review-Fix AP22 (Runde 1)
+-------------------------
+Die Klasse ``ReviewActivityParityTest`` bindet drei Review-Feststellungen:
+Die Glocke zählt **drei** Quellen (offene Fragen, blockierte Pakete,
+fehlgeschlagene Läufe) und verlinkt blockierte Pakete auf ``/work`` sowie
+fehlgeschlagene Läufe auf ``/output``; die Aktivitätsseite zeigt die
+Zusammenfassungs-Kacheln ``running``, ``questions``, ``blocked``; eine
+Laufzeile ``[data-nv-run="<projekt>"]`` bietet einen Stop
+``[data-nv-action="stop-run"]``, der das Register auf ``stopped`` setzt.
+Verbindliche Hooks stehen im Klassen-Docstring. Der fehlgeschlagene Lauf
+entsteht mit dem echten Registerformat (``vibe_runs.py start --state failed``)
+vor dem Serverstart und wird je Test neu in ``runs.json`` gelegt.
+
 Vertragsunklarheiten (bewusst so geprüft und dokumentiert)
 ----------------------------------------------------------
 1. **Glocken-Inhalt.** ``docs/features/AP22.md`` nennt offene Fragen,
-   blockierte Pakete und fehlgeschlagene Läufe; die Beauftragung und der
-   aktuelle Stand nennen eine offene Frage **und einen laufenden Lauf**.
-   Geprüft wird die Beauftragung: Frage + laufender Lauf, beide verlinkt.
-2. **Läufe-Zeilen.** Der Vertrag nennt keinen Zeilen-Hook. Geprüft wird der
-   Projektname im Bereich und ein Link/Knopf, dessen Ziel die
-   Projekt-/Ausgabeansicht ist.
+   blockierte Pakete und fehlgeschlagene Läufe. Der Bestandsfall prüft
+   Frage + laufenden Lauf (Beauftragung der ersten Runde); die Review-Fix-
+   Runde prüft zusätzlich die drei vertraglichen Quellen und ihre
+   Verlinkung. Beide Fälle bleiben unabhängig gültig.
+2. **Läufe-Zeilen.** Der Vertrag nennt keinen Zeilen-Hook. Der Bestandsfall
+   prüft den Projektnamen im Bereich und einen Link/Knopf mit Ziel auf die
+   Projekt-/Ausgabeansicht. Die Review-Fix-Runde bindet für die Laufzeile
+   verbindlich ``[data-nv-run="<projekt>"]`` mit
+   ``[data-nv-action="stop-run"]``.
 3. **Sessions-Limit.** Der Vertrag nennt nur Eingabe und Speichern-Knopf,
    nicht die POST-Form. Der Test prüft die beobachtbare Persistenz über
    ``GET /api/sessions`` und nach dem Reload.
@@ -85,6 +101,8 @@ QUESTION_TEXT = "AP22-FRAGE-4711: Soll die Schaltfläche blau werden?"
 QUESTION_OPTIONS = ["Ja, blau", "Nein, grau"]
 FREE_QUESTION_ID = "qbbbbbbbbbbbb"
 FREE_QUESTION_TEXT = "AP22-FREITEXT-4711: Wie soll die Begrüßung lauten?"
+BLOCKED_ID = "AP22-BLOCK"
+BLOCKED_TITLE = "Blockiertes Paket"
 
 
 def free_port():
@@ -106,7 +124,9 @@ class AP22ActivityBrowserTest(unittest.TestCase):
             "TYPE=generic\n", encoding="utf-8")
         (cls.project / "TICKETS.md").write_text(
             "# TICKETS — AP22 Test\n\n- [ ] AP22 Aktivität\n"
-            "  Beschreibung: Test\n", encoding="utf-8")
+            "  Beschreibung: Test\n\n- [ ] AP22-BLOCK Blockiertes Paket\n"
+            "  Beschreibung: Wartet auf Freigabe.\n"
+            "  BLOCKIERT: externe Freigabe fehlt\n", encoding="utf-8")
         (cls.project / "FEEDBACK.md").write_text("# FEEDBACK\n", encoding="utf-8")
         (cls.root / "home" / ".config" / "opencode" / "agents").mkdir(
             parents=True)
@@ -147,6 +167,27 @@ class AP22ActivityBrowserTest(unittest.TestCase):
             "PYTHONDONTWRITEBYTECODE": "1",
         })
         cls.env = env
+
+        # Review-Fix AP22: Der fehlgeschlagene Lauf entsteht mit dem echten
+        # Registerformat **vor** dem Serverstart. Die Vorlage wird je Test
+        # erneut in runs.json gelegt, damit die Fälle isoliert bleiben.
+        failed = subprocess.run([
+            sys.executable, str(RUNS_PY), "start",
+            "--runtime", str(cls.log_dir),
+            "--project", str(cls.project.resolve()),
+            "--name", PROJECT, "--key", PROJECT, "--agent", "vibe-agent",
+            "--session", "vibe-failed-review", "--state", "failed",
+        ], env=env, capture_output=True, text=True, timeout=30)
+        if failed.returncode != 0:
+            raise AssertionError(
+                "Vorbedingung fehlgeschlagener Lauf fehlgeschlagen: "
+                + failed.stdout + failed.stderr)
+        runs_path = cls.log_dir / "runs.json"
+        cls.failed_runs_text = runs_path.read_text(encoding="utf-8")
+        cls.failed_run_id = json.loads(
+            cls.failed_runs_text)["runs"][-1]["id"]
+        runs_path.unlink()
+
         cls.server_log = open(cls.root / "web-server.log", "w", encoding="utf-8")
         cls.proc = subprocess.Popen(
             [sys.executable, str(WEB)], env=env,
@@ -647,6 +688,190 @@ class BellTest(AP22ActivityBrowserTest):
         self.wait_until(
             updated, timeout=25,
             message="Der Glocken-Zähler sank nach der Antwort nicht")
+        self.assert_clean_page()
+
+
+class ReviewActivityParityTest(AP22ActivityBrowserTest):
+    """Review-Fix AP22: Glocke, Kacheln und Stop decken den Vertrag ab.
+
+    Verbindliche DOM-Hooks dieser Runde (der Vertrag nennt die Inhalte, aber
+    keine Zeilen-/Kachelnamen; die Fix-Runde setzt genau diese Namen um)::
+
+        [data-nv-bell-count]                        Zähler (Bestand)
+        [data-nv-bell-panel]                        Ausklapp (Bestand)
+        a[href*="/work"] im Panel                   blockiertes Paket
+        a[href*="/output"] im Panel                 fehlgeschlagener Lauf
+        [data-nv-tile="running|questions|blocked"]  Zusammenfassungs-Kacheln
+        [data-nv-run="<projekt>"]                   Laufzeile
+        [data-nv-action="stop-run"]                 Stop in der Laufzeile
+        [data-nv-confirm] oder window.confirm()     optionale Stop-Bestätigung
+
+    Die Glocke zählt drei Quellen: offene Fragen, blockierte Pakete
+    (``BLOCKIERT:`` in TICKETS.md) und fehlgeschlagene Läufe
+    (``runs.json``, Zustand ``failed``). Blockierte Pakete verlinken auf den
+    Arbeits-Tab, fehlgeschlagene Läufe auf die Ausgabe. Der Test nimmt eine
+    vorhandene Stop-Bestätigung an, erzwingt aber keine bestimmte Bauform;
+    verbindlich ist der Stop-Hook in der Zeile.
+    """
+
+    def setUp(self):
+        super().setUp()
+        (self.log_dir / "runs.json").write_text(
+            self.failed_runs_text, encoding="utf-8")
+        self.page.on("dialog", lambda dialog: dialog.accept())
+
+    def latest_run_state(self):
+        data = json.loads(
+            (self.log_dir / "runs.json").read_text(encoding="utf-8"))
+        for record in reversed(data.get("runs") or []):
+            if record.get("name") == PROJECT:
+                return str(record.get("state") or "")
+        return None
+
+    def bell_count(self):
+        badge = self.page.locator("span[data-nv-bell-count]")
+        if badge.count() == 0 or not badge.first.is_visible():
+            return 0
+        match = re.search(r"\d+", badge.first.inner_text() or "")
+        return int(match.group(0)) if match else 0
+
+    def wait_bell_count(self, expected, timeout=25):
+        """Wartet auf den Glocken-Zähler und nennt den echten Istwert."""
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            if self.bell_count() == expected:
+                return
+            self.page.wait_for_timeout(100)
+        self.fail("Die Glocke zählt nicht die erwarteten Quellen (erwartet "
+                  + str(expected) + ", gesehen " + str(self.bell_count())
+                  + ")")
+
+    def confirm_stop_if_shown(self):
+        """Nimmt eine optionale Stop-Bestätigung an (Dialog oder Inline)."""
+        for root in (self.page.locator("[data-nv-confirm]"),
+                     self.page.locator("[role='dialog']")):
+            if not root.count():
+                continue
+            confirm = root.locator("button").filter(
+                has_text=re.compile(r"stopp|stop|ja|yes|bestätig|bestaetig",
+                                    re.I)).first
+            if confirm.count() and confirm.is_visible():
+                confirm.click()
+                return
+
+    def activity_tile_value(self, name):
+        tile = self.page.locator(f"[data-nv-tile='{name}']").first
+        self.wait_until(
+            lambda: tile.count() == 1 and tile.is_visible(),
+            timeout=20,
+            message=f"Die Zusammenfassungs-Kachel {name!r} fehlt")
+        text = tile.inner_text() or ""
+        match = re.search(r"\d+", text)
+        self.assertIsNotNone(
+            match, f"Kachel {name!r} zeigt keine Zahl: {text!r}")
+        return int(match.group(0))
+
+    def test_bell_counts_questions_blocked_and_failed_with_links(self):
+        """Vorbedingung: eine offene Frage, ein ``BLOCKIERT:``-Paket und ein
+        fehlgeschlagener Lauf im Register.
+
+        Erwartung: Der Glocken-Zähler ist 3; der Ausklapp nennt alle drei
+        Quellen. Das blockierte Paket verlinkt auf ``/work``, der
+        fehlgeschlagene Lauf auf ``/output``, die Frage auf ihr Projekt. Nach
+        der Antwort sinkt der Zähler auf 2 (Blockiert + Fehlgeschlagen).
+        """
+        self.boot()
+        self.wait_bell_count(3)
+        self.page.locator("button[data-nv-bell]").click()
+        panel = self.page.locator("[data-nv-bell-panel]")
+        panel.wait_for(state="visible", timeout=20000)
+        text = panel.inner_text()
+        for needle in (QUESTION_TEXT, BLOCKED_ID, self.failed_run_id):
+            with self.subTest(needle=needle):
+                self.assertIn(needle, text,
+                              f"Der Glocken-Ausklapp nennt {needle!r} nicht")
+
+        blocked_link = panel.locator("a").filter(has_text=BLOCKED_ID).first
+        self.assertEqual(
+            1, blocked_link.count(),
+            "Das blockierte Paket ist im Ausklapp nicht verlinkt")
+        self.assertIn(
+            "/work", blocked_link.get_attribute("href") or "",
+            "Der Link des blockierten Pakets zeigt nicht auf den Arbeits-Tab")
+
+        failed_link = panel.locator("a[href*='output']").filter(
+            has_text=PROJECT).first
+        self.assertEqual(
+            1, failed_link.count(),
+            "Der fehlgeschlagene Lauf ist im Ausklapp nicht auf die Ausgabe "
+            "verlinkt")
+        question_link = panel.locator("a").filter(
+            has_text=QUESTION_TEXT).first
+        self.assertEqual(
+            1, question_link.count(),
+            "Die offene Frage ist im Ausklapp nicht verlinkt")
+        self.assertTrue((question_link.get_attribute("href") or "").strip(),
+                        "Der Frage-Link hat kein Ziel")
+
+        self.page.goto(self.base + "/#/activity")
+        self.page.locator("main#nv-main[data-nv-view='activity']").wait_for(
+            state="visible", timeout=25000)
+        self.page.locator("[data-nv-answer='1']").wait_for(
+            state="visible", timeout=20000)
+        self.page.locator("[data-nv-answer='1']").click()
+        self.wait_until(lambda: self.answer_file().is_file(), timeout=20,
+                        message="Die Frage wurde nicht beantwortet")
+        self.page.goto(self.base + "/#/")
+        self.page.locator("main#nv-main[data-nv-view='home']").wait_for(
+            state="visible", timeout=25000)
+        self.wait_bell_count(2)
+        self.assert_clean_page()
+
+    def test_activity_summary_tiles_show_running_questions_and_blocked(self):
+        """Vorbedingung: dieselbe Fixture wie der Glocken-Fall (kein laufender
+        Lauf, eine Frage, ein blockiertes Paket).
+
+        Erwartung: Die Kacheln ``running=0``, ``questions=1``, ``blocked=1``
+        sind sichtbar und zeigen die Zahlen.
+        """
+        self.open_activity()
+        expected = {"running": 0, "questions": 1, "blocked": 1}
+        for name, value in expected.items():
+            with self.subTest(tile=name):
+                self.assertEqual(
+                    value, self.activity_tile_value(name),
+                    f"Kachel {name!r} zeigt nicht die erwartete Anzahl")
+        self.assert_clean_page()
+
+    def test_run_row_offers_stop_and_stops_the_run(self):
+        """Vorbedingung: ein laufender Attrappen-Lauf mit markierter
+        tmux-Sitzung im Register.
+
+        Aktion: ``[data-nv-action="stop-run"]`` in der Zeile
+        ``[data-nv-run="proj"]`` klicken.
+        Erwartung: Der Registereintrag endet im Zustand ``stopped`` und
+        ``/api/run-state`` meldet nicht mehr ``running``.
+        """
+        self.start_run()
+        self.open_activity()
+        row = self.page.locator(f"[data-nv-run='{PROJECT}']")
+        self.wait_until(
+            lambda: row.count() == 1 and row.first.is_visible(),
+            timeout=20,
+            message="Die Laufzeile [data-nv-run] fehlt")
+        stop = row.locator("[data-nv-action='stop-run']")
+        self.assertEqual(1, stop.count(),
+                         "Die Laufzeile bietet keinen Stop-Knopf")
+        stop.first.click()
+        self.page.wait_for_timeout(300)
+        self.confirm_stop_if_shown()
+        self.wait_until(
+            lambda: self.latest_run_state() == "stopped", timeout=25,
+            message="Der Lauf wurde nicht auf 'stopped' gesetzt: "
+                    + repr(self.latest_run_state()))
+        self.assertFalse(
+            self.api_json(f"/api/run-state?name={PROJECT}").get("running"),
+            "Die Lauf-Pille meldet nach dem Stop weiterhin einen Lauf")
         self.assert_clean_page()
 
 

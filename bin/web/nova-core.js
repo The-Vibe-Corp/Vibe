@@ -423,16 +423,46 @@ function closeBellPanel() {
 }
 NV.closeBellPanel = closeBellPanel;
 
-/* Glocke: offene Fragen + laufende Läufe. Weitere Quellen (blockierte Pakete,
-   fehlgeschlagene Läufe) kommen in Meilenstein B hinzu — die Liste ist dafür
-   schon als Einträge mit Link aufgebaut. */
+/* Gemeinsame Momentaufnahme für Glocke und Aktivitäts-Kacheln. Quellen sind
+   offene Fragen, Läufe (/api/projects) und blockierte Pakete (/api/project je
+   Projekt mit offenen Einträgen). Der Detailaufruf ist bewusst auf Projekte
+   mit offenen Einträgen beschränkt; die Ansicht bleibt dadurch auch bei vielen
+   Projekten klein. Ein fehlgeschlagener Detailaufruf darf die übrigen Quellen
+   nicht verdecken. */
+NV.pulse = async function pulse() {
+  var questions = await api('/api/questions');
+  var projects = await api('/api/projects');
+  var rows = projects || [];
+  var running = rows.filter(function (row) { return row && !!row.running; });
+  var failed = rows.filter(function (row) {
+    return row && row.run && String(row.run.state || '') === 'failed';
+  });
+  var withOpen = rows.filter(function (row) { return row && (row.open || 0) > 0; });
+  var details = await Promise.all(withOpen.map(function (row) {
+    return api('/api/project?name=' + encodeURIComponent(String(row.name)))
+      .then(function (data) { return {name: String(row.name), tickets: (data && data.tickets) || []}; })
+      .catch(function () { return {name: String(row.name), tickets: []}; });
+  }));
+  var blocked = [];
+  details.forEach(function (detail) {
+    detail.tickets.forEach(function (ticket) {
+      if (String(ticket && ticket.state || '') === 'BLOCKIERT') {
+        blocked.push({project: detail.name, id: String(ticket.id || ''),
+          title: String(ticket.title || ticket.id || '')});
+      }
+    });
+  });
+  return {questions: (questions && questions.questions) || [], projects: rows,
+    running: running, failed: failed, blocked: blocked};
+};
+
+/* Glocke: die drei vertraglichen Quellen (Fragen, blockierte Pakete,
+   fehlgeschlagene Läufe) plus laufende Läufe — alle als verlinkte Einträge. */
 async function refreshBell() {
   try {
-    var questions = await api('/api/questions');
-    var projects = await api('/api/projects');
-    var open = (questions && questions.questions) || [];
-    var running = (projects || []).filter(function (row) { return !!row.running; });
-    var count = open.length + running.length;
+    var p = await NV.pulse();
+    var count = p.questions.length + p.blocked.length + p.failed.length
+      + p.running.length;
     var badge = document.querySelector('[data-nv-bell-count]');
     var panel = document.querySelector('[data-nv-bell-panel]');
     if (badge) {
@@ -441,14 +471,27 @@ async function refreshBell() {
     }
     if (panel) {
       var rows = [];
-      open.forEach(function (question) {
+      p.questions.forEach(function (question) {
         var project = String(question.project || '');
         rows.push(el('a', {class: 'nv-bell-item', href: '#/project/' + encodeURIComponent(project)},
           tr('Frage') + ': ' + String(question.text || '') + ' — ' + project));
       });
-      running.forEach(function (row) {
-        rows.push(el('a', {class: 'nv-bell-item', href: '#/project/' + encodeURIComponent(row.name) + '/output'},
-          tr('Lauf läuft') + ': ' + String(row.name)));
+      p.blocked.forEach(function (item) {
+        rows.push(el('a', {class: 'nv-bell-item',
+          href: '#/project/' + encodeURIComponent(item.project) + '/work'},
+          tr('Blockiert') + ': ' + (item.id || item.title) + ' — ' + item.project));
+      });
+      p.failed.forEach(function (item) {
+        var runId = String((item.run && item.run.run_id) || '');
+        rows.push(el('a', {class: 'nv-bell-item',
+          href: '#/project/' + encodeURIComponent(String(item.name)) + '/output'},
+          tr('Lauf fehlgeschlagen') + ': ' + String(item.name)
+            + (runId ? ' · ' + runId : '')));
+      });
+      p.running.forEach(function (item) {
+        rows.push(el('a', {class: 'nv-bell-item',
+          href: '#/project/' + encodeURIComponent(String(item.name)) + '/output'},
+          tr('Lauf läuft') + ': ' + String(item.name)));
       });
       if (!rows.length) {
         rows.push(el('p', {class: 'nv-muted nv-bell-empty'}, tr('Keine Benachrichtigungen gerade')));

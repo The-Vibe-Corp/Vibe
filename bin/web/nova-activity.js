@@ -74,6 +74,9 @@ function nvQuestionCard(question, token, reload) {
 NV.views.activity = function activity(context, token) {
   if (NV.stale(token)) return;
 
+  /* Zusammenfassung: dieselben Quellen wie die Glocke. Die Kacheln entstehen
+     erst mit den echten Zahlen, damit nie ein veralteter Wert sichtbar wird. */
+  var tilesBox = el('div', {class: 'nv-tiles', 'data-nv-activity-tiles': ''});
   var runsBody = el('div', {class: 'nv-runs-body'},
     nvActivityEmpty(tr('Gerade läuft keine Arbeit.')));
   var sessionsBody = el('div', {class: 'nv-sessions-body'},
@@ -90,6 +93,7 @@ NV.views.activity = function activity(context, token) {
 
   document.getElementById('nv-main').replaceChildren(
     el('h2', {class: 'nv-page-title'}, tr('Aktivität')),
+    tilesBox,
     el('section', {class: 'nv-card', 'data-nv-runs': ''},
       el('h3', {}, tr('Läufe')), runsBody),
     el('section', {class: 'nv-card', 'data-nv-sessions': ''},
@@ -99,20 +103,47 @@ NV.views.activity = function activity(context, token) {
     el('section', {class: 'nv-card', 'data-nv-questions': ''},
       el('h3', {}, tr('Rückfragen')), questionsBody));
 
-  /* ---------- Läufe ---------- */
-  api('/api/projects').then(function (rows) {
+  /* ---------- Zusammenfassung und Läufe (eine gemeinsame Quelle) ---------- */
+  NV.pulse().then(function (p) {
     if (NV.stale(token)) return;
-    var running = (rows || []).filter(function (row) { return row && row.running; });
+    var tiles = el('div', {class: 'nv-tiles'});
+    [
+      ['running', p.running.length, tr('Laufend')],
+      ['questions', p.questions.length, tr('Offene Fragen')],
+      ['blocked', p.blocked.length, tr('Blockiert')]
+    ].forEach(function (tile) {
+      tiles.append(el('div', {class: 'nv-card nv-tile', 'data-nv-tile': tile[0]},
+        el('div', {class: 'nv-tile-num'}, String(tile[1])),
+        el('div', {class: 'nv-tile-label'}, tile[2])));
+    });
+    tilesBox.replaceChildren(tiles);
+
     var list = el('div', {class: 'nv-run-list'});
-    if (!running.length) {
+    if (!p.running.length) {
       list.append(nvActivityEmpty(tr('Gerade läuft keine Arbeit.')));
     }
-    running.forEach(function (row) {
-      list.append(el('div', {class: 'nv-run-row'},
-        el('span', {class: 'nv-run-name'}, String(row.name)),
+    p.running.forEach(function (row) {
+      var name = String(row.name);
+      var stop = el('button', {class: 'nv-btn nv-danger', type: 'button',
+        'data-nv-action': 'stop-run'}, tr('Stopp'));
+      stop.addEventListener('click', async function () {
+        if (!window.confirm(String(tr('Lauf wirklich stoppen?')) + ' ' + name)) return;
+        try {
+          var result = await api('/api/stop', {name: name});
+          if (NV.stale(token)) return;
+          toast(bt(result && result.message)
+            || (result && result.ok ? tr('Lauf gestoppt.') : tr('Stoppen fehlgeschlagen.')));
+          if (!NV.stale(token)) NV.render();
+        } catch (error) {
+          toast(tr('Stoppen fehlgeschlagen: ') + String(error && error.message || error));
+        }
+      });
+      list.append(el('div', {class: 'nv-run-row', 'data-nv-run': name},
+        el('span', {class: 'nv-run-name'}, name),
         el('span', {class: 'nv-pill'}, tr('läuft')),
-        el('a', {class: 'nv-btn', href: '#/project/' + encodeURIComponent(String(row.name)) + '/output',
-          'data-nv-action': 'open-output'}, tr('Öffnen'))));
+        el('a', {class: 'nv-btn', href: '#/project/' + encodeURIComponent(name) + '/output',
+          'data-nv-action': 'open-output'}, tr('Öffnen')),
+        stop));
     });
     runsBody.replaceChildren(list);
   }).catch(function (error) {

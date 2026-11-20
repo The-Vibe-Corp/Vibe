@@ -337,3 +337,261 @@ Tests, kein Commit.
    (verschobenes Paket zuerst, Reihenfolge über den Reload stabil).
    Live-Server-Beleg (B1): `order[0].id == "AP-OPEN2"` nach dem Hochschieben
    und Speichern. `PriorityTest` ist grün.
+
+## Review-Fix-Runde — Rotphase
+
+Grundlage: `docs/reviews/AP22-review-1.md`, Befunde 1–5 (Medium) und 7
+(Minor). Die fünf Lücken sind am Stand `6dc547b` **nicht** umgesetzt; die
+folgenden Fälle sind deshalb absichtlich rot und bilden den Umsetzungsvertrag
+der Fix-Runde. Vorarbeiten einer abgebrochenen Vorgängersitzung in denselben
+drei Testdateien wurden geprüft, py-kompiliert und übernommen; fehlerhafte
+Fragmente wurden nicht gefunden. Es wurden keine Produktionsdateien, fremden
+Tests oder Review-Dateien verändert und nichts committet.
+
+### Neue Fälle und verbindliche Hooks
+
+**`tests/browser/test_ap22_project_ui.py` — `GithubParityTest` (10 Fälle)**
+
+1. `test_github_section_offers_every_parity_action` — Präsenz aller
+   Bedienelemente und der Branch-Zeile `main`.
+2. `test_github_activation_toggle_persists_enable_and_disable` — Schalter
+   ein/aus, `GET /api/project` und `GITHUB_ENABLED="1"` in der project.env.
+3. `test_github_token_save_masks_status_and_clear_removes_it` — Token
+   speichern (maskiert, `auth.source == "projekt"`), wieder entfernen.
+4. `test_github_connection_check_shows_a_structured_result` — lokaler
+   Fern- und REST-Test mit strukturiertem Ergebnis.
+5. `test_github_branch_list_and_checkout_switches_the_worktree` — lokale
+   Branches `main`/`feature/arbeit`, Auschecken wechselt den Arbeitsbaum.
+6. `test_github_pull_fast_forwards_the_current_branch` — ff-only-Pull holt
+   den lokalen Branch auf `origin` auf.
+7. `test_github_push_uses_source_and_target` — Push mit Quelle und Ziel
+   erzeugt `origin/review-target` auf der lokalen Spitze.
+8. `test_github_issues_reports_a_structured_network_error` — geschlossene
+   Loopback-Adresse, `data-nv-ok="false"` mit verständlicher Meldung.
+9. `test_github_import_adds_only_matching_issues_to_tickets` — Label
+   `vibe` importiert `GH-7`, nicht `GH-8`.
+10. `test_github_merge_request_requires_confirmation_then_attempts` — ohne
+    Bestätigung kein REST-POST; nach Bestätigung ein sichtbares Ergebnis
+    (hier ehrliche Token-Ablehnung, kein externer Netzaufruf).
+
+Verbindliche DOM-Hooks (Klassen-Docstring; die Fix-Runde setzt genau diese
+Namen um):
+
+```
+input[data-nv-field="github-enabled"]        Aktivierung
+[data-nv-action="github-settings-save"]      Einstellungen speichern
+input[data-nv-field="github-token"]          Token-Eingabe
+[data-nv-action="github-token-save"]         Token speichern
+[data-nv-action="github-token-clear"]        Token löschen
+[data-nv-github-auth]                        maskierte Statuszeile
+[data-nv-action="github-connection"]         Verbindung prüfen
+[data-nv-github-connection][data-nv-ok]      Ergebnis Verbindungsprüfung
+[data-nv-github-branch="<branch>"]           Branch-Zeile
+[data-nv-action="github-checkout"]           Branch auschecken
+input[data-nv-field="github-push-branch"]    Push-Quelle
+input[data-nv-field="github-push-target"]    Push-Ziel
+[data-nv-action="github-push"]               Push
+[data-nv-action="github-pull"]               Pull (--ff-only)
+[data-nv-action="github-issues"]             Issues laden
+[data-nv-github-issues][data-nv-ok]          Issue-Ergebnis
+[data-nv-action="github-import"]             Issues importieren
+[data-nv-action="github-pr"]                 Merge-Request anfragen
+[data-nv-github-pr-confirm]                  Bestätigungsbereich
+[data-nv-action="github-pr-confirm"]         Merge-Request bestätigen
+[data-nv-github-pr-result]                   Ergebnis des Versuchs
+```
+
+Isolation: lokales Bare-Repository (`file://`) und GitHub-REST-Attrappe auf
+`127.0.0.1`; der Projekt-Token wird vom Server bewusst nicht an fremde
+API-Basen gesendet. Kein github.com-Kontakt.
+
+**`tests/browser/test_ap22_activity_ui.py` — `ReviewActivityParityTest`
+(3 Fälle)**
+
+1. `test_bell_counts_questions_blocked_and_failed_with_links` — Glocke
+   zählt 3 (Frage + `BLOCKIERT:`-Paket + `failed`-Lauf), Panel verlinkt
+   `/work` bzw. `/output`; nach der Antwort 2.
+2. `test_activity_summary_tiles_show_running_questions_and_blocked` —
+   Kacheln `running=0`, `questions=1`, `blocked=1`.
+3. `test_run_row_offers_stop_and_stops_the_run` — Stop in der Laufzeile,
+   Register endet `stopped`, `/api/run-state` meldet nicht mehr `running`.
+
+Verbindliche DOM-Hooks:
+
+```
+[data-nv-bell-count]                        Zähler (Bestand)
+[data-nv-bell-panel]                        Ausklapp (Bestand)
+a[href*="/work"]                            blockiertes Paket
+a[href*="/output"]                          fehlgeschlagener Lauf
+[data-nv-tile="running|questions|blocked"]  Zusammenfassungs-Kacheln
+[data-nv-run="<projekt>"]                   Laufzeile
+[data-nv-action="stop-run"]                 Stop in der Laufzeile
+[data-nv-confirm] oder window.confirm()     optionale Stop-Bestätigung
+```
+
+Der fehlgeschlagene Lauf entsteht mit dem echten Registerformat
+(`vibe_runs.py start --state failed`) vor dem Serverstart; das blockierte
+Paket steht als `BLOCKIERT:` in `TICKETS.md`.
+
+**`tests/browser/test_ap22_agents_ui.py` — `ProjectScopeTest` (4 Fälle)**
+
+1. `test_list_shows_scope_badges_for_same_named_agents` — gleichnamiger
+   Agent `shared` global und in `proj`, beide Karten mit eigener
+   Beschreibung und Geltungsbereichs-Badge.
+2. `test_project_card_edit_opens_project_scoped_editor` — Karte öffnet
+   `#/agents/proj/shared`; Editor zeigt Beschreibung, Modell und Prompt des
+   Projekt-Agenten.
+3. `test_save_project_agent_keeps_global_file_unchanged` — Speichern
+   schreibt nur `proj/.opencode/agents/shared.md`, die globale Datei bleibt
+   byte-gleich.
+4. `test_card_delete_removes_project_agent_but_keeps_global` — Löschknopf
+   **auf der Karte**, projektbezogene Datei verschwindet, globale bleibt.
+
+Verbindliche DOM-Hooks:
+
+```
+article[data-nv-agent][data-nv-agent-scope="global|<projekt>"]
+[data-nv-agent-scope-badge]
+[data-nv-agent-editor][data-nv-agent-scope="global|<projekt>"]
+#/agents/<scope>/<name>
+[data-nv-action="agent-delete"]             auf der Karte
+```
+
+Projekt-Agenten liegen nach `vibe.agent_dir(scope)` in
+`<projekt>/.opencode/agents/<name>.md`; die API `/api/agent` unterstützt
+`scope` bereits vollständig (Lesen, Speichern, Löschen, Kopieren,
+Wiederherstellen).
+
+### Rotphase (Verbatim)
+
+Ausführung mit `python -m unittest ...` am Stand `6dc547b`, ohne
+Produktionsänderung.
+
+`GithubParityTest`:
+
+```
+ERROR: test_github_activation_toggle_persists_enable_and_disable
+...
+playwright._impl._errors.TimeoutError: Locator.wait_for: Timeout 20000ms exceeded.
+...
+FAIL: test_github_section_offers_every_parity_action (...) (control="input[data-nv-field='github-enabled']")
+AssertionError: 1 != 0 : GitHub-Bedienelement "input[data-nv-field='github-enabled']" fehlt
+...
+AssertionError: 1 != 0 : GitHub-Bedienelement "input[data-nv-field='github-token']" fehlt
+AssertionError: 1 != 0 : GitHub-Bedienelement "[data-nv-action='github-token-save']" fehlt
+AssertionError: 1 != 0 : GitHub-Bedienelement "[data-nv-action='github-token-clear']" fehlt
+AssertionError: 1 != 0 : GitHub-Bedienelement "input[data-nv-field='github-push-branch']" fehlt
+AssertionError: 1 != 0 : GitHub-Bedienelement "input[data-nv-field='github-push-target']" fehlt
+AssertionError: 1 != 0 : GitHub-Bedienelement "[data-nv-action='github-push']" fehlt
+AssertionError: 1 != 0 : GitHub-Bedienelement "[data-nv-action='github-pull']" fehlt
+AssertionError: 1 != 0 : GitHub-Bedienelement "[data-nv-action='github-issues']" fehlt
+AssertionError: 1 != 0 : GitHub-Bedienelement "[data-nv-action='github-import']" fehlt
+AssertionError: 1 != 0 : GitHub-Bedienelement "[data-nv-action='github-pr']" fehlt
+AssertionError: 1 != 0 : Die Branch-Zeile [data-nv-github-branch='main'] fehlt
+
+Ran 10 tests in 188.573s
+
+FAILED (failures=12, errors=9)
+```
+
+Die neun Errors sind Timeouts auf den noch fehlenden Aktivierungsschalter
+`input[data-nv-field="github-enabled"]` in `activate_github()`; sie sind
+Folge der fehlenden Umsetzung, keine Testdefekte.
+
+`ReviewActivityParityTest`:
+
+```
+AssertionError: Die Zusammenfassungs-Kachel 'running' fehlt
+AssertionError: Die Zusammenfassungs-Kachel 'questions' fehlt
+AssertionError: Die Zusammenfassungs-Kachel 'blocked' fehlt
+AssertionError: Die Glocke zählt nicht die erwarteten Quellen (erwartet 3, gesehen 1)
+AssertionError: Die Laufzeile [data-nv-run] fehlt
+
+Ran 3 tests in 106.829s
+
+FAILED (failures=5)
+```
+
+`ProjectScopeTest`:
+
+```
+ERROR: test_save_project_agent_keeps_global_file_unchanged
+...
+playwright._impl._errors.TimeoutError: Locator.wait_for: Timeout 20000ms exceeded.
+...
+AssertionError: Die projektbezogene Karte des Agenten shared fehlt
+AssertionError: Gleichnamige globale und projektbezogene Agenten sind in der Liste nicht über ihren Geltungsbereich unterscheidbar
+AssertionError: Die projektbezogene Karte des Agenten shared fehlt
+
+Ran 4 tests in 81.847s
+
+FAILED (failures=3, errors=1)
+```
+
+### Bestandsfälle (grün, unverändert)
+
+Nach den Fixture-Erweiterungen (lokales Git-Remote, GitHub-Attrappe,
+`shared`-Agent, blockiertes Paket, `failed`-Lauf) wurden alle bestehenden
+Fälle der drei Dateien einmal ausgeführt:
+
+```
+ActivitySectionsTest, RunsTest, SessionsTest, QuestionsTest, BellTest
+Ran 8 tests in 9.436s
+OK
+
+ListTest, WizardTest, EditorTest, AssignmentTest
+Ran 16 tests in 14.538s
+OK
+
+ProjectHeroTest, ProjectTabsTest, OverviewTest, ChecksTest, PauseTest,
+SettingsSectionsTest, TeamTest, BasicsTest, AssistantTest
+Ran 9 tests in 27.607s
+OK
+```
+
+Damit ist belegt: die neuen Fixtures verändern die bestehenden Erwartungen
+nicht; die neuen Fälle sind ausschließlich additiv.
+
+### Server-/API-Abgleich (keine Lücke erfunden)
+
+Alle für die Fälle nötigen Fähigkeiten existieren bereits serverseitig:
+
+- `/api/github` unterstützt `settings` (inkl. `enabled`), `token.save`,
+  `token.clear`, `connection`, `fetch`, `pull`, `push` (mit `branch` und
+  `target`), `checkout`, `issues`, `import` und `pr` (mit `confirm`).
+  `vibe_services.project_detail` liefert `github.branches` aus der lokalen
+  Git-Repräsentation.
+- `/api/projects` liefert je Projekt `run.state` (u. a. `failed`), und
+  `/api/project` liefert die Arbeitspakete samt Zustand (blockiert) — damit
+  sind Glocke und Kacheln ohne neue Serverroute ableitbar.
+- `/api/stop` und `/api/run-state` sind vorhanden; der Stop setzt den
+  Registereintrag über `vibe_runs` auf `stopped`.
+- `/api/agents` liefert globale und projektbezogene Agenten inklusive
+  `scope`; `/api/agent?scope=<global|projekt>&name=<name>` unterstützt
+  Lesen, Speichern, Löschen, Kopieren und Wiederherstellen.
+  `agent_dir(projekt)` ist `<projekt>/.opencode/agents`.
+
+Es wurde keine fehlende Serverfähigkeit angenommen oder durch Attrappen
+ersetzt; die Lücken liegen ausschließlich in der neuen UI
+(`nova-project.js`, `nova-core.js`, `nova-activity.js`, `nova-agents.js`).
+
+### Bewusste Vertragsableitungen / Offene Punkte
+
+- Die Fix-Runde muss die oben genannten Hook-Namen exakt umsetzen; sie sind
+  der Vertrag dieser Testrunde. Insbesondere der Projekt-Agenten-Editor
+  braucht die Route `#/agents/<scope>/<name>` und
+  `data-nv-agent-scope` am Editor, die Karte ebenso an
+  `article[data-nv-agent]`.
+- Die Bauform der Löschbestätigung auf der Karte ist nicht vorgegeben; der
+  Test nimmt einen nativen Dialog oder eine sichtbare Inline-Bestätigung an.
+  Entscheidend ist der Knopf auf der Karte und die scope-genaue Wirkung.
+- Der Stop darf optional bestätigen (`[data-nv-confirm]` oder
+  `window.confirm`); verbindlich ist `[data-nv-action="stop-run"]` in der
+  Zeile `[data-nv-run="<projekt>"]`.
+- Der Merge-Request verwendet bewusst keinen Projekt-Token gegen die lokale
+  Attrappe; geprüft wird die Zwei-Schritt-Bestätigung und das ehrliche
+  Ergebnis ohne externen Netzaufruf.
+- Die Issue-Fehlerprobe nutzt eine geschlossene Loopback-Adresse; das ist
+  die gleiche Technik wie in den AP6/AP9-Suiten und erzeugt deterministisch
+  einen strukturierten Fehler.
+

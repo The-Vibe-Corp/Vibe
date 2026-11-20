@@ -12,6 +12,21 @@ var NV_AGENT_ROLES = ['coder', 'reviewer', 'vibe', 'tester', 'analyst',
   'sonstiges', 'content-creator'];
 var NV_AGENT_MODES = ['subagent', 'primary', 'all'];
 
+/* Der Kernrouter kennt nur eine Route-Parameterstelle (#/agents/<name>). Der
+   Geltungsbereich wird deshalb hier aus dem Hash gelesen:
+   #/agents/<scope>/<name> → scope+name, #/agents/<name> → global (Rückwärts-
+   kompatibel mit den Bestandsfällen). */
+function nvAgentRoute() {
+  var raw = (location.hash || '').replace(/^#\/?/, '');
+  var parts = raw.split('/').filter(function (part) { return !!part; });
+  var decode = function (value) {
+    try { return decodeURIComponent(value); } catch (e) { return value; }
+  };
+  if (parts[0] !== 'agents' || !parts[1]) return {scope: 'global', name: null};
+  if (parts.length >= 3) return {scope: decode(parts[1]), name: decode(parts[2])};
+  return {scope: 'global', name: decode(parts[1])};
+}
+
 function nvAgentErrorBox() {
   return el('div', {class: 'nv-form-error', 'data-nv-form-error': '', hidden: ''});
 }
@@ -41,8 +56,9 @@ function nvAgentSelect(values, current, blank) {
 
 NV.views.agents = async function agents(context, token) {
   var main = document.getElementById('nv-main');
+  var route = nvAgentRoute();
   var wanted = {wizard: false};
-  if (!context.name) {
+  if (!route.name) {
     /* Der Rahmen steht sofort: Die Route ist mit dem data-nv-view-Attribut
        sichtbar, bevor die API-Antwort eintrifft. Ohne diesen Rahmen greift
        ein Test (oder ein Nutzer) in einen noch leeren Views-Container. */
@@ -71,7 +87,7 @@ NV.views.agents = async function agents(context, token) {
     return;
   }
   if (NV.stale(token)) return;
-  if (context.name) await nvAgentEditor(context.name, data, token);
+  if (route.name) await nvAgentEditor(route.name, route.scope, data, token);
   else nvAgentList(data, token, wanted);
   if (!NV.stale(token)) NV.refreshBell();
 };
@@ -85,11 +101,32 @@ function nvAgentList(data, token, wanted) {
 
   rows.forEach(function (row) {
     var name = String(row.name || '');
+    var scope = String(row.scope || 'global');
     var description = String(row.description || '');
     var shown = description.length > 120 ? description.slice(0, 117) + '…' : description;
-    var card = el('article', {class: 'nv-card nv-agent', 'data-nv-agent': name},
+    var editRoute = scope === 'global'
+      ? '#/agents/' + encodeURIComponent(name)
+      : '#/agents/' + encodeURIComponent(scope) + '/' + encodeURIComponent(name);
+    var deleteConfirm = el('div', {class: 'nv-confirm', 'data-nv-confirm': '', hidden: ''},
+      el('p', {class: 'nv-muted'}, tr('Diesen Agenten löschen? Eine Sicherung bleibt erhalten.')),
+      el('button', {class: 'nv-btn nv-danger', type: 'button',
+        on: {click: async function () {
+          try {
+            var result = await api('/api/agent', {
+              action: 'delete', scope: scope, name: name});
+            if (!result.ok) { toast(bt(result.message) || tr('Löschen fehlgeschlagen.')); return; }
+            toast(bt(result.message) || tr('Agent gelöscht'));
+            if (!NV.stale(token)) NV.render();
+          } catch (error) {
+            toast(tr('Löschen fehlgeschlagen: ') + String(error && error.message || error));
+          }
+        }}}, tr('Ja, löschen')));
+    var card = el('article', {class: 'nv-card nv-agent', 'data-nv-agent': name,
+      'data-nv-agent-scope': scope},
       el('div', {class: 'nv-row'},
         el('h3', {class: 'nv-agent-name'}, name),
+        el('span', {class: 'nv-pill', 'data-nv-agent-scope-badge': ''},
+          scope === 'global' ? tr('Global') : tr('Projekt') + ': ' + scope),
         el('span', {class: 'nv-pill', 'data-nv-role': ''}, String(row.role || tr('keine Rolle'))),
         row.is_vibe ? el('span', {class: 'nv-pill nv-type'}, tr('Vibe-Agent')) : null,
         row.valid === false
@@ -99,15 +136,17 @@ function nvAgentList(data, token, wanted) {
       el('p', {class: 'nv-muted', title: description}, shown || tr('Keine Beschreibung')),
       el('div', {class: 'nv-row nv-muted'},
         el('span', {}, tr('Modell') + ': '),
-        el('span', {}, String(row.model || '—')),
-        row.scope && row.scope !== 'global'
-          ? el('span', {}, ' · ' + tr('Projekt') + ': ' + String(row.scope))
-          : null),
+        el('span', {}, String(row.model || '—'))),
       el('div', {class: 'nv-row'},
         el('button', {class: 'nv-btn nv-primary', type: 'button',
           'data-nv-action': 'agent-edit', on: {click: function () {
-            NV.navigate('#/agents/' + encodeURIComponent(name));
-          }}}, tr('Bearbeiten'))));
+            NV.navigate(editRoute);
+          }}}, tr('Bearbeiten')),
+        el('button', {class: 'nv-btn nv-danger', type: 'button',
+          'data-nv-action': 'agent-delete', on: {click: function () {
+            deleteConfirm.hidden = false;
+          }}}, tr('Löschen'))),
+      deleteConfirm);
     list.append(card);
   });
   if (!rows.length) {
@@ -301,14 +340,14 @@ function nvAgentWizard(data, token, onCancel) {
 
 /* ---------- Ein-Seiten-Editor ---------- */
 
-async function nvAgentEditor(name, data, token) {
+async function nvAgentEditor(name, scope, data, token) {
   var main = document.getElementById('nv-main');
   var projects = data.projects || [];
   var loaded;
   var assignmentViews;
   try {
     var results = await Promise.all([
-      api('/api/agent?scope=global&name=' + encodeURIComponent(name))
+      api('/api/agent?scope=' + encodeURIComponent(scope) + '&name=' + encodeURIComponent(name))
     ].concat(projects.map(function (project) {
       // Ein fehlender Projektzugriff darf den Agenteneditor nicht blockieren.
       return api('/api/project-agents?name=' + encodeURIComponent(project))
@@ -338,7 +377,7 @@ async function nvAgentEditor(name, data, token) {
   var models = (data.models || []).slice();
   if (fields.model && models.indexOf(fields.model) < 0) models.push(fields.model);
   var agentRow = (data.agents || []).find(function (row) {
-    return row.name === name && row.scope === 'global';
+    return row.name === name && row.scope === scope;
   }) || {};
 
   var description = el('input', {'data-nv-field': 'description',
@@ -412,7 +451,7 @@ async function nvAgentEditor(name, data, token) {
     nvAgentError(errorBox, '');
     saveButton.disabled = true;
     try {
-      var payload = {action: 'save', scope: 'global', name: name, expected: digest};
+      var payload = {action: 'save', scope: scope, name: name, expected: digest};
       if (rawMode) {
         // Rohtext unverändert an den Server geben: ein Digest-Konflikt muss
         // ablehnen, ohne die Datei von außen zu überschreiben.
@@ -466,7 +505,7 @@ async function nvAgentEditor(name, data, token) {
         // Es gibt keinen eigenen Backup-Endpunkt: Ein Speichern des
         // unveränderten Standes legt die Sicherung über die bestehende API an.
         var result = await api('/api/agent', {
-          action: 'save', scope: 'global', name: name,
+          action: 'save', scope: scope, name: name,
           text: rawMode ? rawText.value : currentText, expected: digest
         });
         if (!result.ok) { nvAgentError(errorBox, nvAgentMessage(result)); return; }
@@ -484,7 +523,7 @@ async function nvAgentEditor(name, data, token) {
     el('p', {class: 'nv-muted'}, tr('Die neueste Sicherung wiederherstellen? Der aktuelle Stand wird vorher gesichert.')),
     el('button', {class: 'nv-btn nv-primary', type: 'button', on: {click: async function () {
       try {
-        var result = await api('/api/agent', {action: 'restore', scope: 'global', name: name});
+        var result = await api('/api/agent', {action: 'restore', scope: scope, name: name});
         if (!result.ok) { nvAgentError(errorBox, nvAgentMessage(result)); return; }
         toast(bt(result.message) || tr('Sicherung wiederhergestellt'));
         if (!NV.stale(token)) NV.render();
@@ -503,7 +542,7 @@ async function nvAgentEditor(name, data, token) {
     el('button', {class: 'nv-btn nv-primary', type: 'button', on: {click: async function () {
       try {
         var result = await api('/api/agent', {
-          action: 'copy', scope: 'global', name: name, to: copyTarget.value
+          action: 'copy', scope: scope, name: name, to: copyTarget.value
         });
         if (!result.ok) { nvAgentError(errorBox, nvAgentMessage(result)); return; }
         toast(bt(result.message) || tr('Agent kopiert'));
@@ -518,7 +557,7 @@ async function nvAgentEditor(name, data, token) {
     el('p', {class: 'nv-muted'}, tr('Diesen Agenten löschen? Eine Sicherung bleibt erhalten.')),
     el('button', {class: 'nv-btn nv-danger', type: 'button', on: {click: async function () {
       try {
-        var result = await api('/api/agent', {action: 'delete', scope: 'global', name: name});
+        var result = await api('/api/agent', {action: 'delete', scope: scope, name: name});
         if (!result.ok) { nvAgentError(errorBox, nvAgentMessage(result)); return; }
         toast(bt(result.message) || tr('Agent gelöscht'));
         if (!NV.stale(token)) NV.navigate('#/agents');
@@ -543,9 +582,12 @@ async function nvAgentEditor(name, data, token) {
     'data-nv-action': 'agent-delete', on: {click: function () { showConfirm('delete'); }}},
     tr('Löschen'));
 
-  var editor = el('section', {class: 'nv-card nv-agent-editor', 'data-nv-agent-editor': ''},
+  var editor = el('section', {class: 'nv-card nv-agent-editor', 'data-nv-agent-editor': '',
+    'data-nv-agent-scope': scope},
     el('div', {class: 'nv-row'},
       el('h2', {class: 'nv-page-title'}, tr('Agent bearbeiten')),
+      el('span', {class: 'nv-pill', 'data-nv-agent-scope-badge': ''},
+        scope === 'global' ? tr('Global') : tr('Projekt') + ': ' + scope),
       el('span', {class: 'nv-pill'}, name),
       el('button', {class: 'nv-btn nv-ghost', type: 'button',
         on: {click: function () { NV.navigate('#/agents'); }}}, tr('Zurück zur Liste'))),

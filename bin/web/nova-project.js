@@ -511,30 +511,206 @@ function nvpSessionsSection(name, token, sessions) {
   ]);
 }
 
+/* Git & GitHub: vollständige CLI-Parität als bewusste Aktionen. Die Payloads
+   entsprechen eins zu eins der klassischen Karte (app.js githubBody); der
+   Zugriff ist je Projekt und der Token wird nie in den DOM geschrieben. */
 function nvpGithubSection(name, token, github) {
-  var repo = el('input', {type: 'text', 'data-nv-field': 'repo',
-    value: String((github && github.repo) || ''), 'aria-label': tr('Repository')});
-  var branch = el('input', {type: 'text', 'data-nv-field': 'api',
-    value: String((github && github.api) || ''), 'aria-label': tr('API-Adresse')});
+  var g = github || {};
   var error = nvpErrorBox();
-  var save = nvpButton(tr('Einstellungen speichern'), 'github-settings-save', function () {
-    api('/api/github', {name: name, action: 'settings',
-      enabled: !!(github && github.enabled), repo: repo.value.trim(),
-      label: String((github && github.label) || ''), api: branch.value.trim(),
-      base: String((github && github.base) || '')})
+
+  function post(body, onResult) {
+    return api('/api/github', Object.assign({name: name}, body))
       .then(function (result) {
-        if (NV.stale(token)) return;
+        if (NV.stale(token)) return result;
         if (result && result.ok === false) nvpShowError(error, bt(result.message));
-        else toast(bt(result && result.message) || tr('Gespeichert'));
+        else nvpShowError(error, '');
+        if (onResult) onResult(result);
+        return result;
       })
-      .catch(function (e) { nvpShowError(error, String(e && e.message || e)); });
+      .catch(function (e) {
+        if (!NV.stale(token)) nvpShowError(error, String(e && e.message || e));
+        return null;
+      });
+  }
+  function refresh() {
+    if (!NV.stale(token)) NV.render();
+  }
+
+  /* --- Aktivierung und Einstellungen --- */
+  var enabled = el('input', {type: 'checkbox', 'data-nv-field': 'github-enabled',
+    'aria-label': tr('GitHub-Verknüpfung aktiv')});
+  enabled.checked = !!g.enabled;
+  var repo = el('input', {type: 'text', 'data-nv-field': 'repo',
+    value: String(g.repo || ''), placeholder: 'owner/name',
+    'aria-label': tr('Repository (owner/name)')});
+  var label = el('input', {type: 'text', 'data-nv-field': 'label',
+    value: String(g.label || ''), 'aria-label': tr('Label für vibe-Aufgaben')});
+  var apiBase = el('input', {type: 'text', 'data-nv-field': 'api',
+    value: String(g.api || ''), 'aria-label': tr('API-Adresse')});
+  var base = el('input', {type: 'text', 'data-nv-field': 'base',
+    value: String(g.base || ''), 'aria-label': tr('Basis-Branch (optional)')});
+  var save = nvpButton(tr('Einstellungen speichern'), 'github-settings-save', function () {
+    post({action: 'settings', enabled: enabled.checked, repo: repo.value.trim(),
+      label: label.value.trim(), api: apiBase.value.trim(), base: base.value.trim()},
+      function (result) {
+        if (result && result.ok !== false) {
+          toast(bt(result.message) || tr('Gespeichert'));
+          refresh();
+        }
+      });
   }, 'nv-primary');
-  var connect = nvpButton(tr('Verbindung prüfen'), 'github-connection', function () {
-    nvpPost(name, '/api/github', {action: 'connection'}, 'Verbindung geprüft', token);
+
+  /* --- Zugang (Token): nur Quelle/status, niemals der Wert selbst --- */
+  function setAuth(source) {
+    var text = source === 'umgebung'
+      ? tr('GitHub-Zugang über die Umgebung.')
+      : source === 'projekt'
+        ? tr('GitHub-Projekt-Token gespeichert (verschlüsselt).')
+        : source === 'gespeichert'
+          ? tr('GitHub-Zugang über den gespeicherten Token.')
+          : tr('Kein Token hinterlegt.');
+    return tr('GitHub-Zugang: ') + text;
+  }
+  var authLine = el('div', {class: 'nv-muted', 'data-nv-github-auth': ''},
+    setAuth(g.auth && g.auth.set ? g.auth.source : ''));
+  var tokenInput = el('input', {type: 'password', 'data-nv-field': 'github-token',
+    placeholder: tr('GitHub-Token einfügen'), 'aria-label': tr('GitHub-Token einfügen')});
+  var tokenSave = nvpButton(tr('Token speichern'), 'github-token-save', function () {
+    var value = String(tokenInput.value || '').trim();
+    if (!value) { nvpShowError(error, tr('Kein Token angegeben.')); return; }
+    post({action: 'token.save', token: value}, function (result) {
+      if (!result || result.ok === false) return;
+      tokenInput.value = '';
+      var a = result.auth || (result.github && result.github.auth) || {};
+      setTx(authLine, setAuth(a.set ? a.source : ''));
+      toast(bt(result.message) || tr('Token gespeichert'));
+    });
+  }, 'nv-primary');
+  var tokenClear = nvpButton(tr('Token entfernen'), 'github-token-clear', function () {
+    post({action: 'token.clear'}, function (result) {
+      if (!result || result.ok === false) return;
+      tokenInput.value = '';
+      var a = result.auth || (result.github && result.github.auth) || {};
+      setTx(authLine, setAuth(a.set ? a.source : ''));
+      toast(bt(result.message) || tr('Token entfernt'));
+    });
   });
+
+  /* --- Verbindung --- */
+  var connect = nvpButton(tr('Verbindung prüfen'), 'github-connection', function () {
+    post({action: 'connection'}, function (result) {
+      if (!result) return;
+      var view = result.connection || {};
+      var ok = !!(result.ok && view.ok);
+      connResult.setAttribute('data-nv-ok', ok ? 'true' : 'false');
+      setTx(connResult, tr('Verbindung: ') + (ok ? tr('OK') : tr('FEHLER'))
+        + ' — ' + String(result.message || view.message || ''));
+      connResult.removeAttribute('hidden');
+    });
+  });
+  var connResult = el('div', {class: 'nv-muted', 'data-nv-github-connection': '', hidden: ''});
+
+  /* --- Branches mit zeilenlokalem Checkout --- */
+  var branchRows = el('div', {class: 'nv-list'});
+  (g.branches || []).forEach(function (branch) {
+    var branchName = String(branch.name || '');
+    branchRows.append(el('div', {class: 'nv-row',
+      'data-nv-github-branch': branchName},
+      el('span', {}, (branch.current ? '* ' : '') + branchName
+        + ' (' + tr('Ahead/Behind') + ' ' + (branch.ahead || 0) + '/' + (branch.behind || 0) + ')'),
+      nvpButton(tr('Auschecken'), 'github-checkout', function () {
+        post({action: 'checkout', branch: branchName}, function (result) {
+          if (result && result.ok !== false) refresh();
+        });
+      })));
+  });
+  if (!(g.branches || []).length) {
+    branchRows.append(el('p', {class: 'nv-muted'}, tr('Keine lokalen Branches erkannt.')));
+  }
+
+  /* --- Pull / Push --- */
+  var pull = nvpButton(tr('Pull (aufholen, --ff-only)'), 'github-pull', function () {
+    post({action: 'pull'}, function (result) {
+      if (result && result.ok !== false) refresh();
+    });
+  });
+  var pushBranch = el('input', {type: 'text', 'data-nv-field': 'github-push-branch',
+    placeholder: tr('Quell-Branch'), 'aria-label': tr('Quell-Branch')});
+  var pushTarget = el('input', {type: 'text', 'data-nv-field': 'github-push-target',
+    placeholder: tr('Ziel-Branch (leer = gleicher Name)'),
+    'aria-label': tr('Ziel-Branch (leer = gleicher Name)')});
+  var push = nvpButton(tr('Push'), 'github-push', function () {
+    post({action: 'push', branch: pushBranch.value.trim(), target: pushTarget.value.trim()},
+      function (result) {
+        if (result && result.ok !== false) refresh();
+      });
+  }, 'nv-primary');
+
+  /* --- Issues als Arbeitspakete --- */
+  var issueFilter = el('input', {type: 'text', 'data-nv-field': 'github-issue-label',
+    value: String(g.label || 'vibe'), placeholder: tr('Label (leer = alle)'),
+    'aria-label': tr('Label-Filter')});
+  var issuesResult = el('div', {class: 'nv-muted', 'data-nv-github-issues': '', hidden: ''});
+  var loadIssues = nvpButton(tr('Issues laden'), 'github-issues', function () {
+    post({action: 'issues', label: issueFilter.value.trim()}, function (result) {
+      if (!result) return;
+      var ok = result.ok !== false;
+      issuesResult.setAttribute('data-nv-ok', ok ? 'true' : 'false');
+      if (!ok) {
+        setTx(issuesResult, bt(result.message) || tr('Fehler beim Laden der Issues'));
+      } else {
+        var issues = result.issues || [];
+        setTx(issuesResult, issues.length
+          ? issues.map(function (issue) {
+            return 'GH-' + (issue.number || '') + ' ' + String(issue.title || '');
+          }).join(' · ')
+          : tr('Keine offenen Issues für dieses Label.'));
+      }
+      issuesResult.removeAttribute('hidden');
+    });
+  });
+  var importIssues = nvpButton(tr('Issues importieren'), 'github-import', function () {
+    post({action: 'import', label: issueFilter.value.trim()}, function (result) {
+      if (result && result.ok !== false) refresh();
+    });
+  });
+
+  /* --- Merge-Request: Anfrage zeigt nur die Bestätigung; erst die
+     ausdrückliche Bestätigung löst den REST-Aufruf aus. --- */
+  var prConfirm = el('div', {class: 'nv-confirm', 'data-nv-github-pr-confirm': '', hidden: ''},
+    el('p', {class: 'nv-muted'}, tr('Merge-Request wirklich stellen? Der aktuelle Branch wird nach origin gepusht und der Merge-Request über GitHub angelegt.')),
+    nvpButton(tr('Ja, bestätigen'), 'github-pr-confirm', function () {
+      post({action: 'pr', confirm: true}, function (result) {
+        if (!result) return;
+        prConfirm.setAttribute('hidden', '');
+        prResult.setAttribute('data-nv-ok', result.ok !== false ? 'true' : 'false');
+        setTx(prResult, String(bt(result.message) || tr('Kein Ergebnis zum Merge-Request')));
+        prResult.removeAttribute('hidden');
+      });
+    }, 'nv-primary'));
+  var prResult = el('div', {class: 'nv-muted', 'data-nv-github-pr-result': '', hidden: ''});
+  var pr = nvpButton(tr('Merge-Request stellen'), 'github-pr', function () {
+    prConfirm.removeAttribute('hidden');
+    prResult.setAttribute('hidden', '');
+  }, 'nv-primary');
+
   return nvpSection('github', tr('Git & GitHub'), [
-    nvpLabel(tr('Repository'), repo), nvpLabel(tr('API-Adresse'), branch),
-    el('div', {class: 'nv-row'}, save, connect), error
+    authLine,
+    el('div', {class: 'nv-row'}, tokenInput, tokenSave, tokenClear),
+    nvpLabel(tr('GitHub-Verknüpfung aktiv'), enabled),
+    nvpLabel(tr('Repository (owner/name)'), repo),
+    nvpLabel(tr('Label für vibe-Aufgaben'), label),
+    nvpLabel(tr('API-Adresse'), apiBase),
+    nvpLabel(tr('Basis-Branch (optional)'), base),
+    el('div', {class: 'nv-row'}, save, connect),
+    connResult,
+    el('h4', {}, tr('Branches')), branchRows,
+    el('div', {class: 'nv-row'}, pull, pushBranch, pushTarget, push),
+    el('h4', {}, tr('Issues als Arbeitspakete')),
+    el('div', {class: 'nv-row'}, issueFilter, loadIssues, importIssues),
+    issuesResult,
+    el('div', {class: 'nv-row'}, pr, prConfirm), prResult,
+    error
   ]);
 }
 
