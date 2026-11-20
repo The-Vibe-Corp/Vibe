@@ -87,9 +87,10 @@ LOG="$RUNTIME/$NAME.log"
 VLOG="$RUNTIME/$NAME.verify.log"
 PAUSE_FLAG="$RUNTIME/$NAME.pause-after"
 REPORT="$RUNTIME/$NAME.report.txt"
-# B13: Der private opencode-Server eines Laufs. Die Serverdatei ist die
-# Übergabe an das Dashboard (Ziel und Kennwortdatei), das Protokoll hält die
-# Serverausgabe getrennt vom Laufprotokoll, die PID-Datei dient dem Aufräumen.
+# B13/AP1: Der private opencode-Server eines Laufs. Die Serverdatei ist die
+# Übergabe an das Dashboard (Ziel, Kennwortdatei und Zielverzeichnis), das
+# Protokoll hält die Serverausgabe getrennt vom Laufprotokoll, die PID-Datei
+# dient dem Aufräumen.
 SERVER_JSON="$LOG.server.json"
 SERVER_LOG="$LOG.server.log"
 SERVER_PID_FILE="$LOG.server.pid"
@@ -113,14 +114,35 @@ if not isinstance(url, str) or not url.startswith("http://127.0.0.1:"):
 print(url.rstrip("/"))
 PY
 }
-# B13: Ein bereits laufender privater Server wird wiederverwendet; nur ein
-# fehlender oder nicht mehr gesunder Server führt zu einem Neustart.
+# B13/AP1: Ein bereits laufender privater Server wird nur wiederverwendet,
+# wenn er gesund ist UND für genau dieses Zielverzeichnis gestartet wurde.
+# Die Serverdatei hält das mit realpath aufgelöste write_dir; fehlt sie (alte
+# Serverdatei), gilt der Server als nicht passend und wird neu gestartet.
 private_server_healthy() {
-  local url
+  local dir="$1" url
+  [ -n "$dir" ] || return 1
   url="$(private_server_url)" || return 1
   [ -n "$url" ] || return 1
   curl -sf --max-time 2 -u "opencode:$OPENCODE_SERVER_PASSWORD" \
-    "$url/api/info" > /dev/null 2>&1
+    "$url/api/info" > /dev/null 2>&1 || return 1
+  python3 - "$SERVER_JSON" "$dir" <<'PY' > /dev/null 2>&1
+import json
+import os
+import sys
+
+try:
+    with open(sys.argv[1], encoding="utf-8") as handle:
+        data = json.load(handle)
+except (OSError, ValueError):
+    raise SystemExit(1)
+if not isinstance(data, dict):
+    raise SystemExit(1)
+recorded = data.get("write_dir")
+if not isinstance(recorded, str) or not recorded:
+    raise SystemExit(1)
+if os.path.realpath(recorded) != os.path.realpath(sys.argv[2]):
+    raise SystemExit(1)
+PY
 }
 private_free_port() {
   python3 - <<'PY'
@@ -132,13 +154,21 @@ with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
 PY
 }
 private_server_file_write() {
-  local url="$1" port="$2"
-  python3 - "$SERVER_JSON" "$url" "$port" "$PASSWORD_FILE" <<'PY'
+  local url="$1" port="$2" dir="$3"
+  python3 - "$SERVER_JSON" "$url" "$port" "$PASSWORD_FILE" "$dir" <<'PY'
 import json
+import os
 import sys
 
-path, url, port, password_file = sys.argv[1:5]
-data = {"url": url, "port": int(port), "password_file": password_file}
+path, url, port, password_file, directory = sys.argv[1:6]
+if not directory:
+    raise SystemExit(1)
+data = {
+    "url": url,
+    "port": int(port),
+    "password_file": password_file,
+    "write_dir": os.path.realpath(directory),
+}
 with open(path, "w", encoding="utf-8") as handle:
     json.dump(data, handle, ensure_ascii=False)
     handle.write("\n")
@@ -193,7 +223,7 @@ start_private_server() {
   while [ "$SECONDS" -lt "$deadline" ]; do
     if curl -sf --max-time 2 -u "opencode:$OPENCODE_SERVER_PASSWORD" \
         "$url/api/info" > /dev/null 2>&1; then
-      if private_server_file_write "$url" "$port"; then
+      if private_server_file_write "$url" "$port" "$dir"; then
         return 0
       fi
       echo "ABBRUCH: Serverdatei $SERVER_JSON konnte nicht geschrieben werden." | tee -a "$LOG"
@@ -206,14 +236,16 @@ start_private_server() {
   stop_private_server
   return 1
 }
-# B13: Stellt den privaten Server vor jedem opencode-Agentenaufruf sicher. Der
-# erste Aufruf startet ihn, spätere Aufrufe verwenden den gesunden Server
-# wieder. Ein Fehlschlag wird als Laufabbruch markiert, nie still durch
-# --standalone ersetzt.
+# B13/AP1: Stellt den privaten Server vor jedem opencode-Agentenaufruf sicher.
+# Der erste Aufruf startet ihn; spätere Aufrufe verwenden ihn nur, wenn er
+# gesund ist und für dasselbe Verzeichnis läuft. Bei Wechsel von $P (Preflight)
+# zu $WT (Paket) bzw. zwischen Arbeitskopien wird er neu gestartet. Ein
+# Fehlschlag wird als Laufabbruch markiert, nie still durch --standalone
+# ersetzt.
 ensure_private_server() {
   local dir="$1" url
   [ "$PRIVATE_SERVER" = 1 ] || return 0
-  if private_server_healthy; then
+  if private_server_healthy "$dir"; then
     SERVER_ARGS="--server $(private_server_url)"
     return 0
   fi

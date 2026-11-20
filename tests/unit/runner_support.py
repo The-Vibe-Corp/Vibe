@@ -200,6 +200,7 @@ def _b13_serve(argv):
     httpd = ThreadingHTTPServer(("127.0.0.1", port), Handler)
     bound = httpd.server_address[1]
     note({"event": "listening", "port_bound": bound, "pid": os.getpid(),
+          "cwd": os.getcwd(),
           "tmpdir": os.environ.get("TMPDIR", ""),
           "opencode_password_present": op_present,
           "opencode_password_len": op_len,

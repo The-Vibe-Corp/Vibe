@@ -604,10 +604,14 @@ class SandboxPrivateServerTest(B13RunnerFixture):
         Erwartung: Der Lauf meldet „Sandbox: on“; Agentenaufruf mit
         ``--server http://127.0.0.1:<Port>`` statt --standalone; genau ein
         Serve-Aufruf; dessen TMPDIR ist exakt der Tempordner des
-        Sandbox-Zustandsordners der Arbeitskopie
-        (``state_dir(WT)/tmp``, berechnet mit demselben Modul und
+        Sandbox-Zustandsordners des Integrationsprojekts
+        (``state_dir(P)/tmp``, berechnet mit demselben Modul und
         VIBE_SANDBOX_ROOT), unabhängig vom äußeren TMPDIR; die Serverdatei
-        wird beim Laufende entfernt.
+        wird beim Laufende entfernt. Der Zustandsort gehört zum Projekt,
+        nicht zur Arbeitskopie: Der private Server wird mit ``$P`` als
+        Sandbox-Projektargument gestartet (nur chdir/write-dir wechseln),
+        damit Sandbox-Zustand und opencode-DB pro Integrationsprojekt
+        bleiben und nicht je Arbeitskopie doppelte Sitzungslogs entstehen.
         Fehlerfall: Sandbox bleibt aus (unverpackter Server), Agent läuft
         mit --standalone, TMPDIR entstammt der Umgebung, Serverdatei bleibt
         liegen.
@@ -677,18 +681,23 @@ class SandboxPrivateServerTest(B13RunnerFixture):
             1, len(listening), "Genau ein privater Server je Lauf")
         bound_port = listening[0]["port_bound"]
         tmpdir = str(listening[0].get("tmpdir") or "")
-        # Die Arbeitskopie entnimmt dem Laufprotokoll (Versuch-Zeile); ihr
-        # Zustandsordner wird mit demselben Sandbox-Modul und derselben
-        # VIBE_SANDBOX_ROOT berechnet wie im Lauf.
+        # Die Arbeitskopie entnimmt dem Laufprotokoll (Versuch-Zeile). Der
+        # private Server behält $P als Sandbox-Projektargument; sein
+        # Zustandsordner wird deshalb aus dem Integrationsprojekt berechnet
+        # (nicht aus der Arbeitskopie) und mit demselben Sandbox-Modul sowie
+        # derselben VIBE_SANDBOX_ROOT wie im Lauf ermittelt.
         attempts = re.findall(r"--- Versuch \d+/\d+ für \S+ in (\S+) ---", log)
         self.assertTrue(
             attempts, "Arbeitskopie fehlt im Laufprotokoll:\n" + log)
         worktree = attempts[-1]
+        self.assertNotEqual(
+            os.path.realpath(worktree), os.path.realpath(self.project),
+            "Die Versuch-Zeile nennt keine eigene Arbeitskopie")
         sandbox = load_sandbox_module()
         old_root = os.environ.get("VIBE_SANDBOX_ROOT")
         os.environ["VIBE_SANDBOX_ROOT"] = str(self.sandbox_root)
         try:
-            expected_state = sandbox.state_dir(worktree)
+            expected_state = sandbox.state_dir(self.project)
         finally:
             if old_root is None:
                 os.environ.pop("VIBE_SANDBOX_ROOT", None)
@@ -707,6 +716,85 @@ class SandboxPrivateServerTest(B13RunnerFixture):
         self.assertFalse(
             self.server_file().exists(),
             "Serverdatei wurde beim Laufende nicht entfernt")
+
+
+class PreflightWriteDirChangeTest(B13RunnerFixture):
+    """AP1: Der private Server gehört zum Zielverzeichnis, nicht nur zum Lauf."""
+
+    def test_preflight_server_is_restarted_for_the_package_worktree(self):
+        """AP1: Preflight-Assistent in $P, Paket danach in $WT.
+
+        Vorbedingung: Kennwortdatei nichtleer; autonome Reparatur für „proj“
+        eingeschaltet; uncommittete Datei im Integrationsprojekt; Assistenz
+        aktiv; ``FAKE_PREFLIGHT_MODE=fix``; ``VIBE_MAX_PACKAGES=1``. Die
+        opencode-Attrappe zeichnet pro Server ``cwd`` und ``term`` auf; es
+        wird keine Sandbox und kein echtes bwrap benötigt.
+        Aktion: ``vibe-run.sh <projekt>``.
+        Erwartung: zwei ``listening``-Ereignisse — das erste mit cwd=$P aus
+        der Preflight-Reparatur, das zweite mit cwd=$WT aus der Versuch-Zeile
+        des Pakets — und dazwischen mindestens ein ``term``-Ereignis. Der
+        Lauf endet erfolgreich.
+        Fehlerfall: Der gesunde Preflight-Server wird weiterverwendet; die
+        Arbeitskopie wäre dann nur lesend eingebunden (nur ein listening mit
+        cwd=$P).
+        """
+        self.write_password()
+        (self.project / "unfertig.txt").write_text(
+            "unfertig\n", encoding="utf-8")
+        self.runtime.mkdir(parents=True, exist_ok=True)
+        (self.runtime / "autonomous.json").write_text(
+            json.dumps({
+                "version": 1,
+                "projects": {
+                    "proj": {
+                        "enabled": True,
+                        "changed": "2026-01-01T00:00:00Z",
+                    }
+                },
+            }),
+            encoding="utf-8",
+        )
+        env = self.env()
+        env.update({
+            "VIBE_PREFLIGHT_ASSIST": "1",
+            "VIBE_PREFLIGHT_QUESTION_TIMEOUT": "20",
+            "FAKE_PREFLIGHT_MODE": "fix",
+            "VIBE_MAX_PACKAGES": "1",
+        })
+
+        result = self.run_runner(env=env, timeout=240)
+
+        log = self.log_text()
+        detail = result.stdout + result.stderr + log
+        self.assertEqual(result.returncode, 0, "Läufer bricht ab:\n" + detail)
+        self.assertIn("FERTIG", log)
+        attempts = re.findall(r"--- Versuch \d+/\d+ für \S+ in (\S+) ---", log)
+        self.assertTrue(attempts, "Paketversuch fehlt im Laufprotokoll:\n" + log)
+        worktree = attempts[-1]
+
+        listening = self.listening_events()
+        self.assertEqual(
+            2, len(listening),
+            "Es wurden nicht zwei Server gestartet (einer je Zielverzeichnis):\n"
+            + repr(self.serve_records()) + "\n" + detail)
+        self.assertEqual(
+            os.path.realpath(self.project),
+            os.path.realpath(str(listening[0].get("cwd") or "")),
+            "Der erste Server lief nicht im Integrationsprojekt $P")
+        self.assertEqual(
+            os.path.realpath(worktree),
+            os.path.realpath(str(listening[1].get("cwd") or "")),
+            "Der zweite Server lief nicht in der Paket-Arbeitskopie $WT")
+        events = [entry.get("event") for entry in self.serve_records()]
+        listening_positions = [
+            index for index, event in enumerate(events) if event == "listening"
+        ]
+        self.assertEqual(2, len(listening_positions), repr(events))
+        self.assertTrue(
+            any(event == "term" for event in events[
+                listening_positions[0] + 1:listening_positions[1]]),
+            "Zwischen den beiden Servern wurde kein term protokolliert: "
+            + repr(events))
 
 
 class PiNoPrivateServerTest(B13RunnerFixture):
