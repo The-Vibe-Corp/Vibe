@@ -604,7 +604,7 @@ class AP22AdvancedBrowserTest(unittest.TestCase):
     def open_settings(self):
         if not self.page.locator(
                 "main#nv-main[data-nv-view='settings']").count():
-            self.page.locator("[data-nv-nav='settings']").click()
+            self.page.locator("aside[data-nv-side] [data-nv-nav='settings']").click()
         self.page.locator("main#nv-main[data-nv-view='settings']").wait_for(
             state="visible", timeout=20000)
 

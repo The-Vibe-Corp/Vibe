@@ -773,7 +773,7 @@ class PauseTest(AP22ProjectBrowserTest):
             timeout=20,
             message="Die Pause-Anforderung wurde nicht gespeichert")
 
-        self.page.locator("[data-nv-nav='home']").click()
+        self.page.locator("aside[data-nv-side] [data-nv-nav='home']").click()
         self.page.locator("main#nv-main[data-nv-view='home']").wait_for(
             state="visible", timeout=20000)
         card = self.page.locator(f"[data-nv-project='{PROJECT}']")
@@ -1036,7 +1036,7 @@ class GithubParityTest(AP22ProjectBrowserTest):
     def enable_github_feature(self):
         """Schaltet den Feature-Schalter ``github`` über #/settings ein."""
         self.boot()
-        self.page.locator("[data-nv-nav='settings']").click()
+        self.page.locator("aside[data-nv-side] [data-nv-nav='settings']").click()
         self.page.locator("main#nv-main[data-nv-view='settings']").wait_for(
             state="visible", timeout=25000)
         box = self.page.locator("input[data-nv-feature='github']")

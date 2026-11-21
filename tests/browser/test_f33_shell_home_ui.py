@@ -390,7 +390,7 @@ class ShellChromeTest(F33ShellHomeTest):
             timeout=10,
             message="Bei 1000px bleibt die Sidebar sichtbar; erwartet wird "
                     "die Kopf-Navigation")
-        home_nav = self.page.locator("[data-nv-nav='home']")
+        home_nav = self.page.locator(".nv-top [data-nv-nav='home']")
         self.assertTrue(home_nav.first.is_visible(),
                         "Bei 1000px ist keine Navigation sichtbar")
         box = home_nav.first.bounding_box()

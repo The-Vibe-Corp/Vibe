@@ -7,13 +7,14 @@
 <meta name="vibe-language" content="__VIBE_LANG__">
 <title>vibe</title>
 <link rel="stylesheet" href="/static/nova.css">
+<link rel="icon" href="/static/vibe.svg" type="image/svg+xml">
 </head>
 <body data-nv-app>
 <!-- Texte/aria-labels der Shell kommen aus tr() in initChrome(); das Markup
      bleibt sprachneutral, damit zuerst die gewählte Sprache sichtbar wird. -->
 <a class="nv-skip" href="#nv-main"></a>
 <header class="nv-top">
-<h1 class="nv-brand">vibe</h1>
+<img class="nv-logo" data-nv-logo src="/static/vibe.svg" alt="vibe">
 <button type="button" class="nv-nav-toggle" data-nv-nav-toggle aria-expanded="false" aria-label="" title="">☰</button>
 <nav class="nv-nav" data-nv-navs aria-label="Navigation">
 <button type="button" data-nv-nav="home"></button>
@@ -31,10 +32,16 @@
 </div>
 </div>
 </header>
+<!-- F33/2a/3b: Breitbild-Sidebar unterhalb des Headers (CSS blendet sie unter
+     1280px aus; darunter greift die Kopf-Navigation). nova-core schiebt das
+    selbe Nav in die Aside bei ≥1280 (syncSidebarNav) — die Nav lebt einmal,
+     und der globale [data-nv-nav]-Zähler (AP22) bleibt pro View 1. -->
+<aside class="nv-side" data-nv-side></aside>
 <main id="nv-main" data-nv-view="home" class="nv-main"></main>
 <div id="nv-toasts" class="nv-toasts" aria-live="polite"></div>
 <script src="/static/i18n.js"></script>
 <script src="/static/nova-core.js"></script>
+<script src="/static/nova-widgets.js"></script>
 <script src="/static/nova-home.js"></script>
 <script src="/static/nova-project.js"></script>
 <script src="/static/nova-output.js"></script>

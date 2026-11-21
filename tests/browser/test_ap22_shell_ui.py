@@ -403,26 +403,35 @@ class NavigationTest(AP22BrowserTest):
         (agents → agents, home → home).
         """
         self.boot()
+        # Die Shell hält genau eine Navigation und verschiebt sie per
+        # syncSidebarNav: ab 1280px in die Sidebar, darunter in die Kopfzeile.
+        # Der Scope wählt den tatsächlichen Ort; die Semantik (Klick auf die
+        # Navigation erreicht die Ansicht) bleibt unverändert.
+        nav_scope = "aside[data-nv-side]"
         for key in NAV_LABELS_EN:
             self.assertEqual(
-                1, self.page.locator(f"[data-nv-nav='{key}']").count(),
+                1,
+                self.page.locator(
+                    f"{nav_scope} [data-nv-nav='{key}']").count(),
                 f"Navigationsknopf data-nv-nav={key!r} fehlt")
 
-        self.page.locator("[data-nv-nav='agents']").click()
+        self.page.locator(f"{nav_scope} [data-nv-nav='agents']").click()
         self.page.locator("main#nv-main[data-nv-view='agents']").wait_for(
             state="visible", timeout=20000)
         self.assertEqual(
             "page",
-            self.page.locator("[data-nv-nav='agents']").get_attribute(
+            self.page.locator(
+                f"{nav_scope} [data-nv-nav='agents']").get_attribute(
                 "aria-current"),
             "Der aktive Agents-Knopf trägt kein aria-current=page")
 
-        self.page.locator("[data-nv-nav='home']").click()
+        self.page.locator(f"{nav_scope} [data-nv-nav='home']").click()
         self.page.locator("main#nv-main[data-nv-view='home']").wait_for(
             state="visible", timeout=20000)
         self.assertEqual(
             "page",
-            self.page.locator("[data-nv-nav='home']").get_attribute(
+            self.page.locator(
+                f"{nav_scope} [data-nv-nav='home']").get_attribute(
                 "aria-current"),
             "Der aktive Home-Knopf trägt kein aria-current=page")
         self.assert_clean_page()
@@ -531,7 +540,9 @@ class LanguageTest(AP22BrowserTest):
                     + repr(self.nav_labels()))
 
         # Der Sprachumschalter liegt im Einstellungsbereich (AP22-Vertrag).
-        self.page.locator("[data-nv-nav='settings']").click()
+        # Bei 1400px hält die Shell die Navigation in der Sidebar.
+        self.page.locator(
+            "aside[data-nv-side] [data-nv-nav='settings']").click()
         self.page.locator("main#nv-main[data-nv-view='settings']").wait_for(
             state="visible", timeout=20000)
         self.page.locator("select[aria-label='Language']").select_option("de")
@@ -547,7 +558,8 @@ class LanguageTest(AP22BrowserTest):
                     + repr(self.nav_labels()))
 
         self.page.reload()
-        self.page.locator("[data-nv-nav='home']").wait_for(
+        self.page.locator(
+            "aside[data-nv-side] [data-nv-nav='home']").wait_for(
             state="visible", timeout=25000)
         self.assertEqual(
             "de", self.page.evaluate("() => document.documentElement.lang"),
@@ -581,7 +593,7 @@ class ResponsiveTest(AP22BrowserTest):
             timeout=10,
             message="Der Nav-Toggle setzte aria-expanded nicht")
         self.assertTrue(
-            self.page.locator("[data-nv-nav='home']").is_visible(),
+            self.page.locator(".nv-top [data-nv-nav='home']").is_visible(),
             "Die Navigationsknöpfe sind nach dem Aufklappen nicht sichtbar")
 
         self.page.set_viewport_size({"width": 1280, "height": 800})
@@ -589,9 +601,11 @@ class ResponsiveTest(AP22BrowserTest):
             lambda: not toggle.is_visible(),
             timeout=10,
             message="Der Nav-Toggle bleibt auf dem Desktop sichtbar")
-        self.assertTrue(
-            self.page.locator("[data-nv-nav='home']").is_visible(),
-            "Die Navigation ist auf dem Desktop nicht direkt sichtbar")
+        self.wait_until(
+            lambda: self.page.locator(
+                "aside[data-nv-side] [data-nv-nav='home']").is_visible(),
+            timeout=10,
+            message="Die Navigation ist auf dem Desktop nicht direkt sichtbar")
 
 
 class BellTest(AP22BrowserTest):
