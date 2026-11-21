@@ -586,6 +586,8 @@ def open_items(name):
             first = b.splitlines()[0]
             item = _parse_item_line(first)
             pid, title = (item["id"], item["title"][:60]) if item else ("?", first[:60])
+            if item and item["checked"] and (not need_proof or _proof_ok(root, b)):
+                continue
             if "BLOCKIERT:" in b: res.append((pid, title, "BLOCKIERT"))
             elif "WARTET AUF MERGE:" in b: res.append((pid, title, "WARTET AUF MERGE"))
             elif not item or not item["checked"]: res.append((pid, title, "offen"))
@@ -638,11 +640,12 @@ def _parse_entry(entry, root, need_proof=True):
         i += 1
     block = "\n".join(entry["lines"])
     checked = item["checked"]
-    if "BLOCKIERT:" in block: state = "BLOCKIERT"
+    done = checked and (not need_proof or not root or _proof_ok(root, block))
+    if done: state = "erledigt"
+    elif "BLOCKIERT:" in block: state = "BLOCKIERT"
     elif "WARTET AUF MERGE:" in block: state = "WARTET AUF MERGE"
     elif not checked: state = "offen"
-    elif need_proof and root and not _proof_ok(root, block): state = "ohne Nachweis"
-    else: state = "erledigt"
+    else: state = "ohne Nachweis"
     return {"id": item["id"], "title": item["title"], "description": "\n".join(desc),
             "state": state, "checked": checked, "desc_start": desc_start,
             "desc_end": desc_end, "art": art}

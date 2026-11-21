@@ -663,6 +663,7 @@ function ticketCard(d,name){const list=el('div',{});const cls=s=>({erledigt:'ok'
    ...(i.description?[el('div',{class:'mut fbdesc'},i.description)]:[]),
    el('div',{class:'bar'},
     ...(i.completed?[el('span',{class:'mut'},tr('abgeschlossen – nicht bearbeitbar'))]:[el('button',{class:'b',on:{click:()=>edit(i,row)}},tr('Bearbeiten'))]),
+    ...(i.state==='BLOCKIERT'||i.state==='WARTET AUF MERGE'?[el('button',{class:'b',type:'button',on:{click:async()=>{const r=await api('/api/package',{name,id:i.id,action:'close'});toast(bt(r.message));if(r.ok)detail(name).catch(showErr)}}},tr('Paket abschließen'))]:[]),
     delBtn(i)));
   return row};
  const draw=()=>{const shown=showDone?d.tickets:pending;

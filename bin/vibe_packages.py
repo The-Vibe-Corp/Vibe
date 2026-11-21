@@ -1403,12 +1403,12 @@ def status_report(project):
             if not pid or pid in seen:
                 continue
             seen.add(pid)
-            if is_blocked(block):
+            if is_done(block) and proof_ok(project, block)[0]:
+                report["done"].append(pid)
+            elif is_blocked(block):
                 report["blocked"].append(pid)
             elif is_waiting_merge(block):
                 report["waiting"].append(pid)
-            elif is_done(block) and proof_ok(project, block)[0]:
-                report["done"].append(pid)
             else:
                 report["open"].append(pid)
     return report
