@@ -45,6 +45,17 @@ Testfälle (Kurzfassung; Details in den Methoden)
 ``AccentTest.test_accent_select_has_twelve_options_and_persists``
     Aktion: Akzent wählen, neu laden. Erwartung: 12 Optionen,
     ``html[data-accent]`` und ``localStorage['nv-accent']`` bleiben gesetzt.
+``GlobalAgentsFileTest.test_missing_file_shows_hint_and_create_button``
+    Vorbedingung: globale AGENTS.md fehlt. Erwartung: Hinweis auf das Fehlen;
+    ``global-agents-create`` sendet ``{action:"create"}`` und der Editor
+    erscheint mit der Vorlage.
+``GlobalAgentsFileTest.test_existing_file_editor_prefills_and_saves_with_digest``
+    Vorbedingung: globale AGENTS.md vorhanden. Erwartung: Editor vorbelegt;
+    ``{action:"save", text, digest}`` mit der geladenen Prüfsumme, Toast und
+    lokalem Digest-Update (zweites Speichern nutzt den neuen Digest).
+``GlobalAgentsFileTest.test_hint_explains_the_scope_of_the_global_file``
+    Erwartung: ``small[data-nv-global-agents-hint]`` erklärt „gilt für alle
+    Projekte; projektbezogene AGENTS.md ergänzt sie“.
 
 Vertragsunklarheiten (bewusst so geprüft und dokumentiert)
 ----------------------------------------------------------
@@ -92,6 +103,41 @@ Ergebnis: 11 Fälle, 11 rot (3 ``AssertionError`` = Verhalten fehlt,
   ``p[data-nv-runs-hint]``/``span[data-nv-run-pruneable]`` fehlen.
 * ``test_accent_select_has_twelve_options_and_persists`` — TimeoutError:
   ``select[data-nv-accent-select]`` fehlt.
+
+ROT-PHASE ``GlobalAgentsFileTest`` (2026-11-21, vor der Implementierung
+der globalen AGENTS.md-Sektion)
+--------------------------------------------------------------------
+Ausgeführt mit::
+
+    PLAYWRIGHT_BROWSERS_PATH=/home/vibe/vibe-logs/playwright-browsers \
+        python3 -m unittest -v test_f33_settings_ui.GlobalAgentsFileTest
+
+Gelaufen gegen einen sauberen ``git archive HEAD``-Baum (temporär entpackt),
+weil die globale Sektion im Arbeitsbaum von einem parallelen Agenten bereits
+implementiert wurde. Der Baseline-Baum enthält den committeten
+WP6-Backendstand (``GET /api/global_agents_file``, POST ``create``/``save``),
+aber keine Sektion im Frontend — das ist der Stand „vor der
+Implementierung“. Die Testdatei ist unverändert die finale Fassung.
+
+Ergebnis: **3 Fälle, 3 rot, 0 grün.** Alle drei scheitern mit
+``TimeoutError``, weil die Sektion samt Editor, Anlegen-Knopf und Hinweis
+fehlt; kein Umgebungsfehler.
+
+* ``test_missing_file_shows_hint_and_create_button`` — TimeoutError:
+  ``div[data-nv-global-agents]`` fehlt (kein Hinweis, kein
+  ``global-agents-create``).
+* ``test_existing_file_editor_prefills_and_saves_with_digest`` —
+  TimeoutError: ``textarea[data-nv-global-agents]`` fehlt.
+* ``test_hint_explains_the_scope_of_the_global_file`` — TimeoutError:
+  ``small[data-nv-global-agents-hint]`` fehlt.
+
+Hinweis zur Rotphase im laufenden Arbeitsbaum: Während der Testarbeit hat
+ein paralleler Agent die Sektion implementiert. Ein Lauf gegen den
+Arbeitsbaum zeigte deshalb zwei Fälle grün und zunächst einen echten
+Vertragsfehler (der „Datei fehlt“-Hinweis war bei fehlender Datei
+ausgeblendet). Dieser Fehler wurde vom parallelen Agenten behoben; die
+Rotphase oben wurde deshalb bewusst gegen den unveränderten
+``HEAD``-Baseline-Baum ausgeführt und dokumentiert.
 """
 import http.client
 import json
@@ -128,6 +174,8 @@ ACCENT_IDS = [
     "blue", "teal", "cyan", "green", "lime", "yellow",
     "amber", "orange", "red", "pink", "violet", "indigo",
 ]
+
+GLOBAL_AGENTS_TEXT = "GLOBALE-REGEL-4711: gilt für alle Projekte.\n"
 
 # Minimale opencode-Datenbank, damit die Kosten-Detailansicht echte Zeilen hat
 # (Struktur wie tests/browser/test_costs_ui.py).
@@ -408,7 +456,9 @@ class F33SettingsBrowserTest(unittest.TestCase):
 
     def open_settings(self):
         self.boot()
-        self.page.locator("[data-nv-nav='settings']").click()
+        # Direkt über die Route: unabhängig von doppelten Navigations-
+        # Varianten (Desktop/Mobil) und deren Sichtbarkeit.
+        self.page.goto(self.base + "/#/settings")
         self.page.locator("main#nv-main[data-nv-view='settings']").wait_for(
             state="visible", timeout=20000)
 
@@ -820,6 +870,201 @@ class AccentTest(F33SettingsBrowserTest):
             == "teal",
             timeout=15,
             message="Der Akzent ging beim Reload verloren")
+        self.assert_no_page_errors()
+
+
+class GlobalAgentsFileTest(F33SettingsBrowserTest):
+    """Globale AGENTS.md im Einstellungs-Tab (F33 WP5, Koordinator-Entscheidung 6).
+
+    Vorbedingung: Feature ``agentsfile`` an (über ``localStorage['nv-features']``
+    vor dem Laden gesetzt, damit die Sektion ohne UI-Klick sichtbar ist). Die
+    globale Datei liegt unter ``HOME/.config/opencode/AGENTS.md``; jeder Fall
+    legt sie selbst an oder löscht sie, damit die Fälle unabhängig bleiben.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.global_agents = (
+            self.root / "home" / ".config" / "opencode" / "AGENTS.md")
+        self.global_agents.parent.mkdir(parents=True, exist_ok=True)
+        self.post_requests = []
+        self.page.on(
+            "request",
+            lambda request: self.post_requests.append(request)
+            if request.method == "POST" else None)
+        # Feature vor dem ersten Laden setzen; open_settings() lädt die Seite
+        # danach neu, sodass die Sektion sicher eingeschaltet ist.
+        self.page.goto(self.base + "/#t=" + self.token)
+        self.page.evaluate(
+            "() => localStorage.setItem('nv-features', "
+            "JSON.stringify({agentsfile: true}))")
+
+    def posts_to(self, path):
+        payloads = []
+        for request in self.post_requests:
+            if request.url.split("?")[0].endswith(path):
+                try:
+                    payloads.append(json.loads(request.post_data or "{}"))
+                except ValueError:
+                    payloads.append({})
+        return payloads
+
+    def global_view(self):
+        return self.api_json("/api/global_agents_file")
+
+    def section(self):
+        # Der Vertrag nennt keine Sektions-ID; die Karte trägt
+        # data-nv-global-agents (wie der Editor). Die Sektion wird
+        # asynchron nach der Ansicht eingehängt, deshalb wartet der Aufrufer.
+        return self.page.locator("div[data-nv-global-agents]")
+
+    def test_missing_file_shows_hint_and_create_button(self):
+        """Vorbedingung: globale AGENTS.md existiert nicht.
+
+        Aktion: Einstellungen öffnen, ``button[data-nv-action=
+        "global-agents-create"]`` klicken.
+        Erwartung: Ein Hinweis nennt die fehlende Datei; der Klick sendet
+        ``POST /api/global_agents_file {action:"create"}``; danach erscheint
+        ``textarea[data-nv-global-agents]`` mit der angelegten Vorlage.
+        """
+        self.global_agents.unlink(missing_ok=True)
+        self.open_settings()
+        section = self.section()
+        section.wait_for(state="visible", timeout=20000)
+        text = section.inner_text() or ""
+        self.assertTrue(
+            re.search(r"fehlt|fehlend|nicht vorhanden|missing|not found",
+                      text, re.I),
+            "Der Hinweis nennt die fehlende globale AGENTS.md nicht: "
+            + repr(text))
+        create = section.locator(
+            "button[data-nv-action='global-agents-create']")
+        self.assertEqual(
+            1, create.count(),
+            "Der Anlegen-Knopf global-agents-create fehlt bei fehlender Datei")
+        create.click()
+        self.wait_until(
+            lambda: any(payload.get("action") == "create"
+                        for payload in self.posts_to("/api/global_agents_file")),
+            timeout=20,
+            message="Es wurde kein /api/global_agents_file-POST mit "
+                    "action=create gesendet: "
+                    + repr(self.posts_to("/api/global_agents_file")))
+        self.wait_until(
+            lambda: self.global_agents.is_file(), timeout=20,
+            message="Die globale AGENTS.md wurde nicht angelegt")
+        editor = self.page.locator("textarea[data-nv-global-agents]")
+        editor.wait_for(state="visible", timeout=20000)
+        self.assertTrue(
+            (editor.input_value() or "").strip(),
+            "Der Editor ist nach dem Anlegen nicht mit der Vorlage vorbelegt")
+        self.assert_no_page_errors()
+
+    def test_existing_file_editor_prefills_and_saves_with_digest(self):
+        """Vorbedingung: globale AGENTS.md mit Text vorhanden.
+
+        Aktion: Text im Editor ändern und speichern.
+        Erwartung: ``textarea[data-nv-global-agents]`` ist mit dem aktuellen
+        Text vorbelegt; der POST ``{action:"save", text, digest}`` trägt den
+        neuen Text und eine Prüfsumme; ein Toast bestätigt; die Datei enthält
+        den neuen Text. Ein zweites Speichern nutzt den aktualisierten Digest
+        (lokales Digest-Update), nicht die alte Prüfsumme.
+        """
+        self.global_agents.write_text(GLOBAL_AGENTS_TEXT, encoding="utf-8")
+        self.open_settings()
+        editor = self.page.locator("textarea[data-nv-global-agents]")
+        editor.wait_for(state="visible", timeout=20000)
+        self.assertIn(
+            "GLOBALE-REGEL-4711", editor.input_value(),
+            "Der Editor ist nicht mit dem aktuellen Text der globalen "
+            "AGENTS.md vorbelegt")
+        initial = self.global_view()
+        self.assertTrue(initial.get("exists"),
+                        "Vorbedingung: Die globale Datei wird nicht erkannt")
+        new_text = GLOBAL_AGENTS_TEXT + "Neue globale Regel 4711.\n"
+        editor.fill(new_text)
+        save = self.page.locator("button[data-nv-action='global-agents-save']")
+        self.assertEqual(1, save.count(),
+                         "Der Speichern-Knopf global-agents-save fehlt")
+        save.click()
+        self.wait_until(
+            lambda: any(payload.get("action") == "save"
+                        for payload in self.posts_to("/api/global_agents_file")),
+            timeout=20,
+            message="Es wurde kein /api/global_agents_file-POST mit "
+                    "action=save gesendet: "
+                    + repr(self.posts_to("/api/global_agents_file")))
+        payload = [p for p in self.posts_to("/api/global_agents_file")
+                   if p.get("action") == "save"][-1]
+        self.assertEqual(new_text, payload.get("text"),
+                         "Der POST enthält nicht den eingegebenen Text")
+        self.assertEqual(
+            initial["digest"], payload.get("digest"),
+            "Der POST sendet nicht die geladene Prüfsumme der globalen "
+            "AGENTS.md")
+        self.wait_until(
+            lambda: re.search(r"gespeichert|saved", self.toast_text(), re.I)
+            is not None, timeout=20,
+            message="Das Speichern der globalen AGENTS.md bestätigt nicht: "
+                    + repr(self.toast_text()))
+        self.wait_until(
+            lambda: "Neue globale Regel 4711"
+            in self.global_agents.read_text(encoding="utf-8"),
+            timeout=20,
+            message="Der neue Text steht nicht in der globalen AGENTS.md")
+
+        # Lokales Digest-Update: der nächste Save darf nicht an einer
+        # veralteten Prüfsumme scheitern.
+        current = self.global_view()
+        self.assertTrue(current.get("digest"),
+                        "Nach dem Speichern liefert die API keine Prüfsumme")
+        second_text = new_text + "Noch eine Regel 4712.\n"
+        editor.fill(second_text)
+        save.click()
+        self.wait_until(
+            lambda: len([p for p in self.posts_to("/api/global_agents_file")
+                         if p.get("action") == "save"]) >= 2,
+            timeout=20,
+            message="Ein zweites Speichern wurde nicht gesendet: "
+                    + repr(self.posts_to("/api/global_agents_file")))
+        second = [p for p in self.posts_to("/api/global_agents_file")
+                  if p.get("action") == "save"][-1]
+        self.assertEqual(
+            current["digest"], second.get("digest"),
+            "Das zweite Speichern nutzt nicht den aktualisierten Digest "
+            "(lokales Digest-Update fehlt)")
+        self.wait_until(
+            lambda: "Noch eine Regel 4712"
+            in self.global_agents.read_text(encoding="utf-8"),
+            timeout=20,
+            message="Das zweite Speichern schreibt den Text nicht")
+        self.assert_no_page_errors()
+
+    def test_hint_explains_the_scope_of_the_global_file(self):
+        """Vorbedingung: globale AGENTS.md vorhanden.
+
+        Erwartung: ``small[data-nv-global-agents-hint]`` ist sichtbar und
+        erklärt, dass die Regeln für alle Projekte gelten und die
+        projektbezogene AGENTS.md sie ergänzt.
+        """
+        self.global_agents.write_text(GLOBAL_AGENTS_TEXT, encoding="utf-8")
+        self.open_settings()
+        hint = self.page.locator("small[data-nv-global-agents-hint]")
+        hint.wait_for(state="visible", timeout=20000)
+        text = hint.inner_text() or ""
+        self.assertTrue(text.strip(),
+                        "Der Hinweis zur globalen AGENTS.md ist leer")
+        self.assertTrue(
+            re.search(r"alle|all", text, re.I),
+            "Der Hinweis sagt nicht, dass die Regeln für alle Projekte "
+            "gelten: " + repr(text))
+        self.assertTrue(
+            re.search(r"projekte|projects?", text, re.I),
+            "Der Hinweis nennt die Projekte nicht: " + repr(text))
+        self.assertTrue(
+            re.search(r"ergänz|supplement|extend|project-specific", text, re.I),
+            "Der Hinweis sagt nicht, dass die projektbezogene AGENTS.md die "
+            "globalen Regeln ergänzt: " + repr(text))
         self.assert_no_page_errors()
 
 
