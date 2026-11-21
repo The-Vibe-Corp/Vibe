@@ -201,7 +201,9 @@ TILE_EXPECTED = {
 }
 
 HIDDEN_SECTIONS = ("github", "writeaccess", "sandbox", "agentsfile")
-VISIBLE_SECTIONS = ("team", "basics", "checks", "pause", "sessions")
+# F33 WP3/2r: die eigene Pause-Sektion ist entfallen (Status als Pille im
+# Überblick), daher nicht mehr in den erwarteten Sektionen.
+VISIBLE_SECTIONS = ("team", "basics", "checks", "sessions")
 
 # Review-Fix AP22: lokaler GitHub-REST-Ersatz und lokales Git-Remote.
 # Es gibt keinen Netzzugriff außerhalb von Loopback; die API-Basis steht in
@@ -789,7 +791,8 @@ class SettingsSectionsTest(AP22ProjectBrowserTest):
         """Vorbedingung: frischer Browserkontext, alle Feature-Schalter aus.
 
         Aktion: Projekt-Einstellungen öffnen.
-        Erwartung: ``team/basics/checks/pause/sessions`` existieren; die
+        Erwartung: ``team/basics/checks/sessions`` existieren; die eigene
+        Pause-Sektion ist entfallen (Status als Pille im Überblick); die
         Bereiche ``github/writeaccess/sandbox/agentsfile`` fehlen vollständig
         im DOM (nicht nur versteckt).
         """
@@ -800,6 +803,10 @@ class SettingsSectionsTest(AP22ProjectBrowserTest):
                 self.assertEqual(
                     1, self.page.locator(f"[data-nv-psection='{section}']").count(),
                     f"Projekteinstellung {section!r} fehlt")
+        # F33 WP3/2r: die Pause-Sektion darf nicht mehr existieren.
+        self.assertEqual(
+            0, self.page.locator("[data-nv-psection='pause']").count(),
+            "Die eigene Pause-Sektion existiert entgegen dem F33-Vertrag")
         for section in HIDDEN_SECTIONS:
             with self.subTest(section=section):
                 self.assertEqual(
@@ -836,14 +843,22 @@ class TeamTest(AP22ProjectBrowserTest):
             message="Der Aktiv-Schalter wurde nicht gespeichert")
 
         row = self.page.locator("[data-nv-team-agent='tester']").first
-        model = row.locator("select[data-nv-agent-model]").first
+        # F33 WP3: die Modellwahl ist eine Combobox (kein select); Bedienung
+        # über Eingabefeld und Optionsliste, Wert steht in data-nv-value.
+        model = row.locator(
+            "div[data-nv-combobox][data-nv-agent-model]").first
         self.assertEqual(1, model.count(), "Die Modellwahl des Agenten fehlt")
+        model.locator("input[data-nv-combobox-input]").click()
+        option = model.locator("li[data-nv-combobox-option]",
+                               has_text="opencode/helper-modell")
         self.wait_until(
-            lambda: model.locator(
-                "option[value='opencode/helper-modell']").count() == 1,
+            lambda: option.count() == 1,
             timeout=20,
             message="Der Modellkatalog enthält das Ersatzmodell nicht")
-        model.select_option("opencode/helper-modell")
+        option.first.click()
+        self.assertEqual(
+            "opencode/helper-modell", model.get_attribute("data-nv-value"),
+            "Die Modellauswahl wurde nicht übernommen")
         self.wait_api(
             f"/api/project-agents?name={PROJECT}",
             lambda data: any(
@@ -860,9 +875,12 @@ class TeamTest(AP22ProjectBrowserTest):
         self.assertTrue(
             row.locator("input[data-nv-agent-toggle]").is_checked(),
             "Der Aktiv-Schalter ging beim Reload verloren")
+        # F33 WP3: der gespeicherte Wert steht am Combobox-Container.
         self.assertEqual(
             "opencode/helper-modell",
-            row.locator("select[data-nv-agent-model]").input_value(),
+            row.locator(
+                "div[data-nv-combobox][data-nv-agent-model]"
+            ).get_attribute("data-nv-value"),
             "Die Modellüberschreibung ging beim Reload verloren")
         self.assert_clean_page()
 
@@ -904,13 +922,21 @@ class OpencodeTeamTest(AP22ProjectBrowserTest):
                 for agent in data.get("agents", [])),
             message="Der OpenCode-Toggle wurde nicht gespeichert")
 
-        model = explore.locator("select[data-nv-agent-model]").first
+        # F33 WP3: die Modellwahl ist eine Combobox (kein select); Bedienung
+        # über Eingabefeld und Optionsliste, Wert steht in data-nv-value.
+        model = explore.locator(
+            "div[data-nv-combobox][data-nv-agent-model]").first
+        model.locator("input[data-nv-combobox-input]").click()
+        option = model.locator("li[data-nv-combobox-option]",
+                               has_text="opencode/helper-modell")
         self.wait_until(
-            lambda: model.locator(
-                "option[value='opencode/helper-modell']").count() == 1,
+            lambda: option.count() == 1,
             timeout=20,
             message="Der Modellkatalog enthält das Ersatzmodell nicht")
-        model.select_option("opencode/helper-modell")
+        option.first.click()
+        self.assertEqual(
+            "opencode/helper-modell", model.get_attribute("data-nv-value"),
+            "Die Modellauswahl wurde nicht übernommen")
         self.wait_api(
             f"/api/project-agents?name={PROJECT}",
             lambda data: any(
@@ -928,9 +954,12 @@ class OpencodeTeamTest(AP22ProjectBrowserTest):
             general.locator("input[data-nv-agent-toggle]").is_checked(),
             "Der OpenCode-Schalter ging beim Reload verloren")
         explore = self.page.locator("[data-nv-team-agent='explore']").first
+        # F33 WP3: der gespeicherte Wert steht am Combobox-Container.
         self.assertEqual(
             "opencode/helper-modell",
-            explore.locator("select[data-nv-agent-model]").input_value(),
+            explore.locator(
+                "div[data-nv-combobox][data-nv-agent-model]"
+            ).get_attribute("data-nv-value"),
             "Das OpenCode-Modell ging beim Reload verloren")
         self.assert_clean_page()
 
@@ -956,7 +985,9 @@ class AssistantTest(AP22ProjectBrowserTest):
         Aktion: Assistent öffnen, Autonom-Schalter klicken, Seite neu laden.
         Erwartung: ``[data-nv-assistant]`` zeigt die Leitfaden-Schritte aus
         ``/api/guide``; ``/api/autonomous`` meldet ``enabled=true`` und der
-        Schalter bleibt nach dem Reload an.
+        Schalter bleibt nach dem Reload an. Die Autonom-Zeile liegt dabei
+        vertragsgemäß im Überblick (``div[data-nv-autonomous-row]``), nicht
+        mehr im Beschreibungs-Tab.
         """
         # Erst booten: Relativer API-Zugriff aus ``about:blank`` wäre sonst
         # ein Harness-Fehler, kein Aussagesatz über die Oberfläche.
@@ -977,8 +1008,21 @@ class AssistantTest(AP22ProjectBrowserTest):
             message="Der Assistent zeigt den ersten Leitfaden-Schritt nicht: "
                     + repr(first_title))
 
-        toggle = self.page.locator("[data-nv-autonomous]").first
-        toggle.wait_for(state="visible", timeout=20000)
+        # F33 WP3/2q: die Autonom-Zeile steht im Überblick; die Leitfragen
+        # bleiben im Tab und wurden oben geprüft (keine Abschwächung).
+        self.open_tab("overview")
+        row = self.page.locator(
+            "section[data-nv-ppanel='overview'] div[data-nv-autonomous-row]")
+        row.wait_for(state="visible", timeout=20000)
+        self.assertRegex(
+            row.inner_text() or "",
+            re.compile(r"automatisch|automatic|rückfragen|questions", re.I),
+            "Die Autonom-Zeile erklärt das automatische Beantworten nicht: "
+            + repr(row.inner_text()))
+        toggle = row.locator("input[data-nv-autonomous]")
+        self.assertEqual(
+            1, toggle.count(),
+            "Die Autonom-Zeile enthält keinen Schalter [data-nv-autonomous]")
         self.assertFalse(self.toggle_state("[data-nv-autonomous]"),
                          "Der autonome Modus ist ohne Zutun bereits aktiv")
         toggle.click()
@@ -990,10 +1034,14 @@ class AssistantTest(AP22ProjectBrowserTest):
         self.page.reload()
         self.page.locator("main#nv-main[data-nv-view='project']").wait_for(
             state="visible", timeout=25000)
-        self.wait_until(
-            lambda: self.page.locator("[data-nv-autonomous]").count() == 1,
-            timeout=20,
-            message="Der Autonom-Schalter fehlt nach dem Reload")
+        # F33 WP3: nach dem Reload erneut den Überblick öffnen.
+        self.open_tab("overview")
+        row = self.page.locator(
+            "section[data-nv-ppanel='overview'] div[data-nv-autonomous-row]")
+        row.wait_for(state="visible", timeout=20000)
+        self.assertEqual(
+            1, row.locator("input[data-nv-autonomous]").count(),
+            "Der Autonom-Schalter fehlt nach dem Reload")
         self.assertTrue(
             self.toggle_state("[data-nv-autonomous]"),
             "Der autonome Modus ging beim Reload verloren")

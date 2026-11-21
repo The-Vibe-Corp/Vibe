@@ -1070,6 +1070,14 @@ details[data-nv-assignments] > summary {
 }
 details[data-nv-assignments][open] > summary { margin-bottom: var(--nv-space-3); }
 /* ===== F33 WP3 styles (Projektdetail) — nur in diesem Block ergänzen ===== */
+/* F33 WP3-Zusätze: Filterung per [hidden] muss auch Karten mit display-Regeln
+   zuverlässig ausblenden; Drag-Griff und Switch brauchen echte Boxen. */
+[data-nv-ticket][hidden], [data-nv-feedback-item][hidden] { display: none !important; }
+button[data-nv-drag-handle]::before { content: "⋮⋮"; letter-spacing: -2px; }
+label.nv-switch-row { display: flex; flex-wrap: wrap; }
+.nv-guide-actions { flex-wrap: wrap; gap: var(--nv-space-2); margin-top: var(--nv-space-2); }
+.nv-priority-rows { display: flex; flex-direction: column; gap: var(--nv-space-2); }
+[data-nv-agents-managed] { white-space: pre-wrap; padding: var(--nv-space-2); background: var(--nv-surface-2); }
 /* Beschreibung: zweispaltig ab Breitbild, einspaltig darunter. */
 .nv-guide-grid { display: grid; grid-template-columns: 1fr; gap: var(--nv-space-5); }
 @media (min-width: 1280px) {

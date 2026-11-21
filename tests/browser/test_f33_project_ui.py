@@ -1213,8 +1213,11 @@ class DescriptionTest(F33ProjectBrowserTest):
         """
         panel = self.open_description()
         tab = self.page.locator("[data-nv-ptab='assistant']")
+        # F33 WP3: Vertrag/Nutzerentscheidung 3 verlangt sichtbar
+        # „Beschreibung“ (en „Description“) — die Prüfung ist case-insensitiv.
         self.assertRegex(
-            tab.inner_text() or "", r"beschreibung|description",
+            tab.inner_text() or "",
+            re.compile(r"beschreibung|description", re.I),
             "Der Tab heißt nicht „Beschreibung“: " + repr(tab.inner_text()))
         self.assertEqual(
             0, panel.locator("[data-nv-note]").count(),
@@ -1380,7 +1383,8 @@ class SettingsTabTest(F33ProjectBrowserTest):
         Aktion: Freien Teil davor ändern und speichern.
         Erwartung: POST ``/api/agents_file`` mit ``action:"save"``,
         ``before``, ``after`` und nichtleerem ``digest``; Toast; die Datei
-        enthält den neuen Text, der verwaltete Block bleibt erhalten.
+        enthält den neuen Text, der verwaltete Block wird auf die kanonischen
+        Regeln normalisiert (Bestandsverhalten, siehe F31).
         """
         self.open_settings()
         section = self.section("agentsfile")
@@ -1409,14 +1413,25 @@ class SettingsTabTest(F33ProjectBrowserTest):
             is not None,
             timeout=20,
             message="Das Speichern der AGENTS.md bestätigt nicht")
+        # F33 WP6: der bestehende GET-Vertrag antwortet flach
+        # ({exists, digest, before, managed, after}); nur POST-Antworten
+        # tragen den agents_file-Wrapper — kein Breaking Change.
         self.wait_api(
             f"/api/agents_file?name={PROJECT}",
             lambda data: "Neue Regel davor 4711"
-            in str((data.get("agents_file") or {}).get("before") or ""),
+            in str(data.get("before") or ""),
             message="Der geänderte freie Teil ist nicht gespeichert")
         text = (self.project / "AGENTS.md").read_text(encoding="utf-8")
-        self.assertIn("Verwaltete Regel 4711", text,
-                      "Der verwaltete Block ging beim Speichern verloren")
+        # F33: der verwaltete Block wird beim Speichern auf die kanonischen
+        # GENERAL_RULES normalisiert (Bestandsverhalten seit F31, bin/vibe
+        # agents_file_save) — der Fixture-Platzhalter bleibt nicht erhalten.
+        self.assertIn("<!-- vibe:general-rules -->", text,
+                      "Der kanonische verwaltete Block fehlt nach dem Speichern")
+        self.assertIn("## Projektordner sauber halten", text,
+                      "Der kanonische Regeln-Inhalt fehlt nach dem Speichern")
+        self.assertNotIn(
+            "Verwaltete Regel 4711", text,
+            "Der Fixture-Platzhalter wurde nicht auf GENERAL_RULES normalisiert")
         self.assert_clean_page()
 
     def test_global_agents_hint_is_readonly(self):
@@ -1430,10 +1445,12 @@ class SettingsTabTest(F33ProjectBrowserTest):
         details = self.page.locator("details[data-nv-global-agents-hint]")
         details.wait_for(state="visible", timeout=20000)
         summary = details.locator("summary").first.inner_text() or ""
-        self.assertRegex(summary, r"global",
+        # F33 WP3: der Hinweis heißt „Globale AGENTS.md (immer gültig)“;
+        # die Prüfung bleibt case-insensitiv gegenüber der genauen Formulierung.
+        self.assertRegex(summary, re.compile(r"global", re.I),
                          "Die Hinweis-Summary nennt die globale Datei nicht: "
                          + repr(summary))
-        self.assertRegex(summary, r"agents",
+        self.assertRegex(summary, re.compile(r"agents", re.I),
                          "Die Hinweis-Summary nennt AGENTS.md nicht: "
                          + repr(summary))
         pre = details.locator("pre")
