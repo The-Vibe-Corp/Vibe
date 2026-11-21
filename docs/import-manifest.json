@@ -1244,6 +1244,14 @@
         "bin/vibe-web.py",
         "bin/web/i18n.js",
         "bin/web/nova.css",
+        "bin/web/index.html",
+        "bin/web/nova-core.js",
+        "bin/web/nova-home.js",
+        "bin/web/vibe.svg",
+        "bin/web/nova-agents.js",
+        "bin/web/nova-widgets.js",
+        "bin/web/nova-activity.js",
+        "bin/web/nova-settings.js",
         "docs/import-manifest.json"
       ],
       "grund": "F33 (UI-Überarbeitung Nova) in Arbeit: Backend-Verträge umgesetzt (POST /api/agent action=backup ohne Versionswarnung, AGENTS.md-Sicherung/Wiederherstellung mit agents_file_backup_dir, GET/POST /api/global_agents_file, globale Modellpreise action=prices_global mit Rangfolge Projekt > global > Katalog und global_prices in Übersicht/Detail, STATIC_FILES-Einträge vibe.svg/nova-widgets.js); bin/web/nova.css vollständig überarbeitet (mattes Frosted Glass, 12 Akzentpaletten hell/dunkel, Sidebar-Breitbild ab 1280px, F33-Stilblöcke WP1-WP5); bin/web/i18n.js um F33-Koordinationsblöcke ergänzt. Da Programmdaten geändert wurden, sind Größe und SHA-256 der vier betreffenden files-Einträge aktualisiert und dadurch begründet. Merge origin/dev (AP5-Korbat 4cbf70d, B18 d53efa4): alle drei aenderungen-Datensaetze erhalten; Größe/SHA-256 von bin/vibe, bin/vibe-web.py und bin/web/i18n.js auf den gemergten Stand neu berechnet. CSS-Defektreparatur: backdrop-filter von Karten entfernt (Kompositierungs-/Timing-Defekt mit nv-slide-in und asynchronem Render belegt; Blur bleibt auf Header/Sidebar/Schublade/Toasts) und das Breitbild-Grid auf body:has(aside.nv-side) eingegrenzt — im sauberen HEAD-Vergleich validiert (AP22 Shell/Home/Settings/Activity grün)."
@@ -1395,9 +1403,9 @@
       "sha256": "2bb2c8c578d4b5e26ed273fa72d125ea997f1eafcafe259ad25045766bf81047"
     },
     {
-      "bytes": 27801,
+      "bytes": 39558,
       "path": "bin/web/nova-agents.js",
-      "sha256": "4bdb9dc747513a3437d2dd2abfabacce5a1569581b8f711988cdd10c2317b086"
+      "sha256": "9f07a51911256ddf5155fca302e58e3d4c648c9f6e3de51c0fed163083ef56c2"
     },
     {
       "bytes": 24936,
@@ -1423,6 +1431,11 @@
       "bytes": 58929,
       "path": "bin/web/nova-settings.js",
       "sha256": "e37f2fea39bb8f6b35a6837cd6660af6426f07dc9be7407f9218b120d5716e7c"
+    },
+    {
+      "bytes": 4602,
+      "path": "bin/web/nova-widgets.js",
+      "sha256": "ab74aeb02b105df1227a28752f6e84686fef8ca5bef15a02dfa26ab86ee051f9"
     },
     {
       "bytes": 53656,
