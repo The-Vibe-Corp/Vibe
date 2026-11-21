@@ -1709,7 +1709,7 @@ function harnessCard(hs){
     feedback.replaceChildren(el('span',{class:(r.ok?'ok':'bad')},r.message||''));
     feedback.hidden=false;
     if(r.ok){const fresh=await api('/api/harness');setSel(fresh);drawEntries(fresh)}}
-   catch(e){feedback.replaceChildren(el('span',{class:'bad'},String(e&&e.message||e)))}
+   catch(e){feedback.replaceChildren(el('span',{class:'bad'},String(e&&e.message||e)));feedback.hidden=false;}
   }}},tr('Installieren'));
  const drawEntries=(d)=>{
   entryNodes.forEach(n=>n.remove());

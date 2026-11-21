@@ -753,6 +753,8 @@ async function buildHarnessSection(token) {
         el('span', {class: item.installed ? 'nv-ok' : 'nv-bad'},
           item.installed ? String(tr('Installiert')) : String(tr('Nicht installiert'))));
       if (!item.installed) row.append(installButton(item.harness));
+      if (item.version) row.append(el('span', {class: 'nv-muted'},
+        String(tr('Version')) + ' ' + nvText(item.version)));
       nodes.push(row);
       if (item.hint) nodes.push(el('div', {class: 'nv-muted'}, nvText(item.hint)));
       if (item.official) nodes.push(el('div', {class: 'nv-muted'},

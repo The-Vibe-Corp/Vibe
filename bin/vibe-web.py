@@ -2202,7 +2202,7 @@ class H(BaseHTTPRequestHandler):
                         result = vibe_harness.install(body.get("harness", ""))
                         ok = result["code"] == 0
                         if result["already"]:
-                            msg = result["harness"] + " ist bereits installiert."
+                            msg = vibe_harness.definition(result["harness"])["name"] + " ist bereits installiert."
                         elif ok:
                             msg = "Installation abgeschlossen: " + result["harness"]
                         else:
