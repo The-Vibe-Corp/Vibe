@@ -325,7 +325,7 @@ AssertionError: 2 != 3
 
 Immer mit bereinigter Umgebung (`env -u VIBE ... -u VIBE_UI_BIND ... -u SANDBOX ...`),
 damit weder produktives `HOME`/`VIBE` noch die produktive Bindung
-`VIBE_UI_BIND=192.168.13.13` verwendet werden.
+`VIBE_UI_BIND=<redacted>` verwendet werden.
 
 | Befehl | Exit | Beobachtung |
 |---|---|---|
