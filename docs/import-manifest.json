@@ -1246,7 +1246,16 @@
         "bin/web/nova.css",
         "docs/import-manifest.json"
       ],
-      "grund": "F33 (UI-Überarbeitung Nova) in Arbeit: Backend-Verträge umgesetzt (POST /api/agent action=backup ohne Versionswarnung, AGENTS.md-Sicherung/Wiederherstellung mit agents_file_backup_dir, GET/POST /api/global_agents_file, globale Modellpreise action=prices_global mit Rangfolge Projekt > global > Katalog und global_prices in Übersicht/Detail, STATIC_FILES-Einträge vibe.svg/nova-widgets.js); bin/web/nova.css vollständig überarbeitet (mattes Frosted Glass, 12 Akzentpaletten hell/dunkel, Sidebar-Breitbild ab 1280px, F33-Stilblöcke WP1-WP5); bin/web/i18n.js um F33-Koordinationsblöcke ergänzt. Da Programmdaten geändert wurden, sind Größe und SHA-256 der vier betreffenden files-Einträge aktualisiert und dadurch begründet. Merge origin/dev (AP5-Korbat 4cbf70d, B18 d53efa4): alle drei aenderungen-Datensaetze erhalten; Größe/SHA-256 von bin/vibe, bin/vibe-web.py und bin/web/i18n.js auf den gemergten Stand neu berechnet."
+      "grund": "F33 (UI-Überarbeitung Nova) in Arbeit: Backend-Verträge umgesetzt (POST /api/agent action=backup ohne Versionswarnung, AGENTS.md-Sicherung/Wiederherstellung mit agents_file_backup_dir, GET/POST /api/global_agents_file, globale Modellpreise action=prices_global mit Rangfolge Projekt > global > Katalog und global_prices in Übersicht/Detail, STATIC_FILES-Einträge vibe.svg/nova-widgets.js); bin/web/nova.css vollständig überarbeitet (mattes Frosted Glass, 12 Akzentpaletten hell/dunkel, Sidebar-Breitbild ab 1280px, F33-Stilblöcke WP1-WP5); bin/web/i18n.js um F33-Koordinationsblöcke ergänzt. Da Programmdaten geändert wurden, sind Größe und SHA-256 der vier betreffenden files-Einträge aktualisiert und dadurch begründet. Merge origin/dev (AP5-Korbat 4cbf70d, B18 d53efa4): alle drei aenderungen-Datensaetze erhalten; Größe/SHA-256 von bin/vibe, bin/vibe-web.py und bin/web/i18n.js auf den gemergten Stand neu berechnet. CSS-Defektreparatur: backdrop-filter von Karten entfernt (Kompositierungs-/Timing-Defekt mit nv-slide-in und asynchronem Render belegt; Blur bleibt auf Header/Sidebar/Schublade/Toasts) und das Breitbild-Grid auf body:has(aside.nv-side) eingegrenzt — im sauberen HEAD-Vergleich validiert (AP22 Shell/Home/Settings/Activity grün)."
+    },
+    {
+      "arbeitspaket": "F33",
+      "datum": "2026-11-21",
+      "dateien": [
+        "bin/web/nova-activity.js",
+        "bin/web/nova-settings.js"
+      ],
+      "grund": "F33 WP5 Aktivität/Einstellungen (Nova): Aktivität — Reihenfolge Kacheln → Rückfragen (select data-nv-questions-project „Alle Projekte“ + je Projekt, hint p[data-nv-questions-hint], Session-Limit-Hinweis small[data-nv-limit-hint] „Gilt für das oben ausgewählte Projekt und begrenzt die Anzahl gelisteter Sitzungen“) → Läufe → Sessions; Einstellungen — Netzwerk in details[data-nv-network-advanced] (Standard zusammengeklappt, Portfelder darin), Feature-Schalter in div[data-nv-feature-groups], je Schranke small[data-nv-gate-help] (5 deutsche Schranken-Expertisen, incl. Form-Hilfe unter dem Auswahl-Knopf), Auswertungsgruppe „Auswertungen“ vor Kosten/Runs mit span[data-nv-eval-badge], Kosten-Karte: hint p[data-nv-costs-hint], Projektzeilen nv-clickable, Detailtabelle Kennung/Sitzungen/Eingabe/gecachte Eingabe/Ausgabe/Kosten + Gesamtzeile, globale Modellpreise (button data-nv-action=„cost-global-edit“ → input[data-nv-cost-global-model] + data-nv-cost-field, Speichern data-nv-action=„cost-global-save“ → POST /api/costs action=prices_global, Toast „Globale Preise gespeichert“), Run-Register: span[data-nv-run-pruneable] „bereinigbar“ + hint p[data-nv-runs-hint], Akzent select[data-nv-accent-select] mit 12 Vertrags-Optionen (defensive NV.setAccent), Globale AGENTS.md (GET /api/global_agents_file, create/save, textarea[data-nv-global-agents], Toast + lokaler Digest-Update, hint p[data-nv-global-agents-hint]). Da Programmdaten geändert wurden, sind Größe und SHA-256 der zwei betreffenden files-Einträge aktualisiert und dadurch begründet."
     }
   ],
   "files": [
@@ -1381,9 +1390,9 @@
       "sha256": "40050caa0fea3f2fd42934ed5eb2b2064ab7ab433ff7601f80733c82a11987ad"
     },
     {
-      "bytes": 11903,
+      "bytes": 13653,
       "path": "bin/web/nova-activity.js",
-      "sha256": "9d4e6cc42dd93472f032cc171cf855fb8692d9534e7b43ed732b4efd156239a0"
+      "sha256": "2bb2c8c578d4b5e26ed273fa72d125ea997f1eafcafe259ad25045766bf81047"
     },
     {
       "bytes": 27801,
@@ -1411,14 +1420,14 @@
       "sha256": "e05e898aa38cca8f888e355681ea93d4c974affc8cae0574890502a779552974"
     },
     {
-      "bytes": 46592,
+      "bytes": 58721,
       "path": "bin/web/nova-settings.js",
-      "sha256": "be83e52357bf9fee9b9337a33397be3abdfe3c1a67f66c647013431a98d84f46"
+      "sha256": "33c4b8a7488442d81bf6d94887ce2d2c4ebab55a56aaa534da8028284aa409d4"
     },
     {
-      "bytes": 52251,
+      "bytes": 53656,
       "path": "bin/web/nova.css",
-      "sha256": "a1a89c04758d3a5f70b082fec7a9ea4715daa6441c83244a95d1652b3cb2c2ac"
+      "sha256": "9e54edb6282c9324d4ea96a3c66eb4d4c340129d1613dde361c696032cf5ef9b"
     },
     {
       "bytes": 12751,
