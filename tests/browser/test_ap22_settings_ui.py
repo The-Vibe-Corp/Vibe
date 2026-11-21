@@ -342,6 +342,13 @@ class SettingsTest(AP22SettingsBrowserTest):
         """
         self.boot()
         self.open_settings()
+        # F33 WP5: erweiterte Bereiche (inkl. „Auswertungen") und der
+        # Klassisch-Link werden erst nach den parallelen Datenabrufen
+        # asynchron ans DOM gehängt — nicht schon mit dem Basis-Render.
+        self.page.locator("[data-nv-ssection='advanced']").wait_for(
+            state="visible", timeout=15000)
+        self.page.locator("a[data-nv-classic-link]").wait_for(
+            state="visible", timeout=15000)
         for section in SECTIONS:
             with self.subTest(section=section):
                 self.assertEqual(
@@ -522,10 +529,16 @@ class SettingsTest(AP22SettingsBrowserTest):
         Erwartung: ``70000`` erzeugt einen sichtbaren Fehler und lässt
         ``ui.json`` byte-gleich; ein freier Port erzeugt den sichtbaren
         Neustart-Hinweis ``[data-nv-restart-note]`` und steht als ``ui_port``
-        in ``ui.json``.
+        in ``ui.json``. Die Netzwerk-Felder liegen vertragsgemäß im
+        standardmäßig zusammengeklappten ``details[data-nv-network-advanced]``
+        und werden vor der Prüfung aufgeklappt.
         """
         self.boot()
         self.open_settings()
+        # F33 WP5: Netzwerk ist standardmäßig zusammengeklappt (Vertrag).
+        network = self.page.locator("details[data-nv-network-advanced]")
+        network.wait_for(state="attached", timeout=15000)
+        network.locator("summary").click()
         field = self.page.locator("input[data-nv-field='port']")
         field.wait_for(state="visible", timeout=15000)
         save = self.page.locator("[data-nv-action='security-save']")
