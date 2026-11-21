@@ -702,22 +702,58 @@ async function buildHarnessSection(token) {
 
   var select = el('select', {'data-nv-field': 'harness',
     'aria-label': String(tr('Harness-Auswahl'))});
-  (status.harnesses || []).forEach(function (item) {
-    select.append(el('option', {value: nvText(item.harness)},
-      nvText(item.name) + ' (' + nvText(item.harness) + ')'));
-  });
-  if (status.selected) select.value = status.selected;
+  function syncSelect(data) {
+    var options = [];
+    (data.harnesses || []).forEach(function (item) {
+      // B18: Nicht installierte Harnesses sind deaktiviert — die Auswahl ist
+      // per UI nur dann wirksam, wenn das Programm tatsächlich läuft.
+      var option = el('option', {value: nvText(item.harness)},
+        nvText(item.name) + ' (' + nvText(item.harness) + ')'
+          + (item.installed ? '' : String(tr(' (nicht installiert)'))));
+      if (!item.installed) option.setAttribute('disabled', '');
+      options.push(option);
+    });
+    select.replaceChildren.apply(select, options);
+    select.value = data.selected || select.value;
+  }
+  syncSelect(status);
 
   var statusBox = el('div', {class: 'nv-note', 'data-nv-harness-status': ''});
+  var installFeedback = el('div', {class: 'nv-note',
+    'data-nv-harness-install-feedback': '', hidden: ''});
+  function installButton(id) {
+    return el('button', {class: 'nv-btn nv-secondary', type: 'button',
+      'data-nv-action': 'harness-install', 'data-nv-harness': nvText(id),
+      on: {click: async function () {
+        settingsError(error, '');
+        try {
+          var answer = await api('/api/harness', {action: 'install', harness: id});
+          // Erst Kind, dann Sichtbarkeit: der Test liest die Rückmeldung
+          // direkt nach der Sichtbarkeit, nicht nach einem leeren Feedback.
+          installFeedback.replaceChildren(el('span', {},
+            nvBackend(answer && answer.message) || String(tr('Installation fehlgeschlagen'))));
+          installFeedback.hidden = false;
+          if (answer && answer.ok && !NV.stale(token)) {
+            var fresh = await api('/api/harness');
+            draw(fresh);
+          }
+        } catch (failure) {
+          installFeedback.replaceChildren(el('span', {},
+            String(failure && failure.message || failure)));
+          installFeedback.hidden = false;
+        }
+      }}}, String(tr('Installieren')));
+  }
   function draw(data) {
+    syncSelect(data);
     var nodes = [el('p', {}, String(tr('Aktiver Harness')) + ': ' + nvText(data.selected))];
     (data.harnesses || []).forEach(function (item) {
-      nodes.push(el('div', {class: 'nv-row'},
+      var row = el('div', {class: 'nv-row'},
         el('b', {}, nvText(item.name) + ' (' + nvText(item.harness) + ')'),
         el('span', {class: item.installed ? 'nv-ok' : 'nv-bad'},
-          item.installed ? String(tr('Installiert')) : String(tr('Nicht installiert'))),
-        item.version ? el('span', {class: 'nv-muted'},
-          String(tr('Version')) + ' ' + nvText(item.version)) : null));
+          item.installed ? String(tr('Installiert')) : String(tr('Nicht installiert'))));
+      if (!item.installed) row.append(installButton(item.harness));
+      nodes.push(row);
       if (item.hint) nodes.push(el('div', {class: 'nv-muted'}, nvText(item.hint)));
       if (item.official) nodes.push(el('div', {class: 'nv-muted'},
         String(tr('Offizielle Anleitung')) + ': ' + nvText(item.official)));
@@ -740,14 +776,20 @@ async function buildHarnessSection(token) {
           toast(nvBackend(answer.message));
           var fresh = await api('/api/harness');
           if (!NV.stale(token)) { draw(fresh); select.value = fresh.selected; }
-        } else settingsError(error, nvBackend(answer && answer.message) || String(tr('Aktion fehlgeschlagen')));
+        } else {
+          // B18: Ablehnung zeigt die Backend-Meldung und setzt die
+          // Auswahlanzeige auf den persistierten Wert zurück.
+          settingsError(error, nvBackend(answer && answer.message) || String(tr('Aktion fehlgeschlagen')));
+          var freshReset = await api('/api/harness');
+          if (!NV.stale(token)) select.value = freshReset.selected;
+        }
       } catch (failure) { nvActionError(error, failure); }
     }}}, String(tr('Harness übernehmen')));
 
   return el('div', {class: 'nv-card', 'data-nv-advanced': 'harness'},
     el('h3', {}, String(tr('Harness'))),
     el('label', {}, String(tr('Harness-Auswahl'))), select,
-    el('div', {class: 'nv-row'}, useButton), statusBox, error);
+    el('div', {class: 'nv-row'}, useButton), statusBox, error, installFeedback);
 }
 
 /* ---------- Umgebung: Doctor, Pfade, Fritz, Emulator, Server ---------- */
