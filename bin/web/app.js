@@ -630,7 +630,7 @@ function drawAgentsFile(v,name,reload){
   after,
   el('div',{class:'bar'},v.exists?save:null,v.exists?null:create)];
  return out}
-function feedbackCard(d,name){const list=el('div',{});const cls=s=>s==='erledigt'?'ok':s==='BLOCKIERT'?'bad':'warn';
+function feedbackCard(d,name){const list=el('div',{});const cls=s=>({erledigt:'ok',BLOCKIERT:'bad','WARTET AUF MERGE':'warn'})[s]||'warn';
  const done=d.feedback.filter(i=>i.completed),pending=d.feedback.filter(i=>!i.completed);let showDone=false;
  const toggle=el('button',{class:'b'});
  const delBtn=i=>{const b=el('button',{class:'b d',on:{click:()=>askInline(b,'Feedback '+i.id+tr(' wirklich löschen?'),tr('Ja, löschen'),async()=>{const r=await api('/api/feedback',{name,action:'delete',id:i.id});toast(bt(r.message));if(r.ok)detail(name).catch(showErr)})}},tr('Löschen'));return b};
@@ -654,7 +654,7 @@ function feedbackCard(d,name){const list=el('div',{});const cls=s=>s==='erledigt
  toggle.addEventListener('click',()=>{showDone=!showDone;draw()});
  draw();
  return el('div',{class:'card',id:'feedback'},el('div',{class:'bar'},el('b',{},'Feedback ('+d.feedback.length+')'),toggle),list)}
-function ticketCard(d,name){const list=el('div',{});const cls=s=>s==='erledigt'?'ok':s==='BLOCKIERT'?'bad':'warn';
+function ticketCard(d,name){const list=el('div',{});const cls=s=>({erledigt:'ok',BLOCKIERT:'bad','WARTET AUF MERGE':'warn'})[s]||'warn';
  const done=d.tickets.filter(i=>i.completed),pending=d.tickets.filter(i=>!i.completed);let showDone=false;
  const toggle=el('button',{class:'b'});
  const delBtn=i=>{const b=el('button',{class:'b d',on:{click:()=>askInline(b,tr('Arbeitspaket ')+i.id+tr(' wirklich löschen?'),tr('Ja, löschen'),async()=>{const r=await api('/api/ticket',{name,action:'delete',id:i.id});toast(bt(r.message));if(r.ok)detail(name).catch(showErr)})}},tr('Löschen'));return b};
@@ -1120,7 +1120,7 @@ function openPackagesCard(d,name){
    'aria-label':tr('Paket ')+r.id+tr(' verschieben (Pfeiltasten auf/ab)'),'title':tr('Paket ')+r.id+tr(' verschieben')},'⋮⋮');
   const row=el('div',{class:'item packitem',draggable:'true','data-item':r.id},handle,
    el('span',{},el('b',{},r.id+' '),r.title?el('span',{class:'mut'},r.title):null),
-   r.state?el('span',{class:'pill '+(r.state==='BLOCKIERT'?'bad':'warn')},r.state):null,
+   r.state?el('span',{class:'pill '+({BLOCKIERT:'bad','WARTET AUF MERGE':'warn'})[r.state]||'warn'},r.state):null,
    r.ordered===undefined?null:el('span',{class:'pill '+(r.ordered?'ok':'mut')},r.ordered?tr('priorisiert'):tr('Standardordnung')));
   handle.addEventListener('keydown',e=>{
    if(e.key!=='ArrowUp'&&e.key!=='ArrowDown')return;
