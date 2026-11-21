@@ -327,7 +327,7 @@ docs/
 - Öffentlicher Remotezugriff auf das Dashboard.
 - Mehrbenutzerbetrieb oder Cloud-Synchronisation.
 - Vollständiger Ersatz für coding harniss.
-- Automatische Veröffentlichung, Push, Merge oder Release ohne Freigabe.
+- Automatische Veröffentlichung, Push, Merge oder Release **ohne Freigabe oder ohne gesetztes `GITHUB_AUTO_MERGE`**.
 - Vollständiger Frameworkwechsel als Voraussetzung für weitere Entwicklung.
 
 ## Decisions Locked
@@ -339,30 +339,36 @@ docs/
 - Laufzeitdaten und Geheimnisse nicht ins Repository aufnehmen.
 - Ungeprüfte Modellinformationen als unbekannt behandeln.
 - Sicherheits- und Datenintegritätsfehler vor neuen Komfortfunktionen beheben.
-## Git Workflow & Branch Rules (Strictly Enforced)
 
-- **Branch naming:** `feature/<owner>/<kebab-case-name>` (lowercase, numbers, hyphens only).
-- **Ownership:** Check your Git/GitHub user (`git config user.name` or `gh api user`) and use ONLY your folder:
-  - `mop` -> `feature/mop/*`
-- **Restrictions:** Never push directly to `dev` or `main`, and never create PRs targeting `main` unless explicitly instructed.
-- **Workflow (per feature/ticket):**
-  1. Pull latest `dev` and create **one dedicated branch** `feature/<owner>/<kebab-case-name>` (never reuse branches).
-  2. Implement the feature and its tests.
-  3. Fetch and merge/rebase latest `origin/dev` into your branch. If conflicts occur, **integrate both sets of changes** so that incoming features/tests from `dev` and your new feature/tests both remain intact and functional (never overwrite one side with `--ours` or `--theirs`).
-  4. Run the full test suite and verify **all existing and new tests pass**.
-  5. Push the branch, open a PR targeting `dev`, and squash-merge it (`gh pr merge --squash --delete-branch`).
-  6. Switch back to `dev`, pull latest `dev`, delete the local feature branch (`git branch -D <branch>`), and move to the next task.
+## Git & work-package closing (runner-owned)
 
-## Git&GitHub Workflow & Branch Rules (Strictly Enforced)
-
-- **Branch naming:** `feature/<owner>/<kebab-case-name>` (lowercase, numbers, hyphens only).
-- **Ownership:**
-  - `mop` -> `feature/mop/*`
-- **Workflow:**
-  1. Always branch off `dev`. Never push directly to `dev` or `main`.
-  2. Push your `feature/<owner>/*` branch and open a PR targeting `dev`.
-  3. Stop after opening the PR—a human must review and squash-merge into `dev` (and delete the branch).
-  4. Never create PRs targeting `main` unless explicitly instructed.
+- The runner owns worktrees, branches, mergeability, push, PR, merge and cleanup.
+  Agents never create, switch, merge, push, force-push, rebase or delete branches.
+- Agents work only in the worktree path given in the task (`$WT`) and never touch
+  the integration directory (`$P`).
+- Before close, the runner makes the PR mergeable by fetching `origin/<base>` and
+  merging it into the feature branch (`git merge origin/<base>`; merge, never rebase).
+  On conflict the runner leaves the worktree in the conflicted state and re-launches
+  the agent to resolve (`git add` + `git merge --continue`); the runner verifies a
+  clean merge before the (single) push in `github-complete`.
+- Commit in the worktree with the package prefix (`<ID>:`). Stage only your own
+  files; review `git status`/diff before committing.
+- Tick the ticket (`[x]`) in `TICKETS.md`/`FEEDBACK.md` and add
+  `Commit: <hash>; Test: <method or file>`.
+- Create `docs/features/<ID>.md` and obtain an independent review saved as
+  `docs/reviews/<ID>-review-*.md` with `Verdict: PASS`.
+- Leave the worktree clean. Do not merge, push or delete branches.
+- Per-project close mode is controlled by `GITHUB_AUTO_MERGE` in `.vibe/project.env`:
+  - unset/`""`: PR-only — runner pushes, opens the PR, and stops; worktree stays
+    registered until the owner merges and runs `vibe package close <id>`.
+  - `"1"`: auto-merge — runner merges the approved PR (squash) after all gates and
+    ensure-mergeable pass, then syncs notes and removes worktree/branch.
+- In local-only mode (`GITHUB_ENABLED` empty / no origin) the runner merges the
+  feature branch into the integration branch locally and then cleans up.
+- Verification gates (`VERIFY_PACKAGE`, `VERIFY_FULL`) are run by the runner; do not
+  re-run the full suite unless asked.
+- On merge conflict during a repair round, resolve in the worktree and re-commit;
+  do not abort the merge or use `--ours`/`--theirs` wholesale.
 
 ## Zielgruppe und Nutzung
 

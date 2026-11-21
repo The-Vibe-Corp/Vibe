@@ -1174,6 +1174,37 @@
         "docs/import-manifest.json"
       ],
       "grund": "Agenten-Markdowns erzeugen opencode-v2-Berechtigungsblöcke (permissions-Regelliste, shell statt bash, subagent statt task); die opencode-eigenen Subagenten general/explore sind in der Projekt-Agentenauswahl umschaltbar und mit eigenem Modell belegbar (Projektdatei Version 3 mit opencode-Abschnitt); der Läufer mischt diese Einträge in OPENCODE_CONFIG_CONTENT (disabled nur in der agents-Map, nie in der Legacy-agent-Map)."
+    },
+    {
+      "arbeitspaket": "AP4-Korbat",
+      "dateien": [
+        "bin/vibe",
+        "bin/vibe-run.sh",
+        "bin/vibe-web.py",
+        "bin/vibe_github.py",
+        "bin/vibe_packages.py",
+        "bin/vibe_runs.py",
+        "bin/web/app.js",
+        "bin/web/nova-project.js",
+        "templates/android/AGENTS.md",
+        "templates/docker/AGENTS.md",
+        "templates/generic/AGENTS.md",
+        "templates/rebuild/AGENTS.md",
+        "templates/web/AGENTS.md"
+      ],
+      "datum": "2026-11-21",
+      "grund": "Arbeitspaket-Abschlussprozess für GitHub-verknüpfte Projekte überarbeitet: Runner-eigene Abschlussfolge mit ensure-mergeable, PR-only-Standard und per-Projekt-Auto-Merge (GITHUB_AUTO_MERGE) inklusive begrenzter Reparaturrunde, Worktree-Registry mit Reconnect, Session-Worktree-Anbindung, Pruning-Fetch, Upstream bei Verknüpfung, worktree-bewusstes Branch-Löschen, Kollisionsprüfung inkl. Remotes/Worktrees, Paketabschluss per 'vibe package close'; Regeldedupe im verwalteten AGENTS.md-Block und kanonischer Git-Workflow in SPEC.md; GUI: Auto-Merge-Checkbox, Nova-Link/Unlink/Fetch, Session- und Paketabschluss-Anzeige."
+    },
+    {
+      "arbeitspaket": "AP4-Korbat",
+      "datum": "2026-11-21",
+      "dateien": [
+        "bin/vibe",
+        "bin/vibe-web.py",
+        "bin/web/nova-project.js",
+        "docs/import-manifest.json"
+      ],
+      "grund": "Review-Runde 1 (docs/reviews/AP4-Korbat-review-1.md, 3 Minor-Befunde): POST /api/sessions action=continue reicht den Session-Worktree-/Paket-Anhang (resume_package/resume_worktree/resume_branch) an vibe.cmd_run weiter; resume_worktree/resume_branch werden im tmux-Startbefehl mit shlex.quote abgesichert; 'vibe github <projekt> status' zeigt Auto-Merge (ja/nein) an; Nova-Überblicks-Tab blendet den Paket-/Worktree-Anhang der Session ein. Da drei Programmdaten geändert wurden, sind Größe und SHA-256 der betreffenden files-Einträge aktualisiert und dadurch begründet."
     }
   ],
   "files": [
@@ -1188,19 +1219,19 @@
       "sha256": "e5ae3183efcb76dace1e0bcbde9993be7afe82d93d7877da9ee39846cf45330a"
     },
     {
-      "bytes": 285122,
+      "bytes": 291967,
       "path": "bin/vibe",
-      "sha256": "ec278df135338ffacbe4db981bac9d6fcc2383ade563dc22360ace7de4712000"
+      "sha256": "a4df9352ce24458e653c70e1276832ccc27ba826c2e101ce853cee023d3bd55b"
     },
     {
-      "bytes": 71042,
+      "bytes": 81878,
       "path": "bin/vibe-run.sh",
-      "sha256": "c15919f8c8a891de1546187846b90bfff44e7c54e85056c21591c2d90dc4cfb4"
+      "sha256": "12078b91bf7bd3aabaa7029dd7e1d65488b9be00a6e70788d766dba87e26071a"
     },
     {
-      "bytes": 114369,
+      "bytes": 116517,
       "path": "bin/vibe-web.py",
-      "sha256": "223710eb7fd30921d699954eeeb7c92ac685067604a7c877a9cc3bf3f0b20fa3"
+      "sha256": "70452e81ed49920d98a1e188fc205749bc72e67622181e696b319dc9fc0caa0d"
     },
     {
       "bytes": 5189,
@@ -1213,9 +1244,9 @@
       "sha256": "0f6d9c2c9d72ff1400ba0c2e8173217102ac9f163a41191c34367dd5f81f5778"
     },
     {
-      "bytes": 60761,
+      "bytes": 74232,
       "path": "bin/vibe_github.py",
-      "sha256": "a4e7e249c934c5a99edd6ea37058635ea4c9ecd73cbca3e2f19931dd261a421b"
+      "sha256": "0abd4d2fdb366a89b5960806ac6b657299b14222932ed8acd2258c36d1a57ffc"
     },
     {
       "bytes": 27530,
@@ -1248,9 +1279,9 @@
       "sha256": "ac3b26da4208a087a09c67c389238c82802d7c1bd50b10d9bcd9492a07050462"
     },
     {
-      "bytes": 66434,
+      "bytes": 71746,
       "path": "bin/vibe_packages.py",
-      "sha256": "9f59944d599161676af32c53027dfc4a82bc06201331da938ae01719ebacb1ac"
+      "sha256": "6b4c95471bb27182e845e1fa062ecd3e01a1cefa6955fc11cccb8325af05fd70"
     },
     {
       "bytes": 20789,
@@ -1263,9 +1294,9 @@
       "sha256": "9a4bb9a2a182977c276b04676b133d918c97ed4f0a957c4d6f0e72835848b5cd"
     },
     {
-      "bytes": 54960,
+      "bytes": 67575,
       "path": "bin/vibe_runs.py",
-      "sha256": "d086689d67fc4fbe7023b06bf0da60a4ac001899c457a7f8bae3d7d267f25aae"
+      "sha256": "7caaa7b0d518a161f5b6df436b64b425f01aacb02cf9bf9c951a5665dc439698"
     },
     {
       "bytes": 36700,
@@ -1288,9 +1319,9 @@
       "sha256": "43805dba175b11e01392b376bc12f931d82c06c8ab82dfc60474b9e9170cdd0f"
     },
     {
-      "bytes": 153168,
+      "bytes": 154278,
       "path": "bin/web/app.js",
-      "sha256": "bade76d827175dbf2ed41acdb51ef7e077e648a18d52c898a715826fae44046a"
+      "sha256": "5279ae3e900ca146b3df4016d689544f7b230cec3e962ce33f6fe1f9b3f05a99"
     },
     {
       "bytes": 688,
@@ -1333,9 +1364,9 @@
       "sha256": "8c56aa9e89ece8d02ea76f5d1b11e43ff8466b1d3becb8956a98ae0f6036895b"
     },
     {
-      "bytes": 46182,
+      "bytes": 49197,
       "path": "bin/web/nova-project.js",
-      "sha256": "b41e6318b044188e594551d9a4404bc133cc47fdd1c839358b748e07ab888c2c"
+      "sha256": "2ad5f052557a6fdfb76eef45012c1eef21dd0219bfad47cb056c9156ab25cac1"
     },
     {
       "bytes": 44549,
@@ -1378,9 +1409,9 @@
       "sha256": "b45ed5e95c842e67dbecf165bb6096ec9c513cc431ede7442cd4bbad9ed0e806"
     },
     {
-      "bytes": 5797,
+      "bytes": 5479,
       "path": "templates/android/AGENTS.md",
-      "sha256": "8c79d4bbcb7872dbba6b96ae50d76c2ba5b8d0a444b2ea0e63097945362778da"
+      "sha256": "75764793381308e956481ecb60fccfd5fa7b29ce5f6d5ec2a6e01a2ef773df99"
     },
     {
       "bytes": 522,
@@ -1418,9 +1449,9 @@
       "sha256": "722919bbc27d3ec4bf3ccadaff4be18ff5cf6c9cb1e4666e6f080c467e48f1b7"
     },
     {
-      "bytes": 5411,
+      "bytes": 5093,
       "path": "templates/docker/AGENTS.md",
-      "sha256": "c5aae5cb096b372e3262d1ad88c54368f145f9bca0e71e367724bc16c8fe8014"
+      "sha256": "33859eb43f9b1fa56af9cd88a6b35d8616c6532a675f4c0bdc91c3efa0d25788"
     },
     {
       "bytes": 354,
@@ -1428,9 +1459,9 @@
       "sha256": "63c0ebab49aa870ae5e5f731890cce3f0ce2859364152c00b64cb89e3e6d9ae5"
     },
     {
-      "bytes": 5096,
+      "bytes": 4778,
       "path": "templates/generic/AGENTS.md",
-      "sha256": "5cf6ecf9f41fcd8cb0a35cd48b0d35e1b8ecd79b5a2f6634b5f5db0e94de54a3"
+      "sha256": "51966902fc1accced89ffc09546e4f9f54179ccf431e3833e38bf318ad78300e"
     },
     {
       "bytes": 670,
@@ -1483,9 +1514,9 @@
       "sha256": "db8026a75dd2f358a771be9e2fc2fd4ba88c6180f026078552c3259e5156360f"
     },
     {
-      "bytes": 8741,
+      "bytes": 8423,
       "path": "templates/rebuild/AGENTS.md",
-      "sha256": "1910b5845cf74768ebc2b0c99575dcf8c64dccf9a164de5b70dfe177c14b64de"
+      "sha256": "18e98713efa530519fa663f7b0b5832efd9bc0eb69580d56ecbc2f5fd7ad1e6e"
     },
     {
       "bytes": 1675,
@@ -1508,9 +1539,9 @@
       "sha256": "54b4975a06030dc63f299d0a0e2ef8249857b08d62e3e35e61bacb2205c8e1c4"
     },
     {
-      "bytes": 5461,
+      "bytes": 5143,
       "path": "templates/web/AGENTS.md",
-      "sha256": "c1e4a3d830f4c8791e00c3aa053f348d2159c286303405f0f34db867845c10d4"
+      "sha256": "1521d6b6403f686839836194b666e65ebfe5402d71124637abb64938e6343628"
     }
   ],
   "hinweis": "SHA-256 der übernommenen Programmdateien. Beabsichtigte Änderungen an diesen Dateien sind nur zulässig, wenn dieser Eintrag im selben Arbeitspaket aktualisiert und begründet wird. Laufzeitdaten, Sicherungen und Geheimnisse sind nicht Bestandteil des Imports.",

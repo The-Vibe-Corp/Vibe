@@ -65,6 +65,13 @@ STATES = ("starting", "running", "finished", "stopped", "paused", "failed", "end
 SESSION_ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 SESSION_LIMIT_DEFAULT = 5
 SESSION_LIMIT_MAX = 100
+# AP4 (T-W2): Branch-Namen des Worktree-Registers folgen dem Git-Refname-Muster
+# (Teilmenge wie in vibe_github); keine "..", kein ".lock"-Ende, keine Leer-
+# oder Steuerzeichen.
+BRANCH_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]*$")
+# Altersgrenze für das Aufräumen von Sessions ohne (noch existierenden)
+# Worktree-Anhang (30 Tage), ausgelöst ausschließlich durch sessions-finish.
+SESSION_PRUNE_DAYS = 30
 # Laufzustand -> (Anzeigezustand, deutsches Label). "ended" ist der unerwartete
 # Abbruch und wird bewusst als "aborted" vorgetragen; ein fehlender Lauf bleibt
 # "unknown". Die Tabelle ist die einzige Quelle für state/state_label.
@@ -658,7 +665,8 @@ def translate_pi_event(event, state):
 
 def stream_events(stdin, emit, state_path, attempt=False, sessions=None,
                   session_project="", session_name="", session_run="",
-                  session_agent="", session_harness=""):
+                  session_agent="", session_harness="",
+                  session_worktree="", session_package="", session_branch=""):
     """Liest JSON-Zeilen von stdin, schreibt Klartext und pflegt den Zustand.
 
     Nicht-JSON-Zeilen (z. B. stderr des Agenten) werden unverändert
@@ -708,6 +716,8 @@ def stream_events(stdin, emit, state_path, attempt=False, sessions=None,
         registry.observe(
             session=current, project=session_project, name=session_name,
             run_id=session_run, agent=session_agent, harness=session_harness,
+            worktree_path=session_worktree, package_id=session_package,
+            branch=session_branch,
         )
         recorded = current
 
@@ -1022,11 +1032,14 @@ class SessionRegistry:
                 return dict(entry)
         return None
 
-    def observe(self, session, project, name, run_id, agent, harness, now=None):
+    def observe(self, session, project, name, run_id, agent, harness, now=None,
+                worktree_path="", package_id="", branch=""):
         """Erfasst die Session (Upsert) und liefert den gespeicherten Eintrag.
 
         Ungültige Kennungen werden ohne jede Dateiänderung ignoriert. Beim
         Upsert bleibt ``first_seen`` erhalten; ``last_seen`` geht nicht zurück.
+        AP4 (T-W1): ``worktree_path``, ``package_id`` und ``branch`` werden
+        optional mitgeführt; fehlende Angaben (Alteinträge) bleiben leer.
         """
         if not isinstance(session, str) or not SESSION_ID_RE.fullmatch(session):
             return None
@@ -1052,6 +1065,9 @@ class SessionRegistry:
                 "agent": str(agent or ""),
                 "harness": str(harness or ""),
                 "last_seen": max(moment, previous),
+                "worktree_path": str(worktree_path or ""),
+                "package_id": str(package_id or ""),
+                "branch": str(branch or ""),
             })
             self._write(data)
             return dict(entry)
@@ -1071,6 +1087,196 @@ class SessionRegistry:
             data["limit"] = int(value)
             self._write(data)
         return int(value)
+
+    def finish_for_run(self, run_id, state):
+        """Persistiert den Endzustand auf allen Einträgen eines Laufs (T-S1).
+
+        Zusätzlich räumt dieser Aufruf altersbedingt auf: Einträge, deren
+        ``last_seen`` älter als ``SESSION_PRUNE_DAYS`` Tage ist und die keinen
+        (noch existierenden) Worktree-Anhang haben, werden entfernt. Der
+        aktuell beendete Lauf (passende ``run_id``) wird nie mit aufgeräumt.
+        """
+        now = int(time.time())
+        cutoff = now - SESSION_PRUNE_DAYS * 86400
+        with self._locked():
+            data = self._read()
+            changed = False
+            for entry in data["sessions"]:
+                if entry.get("run_id") == run_id and entry.get("state") != state:
+                    entry["state"] = str(state)
+                    changed = True
+            kept = []
+            for entry in data["sessions"]:
+                if entry.get("run_id") == run_id:
+                    kept.append(entry)
+                    continue
+                last = _epoch_number(entry.get("last_seen"))
+                if last is not None and last < cutoff:
+                    worktree = str(entry.get("worktree_path") or "").strip()
+                    if not (worktree and os.path.isdir(worktree)):
+                        changed = True
+                        continue
+                kept.append(entry)
+            if changed:
+                data["sessions"] = kept
+                self._write(data)
+
+    def forget_worktree(self, path):
+        """Entfernt alle Einträge mit diesem Worktree-Anhang (realpath-Vergleich).
+
+        AP4 (T-W1): Nach dem Entfernen einer Arbeitskopie werden die zugehörigen
+        Session-Einträge vergessen. Ein leerer Pfad verändert nichts.
+        """
+        if not str(path or "").strip():
+            return
+        real = os.path.realpath(os.path.abspath(str(path)))
+        with self._locked():
+            data = self._read()
+            before = len(data["sessions"])
+            data["sessions"] = [
+                entry for entry in data["sessions"]
+                if os.path.realpath(
+                    os.path.abspath(str(entry.get("worktree_path") or ""))
+                ) != real
+            ]
+            if len(data["sessions"]) != before:
+                self._write(data)
+
+
+def _clean_registry_id(value):
+    """Paket-Kennung des Worktree-Registers; ungültig → Leerwert."""
+    text = str(value or "").strip()
+    return text if SESSION_ID_RE.fullmatch(text) else ""
+
+
+def _clean_registry_branch(value):
+    """Branch-Name des Worktree-Registers; ungültig → Leerwert."""
+    text = str(value or "").strip()
+    if (not text or not BRANCH_RE.match(text) or ".." in text
+            or text.endswith(".lock") or text.endswith("/")
+            or text.endswith(".")):
+        return ""
+    return text
+
+
+class WorktreeRegistry:
+    """Registrierte Arbeitskopien eines Laufzeitordners (AP4, T-W2).
+
+    Datei ``<laufzeit>/worktrees.json`` plus Sperrdatei ``worktrees.lock``,
+    atomar geschrieben wie das Session-Register. Felder je Eintrag: ``project``
+    (realpath), ``id``, ``branch``, ``path``, ``base_commit``, ``created``,
+    ``updated``, ``pr_url``, ``session``, ``state``. Ein fehlender oder
+    defekter Bestand gilt als leer (die Datei wird nie gelöscht). Ungültige
+    ``id``/``branch`` werden abgelehnt (``register`` liefert dann ``None``).
+    """
+
+    def __init__(self, runtime):
+        self.runtime = os.path.abspath(str(runtime))
+        self.path = os.path.join(self.runtime, "worktrees.json")
+        self.lock_path = os.path.join(self.runtime, "worktrees.lock")
+
+    @contextlib.contextmanager
+    def _locked(self):
+        os.makedirs(self.runtime, exist_ok=True)
+        handle = open(self.lock_path, "a+", encoding="utf-8")
+        try:
+            if fcntl is not None:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            yield
+        finally:
+            if fcntl is not None:
+                with contextlib.suppress(OSError):
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+            handle.close()
+
+    def _read(self):
+        try:
+            with open(self.path, encoding="utf-8") as handle:
+                data = json.load(handle)
+        except (OSError, ValueError):
+            data = None
+        if not isinstance(data, dict):
+            data = {}
+        entries = data.get("worktrees")
+        if not isinstance(entries, list):
+            entries = []
+        return {"worktrees": [
+            dict(item) for item in entries
+            if isinstance(item, dict)
+            and isinstance(item.get("project"), str)
+            and isinstance(item.get("id"), str)
+        ]}
+
+    def _write(self, data):
+        text = json.dumps({"worktrees": data["worktrees"]},
+                          indent=1, ensure_ascii=False) + "\n"
+        _atomic_write(self.path, text)
+
+    def register(self, project, id, branch, path, base_commit,
+                 pr_url="", session="", state=""):
+        """Legt einen Eintrag an oder aktualisiert ihn (Upsert über project+id).
+
+        ``created`` bleibt beim Aktualisieren erhalten; ``updated`` wird neu
+        gesetzt. Ungültige ``id``/``branch`` oder fehlende Pflichtangaben
+        liefern ``None`` und ändern nichts.
+        """
+        project = os.path.realpath(os.path.abspath(str(project or "")))
+        pid = _clean_registry_id(id)
+        branch = _clean_registry_branch(branch)
+        path = str(path or "").strip()
+        if not project or not pid or not branch or not path:
+            return None
+        now = int(time.time())
+        with self._locked():
+            data = self._read()
+            entry = next(
+                (item for item in data["worktrees"]
+                 if item.get("project") == project and item.get("id") == pid),
+                None)
+            if entry is None:
+                entry = {"project": project, "id": pid, "created": now}
+                data["worktrees"].append(entry)
+            entry.update({
+                "branch": branch,
+                "path": path,
+                "base_commit": str(base_commit or ""),
+                "pr_url": str(pr_url or ""),
+                "session": str(session or ""),
+                "state": str(state or ""),
+                "updated": now,
+            })
+            self._write(data)
+            return dict(entry)
+
+    def get(self, project, id):
+        """Eintrag als Kopie oder ``None``; Schlüssel sind (project, id)."""
+        project = os.path.realpath(os.path.abspath(str(project or "")))
+        for entry in self._read()["worktrees"]:
+            if entry.get("project") == project and entry.get("id") == id:
+                return dict(entry)
+        return None
+
+    def unregister(self, project, id):
+        """Entfernt genau den benannten Eintrag; ein fehlender ist kein Fehler."""
+        project = os.path.realpath(os.path.abspath(str(project or "")))
+        with self._locked():
+            data = self._read()
+            before = len(data["worktrees"])
+            data["worktrees"] = [
+                item for item in data["worktrees"]
+                if not (item.get("project") == project and item.get("id") == id)
+            ]
+            if len(data["worktrees"]) != before:
+                self._write(data)
+
+    def all(self, project=None):
+        """Alle Einträge; mit ``project`` nur die dieses Projekts (realpath)."""
+        entries = self._read()["worktrees"]
+        if project is None:
+            return [dict(item) for item in entries]
+        project = os.path.realpath(os.path.abspath(str(project)))
+        return [dict(item) for item in entries
+                if item.get("project") == project]
 
 
 def session_overview(runtime, project=None, limit=None, text=None):
@@ -1127,8 +1333,14 @@ def session_overview(runtime, project=None, limit=None, text=None):
     for entry in entries[:effective]:
         run_id = str(entry.get("run_id") or "")
         record = runs.get(run_id) if run_id else None
-        state, label = SESSION_STATES.get(
-            str((record or {}).get("state") or ""), ("unknown", "unbekannt"))
+        # AP4 (T-S1): Ein persistiertes ``state`` gilt, wenn der Lauf-Eintrag
+        # fehlt; sonst bleibt das Laufregister maßgeblich (LIVE_STATES über die
+        # SESSION_STATES-Tabelle). Unbekannt bleibt unknown.
+        if record is not None:
+            source_state = str((record or {}).get("state") or "")
+        else:
+            source_state = str(entry.get("state") or "")
+        state, label = SESSION_STATES.get(source_state, ("unknown", "unbekannt"))
         item = dict(entry)
         item["state"] = state
         item["state_label"] = label
@@ -1288,6 +1500,53 @@ def build_parser():
     stream.add_argument("--session-run", default="", help="Lauf-ID des Eintrags")
     stream.add_argument("--session-agent", default="", help="Agent des Eintrags")
     stream.add_argument("--session-harness", default="", help="Harness des Eintrags")
+    # AP4 (T-W1): Worktree-Anhang der Session (leer = Integrationsstand).
+    stream.add_argument("--session-worktree", default="", help="Worktree-Pfad des Eintrags")
+    stream.add_argument("--session-package", default="", help="Paket-Kennung des Eintrags")
+    stream.add_argument("--session-branch", default="", help="Branch des Eintrags")
+
+    sessions_finish = sub.add_parser(
+        "sessions-finish",
+        help="Endzustand auf allen Sessions eines Laufs persistieren (AP4)",
+    )
+    sessions_finish.add_argument("--runtime", required=True)
+    sessions_finish.add_argument("--run-id", required=True)
+    sessions_finish.add_argument("--state", type=_state, required=True)
+
+    sessions_forget = sub.add_parser(
+        "sessions-forget-worktree",
+        help="Sessions eines Worktrees vergessen (AP4)",
+    )
+    sessions_forget.add_argument("--runtime", required=True)
+    sessions_forget.add_argument("--worktree", required=True)
+
+    worktree_get = sub.add_parser(
+        "worktree-get", help="Worktree-Eintrag als JSON oder 'none' (AP4)",
+    )
+    worktree_get.add_argument("--runtime", required=True)
+    worktree_get.add_argument("--project", required=True)
+    worktree_get.add_argument("--id", required=True)
+
+    worktree_register = sub.add_parser(
+        "worktree-register", help="Worktree-Eintrag anlegen/aktualisieren (AP4)",
+    )
+    worktree_register.add_argument("--runtime", required=True)
+    worktree_register.add_argument("--project", required=True)
+    worktree_register.add_argument("--id", required=True)
+    worktree_register.add_argument("--branch", required=True)
+    worktree_register.add_argument("--path", required=True)
+    worktree_register.add_argument("--base-commit", required=True)
+    worktree_register.add_argument("--pr-url", default="")
+    worktree_register.add_argument("--session", default="")
+    worktree_register.add_argument("--state", default="")
+
+    worktree_unregister = sub.add_parser(
+        "worktree-unregister", help="Worktree-Eintrag entfernen (AP4)",
+    )
+    worktree_unregister.add_argument("--runtime", required=True)
+    worktree_unregister.add_argument("--project", required=True)
+    worktree_unregister.add_argument("--id", required=True)
+
     return parser
 
 
@@ -1338,7 +1597,35 @@ def main(argv=None):
             sessions=args.sessions, session_project=args.session_project,
             session_name=args.session_name, session_run=args.session_run,
             session_agent=args.session_agent, session_harness=args.session_harness,
+            session_worktree=args.session_worktree,
+            session_package=args.session_package,
+            session_branch=args.session_branch,
         )
+        return 0
+    if args.command == "sessions-finish":
+        SessionRegistry(args.runtime).finish_for_run(args.run_id, args.state)
+        return 0
+    if args.command == "sessions-forget-worktree":
+        SessionRegistry(args.runtime).forget_worktree(args.worktree)
+        return 0
+    if args.command == "worktree-get":
+        entry = WorktreeRegistry(args.runtime).get(args.project, args.id)
+        print(json.dumps(entry, ensure_ascii=False) if entry else "none")
+        return 0
+    if args.command == "worktree-register":
+        entry = WorktreeRegistry(args.runtime).register(
+            project=args.project, id=args.id, branch=args.branch, path=args.path,
+            base_commit=args.base_commit, pr_url=args.pr_url,
+            session=args.session, state=args.state,
+        )
+        if entry is None:
+            print("FEHLT: ungültiger Worktree-Eintrag", file=sys.stderr)
+            return 1
+        # Bewusst ohne stdout-Ausgabe: Der Läufer hängt den Aufruf an das
+        # Laufprotokoll; eine JSON-Zeile würde das Protokoll verfälschen.
+        return 0
+    if args.command == "worktree-unregister":
+        WorktreeRegistry(args.runtime).unregister(args.project, args.id)
         return 0
     parser.print_help(sys.stderr)
     return 2

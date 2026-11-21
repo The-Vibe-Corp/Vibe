@@ -22,15 +22,7 @@
 - Fremde oder vorbestehende Änderungen nicht löschen, überschreiben, stashen oder mitcommitten.
 - Keine Historie umschreiben, keine Force-Pushes und kein Push ohne ausdrückliche Freigabe.
 - Paket-Branches folgen den Repository-Regeln (`feature/<owner>/<kennung>`); das Muster ist über `PACKAGE_BRANCH_PATTERN` konfigurierbar.
-- Bei aktivierter GitHub-Verknüpfung gilt ein Arbeitspaket erst mit gepushtem Branch und gestelltem Merge-Request als geschlossen; ohne Push und Merge-Request kein Häkchen und kein lokaler Merge.
-
-## Laufende Instanz nicht verändern (verbindlich)
-
-- Entwicklung, Tests und Verifikation verändern die laufende Instanz nicht: bereinigte VIBE_*-Umgebung, explizite Temp-Pfade und ein Update nur mit autorisierter Quelle (`--source`).
-
-## Laufende Instanz nicht verändern (verbindlich)
-
-- Entwicklung, Tests und Verifikation verändern die laufende Instanz nicht: bereinigte VIBE_*-Umgebung, explizite Temp-Pfade und ein Update nur mit autorisierter Quelle (`--source`).
+- Bei aktivierter GitHub-Verknüpfung gilt ein Arbeitspaket erst mit gepushtem Branch und gestelltem Merge-Request als geschlossen; ohne Push (und bei aktivierter Verknüpfung Merge-Request) kein Häkchen. Merge nur gemäß `GITHUB_AUTO_MERGE` (Standard aus = PR-only: der Eigentümer mergt und schließt danach mit `vibe package close <projekt> <id>`).
 
 ## Laufende Instanz nicht verändern (verbindlich)
 

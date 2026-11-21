@@ -307,6 +307,17 @@ CONTINUE_SESSION="${VIBE_CONTINUE_SESSION:-}"
 case "$CONTINUE_SESSION" in
   *[!A-Za-z0-9_-]*) CONTINUE_SESSION="" ;;
 esac
+# AP4 (T-W1): Resume-Paket aus der Session (Reattach). Dieselbe harte
+# Zeichenklassenprüfung wie bei VIBE_CONTINUE_SESSION; ein leerer Wert heißt
+# normale Auswahl. Ein bereits geschlossenes Paket wird über den --prefer-
+# Hinweis ignoriert und der Lauf wählt normal (protokollierter Rückfall).
+RESUME_PACKAGE="${VIBE_RESUME_PACKAGE:-}"
+case "$RESUME_PACKAGE" in
+  *[!A-Za-z0-9_-]*) RESUME_PACKAGE="" ;;
+esac
+# Ist das bevorzugte Resume-Paket bereits geschlossen, wird es über den
+# --prefer-Hinweis ignoriert; der Lauf wählt dann normal weiter und
+# protokolliert den Rückfall (siehe select_item/Arbeitspaket-Schleife).
 # Harness-Auswahl (AP04): Ohne vibe_harness.py bleibt der bisherige direkte
 # opencode-Pfad erhalten (ältere Installationen und Prüf-Attrappen). Der
 # Zustandsordner enthält harness.json; VIBE_HARNESS überschreibt ihn für
@@ -434,6 +445,10 @@ register_finish() {
   [ "${4:-}" = "only-live" ] && extra+=(--only-live)
   python3 "$RUNS_PY" finish --runtime "$RUNTIME" --id "$RUN_ID" \
     --exit-code "$1" --state "$2" "${extra[@]}" >>"$LOG" 2>&1 || true
+  # AP4 (T-S1): Endzustand auf den Session-Einträgen dieses Laufs persistieren
+  # (blocked/finished/failed/paused/ended); räumt zugleich altersbedingt auf.
+  python3 "$RUNS_PY" sessions-finish --runtime "$RUNTIME" --run-id "$RUN_ID" \
+    --state "$2" >>"$LOG" 2>&1 || true
   return 0
 }
 HASHFILE="$HOME/.config/schreibfuchs-verify.sha"
@@ -478,7 +493,9 @@ final_verify() {
 # aus dem Git-Status herausgehalten.
 select_item() {
   local state="$P/.vibe/tmp/next-package.json"
-  if ! python3 "$PACKAGES_PY" select --project "$P" --state "$state" --skip "$SKIP" >>"$LOG" 2>&1; then
+  local prefer=()
+  [ -n "$RESUME_PACKAGE" ] && prefer=(--prefer "$RESUME_PACKAGE")
+  if ! python3 "$PACKAGES_PY" select --project "$P" --state "$state" --skip "$SKIP" "${prefer[@]}" >>"$LOG" 2>&1; then
     return 1
   fi
   eval "$(python3 - "$state" <<'PY'
@@ -505,6 +522,7 @@ create_worktree() {
   safe_id="$(printf '%s' "$ID" | tr -c 'A-Za-z0-9_.-' '-')"
   WT_ROOT="$RUNTIME/worktrees"
   mkdir -p "$WT_ROOT" || return 1
+  RECONNECT=0
   # B16: Der Branch-Name kommt aus dem Repository-Muster (Subkommando
   # branch-name), nicht mehr aus vibe/<...>. Er steht vor mktemp fest, damit
   # ein Fehlschlag keine halbe Arbeitskopie zurücklässt. Die FEHLT-Meldung
@@ -516,6 +534,37 @@ create_worktree() {
   if [ -z "$BRANCH" ]; then
     echo "FEHLT: branch-name lieferte keinen Branch-Namen für $ID." >>"$LOG"
     return 1
+  fi
+  # AP4 (T-W2): RECONNECT aus der Worktree-Registry. Ein gültiger Eintrag
+  # (Pfad existiert, erscheint in ``worktree list``, Branch existiert) wird
+  # wiederverwendet; sonst wird der veraltete Eintrag entfernt.
+  if [ -f "$RUNS_PY" ]; then
+    local existing wt_candidate branch_candidate base_candidate
+    existing="$(python3 "$RUNS_PY" worktree-get --runtime "$RUNTIME" --project "$P" --id "$ID" 2>>"$LOG")"
+    if [ -n "$existing" ] && [ "$existing" != "none" ]; then
+      eval "$(printf '%s' "$existing" | python3 -c '
+import json
+import shlex
+import sys
+
+data = json.load(sys.stdin)
+if isinstance(data, dict):
+    print("wt_candidate=" + shlex.quote(str(data.get("path") or "")))
+    print("branch_candidate=" + shlex.quote(str(data.get("branch") or "")))
+    print("base_candidate=" + shlex.quote(str(data.get("base_commit") or "")))
+' 2>>"$LOG")" || true
+      if [ -n "$wt_candidate" ] && [ -n "$branch_candidate" ] && [ -d "$wt_candidate" ] \
+          && git -C "$P" worktree list --porcelain 2>>"$LOG" | grep -Fxq "worktree $wt_candidate" \
+          && git -C "$P" rev-parse --verify --quiet "refs/heads/$branch_candidate" >/dev/null 2>&1; then
+        WT="$wt_candidate"
+        BRANCH="$branch_candidate"
+        PACKAGE_BASE="${base_candidate:-$PACKAGE_BASE}"
+        RECONNECT=1
+        echo "RECONNECT: Arbeitskopie $WT (Branch $BRANCH) wird wiederverwendet." | tee -a "$LOG"
+        return 0
+      fi
+      python3 "$RUNS_PY" worktree-unregister --runtime "$RUNTIME" --project "$P" --id "$ID" >>"$LOG" 2>&1 || true
+    fi
   fi
   WT="$(mktemp -d "$WT_ROOT/${safe_name}-${safe_id}-XXXXXX")" || return 1
   if ! git -C "$P" worktree add --quiet -b "$BRANCH" "$WT" "$PACKAGE_BASE" >>"$LOG" 2>&1; then
@@ -731,6 +780,34 @@ repair_package_finding() {
   REPAIR_ROUNDS=$((REPAIR_ROUNDS + 1))
   repair_round "$finding" "$details" "$REPAIR_ROUNDS"
 }
+# AP4 (T-G7): Basis in den Paketbranch mergen; bei Konflikt genau eine
+# begrenzte Reparaturrunde, danach erneut prüfen. Besteht der Konflikt im
+# zweiten Versuch, wird der Merge abgebrochen und das Paket blockiert.
+# Rückgabe: 0 = mergebar/Skip, 1 = blockiert (REPAIR_ERROR ist gesetzt).
+ensure_mergeable_package() {
+  local rc instruction repair_rc
+  python3 "$PACKAGES_PY" ensure-mergeable --project "$P" --worktree "$WT" >>"$LOG" 2>&1
+  rc=$?
+  [ "$rc" = 0 ] && return 0
+  if [ "$rc" = 2 ]; then
+    instruction="Der Läufer hat 'git merge origin/<base>' in die Arbeitskopie gestartet und es gibt Merge-Konflikte. Starte KEINEN neuen Merge und brich den Merge des Läufers NICHT ab. Löse die Konflikte in der Arbeitskopie $WT, 'git add' die gelösten Dateien und schließe mit 'git merge --continue' (oder 'git commit') ab. Nutze niemals global --ours/--theirs, niemals rebase, force-push oder push. Committe mit dem Präfix '$ID:' falls eigene Commits nötig."
+    REPAIR_ROUNDS=$((REPAIR_ROUNDS + 1))
+    repair_round "Merge-Konflikt mit der Basis in $WT" "$instruction" "$REPAIR_ROUNDS" "$instruction"
+    repair_rc=$?
+    if [ "$repair_rc" = 0 ]; then
+      python3 "$PACKAGES_PY" ensure-mergeable --project "$P" --worktree "$WT" >>"$LOG" 2>&1
+      rc=$?
+      [ "$rc" = 0 ] && return 0
+    fi
+    python3 "$PACKAGES_PY" ensure-mergeable --project "$P" --worktree "$WT" --abort >>"$LOG" 2>&1 || true
+    REPAIR_ERROR="Merge-Konflikt mit der Basis für $ID nicht behoben."
+    return 1
+  fi
+  # Exit 1 = Fehler ohne Konflikt (z. B. Fetch nicht möglich, Basis unbekannt).
+  # Kein Block hier: Der eigentliche Push/Merge-Request läuft über
+  # github-complete und meldet einen Fehlschlag dort mit der passenden Ursache.
+  return 0
+}
 merge_package() {
   # Arbeitsnotizen sind Laufzeitstand (wie dirty_report): lokale, uncommittete
   # Änderungen an ihnen — zurückgeschriebener Nachweis, Blockievermerk (AP10) —
@@ -756,14 +833,31 @@ sync_work_notes() {
     --project "$P" --worktree "$WT" --id "$ID" >>"$LOG" 2>&1
 }
 cleanup_worktree() {
-  # Nur gemergte Arbeitskopien und Branches werden entfernt. Blockierte
-  # Arbeitskopien bleiben zur Diagnose liegen.
+  # T-G4: Erst die Arbeitskopie entfernen (bei Misserfolg prune + ein
+  # Wiederholungsversuch), danach den Branch nur löschen, wenn er nicht mehr
+  # in einer anderen Arbeitskopie ausgecheckt ist.
   if ! git -C "$P" worktree remove --force "$WT" >>"$LOG" 2>&1; then
-    echo "WARNUNG: Arbeitskopie $WT konnte nicht entfernt werden." | tee -a "$LOG"
+    git -C "$P" worktree prune >>"$LOG" 2>&1 || true
+    if ! git -C "$P" worktree remove --force "$WT" >>"$LOG" 2>&1; then
+      echo "WARNUNG: Arbeitskopie $WT konnte nicht entfernt werden." | tee -a "$LOG"
+    fi
   fi
-  if ! git -C "$P" branch -d "$BRANCH" >>"$LOG" 2>&1; then
-    echo "WARNUNG: Branch $BRANCH konnte nicht entfernt werden." | tee -a "$LOG"
+  if git -C "$P" worktree list --porcelain 2>>"$LOG" | grep -Fxq "branch refs/heads/$BRANCH"; then
+    echo "WARNUNG: Branch $BRANCH ist in einer Arbeitskopie ausgecheckt; Löschen übersprungen." | tee -a "$LOG"
+    return 0
   fi
+  if git -C "$P" branch -d "$BRANCH" >>"$LOG" 2>&1; then
+    return 0
+  fi
+  # Nach verifiziertem PR-Squash-Merge erzeugt GitHub einen neuen Commit ohne
+  # Abstammung; -d scheitert dann zu Recht und -D ist mit Begründung erlaubt.
+  if [ "$VERIFIED_SQUASH" = 1 ]; then
+    echo "WARNUNG: Branch $BRANCH nach verifiziertem Squash-Merge mit -D entfernt." | tee -a "$LOG"
+    git -C "$P" branch -D "$BRANCH" >>"$LOG" 2>&1 || \
+      echo "WARNUNG: Branch $BRANCH konnte nicht entfernt werden." | tee -a "$LOG"
+    return 0
+  fi
+  echo "WARNUNG: Branch $BRANCH konnte nicht entfernt werden." | tee -a "$LOG"
   return 0
 }
 # B1: Projektmodelle aus $P/.vibe/agents.json erreichen opencode. Sie werden
@@ -1263,9 +1357,45 @@ echo "Lauf: ${RUN_ID:-ohne Register}, Harness: $HARNESS, Modus: $RUN_MODE, Agent
 PAUSED=0; LAST_ID=""; STOP=0; PACKAGES=0; SKIP=""
 CLOSED=(); CLOSED_BRANCH=(); CLOSED_COMMIT=(); CLOSED_PR=()
 BLOCKED_IDS=(); BLOCKED_REPORT=(); BLOCK_REASON=""
+WAITING_MERGE=()
+VERIFIED_SQUASH=0
 record_block() {
   BLOCKED_IDS+=("$1")
   BLOCKED_REPORT+=("$1 ($2)")
+}
+# AP4 (T-G1): PR-only-Abschluss. Der Lauf hält an, die Arbeitskopie bleibt
+# registriert und das Ticket bleibt offen mit Blockievermerk; gemergt wird
+# erst vom Eigentümer (oder per ``vibe package close``).
+pr_only_fallback() {
+  local note="PR-only: wartet auf Merge des Eigentümers; Merge-Request $PR_URL; danach 'vibe package close $NAME $ID'"
+  [ -n "${1:-}" ] && note="PR-only-Rückfall ($1): $note"
+  python3 "$PACKAGES_PY" mark-blocked --project "$P" --id "$ID" \
+    --note "$note" >>"$LOG" 2>&1 || true
+  record_block "$ID" "PR-only: wartet auf Merge (Merge-Request $PR_URL)"
+  WAITING_MERGE+=("$ID — Merge-Request $PR_URL; danach: vibe package close $NAME $ID")
+  echo "WARTET AUF MERGE: $ID — Merge-Request $PR_URL; danach: vibe package close $NAME $ID" | tee -a "$LOG"
+  STOP=1
+}
+# AP4 (T-G1): Nach erfolgreichem Abschluss den Nachweis zurückschreiben, die
+# Arbeitskopie entfernen, Registry/Sessions vergessen und das Paket als
+# geschlossen vermerken. Rückgabe 0 = geschlossen, 1 = blockiert.
+finish_closed_package() {
+  if ! sync_work_notes; then
+    BLOCK_REASON="Ticket-Nachweis für $ID konnte nicht in den Projektordner geschrieben werden."
+    record_block "$ID" "$BLOCK_REASON"
+    echo "BLOCKIERT: $BLOCK_REASON" | tee -a "$LOG"
+    return 1
+  fi
+  cleanup_worktree
+  if [ -f "$RUNS_PY" ]; then
+    python3 "$RUNS_PY" worktree-unregister --runtime "$RUNTIME" --project "$P" --id "$ID" >>"$LOG" 2>&1 || true
+  fi
+  CLOSED+=("$ID")
+  CLOSED_BRANCH+=("$BRANCH")
+  CLOSED_COMMIT+=("$(git -C "$P" rev-parse --short HEAD)")
+  CLOSED_PR+=("$PR_URL")
+  PACKAGE_DONE=1
+  return 0
 }
 # Arbeitsnotizen (TICKETS.md/FEEDBACK.md am Projektstamm) sind Laufzeitstand
 # wie in dirty_report (bin/vibe_packages.py). Ihre uncommitteten Änderungen —
@@ -1322,6 +1452,11 @@ for key in ("open", "blocked", "done"):
     else
       for blocked in "${BLOCKED_REPORT[@]}"; do echo "Blockiert: $blocked"; done
     fi
+    if [ "${#WAITING_MERGE[@]}" -eq 0 ]; then
+      echo "Wartet auf Merge: keine"
+    else
+      for waiting in "${WAITING_MERGE[@]}"; do echo "Wartet auf Merge: $waiting"; done
+    fi
     echo "Offen: $open_filtered"
     [ -n "$BLOCK_REASON" ] && echo "Grund: $BLOCK_REASON"
     echo "Integrationsbranch: ${BASE_BRANCH:-unbekannt} @ $(git -C "$P" rev-parse --short HEAD 2>/dev/null || echo unbekannt)"
@@ -1355,6 +1490,11 @@ while [ "$PACKAGES" -lt "$MAXP" ] && [ "$STOP" = 0 ]; do
   if [ "$ORDERED" = 1 ]; then
     echo "Auswahl aus projektweiser Priorisierung (PACKAGE_ORDER, verbindlich)." | tee -a "$LOG"
   fi
+  # AP4 (T-W1): Ein ausdrücklich bevorzugtes Resume-Paket, das nicht gewählt
+  # wurde, ist geschlossen — normaler Rückfall mit Protokolleintrag.
+  if [ -n "$RESUME_PACKAGE" ] && [ "$ID" != "$RESUME_PACKAGE" ]; then
+    echo "HINWEIS: Resume-Paket $RESUME_PACKAGE ist nicht mehr offen (geschlossen); normale Auswahl." | tee -a "$LOG"
+  fi
   # AP9: Vor jedem neuen Arbeitspaket den Haupt-Branch aktualisieren (nur
   # bei GitHub-Konfiguration; sonst bewusster Skip). Ein Fehlschlag erzeugt
   # nur einen Hinweis, blockiert das Paket aber nicht.
@@ -1370,10 +1510,25 @@ while [ "$PACKAGES" -lt "$MAXP" ] && [ "$STOP" = 0 ]; do
     echo "BLOCKIERT: $BLOCK_REASON" | tee -a "$LOG"
     STOP=1; break
   fi
+  # AP4 (T-W2): Registry nach Anlage/Reconnect aktualisieren (Upsert).
+  if [ -f "$RUNS_PY" ]; then
+    python3 "$RUNS_PY" worktree-register --runtime "$RUNTIME" --project "$P" \
+      --id "$ID" --branch "$BRANCH" --path "$WT" --base-commit "$PACKAGE_BASE" \
+      >>"$LOG" 2>&1 || true
+  fi
+  # AP4 (T-W1): Ab jetzt trägt der Erfassungsfilter den Worktree-Anhang des
+  # Pakets; vor dem ersten Paket (Preflight) bleibt er ohne diese Angaben.
+  if [ -f "$RUNS_PY" ]; then
+STREAM_FILTER=(python3 "$RUNS_PY" stream --state "$LOG.state.json" --attempt --sessions "$RUNTIME/sessions.json" --session-project "$P" --session-name "$NAME" --session-run "$RUN_ID" --session-agent "$AGENT" --session-harness "$HARNESS" --session-worktree "$WT" --session-package "$ID" --session-branch "$BRANCH")
+  fi
   # Die Arbeitsnotizen sind Laufzeitstand und nicht versioniert; die
   # Arbeitskopie enthält sie daher nicht. Sie werden hineinkopiert, damit
-  # Agent und Abschlussschranke den aktuellen Ticketstand sehen.
-  if ! python3 "$PACKAGES_PY" copy-notes \
+  # Agent und Abschlussschranke den aktuellen Ticketstand sehen. Bei RECONNECT
+  # ist die Arbeitskopie während des Laufs kanonisch; copy-notes wird dann
+  # übersprungen.
+  if [ "$RECONNECT" = 1 ]; then
+    echo "RECONNECT: copy-notes übersprungen (Arbeitskopie ist kanonisch)." >>"$LOG"
+  elif ! python3 "$PACKAGES_PY" copy-notes \
       --project "$P" --worktree "$WT" >>"$LOG" 2>&1; then
     BLOCK_REASON="Arbeitsnotizen konnten nicht in die Arbeitskopie übernommen werden."
     record_block "$ID" "$BLOCK_REASON"
@@ -1466,6 +1621,16 @@ $QUESTION_HINT"
         echo "BLOCKIERT: $BLOCK_REASON" | tee -a "$LOG"
         STOP=1; break
       fi
+      # AP4 (T-G7): Mergeability vor dem Abschluss sichern (nur GitHub-Modus;
+      # ohne Verknüpfung/origin bewusster Skip). Konflikt → eine begrenzte
+      # Reparaturrunde; besteht er im zweiten Versuch, wird abgebrochen und
+      # das Paket blockiert.
+      if ! ensure_mergeable_package; then
+        BLOCK_REASON="$REPAIR_ERROR"
+        record_block "$ID" "$BLOCK_REASON"
+        echo "BLOCKIERT: $BLOCK_REASON" | tee -a "$LOG"
+        STOP=1; break
+      fi
       # B16: Nach grüner Schranke ist der GitHub-Abschluss (Push und
       # Merge-Request) eine echte Schranke. Bei Fehlschlag wird nicht lokal
       # gemergt, das Ticket bleibt offen und die Arbeitskopie bleibt liegen.
@@ -1487,27 +1652,65 @@ $QUESTION_HINT"
       # Skip (GitHub nicht aktiv oder kein origin).
       PR_URL="$(printf '%s\n' "$GH_COMPLETE_OUT" | sed -n 's/^ABGABE: .*, Merge-Request //p')"
       [ "$PR_URL" = "keine" ] && PR_URL=""
+      # AP4 (T-W2): Registry um Merge-Request-URL und Session ergänzen (Upsert).
+      if [ -f "$RUNS_PY" ]; then
+        WT_SESSION="$(read_state_session)"
+        python3 "$RUNS_PY" worktree-register --runtime "$RUNTIME" --project "$P" \
+          --id "$ID" --branch "$BRANCH" --path "$WT" --base-commit "$PACKAGE_BASE" \
+          --pr-url "$PR_URL" --session "$WT_SESSION" >>"$LOG" 2>&1 || true
+      fi
+      if [ -n "$PR_URL" ]; then
+        # GitHub-Modus: Ein Merge-Request steht offen. Ohne GITHUB_AUTO_MERGE
+        # bleibt es beim PR-only-Abschluss; mit "1" wird per REST squash-gemergt.
+        if [ "${GITHUB_AUTO_MERGE:-}" = "1" ]; then
+          GH_MERGE_OUT="$(python3 "$PACKAGES_PY" github-merge --project "$P" \
+              --branch "$BRANCH" --id "$ID" 2>>"$LOG")"
+          GH_MERGE_RC=$?
+          printf '%s\n' "$GH_MERGE_OUT" >>"$LOG"
+          if [ "$GH_MERGE_RC" = 2 ]; then
+            # Konflikt: genau EIN begrenzter Reparaturdurchlauf — Basis mergen,
+            # erneut pushen und mergen. Kein weiterer Versuch, keine Schleife.
+            if ensure_mergeable_package; then
+              python3 "$PACKAGES_PY" github-push --project "$P" --branch "$BRANCH" >>"$LOG" 2>&1
+              GH_MERGE_OUT="$(python3 "$PACKAGES_PY" github-merge --project "$P" \
+                  --branch "$BRANCH" --id "$ID" 2>>"$LOG")"
+              GH_MERGE_RC=$?
+              printf '%s\n' "$GH_MERGE_OUT" >>"$LOG"
+            fi
+          fi
+          if [ "$GH_MERGE_RC" = 0 ]; then
+            VERIFIED_SQUASH=1
+            # Integrationsbranch auf die Fernspitze bringen (fetch + ff-only).
+            python3 "$PACKAGES_PY" github-pull --project "$P" >>"$LOG" 2>&1 || true
+            if ! finish_closed_package; then
+              STOP=1; break
+            fi
+            # Der Worktree ist nach dem Squash-Merge endgültig geschlossen;
+            # seine Session-Einträge werden vergessen (T-W1).
+            if [ -f "$RUNS_PY" ]; then
+              python3 "$RUNS_PY" sessions-forget-worktree --runtime "$RUNTIME" --worktree "$WT" >>"$LOG" 2>&1 || true
+            fi
+            break
+          fi
+          # Auto-Merge scheiterte (Konflikt blieb oder Token/API/Netz): der PR
+          # steht offen; Rückfall auf PR-only, der Eigentümer kann manuell mergen.
+          pr_only_fallback "Auto-Merge nicht möglich (Merge-Request steht offen)"
+          break
+        fi
+        pr_only_fallback
+        break
+      fi
+      # Lokal-ohne-GitHub (github-complete-Skip): Bestandsweg ff-only Merge.
       if ! merge_package; then
         BLOCK_REASON="Merge für $ID fehlgeschlagen."
         record_block "$ID" "$BLOCK_REASON"
         echo "BLOCKIERT: $BLOCK_REASON" | tee -a "$LOG"
         STOP=1; break
       fi
-      # Der Nachweis wird aus der Arbeitskopie in den Projektordner
-      # zurückgeschrieben; erst danach wird die Arbeitskopie entfernt, damit
-      # das Paket im nächsten Lauf nicht erneut gewählt wird.
-      if ! sync_work_notes; then
-        BLOCK_REASON="Ticket-Nachweis für $ID konnte nicht in den Projektordner geschrieben werden."
-        record_block "$ID" "$BLOCK_REASON"
-        echo "BLOCKIERT: $BLOCK_REASON" | tee -a "$LOG"
+      VERIFIED_SQUASH=0
+      if ! finish_closed_package; then
         STOP=1; break
       fi
-      cleanup_worktree
-      CLOSED+=("$ID")
-      CLOSED_BRANCH+=("$BRANCH")
-      CLOSED_COMMIT+=("$(git -C "$P" rev-parse --short HEAD)")
-      CLOSED_PR+=("$PR_URL")
-      PACKAGE_DONE=1
       break
     fi
     CLASS="$(python3 "$PACKAGES_PY" classify --exit-code "$RC" --log "$LOG" --since "$LOG_START_LINE" 2>>"$LOG")"

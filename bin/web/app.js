@@ -436,11 +436,12 @@ async function sessionsCard(name){
         toast(r&&r.ok?(bt(r.message)||tr('Fortsetzen gestartet.')):tr('Fortsetzen abgelehnt: ')+((r&&r.message)?bt(r.message):tr('Unbekannter Grund.')))}
       catch(e){toast(tr('Fortsetzen nicht gestartet: ')+String(e&&e.message||e))}
     }}},tr('Fortsetzen')):null;
+    const attachment=(s.package_id||s.worktree_path)?el('span',{class:'mut','data-attachment':''},tr('Paket ')+String(s.package_id||'?')+tr(' · Arbeitskopie ')+String(s.worktree_path||'?')):null;
     card.append(el('div',{class:'bar','data-session':String(s.session)},
       el('span',{class:'pill '+sessionTone(s.state)},bt(s.state_label||s.state||'?')),
       el('span',{},' '+s.session),
       el('span',{class:'mut'},s.agent||'?'),
-      el('span',{class:'mut'},sessionTime(s.last_seen)),btn));
+      el('span',{class:'mut'},sessionTime(s.last_seen)),attachment,btn));
   }
   if(list.length&&data&&data.resume_supported===false)
     card.append(el('div',{class:'mut'},tr('Fortsetzen ist bei Pi nicht möglich (--no-session): Pi läuft ohne fortsetzbare Session.')));
@@ -976,7 +977,9 @@ function sandboxBody(d,name,isPi){const s=d.sandbox||{enabled:false,tools:[],wri
    AP9: Token je Projekt verschlüsselt, Branch-Kontrolle, Verbindungsprüfung,
    Basis-Branch; der Läufer zieht bei GITHUB_ENABLED vor jedem Arbeitspaket
    den Haupt-Branch und pusht nach jedem abgeschlossenen Paket automatisch
-   den Paket-Branch samt Merge-Request — das Zusammenführen bleibt manuell) ---------- */
+   den Paket-Branch samt Merge-Request — das Zusammenführen bleibt manuell,
+   solange GITHUB_AUTO_MERGE nicht gesetzt ist (dann mergt der Läufer den
+   freigegebenen PR nach bestandener Schranke selbst; Standard aus)) ---------- */
 function githubBody(d,name){
  const g=d.github||{enabled:false,repo:'',label:'vibe',api:'',base:'',branch:'-',remotes:[],branches:[],ahead:0,behind:0,unpushed:false};
  const active=!!g.enabled;
@@ -992,6 +995,11 @@ function githubBody(d,name){
  const apiIn=el('input',{value:(g.api&&g.api!=='https://api.github.com')?g.api:'',placeholder:tr('https://api.github.com (Standard)'),'aria-label':'GitHub-API-Basis'});
  /* AP9: Basis-Branch für Merge-Requests (GITHUB_BASE); Leerwert = Standard-Branch der origin (meist main). */
  const baseIn=el('input',{value:g.base||'',placeholder:tr('z. B. main (leer = Standard-Branch der origin)'),'aria-label':tr('Basis-Branch für Merge-Requests')});
+ /* AP4 (T-G0): Auto-Merge-Schalter je Projekt (GITHUB_AUTO_MERGE). Standard
+    aus = PR-only: der Läufer pusht und stellt den Merge-Request, der Eigentümer
+    mergt und schließt danach mit "vibe package close". Bei "1" mergt der Läufer
+    den freigegebenen PR nach bestandener Schranke selbst. */
+ const autoMerge=el('input',{type:'checkbox','aria-label':tr('Auto-Merge aktivieren (Läufer mergt freigegebene Merge-Requests selbst)')});autoMerge.checked=!!(g.auto_merge);
  /* B7/AP9: GitHub-Zugang (Token) direkt in der Karte, ohne CLI oder Umgebungsvariable.
     Seit AP9 gilt der Token je Projekt und wird verschlüsselt im Zustandsordner
     abgelegt. Der Zustand spiegelt g.auth (set/source ohne Geheimnis) und wird
@@ -1018,7 +1026,7 @@ function githubBody(d,name){
    const r=await api('/api/github',{name,action:'token.clear'});
    setErr(r.ok?'':bt(r.message));toast(bt(r.message)||'');
    if(r.ok){tokenIn.value='';setAuth(r.auth&&r.auth.set?r.auth.source:'')}}}},tr('Token entfernen'));
- const save=el('button',{class:'b p',on:{click:async()=>{const r=await api('/api/github',{name,action:'settings',enabled:enabled.checked,repo:repo.value.trim(),label:label.value.trim(),api:apiIn.value.trim(),base:baseIn.value.trim()});
+ const save=el('button',{class:'b p',on:{click:async()=>{const r=await api('/api/github',{name,action:'settings',enabled:enabled.checked,repo:repo.value.trim(),label:label.value.trim(),api:apiIn.value.trim(),base:baseIn.value.trim(),auto_merge:autoMerge.checked});
    if(!r.ok)setErr(bt(r.message));toast(bt(r.message));if(r.ok){setErr('');refresh()}}}},tr('Speichern'));
  const linkBtn=el('button',{class:'b',on:{click:async()=>{
    const value=repo.value.trim();
@@ -1064,7 +1072,7 @@ function githubBody(d,name){
    el('button',{class:'b',on:{click:async()=>{const r=await post({name,action:'checkout',branch:b.name});if(r.ok)refresh()}}},tr('Wechseln')),
    el('button',{class:'b',on:{click:async()=>{const r=await post({name,action:'push',branch:b.name});if(r.ok)refresh()}}},'Push'))));
  const conn=el('div',{},
-   el('div',{class:'mut'},tr('GitHub ist optional je Projekt. Die Einstellungen gelten nur für dieses Projekt; die Knöpfe bleiben bewusste Aktionen. Bei aktiver Verknüpfung überträgt der Läufer nach jedem abgeschlossenen Paket den Paket-Branch und stellt einen Merge-Request — ohne Push und Merge-Request blockiert der Abschluss (kein Häkchen, kein lokaler Merge); das Zusammenführen bleibt manuell.')),
+   el('div',{class:'mut'},tr('GitHub ist optional je Projekt. Die Einstellungen gelten nur für dieses Projekt; die Knöpfe bleiben bewusste Aktionen. Bei aktiver Verknüpfung überträgt der Läufer nach jedem abgeschlossenen Paket den Paket-Branch und stellt einen Merge-Request — ohne Push und Merge-Request blockiert der Abschluss (kein Häkchen, kein lokaler Merge); das Zusammenführen bleibt manuell, solange Auto-Merge aus ist (Standard aus = PR-only: der Eigentümer mergt und schließt danach mit „vibe package close“).')),
    authLine,
    el('div',{class:'bar'},tokenIn,tokenSave,tokenClear),
    el('label',{class:'inline'},enabled,tr(' GitHub-Verknüpfung aktiv')),
@@ -1073,6 +1081,7 @@ function githubBody(d,name){
    el('label',{},tr('API-Basis (optional)')),apiIn,
    /* AP9: Basis-Branch für Merge-Requests (GITHUB_BASE); leer = Standard-Branch der origin. */
    el('label',{},tr('Basis-Branch für Merge-Requests (optional)')),baseIn,
+   el('label',{class:'inline'},autoMerge,tr(' Auto-Merge aktivieren (Läufer mergt freigegebene Merge-Requests selbst)')),
    el('div',{class:'bar'},save,linkBtn,unlinkBtn));
  const actions=active?el('div',{class:'gh-actions'},
    ...facts,

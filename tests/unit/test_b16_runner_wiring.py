@@ -14,6 +14,11 @@ einer Fake-Toolchain (Muster ``test_ap9_runner_wiring.py``):
   Status blockiert, Arbeitskopie bleibt liegen.
 * Bei divergiertem ``dev`` blockiert der Abschluss mit ``divergiert``; der
   ``github-pull`` bleibt wie in AP9 ein HINWEIS.
+* Ein erfolgreicher ``github-complete`` führt im PR-only-Standard (ohne
+  ``GITHUB_AUTO_MERGE``) NICHT zu einem lokalen Merge: Der Lauf hält mit
+  „wartet auf Merge“/``vibe package close`` an, die Arbeitskopie bleibt
+  registriert und das Ticket bleibt offen (AP4-Korbat T-G0/T-G1). Der
+  automatische Merge samt Cleanup ist Fall von ``test_ap4_korbat_github``.
 * Der Abschlussbericht nennt je geschlossenem Paket Branch, Commit und
   Merge-Request-URL; der Commit-Anteil der Berichtszeile wird in Report und
   Log gegen den Projekt-HEAD geprüft. Ohne GitHub-Verknüpfung erscheint
@@ -84,10 +89,6 @@ class B16WiringFixture(AP9WiringFixture):
         path = self.runtime / (project.name + ".report.txt")
         return path.read_text(encoding="utf-8") if path.exists() else ""
 
-    def worktrees(self):
-        root = self.runtime / "worktrees"
-        return [entry for entry in root.iterdir()] if root.exists() else []
-
     def blocked_line(self, log):
         """Erste Protokollzeile der GitHub-Abschlussschranke."""
         for line in log.splitlines():
@@ -109,11 +110,18 @@ class B16WiringFixture(AP9WiringFixture):
                       "Das Ticket muss offen bleiben:\n" + text)
 
 
-# --------------------------------------------------------------- Erfolgsfall
-class SuccessfulClosureTest(B16WiringFixture):
-    """AK: Abschluss nur mit Push und Merge-Request; Bericht nennt beides."""
+# --------------------------------------------------------------- PR-only-Fall
+class PrOnlyClosureTest(B16WiringFixture):
+    """AK AP4/T-G1: Ohne GITHUB_AUTO_MERGE bleibt es beim PR-only-Abschluss.
 
-    def test_successful_run_pushes_feature_branch_and_opens_the_pr(self):
+    Die frühere B16-Erwartung (sofortiger lokaler Merge, Cleanup und
+    „Geschlossen“) gilt nur noch im Auto-Merge-Modus. AP4-Korbat macht
+    PR-only zum Standard: Push und Merge-Request sind weiterhin eine harte
+    Schranke, aber der Lauf hält nach dem Öffnen des PRs an, die Arbeitskopie
+    bleibt registriert und das Ticket bleibt offen.
+    """
+
+    def test_successful_run_pushes_and_opens_the_pr_then_waits_for_merge(self):
         server = RestFakeServer().start()
         self.addCleanup(server.close)
         bare = self.empty_bare("b16-ok")
@@ -123,30 +131,30 @@ class SuccessfulClosureTest(B16WiringFixture):
 
         result = self.run_runner(project)
 
-        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        log = self.log(project)
         # Branch-Regel: feature/<owner>/<id>, nicht vibe/...
         self.assertEqual(
             0, git(bare, "rev-parse", "--verify",
                    "refs/heads/feature/test/f1").returncode,
             "Der Branch wurde nicht unter dem Repository-Namensschema "
-            "gepusht:\n" + self.log(project))
-        report = self.report(project)
-        log = self.log(project)
-        self.assertIn("Geschlossen: F1 — Branch feature/test/f1", report)
-        self.assertIn("Merge-Request http://127.0.0.1/pull/42", report)
-        self.assertIn("Geschlossen: F1 — Branch feature/test/f1", log)
-        # Der Commit-Anteil der Berichtszeile muss den Projekt-HEAD nennen.
-        head_sha = git(project, "rev-parse", "--short", "HEAD").stdout.strip()
-        self.assertTrue(head_sha, "Projekt-HEAD nicht ermittelbar")
-        self.assertIn(", Commit " + head_sha + ",", report)
-        self.assertIn(", Commit " + head_sha + ",", log)
-        # Der Merge ist erfolgt:
-        self.assertEqual(0, git(project, "cat-file", "-e",
-                                "HEAD:impl-F1.txt").returncode)
+            "gepusht:\n" + log)
         posts = [post for post in server.posts
                  if post["path"].startswith("/repos/owner/name/pulls")]
         self.assertTrue(posts, "Der Merge-Request wurde nicht gestellt")
         self.assertEqual("feature/test/f1", posts[-1]["body"].get("head"))
+        # PR-only: kein lokaler Merge, kein Cleanup, Ticket bleibt offen.
+        self.assert_not_merged(project)
+        self.assert_ticket_open(project)
+        self.assertIn("BLOCKIERT",
+                      (project / "FEEDBACK.md").read_text(
+                          encoding="utf-8").upper())
+        self.assertTrue(self.worktrees(),
+                        "Die Arbeitskopie muss bis zum Merge registriert "
+                        "bleiben:\n" + log)
+        self.assertIn("wartet auf merge", log.lower(),
+                      "Der Lauf muss auf den Merge warten:\n" + log)
+        self.assertIn("vibe package close", log,
+                      "Der nächste Schritt muss genannt sein:\n" + log)
 
 
 # --------------------------------------------------------------- Fehlerpfade

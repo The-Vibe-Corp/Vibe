@@ -131,6 +131,24 @@ function nvpBoardColumn(name, column, rows, token) {
     var id = String(row.id || '');
     var isFeedback = !!row.__feedback;
     var title = String(row.title || id);
+    var closeError = el('div', {class: 'nv-form-error', 'data-nv-form-error': '', hidden: ''});
+    var closeAction = (column === 'blocked' && !isFeedback)
+      ? el('button', {class: 'nv-btn nv-ghost nv-compact', type: 'button',
+          'data-nv-action': 'package-close', on: {click: function () {
+            nvpShowError(closeError, '');
+            api('/api/package', {name: name, id: id, action: 'close'}).then(function (result) {
+              if (NV.stale(token)) return;
+              if (result && result.ok === false) {
+                nvpShowError(closeError, bt(result.message));
+                return;
+              }
+              toast(bt(result && result.message) || tr('Paket abgeschlossen'));
+              NV.render();
+            }).catch(function (e) {
+              if (!NV.stale(token)) nvpShowError(closeError, String(e && e.message || e));
+            });
+          }}}, tr('Paket abschließen'))
+      : null;
     var card = el('article', {
       class: 'nv-card nv-ticket',
       'data-nv-ticket': id,
@@ -160,7 +178,9 @@ function nvpBoardColumn(name, column, rows, token) {
             nvpPost(name, path, body, 'Gelöscht', token).then(function () {
               if (!NV.stale(token)) NV.render();
             });
-          }}}, tr('Löschen'))));
+          }}}, tr('Löschen')),
+        closeAction),
+      closeError);
     box.append(card);
   });
   return box;
@@ -501,6 +521,10 @@ function nvpSessionsSection(name, token, sessions) {
     var session = String(row.session || row.id || row.name || '');
     body.append(el('div', {class: 'nv-row nv-session-row'},
       el('span', {}, session + ' ' + String(row.project || '')),
+      el('span', {class: 'nv-muted', 'data-nv-session-attach': ''},
+        (row.package_id || row.worktree_path)
+          ? tr('Paket ') + String(row.package_id || '?') + tr(' · Arbeitskopie ') + String(row.worktree_path || '?')
+          : ''),
       nvpButton(tr('Fortsetzen'), 'session-resume-settings', function () {
         nvpPost(name, '/api/sessions', {action: 'continue', session: session},
           'Sitzung fortgesetzt', token);
@@ -515,7 +539,10 @@ function nvpSessionsSection(name, token, sessions) {
 
 /* Git & GitHub: vollständige CLI-Parität als bewusste Aktionen. Die Payloads
    entsprechen eins zu eins der klassischen Karte (app.js githubBody); der
-   Zugriff ist je Projekt und der Token wird nie in den DOM geschrieben. */
+   Zugriff ist je Projekt und der Token wird nie in den DOM geschrieben.
+   AP4 (T-G0): Auto-Merge-Schalter je Projekt; Standard aus = PR-only (der
+   Eigentümer mergt und schließt danach mit "vibe package close"), bei "1"
+   mergt der Läufer den freigegebenen PR nach bestandener Schranke selbst. */
 function nvpGithubSection(name, token, github) {
   var g = github || {};
   var error = nvpErrorBox();
@@ -551,9 +578,12 @@ function nvpGithubSection(name, token, github) {
     value: String(g.api || ''), 'aria-label': tr('API-Adresse')});
   var base = el('input', {type: 'text', 'data-nv-field': 'base',
     value: String(g.base || ''), 'aria-label': tr('Basis-Branch (optional)')});
+  var autoMerge = el('input', {type: 'checkbox', 'data-nv-field': 'github-auto-merge',
+    'aria-label': tr('Auto-Merge aktivieren (Läufer mergt freigegebene Merge-Requests selbst)')});
+  autoMerge.checked = !!g.auto_merge;
   var save = nvpButton(tr('Einstellungen speichern'), 'github-settings-save', function () {
     post({action: 'settings', enabled: enabled.checked, repo: repo.value.trim(),
-      label: label.value.trim(), api: apiBase.value.trim(), base: base.value.trim()},
+      label: label.value.trim(), api: apiBase.value.trim(), base: base.value.trim(), auto_merge: autoMerge.checked},
       function (result) {
         if (result && result.ok !== false) {
           toast(bt(result.message) || tr('Gespeichert'));
@@ -648,6 +678,28 @@ function nvpGithubSection(name, token, github) {
       });
   }, 'nv-primary');
 
+  /* --- Verknüpfung herstellen/lösen, Abruf (fetch) --- */
+  var link = nvpButton(tr('Mit GitHub verknüpfen'), 'github-link', function () {
+    var value = String(repo.value || '').trim();
+    if (!value || value.indexOf('/') < 0) {
+      nvpShowError(error, tr('Repository in der Form owner/name angeben'));
+      return;
+    }
+    post({action: 'link', url: 'https://github.com/' + value + '.git'}, function (result) {
+      if (result && result.ok !== false) refresh();
+    });
+  });
+  var unlink = nvpButton(tr('Verknüpfung lösen'), 'github-unlink', function () {
+    post({action: 'unlink'}, function (result) {
+      if (result && result.ok !== false) refresh();
+    });
+  });
+  var fetch = nvpButton(tr('Abrufen (fetch, kein Merge)'), 'github-fetch', function () {
+    post({action: 'fetch'}, function (result) {
+      if (result && result.ok !== false) refresh();
+    });
+  });
+
   /* --- Issues als Arbeitspakete --- */
   var issueFilter = el('input', {type: 'text', 'data-nv-field': 'github-issue-label',
     value: String(g.label || 'vibe'), placeholder: tr('Label (leer = alle)'),
@@ -704,7 +756,9 @@ function nvpGithubSection(name, token, github) {
     nvpLabel(tr('Label für vibe-Aufgaben'), label),
     nvpLabel(tr('API-Adresse'), apiBase),
     nvpLabel(tr('Basis-Branch (optional)'), base),
+    nvpLabel(tr('Auto-Merge aktivieren (Läufer mergt freigegebene Merge-Requests selbst)'), autoMerge),
     el('div', {class: 'nv-row'}, save, connect),
+    el('div', {class: 'nv-row'}, link, unlink, fetch),
     connResult,
     el('h4', {}, tr('Branches')), branchRows,
     el('div', {class: 'nv-row'}, pull, pushBranch, pushTarget, push),
@@ -951,6 +1005,10 @@ NV.views.project = async function project(context, token) {
     var session = String(row.session || row.id || row.name || '');
     sessionBox.append(el('div', {class: 'nv-row nv-session-row'},
       el('span', {}, session),
+      el('span', {class: 'nv-muted', 'data-nv-session-attach': ''},
+        (row.package_id || row.worktree_path)
+          ? tr('Paket ') + String(row.package_id || '?') + tr(' · Arbeitskopie ') + String(row.worktree_path || '?')
+          : ''),
       nvpButton(tr('Fortsetzen'), 'session-resume', function () {
         nvpPost(name, '/api/sessions', {action: 'continue', session: session},
           'Sitzung fortgesetzt', token);
