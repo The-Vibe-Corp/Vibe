@@ -208,7 +208,7 @@ class ProjectAgentsFixture(unittest.TestCase):
 
 
 class SelectionTest(ProjectAgentsFixture):
-    def test_default_selection_uses_only_the_vibe_agent(self):
+    def test_default_selection_uses_the_vibe_agent_and_opencode_agents(self):
         self.write_vibe()
         self.write_global()
         self.write_project_agent(self.project, "pruefer", PROJECT_AGENT)
@@ -218,8 +218,11 @@ class SelectionTest(ProjectAgentsFixture):
 
         # AP03: Projekte dürfen nur systemweite Agenten verwenden. Der
         # projektlokale Agent wird nicht angeboten; ohne .vibe/agents.json ist
-        # ausschließlich der Vibe-Agent konfiguriert.
-        self.assertEqual(sorted(rows), ["tester", "vibe-agent"])
+        # ausschließlich der Vibe-Agent konfiguriert. AP2-Korbat ergänzt die
+        # opencode-eigenen Agenten general/explore als keine Dateiagenten.
+        self.assertEqual(
+            sorted(rows), ["explore", "general", "tester", "vibe-agent"]
+        )
         self.assertTrue(rows["vibe-agent"]["configured"])
         self.assertTrue(rows["vibe-agent"]["is_vibe"])
         self.assertFalse(rows["tester"]["configured"])
@@ -227,6 +230,10 @@ class SelectionTest(ProjectAgentsFixture):
         self.assertEqual(rows["vibe-agent"]["model"], "opencode/vibe-modell")
         self.assertEqual(rows["vibe-agent"]["override"], "")
         self.assertNotIn("pruefer", rows)
+        for name in ("general", "explore"):
+            self.assertIs(rows[name].get("opencode"), True)
+            self.assertTrue(rows[name]["configured"])
+            self.assertEqual(rows[name]["effective_model"], "")
         # Die Auswahl ist reine Konfiguration: ohne Änderung entsteht keine Datei.
         self.assertFalse(self.config_path(self.project).exists())
 
@@ -237,7 +244,9 @@ class SelectionTest(ProjectAgentsFixture):
 
         rows = self.rows()
 
-        self.assertEqual(sorted(rows), ["tester", "vibe-agent"])
+        self.assertEqual(
+            sorted(rows), ["explore", "general", "tester", "vibe-agent"]
+        )
         self.assertEqual(rows["tester"]["scope"], "global")
         self.assertEqual(rows["tester"]["model"], "opencode/global-modell")
 
@@ -253,7 +262,7 @@ class SelectionTest(ProjectAgentsFixture):
         # Vibe-Agent konfiguriert, die Abwahl wirkt also nur im gewählten Projekt.
         self.assertFalse(self.rows("other")["tester"]["configured"])
         stored = json.loads(self.config_path(self.project).read_text(encoding="utf-8"))
-        self.assertEqual(stored["version"], 2)
+        self.assertEqual(stored["version"], 3)
         self.assertNotIn("tester", stored["aktiv"])
         self.assertIn("vibe-agent", stored["aktiv"])
         # Das andere Projekt bleibt ohne eigene Datei und unverändert.
@@ -336,7 +345,7 @@ class SelectionTest(ProjectAgentsFixture):
         path = self.config_path(self.project)
         path.write_text(
             json.dumps(
-                {"version": 2, "aktiv": [], "modelle": {}, "farbe": "rot"}
+                {"version": 3, "aktiv": [], "modelle": {}, "farbe": "rot"}
             ),
             encoding="utf-8",
         )
@@ -352,7 +361,7 @@ class SelectionTest(ProjectAgentsFixture):
         path = self.config_path(self.project)
         path.write_text(
             json.dumps(
-                {"version": 2, "aktiv": ["tester"], "modelle": {"tester": 5}}
+                {"version": 3, "aktiv": ["tester"], "modelle": {"tester": 5}}
             ),
             encoding="utf-8",
         )
@@ -369,20 +378,20 @@ class SelectionTest(ProjectAgentsFixture):
         path = self.config_path(self.project)
         path.write_text(
             json.dumps(
-                {"version": 2, "aktiv": ["vibe-agent", "tester"], "modelle": {}}
+                {"version": 3, "aktiv": ["vibe-agent", "tester"], "modelle": {}}
             ),
             encoding="utf-8",
         )
         snapshot = self.cli.vibe_storage.read_snapshot(path)
         path.write_text(
-            json.dumps({"version": 2, "aktiv": ["vibe-agent"], "modelle": {}}),
+            json.dumps({"version": 3, "aktiv": ["vibe-agent"], "modelle": {}}),
             encoding="utf-8",
         )
 
         with self.assertRaises(self.cli.vibe_storage.ConcurrentChangeError):
             self.cli.project_agents_save(
                 "proj",
-                {"version": 2, "aktiv": ["vibe-agent", "tester"], "modelle": {}},
+                {"version": 3, "aktiv": ["vibe-agent", "tester"], "modelle": {}},
                 expected=snapshot.digest,
             )
 

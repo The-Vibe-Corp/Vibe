@@ -10,6 +10,7 @@ import importlib.machinery
 import importlib.util
 import json
 import os
+import re
 import socket
 import subprocess
 import sys
@@ -29,15 +30,31 @@ WEB = REPO / "bin" / "vibe-web.py"
 AGENT_TEMPLATE = """---
 description: Projektagent für Tests
 mode: subagent
-permission:
-  read: allow
-  glob: allow
-  grep: allow
-  list: allow
-  edit: allow
-  bash: allow
-  webfetch: deny
-  websearch: deny
+permissions:
+  - action: read
+    resource: "*"
+    effect: allow
+  - action: glob
+    resource: "*"
+    effect: allow
+  - action: grep
+    resource: "*"
+    effect: allow
+  - action: edit
+    resource: "*"
+    effect: allow
+  - action: shell
+    resource: "*"
+    effect: allow
+  - action: subagent
+    resource: "*"
+    effect: deny
+  - action: webfetch
+    resource: "*"
+    effect: deny
+  - action: websearch
+    resource: "*"
+    effect: deny
 ---
 
 Du änderst ausschließlich Dateien im Projekt.
@@ -46,9 +63,31 @@ Du änderst ausschließlich Dateien im Projekt.
 AGENT_WITHOUT_EDIT = """---
 description: Agent ohne Schreibrecht
 mode: subagent
-permission:
-  read: allow
-  edit: deny
+permissions:
+  - action: read
+    resource: "*"
+    effect: allow
+  - action: glob
+    resource: "*"
+    effect: allow
+  - action: grep
+    resource: "*"
+    effect: allow
+  - action: edit
+    resource: "*"
+    effect: deny
+  - action: shell
+    resource: "*"
+    effect: deny
+  - action: subagent
+    resource: "*"
+    effect: deny
+  - action: webfetch
+    resource: "*"
+    effect: deny
+  - action: websearch
+    resource: "*"
+    effect: deny
 ---
 
 Nur lesen.
@@ -71,6 +110,35 @@ permission: { read: allow, edit: deny }
 
 Nur lesen.
 """
+
+
+def permission_pairs(text, action):
+    """Liest die (resource, effect)-Paare einer v2-Aktion aus dem Frontmatter."""
+    rules, current, collecting = [], None, False
+    for line in text.splitlines():
+        if re.match(r"^permissions:[ \t]*$", line):
+            collecting = True
+            continue
+        if not collecting:
+            continue
+        if line and not line.startswith((" ", "\t")):
+            break
+        entry = re.match(r"^[ \t]*-[ \t]+([A-Za-z_]+):[ \t]*(.*)$", line)
+        if entry:
+            if current is not None:
+                rules.append(current)
+            current = {entry.group(1): entry.group(2).strip().strip('"')}
+            continue
+        field = re.match(r"^[ \t]+([A-Za-z_]+):[ \t]*(.*)$", line)
+        if field and current is not None:
+            current[field.group(1)] = field.group(2).strip().strip('"')
+    if current is not None:
+        rules.append(current)
+    return [
+        (rule.get("resource"), rule.get("effect"))
+        for rule in rules
+        if rule.get("action") == action
+    ]
 
 
 def load_cli(vibe_root):
@@ -208,33 +276,39 @@ class WriteDirsModelTest(unittest.TestCase):
             prompt="Du bist ein Testagent.",
         )
 
-        self.assertIn("  edit:\n", text)
-        self.assertIn('    "/tmp/opencode/**": allow', text)
-        self.assertIn(f'    "{self.project}/**": allow', text)
-        self.assertIn('    "*": deny', text)
-        self.assertNotIn("  edit: allow", text)
-        self.assertIn("  bash: allow", text)
+        # v2: Eine pauschale Deny-Regel steht vor den erlaubten Verzeichnissen.
+        self.assertIn("permissions:", text)
+        self.assertEqual(
+            permission_pairs(text, "edit"),
+            [
+                ("*", "deny"),
+                ("/tmp/opencode", "allow"),
+                ("/tmp/opencode/**", "allow"),
+                (str(self.project), "allow"),
+                (str(self.project) + "/**", "allow"),
+            ],
+        )
+        self.assertEqual(permission_pairs(text, "shell"), [("*", "allow")])
+        self.assertNotIn("bash:", text)
         self.assertIn("Du bist ein Testagent.", text)
 
     def test_template_without_write_dirs_keeps_full_edit_permission(self):
         text = self.cli.agent_template("Testagent", perm="voll")
 
-        self.assertIn("  edit: allow", text)
-        self.assertNotIn('    "*": deny', text)
+        self.assertEqual(permission_pairs(text, "edit"), [("*", "allow")])
 
     def test_template_with_empty_list_denies_edits(self):
         text = self.cli.agent_template("Testagent", perm="voll", write_dirs=[])
 
-        self.assertIn("  edit: deny", text)
-        self.assertNotIn("  edit:\n", text)
+        self.assertEqual(permission_pairs(text, "edit"), [("*", "deny")])
 
     def test_read_only_preset_stays_read_only(self):
         text = self.cli.agent_template(
             "Testagent", perm="lesen", write_dirs=["/tmp/opencode"]
         )
 
-        self.assertIn("  edit: deny", text)
-        self.assertNotIn("/tmp/opencode/**", text)
+        self.assertEqual(permission_pairs(text, "edit"), [("*", "deny")])
+        self.assertNotIn("/tmp/opencode", text)
 
     def test_apply_write_dirs_rewrites_only_the_edit_block(self):
         path = self.agent_file("proj-agent")
@@ -245,11 +319,17 @@ class WriteDirsModelTest(unittest.TestCase):
 
         text = path.read_text(encoding="utf-8")
         self.assertEqual(changed, text)
-        self.assertIn('    "/tmp/opencode/**": allow', text)
-        self.assertIn(f'    "{self.project}/**": allow', text)
-        self.assertIn('    "*": deny', text)
-        self.assertNotIn("  edit: allow", text)
-        self.assertIn("  bash: allow", text)
+        self.assertEqual(
+            permission_pairs(text, "edit"),
+            [
+                ("*", "deny"),
+                ("/tmp/opencode", "allow"),
+                ("/tmp/opencode/**", "allow"),
+                (str(self.project), "allow"),
+                (str(self.project) + "/**", "allow"),
+            ],
+        )
+        self.assertEqual(permission_pairs(text, "shell"), [("*", "allow")])
         self.assertIn("description: Projektagent für Tests", text)
         self.assertIn("Du änderst ausschließlich Dateien im Projekt.", text)
         backups = list((self.root / "_toolchain" / "agent-backups" / "proj").glob("*.md"))
@@ -264,7 +344,10 @@ class WriteDirsModelTest(unittest.TestCase):
 
         text = path.read_text(encoding="utf-8")
         self.assertNotIn("/tmp/opencode/eins", text)
-        self.assertEqual(text.count('    "/tmp/opencode/zwei/**": allow'), 1)
+        self.assertEqual(
+            permission_pairs(text, "edit").count(("/tmp/opencode/zwei/**", "allow")),
+            1,
+        )
 
     def test_apply_write_dirs_keeps_read_only_agent_unchanged(self):
         path = self.agent_file("leser", AGENT_WITHOUT_EDIT)
@@ -273,7 +356,7 @@ class WriteDirsModelTest(unittest.TestCase):
 
         self.assertEqual(path.read_text(encoding="utf-8"), AGENT_WITHOUT_EDIT)
         self.assertEqual(returned, AGENT_WITHOUT_EDIT)
-        self.assertNotIn('    "*": deny', returned)
+        self.assertNotIn("/tmp/opencode", returned)
         backups = list((self.root / "_toolchain" / "agent-backups" / "proj").glob("*.md"))
         self.assertEqual(backups, [])
 
@@ -319,9 +402,11 @@ Prompt.
         self.cli.apply_write_dirs("proj", "offen", ["/tmp/opencode"])
 
         text = path.read_text(encoding="utf-8")
-        self.assertIn("permission:\n  edit:\n", text)
-        self.assertIn('    "/tmp/opencode/**": allow', text)
-        self.assertIn('    "*": deny', text)
+        self.assertIn("permissions:", text)
+        self.assertEqual(
+            permission_pairs(text, "edit"),
+            [("*", "deny"), ("/tmp/opencode", "allow"), ("/tmp/opencode/**", "allow")],
+        )
         self.assertIn("Prompt.", text)
 
     def test_apply_write_dirs_rejects_unknown_agent_without_creating_files(self):
@@ -332,6 +417,10 @@ Prompt.
         self.assertFalse(folder.exists() and any(folder.iterdir()))
 
     def test_apply_write_dirs_to_project_skips_agents_without_write_permission(self):
+        # Ohne eigene Projektliste gelten die Standardverzeichnisse (inkl.
+        # Projektpfad). Für die exakte Erwartung wird die Liste ausdrücklich
+        # auf "/tmp/opencode" gesetzt.
+        self.cli.write_dirs_save("proj", ["/tmp/opencode"])
         writable = self.agent_file("eins")
         readonly = self.agent_file("zwei", AGENT_WITHOUT_EDIT)
 
@@ -339,8 +428,10 @@ Prompt.
 
         self.assertEqual(names, ["eins"])
         text = writable.read_text(encoding="utf-8")
-        self.assertIn('    "/tmp/opencode/**": allow', text)
-        self.assertIn('    "*": deny', text)
+        self.assertEqual(
+            permission_pairs(text, "edit"),
+            [("*", "deny"), ("/tmp/opencode", "allow"), ("/tmp/opencode/**", "allow")],
+        )
         self.assertEqual(readonly.read_text(encoding="utf-8"), AGENT_WITHOUT_EDIT)
 
     def test_apply_write_dirs_to_project_ignores_files_with_unaddressable_names(self):
@@ -352,7 +443,10 @@ Prompt.
         names = self.cli.apply_write_dirs_to_project("proj")
 
         self.assertEqual(names, ["eins"])
-        self.assertIn('    "*": deny', writable.read_text(encoding="utf-8"))
+        self.assertIn(
+            ("/tmp/opencode/**", "allow"),
+            permission_pairs(writable.read_text(encoding="utf-8"), "edit"),
+        )
         self.assertEqual(stray.read_text(encoding="utf-8"), AGENT_TEMPLATE)
 
     def test_apply_write_dirs_to_project_changes_nothing_when_an_agent_is_invalid(self):
@@ -421,11 +515,17 @@ class WriteDirsCopyTest(unittest.TestCase):
 
         target = self.project / ".opencode" / "agents" / "schreiber.md"
         text = target.read_text(encoding="utf-8")
-        self.assertNotIn("  edit: allow", text)
-        self.assertIn('    "/tmp/opencode/**": allow', text)
-        self.assertIn(f'    "{os.path.realpath(self.project)}/**": allow', text)
-        self.assertIn('    "*": deny', text)
-        self.assertIn("  bash: allow", text)
+        self.assertEqual(
+            permission_pairs(text, "edit"),
+            [
+                ("*", "deny"),
+                ("/tmp/opencode", "allow"),
+                ("/tmp/opencode/**", "allow"),
+                (os.path.realpath(self.project), "allow"),
+                (os.path.realpath(self.project) + "/**", "allow"),
+            ],
+        )
+        self.assertEqual(permission_pairs(text, "shell"), [("*", "allow")])
         self.assertIn("Du änderst ausschließlich Dateien im Projekt.", text)
         self.assertEqual(source.read_text(encoding="utf-8"), AGENT_TEMPLATE)
 
@@ -437,9 +537,8 @@ class WriteDirsCopyTest(unittest.TestCase):
         text = (self.project / ".opencode" / "agents" / "leser.md").read_text(
             encoding="utf-8"
         )
-        self.assertIn("  edit: deny", text)
+        self.assertEqual(permission_pairs(text, "edit"), [("*", "deny")])
         self.assertNotIn("/tmp/opencode", text)
-        self.assertNotIn('"*": deny', text)
 
     def test_copy_between_projects_uses_target_project_write_dirs(self):
         self.cli.write_dirs_save("zweit", ["/tmp/opencode/zweit"])
@@ -451,8 +550,11 @@ class WriteDirsCopyTest(unittest.TestCase):
         text = (self.other / ".opencode" / "agents" / "eins.md").read_text(
             encoding="utf-8"
         )
-        self.assertIn('    "/tmp/opencode/zweit/**": allow', text)
-        self.assertIn('    "*": deny', text)
+        self.assertEqual(
+            permission_pairs(text, "edit"),
+            [("*", "deny"), ("/tmp/opencode/zweit", "allow"),
+             ("/tmp/opencode/zweit/**", "allow")],
+        )
         self.assertNotIn(os.path.realpath(self.project), text)
         self.assertNotIn("/tmp/opencode/**", text)
 
@@ -703,10 +805,16 @@ class WriteDirsApiTest(WriteDirsApiFixture):
 
         self.assertEqual(status, 200, body)
         text = json.loads(body)["message"]
-        self.assertIn(f'    "{os.path.realpath(self.project)}/**": allow', text)
-        self.assertIn('    "/tmp/opencode/**": allow', text)
-        self.assertIn('    "*": deny', text)
-        self.assertNotIn("  edit: allow", text)
+        self.assertEqual(
+            permission_pairs(text, "edit"),
+            [
+                ("*", "deny"),
+                ("/tmp/opencode", "allow"),
+                ("/tmp/opencode/**", "allow"),
+                (os.path.realpath(self.project), "allow"),
+                (os.path.realpath(self.project) + "/**", "allow"),
+            ],
+        )
 
     def test_agent_template_for_global_scope_stays_unrestricted(self):
         status, body = self.request(
@@ -721,7 +829,8 @@ class WriteDirsApiTest(WriteDirsApiFixture):
         )
 
         self.assertEqual(status, 200, body)
-        self.assertIn("  edit: allow", json.loads(body)["message"])
+        text = json.loads(body)["message"]
+        self.assertEqual(permission_pairs(text, "edit"), [("*", "allow")])
 
     def test_api_copy_into_project_restricts_write_dirs(self):
         global_agent = self.root / "home" / ".config" / "opencode" / "agents" / "schreiber.md"
@@ -735,9 +844,16 @@ class WriteDirsApiTest(WriteDirsApiFixture):
         self.assertEqual(status, 200, body)
         target = self.project / ".opencode" / "agents" / "schreiber.md"
         text = target.read_text(encoding="utf-8")
-        self.assertNotIn("  edit: allow", text)
-        self.assertIn(f'    "{os.path.realpath(self.project)}/**": allow', text)
-        self.assertIn('    "*": deny', text)
+        self.assertEqual(
+            permission_pairs(text, "edit"),
+            [
+                ("*", "deny"),
+                ("/tmp/opencode", "allow"),
+                ("/tmp/opencode/**", "allow"),
+                (os.path.realpath(self.project), "allow"),
+                (os.path.realpath(self.project) + "/**", "allow"),
+            ],
+        )
         self.assertEqual(global_agent.read_text(encoding="utf-8"), AGENT_TEMPLATE)
 
     def test_api_applies_write_dirs_to_writable_project_agents(self):
@@ -753,8 +869,16 @@ class WriteDirsApiTest(WriteDirsApiFixture):
         self.assertTrue(result["ok"])
         self.assertEqual(result["changed"], ["eins"])
         text = first.read_text(encoding="utf-8")
-        self.assertIn(f'    "{os.path.realpath(self.project)}/**": allow', text)
-        self.assertIn('    "*": deny', text)
+        self.assertEqual(
+            permission_pairs(text, "edit"),
+            [
+                ("*", "deny"),
+                ("/tmp/opencode", "allow"),
+                ("/tmp/opencode/**", "allow"),
+                (os.path.realpath(self.project), "allow"),
+                (os.path.realpath(self.project) + "/**", "allow"),
+            ],
+        )
         self.assertEqual(second.read_text(encoding="utf-8"), AGENT_WITHOUT_EDIT)
 
     def test_detail_page_contains_write_dirs_controls(self):

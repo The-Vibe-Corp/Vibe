@@ -1160,6 +1160,20 @@
         "bin/web/i18n.js"
       ],
       "grund": "AP22 letzte Kosmetik-Runde nach visueller Bestaetigung: Agenten-Kopfzeile mit 16px Abstand, Ticket-ID und Status-Badge auf gemeinsamer Baseline (8px Gap), konditionale Session-Beschriftung (Neue Key ' Fuer dieses Projekt sind keine Sitzungen aufgezeichnet.'), Agentenname mit Ellipsis und nicht umbrechenden Badges, Board-Spalten min 280px (Mobil einspaltig unveraendert), Wizard-Schrittanzeige als CSS-Fuellbalken, Kachelzahlen mit vollem Kontrast/Gewicht, Scrim auf 0.55. Alle betroffenen Suiten gruen (70 Faelle), i18n ohne Duplikate (999/999)."
+    },
+    {
+      "arbeitspaket": "AP2-Korbat",
+      "datum": "2026-11-21",
+      "dateien": [
+        "bin/vibe",
+        "bin/vibe-run.sh",
+        "bin/web/app.js",
+        "bin/web/i18n.js",
+        "bin/web/nova-project.js",
+        "templates/common/opencode.json",
+        "docs/import-manifest.json"
+      ],
+      "grund": "Agenten-Markdowns erzeugen opencode-v2-Berechtigungsblöcke (permissions-Regelliste, shell statt bash, subagent statt task); die opencode-eigenen Subagenten general/explore sind in der Projekt-Agentenauswahl umschaltbar und mit eigenem Modell belegbar (Projektdatei Version 3 mit opencode-Abschnitt); der Läufer mischt diese Einträge in OPENCODE_CONFIG_CONTENT (disabled nur in der agents-Map, nie in der Legacy-agent-Map)."
     }
   ],
   "files": [
@@ -1174,14 +1188,14 @@
       "sha256": "e5ae3183efcb76dace1e0bcbde9993be7afe82d93d7877da9ee39846cf45330a"
     },
     {
-      "bytes": 271898,
+      "bytes": 285122,
       "path": "bin/vibe",
-      "sha256": "e9b8d701228bd30348a016f6e9687aee5147c731869181c0276633c92ca996e0"
+      "sha256": "ec278df135338ffacbe4db981bac9d6fcc2383ade563dc22360ace7de4712000"
     },
     {
-      "bytes": 69107,
+      "bytes": 71042,
       "path": "bin/vibe-run.sh",
-      "sha256": "c9ed031a0863f3e36264422996c01d08f03f5f35dee91e3650f12fbd0ecaa243"
+      "sha256": "c15919f8c8a891de1546187846b90bfff44e7c54e85056c21591c2d90dc4cfb4"
     },
     {
       "bytes": 114369,
@@ -1274,9 +1288,9 @@
       "sha256": "43805dba175b11e01392b376bc12f931d82c06c8ab82dfc60474b9e9170cdd0f"
     },
     {
-      "bytes": 152799,
+      "bytes": 153168,
       "path": "bin/web/app.js",
-      "sha256": "2f183ded46b9ef67675c56562e23f34167ba3e1ccd7cda9e97ee54a058d36488"
+      "sha256": "bade76d827175dbf2ed41acdb51ef7e077e648a18d52c898a715826fae44046a"
     },
     {
       "bytes": 688,
@@ -1284,9 +1298,9 @@
       "sha256": "19ea677f5c3dc3579279fd9b5bf7584612967654b8ec0bbde3818576c78b46b5"
     },
     {
-      "bytes": 148059,
+      "bytes": 149004,
       "path": "bin/web/i18n.js",
-      "sha256": "2c1d9999fe2f52e376488e2ec03abb60332798494c03b8d4eed86129e8d7ec63"
+      "sha256": "c22fa4427004b11ccf0a89efcec24bcfa65dfaaa110cc28ab22cb84b8ed1d241"
     },
     {
       "bytes": 2207,
@@ -1319,9 +1333,9 @@
       "sha256": "8c56aa9e89ece8d02ea76f5d1b11e43ff8466b1d3becb8956a98ae0f6036895b"
     },
     {
-      "bytes": 46101,
+      "bytes": 46182,
       "path": "bin/web/nova-project.js",
-      "sha256": "446e5ca4cb353ea2ba8d39428c05c7b1399b7ef7d342e446da6b2efdd2db1875"
+      "sha256": "b41e6318b044188e594551d9a4404bc133cc47fdd1c839358b748e07ab888c2c"
     },
     {
       "bytes": 44549,
@@ -1394,9 +1408,9 @@
       "sha256": "85601551f67bde402c5f7b50626f949653825696b80921b4a2f3d7207af16c9c"
     },
     {
-      "bytes": 105,
+      "bytes": 199,
       "path": "templates/common/opencode.json",
-      "sha256": "2cf66ebdb7c6cacd36ad8a2f069738ef2e65632776c4fc16f09247f2abb2be70"
+      "sha256": "c7b5f4e754661eabdf02ecf6a9c799e52c194126fa2df6dea2d725109d19e8b3"
     },
     {
       "bytes": 353,
@@ -1510,6 +1524,6 @@
     "setup-vibe.cmd",
     "VERSION"
   ],
-  "stand": "2026-11-20",
+  "stand": "2026-11-21",
   "version": 1
 }

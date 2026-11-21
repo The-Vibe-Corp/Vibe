@@ -1014,6 +1014,8 @@
         "Löschen fehlgeschlagen.": "Deletion failed.",
         "Token entfernt": "Token removed",
         "Für dieses Projekt sind keine Sitzungen aufgezeichnet.": "No sessions recorded for this project.",
+        "OpenCode": "OpenCode",
+        "OpenCode-Agenten (general, explore) sind eingebaute Subagenten ohne eigene Datei. Abwählen sperrt ihr Aufrufen durch andere Agenten in Läufen dieses Projekts; ihr Modell lässt sich hier je Projekt überschreiben.": "OpenCode agents (general, explore) are built-in subagents without their own file. Deselecting blocks other agents from calling them in runs of this project; their model can be overridden per project here.",
     },
     de: {
         "ui.language.hint": "Die gesamte vibe-Oberfläche; Englisch ist der Standard.",
@@ -2020,6 +2022,8 @@
         "Löschen fehlgeschlagen.": "Löschen fehlgeschlagen.",
         "Token entfernt": "Token entfernt",
         "Für dieses Projekt sind keine Sitzungen aufgezeichnet.": "Für dieses Projekt sind keine Sitzungen aufgezeichnet.",
+        "OpenCode": "OpenCode",
+        "OpenCode-Agenten (general, explore) sind eingebaute Subagenten ohne eigene Datei. Abwählen sperrt ihr Aufrufen durch andere Agenten in Läufen dieses Projekts; ihr Modell lässt sich hier je Projekt überschreiben.": "OpenCode-Agenten (general, explore) sind eingebaute Subagenten ohne eigene Datei. Abwählen sperrt ihr Aufrufen durch andere Agenten in Läufen dieses Projekts; ihr Modell lässt sich hier je Projekt überschreiben.",
     }
 
   };

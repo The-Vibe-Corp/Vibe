@@ -529,7 +529,7 @@ class Ap03AgentsBrowserTest(unittest.TestCase):
             message="Die Modellüberschreibung wurde nicht gespeichert",
         )
         config = self.agents_config()
-        self.assertEqual(config.get("version"), 2)
+        self.assertEqual(config.get("version"), 3)
         self.assertEqual(config.get("modelle", {}).get("tester"), "opencode/neu")
         self.assertNotIn("tester", config.get("aktiv", []))
         self.assertIn("vibe-agent", config.get("aktiv", []))
@@ -538,7 +538,7 @@ class Ap03AgentsBrowserTest(unittest.TestCase):
             agent_before,
         )
 
-        # Konfigurieren schreibt die aktive Liste in derselben Version 2.
+        # Konfigurieren schreibt die aktive Liste in derselben Version 3.
         self.reveal_unconfigured()
         configure = self.page.locator('input[data-configure="tester"]')
         self.assertEqual(
@@ -550,7 +550,7 @@ class Ap03AgentsBrowserTest(unittest.TestCase):
             message="Der konfigurierte Agent wurde nicht in 'aktiv' gespeichert",
         )
         config = self.agents_config()
-        self.assertEqual(config.get("version"), 2)
+        self.assertEqual(config.get("version"), 3)
         self.assertIn("vibe-agent", config.get("aktiv", []))
         self.assertEqual(config.get("modelle", {}).get("tester"), "opencode/neu")
 

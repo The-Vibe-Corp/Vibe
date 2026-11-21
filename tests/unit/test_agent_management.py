@@ -331,8 +331,9 @@ class StructuredEditorTest(AgentFixture):
         self.assertIn("steps: 5", changed)
         self.assertIn("color: blau", changed)
         self.assertIn("tools:\n  write: true", changed)
-        self.assertIn("permission:\n  read: allow", changed)
-        self.assertIn("  edit: deny", changed)
+        self.assertIn("permissions:\n  - action: read", changed)
+        self.assertIn("action: edit", changed)
+        self.assertIn("effect: deny", changed)
         self.assertIn("Neuer Prompt.", changed)
         self.assertNotIn("Erster Prompt.", changed)
         self.assertTrue(changed.endswith("\n"))
@@ -350,8 +351,9 @@ class StructuredEditorTest(AgentFixture):
 
         changed = self.cli.agent_render_fields("global", text, {"permission": "lesen"})
 
-        self.assertIn("permission:\n  read: allow", changed)
-        self.assertIn("  edit: deny", changed)
+        self.assertIn("permissions:\n  - action: read", changed)
+        self.assertIn("action: edit", changed)
+        self.assertIn("effect: deny", changed)
         self.assertIn("color: blau", changed)
         fields = self.cli.agent_fields("global", changed)
         self.assertEqual(fields["permission"], "lesen")
@@ -771,7 +773,7 @@ class AgentApiTest(unittest.TestCase):
         preview = json.loads(body)["text"]
         self.assertIn("description: Neu", preview)
         self.assertIn("color: blau", preview)
-        self.assertIn("  read: allow", preview)
+        self.assertIn("- action: read", preview)
         self.assertEqual(
             self.path.read_text(encoding="utf-8"),
             AGENT_V1,

@@ -587,7 +587,9 @@ class AgentRemapTest(StorageFixture):
             with mock.patch.object(self.cli, "models_list", return_value=[]):
                 rows = self.cli.project_agent_rows("ohne-farbe")
             konfiguriert = sorted(row["name"] for row in rows if row.get("configured"))
-            self.assertEqual(konfiguriert, ["vibe-agent"])
+            # AP2-Korbat: Die opencode-eigenen Agenten general/explore sind
+            # standardmäßig aktiv, aber keine Startagenten.
+            self.assertEqual(konfiguriert, ["explore", "general", "vibe-agent"])
 
     def test_the_summary_names_the_removed_agents(self):
         url = self.url_with_agents_config(

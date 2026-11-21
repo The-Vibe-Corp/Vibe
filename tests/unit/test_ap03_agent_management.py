@@ -548,7 +548,7 @@ class ProjectConfigurationTest(Ap03Fixture):
         self.assertFalse(rows["tester"]["selected"])
         self.assertFalse(self.config_path().exists())
 
-    def test_version_1_is_migrated_to_version_2_without_losing_overrides(self):
+    def test_version_1_is_migrated_to_version_3_without_losing_overrides(self):
         self.write_vibe()
         self.write_global("tester")
         self.write_global("other")
@@ -564,7 +564,7 @@ class ProjectConfigurationTest(Ap03Fixture):
         )
 
         config, _snapshot = self.cli.project_agents_load("proj")
-        self.assertEqual(config["version"], 2)
+        self.assertEqual(config["version"], 3)
         self.assertEqual(set(config["aktiv"]), {"vibe-agent", "tester"})
         self.assertNotIn("other", config["aktiv"])
 
@@ -643,7 +643,7 @@ class ProjectConfigurationTest(Ap03Fixture):
         self.assertFalse(row["configured"])
         self.assertEqual(row["override"], "opencode/override")
         stored = json.loads(self.config_path().read_text(encoding="utf-8"))
-        self.assertEqual(stored["version"], 2)
+        self.assertEqual(stored["version"], 3)
         self.assertNotIn("tester", stored["aktiv"])
         self.assertEqual(stored["modelle"]["tester"], "opencode/override")
 
