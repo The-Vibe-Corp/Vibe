@@ -1207,6 +1207,20 @@
       "grund": "Review-Runde 1 (docs/reviews/AP4-Korbat-review-1.md, 3 Minor-Befunde): POST /api/sessions action=continue reicht den Session-Worktree-/Paket-Anhang (resume_package/resume_worktree/resume_branch) an vibe.cmd_run weiter; resume_worktree/resume_branch werden im tmux-Startbefehl mit shlex.quote abgesichert; 'vibe github <projekt> status' zeigt Auto-Merge (ja/nein) an; Nova-Überblicks-Tab blendet den Paket-/Worktree-Anhang der Session ein. Da drei Programmdaten geändert wurden, sind Größe und SHA-256 der betreffenden files-Einträge aktualisiert und dadurch begründet."
     },
     {
+      "arbeitspaket": "B18",
+      "dateien": [
+        "bin/vibe_harness.py",
+        "bin/vibe-web.py",
+        "bin/web/nova-settings.js",
+        "bin/web/app.js",
+        "bin/web/i18n.js",
+        "docs/handbuch.md",
+        "docs/import-manifest.json"
+      ],
+      "datum": "2026-11-21",
+      "grund": "Harness nur auswählbar, wenn installiert: POST /api/harness use prüft vor dem Speichern vibe_harness.probe(chosen); nicht installierte Harnesses (Pi) werden abgelehnt (400, „Auswahl nicht gespeichert.“). Neue action=install führt vibe_harness.install aus (Registry-Befehl aus setup_plan; npm install -g --ignore-scripts @earendil-works/pi-coding-agent für Pi) und meldet Code/Ausgabe/erneutes Probe zurück. Nova und Classic zeigen nicht installierte Optionen deaktiviert mit Suffix „ (nicht installiert)“ und einem Installieren-Knopf mit Feedback-Bereich; Übernehmen setzt die Auswahl auf den persistierten Wert zurück. Neue deutsche i18n-Schlüssel „Installieren“ und „ (nicht installiert)“; Handbuch: neuer Abschnitt Harness-Auswahl unter Umgebung und Release; Manifest: Größe/SHA-256 der fünf Programmdateien aktualisiert. Review-Runde 1 (4 Low-Befunde) eingearbeitet."
+    },
+    {
       "arbeitspaket": "AP5-Korbat",
       "dateien": [
         "bin/vibe",
@@ -1245,9 +1259,9 @@
       "sha256": "874853f89c0c46e7ab65b8286d59b97da4645ed4e9b31f5d51a7bf094e41190c"
     },
     {
-      "bytes": 116517,
+      "bytes": 117939,
       "path": "bin/vibe-web.py",
-      "sha256": "70452e81ed49920d98a1e188fc205749bc72e67622181e696b319dc9fc0caa0d"
+      "sha256": "dabc71aea345b4e04e620775fd5ae2ae0598f673263b32f05bda2b7e78c41162"
     },
     {
       "bytes": 5189,
@@ -1270,9 +1284,9 @@
       "sha256": "5f3960c199534fe83685b6572f5bdf6c85c940bb6c6ee3cb54313733f2642f4a"
     },
     {
-      "bytes": 22482,
+      "bytes": 23512,
       "path": "bin/vibe_harness.py",
-      "sha256": "5447d366dcd31cf71a5856079a49d89b16a8e7d028ac62d01f4675fc0ff24581"
+      "sha256": "30f0394d2ac58458ecf607159c6041ebe19d4aef73e4878a510db3902bd11670"
     },
     {
       "bytes": 4311,
@@ -1335,9 +1349,9 @@
       "sha256": "43805dba175b11e01392b376bc12f931d82c06c8ab82dfc60474b9e9170cdd0f"
     },
     {
-      "bytes": 154348,
+      "bytes": 156155,
       "path": "bin/web/app.js",
-      "sha256": "6f9c75f598ebe533588547bf9729e9f1ee048a48e53b86a7c5ca3137124dcf9a"
+      "sha256": "f0cd5380898a5d617491109ac45cb5afbd9d14e7f861bcd2ac22c6a777dae03f"
     },
     {
       "bytes": 688,
@@ -1345,9 +1359,9 @@
       "sha256": "19ea677f5c3dc3579279fd9b5bf7584612967654b8ec0bbde3818576c78b46b5"
     },
     {
-      "bytes": 149101,
+      "bytes": 149416,
       "path": "bin/web/i18n.js",
-      "sha256": "4641f01b8db7bda02e86ede4e1b42dd84d79b59012f70680f0899d1206723aaa"
+      "sha256": "eb3e758659652b8e9ec25c788886ed27039049357cc8513068ca4677305c9be0"
     },
     {
       "bytes": 2207,
@@ -1385,9 +1399,9 @@
       "sha256": "e05e898aa38cca8f888e355681ea93d4c974affc8cae0574890502a779552974"
     },
     {
-      "bytes": 44549,
+      "bytes": 46592,
       "path": "bin/web/nova-settings.js",
-      "sha256": "13da8aba0256919ffc46c33d0460dbcd58327d2ba1f3aaff8f5a8324dbbfa896"
+      "sha256": "be83e52357bf9fee9b9337a33397be3abdfe3c1a67f66c647013431a98d84f46"
     },
     {
       "bytes": 22418,

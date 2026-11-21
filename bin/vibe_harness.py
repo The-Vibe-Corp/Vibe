@@ -255,6 +255,35 @@ def setup_plan(name, which=None):
     }
 
 
+def install(name, which=None, runner=None, timeout=300, environ=None):
+    """Führt den Registry-Befehl der Installation aus und prüft danach erneut.
+
+    Der Befehl kommt nur aus ``setup_plan`` (B18: Aufrufargumente laufen
+    nicht an den Installer). Bereits installiert (``which(binary)``): kein
+    Befehl, ``already=True``, ``output=""``. Danach prüft ``install``
+    erneut (``already=False``).
+    """
+    info = definition(name)
+    which = which or shutil.which
+    if which(info["binary"]):
+        return {
+            "harness": info["id"],
+            "code": 0,
+            "output": "",
+            "already": True,
+            "probe": probe(name, runner=runner, environ=environ),
+        }
+    plan = setup_plan(name, which=which)
+    code, output = _run(runner, plan["install_command"], timeout, environ=environ)
+    return {
+        "harness": info["id"],
+        "code": code,
+        "output": _short(output),
+        "already": False,
+        "probe": probe(name, runner=runner, environ=environ),
+    }
+
+
 def status(state_dir, environ=None, runner=None, which=None):
     """Aktive Auswahl plus Diagnose aller bekannten Harnesses."""
     selected = read_selection(state_dir, environ=environ)
