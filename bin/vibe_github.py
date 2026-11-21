@@ -1430,10 +1430,17 @@ def ensure_mergeable(project_path_config, worktree, base=""):
             base_ref = "origin/" + base
         else:
             base_ref = str(base).strip()
-        if not any(r["name"] == "origin" for r in remotes(wt)):
-            result["performed"] = False
-            return True, "Kein Remote origin: Mergeability übersprungen.", result
-        ok, message, sub = _ensure_mergeable(wt, base_ref)
+        # AP5 (4c): Das Credential wird einmal aus dem Projektkonfigurations-
+        # pfad gelöst und für alle Git-Aufrufe der Arbeitskopie durchgereicht.
+        # Der Worktree-Digest unterscheidet sich vom Projekt-Digest; löste
+        # ``git()`` das Credential über den Worktree-CWD auf, fehlte der
+        # Projekt-Token trotz funktionierendem Push. Der Token bleibt nur in
+        # der Prozessumgebung (VIBE_GITHUB_CREDENTIAL), nie in argv/Logs.
+        with _credential_passdown(credential_for_git(project)):
+            if not any(r["name"] == "origin" for r in remotes(wt)):
+                result["performed"] = False
+                return True, "Kein Remote origin: Mergeability übersprungen.", result
+            ok, message, sub = _ensure_mergeable(wt, base_ref)
         sub["performed"] = True
         result.update(sub)
         return ok, message, result

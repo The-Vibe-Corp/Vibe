@@ -1207,6 +1207,36 @@
       "grund": "Review-Runde 1 (docs/reviews/AP4-Korbat-review-1.md, 3 Minor-Befunde): POST /api/sessions action=continue reicht den Session-Worktree-/Paket-Anhang (resume_package/resume_worktree/resume_branch) an vibe.cmd_run weiter; resume_worktree/resume_branch werden im tmux-Startbefehl mit shlex.quote abgesichert; 'vibe github <projekt> status' zeigt Auto-Merge (ja/nein) an; Nova-Überblicks-Tab blendet den Paket-/Worktree-Anhang der Session ein. Da drei Programmdaten geändert wurden, sind Größe und SHA-256 der betreffenden files-Einträge aktualisiert und dadurch begründet."
     },
     {
+      "arbeitspaket": "B18",
+      "dateien": [
+        "bin/vibe_harness.py",
+        "bin/vibe-web.py",
+        "bin/web/nova-settings.js",
+        "bin/web/app.js",
+        "bin/web/i18n.js",
+        "docs/handbuch.md",
+        "docs/import-manifest.json"
+      ],
+      "datum": "2026-11-21",
+      "grund": "Harness nur auswählbar, wenn installiert: POST /api/harness use prüft vor dem Speichern vibe_harness.probe(chosen); nicht installierte Harnesses (Pi) werden abgelehnt (400, „Auswahl nicht gespeichert.“). Neue action=install führt vibe_harness.install aus (Registry-Befehl aus setup_plan; npm install -g --ignore-scripts @earendil-works/pi-coding-agent für Pi) und meldet Code/Ausgabe/erneutes Probe zurück. Nova und Classic zeigen nicht installierte Optionen deaktiviert mit Suffix „ (nicht installiert)“ und einem Installieren-Knopf mit Feedback-Bereich; Übernehmen setzt die Auswahl auf den persistierten Wert zurück. Neue deutsche i18n-Schlüssel „Installieren“ und „ (nicht installiert)“; Handbuch: neuer Abschnitt Harness-Auswahl unter Umgebung und Release; Manifest: Größe/SHA-256 der fünf Programmdateien aktualisiert. Review-Runde 1 (4 Low-Befunde) eingearbeitet."
+    },
+    {
+      "arbeitspaket": "AP5-Korbat",
+      "dateien": [
+        "bin/vibe",
+        "bin/vibe-run.sh",
+        "bin/vibe_github.py",
+        "bin/vibe_packages.py",
+        "bin/web/app.js",
+        "bin/web/i18n.js",
+        "bin/web/nova-project.js",
+        "scripts/verify.py",
+        "docs/import-manifest.json"
+      ],
+      "datum": "2026-11-21",
+      "grund": "NameError-Artefakte in init/Übernahme behoben (Meldung nur bei neu angelegter Test-Agent-Vorlage); read-only-Einwegtransport von .vibe/project.env in Arbeitskopien; VERIFY_PACKAGE_TESTS entkoppelt den Paketnachweis vom Vollmodus und der Verify-Tempfpfad ist kurz (vv-/VIBE_VERIFY_TMP); neuer Ticket-Zustand ‚WARTET AUF MERGE' (statt BLOCKIERT) für PR-only-Pakete inkl. GUI; ensure-mergeable löst das Git-Credential aus dem Projektpfad."
+    },
+    {
       "arbeitspaket": "F33",
       "datum": "2026-11-21",
       "dateien": [
@@ -1216,7 +1246,7 @@
         "bin/web/nova.css",
         "docs/import-manifest.json"
       ],
-      "grund": "F33 (UI-Überarbeitung Nova) in Arbeit: Backend-Verträge umgesetzt (POST /api/agent action=backup ohne Versionswarnung, AGENTS.md-Sicherung/Wiederherstellung mit agents_file_backup_dir, GET/POST /api/global_agents_file, globale Modellpreise action=prices_global mit Rangfolge Projekt > global > Katalog und global_prices in Übersicht/Detail, STATIC_FILES-Einträge vibe.svg/nova-widgets.js); bin/web/nova.css vollständig überarbeitet (mattes Frosted Glass, 12 Akzentpaletten hell/dunkel, Sidebar-Breitbild ab 1280px, F33-Stilblöcke WP1-WP5); bin/web/i18n.js um F33-Koordinationsblöcke ergänzt. Da Programmdaten geändert wurden, sind Größe und SHA-256 der vier betreffenden files-Einträge aktualisiert und dadurch begründet."
+      "grund": "F33 (UI-Überarbeitung Nova) in Arbeit: Backend-Verträge umgesetzt (POST /api/agent action=backup ohne Versionswarnung, AGENTS.md-Sicherung/Wiederherstellung mit agents_file_backup_dir, GET/POST /api/global_agents_file, globale Modellpreise action=prices_global mit Rangfolge Projekt > global > Katalog und global_prices in Übersicht/Detail, STATIC_FILES-Einträge vibe.svg/nova-widgets.js); bin/web/nova.css vollständig überarbeitet (mattes Frosted Glass, 12 Akzentpaletten hell/dunkel, Sidebar-Breitbild ab 1280px, F33-Stilblöcke WP1-WP5); bin/web/i18n.js um F33-Koordinationsblöcke ergänzt. Da Programmdaten geändert wurden, sind Größe und SHA-256 der vier betreffenden files-Einträge aktualisiert und dadurch begründet. Merge origin/dev (AP5-Korbat 4cbf70d, B18 d53efa4): alle drei aenderungen-Datensaetze erhalten; Größe/SHA-256 von bin/vibe, bin/vibe-web.py und bin/web/i18n.js auf den gemergten Stand neu berechnet."
     }
   ],
   "files": [
@@ -1231,19 +1261,19 @@
       "sha256": "e5ae3183efcb76dace1e0bcbde9993be7afe82d93d7877da9ee39846cf45330a"
     },
     {
-      "bytes": 299159,
+      "bytes": 299978,
       "path": "bin/vibe",
-      "sha256": "db502ce8ab2391bfac09997fca3c80b99e69e660b1c6dcd47a997a8b6cccaafe"
+      "sha256": "a197931bdfb0aac8f9c7456d4f51ad00d36c9bce302cfbd06b6daec924022974"
     },
     {
       "bytes": 81878,
       "path": "bin/vibe-run.sh",
-      "sha256": "12078b91bf7bd3aabaa7029dd7e1d65488b9be00a6e70788d766dba87e26071a"
+      "sha256": "874853f89c0c46e7ab65b8286d59b97da4645ed4e9b31f5d51a7bf094e41190c"
     },
     {
-      "bytes": 119412,
+      "bytes": 120834,
       "path": "bin/vibe-web.py",
-      "sha256": "bbe729b6af5939dbdf614a342cee53900168041d4ea6f7296475c37ca815092a"
+      "sha256": "f82b3ffa775fb045b892de21bdc03b29f494dd9c23396b11f87e8bfdc5a4affe"
     },
     {
       "bytes": 5189,
@@ -1256,9 +1286,9 @@
       "sha256": "0f6d9c2c9d72ff1400ba0c2e8173217102ac9f163a41191c34367dd5f81f5778"
     },
     {
-      "bytes": 74232,
+      "bytes": 74772,
       "path": "bin/vibe_github.py",
-      "sha256": "0abd4d2fdb366a89b5960806ac6b657299b14222932ed8acd2258c36d1a57ffc"
+      "sha256": "05b357f627b08d93adfa092331309831c1ea1f244e164ba38094c0333d47a83b"
     },
     {
       "bytes": 27530,
@@ -1266,9 +1296,9 @@
       "sha256": "5f3960c199534fe83685b6572f5bdf6c85c940bb6c6ee3cb54313733f2642f4a"
     },
     {
-      "bytes": 22482,
+      "bytes": 23512,
       "path": "bin/vibe_harness.py",
-      "sha256": "5447d366dcd31cf71a5856079a49d89b16a8e7d028ac62d01f4675fc0ff24581"
+      "sha256": "30f0394d2ac58458ecf607159c6041ebe19d4aef73e4878a510db3902bd11670"
     },
     {
       "bytes": 4311,
@@ -1291,9 +1321,9 @@
       "sha256": "ac3b26da4208a087a09c67c389238c82802d7c1bd50b10d9bcd9492a07050462"
     },
     {
-      "bytes": 71746,
+      "bytes": 77744,
       "path": "bin/vibe_packages.py",
-      "sha256": "6b4c95471bb27182e845e1fa062ecd3e01a1cefa6955fc11cccb8325af05fd70"
+      "sha256": "561ca9d26d466a099fcb48aa3475116f30c626d102b09ceed53d0b942914a721"
     },
     {
       "bytes": 20789,
@@ -1331,9 +1361,9 @@
       "sha256": "43805dba175b11e01392b376bc12f931d82c06c8ab82dfc60474b9e9170cdd0f"
     },
     {
-      "bytes": 154278,
+      "bytes": 156155,
       "path": "bin/web/app.js",
-      "sha256": "5279ae3e900ca146b3df4016d689544f7b230cec3e962ce33f6fe1f9b3f05a99"
+      "sha256": "f0cd5380898a5d617491109ac45cb5afbd9d14e7f861bcd2ac22c6a777dae03f"
     },
     {
       "bytes": 688,
@@ -1341,9 +1371,9 @@
       "sha256": "19ea677f5c3dc3579279fd9b5bf7584612967654b8ec0bbde3818576c78b46b5"
     },
     {
-      "bytes": 149559,
+      "bytes": 149971,
       "path": "bin/web/i18n.js",
-      "sha256": "61d0e41ba6e01756d4711e0bdcebc2c229b0163e7cebaa0d17d4e39efc8847af"
+      "sha256": "ec58d805543733a541907ad300e221e7016ca5537caaf168e9433f17b0e86db8"
     },
     {
       "bytes": 2207,
@@ -1376,14 +1406,14 @@
       "sha256": "8c56aa9e89ece8d02ea76f5d1b11e43ff8466b1d3becb8956a98ae0f6036895b"
     },
     {
-      "bytes": 49197,
+      "bytes": 49544,
       "path": "bin/web/nova-project.js",
-      "sha256": "2ad5f052557a6fdfb76eef45012c1eef21dd0219bfad47cb056c9156ab25cac1"
+      "sha256": "e05e898aa38cca8f888e355681ea93d4c974affc8cae0574890502a779552974"
     },
     {
-      "bytes": 44549,
+      "bytes": 46592,
       "path": "bin/web/nova-settings.js",
-      "sha256": "13da8aba0256919ffc46c33d0460dbcd58327d2ba1f3aaff8f5a8324dbbfa896"
+      "sha256": "be83e52357bf9fee9b9337a33397be3abdfe3c1a67f66c647013431a98d84f46"
     },
     {
       "bytes": 52251,

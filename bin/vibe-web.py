@@ -2234,8 +2234,31 @@ class H(BaseHTTPRequestHandler):
                 try:
                     if body.get("action") == "use":
                         chosen = body.get("harness", "")
-                        path = vibe_harness.write_selection(PATHS.state, chosen)
-                        ok, msg = True, "Gespeichert: " + chosen + " (" + path + ")"
+                        state = vibe_harness.probe(chosen)
+                        if not state.get("installed"):
+                            # B18: Nur wirklich installierte Harnesses dürfen
+                            # gespeichert werden; die Persistierung des Bestands
+                            # bleibt unverändert, nur neue Speicherungen sind
+                            # abgelehnt.
+                            ok, msg = False, state.get("message", "") + " Auswahl nicht gespeichert."
+                        else:
+                            path = vibe_harness.write_selection(PATHS.state, chosen)
+                            ok, msg = True, "Gespeichert: " + chosen + " (" + path + ")"
+                    elif body.get("action") == "install":
+                        result = vibe_harness.install(body.get("harness", ""))
+                        ok = result["code"] == 0
+                        if result["already"]:
+                            msg = vibe_harness.definition(result["harness"])["name"] + " ist bereits installiert."
+                        elif ok:
+                            msg = "Installation abgeschlossen: " + result["harness"]
+                        else:
+                            msg = "Installation fehlgeschlagen (Exit " + str(result["code"]) + ")"
+                        extra["install"] = {
+                            "code": result["code"],
+                            "output": result["output"],
+                            "already": result["already"],
+                        }
+                        extra["probe"] = result["probe"]
                     elif body.get("action") in (None, "", "setup"):
                         chosen = body.get("harness") or vibe_harness.read_selection(PATHS.state)
                         plan = vibe_harness.setup_plan(chosen)

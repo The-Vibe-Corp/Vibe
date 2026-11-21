@@ -1,6 +1,6 @@
 # Handbuch
 
-Stand: 2026-11-03
+Stand: 2026-11-21
 Gilt für: vibe 0.18.0 (Repositorystand, siehe `VERSION`)
 
 Dieses Handbuch beschreibt die tägliche Bedienung von vibe über die
@@ -231,6 +231,21 @@ Katalog enthält keine erfundenen Preise.
 
 `/api/health` liefert dieselbe Releasekennung ohne Geheimnisse und dient dem
 Starter zur Erkennung einer echten vibe-Instanz.
+
+### Harness auswählen (opencode/Pi)
+
+Neben opencode (Standard und Initialwert) ist Pi verfügbar, wenn das Programm
+im PATH liegt: `npm install -g --ignore-scripts @earendil-works/pi-coding-agent`.
+Nicht installierte Harnesses erscheinen deaktiviert mit der Anzeige
+„(nicht installiert)“; die Statuszeilen der Harnesses werden „Installiert“
+oder „Nicht installiert“ nennbar. Für nicht installierte Harnesses ist ein
+Installieren-Knopf sichtbar: Er führt den Registry-Befehl aus, prüft danach
+erneut (npm läuft, Version wird geprüft) und meldet Rückmeldung im
+Feedback-Bereich — bei Erfolg ist die Option aktiviert und der Status
+„Installiert“. Das Speichern eines nicht installierten Harness als Auswahl
+wird abgelehnt („Auswahl nicht gespeichert.“); die Ansicht zeigt immer den
+tatsächlich persistierten Zustand (`harness.json`), nicht den lokalen
+Wunschzustand. Das CLI `vibe harness use` bleibt unverändert.
 
 ## Beenden und Daten
 

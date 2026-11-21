@@ -587,6 +587,7 @@ def open_items(name):
             item = _parse_item_line(first)
             pid, title = (item["id"], item["title"][:60]) if item else ("?", first[:60])
             if "BLOCKIERT:" in b: res.append((pid, title, "BLOCKIERT"))
+            elif "WARTET AUF MERGE:" in b: res.append((pid, title, "WARTET AUF MERGE"))
             elif not item or not item["checked"]: res.append((pid, title, "offen"))
             elif need_proof and not _proof_ok(root, b): res.append((pid, title, "ohne Nachweis"))
     return res
@@ -596,7 +597,7 @@ def open_items(name):
 # liegt nur im Abschlussnachweis: Feedback gilt erst mit Nachweis als erledigt,
 # Arbeitspakete wie in open_items schon mit gesetzter Checkbox.
 _FEEDBACK_LABEL = re.compile(
-    r"^[ \t]+(Beschreibung|Erwartet|Schritte|Ist|Commit|BLOCKIERT|Art|Priorität|"
+    r"^[ \t]+(Beschreibung|Erwartet|Schritte|Ist|Commit|BLOCKIERT|WARTET AUF MERGE|Art|Priorität|"
     r"Abhängigkeiten|Umfang|Akzeptanz|Tests|Prüfungen|Review|Dokumentation|Doku):[ \t]?(.*)$")
 _ART_LINE = re.compile(r"^[ \t]+Art:[ \t]?(.*)$")
 
@@ -638,6 +639,7 @@ def _parse_entry(entry, root, need_proof=True):
     block = "\n".join(entry["lines"])
     checked = item["checked"]
     if "BLOCKIERT:" in block: state = "BLOCKIERT"
+    elif "WARTET AUF MERGE:" in block: state = "WARTET AUF MERGE"
     elif not checked: state = "offen"
     elif need_proof and root and not _proof_ok(root, block): state = "ohne Nachweis"
     else: state = "erledigt"
@@ -931,6 +933,7 @@ def cmd_priority(name, action=None, values=None):
           + ("" if view["order"] else "  (keine; Standardordnung: TICKETS vor FEEDBACK, dann Priorität)"))
     marks = {"erledigt": col("d", "  (erledigt — der Priorisierung entnommen)"),
              "gesperrt": col("y", "  (BLOCKIERT)"),
+             "wartet auf Merge": col("y", "  (wartet auf Merge)"),
              "fehlt": col("y", "  (unbekannt)")}
     for entry in view["order"]:
         print(f"  {entry['id']}" + marks.get(entry["status"], ""))
@@ -2730,6 +2733,17 @@ def agents_file_create(name):
     vibe_storage.write_text(path, content, expected=vibe_storage.MISSING)
     return "created"
 
+# AP5 (C5): Relativer Pfad der Test-Agent-Vorlage, wie ``copy_tree`` ihn in
+# ``created`` liefert (``os.path.relpath``). Es wird bewusst kein Test-Agent
+# hardcoded angelegt und kein ``TESTER=`` geschrieben (Commit 35233ff);
+# gemeldet wird nur, wenn eine Vorlage die Datei tatsächlich neu kopiert hat.
+TEST_AGENT_REL = os.path.join(".opencode", "agents", "test-agent.md")
+
+
+def _test_agent_created(created):
+    """C5: True, wenn die Vorlage den Test-Agent neu angelegt hat."""
+    return TEST_AGENT_REL in created
+
 
 def agents_file_backup_dir(name):
     """Verzeichnis der AGENTS.md-Sicherungen: ``BACKUPS/<safe(name)>-agents-md``."""
@@ -2854,7 +2868,7 @@ def cmd_init(name, typ=None, out=None):
     if rules:
         action = "aktualisiert" if rules == "updated" else "ergänzt"
         print(f"Allgemeine Regeln in AGENTS.md {action}; vorhandene Inhalte blieben unverändert.", file=out)
-    if agent["agent"] or agent["config"]:
+    if _test_agent_created(created):
         print("Unabhängiger Test-Agent ergänzt; vorhandene Agentendateien und TESTER blieben unverändert.", file=out)
     print("Vorhandene Dateien wurden nicht verändert. Nicht committet: bitte prüfen und selbst committen.", file=out)
     if typ not in ("android",): print("Prüfbefehle in .vibe/project.env eintragen (VERIFY_QUICK / VERIFY_FULL), sonst bricht die Abschlussprüfung ab.", file=out)
@@ -3072,8 +3086,8 @@ def _adopt_checked_out_project(project, name):
     if rules:
         notes.append("Allgemeine Regeln in AGENTS.md "
                      + ("aktualisiert" if rules == "updated" else "ergänzt"))
-    if agent_note:
-        notes.append(agent_note)
+    if _test_agent_created(created):
+        notes.append("Unabhängiger Test-Agent ergänzt (" + TEST_AGENT_REL + ")")
     try:
         env_note = _adopt_project_env(project, name, typ)
         notes.append(env_note)

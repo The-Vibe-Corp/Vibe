@@ -630,7 +630,7 @@ function drawAgentsFile(v,name,reload){
   after,
   el('div',{class:'bar'},v.exists?save:null,v.exists?null:create)];
  return out}
-function feedbackCard(d,name){const list=el('div',{});const cls=s=>s==='erledigt'?'ok':s==='BLOCKIERT'?'bad':'warn';
+function feedbackCard(d,name){const list=el('div',{});const cls=s=>({erledigt:'ok',BLOCKIERT:'bad','WARTET AUF MERGE':'warn'})[s]||'warn';
  const done=d.feedback.filter(i=>i.completed),pending=d.feedback.filter(i=>!i.completed);let showDone=false;
  const toggle=el('button',{class:'b'});
  const delBtn=i=>{const b=el('button',{class:'b d',on:{click:()=>askInline(b,'Feedback '+i.id+tr(' wirklich löschen?'),tr('Ja, löschen'),async()=>{const r=await api('/api/feedback',{name,action:'delete',id:i.id});toast(bt(r.message));if(r.ok)detail(name).catch(showErr)})}},tr('Löschen'));return b};
@@ -654,7 +654,7 @@ function feedbackCard(d,name){const list=el('div',{});const cls=s=>s==='erledigt
  toggle.addEventListener('click',()=>{showDone=!showDone;draw()});
  draw();
  return el('div',{class:'card',id:'feedback'},el('div',{class:'bar'},el('b',{},'Feedback ('+d.feedback.length+')'),toggle),list)}
-function ticketCard(d,name){const list=el('div',{});const cls=s=>s==='erledigt'?'ok':s==='BLOCKIERT'?'bad':'warn';
+function ticketCard(d,name){const list=el('div',{});const cls=s=>({erledigt:'ok',BLOCKIERT:'bad','WARTET AUF MERGE':'warn'})[s]||'warn';
  const done=d.tickets.filter(i=>i.completed),pending=d.tickets.filter(i=>!i.completed);let showDone=false;
  const toggle=el('button',{class:'b'});
  const delBtn=i=>{const b=el('button',{class:'b d',on:{click:()=>askInline(b,tr('Arbeitspaket ')+i.id+tr(' wirklich löschen?'),tr('Ja, löschen'),async()=>{const r=await api('/api/ticket',{name,action:'delete',id:i.id});toast(bt(r.message));if(r.ok)detail(name).catch(showErr)})}},tr('Löschen'));return b};
@@ -1120,7 +1120,7 @@ function openPackagesCard(d,name){
    'aria-label':tr('Paket ')+r.id+tr(' verschieben (Pfeiltasten auf/ab)'),'title':tr('Paket ')+r.id+tr(' verschieben')},'⋮⋮');
   const row=el('div',{class:'item packitem',draggable:'true','data-item':r.id},handle,
    el('span',{},el('b',{},r.id+' '),r.title?el('span',{class:'mut'},r.title):null),
-   r.state?el('span',{class:'pill '+(r.state==='BLOCKIERT'?'bad':'warn')},r.state):null,
+   r.state?el('span',{class:'pill '+({BLOCKIERT:'bad','WARTET AUF MERGE':'warn'})[r.state]||'warn'},r.state):null,
    r.ordered===undefined?null:el('span',{class:'pill '+(r.ordered?'ok':'mut')},r.ordered?tr('priorisiert'):tr('Standardordnung')));
   handle.addEventListener('keydown',e=>{
    if(e.key!=='ArrowUp'&&e.key!=='ArrowDown')return;
@@ -1686,24 +1686,66 @@ async function mcpForm(scope,name){const d=await api('/api/mcp');let e={type:'lo
     delMcp)),res)}
 function harnessCard(hs){
  const sel=el('select',{id:'harness-select','aria-label':'Harness'});
- hs.harnesses.forEach(h=>sel.append(el('option',{value:h.harness},h.name+' ('+h.harness+')')));
- sel.value=hs.selected;
  const result=el('div',{});
+ const feedback=el('div',{id:'harness-install-feedback',hidden:''});
+ const entryNodes=[];
+ const setSel=(d)=>{
+  // B18: Nicht installierte Harnesses sind deaktiviert — die Auswahl ist
+  // per UI nur dann wirksam, wenn das Programm tatsächlich läuft.
+  sel.replaceChildren(...d.harnesses.map(h=>{
+   const option=el('option',{value:h.harness},
+    h.name+' ('+h.harness+')'+(h.installed?'':String(tr(' (nicht installiert)'))));
+   if(!h.installed)option.setAttribute('disabled','');
+   return option;
+  }));
+  sel.value=d.selected;
+ };
+ const installBtn=(h)=>el('button',{class:'b harness-install',id:'harness-install-'+h.harness,type:'button',
+  'data-harness':h.harness,on:{click:async()=>{
+   try{
+    const r=await api('/api/harness',{action:'install',harness:h.harness});
+    // Erst Kind, dann Sichtbarkeit: der Test liest die Rückmeldung direkt
+    // nach der Sichtbarkeit, nicht nach einem leeren Feedback.
+    feedback.replaceChildren(el('span',{class:(r.ok?'ok':'bad')},r.message||''));
+    feedback.hidden=false;
+    if(r.ok){const fresh=await api('/api/harness');setSel(fresh);drawEntries(fresh)}}
+   catch(e){feedback.replaceChildren(el('span',{class:'bad'},String(e&&e.message||e)));feedback.hidden=false;}
+  }}},tr('Installieren'));
+ const drawEntries=(d)=>{
+  entryNodes.forEach(n=>n.remove());
+  entryNodes.length=0;
+  d.harnesses.forEach(h=>{
+   const div=el('div',{class:'mut'},el('b',{},h.name+' ('+h.harness+')'),
+    el('span',{class:h.installed?'ok':'bad'},h.installed?tr('Installiert'):tr('Nicht installiert')),
+    h.version?el('span',{class:'mut'},' '+tr('Version ')+h.version):null,
+    h.hint?el('div',{},h.hint):null,
+    h.official?el('div',{},tr('Offiziell: ')+h.official):null,
+    h.install_command&&h.install_command.length?el('div',{},tr('Einrichten: ')+h.install_command.join(' ')):null,
+    h.installed?null:installBtn(h));
+   card.append(div);
+   entryNodes.push(div)});
+ };
  const use=el('button',{class:'b p',id:'harness-use',on:{click:async()=>{
   use.disabled=true;
   try{const r=await api('/api/harness',{action:'use',harness:sel.value});
-   result.replaceChildren(el('span',{class:r.ok?'ok':'bad'},r.message));if(r.ok)header()}
+   result.replaceChildren(el('span',{class:r.ok?'ok':'bad'},r.message));
+   if(r.ok){
+    // B18: Neuzeichnung aus dem frischen GET (nicht lokaler Wunschzustand).
+    const fresh=await api('/api/harness');setSel(fresh);drawEntries(fresh)}
+   else{
+    // B18: Ablehnung zeigt die Backend-Meldung und setzt die
+    // Auswahlanzeige auf den persistierten Wert zurück.
+    const fresh=await api('/api/harness');sel.value=fresh.selected}
+   if(r.ok)header()}
   catch(e){result.replaceChildren(el('span',{class:'bad'},String(e&&e.message||e)))}
   finally{use.disabled=false}}}}, tr('Harness verwenden'));
- const entries=hs.harnesses.map(h=>el('div',{class:'mut'},el('b',{},h.name+' ('+h.harness+')'),' – ',
-  h.installed?(h.version?tr('Version ')+h.version:tr('vorhanden')):tr('nicht installiert'),
-  h.hint?el('div',{},h.hint):null,
-  h.official?el('div',{},tr('Offiziell: ')+h.official):null,
-  h.install_command&&h.install_command.length?el('div',{},tr('Einrichten: ')+h.install_command.join(' ')):null));
- return el('div',{class:'card',id:'harness'},el('b',{},'Harness'),
-  el('div',{class:'bar'},el('label',{style:'margin:0'},el('span',{},tr(' Aktiver Harness ')),sel),use),result,
-  el('div',{class:'mut'},tr('Die Auswahl gilt für neue Agentenläufe; laufende Prozesse werden nicht umgestellt. Ohne gespeicherte Auswahl bleibt opencode der Standard.')),
-  ...entries)}
+ const card=el('div',{class:'card',id:'harness'},el('b',{},'Harness'),
+  el('div',{class:'bar'},el('label',{style:'margin:0'},el('span',{},tr(' Aktiver Harness ')),sel),use),result,feedback,
+  el('div',{class:'mut'},tr('Die Auswahl gilt für neue Agentenläufe; laufende Prozesse werden nicht umgestellt. Ohne gespeicherte Auswahl bleibt opencode der Standard.')));
+ setSel(hs);
+ drawEntries(hs);
+ return card}
+
 async function env(){const token=RENDER_TOKEN;const d=await api('/api/doctor');const f=await api('/api/fritz');const rel=await api('/api/health');const hs=await api('/api/harness');
  const origin=rel.release_origin==='installation'?'Installation':rel.release_origin==='quelle'?tr('Quelle'):tr('unbekannt');
  if(renderStale(token))return;
