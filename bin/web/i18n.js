@@ -617,7 +617,6 @@
         "Modell": "Model",
         "Preis": "Price",
         "Modus": "Mode",
-        "— Standardmodell —": "— default model —",
         " Subagenten des eigenen Typs erlauben (Parallelisierung)": " allow subagents of the same type (parallelization)",
         "Temperatur": "Temperature",
         "Max. Schritte": "Max. steps",
@@ -1022,6 +1021,7 @@
         "OpenCode-Agenten (general, explore) sind eingebaute Subagenten ohne eigene Datei. Abwählen sperrt ihr Aufrufen durch andere Agenten in Läufen dieses Projekts; ihr Modell lässt sich hier je Projekt überschreiben.": "OpenCode agents (general, explore) are built-in subagents without their own file. Deselecting blocks other agents from calling them in runs of this project; their model can be overridden per project here.",
         // ===== F33 WP1 keys (Shell/Design/Home) — nur in diesem Block ergänzen =====
         // ===== F33 WP2 keys (Combobox/Agenten/Wizard/Editor) — nur in diesem Block ergänzen =====
+        "— Standardmodell —": "— Standard model —",
         // ===== F33 WP3 keys (Projektdetail) — nur in diesem Block ergänzen =====
         // ===== F33 WP4 keys (Ausgabe) — nur in diesem Block ergänzen =====
         // ===== F33 WP5 keys (Aktivität/Einstellungen) — nur in diesem Block ergänzen =====

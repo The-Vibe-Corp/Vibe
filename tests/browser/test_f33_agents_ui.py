@@ -1076,7 +1076,7 @@ class WizardTest(F33AgentsTest):
             "Die Abbruch-Warnung erklärt den Datenverlust nicht: "
             + repr(confirm.inner_text()))
         yes = confirm.locator(
-            "button", has_text=re.compile(r"(?i)(ja,?\s*abbrechen|yes,?\s*cancel)"))
+            "button", has_text=re.compile(r"ja,?\s*abbrechen|yes,?\s*cancel", re.I))
         self.assertGreaterEqual(
             yes.count(), 1,
             "Die Abbruch-Warnung bietet keinen „Ja, abbrechen“-Knopf")

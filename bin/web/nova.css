@@ -782,8 +782,11 @@ html[data-animations="on"] .nv-skeleton {
 }
 
 /* ---------- Animationen (nur bei data-animations="on") ---------- */
+/* fill-mode "backwards" statt "both": ohne End-Fill bleibt kein animierter
+   Identity-Transform (matrix(1,0,0,1,0,0)) hängen. Der erzeugt einen
+   Stacking-Context und vergräbt z. B. Combobox-Optionen unter Nachbarkarten. */
 html[data-animations="on"] .nv-card,
-html[data-animations="on"] .nv-toast { animation: nv-slide-in var(--nv-speed) ease-out both; }
+html[data-animations="on"] .nv-toast { animation: nv-slide-in var(--nv-speed) ease-out backwards; }
 html[data-animations="on"] .nv-btn,
 html[data-animations="on"] .nv-nav button,
 html[data-animations="on"] .nv-tab { transition: background-color var(--nv-speed) ease, color var(--nv-speed) ease, transform var(--nv-speed) ease; }
