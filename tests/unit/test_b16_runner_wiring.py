@@ -119,6 +119,17 @@ class PrOnlyClosureTest(B16WiringFixture):
     PR-only zum Standard: Push und Merge-Request sind weiterhin eine harte
     Schranke, aber der Lauf hält nach dem Öffnen des PRs an, die Arbeitskopie
     bleibt registriert und das Ticket bleibt offen.
+
+    Vorbedingung: Projekt mit aktivierter GitHub-Verknüpfung, ein offenes
+    Paket F1, ``GITHUB_AUTO_MERGE`` nicht gesetzt.
+    Aktion: Läufer einmal ausführen (Repo wird gepusht, Merge-Request
+    gestellt).
+    Erwartung: ``FEEDBACK.md`` trägt den Wartezustand ``WARTET AUF MERGE``
+    und keinen ``BLOCKIERT``-Vermerk mehr. Grund: AP5-Korbat 4b ersetzt den
+    bisherigen PR-only-BLOCKIERT-Vermerk ausdrücklich durch den neuen
+    Wartezustand (analog zu ``test_ap4_korbat_github.PrOnlyRunnerTest``).
+    Fehlerfall: Der Lauf vermerkt weiterhin BLOCKIERT oder gar keinen
+    Wartezustand; dann wäre die geforderte Zustandsänderung nicht umgesetzt.
     """
 
     def test_successful_run_pushes_and_opens_the_pr_then_waits_for_merge(self):
@@ -145,9 +156,14 @@ class PrOnlyClosureTest(B16WiringFixture):
         # PR-only: kein lokaler Merge, kein Cleanup, Ticket bleibt offen.
         self.assert_not_merged(project)
         self.assert_ticket_open(project)
-        self.assertIn("BLOCKIERT",
-                      (project / "FEEDBACK.md").read_text(
-                          encoding="utf-8").upper())
+        feedback = (project / "FEEDBACK.md").read_text(
+            encoding="utf-8").upper()
+        self.assertIn("WARTET AUF MERGE", feedback,
+                      "AP5-Korbat 4b: PR-only muss als Wartezustand "
+                      "vermerkt sein:\n" + feedback)
+        self.assertNotIn("BLOCKIERT", feedback,
+                         "AP5-Korbat 4b: PR-only darf nicht mehr als "
+                         "blockiert vermerkt werden:\n" + feedback)
         self.assertTrue(self.worktrees(),
                         "Die Arbeitskopie muss bis zum Merge registriert "
                         "bleiben:\n" + log)

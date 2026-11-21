@@ -15,10 +15,12 @@ einer temporären Umgebung aus:
   bereitgestellt (VIBE_UI_PORT, VIBE_OPENCODE_PORT, VIBE_TEST_PORT,
   VIBE_VERIFY_PORT).
 * Der Vollmodus muss eine Teststruktur und tatsächlich ausgeführte Tests
-  nachweisen. Ein Lauf ohne Tests oder mit "Ran 0 tests" ist kein Erfolg.
+  nachweisen (VERIFY_TESTS). Ein Lauf ohne Tests oder mit "Ran 0 tests" ist
+  kein Erfolg.
 * Der Mittelmodus "package" (F31) führt ausschließlich VERIFY_PACKAGE aus.
-  Ist VERIFY_TESTS gesetzt, gilt derselbe Testnachweis wie im Vollmodus;
-  ohne VERIFY_TESTS besteht kein Nachweiszwang (wie bei "quick").
+  Er verlangt einen Testnachweis nur bei gesetztem VERIFY_PACKAGE_TESTS
+  (T-V1); VERIFY_TESTS steuert ausschließlich den Vollmodus. Ohne
+  VERIFY_PACKAGE_TESTS besteht kein Nachweiszwang (wie bei "quick").
 
 Exitcodes:
   0  Prüfung erfolgreich
@@ -27,8 +29,8 @@ Exitcodes:
   3  fehlende oder ungültige Prüfkonfiguration
   4  benötigtes Werkzeug fehlt
   5  Prüfbefehl ist fehlgeschlagen
-  6  Testnachweis fehlt oder ist unvollständig (full; package nur bei gesetztem
-     VERIFY_TESTS)
+  6  Testnachweis fehlt oder ist unvollständig (full über VERIFY_TESTS;
+     package nur bei gesetztem VERIFY_PACKAGE_TESTS)
 """
 import glob
 import json
@@ -54,20 +56,21 @@ EXIT_TESTS = 6
 
 MODES = ("quick", "package", "full")
 DEFAULT_TEST_PATTERN = r"Ran (\d+) tests?"
-TEMP_PREFIX = "vibe-verify-"
+TEMP_PREFIX = "vv-"
 
 USAGE = (
     "Aufruf: bash scripts/verify.sh quick|package|full [--project DIR] [--keep]\n"
     "\n"
     "  quick    schnelle statische Prüfung (VERIFY_QUICK)\n"
     "  package  Paketprüfung (VERIFY_PACKAGE); Testnachweis nur bei gesetztem"
-    " VERIFY_TESTS\n"
+    " VERIFY_PACKAGE_TESTS\n"
     "  full     vollständige Prüfung inklusive Testnachweis (VERIFY_FULL)\n"
     "  --project DIR  Projekt mit .vibe/project.env (Standard: dieses Repository)\n"
     "  --keep   temporäres Prüfverzeichnis auch bei Erfolg behalten\n"
     "\n"
     "Exitcodes: 0 Erfolg, 1 interner Fehler, 2 Aufruf, 3 Konfiguration,\n"
-    "           4 Werkzeug, 5 Prüfbefehl, 6 Testnachweis."
+    "           4 Werkzeug, 5 Prüfbefehl, 6 Testnachweis (full: VERIFY_TESTS,\n"
+    "           package: VERIFY_PACKAGE_TESTS)."
 )
 
 
@@ -399,24 +402,27 @@ def main(argv=None):
         tools = check_tools(values)
 
         specs = shlex.split(values.get("VERIFY_TESTS", ""))
+        package_specs = shlex.split(values.get("VERIFY_PACKAGE_TESTS", ""))
         minimum = 1
-        # package verlangt den Testnachweis nur, wenn VERIFY_TESTS gesetzt ist
-        # (F31); quick verlangt ihn nie, full immer.
-        requires_proof = mode == "full" or (mode == "package" and bool(specs))
+        # package verlangt den Testnachweis nur, wenn VERIFY_PACKAGE_TESTS
+        # gesetzt ist (T-V1); quick verlangt ihn nie, full immer (VERIFY_TESTS).
+        requires_proof = mode == "full" or (mode == "package" and bool(package_specs))
+        proof_specs = specs if mode == "full" else package_specs
+        proof_key = "VERIFY_TESTS" if mode == "full" else "VERIFY_PACKAGE_TESTS"
         if requires_proof:
-            if not specs:
+            if not proof_specs:
                 fail(
                     EXIT_TESTS,
-                    f"VERIFY_TESTS fehlt in {env_file}. Ohne Teststruktur ist "
+                    f"{proof_key} fehlt in {env_file}. Ohne Teststruktur ist "
                     "'full' kein vollständiger Nachweis.",
                 )
-            missing = required_test_files(root, specs)
+            missing = required_test_files(root, proof_specs)
             if missing:
                 fail(
                     EXIT_TESTS,
                     "Keine Testdateien gefunden für: "
                     + ", ".join(missing)
-                    + " (VERIFY_TESTS).",
+                    + f" ({proof_key}).",
                 )
             raw_minimum = values.get("VERIFY_MIN_TESTS", "1").strip() or "1"
             try:
@@ -429,7 +435,17 @@ def main(argv=None):
         else:
             pattern = ""
 
-        base = Path(tempfile.mkdtemp(prefix=TEMP_PREFIX))
+        # T-V2: kurzer Präfix; VIBE_VERIFY_TMP legt den Elternordner fest.
+        tmp_parent = os.environ.get("VIBE_VERIFY_TMP")
+        if tmp_parent:
+            parent = Path(tmp_parent)
+            try:
+                parent.mkdir(parents=True, exist_ok=True)
+                base = Path(tempfile.mkdtemp(prefix=TEMP_PREFIX, dir=str(parent)))
+            except OSError as error:
+                fail(EXIT_CONFIG, "VIBE_VERIFY_TMP ist nicht nutzbar: " + str(error))
+        else:
+            base = Path(tempfile.mkdtemp(prefix=TEMP_PREFIX))
         log_path = base / "verify.log"
         environment = prepare_environment(base)
         service_started = (

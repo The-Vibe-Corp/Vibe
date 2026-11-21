@@ -21,7 +21,8 @@ Implementierungsdiff. Abgedeckt sind:
 * T-G1: Nach erfolgreichem ``github-complete`` wird im PR-only-Standard
   nicht lokal gemergt; der Lauf hält mit dem Hinweis auf
   ``vibe package close <projekt> <id>`` an, die Arbeitskopie bleibt
-  registriert und das Ticket bleibt offen (Blockievermerk).
+  registriert und das Ticket bleibt offen. AP5-Korbat (4a) ersetzt den
+  bisherigen BLOCKIERT-Vermerk durch ``WARTET AUF MERGE``.
 * T-G2: Jeder Fetch-Pfad nutzt ``--prune`` (``fetch``, ``pull_integration``,
   ``integration_state`` und der ensure-mergeable-Fetch).
 * T-G3: ``github_link`` setzt best-effort den Upstream für lokale Branches,
@@ -50,9 +51,11 @@ import subprocess
 import sys
 import tempfile
 import threading
+import types
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from unittest import mock
 
 REPO = Path(__file__).resolve().parents[2]
 BIN = REPO / "bin"
@@ -62,6 +65,7 @@ RUNS_PY = BIN / "vibe_runs.py"
 CLI = BIN / "vibe"
 
 FAKE_TOKEN = "ap4-korbat-env-token-0815"
+WORKTREE_TOKEN = "ap5-korbat-worktree-token-4711"
 
 ISOLATED_ENV = (
     "VIBE", "VIBE_NO_CONTAINER", "HOME", "VIBE_PROFILE", "VIBE_INSTALL",
@@ -395,6 +399,108 @@ class EnsureMergeableTest(GithubCase):
                          second.stdout + second.stderr)
         self.assertFalse((project / ".git" / "MERGE_HEAD").exists())
         self.assertEqual("", real_git_out(project, "status", "--porcelain"))
+
+
+class EnsureMergeableCredentialTest(GithubCase):
+    """AP5-Korbat 4c: Credential einmal aus dem Projektordner für den Worktree.
+
+    ``ensure_mergeable(project, worktree)`` führt Git im Worktree aus, muss
+    den verschlüsselten Projekt-Token aber über den Projektpfad auflösen und
+    an alle Git-Aufrufe weiterreichen. Sonst scheitert ``git fetch origin`` im
+    Worktree mit „could not read Username“, obwohl der Projektpfad einen Token
+    besitzt.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.project = self.base / "projekt"
+        self.project.mkdir()
+        (self.project / ".vibe").mkdir()
+        (self.project / ".vibe" / "project.env").write_text(
+            'GITHUB_ENABLED="1"\nGITHUB_BASE="main"\n', encoding="utf-8")
+        self.worktree = self.base / "worktree"
+        self.worktree.mkdir()
+
+    def stub_git(self, calls, fetch=(0, "")):
+        """Ersetzt subprocess.run und protokolliert argv/cwd/ENV."""
+
+        def stub(argv, **kwargs):
+            record = {
+                "argv": [str(item) for item in argv],
+                "cwd": kwargs.get("cwd"),
+                "env": dict(kwargs.get("env") or {}),
+            }
+            calls.append(record)
+            if "remote" in record["argv"]:
+                return types.SimpleNamespace(
+                    returncode=0,
+                    stdout="origin\tfile:///tmp/origin (fetch)\n",
+                    stderr="")
+            if "fetch" in record["argv"]:
+                return types.SimpleNamespace(
+                    returncode=fetch[0], stdout=fetch[1], stderr="")
+            return types.SimpleNamespace(returncode=0, stdout="", stderr="")
+
+        return stub
+
+    def test_fetch_in_the_worktree_uses_the_project_token(self):
+        """Vorbedingung: Projekt hat einen Projekt-Token, der Worktree einen
+        anderen; Base ``origin/main`` ist bereits Vorfahr.
+        Aktion: ``ensure_mergeable(project, worktree, base="origin/main")`` mit
+        protokolliertem Git-Stub ausführen.
+        Erwartung: ``git fetch`` im Worktree erhält den Token des
+        PROJEKTordners über die Prozessumgebung; der Token steht nie in argv
+        oder der Meldung; das Ergebnis ist erfolgreich.
+        Fehlerfall: Worktree-Pfad löst die Credential-Kette aus (falscher oder
+        kein Token) → scheinbarer Token-Fehler.
+        """
+        self.gh.save_project_token(self.project, FAKE_TOKEN)
+        self.gh.save_project_token(self.worktree, WORKTREE_TOKEN)
+        calls = []
+
+        with mock.patch("subprocess.run", self.stub_git(calls)):
+            ok, message, result = self.gh.ensure_mergeable(
+                self.project, self.worktree, base="origin/main")
+
+        self.assertTrue(ok, message)
+        fetch_calls = [record for record in calls
+                       if "fetch" in record["argv"]]
+        self.assertTrue(fetch_calls, "git fetch wurde nicht ausgeführt")
+        credential_key = self.gh.CREDENTIAL_ENV_NAME
+        for record in calls:
+            self.assertEqual(
+                FAKE_TOKEN, record["env"].get(credential_key),
+                "Git im Worktree nutzt nicht den Projekt-Token: %r"
+                % (record["argv"],))
+            self.assertNotIn(FAKE_TOKEN, "\n".join(record["argv"]),
+                             "Der Token darf nie in argv stehen")
+        self.assertNotIn(FAKE_TOKEN, message)
+        self.assertNotIn(WORKTREE_TOKEN, message)
+
+    def test_without_any_token_the_fetch_fails_with_guidance(self):
+        """Vorbedingung: Weder Projekt- noch Umgebungstoken vorhanden.
+        Aktion: ``ensure_mergeable``; der Stub lässt ``git fetch`` mit der
+        üblichen Git-Auth-Meldung scheitern.
+        Erwartung: ``ok`` ist False; die Meldung enthält die verständliche
+        Token-Guidance; ein Credential wird nicht injiziert.
+        Fehlerfall: stiller Erfolg oder rohe Git-Meldung ohne Hilfe.
+        """
+        calls = []
+        failure = (128, "fatal: could not read Username for "
+                        "'https://github.com': terminal prompts disabled")
+
+        with mock.patch("subprocess.run",
+                        self.stub_git(calls, fetch=failure)):
+            ok, message, _result = self.gh.ensure_mergeable(
+                self.project, self.worktree, base="origin/main")
+
+        self.assertFalse(ok)
+        self.assertIn("Zugangsdaten", message, message)
+        fetch_call = [record for record in calls
+                      if "fetch" in record["argv"]][-1]
+        self.assertNotIn(
+            self.gh.CREDENTIAL_ENV_NAME, fetch_call["env"],
+            "Ohne Token darf kein Credential weitergegeben werden")
 
 
 # ----------------------------------------------------------------- T-G2 prune
@@ -846,8 +952,9 @@ class PrOnlyRunnerTest(RunnerFixtureMixin, unittest.TestCase):
         Aktion: Läufer ausführen.
         Erwartung: Branch wird gepusht und der MR gestellt; KEIN lokaler
         Merge, Arbeitskopie bleibt, Registry-Eintrag mit MR-URL existiert,
-        Ticket bleibt offen mit Blockievermerk; Protokoll nennt „wartet auf
-        Merge“ und ``vibe package close``; kein REST-Merge.
+        Ticket bleibt offen mit Wartevermerk (AP5-Korbat 4a: „WARTET AUF
+        MERGE“ statt BLOCKIERT); Protokoll nennt „wartet auf Merge“ und
+        ``vibe package close``; kein REST-Merge.
         Fehlerfall: lokaler Merge, Cleanup, stilles Verschlucken oder
         fehlender Wartehinweis.
         """
@@ -873,7 +980,10 @@ class PrOnlyRunnerTest(RunnerFixtureMixin, unittest.TestCase):
             "Der Paketbranch muss gepusht sein")
         feedback = (project / "FEEDBACK.md").read_text(encoding="utf-8")
         self.assertIn("- [ ] F1", feedback, feedback)
-        self.assertIn("BLOCKIERT", feedback.upper(), feedback)
+        self.assertIn("WARTET AUF MERGE", feedback.upper(), feedback)
+        self.assertNotIn("BLOCKIERT", feedback.upper(),
+                         "PR-only schreibt den neuen Wartezustand, keine "
+                         "BLOCKIERT-Marke:\n" + feedback)
         self.assertTrue(self.fixture.worktrees(self), "Arbeitskopie fehlt")
         entries = self.worktree_registry().all()
         self.assertTrue(

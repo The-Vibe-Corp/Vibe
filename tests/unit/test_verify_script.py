@@ -3,9 +3,12 @@
 Die Tests bauen eigene Fixture-Projekte in temporären Verzeichnissen. Sie
 prüfen Erfolg, beabsichtigten Fehlschlag, unbekannte Modi, fehlende Werkzeuge,
 die Testvollständigkeit im Vollmodus sowie die Isolation von HOME, VIBE und
-Ports. F31 ergänzt den Mittelmodus ``package``: Er führt die Paketprüfung aus
-und verlangt nur dann einen Testnachweis, wenn ``VERIFY_TESTS`` konfiguriert
-ist. Die produktive Konfiguration des Aufrufers wird dabei nur gelesen.
+Ports. F31 ergänzt den Mittelmodus ``package``. AP5-Korbat (T-V1) entkoppelt
+ihn vom Vollmodus: ``package`` verlangt einen Testnachweis nur noch bei
+gesetztem ``VERIFY_PACKAGE_TESTS``; ``VERIFY_TESTS`` steuert ausschließlich
+``full``. T-V2 verkürzt den temporären Präfix auf ``vv-`` und erlaubt über
+``VIBE_VERIFY_TMP`` einen eigenen Elternordner. Die produktive Konfiguration
+des Aufrufers wird dabei nur gelesen.
 """
 import hashlib
 import json
@@ -417,9 +420,11 @@ class VerifyPackageTest(unittest.TestCase):
 
     F31: Die Agenten brauchen zwischen ``quick`` und ``full`` einen schnellen,
     belegbaren Modus. ``package`` führt ausschließlich ``VERIFY_PACKAGE`` aus.
-    Ist ``VERIFY_TESTS`` gesetzt, gilt derselbe Testnachweis wie in ``full``
-    (Testdateien vorhanden, Mindestanzahl erreicht, Exit 6 bei Verstoß). Ohne
-    ``VERIFY_TESTS`` besteht kein Nachweiszwang wie in ``quick``.
+    AP5-Korbat (T-V1) entkoppelt den Nachweis vom Vollmodus: Nur ein gesetztes
+    ``VERIFY_PACKAGE_TESTS`` verlangt Testdateien, eine Mindestanzahl und Exit
+    6 bei Verstoß. ``VERIFY_TESTS`` gilt ausschließlich für ``full``; ein
+    gesetztes ``VERIFY_TESTS`` macht ``package`` nicht mehr nachweispflichtig.
+    Ohne ``VERIFY_PACKAGE_TESTS`` besteht kein Nachweiszwang wie in ``quick``.
     """
 
     BEISPIELTEST = (
@@ -499,27 +504,38 @@ class VerifyPackageTest(unittest.TestCase):
         self.assertIn("VERIFY_PACKAGE", result.stdout + result.stderr)
         self.assertIn("TODO", result.stdout + result.stderr)
 
-    def test_package_requires_test_files_when_verify_tests_is_set(self):
+    def test_package_requires_test_files_when_package_tests_is_set(self):
+        """Vorbedingung: ``VERIFY_PACKAGE_TESTS="tests"``, aber kein
+        Testordner im Projekt.
+        Aktion: ``package`` ausführen.
+        Erwartung: Exit 6 (der Nachweiszwang stammt aus der Paket-Einstellung).
+        Fehlerfall: fehlende Teststruktur wird als Erfolg gewertet.
+        """
         project = make_project(
             self.base,
             [
                 "TYPE=generic",
                 'VERIFY_PACKAGE="true"',
-                'VERIFY_TESTS="tests"',
+                'VERIFY_PACKAGE_TESTS="tests"',
             ],
         )
 
         result = run_verify("package", project=project)
 
         self.assertEqual(result.returncode, 6, result.stdout + result.stderr)
-        self.assertIn("VERIFY_TESTS", result.stdout + result.stderr)
 
     def test_package_rejects_a_run_without_executed_tests(self):
+        """Vorbedingung: ``VERIFY_PACKAGE_TESTS="tests"``; der Prüfbefehl gibt
+        „Ran 0 tests“ aus.
+        Aktion: ``package`` ausführen.
+        Erwartung: Exit 6; die Meldung nennt 0 Tests.
+        Fehlerfall: ein Lauf ohne ausgeführte Tests gilt als Nachweis.
+        """
         project = self.make_test_project(
             [
                 "TYPE=generic",
                 'VERIFY_PACKAGE="python3 leerlauf.py"',
-                'VERIFY_TESTS="tests"',
+                'VERIFY_PACKAGE_TESTS="tests"',
                 'VERIFY_TEST_PATTERN="Ran ([0-9]+) tests?"',
             ]
         )
@@ -532,11 +548,17 @@ class VerifyPackageTest(unittest.TestCase):
         self.assertIn("Tests", result.stdout + result.stderr)
 
     def test_package_passes_with_real_tests_and_reports_the_count(self):
+        """Vorbedingung: ``VERIFY_PACKAGE_TESTS="tests"`` und echte Tests, die
+        der Paketbefehl ausführt.
+        Aktion: ``package`` ausführen.
+        Erwartung: Exit 0; „Tests erkannt: 1“.
+        Fehlerfall: Nachweis wird nicht gezählt.
+        """
         project = self.make_test_project(
             [
                 "TYPE=generic",
                 'VERIFY_PACKAGE="python3 -m unittest discover -s tests -v"',
-                'VERIFY_TESTS="tests"',
+                'VERIFY_PACKAGE_TESTS="tests"',
                 'VERIFY_TEST_PATTERN="Ran ([0-9]+) tests?"',
             ]
         )
@@ -548,11 +570,17 @@ class VerifyPackageTest(unittest.TestCase):
         self.assertIn("OK: Prüfung 'package'", result.stdout)
 
     def test_package_rejects_fewer_tests_than_configured(self):
+        """Vorbedingung: ``VERIFY_PACKAGE_TESTS="tests"``,
+        ``VERIFY_MIN_TESTS=2`` und nur ein ausgeführter Test.
+        Aktion: ``package`` ausführen.
+        Erwartung: Exit 6 mit „Minimum 2“.
+        Fehlerfall: zu wenige Tests gelten als bestanden.
+        """
         project = self.make_test_project(
             [
                 "TYPE=generic",
                 'VERIFY_PACKAGE="python3 -m unittest discover -s tests -v"',
-                'VERIFY_TESTS="tests"',
+                'VERIFY_PACKAGE_TESTS="tests"',
                 'VERIFY_TEST_PATTERN="Ran ([0-9]+) tests?"',
                 "VERIFY_MIN_TESTS=2",
             ]
@@ -563,7 +591,13 @@ class VerifyPackageTest(unittest.TestCase):
         self.assertEqual(result.returncode, 6, result.stdout + result.stderr)
         self.assertIn("Minimum 2", result.stdout + result.stderr)
 
-    def test_package_without_verify_tests_requires_no_test_proof(self):
+    def test_package_without_package_tests_requires_no_test_proof(self):
+        """Vorbedingung: kein ``VERIFY_PACKAGE_TESTS``; nur ein statischer
+        ``VERIFY_PACKAGE``-Befehl.
+        Aktion: ``package`` ausführen.
+        Erwartung: Exit 0; der Befehl läuft, kein Testnachweis wird verlangt.
+        Fehlerfall: statische Paketprüfung wird ohne Teststruktur abgelehnt.
+        """
         project = make_project(
             self.base,
             ["TYPE=generic", 'VERIFY_PACKAGE="echo ohne-testnachweis"'],
@@ -574,6 +608,62 @@ class VerifyPackageTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("ohne-testnachweis", result.stdout)
         self.assertIn("OK: Prüfung 'package'", result.stdout)
+
+    def test_package_stays_static_even_when_verify_tests_is_set(self):
+        """Vorbedingung: ``VERIFY_TESTS="tests"`` ist gesetzt (Vollmodus-
+        Einstellung), ``VERIFY_PACKAGE_TESTS`` fehlt; kein Testordner.
+        Aktion: ``package`` ausführen.
+        Erwartung: Exit 0; der statische ``VERIFY_PACKAGE``-Befehl genügt. Die
+        Vollmodus-Einstellung darf den Paketmodus nicht nachweispflichtig
+        machen (Entkopplung T-V1).
+        Fehlerfall: ``package`` verlangt wegen ``VERIFY_TESTS`` Testdateien.
+        """
+        project = make_project(
+            self.base,
+            [
+                "TYPE=generic",
+                'VERIFY_PACKAGE="echo paket-statisch"',
+                'VERIFY_TESTS="tests"',
+            ],
+        )
+
+        result = run_verify("package", project=project)
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("paket-statisch", result.stdout)
+        self.assertIn("OK: Prüfung 'package'", result.stdout)
+
+    def test_full_still_requires_verify_tests_and_ignores_verify_package_tests(self):
+        """Vorbedingung: ``VERIFY_FULL`` und ``VERIFY_PACKAGE_TESTS`` sind
+        gesetzt, ``VERIFY_TESTS`` fehlt.
+        Aktion: ``full`` ausführen.
+        Erwartung: Exit 6; die Meldung verlangt ``VERIFY_TESTS``. Die
+        Paket-Einstellung ersetzt den Vollnachweis nicht.
+        Fehlerfall: ``full`` akzeptiert die Paket-Einstellung als Nachweis.
+        """
+        project = self.make_test_project(
+            [
+                "TYPE=generic",
+                'VERIFY_FULL="python3 -m unittest discover -s tests -v"',
+                'VERIFY_PACKAGE_TESTS="tests"',
+            ]
+        )
+
+        result = run_verify("full", project=project)
+
+        self.assertEqual(result.returncode, 6, result.stdout + result.stderr)
+        self.assertIn("VERIFY_TESTS", result.stdout + result.stderr)
+
+    def test_help_names_the_package_test_key(self):
+        """Vorbedingung: ``--help``.
+        Aktion: Hilfe ausgeben.
+        Erwartung: ``VERIFY_PACKAGE_TESTS`` wird genannt.
+        Fehlerfall: Die neue Entkopplung ist nicht dokumentiert.
+        """
+        result = run_verify("--help")
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("VERIFY_PACKAGE_TESTS", result.stdout)
 
     def test_package_does_not_start_the_opencode_service(self):
         # Der opencode-Dienst gehört nur zum Vollmodus; package bleibt schnell.
@@ -613,6 +703,89 @@ class VerifyPackageTest(unittest.TestCase):
 
         self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
         self.assertIn("package", result.stdout + result.stderr)
+
+
+class VerifyTempDirectoryTest(unittest.TestCase):
+    """T-V2: kurzer Präfix ``vv-`` und optionaler Elternordner ``VIBE_VERIFY_TMP``."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.base = Path(self.tmp.name)
+        self.tmpdir = self.base / "tmpdir"
+        self.tmpdir.mkdir()
+
+    def temp_dir_from_output(self, output):
+        match = re.search(r"Prüfverzeichnis: (\S+)", output)
+        self.assertIsNotNone(match, output)
+        return Path(match.group(1))
+
+    def test_default_temp_directory_uses_the_short_prefix(self):
+        """Vorbedingung: Prüfung ohne ``VIBE_VERIFY_TMP``; ``TMPDIR`` zeigt auf
+        ein eigenes Temp-Verzeichnis.
+        Aktion: ``quick --keep`` ausführen, damit der Pfad sichtbar bleibt.
+        Erwartung: Der Verzeichnisname beginnt mit ``vv-`` (nicht mit dem alten
+        langen ``vibe-verify-``).
+        Fehlerfall: langer Präfix bleibt (tmux-Socket-Limit).
+        """
+        project = make_project(
+            self.base, ["TYPE=generic", 'VERIFY_QUICK="true"'])
+
+        result = run_verify(
+            "quick", "--keep", project=project, env={"TMPDIR": str(self.tmpdir)}
+        )
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        kept = self.temp_dir_from_output(result.stdout)
+        self.assertTrue(kept.name.startswith("vv-"), kept.name)
+        self.assertFalse(kept.name.startswith("vibe-verify-"), kept.name)
+        self.assertEqual(kept.resolve().parent, self.tmpdir.resolve())
+
+    def test_vibe_verify_tmp_places_the_directory_under_the_configured_folder(self):
+        """Vorbedingung: ``VIBE_VERIFY_TMP`` zeigt auf einen eigenen Ordner.
+        Aktion: ``quick --keep`` ausführen.
+        Erwartung: Das Prüfverzeichnis liegt direkt unterhalb dieses Ordners und
+        nutzt den kurzen Präfix.
+        Fehlerfall: ``VIBE_VERIFY_TMP`` wird ignoriert.
+        """
+        verify_tmp = self.base / "kurz"
+        verify_tmp.mkdir()
+        project = make_project(
+            self.base, ["TYPE=generic", 'VERIFY_QUICK="true"'])
+
+        result = run_verify(
+            "quick", "--keep", project=project,
+            env={"VIBE_VERIFY_TMP": str(verify_tmp)},
+        )
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        kept = self.temp_dir_from_output(result.stdout)
+        self.assertEqual(kept.resolve().parent, verify_tmp.resolve())
+        self.assertTrue(kept.name.startswith("vv-"), kept.name)
+        self.assertTrue(kept.is_dir())
+
+    def test_vibe_verify_tmp_is_still_cleaned_up_without_keep(self):
+        """Vorbedingung: ``VIBE_VERIFY_TMP`` gesetzt; Erfolg ohne ``--keep``.
+        Aktion: ``quick`` ausführen.
+        Erwartung: Das Prüfverzeichnis wird entfernt, der konfigurierte
+        Elternordner bleibt bestehen (Aufräumen unverändert).
+        Fehlerfall: Das kurze Verzeichnis bleibt liegen oder der Elternordner
+        wird gelöscht.
+        """
+        verify_tmp = self.base / "kurz"
+        verify_tmp.mkdir()
+        project = make_project(
+            self.base, ["TYPE=generic", 'VERIFY_QUICK="true"'])
+
+        result = run_verify(
+            "quick", project=project,
+            env={"VIBE_VERIFY_TMP": str(verify_tmp)},
+        )
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        used = self.temp_dir_from_output(result.stdout)
+        self.assertFalse(used.exists(), "Prüfverzeichnis wurde nicht entfernt")
+        self.assertTrue(verify_tmp.is_dir(), "Elternordner darf bleiben")
 
 
 class ScreenshotIsolationTest(unittest.TestCase):

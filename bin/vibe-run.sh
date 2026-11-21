@@ -1369,7 +1369,7 @@ record_block() {
 pr_only_fallback() {
   local note="PR-only: wartet auf Merge des Eigentümers; Merge-Request $PR_URL; danach 'vibe package close $NAME $ID'"
   [ -n "${1:-}" ] && note="PR-only-Rückfall ($1): $note"
-  python3 "$PACKAGES_PY" mark-blocked --project "$P" --id "$ID" \
+  python3 "$PACKAGES_PY" mark-waiting --project "$P" --id "$ID" \
     --note "$note" >>"$LOG" 2>&1 || true
   record_block "$ID" "PR-only: wartet auf Merge (Merge-Request $PR_URL)"
   WAITING_MERGE+=("$ID — Merge-Request $PR_URL; danach: vibe package close $NAME $ID")
