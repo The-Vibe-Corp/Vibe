@@ -1205,6 +1205,18 @@
         "docs/import-manifest.json"
       ],
       "grund": "Review-Runde 1 (docs/reviews/AP4-Korbat-review-1.md, 3 Minor-Befunde): POST /api/sessions action=continue reicht den Session-Worktree-/Paket-Anhang (resume_package/resume_worktree/resume_branch) an vibe.cmd_run weiter; resume_worktree/resume_branch werden im tmux-Startbefehl mit shlex.quote abgesichert; 'vibe github <projekt> status' zeigt Auto-Merge (ja/nein) an; Nova-Überblicks-Tab blendet den Paket-/Worktree-Anhang der Session ein. Da drei Programmdaten geändert wurden, sind Größe und SHA-256 der betreffenden files-Einträge aktualisiert und dadurch begründet."
+    },
+    {
+      "arbeitspaket": "F33",
+      "datum": "2026-11-21",
+      "dateien": [
+        "bin/vibe",
+        "bin/vibe-web.py",
+        "bin/web/i18n.js",
+        "bin/web/nova.css",
+        "docs/import-manifest.json"
+      ],
+      "grund": "F33 (UI-Überarbeitung Nova) in Arbeit: Backend-Verträge umgesetzt (POST /api/agent action=backup ohne Versionswarnung, AGENTS.md-Sicherung/Wiederherstellung mit agents_file_backup_dir, GET/POST /api/global_agents_file, globale Modellpreise action=prices_global mit Rangfolge Projekt > global > Katalog und global_prices in Übersicht/Detail, STATIC_FILES-Einträge vibe.svg/nova-widgets.js); bin/web/nova.css vollständig überarbeitet (mattes Frosted Glass, 12 Akzentpaletten hell/dunkel, Sidebar-Breitbild ab 1280px, F33-Stilblöcke WP1-WP5); bin/web/i18n.js um F33-Koordinationsblöcke ergänzt. Da Programmdaten geändert wurden, sind Größe und SHA-256 der vier betreffenden files-Einträge aktualisiert und dadurch begründet."
     }
   ],
   "files": [
@@ -1219,9 +1231,9 @@
       "sha256": "e5ae3183efcb76dace1e0bcbde9993be7afe82d93d7877da9ee39846cf45330a"
     },
     {
-      "bytes": 291967,
+      "bytes": 299159,
       "path": "bin/vibe",
-      "sha256": "a4df9352ce24458e653c70e1276832ccc27ba826c2e101ce853cee023d3bd55b"
+      "sha256": "db502ce8ab2391bfac09997fca3c80b99e69e660b1c6dcd47a997a8b6cccaafe"
     },
     {
       "bytes": 81878,
@@ -1229,9 +1241,9 @@
       "sha256": "12078b91bf7bd3aabaa7029dd7e1d65488b9be00a6e70788d766dba87e26071a"
     },
     {
-      "bytes": 116517,
+      "bytes": 119412,
       "path": "bin/vibe-web.py",
-      "sha256": "70452e81ed49920d98a1e188fc205749bc72e67622181e696b319dc9fc0caa0d"
+      "sha256": "bbe729b6af5939dbdf614a342cee53900168041d4ea6f7296475c37ca815092a"
     },
     {
       "bytes": 5189,
@@ -1329,9 +1341,9 @@
       "sha256": "19ea677f5c3dc3579279fd9b5bf7584612967654b8ec0bbde3818576c78b46b5"
     },
     {
-      "bytes": 149004,
+      "bytes": 149559,
       "path": "bin/web/i18n.js",
-      "sha256": "c22fa4427004b11ccf0a89efcec24bcfa65dfaaa110cc28ab22cb84b8ed1d241"
+      "sha256": "61d0e41ba6e01756d4711e0bdcebc2c229b0163e7cebaa0d17d4e39efc8847af"
     },
     {
       "bytes": 2207,
@@ -1374,9 +1386,9 @@
       "sha256": "13da8aba0256919ffc46c33d0460dbcd58327d2ba1f3aaff8f5a8324dbbfa896"
     },
     {
-      "bytes": 22418,
+      "bytes": 52251,
       "path": "bin/web/nova.css",
-      "sha256": "a7a3b1d7e89c5ffe71ea302a621a0ad52525519a52335035b9f9619cf6541bbe"
+      "sha256": "a1a89c04758d3a5f70b082fec7a9ea4715daa6441c83244a95d1652b3cb2c2ac"
     },
     {
       "bytes": 12751,
