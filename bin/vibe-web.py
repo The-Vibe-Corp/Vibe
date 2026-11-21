@@ -666,7 +666,15 @@ def start_continue(name):
             "(--no-session) ohne fortsetzbare Session; es wurde nichts "
             "gestartet."
         )
-    return vibe_services.capture(vibe.cmd_run, name, continue_session=session)
+    # AP4 (T-W1): Hat die Session einen Worktree-/Paket-Anhang, wird der
+    # Paket-Hinweis an den Läufer weitergereicht (Reattach über die Registry).
+    entry = vibe_runs.SessionRegistry(PATHS.runtime).get(session)
+    resume_package = ""
+    if entry and str(entry.get("package_id") or "").strip():
+        resume_package = str(entry["package_id"]).strip()
+    return vibe_services.capture(
+        vibe.cmd_run, name, continue_session=session,
+        resume_package=resume_package or None)
 
 
 def session_resume_supported():
@@ -1464,7 +1472,7 @@ class H(BaseHTTPRequestHandler):
         # als 200 {"ok": false, "message": …} geliefert (Vertrag der neuen UI),
         # ohne den Generic-Pfad darunter zu verändern (dort bedeutet ok:false
         # weiterhin HTTP 400).
-        if u.path in ("/api/limits", "/api/gates", "/api/runs", "/api/emu"):
+        if u.path in ("/api/limits", "/api/gates", "/api/runs", "/api/emu", "/api/package"):
             if u.path == "/api/limits":
                 result = _limits_set(body.get("action"))
             elif u.path == "/api/gates":
@@ -1473,6 +1481,17 @@ class H(BaseHTTPRequestHandler):
             elif u.path == "/api/runs":
                 result = ({"ok": False, "message": "Unbekannte Aktion"}
                           if body.get("action") != "prune" else _runs_prune())
+            elif u.path == "/api/package":
+                # AP4 (T-G1): PR-only-Paket abschließen. Fachfehler werden als
+                # 200 {"ok": false, "message": …} geliefert (Vertrag der neuen UI).
+                name = known(body.get("name", ""))
+                if body.get("action") != "close":
+                    result = {"ok": False, "message": (
+                        "Unbekannte Aktion für /api/package: nur 'close' "
+                        "wird unterstützt.")}
+                else:
+                    ok, msg = vibe.package_close(name, str(body.get("id") or ""))
+                    result = {"ok": ok, "message": msg}
             else:
                 started, msg = _emu(body.get("action"))
                 result = {"ok": started, "message": msg}
@@ -1551,8 +1570,19 @@ class H(BaseHTTPRequestHandler):
                             "Print-Modus (--no-session) ohne fortsetzbare "
                             "Session; es wurde nichts gestartet.")
                     else:
+                        # AP4 (T-W1): Worktree-Anhang der Session an den
+                        # Läufer weiterreichen (Reattach über die Registry);
+                        # leere/fehlende Felder werden zu None, der Läufer
+                        # löst Pfad/Branch ohnehin über die WorktreeRegistry
+                        # auf. Fehlt der Eintrag, greift obige Prüfung schon.
+                        resume_package = str(entry.get("package_id") or "").strip() or None
+                        resume_worktree = str(entry.get("worktree_path") or "").strip() or None
+                        resume_branch = str(entry.get("branch") or "").strip() or None
                         ok, msg = vibe_services.capture(
-                            vibe.cmd_run, name, continue_session=session)
+                            vibe.cmd_run, name, continue_session=session,
+                            resume_package=resume_package,
+                            resume_worktree=resume_worktree,
+                            resume_branch=resume_branch)
             elif u.path == "/api/run":
                 ok, msg = vibe_services.capture(vibe.cmd_run, name, body.get("agent") or None, keep_changes=bool(body.get("keep_changes")))
             elif u.path == "/api/stop":
@@ -1731,10 +1761,13 @@ class H(BaseHTTPRequestHandler):
                                 # Validierung teilt sich mit checkout/push.
                                 base = vibe_github.branch_name(base)
                             values["GITHUB_BASE"] = base
+                        if "auto_merge" in body:
+                            # AP4 (T-G0): Auto-Merge-Schalter als binärer Wert.
+                            values["GITHUB_AUTO_MERGE"] = "1" if body.get("auto_merge") else ""
                         if values:
                             vibe.set_env_values(name, values)
                         msg = "GitHub-Einstellungen gespeichert"
-                        extra["github"] = vibe_github.status(name)
+                        extra["github"] = vibe.github_status(name)
                     elif act == "link":
                         url = str(body.get("url") or "").strip()
                         if not url:

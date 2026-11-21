@@ -7,8 +7,10 @@ Subkommandos selbst — die deckt ``test_ap9_runner_github.py`` ab):
   Paketbases (``PACKAGE_BASE``/Arbeitskopie); ein Fehlschlag erzeugt nur
   einen HINWEIS und blockiert das Paket nicht (AP9: „Vor jedem neuen AP
   den Haupt-Branch aktualisieren").
-* ``github-complete`` läuft erst nach grüner Abschlussschranke und vor
-  ``merge_package``. **B16 ersetzt hier die AP9-Semantik:** Ein Fehlschlag
+* ``github-complete`` läuft erst nach grüner Abschlussschranke. Im
+  PR-only-Standard endet der Lauf danach ohne lokalen Merge (AP4); im
+  Auto-Merge-Modus folgt der REST-Merge. **B16 ersetzt hier die
+  AP9-Semantik:** Ein Fehlschlag
   der GitHub-Abschlussschranke (Push oder Merge-Request) ist keine bloße
   Empfehlung mehr, sondern blockiert das Paket. Es wird nicht lokal gemergt,
   das Ticket bleibt offen, und die Arbeitskopie bleibt zur Diagnose liegen.
@@ -186,6 +188,11 @@ class AP9WiringFixture(unittest.TestCase):
         return path.read_text(encoding="utf-8") if path.exists() else ""
 
     # ---------------------------------------------------------- Assertions
+    def worktrees(self):
+        """Arbeitskopien des Laufs (leer, wenn noch keine angelegt wurden)."""
+        root = self.runtime / "worktrees"
+        return [entry for entry in root.iterdir()] if root.exists() else []
+
     def log_index(self, log, needle):
         for index, line in enumerate(log.splitlines()):
             if needle in line:
@@ -269,15 +276,21 @@ class PullWiringTest(AP9WiringFixture):
 
         result = self.run_runner(project)
 
-        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        # AP4-Korbat: PR-only ist der Standard; der Lauf endet nach dem
+        # Merge-Request, ohne lokal zu mergen. Der Paketbranch bleibt in der
+        # Arbeitskopie und trägt den Nachweis der Reihenfolge.
         log = self.log(project)
         self.assertEqual(
             -1, self.log_index(log, "HINWEIS: GitHub-Pull"),
             "Ein erfolgreicher Pull läuft unsichtbar weiter:\n" + log)
+        branch = git(project, "rev-parse", "--verify",
+                     "refs/heads/feature/test/f1")
+        self.assertEqual(0, branch.returncode,
+                         "Der Paketbranch fehlt:\n" + log)
         # Der erste Paketcommit baut unmittelbar auf dem gezogenen
         # Fernstand auf: der Pull ist vor Arbeitskopie/Paketbase gelaufen.
         history = git(project, "log", "--format=%H %P %s",
-                      "main").stdout.splitlines()
+                      "feature/test/f1").stdout.splitlines()
         parent = None
         for line in reversed(history):
             fields = line.split(" ", 2)

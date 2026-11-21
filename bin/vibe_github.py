@@ -11,7 +11,10 @@ abgeschlossenen Paket überträgt er den Paket-Branch automatisch nach origin
 und stellt einen Merge-Request (``complete_package``). Seit B16 ist dieser
 Abschluss eine echte Schranke: Bei divergiertem/veraltetem Integrationsstand
 oder einem fehlgeschlagenen Push/Merge-Request wird das Paket blockiert, ohne
-lokal zu mergen. Das Zusammenführen selbst bleibt manuell. Git läuft mit
+lokal zu mergen. Das Zusammenführen des Merge-Requests übernimmt der Läufer
+seit AP4 nur bei ``GITHUB_AUTO_MERGE="1"`` (squash über die REST-API); ohne
+den Schalter bleibt der Abschluss PR-only und wartet auf den Eigentümer
+(``vibe package close``). Git läuft mit
 Argumentlisten (ohne Shell),
 GitHub-REST über die
 Standardbibliothek (urllib); die API-Basis ist konfigurierbar
@@ -61,6 +64,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -446,6 +450,9 @@ def read_config(env_path):
     enabled = str(values.get("GITHUB_ENABLED", "")).strip().lower() in TRUE_VALUES
     label = str(values.get("GITHUB_LABEL", "")).strip() or DEFAULT_LABEL
     api = str(values.get("GITHUB_API", "")).strip() or OFFICIAL_API
+    # AP4: Binärer Schalter — nur exakt "1" aktiviert den Auto-Merge; alles
+    # andere (leer, "true", "on", …) bleibt aus (PR-only ist der Standard).
+    auto_merge = str(values.get("GITHUB_AUTO_MERGE", "")).strip() == "1"
     return {
         "enabled": enabled,
         "repo": str(values.get("GITHUB_REPO", "")).strip(),
@@ -453,6 +460,7 @@ def read_config(env_path):
         "api": api,
         # AP9: Basis-Branch für Merge-Requests (Leerwert = Standard der origin).
         "base": str(values.get("GITHUB_BASE", "")).strip(),
+        "auto_merge": auto_merge,
     }
 
 
@@ -785,6 +793,7 @@ def status(project_path, *, remote=True, token=None):
         "label": config["label"],
         "api": config["api"],
         "base": config["base"],
+        "auto_merge": config["auto_merge"],
         "remotes": remote_rows,
         "branch": branch or "-",
         "ahead": ahead,
@@ -868,7 +877,7 @@ def fetch(project_path):
     count = len(remotes(project_path))
     if count == 0:
         return False, "Kein Remote konfiguriert: erst verknüpfen (link)"
-    rc, out = git(project_path, "fetch", "--all", "--quiet")
+    rc, out = git(project_path, "fetch", "--all", "--quiet", "--prune")
     if rc != 0:
         return False, _auth_guidance("Abruf fehlgeschlagen: " + (out or "unbekannter Fehler"))
     return True, f"Abgleich beendet ({count} Remote(s))"
@@ -886,13 +895,36 @@ def pull(project_path):
     return True, f"Branch {branch} aufgeholt ({out or 'aktuell'})"
 
 
+def _worktrees_by_branch(project_path):
+    """Branch -> Arbeitskopie-Pfade aus ``git worktree list --porcelain``.
+
+    Liefert ein Mapping auf Pfadlisten; bei Git-Fehlern bleibt es leer
+    (best effort, keine Ausnahme)."""
+    mapping = {}
+    rc, out = git(project_path, "worktree", "list", "--porcelain")
+    if rc != 0:
+        return mapping
+    path = ""
+    for line in out.splitlines():
+        if line.startswith("worktree "):
+            path = line[len("worktree "):].strip()
+        elif line.startswith("branch ") and path:
+            branch = line[len("branch "):].strip()
+            if branch.startswith("refs/heads/"):
+                branch = branch[len("refs/heads/"):]
+            mapping.setdefault(branch, []).append(path)
+    return mapping
+
+
 def checkout_branch(project_path, branch):
     """Checkt einen Branch aus; erzeugt ihn bei Bedarf aus origin/<branch>.
 
     Schutzregeln: Ein ungültiger Name wird vor jedem Git-Aufruf abgelehnt;
     bei uncommitteten Änderungen wird der Wechsel verweigert, damit keine
     fremden Arbeiten gemischt werden; ein bereits ausgecheckter Branch ist
-    Erfolg ohne Aktion. Git läuft mit Argumentlisten (ohne Shell)."""
+    Erfolg ohne Aktion; ein Branch, der in einer anderen Arbeitskopie
+    ausgecheckt ist, wird verweigert (T-G4). Git läuft mit Argumentlisten
+    (ohne Shell)."""
     project = str(project_path)
     branch = branch_name(branch)
     if current_branch(project) == branch:
@@ -906,6 +938,13 @@ def checkout_branch(project_path, branch):
         # Arbeitsbaum und wandern bei einem Wechsel nicht mit.
         raise ValueError("Es gibt uncommittete Änderungen: Erst committen "
                          "oder verwerfen, dann den Branch wechseln.")
+    held = [
+        path for path in _worktrees_by_branch(project).get(branch, [])
+        if os.path.realpath(path) != os.path.realpath(project)
+    ]
+    if held:
+        raise ValueError("Branch ist in einer Arbeitskopie ausgecheckt: "
+                         + held[0])
     rc, _ = git(project, "rev-parse", "--verify", "--quiet",
                 "refs/heads/" + branch)
     if rc == 0:
@@ -1021,7 +1060,7 @@ def pull_integration(project_path):
         if not branch:
             return True, False, ("Kein Branch ausgecheckt (detached HEAD): "
                                  "Aktualisierung verweigert")
-        rc, out = git(project, "fetch", "--quiet", "origin")
+        rc, out = git(project, "fetch", "--quiet", "--prune", "origin")
         if rc != 0:
             return True, False, _auth_guidance(mask_embedded_credentials(
                 "Abruf fehlgeschlagen: " + (out or "unbekannter Fehler")))
@@ -1055,7 +1094,7 @@ def integration_state(project_path):
                 "Kein Branch ausgecheckt (detached HEAD): kein Abschluss "
                 "auf veraltetem Stand.")
             return state
-        rc, out = git(project, "fetch", "origin")
+        rc, out = git(project, "fetch", "--prune", "origin")
         if rc != 0:
             # Ein Fetch kann auch an Zugangsdaten scheitern; die Guidance
             # steht deshalb immer dabei, die URL bleibt maskiert.
@@ -1150,6 +1189,19 @@ def complete_package(project_path, branch, package_id=None, title=None):
                 token=token_for_rest(config["api"], project),
                 token_required=False)
         except (GitHubError, ValueError) as error:
+            # AP4: Idempotenter Abschluss — ein bereits bestehender offener
+            # Merge-Request (422 / "already exists") wird nachgeschlagen und
+            # dessen URL als Erfolg übernommen, statt einen zweiten PR zu
+            # stellen. Andere Fehler melden wie bisher ``ok=False``.
+            existing = _find_open_pull_request(
+                project, config["repo"], branch, config["api"] or None,
+                token_for_rest(config["api"], project))
+            if existing:
+                result["pr_url"] = existing.get("url") or ""
+                return True, True, ("Branch " + branch + " übertragen; "
+                                    "bestehender Merge-Request #"
+                                    + str(existing.get("number")) + ": "
+                                    + (existing.get("url") or "")), result
             return True, False, ("Branch " + branch + " übertragen; "
                                  "Merge-Request fehlgeschlagen: " + str(error)), result
         result["pr_url"] = request.get("url") or ""
@@ -1159,6 +1211,235 @@ def complete_package(project_path, branch, package_id=None, title=None):
     except Exception as error:  # noqa: BLE001; pylint: disable=broad-exception-caught
         return True, False, ("Übertragung fehlgeschlagen: "
                              + mask_embedded_credentials(str(error))), result
+
+
+def _first_pr(payload):
+    """Erster PR-Datensatz aus einer Liste oder einem einzelnen Objekt.
+
+    GitHub liefert für ``GET /pulls`` eine Liste, für ``GET /pulls/<n>`` ein
+    einzelnes Objekt; lokale Fakes bilden gelegentlich nur eine der beiden
+    Formen ab. Beide werden gleichwertig gelesen."""
+    if isinstance(payload, dict) and payload.get("number"):
+        return payload
+    if isinstance(payload, list):
+        for item in payload:
+            if isinstance(item, dict) and item.get("number"):
+                return item
+    return None
+
+
+def _pr_field(payload, field):
+    pr = _first_pr(payload)
+    return pr.get(field) if pr else None
+
+
+def _find_open_pull_request(project, repo, branch, api, token):
+    """Offener Merge-Request zum Branch; ``None`` ohne Treffer oder Fehler."""
+    owner = str(repo or "").split("/", 1)[0]
+    url = (api or OFFICIAL_API).rstrip("/") + "/repos/" + quote(repo) + "/pulls"
+    query = urllib.parse.urlencode({"head": owner + ":" + branch,
+                                    "state": "open"})
+    try:
+        payload = _http_json("GET", url + "?" + query, token=token)
+    except GitHubError:
+        return None
+    pr = _first_pr(payload)
+    if not pr:
+        return None
+    return {"number": pr.get("number"), "url": pr.get("html_url") or ""}
+
+
+def merged_pull_request(project_path, branch):
+    """Sucht den Merge-Request eines Branches und prüft, ob er gemergt ist.
+
+    Ohne aktivierte Verknüpfung, ohne Repository oder bei Fehlern bleibt
+    ``found=False``. Liefert immer ``{found, state, merged, url, number}``
+    und wirft niemals. ``merged`` und ``state`` kommen zuverlässig aus der
+    Detailabfrage (``GET /pulls/<n>``), wenn diese verfügbar ist."""
+    result = {"found": False, "state": "", "merged": False, "url": "",
+              "number": None}
+    project = str(project_path)
+    try:
+        config = read_config(os.path.join(project, ".vibe", "project.env"))
+        if not config["enabled"] or not config["repo"]:
+            return result
+        branch = branch_name(branch or current_branch(project))
+        api = (config["api"] or OFFICIAL_API).rstrip("/")
+        owner = config["repo"].split("/", 1)[0]
+        token = token_for_rest(api, project)
+        base_url = api + "/repos/" + quote(config["repo"]) + "/pulls"
+        query = urllib.parse.urlencode({"head": owner + ":" + branch,
+                                        "state": "all"})
+        listing = _http_json("GET", base_url + "?" + query, token=token)
+        pr = _first_pr(listing)
+        if not pr:
+            return result
+        result.update({
+            "found": True,
+            "number": pr.get("number"),
+            "url": pr.get("html_url") or "",
+            "state": str(pr.get("state") or ""),
+            "merged": bool(pr.get("merged")),
+        })
+        try:
+            detail = _http_json("GET", base_url + "/" + str(pr.get("number")),
+                                token=token)
+        except GitHubError:
+            detail = None
+        if isinstance(detail, dict):
+            result["state"] = str(detail.get("state") or result["state"])
+            result["merged"] = bool(detail.get("merged"))
+            result["url"] = str(detail.get("html_url") or result["url"])
+        return result
+    except Exception:  # noqa: BLE001; pylint: disable=broad-exception-caught
+        return result
+
+
+def merge_pull_request(project_path, branch, package_id=None):
+    """Mergt den offenen Merge-Request des Branches per REST (squash).
+
+    Wirft niemals; liefert ``(ok, message, result)``. ``result`` trägt
+    ``branch``, ``number``, ``sha``, ``pr_url`` und bei einem Konflikt
+    ``conflict=True`` (405/409 bzw. ``merged=false``), damit der Läufer den
+    begrenzten Reparaturpfad erkennt. Ohne Token wird der Versuch trotzdem
+    unternommen (``token_for_rest`` mit token_required-Prinzip von
+    ``complete_package``); die Ablehnung wird als Befund gemeldet."""
+    project = str(project_path)
+    result = {"branch": str(branch or "").strip(), "number": None,
+              "sha": "", "pr_url": "", "conflict": False}
+    try:
+        config = read_config(os.path.join(project, ".vibe", "project.env"))
+        if not config["enabled"]:
+            return False, ("GitHub ist für dieses Projekt nicht aktiv: "
+                           "kein automatischer Merge."), result
+        if not config["repo"]:
+            return False, "Kein Repository verknüpft (GITHUB_REPO fehlt).", result
+        branch = branch_name(branch or current_branch(project))
+        result["branch"] = branch
+        api = (config["api"] or OFFICIAL_API).rstrip("/")
+        owner = config["repo"].split("/", 1)[0]
+        token = token_for_rest(api, project)
+        base_url = api + "/repos/" + quote(config["repo"]) + "/pulls"
+        query = urllib.parse.urlencode({"head": owner + ":" + branch,
+                                        "state": "open"})
+        listing = _http_json("GET", base_url + "?" + query, token=token)
+        pr = _first_pr(listing)
+        if not pr or not pr.get("number"):
+            return False, ("Kein offener Merge-Request für " + branch
+                           + " gefunden."), result
+        number = pr.get("number")
+        result["number"] = number
+        result["pr_url"] = pr.get("html_url") or ""
+        # Mergeability kurz abfragen; ``mergeable == null`` heißt bei GitHub
+        # "noch nicht berechnet" und wird kurz (max. 3×) erneut geprüft.
+        for _ in range(3):
+            try:
+                detail = _http_json("GET", base_url + "/" + str(number),
+                                    token=token)
+            except GitHubError:
+                break
+            mergeable = detail.get("mergeable") if isinstance(detail, dict) else None
+            if mergeable is not None:
+                break
+            time.sleep(1)
+        try:
+            merged = _http_json("PUT", base_url + "/" + str(number) + "/merge",
+                                token=token, payload={"merge_method": "squash"})
+        except GitHubError as error:
+            message = str(error)
+            if "GitHub-Fehler 405" in message or "GitHub-Fehler 409" in message:
+                result["conflict"] = True
+                return False, ("Konflikt beim automatischen Merge von " + branch
+                               + ": " + message), result
+            raise
+        if not isinstance(merged, dict):
+            return False, "GitHub-Antwort auf den Merge ist ungewöhnlich.", result
+        if merged.get("merged") is False:
+            result["conflict"] = True
+            return False, ("Merge-Request #" + str(number) + " konnte nicht "
+                           "gemergt werden: "
+                           + str(merged.get("message") or "")), result
+        result["sha"] = str(merged.get("sha") or "")
+        return True, ("Merge-Request #" + str(number) + " automatisch gemergt "
+                      "(squash)."), result
+    except Exception as error:  # noqa: BLE001; pylint: disable=broad-exception-caught
+        return False, ("Automatischer Merge fehlgeschlagen: "
+                       + mask_embedded_credentials(str(error))), result
+
+
+def _ensure_mergeable(worktree, base_ref):
+    """Fetch --prune origin und Merge von ``base_ref`` nach HEAD (--no-ff).
+
+    Niederstufige Operation (T-G7): läuft ausschließlich im ``worktree`` und
+    wirft niemals. Liefert ``(ok, message, result)``; ``result`` trägt bei
+    einem Konflikt ``conflict=True`` und die konfliktbehafteten ``paths``.
+    Ein Push findet nicht statt."""
+    result = {"conflict": False, "paths": []}
+    wt = str(worktree)
+    try:
+        rc, out = git(wt, "fetch", "--quiet", "--prune", "origin")
+        if rc != 0:
+            return False, _auth_guidance(mask_embedded_credentials(
+                "Abruf fehlgeschlagen: " + (out or "unbekannter Fehler"))), result
+        rc, _ = git(wt, "merge-base", "--is-ancestor", base_ref, "HEAD")
+        if rc == 0:
+            return True, ("Bereits mergebar (" + base_ref
+                          + " ist Vorfahr von HEAD)."), result
+        rc, out = git(wt, "merge", "--no-ff", "--no-edit", base_ref)
+        if rc == 0:
+            return True, "Basis " + base_ref + " gemergt.", result
+        rc_conf, conflict_files = git(wt, "diff", "--name-only", "--diff-filter=U")
+        if rc_conf == 0 and conflict_files.strip():
+            result["conflict"] = True
+            result["paths"] = [line.strip() for line in conflict_files.splitlines()
+                               if line.strip()]
+            return False, ("Merge-Konflikt mit " + base_ref), result
+        return False, mask_embedded_credentials(
+            "Merge mit " + base_ref + " fehlgeschlagen: "
+            + (out or "unbekannter Fehler")), result
+    except Exception as error:  # noqa: BLE001; pylint: disable=broad-exception-caught
+        return False, mask_embedded_credentials(
+            "Merge nicht durchführbar: " + str(error)), result
+
+
+def ensure_mergeable(project_path_config, worktree, base=""):
+    """Sichert die Mergeability des Paketbranches vor dem Abschluss (T-G7).
+
+    Die Konfiguration (``enabled``/``base``) kommt aus
+    ``project_path_config/.vibe/project.env``; Git läuft ausschließlich im
+    ``worktree``. Ohne aktivierte Verknüpfung oder ohne origin wird bewusst
+    übersprungen. Ist ``base`` ausdrücklich angegeben (voller Ref, z. B.
+    ``origin/main``), gilt er unmittelbar. Liefert ``(ok, message, result)``
+    und wirft niemals; ``result`` trägt ``conflict``/``paths`` (Konflikt),
+    sonst ``performed``.
+    """
+    result = {"conflict": False, "paths": []}
+    project = str(project_path_config)
+    wt = str(worktree)
+    try:
+        if not str(base or "").strip():
+            config = read_config(os.path.join(project, ".vibe", "project.env"))
+            if not config["enabled"]:
+                result["performed"] = False
+                return True, ("GitHub ist für dieses Projekt nicht aktiv: "
+                              "Mergeability übersprungen."), result
+            base = config["base"] or default_base(wt)
+            if not base:
+                return False, ("Basis-Branch unbekannt: GITHUB_BASE angeben "
+                               "oder origin/HEAD setzen."), result
+            base_ref = "origin/" + base
+        else:
+            base_ref = str(base).strip()
+        if not any(r["name"] == "origin" for r in remotes(wt)):
+            result["performed"] = False
+            return True, "Kein Remote origin: Mergeability übersprungen.", result
+        ok, message, sub = _ensure_mergeable(wt, base_ref)
+        sub["performed"] = True
+        result.update(sub)
+        return ok, message, result
+    except Exception as error:  # noqa: BLE001; pylint: disable=broad-exception-caught
+        return False, mask_embedded_credentials(
+            "Mergeability nicht prüfbar: " + str(error)), result
 
 
 def clone(url, target_dir, timeout=TIMEOUT_GIT, branch=None):

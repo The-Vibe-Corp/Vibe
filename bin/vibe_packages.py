@@ -219,6 +219,11 @@ def _apply_proof(text, span, worktree_block):
             if insert_at is None:
                 insert_at = len(reduced)
             continue
+        if BLOCK_MARKER in line.upper():
+            # AP4 (T-G1/package close): Der Worktree-Block ist kanonisch; ein
+            # BLOCKIERT-Vermerk des PR-only-Abschlusses entfällt beim
+            # Zurückschreiben des Nachweises.
+            continue
         reduced.append(line)
     if insert_at is None:
         insert_at = len(reduced)
@@ -235,13 +240,15 @@ def _apply_proof(text, span, worktree_block):
     return result + "\n" if text.endswith("\n") else result
 
 
-def sync_proof(project, worktree, pid):
+def sync_proof(project, worktree, pid, require_commit=True):
     """Übernimmt ``[x]`` und Nachweiszeilen eines Pakets in den Projektordner.
 
     Quelle ist die Arbeitskopie; Ziel ist derselbe Dateiname im Projekt. Der
     Nachweis wird nur übernommen, wenn er vollständig ist. Liefert
     ``(changed, message)``; bei ``changed=False`` bleibt die Zieldatei
-    unverändert.
+    unverändert. Mit ``require_commit=False`` (AP4 ``package close``) entfällt
+    die Prüfung auf vorhandene Nachweis-Commits: Nach einem verifizierten
+    Squash-Merge existiert der ursprüngliche Branch-Commit nicht mehr.
     """
     project, worktree = Path(project), Path(worktree)
     source_name, worktree_block = "", ""
@@ -260,9 +267,9 @@ def sync_proof(project, worktree, pid):
     if not is_done(worktree_block):
         return False, "Block " + pid + " ist in der Arbeitskopie nicht abgehakt."
     revisions = proof_commits(worktree_block)
-    if not revisions or not any(
+    if require_commit and (not revisions or not any(
         commit_exists(project, revision) for revision in revisions
-    ):
+    )):
         return False, "Nachweis-Commit für " + pid + " fehlt oder ist nicht vorhanden."
     if not PROOF_PATTERN.search(worktree_block):
         return False, "Nachweis 'Test:' oder 'Datei:' für " + pid + " fehlt."
@@ -541,12 +548,30 @@ def package_branch_name(project, pid, pattern=None):
     name = BRANCH_PLACEHOLDER_RE.sub(substitute, str(pattern))
     _validate_branch_name(name)
 
+    # AP4 (T-G5): Auch Fern-Refs (refs/remotes/origin/...) und in einer
+    # Arbeitskopie ausgecheckte Branches sind Kollisionen — nicht nur lokale
+    # refs/heads/. Die Worktree-Liste wird einmal gelesen und wiederverwendet.
+    worktree_branches = set()
+    listing = run_git(project, "worktree", "list", "--porcelain")
+    if listing.returncode == 0:
+        for line in listing.stdout.splitlines():
+            if line.startswith("branch "):
+                branch = line[len("branch "):].strip()
+                if branch.startswith("refs/heads/"):
+                    branch = branch[len("refs/heads/"):]
+                worktree_branches.add(branch)
+
     for attempt in range(1, MAX_BRANCH_COLLISIONS + 1):
         candidate = name if attempt == 1 else name + "-" + str(attempt)
         if len(candidate) > MAX_BRANCH_LENGTH:
             break
-        exists = run_git(project, "rev-parse", "--verify", "--quiet",
-                         "refs/heads/" + candidate).returncode == 0
+        exists = (
+            run_git(project, "rev-parse", "--verify", "--quiet",
+                    "refs/heads/" + candidate).returncode == 0
+            or run_git(project, "rev-parse", "--verify", "--quiet",
+                       "refs/remotes/origin/" + candidate).returncode == 0
+            or candidate in worktree_branches
+        )
         if not exists:
             return candidate
     raise ValueError(
@@ -565,7 +590,7 @@ def done_ids(project):
     return done
 
 
-def select_package(project, skip=None, state_path=None):
+def select_package(project, skip=None, state_path=None, prefer=""):
     """Liefert das nächste offene Paket oder ``None``.
 
     Steht in ``.vibe/project.env`` eine Priorisierung (``PACKAGE_ORDER``),
@@ -578,6 +603,11 @@ def select_package(project, skip=None, state_path=None):
     Priorität (P0, P1, P2, ohne Angabe) und sonst nach Dateireihenfolge.
     Ein Paket wird nur gewählt, wenn alle bekannten Abhängigkeiten
     nachweislich erledigt sind.
+
+    ``prefer`` (AP4/T-W1) nennt ein ausdrücklich bevorzugtes Paket (Reattach):
+    Ist es im Kandidatenbestand und noch nicht erledigt, wird es vorrangig
+    gewählt — auch wenn es als blockiert vermerkt ist (bewusste
+    Nutzer-Intention). Sonst wird ``prefer`` ignoriert und normal gewählt.
     """
     project = Path(project)
     if isinstance(skip, str):
@@ -605,11 +635,16 @@ def select_package(project, skip=None, state_path=None):
         )
 
     chosen = None
-    for pid in package_order(project):
-        if pid in skip or pid not in located or not _ready(pid):
-            continue
-        chosen = (pid, True)
-        break
+    preferred = str(prefer or "").strip()
+    if (preferred and preferred in located and preferred not in done
+            and preferred not in skip):
+        chosen = (preferred, False)
+    if chosen is None:
+        for pid in package_order(project):
+            if pid in skip or pid not in located or not _ready(pid):
+                continue
+            chosen = (pid, True)
+            break
     if chosen is None:
         for source, blocks in collect_blocks(project):
             candidates = []
@@ -1386,7 +1421,8 @@ def normalize_order(project, text):
 
 def command_select(args):
     """Befehl ``select``: wählt ein Paket und gibt seine Kennung aus."""
-    selected = select_package(args.project, skip=args.skip, state_path=args.state)
+    selected = select_package(args.project, skip=args.skip, state_path=args.state,
+                              prefer=getattr(args, "prefer", "") or "")
     if selected is None:
         return EXIT_NONE
     print(selected["id"])
@@ -1559,6 +1595,62 @@ def command_github_complete(args):
     return EXIT_OK if ok else EXIT_NONE
 
 
+def command_github_push(args):
+    """Befehl ``github-push``: Branch nach origin übertragen (Retry-Pfad).
+
+    Wrappt ``vibe_github.push``; Exit 0 bei Erfolg, 1 bei Fehlschlag."""
+    ok, message = _github_module().push(args.project, args.branch)
+    print(message)
+    return EXIT_OK if ok else EXIT_NONE
+
+
+def command_github_merge(args):
+    """Befehl ``github-merge``: offenen Merge-Request per REST squash-mergen.
+
+    Exit 0 = gemergt, Exit 2 = Konflikt (der Läufer erkennt den begrenzten
+    Reparaturpfad), Exit 1 = sonstiger Fehler. Die letzte Zeile ist die
+    maschinenlesbare ``MERGE:``-Zeile."""
+    ok, message, result = _github_module().merge_pull_request(
+        args.project, args.branch, package_id=args.id)
+    print(message)
+    state = "ok" if ok else ("konflikt" if result.get("conflict") else "fehler")
+    sha = result.get("sha") or ""
+    print("MERGE: " + state + (" " + sha if sha else ""))
+    if ok:
+        return EXIT_OK
+    if result.get("conflict"):
+        return 2
+    return EXIT_NONE
+
+
+def command_ensure_mergeable(args):
+    """Befehl ``ensure-mergeable``: Basis in den Paketbranch mergen (T-G7).
+
+    Exit 0 = mergebar/Skip, Exit 2 = Konflikt (je Pfad eine ``KONFLIKT:``-
+    Zeile), Exit 1 = Fehler. ``--abort`` bricht einen laufenden Merge ab."""
+    gh = _github_module()
+    worktree = args.worktree or args.project
+    if getattr(args, "abort", False):
+        rc, out = gh.git(worktree, "merge", "--abort")
+        if rc != 0:
+            print("FEHLT: merge --abort: " + (out or "unbekannter Fehler"))
+            return EXIT_NONE
+        print("OK: Merge abgebrochen.")
+        return EXIT_OK
+    ok, message, result = gh.ensure_mergeable(
+        args.project, worktree, base=getattr(args, "base", "") or "")
+    if result.get("conflict"):
+        for path in result.get("paths") or []:
+            print("KONFLIKT: " + path)
+        print("KONFLIKT: " + message)
+        return 2
+    if ok:
+        print("OK: " + message)
+        return EXIT_OK
+    print("FEHLT: " + message)
+    return EXIT_NONE
+
+
 def build_parser():
     """Baut die argparse-Befehlszeile aller Unterbefehle."""
     parser = argparse.ArgumentParser(
@@ -1570,6 +1662,8 @@ def build_parser():
     select.add_argument("--project", required=True)
     select.add_argument("--skip", default="")
     select.add_argument("--state", default=None)
+    select.add_argument("--prefer", default="",
+                        help="bevorzugtes Paket (Reattach), falls offen")
     select.set_defaults(handler=command_select)
 
     preflight = subparsers.add_parser("preflight", help="Startbedingungen prüfen")
@@ -1693,6 +1787,33 @@ def build_parser():
     github_complete.add_argument("--branch", required=True)
     github_complete.add_argument("--id", default=None)
     github_complete.set_defaults(handler=command_github_complete)
+
+    github_push = subparsers.add_parser(
+        "github-push",
+        help="Paket-Branch nach origin übertragen (Retry-Pfad)",
+    )
+    github_push.add_argument("--project", required=True)
+    github_push.add_argument("--branch", required=True)
+    github_push.set_defaults(handler=command_github_push)
+
+    github_merge = subparsers.add_parser(
+        "github-merge",
+        help="offenen Merge-Request per REST squash-mergen (AP4)",
+    )
+    github_merge.add_argument("--project", required=True)
+    github_merge.add_argument("--branch", required=True)
+    github_merge.add_argument("--id", default=None)
+    github_merge.set_defaults(handler=command_github_merge)
+
+    ensure_mergeable = subparsers.add_parser(
+        "ensure-mergeable",
+        help="Basis in den Paketbranch mergen, Konflikte stehen lassen (AP4)",
+    )
+    ensure_mergeable.add_argument("--project", required=True)
+    ensure_mergeable.add_argument("--worktree", default="")
+    ensure_mergeable.add_argument("--base", default="")
+    ensure_mergeable.add_argument("--abort", action="store_true")
+    ensure_mergeable.set_defaults(handler=command_ensure_mergeable)
 
     return parser
 

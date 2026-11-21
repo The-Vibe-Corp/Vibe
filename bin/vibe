@@ -115,15 +115,7 @@ GENERAL_RULES = """<!-- vibe:general-rules -->
 - Fremde oder vorbestehende Änderungen nicht löschen, überschreiben, stashen oder mitcommitten.
 - Keine Historie umschreiben, keine Force-Pushes und kein Push ohne ausdrückliche Freigabe.
 - Paket-Branches folgen den Repository-Regeln (`feature/<owner>/<kennung>`); das Muster ist über `PACKAGE_BRANCH_PATTERN` konfigurierbar.
-- Bei aktivierter GitHub-Verknüpfung gilt ein Arbeitspaket erst mit gepushtem Branch und gestelltem Merge-Request als geschlossen; ohne Push und Merge-Request kein Häkchen und kein lokaler Merge.
-
-## Laufende Instanz nicht verändern (verbindlich)
-
-- Entwicklung, Tests und Verifikation verändern die laufende Instanz nicht: bereinigte VIBE_*-Umgebung, explizite Temp-Pfade und ein Update nur mit autorisierter Quelle (`--source`).
-
-## Laufende Instanz nicht verändern (verbindlich)
-
-- Entwicklung, Tests und Verifikation verändern die laufende Instanz nicht: bereinigte VIBE_*-Umgebung, explizite Temp-Pfade und ein Update nur mit autorisierter Quelle (`--source`).
+- Bei aktivierter GitHub-Verknüpfung gilt ein Arbeitspaket erst mit gepushtem Branch und gestelltem Merge-Request als geschlossen; ohne Push (und bei aktivierter Verknüpfung Merge-Request) kein Häkchen. Merge nur gemäß `GITHUB_AUTO_MERGE` (Standard aus = PR-only: der Eigentümer mergt und schließt danach mit `vibe package close <projekt> <id>`).
 
 ## Laufende Instanz nicht verändern (verbindlich)
 
@@ -1075,6 +1067,30 @@ def github_link(name, url):
     # origin/HEAD gleich mit versorgen, damit der Merge-Request-Fluss
     # (auch aus der Oberfläche) ohne Vorarbeit eine Basis kennt.
     vibe_github.set_head_default(ppath(name))
+    # AP4 (T-G3): Upstream für lokale Branches mit origin-Pendant best effort
+    # setzen; Fehler werden gesammelt und sind nicht fatal.
+    upstream_errors = []
+    rc, out = vibe_github.git(ppath(name), "for-each-ref", "refs/heads",
+                              "--format=%(refname:short)")
+    if rc == 0:
+        for local_branch in out.splitlines():
+            local_branch = local_branch.strip()
+            if not local_branch:
+                continue
+            rc_remote, _ = vibe_github.git(
+                ppath(name), "rev-parse", "--verify", "--quiet",
+                "refs/remotes/origin/" + local_branch)
+            if rc_remote != 0:
+                continue
+            rc_set, set_out = vibe_github.git(
+                ppath(name), "branch", "--set-upstream-to",
+                "origin/" + local_branch, local_branch)
+            if rc_set != 0:
+                upstream_errors.append(local_branch + ": "
+                                       + (set_out or "unbekannter Fehler"))
+    for error in upstream_errors:
+        print("WARNUNG: Upstream konnte nicht gesetzt werden: " + error,
+              file=sys.stderr)
     values = {"GITHUB_ENABLED": "1"}
     if slug:
         values["GITHUB_REPO"] = slug
@@ -1165,6 +1181,9 @@ def cmd_github(name=None, action="status", value=None, label=None, title=None,
             line("Zugangstoken:", (auth.get("source") or "-"
                                    ) + (" (hinterlegt)" if auth.get("set") else
                                         "(kein Token)"))
+            line("Auto-Merge:", "ja (Läufer mergt freigegebene Merge-Requests selbst)"
+                 if st["auto_merge"] else
+                 "nein (PR-only: Eigentümer mergt und schließt mit 'vibe package close')")
             line("Branchübersicht: vibe github " + name + " branches")
         elif action == "link":
             if not value:
@@ -1927,7 +1946,8 @@ def changed_file(project, name):
     return result.returncode == 0 and bool(result.stdout.strip())
 
 
-def cmd_run(name, agent=None, out=None, keep_changes=False, continue_session=None):
+def cmd_run(name, agent=None, out=None, keep_changes=False, continue_session=None,
+            resume_package=None, resume_worktree=None, resume_branch=None):
     out = out or sys.stdout
     p = ppath(name)
     # AP14: Fortsetzung in derselben Modell-Session. Die Kennung reist als
@@ -1935,6 +1955,11 @@ def cmd_run(name, agent=None, out=None, keep_changes=False, continue_session=Non
     # geprüft, damit sie nie als zusätzliches Kommando ausgewertet wird.
     if continue_session is not None and not re.fullmatch(r"[A-Za-z0-9_-]+", continue_session):
         sys.exit("Ungültige Session-Kennung für die Fortsetzung: " + continue_session)
+    # AP4 (T-W1): Resume-Hinweise auf den Worktree-Anhang. Die Paket-Kennung
+    # unterliegt derselben harten Zeichenklasse wie die Session-Kennung; die
+    # übrigen Werte werden als reine Umgebungsvariablen durchgereicht.
+    if resume_package is not None and not re.fullmatch(r"[A-Za-z0-9_-]+", resume_package):
+        sys.exit("Ungültige Paket-Kennung für die Fortsetzung: " + resume_package)
     if agent is not None: require_agent(agent)
     if tmux_has(name): print("Läuft bereits. vibe attach", name, file=out); return
     if not is_init(name): sys.exit("Projekt ist nicht für vibe vorbereitet: vibe init " + name)
@@ -2041,7 +2066,20 @@ def cmd_run(name, agent=None, out=None, keep_changes=False, continue_session=Non
     # variable übergeben; sie wird im Läufer nie als Kommando ausgewertet.
     continue_export = (" export VIBE_CONTINUE_SESSION=" + continue_session + ";"
                        if continue_session else "")
+    # AP4 (T-W1): Worktree-Anhang als Resume-Hinweise übergeben. Die Werte
+    # stammen aus dem Session-Register und werden im Läufer erneut geprüft;
+    # Pfad/Branch werden zusätzlich shell-sicher quotiert, damit Leer- oder
+    # Sonderzeichen den Export-Befehl nicht zerreißen. Paket-/Session-Kennung
+    # unterliegen bereits der harten Zeichenklasse weiter oben.
+    resume_export = ""
+    if resume_worktree:
+        resume_export += " export VIBE_RESUME_WORKTREE=" + shlex.quote(resume_worktree) + ";"
+    if resume_package:
+        resume_export += " export VIBE_RESUME_PACKAGE=" + resume_package + ";"
+    if resume_branch:
+        resume_export += " export VIBE_RESUME_BRANCH=" + shlex.quote(resume_branch) + ";"
     inner = ("source ~/.bashrc; " + child_exports() + keep_export + continue_export
+             + resume_export
              + ' export VIBE_PREFLIGHT_ASSIST=1 VIBE_LOGNAME="$1" VIBE_RUN_ID="$2" VIBE_SESSION="$3" VIBE_MODEL="$7"; bash "$4" "$5" "$6" "$7"')
     rc, output = run(tmux_argv(
                    session, "new-session", "-d", "-s", session,
@@ -2276,6 +2314,7 @@ def cmd_sessions(args):
             if not candidates:
                 sys.exit(f"Keine {label} Session für Projekt '{name}' im Register.")
             session_id = candidates[0]["session"]
+            entry = candidates[0]
         else:
             sys.exit("--session, --last oder --aborted angeben")
 
@@ -2299,7 +2338,15 @@ def cmd_sessions(args):
         if not vibe_harness.supports(selected, "continue"):
             sys.exit("Fortsetzen ist bei Pi nicht möglich: Pi läuft im "
                      "Print-Modus (--no-session) ohne fortsetzbare Session.")
-        cmd_run(name, continue_session=session_id)
+        # AP4 (T-W1): Worktree-Anhang der Session als Resume-Hinweis an den
+        # Läufer weiterreichen; continue_session bleibt die AP14-Mechanik.
+        resume_package = str(entry.get("package_id") or "") if entry else ""
+        resume_worktree = str(entry.get("worktree_path") or "") if entry else ""
+        resume_branch = str(entry.get("branch") or "") if entry else ""
+        cmd_run(name, continue_session=session_id,
+                resume_package=resume_package or None,
+                resume_worktree=resume_worktree or None,
+                resume_branch=resume_branch or None)
         return
 
     limit = None
@@ -2339,6 +2386,92 @@ def cmd_sessions(args):
         print(f"{entry['session']}  {entry['state_label']}  "
               f"{entry.get('agent') or '?'}  "
               f"{entry.get('name') or entry.get('project') or '?'}")
+
+
+def _worktree_branch_held(project, branch):
+    """True, wenn ``branch`` noch in einer Arbeitskopie ausgecheckt ist."""
+    rc, out = vibe_github.git(project, "worktree", "list", "--porcelain")
+    if rc != 0:
+        return False
+    for line in out.splitlines():
+        if line.startswith("branch "):
+            name = line[len("branch "):].strip()
+            if name.startswith("refs/heads/"):
+                name = name[len("refs/heads/"):]
+            if name == branch:
+                return True
+    return False
+
+
+def package_close(name, pid):
+    """Zweite Abschlussphase eines PR-only-Pakets (AP4, T-G1).
+
+    Findet den registrierten Worktree, prüft den gemergten Merge-Request
+    (REST), holt den Integrationsbranch per fetch --prune + ff-only auf die
+    Fernspitze, übernimmt den Nachweis aus dem Worktree, entfernt
+    Worktree/Branch/Registry und vergisst die Sessions. Liefert
+    ``(ok, message)`` und wirft niemals.
+    """
+    pid = str(pid or "").strip()
+    if not pid:
+        return False, "Paket-Kennung fehlt."
+    project = ppath(name)
+    registry = vibe_runs.WorktreeRegistry(LOGS)
+    entry = registry.get(project, pid)
+    if not entry:
+        return False, ("Kein registrierter Worktree für " + pid
+                       + "; Paket nicht im PR-only-Abschluss.")
+    branch = str(entry.get("branch") or "").strip()
+    path = str(entry.get("path") or "").strip()
+    config = vibe_github.read_config(github_env_path(name))
+    if not config["enabled"]:
+        return False, ("GitHub ist für dieses Projekt nicht aktiv; "
+                       "Paket-Abschluss nur mit aktiver Verknüpfung.")
+    if not config["repo"]:
+        return False, "Kein Repository verknüpft (GITHUB_REPO fehlt)."
+    if not any(remote["name"] == "origin" for remote in vibe_github.remotes(project)):
+        return False, "Kein Remote origin: Paket-Abschluss verweigert."
+    pr = vibe_github.merged_pull_request(project, branch)
+    if not pr.get("found") or not pr.get("merged"):
+        url = str(pr.get("url") or "")
+        return False, ("Merge-Request für " + branch + " ist noch nicht gemergt"
+                       + ((" (" + url + ")") if url else "")
+                       + "; keine Änderungen vorgenommen.")
+    performed, ok, message = vibe_github.pull_integration(project)
+    if not ok:
+        return False, "Integrationsbranch nicht aktualisierbar: " + message
+    changed, sync_message = vibe_packages.sync_proof(
+        project, path, pid, require_commit=False)
+    if not changed:
+        return False, "Nachweis nicht übernehmbar: " + sync_message
+    # Cleanup: Arbeitskopie, Branch (ggf. -D nach Squash-Merge), Registry,
+    # Sessions. Reihenfolge wie T-G4: erst Worktree, dann Branch-Prüfung.
+    vibe_github.git(project, "worktree", "remove", "--force", path)
+    if not _worktree_branch_held(project, branch):
+        rc, _ = vibe_github.git(project, "branch", "-d", branch)
+        if rc != 0:
+            # Nach verifiziertem Squash-Merge erzeugt GitHub einen neuen Commit
+            # ohne Abstammung; -d scheitert dann zu Recht und -D ist erlaubt.
+            vibe_github.git(project, "branch", "-D", branch)
+    registry.unregister(project, pid)
+    vibe_runs.SessionRegistry(LOGS).forget_worktree(path)
+    return True, ("Paket " + pid + " geschlossen (Branch " + branch
+                  + ", Merge-Request " + str(pr.get("url") or "") + "); "
+                  "der nächste Lauf wählt das nächste Paket.")
+
+
+def cmd_package_close(args):
+    """``vibe package close <projekt> <id>``: PR-only-Paket abschließen."""
+    args = list(args or [])
+    if not args or args[0] != "close":
+        sys.exit("Aufruf: vibe package close <projekt> <id>")
+    rest = args[1:]
+    if len(rest) < 2:
+        sys.exit("Aufruf: vibe package close <projekt> <id>")
+    ok, message = package_close(rest[0], rest[1])
+    print(message)
+    sys.exit(0 if ok else 1)
+
 
 class VerifyConfigError(ValueError):
     """Prüfkonfiguration ist unvollständig oder nur ein Platzhalter."""
@@ -6096,6 +6229,7 @@ def main():
                  "limits": lambda: cmd_limits(r[0] if r else "status"),
                  "gates": lambda: cmd_gates(r),
                  "github": lambda: github_cli(r),
+                 "package": lambda: cmd_package_close(r),
                  "types": lambda: cmd_types(), "doctor": lambda: cmd_doctor()}
         table[c]()
     except (KeyError, IndexError):
