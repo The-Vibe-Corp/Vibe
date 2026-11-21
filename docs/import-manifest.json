@@ -1205,6 +1205,22 @@
         "docs/import-manifest.json"
       ],
       "grund": "Review-Runde 1 (docs/reviews/AP4-Korbat-review-1.md, 3 Minor-Befunde): POST /api/sessions action=continue reicht den Session-Worktree-/Paket-Anhang (resume_package/resume_worktree/resume_branch) an vibe.cmd_run weiter; resume_worktree/resume_branch werden im tmux-Startbefehl mit shlex.quote abgesichert; 'vibe github <projekt> status' zeigt Auto-Merge (ja/nein) an; Nova-Überblicks-Tab blendet den Paket-/Worktree-Anhang der Session ein. Da drei Programmdaten geändert wurden, sind Größe und SHA-256 der betreffenden files-Einträge aktualisiert und dadurch begründet."
+    },
+    {
+      "arbeitspaket": "AP5-Korbat",
+      "dateien": [
+        "bin/vibe",
+        "bin/vibe-run.sh",
+        "bin/vibe_github.py",
+        "bin/vibe_packages.py",
+        "bin/web/app.js",
+        "bin/web/i18n.js",
+        "bin/web/nova-project.js",
+        "scripts/verify.py",
+        "docs/import-manifest.json"
+      ],
+      "datum": "2026-11-21",
+      "grund": "NameError-Artefakte in init/Übernahme behoben (Meldung nur bei neu angelegter Test-Agent-Vorlage); read-only-Einwegtransport von .vibe/project.env in Arbeitskopien; VERIFY_PACKAGE_TESTS entkoppelt den Paketnachweis vom Vollmodus und der Verify-Tempfpfad ist kurz (vv-/VIBE_VERIFY_TMP); neuer Ticket-Zustand ‚WARTET AUF MERGE' (statt BLOCKIERT) für PR-only-Pakete inkl. GUI; ensure-mergeable löst das Git-Credential aus dem Projektpfad."
     }
   ],
   "files": [
@@ -1219,14 +1235,14 @@
       "sha256": "e5ae3183efcb76dace1e0bcbde9993be7afe82d93d7877da9ee39846cf45330a"
     },
     {
-      "bytes": 291967,
+      "bytes": 292787,
       "path": "bin/vibe",
-      "sha256": "a4df9352ce24458e653c70e1276832ccc27ba826c2e101ce853cee023d3bd55b"
+      "sha256": "c8b4eadf92300d84ffb0810338699ed8181f3eb34e7cbf63a7104af2626f84ba"
     },
     {
       "bytes": 81878,
       "path": "bin/vibe-run.sh",
-      "sha256": "12078b91bf7bd3aabaa7029dd7e1d65488b9be00a6e70788d766dba87e26071a"
+      "sha256": "874853f89c0c46e7ab65b8286d59b97da4645ed4e9b31f5d51a7bf094e41190c"
     },
     {
       "bytes": 116517,
@@ -1244,9 +1260,9 @@
       "sha256": "0f6d9c2c9d72ff1400ba0c2e8173217102ac9f163a41191c34367dd5f81f5778"
     },
     {
-      "bytes": 74232,
+      "bytes": 74772,
       "path": "bin/vibe_github.py",
-      "sha256": "0abd4d2fdb366a89b5960806ac6b657299b14222932ed8acd2258c36d1a57ffc"
+      "sha256": "05b357f627b08d93adfa092331309831c1ea1f244e164ba38094c0333d47a83b"
     },
     {
       "bytes": 27530,
@@ -1279,9 +1295,9 @@
       "sha256": "ac3b26da4208a087a09c67c389238c82802d7c1bd50b10d9bcd9492a07050462"
     },
     {
-      "bytes": 71746,
+      "bytes": 77744,
       "path": "bin/vibe_packages.py",
-      "sha256": "6b4c95471bb27182e845e1fa062ecd3e01a1cefa6955fc11cccb8325af05fd70"
+      "sha256": "561ca9d26d466a099fcb48aa3475116f30c626d102b09ceed53d0b942914a721"
     },
     {
       "bytes": 20789,
@@ -1319,9 +1335,9 @@
       "sha256": "43805dba175b11e01392b376bc12f931d82c06c8ab82dfc60474b9e9170cdd0f"
     },
     {
-      "bytes": 154278,
+      "bytes": 154348,
       "path": "bin/web/app.js",
-      "sha256": "5279ae3e900ca146b3df4016d689544f7b230cec3e962ce33f6fe1f9b3f05a99"
+      "sha256": "6f9c75f598ebe533588547bf9729e9f1ee048a48e53b86a7c5ca3137124dcf9a"
     },
     {
       "bytes": 688,
@@ -1329,9 +1345,9 @@
       "sha256": "19ea677f5c3dc3579279fd9b5bf7584612967654b8ec0bbde3818576c78b46b5"
     },
     {
-      "bytes": 149004,
+      "bytes": 149101,
       "path": "bin/web/i18n.js",
-      "sha256": "c22fa4427004b11ccf0a89efcec24bcfa65dfaaa110cc28ab22cb84b8ed1d241"
+      "sha256": "4641f01b8db7bda02e86ede4e1b42dd84d79b59012f70680f0899d1206723aaa"
     },
     {
       "bytes": 2207,
@@ -1364,9 +1380,9 @@
       "sha256": "8c56aa9e89ece8d02ea76f5d1b11e43ff8466b1d3becb8956a98ae0f6036895b"
     },
     {
-      "bytes": 49197,
+      "bytes": 49544,
       "path": "bin/web/nova-project.js",
-      "sha256": "2ad5f052557a6fdfb76eef45012c1eef21dd0219bfad47cb056c9156ab25cac1"
+      "sha256": "e05e898aa38cca8f888e355681ea93d4c974affc8cae0574890502a779552974"
     },
     {
       "bytes": 44549,

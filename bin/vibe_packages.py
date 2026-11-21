@@ -74,6 +74,10 @@ BARRIER_AGENT_OPTION = 2
 CHECKBOX_DONE = re.compile(r"^- \[[xX]\]")
 CHECKBOX_ANY = re.compile(r"^- \[[ xX]\]")
 BLOCK_MARKER = "BLOCKIERT:"
+# AP5 (4a): PR-only-Pakete warten auf den Merge des Eigentümers statt als
+# blockiert zu erscheinen. Eigene Marke, damit Bestandstickets mit alten
+# BLOCKIERT-Vermerken unverändert blockiert bleiben.
+WAITING_MARKER = "WARTET AUF MERGE:"
 ID_PATTERN = re.compile(r"[A-Za-z][A-Za-z0-9_-]*\d+")
 PROOF_PATTERN = re.compile(r"(?:Test|Datei)\s*:\s*\S+")
 DEPENDENCY_PATTERN = re.compile(r"Abhängigkeiten\s*:\s*(.+)")
@@ -95,6 +99,10 @@ WORK_NOTE_FILES = ("TICKETS.md", "FEEDBACK.md")
 # wie die Arbeitsnotizen in die Paket-Arbeitskopie übernommen werden (B2).
 PROJECT_RULES_FILE = "AGENTS.md"
 WORK_COPY_FILES = WORK_NOTE_FILES + (PROJECT_RULES_FILE,)
+# AP5: .vibe/project.env ist Laufzeitstand wie die Arbeitsnotizen, wird aber
+# nur read-only einwegig in die Arbeitskopie transportiert. Die Datei des
+# Hauptprojekts bleibt autoritativ; .vibe/_secrets.env wird nie transportiert.
+PROJECT_ENV_REL = os.path.join(".vibe", "project.env")
 PROOF_KEYS = ("Commit", "Test", "Datei", "Review", "Doku")
 PROOF_LINE = re.compile(r"^\s*(?:" + "|".join(PROOF_KEYS) + r")\s*:")
 
@@ -190,6 +198,58 @@ def copy_work_notes(project, worktree):
     return copied
 
 
+def _exclude_project_env(worktree):
+    """Trägt ``.vibe/project.env`` idempotent in die Git-Exclude des Worktrees
+    ein (AP5). Liefert ``False`` bei einem Git- oder Schreibfehler, ohne zu
+    werfen; die transportierte Datei bleibt davon unberührt.
+    """
+    result = run_git(worktree, "rev-parse", "--git-path", "info/exclude")
+    if result.returncode != 0:
+        return False
+    path = Path(result.stdout.strip())
+    if not path.is_absolute():
+        path = worktree / path
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        lines = path.read_text(encoding="utf-8").splitlines() if path.is_file() else []
+        if any(line.strip() == PROJECT_ENV_REL for line in lines):
+            return True
+        with open(path, "a", encoding="utf-8") as handle:
+            if lines and lines[-1].strip():
+                handle.write("\n")
+            handle.write(PROJECT_ENV_REL + "\n")
+        return True
+    except OSError:
+        return False
+
+
+def transport_project_env(project, worktree):
+    """Transportiert ``.vibe/project.env`` read-only einwegig in die
+    Arbeitskopie (AP5).
+
+    Existiert ``<project>/.vibe/project.env``, wird ``<worktree>/.vibe/``
+    angelegt, der Inhalt 1:1 kopiert und best effort schreibgeschützt (0444).
+    Danach wird ``.vibe/project.env`` idempotent in die Git-Exclude des
+    Worktrees eingetragen. Ohne ``project.env`` geschieht nichts — insbesondere
+    entsteht kein ``.vibe/``-Ordner. Transportiert wird ausschließlich
+    ``project.env``; ``_secrets.env`` und andere ``.vibe/``-Dateien bleiben
+    zurück. Liefert ``(transported, exclude_ok)``.
+    """
+    project, worktree = Path(project), Path(worktree)
+    source = project / PROJECT_ENV_REL
+    if not source.is_file():
+        return False, True
+    target = worktree / PROJECT_ENV_REL
+    write_text_atomic(target, read_text(source))
+    # Best effort Schreibschutz: auf FUSE/NTFS können Unix-Rechte wirkungslos
+    # sein; ein OSError ist dort kein Transportfehler (SPEC-Konvention).
+    try:
+        os.chmod(target, 0o444)
+    except OSError:
+        pass
+    return True, _exclude_project_env(worktree)
+
+
 def block_span(lines, pid):
     """Zeilenbereich ``[start, end)`` des Ticketblocks mit dieser ID."""
     for index, line in enumerate(lines):
@@ -219,10 +279,10 @@ def _apply_proof(text, span, worktree_block):
             if insert_at is None:
                 insert_at = len(reduced)
             continue
-        if BLOCK_MARKER in line.upper():
-            # AP4 (T-G1/package close): Der Worktree-Block ist kanonisch; ein
-            # BLOCKIERT-Vermerk des PR-only-Abschlusses entfällt beim
-            # Zurückschreiben des Nachweises.
+        if BLOCK_MARKER in line.upper() or WAITING_MARKER in line.upper():
+            # AP4 (T-G1/package close) und AP5 (4a): Der Worktree-Block ist
+            # kanonisch; ein BLOCKIERT- bzw. WARTET-AUF-MERGE-Vermerk des
+            # PR-only-Abschlusses entfällt beim Zurückschreiben des Nachweises.
             continue
         reduced.append(line)
     if insert_at is None:
@@ -341,6 +401,11 @@ def is_done(block):
 def is_blocked(block):
     """True, wenn der Block die Blockierungsmarke enthält."""
     return BLOCK_MARKER in block.upper()
+
+
+def is_waiting_merge(block):
+    """True, wenn der Block auf den Merge des Eigentümers wartet (AP5 4a)."""
+    return WAITING_MARKER in block.upper()
 
 
 def proof_commits(block):
@@ -628,7 +693,7 @@ def select_package(project, skip=None, state_path=None, prefer=""):
 
     def _ready(pid):
         _, block = located[pid]
-        if is_blocked(block) or pid in done:
+        if is_blocked(block) or is_waiting_merge(block) or pid in done:
             return False
         return not any(
             dep in known and dep not in done for dep in dependencies(block)
@@ -1184,6 +1249,39 @@ def mark_blocked(project, pid, note):
     return False, "Block " + pid + " fehlt in TICKETS.md/FEEDBACK.md."
 
 
+def mark_waiting_merge(project, pid, note):
+    """Vermerkt ``WARTET AUF MERGE:`` am Arbeitspaket in den Arbeitsnotizen
+    (AP5 4a).
+
+    Analog zu ``mark_blocked``: Die Zeile wird eingerückt an den Block in
+    TICKETS.md/FEEDBACK.md des Projektordners angehängt, damit die Auswahl das
+    wartende Paket nicht erneut wählt (``is_waiting_merge``) und der Grund
+    sichtbar bleibt. Bereits vorhandene Wartemarken bleiben unverändert
+    (idempotent). Liefert ``(changed, message)``.
+    """
+    project = Path(project)
+    for name in WORK_NOTE_FILES:
+        target = project / name
+        if not target.is_file():
+            continue
+        text = read_text(target)
+        lines = text.splitlines()
+        span = block_span(lines, pid)
+        if span is None:
+            continue
+        start, end = span
+        if any("WARTET AUF MERGE" in line.upper() for line in lines[start:end]):
+            return False, "Block " + pid + " ist bereits als wartend vermerkt."
+        insert = end
+        while insert > start and not lines[insert - 1].strip():
+            insert -= 1
+        lines.insert(insert, "  " + WAITING_MARKER + " " + note)
+        updated = "\n".join(lines) + ("\n" if text.endswith("\n") else "")
+        write_text_atomic(target, updated)
+        return True, "Block " + pid + " in " + name + " als wartend vermerkt."
+    return False, "Block " + pid + " fehlt in TICKETS.md/FEEDBACK.md."
+
+
 def review_order(path):
     """Sortierschlüssel für ``<ID>-review-N.md``; höhere Nummer ist neuer."""
     match = re.search(r"-review-?(\d+)", path.name)
@@ -1296,8 +1394,8 @@ def classify_output(exit_code, text):
 
 
 def status_report(project):
-    """Liefert offene, blockierte und nachweislich erledigte Pakete."""
-    report = {"open": [], "blocked": [], "done": []}
+    """Liefert offene, wartende, blockierte und erledigte Pakete."""
+    report = {"open": [], "waiting": [], "blocked": [], "done": []}
     seen = set()
     for _, blocks in collect_blocks(project):
         for block in blocks:
@@ -1307,6 +1405,8 @@ def status_report(project):
             seen.add(pid)
             if is_blocked(block):
                 report["blocked"].append(pid)
+            elif is_waiting_merge(block):
+                report["waiting"].append(pid)
             elif is_done(block) and proof_ok(project, block)[0]:
                 report["done"].append(pid)
             else:
@@ -1346,6 +1446,8 @@ def priority_view(project):
                 entry["status"] = "erledigt"
             elif is_blocked(block):
                 entry["status"] = "gesperrt"
+            elif is_waiting_merge(block):
+                entry["status"] = "wartet auf Merge"
             else:
                 entry["status"] = "offen"
         entries.append(entry)
@@ -1383,7 +1485,9 @@ def priority_view(project):
                 "id": pid,
                 "source": source,
                 "title": block_title(block),
-                "status": "gesperrt" if is_blocked(block) else "offen",
+                "status": ("gesperrt" if is_blocked(block)
+                           else "wartet auf Merge" if is_waiting_merge(block)
+                           else "offen"),
             })
     return {"key": ORDER_KEY, "order": entries, "queue": queue,
             "standard": standard}
@@ -1474,6 +1578,15 @@ def command_copy_notes(args):
     copied = copy_work_notes(args.project, args.worktree)
     for name in copied:
         print("OK: " + name + " in die Arbeitskopie übernommen.")
+    # AP5: read-only Einweg-Transport von .vibe/project.env (nie zurück).
+    transported, exclude_ok = transport_project_env(args.project, args.worktree)
+    if transported:
+        if exclude_ok:
+            print("OK: .vibe/project.env read-only in die Arbeitskopie "
+                  "übernommen.")
+        else:
+            print("WARNUNG: .vibe/project.env wurde kopiert, aber der "
+                  "Git-Exclude-Eintrag ist fehlgeschlagen.")
     return EXIT_OK
 
 
@@ -1548,6 +1661,18 @@ def command_mark_blocked(args):
     erneute Auswahl im Projektordner.
     """
     changed, message = mark_blocked(args.project, args.id, args.note)
+    print(("OK: " if changed else "HINWEIS: ") + message)
+    return EXIT_OK if changed else EXIT_NONE
+
+
+def command_mark_waiting(args):
+    """Befehl ``mark-waiting``: vermerkt ein Paket als wartend (AP5 4a).
+
+    Wird vom Läufer im PR-only-Abschluss genutzt; die Marke verhindert die
+    erneute Auswahl, lässt den Eigentümer das Paket aber nach dem Merge über
+    ``vibe package close`` abschließen.
+    """
+    changed, message = mark_waiting_merge(args.project, args.id, args.note)
     print(("OK: " if changed else "HINWEIS: ") + message)
     return EXIT_OK if changed else EXIT_NONE
 
@@ -1767,6 +1892,15 @@ def build_parser():
     mark_blocked_parser.add_argument("--id", required=True)
     mark_blocked_parser.add_argument("--note", required=True)
     mark_blocked_parser.set_defaults(handler=command_mark_blocked)
+
+    mark_waiting_parser = subparsers.add_parser(
+        "mark-waiting",
+        help="Arbeitspaket als auf Merge wartend vermerken (AP5)",
+    )
+    mark_waiting_parser.add_argument("--project", required=True)
+    mark_waiting_parser.add_argument("--id", required=True)
+    mark_waiting_parser.add_argument("--note", required=True)
+    mark_waiting_parser.set_defaults(handler=command_mark_waiting)
 
     status = subparsers.add_parser("status", help="Paketstand ausgeben")
     status.add_argument("--project", required=True)

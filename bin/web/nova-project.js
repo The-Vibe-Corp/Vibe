@@ -52,6 +52,7 @@ function nvpOption(select, value, selected) {
 
 function nvpStateColumn(state) {
   if (state === 'offen') return 'open';
+  if (state === 'WARTET AUF MERGE') return 'waiting';
   if (state === 'BLOCKIERT') return 'blocked';
   if (state === 'ohne Nachweis') return 'proof';
   if (state === 'erledigt') return 'done';
@@ -60,6 +61,7 @@ function nvpStateColumn(state) {
 
 function nvpStateLabel(state) {
   if (state === 'offen') return tr('Offen');
+  if (state === 'WARTET AUF MERGE') return tr('Wartet auf Merge');
   if (state === 'BLOCKIERT') return tr('Blockiert');
   if (state === 'ohne Nachweis') return tr('Ohne Nachweis');
   if (state === 'erledigt') return tr('Erledigt');
@@ -123,7 +125,8 @@ function nvpBoardColumn(name, column, rows, token) {
   var box = el('div', {class: 'nv-board-col', 'data-nv-col': column},
     el('h3', {}, nvpStateLabel(column === 'open' ? 'offen'
       : column === 'blocked' ? 'BLOCKIERT'
-        : column === 'proof' ? 'ohne Nachweis' : 'erledigt')));
+        : column === 'waiting' ? 'WARTET AUF MERGE'
+          : column === 'proof' ? 'ohne Nachweis' : 'erledigt')));
   if (!rows.length) {
     box.append(el('p', {class: 'nv-muted'}, tr('Keine Einträge')));
   }
@@ -132,7 +135,7 @@ function nvpBoardColumn(name, column, rows, token) {
     var isFeedback = !!row.__feedback;
     var title = String(row.title || id);
     var closeError = el('div', {class: 'nv-form-error', 'data-nv-form-error': '', hidden: ''});
-    var closeAction = (column === 'blocked' && !isFeedback)
+    var closeAction = ((column === 'blocked' || column === 'waiting') && !isFeedback)
       ? el('button', {class: 'nv-btn nv-ghost nv-compact', type: 'button',
           'data-nv-action': 'package-close', on: {click: function () {
             nvpShowError(closeError, '');
@@ -156,7 +159,7 @@ function nvpBoardColumn(name, column, rows, token) {
     },
       el('div', {class: 'nv-ticket-head'},
         el('span', {class: 'nv-ticket-id'}, id),
-        el('span', {class: 'nv-pill nv-state'}, nvpStateLabel(row.state))),
+        el('span', {class: 'nv-pill nv-state' + (row.state === 'WARTET AUF MERGE' ? ' nv-warn' : '')}, nvpStateLabel(row.state))),
       el('div', {class: 'nv-ticket-title'}, title),
       String(row.description || '')
         ? el('div', {class: 'nv-muted nv-ticket-desc'}, String(row.description || '')) : null,
@@ -977,6 +980,7 @@ NV.views.project = async function project(context, token) {
   var tiles = el('div', {class: 'nv-tiles'});
   [
     ['open', nvpCount(tickets, 'offen'), tr('Offene Pakete')],
+    ['waiting', nvpCount(tickets, 'WARTET AUF MERGE'), tr('Wartet auf Merge')],
     ['blocked', nvpCount(tickets, 'BLOCKIERT'), tr('Blockiert')],
     ['proof', nvpCount(feedback, 'ohne Nachweis'), tr('Ohne Nachweis')],
     ['done', nvpCount(tickets, 'erledigt'), tr('Erledigt')],
@@ -1032,7 +1036,7 @@ NV.views.project = async function project(context, token) {
   panels.work.append(newRow);
 
   var board = el('div', {class: 'nv-board'});
-  ['open', 'blocked', 'proof', 'done'].forEach(function (column) {
+  ['open', 'waiting', 'blocked', 'proof', 'done'].forEach(function (column) {
     var rows = tickets.concat(feedback.map(function (row) {
       return Object.assign({}, row, {__feedback: true});
     })).filter(function (row) {
