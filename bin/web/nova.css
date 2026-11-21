@@ -559,3 +559,10 @@ html[data-animations="on"] .nv-drawer { animation: nv-fade-in var(--nv-speed) ea
   .nv-grid, .nv-tiles, .nv-board { grid-template-columns: 1fr; }
   .nv-toasts { right: var(--nv-space-2); bottom: var(--nv-space-2); }
 }
+
+/* ===== F33 WP1 styles (Shell/Design/Home) — nur in diesem Block ergänzen ===== */
+/* ===== F33 WP2 styles (Combobox/Agenten/Wizard/Editor) — nur in diesem Block ergänzen ===== */
+/* ===== F33 WP3 styles (Projektdetail) — nur in diesem Block ergänzen ===== */
+/* ===== F33 WP4 styles (Ausgabe) — nur in diesem Block ergänzen ===== */
+/* ===== F33 WP5 styles (Aktivität/Einstellungen) — nur in diesem Block ergänzen ===== */
+/* Ende der F33-Blöcke. */

@@ -1016,6 +1016,12 @@
         "Für dieses Projekt sind keine Sitzungen aufgezeichnet.": "No sessions recorded for this project.",
         "OpenCode": "OpenCode",
         "OpenCode-Agenten (general, explore) sind eingebaute Subagenten ohne eigene Datei. Abwählen sperrt ihr Aufrufen durch andere Agenten in Läufen dieses Projekts; ihr Modell lässt sich hier je Projekt überschreiben.": "OpenCode agents (general, explore) are built-in subagents without their own file. Deselecting blocks other agents from calling them in runs of this project; their model can be overridden per project here.",
+        // ===== F33 WP1 keys (Shell/Design/Home) — nur in diesem Block ergänzen =====
+        // ===== F33 WP2 keys (Combobox/Agenten/Wizard/Editor) — nur in diesem Block ergänzen =====
+        // ===== F33 WP3 keys (Projektdetail) — nur in diesem Block ergänzen =====
+        // ===== F33 WP4 keys (Ausgabe) — nur in diesem Block ergänzen =====
+        // ===== F33 WP5 keys (Aktivität/Einstellungen) — nur in diesem Block ergänzen =====
+        // ===== F33 WP6 keys (globale AGENTS.md-UI-Texte) — nur in diesem Block ergänzen =====
     },
     de: {
         "ui.language.hint": "Die gesamte vibe-Oberfläche; Englisch ist der Standard.",
