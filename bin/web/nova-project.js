@@ -435,7 +435,9 @@ function nvpTeamSection(name, token, agents) {
         .catch(function (e) { nvpShowError(error, String(e && e.message || e)); });
     });
     body.append(el('div', {class: 'nv-row nv-team-row', 'data-nv-team-agent': agent},
-      toggle, el('span', {class: 'nv-team-name'}, agent), model));
+      toggle, el('span', {class: 'nv-team-name'}, agent),
+      row.opencode ? el('span', {class: 'nv-tag'}, tr('OpenCode')) : null,
+      model));
   });
   return nvpSection('team', tr('Team'), [body, error]);
 }

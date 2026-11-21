@@ -2746,7 +2746,7 @@ def _remap_project_agents(name, project):
     removed = sorted(set(config["aktiv"]) - set(active)
                      | set(config["modelle"]) - set(models))
     clean = {"version": PROJECT_AGENTS_VERSION, "aktiv": sorted(set(active)),
-             "modelle": models}
+             "modelle": models, "opencode": config.get("opencode", {})}
     if clean == config:
         return "" if not removed else \
             "Aktive Agenten: bereits auf die lokal konfigurierten Agenten begrenzt"
@@ -2872,7 +2872,46 @@ def cmd_clone(url, name=None, branch=None, out=None):
     print("Änderungen am Arbeitsbaum liegen vor: bitte prüfen und selbst committen.", file=out)
 
 # ---------- Agenten (global und projektspezifisch) ----------
+# v2-Regelblöcke: Jede Regel ist (action, resource, effect). Die Reihenfolge
+# bleibt erhalten, weil in opencode v2 'die letzte passende Regel gewinnt'.
 PERMS = {
+ "voll": [
+     ("read", "*", "allow"),
+     ("glob", "*", "allow"),
+     ("grep", "*", "allow"),
+     ("edit", "*", "allow"),
+     ("shell", "*", "allow"),
+     ("subagent", "*", "deny"),
+     ("webfetch", "*", "deny"),
+     ("websearch", "*", "deny"),
+ ],
+ "lesen": [
+     ("read", "*", "allow"),
+     ("glob", "*", "allow"),
+     ("grep", "*", "allow"),
+     ("edit", "*", "deny"),
+     ("shell", "*", "deny"),
+     ("subagent", "*", "deny"),
+     ("webfetch", "*", "deny"),
+     ("websearch", "*", "deny"),
+ ],
+ "lesen_git": [
+     ("read", "*", "allow"),
+     ("glob", "*", "allow"),
+     ("grep", "*", "allow"),
+     ("edit", "*", "deny"),
+     ("shell", "*", "deny"),
+     ("shell", "git status --short", "allow"),
+     ("shell", "git diff *", "allow"),
+     ("shell", "git show *", "allow"),
+     ("shell", "git log *", "allow"),
+     ("subagent", "*", "deny"),
+     ("webfetch", "*", "deny"),
+     ("websearch", "*", "deny"),
+ ],
+}
+# v1-Vorlagen nur noch zur Migration bestehender Dateien; Neuerzeugung ist v2.
+V1_PERMS = {
  "voll": "  read: allow\n  glob: allow\n  grep: allow\n  list: allow\n  edit: allow\n  bash: allow\n  webfetch: deny\n  websearch: deny",
  "lesen": "  read: allow\n  glob: allow\n  grep: allow\n  list: allow\n  edit: deny\n  bash: deny\n  task: deny\n  webfetch: deny\n  websearch: deny",
  "lesen_git": '  read: allow\n  glob: allow\n  grep: allow\n  list: allow\n  edit: deny\n  bash:\n    "*": deny\n    "git status --short": allow\n    "git diff *": allow\n    "git show *": allow\n    "git log *": allow\n  task: deny\n  webfetch: deny\n  websearch: deny',
@@ -2880,8 +2919,32 @@ PERMS = {
 PERM_LABELS = {"voll": "Voll (lesen, schreiben, Shell)", "lesen": "Nur lesen", "lesen_git": "Nur lesen + Git lesend"}
 PERM_LABELS_PROJECT = dict(PERM_LABELS, voll="Voll (edit nur in erlaubten Verzeichnissen, Shell erlaubt)")
 
-def edit_permission_lines(write_dirs):
-    """YAML-Zeilen für edit-Rechte, die nur die erlaubten Verzeichnisse zulassen."""
+def _rule_lines(action, resource, effect):
+    """Eine v2-Regel als drei eingerückte YAML-Zeilen."""
+    return ["  - action: " + action,
+            "    resource: " + json.dumps(resource, ensure_ascii=False),
+            "    effect: " + effect]
+
+def _rules_lines(rules):
+    lines = []
+    for rule in rules:
+        if isinstance(rule, dict):
+            action, resource, effect = rule.get("action"), rule.get("resource"), rule.get("effect")
+        else:
+            action, resource, effect = rule
+        lines += _rule_lines(action, resource, effect)
+    return lines
+
+def _edit_rules(write_dirs):
+    """edit-Regeln mit breiter Deny-Regel zuerst, dann je Verzeichnis allow."""
+    rules = [("edit", "*", "deny")]
+    for directory in (write_dirs or []):
+        rules.append(("edit", directory, "allow"))
+        rules.append(("edit", directory + "/**", "allow"))
+    return rules
+
+def _v1_edit_lines(write_dirs):
+    """v1-Zeilen für edit-Rechte (Kompatibilität für v1-Bestandsblöcke)."""
     if not write_dirs: return ["  edit: deny"]
     lines = ["  edit:"]
     for d in write_dirs:
@@ -2890,12 +2953,23 @@ def edit_permission_lines(write_dirs):
     lines.append('    "*": deny')
     return lines
 
-def permission_block(perm="lesen", write_dirs=None):
+def edit_permission_lines(write_dirs):
+    """v2-YAML-Zeilen für edit-Rechte, die nur die erlaubten Verzeichnisse zulassen."""
+    return _rules_lines(_edit_rules(write_dirs))
+
+def _permission_rules(perm="lesen", write_dirs=None):
+    """Geordnete v2-Regeln einer Vorlage; 'voll' ggf. verzeichnisbeschränkt."""
     if perm not in PERMS: perm = "lesen"
-    block = PERMS[perm]
+    rules = [tuple(rule) for rule in PERMS[perm]]
     if perm == "voll" and write_dirs is not None:
-        block = block.replace("  edit: allow", "\n".join(edit_permission_lines(write_dirs)))
-    return block
+        edit = _edit_rules(write_dirs)
+        index = next((i for i, rule in enumerate(rules) if rule[0] == "edit"), len(rules))
+        rules[index:index + 1] = edit
+    return rules
+
+def permission_block(perm="lesen", write_dirs=None):
+    """v2-Regelblock als Zeichenkette (ohne die Kopfzeile ``permissions:``)."""
+    return "\n".join(_rules_lines(_permission_rules(perm, write_dirs)))
 
 def agent_dir(scope):
     return AGENTS_DIR if scope == "global" else vibe_opencode.agent_directory(ppath(scope))
@@ -3112,6 +3186,32 @@ def _unquote(value):
         return value[1:-1].replace("''", "'")
     return value
 
+def _v2_rules(lines):
+    """Geordnete Regeln eines v2-``permissions``-Blocks; ``None`` ohne Block.
+
+    ``lines`` ist die Frontmatter-Zeilenliste. Jede Regel ist ein Dict mit
+    ``action``, ``resource`` und ``effect``; die Reihenfolge bleibt erhalten.
+    """
+    section = next((s for s in _front_sections(lines) if s["key"] == "permissions"), None)
+    if section is None:
+        return None
+    rules, current = [], None
+    for line in lines[section["start"] + 1:section["end"]]:
+        if re.match(r"^[ \t]*-[ \t]+", line):
+            if current is not None:
+                rules.append(current)
+            current = {}
+        item = re.match(r"^[ \t]*(?:-[ \t]+)?([A-Za-z_][\w-]*):[ \t]*(.*)$", line)
+        if not item:
+            continue
+        if current is None:
+            current = {}
+        current[item.group(1)] = _unquote(item.group(2))
+    if current is not None:
+        rules.append(current)
+    return rules
+
+
 def _parse_agent_text(text):
     """Liest die bearbeitbaren Felder und die unbekannten Schlüssel."""
     _m, _fm, body, lines = _frontmatter_parts(text)
@@ -3120,12 +3220,18 @@ def _parse_agent_text(text):
     def inline(key):
         section = by_key.get(key)
         return _unquote(section["inline"]) if section else ""
+    def block(key):
+        section = by_key.get(key)
+        return "\n".join(lines[section["start"]:section["end"]]) if section else ""
     fields = {key: inline(key) for key in AGENT_FIELDS}
     permission = by_key.get("permission")
-    fields["permission"] = "\n".join(lines[permission["start"]:permission["end"]]) if permission else ""
+    fields["permission"] = block("permission")
     fields["permission_inline"] = bool(permission and permission["inline"])
+    permissions = by_key.get("permissions")
+    fields["permissions"] = block("permissions")
+    fields["permissions_inline"] = bool(permissions and permissions["inline"])
     fields["prompt"] = body.strip("\n")
-    known = set(AGENT_FIELDS) | {"permission"}
+    known = set(AGENT_FIELDS) | {"permission", "permissions"}
     fields["unknown"] = sorted({section["key"] for section in sections if section["key"] not in known})
     return fields
 
@@ -3140,22 +3246,25 @@ def agent_fields(scope, text):
     ``permission`` ist die passende Vorlage oder ein leerer Wert, wenn der
     Rechteblock individuell ist. ``unknown`` nennt alle Felder, die der
     strukturierte Editor nicht kennt und deshalb unverändert stehen lässt.
+    Ein v1-``permission``-Block gilt als individuell; v2-``permissions``-Blöcke
+    werden gegen die Vorlagen verglichen.
     """
     parsed = _parse_agent_text(text)
-    raw_permission = parsed["permission"]
+    raw_permissions = parsed["permissions"]
     preset = ""
-    if raw_permission and not parsed["permission_inline"]:
+    if raw_permissions and not parsed["permissions_inline"]:
         try:
             dirs = None if scope == "global" else write_dirs(scope)
         except ValueError:
             dirs = None
         for key in PERMS:
-            candidate = "permission:\n" + permission_block(key, dirs)
-            if _same_block(parsed["permission"], candidate):
+            candidate = "permissions:\n" + permission_block(key, dirs)
+            if _same_block(raw_permissions, candidate):
                 preset = key
                 break
+    has_block = bool(raw_permissions) or bool(parsed["permission"])
     parsed["permission"] = preset
-    parsed["permission_custom"] = bool(raw_permission) and not preset
+    parsed["permission_custom"] = has_block and not preset
     return parsed
 
 def _validate_agent_field(key, value):
@@ -3221,12 +3330,16 @@ def _apply_agent_fields(text, values, permission_lines=None):
         if key in values:
             replace_inline(key, values[key])
     if permission_lines is not None:
-        section = sections().get("permission")
-        if section and section["inline"]:
-            raise ValueError("permission: wird nur in Blockform unterstützt; Inline-Rechte werden nicht verändert.")
-        block = ["permission:"] + list(permission_lines)
-        if section:
-            lines[section["start"]:section["end"]] = block
+        # Inline-Formen beider Schlüssel werden nicht stillschweigend verändert.
+        for key in ("permission", "permissions"):
+            section = sections().get(key)
+            if section and section["inline"]:
+                raise ValueError(key + ": wird nur in Blockform unterstützt; Inline-Rechte werden nicht verändert.")
+        block = ["permissions:"] + list(permission_lines)
+        # Ein vorhandener v1- oder v2-Block wird durch den v2-Block ersetzt.
+        target = sections().get("permissions") or sections().get("permission")
+        if target:
+            lines[target["start"]:target["end"]] = block
         else:
             lines.extend(block)
     new_body = body
@@ -3264,14 +3377,41 @@ def agent_render_fields(scope, text, values):
     agent_validate(new_text)
     return new_text
 
-def agent_task_policy(text):
-    """Liest ``permission.task`` als Modus und erlaubte Subagenten.
+def _subagent_policy(rules):
+    """Wertet geordnete v2-``subagent``-Regeln aus; die letzte passende Regel gewinnt."""
+    mode, allowed = "none", set()
+    for rule in rules:
+        resource = rule.get("resource")
+        effect = (rule.get("effect") or "").lower()
+        if resource == "*":
+            mode = "all" if effect == "allow" else "none"
+            allowed = set()
+        elif effect == "allow":
+            allowed.add(resource)
+            if mode != "all":
+                mode = "custom"
+        else:
+            allowed.discard(resource)
+    if mode == "all":
+        return {"mode": "all", "allowed": []}
+    unique = sorted(allowed)
+    return {"mode": "custom" if unique else "none", "allowed": unique}
 
-    ``all`` bedeutet ``task: allow``, ``none`` bedeutet gesperrt (auch der
-    Standard ohne Eintrag) und ``custom`` nennt die ausdrücklich erlaubten
-    Namen. Unbekannte Werte werden sicher als gesperrt behandelt.
+
+def agent_task_policy(text):
+    """Liest Subagenten-Rechte als Modus und erlaubte Namen.
+
+    Bei einem v2-``permissions``-Block gelten die ``subagent``-Regeln (die
+    letzte passende Regel gewinnt). Ohne v2-Block bleibt der bisherige
+    v1-``permission.task``-Fallback wirksam. ``all`` bedeutet alles erlaubt,
+    ``none`` gesperrt (auch der Standard ohne Eintrag) und ``custom`` nennt die
+    ausdrücklich erlaubten Namen. Unbekannte Werte werden sicher gesperrt.
     """
     _m, _fm, _body, lines = _frontmatter_parts(text)
+    v2 = next((section for section in _front_sections(lines) if section["key"] == "permissions"), None)
+    if v2 is not None:
+        rules = _v2_rules(lines) or []
+        return _subagent_policy([rule for rule in rules if rule.get("action") == "subagent"])
     permission = next(
         (section for section in _front_sections(lines) if section["key"] == "permission"),
         None,
@@ -3418,8 +3558,18 @@ def agent_validate_hierarchy(name, allowed, own_text=None, vibe_agent=None):
     return sorted(set(allowed))
 
 
+def _subagent_rules(allowed, allow_all=False):
+    """Geordnete v2-``subagent``-Regeln für den gewünschten Freigabestand."""
+    if allow_all:
+        return [("subagent", "*", "allow")]
+    names = sorted(set(allowed))
+    if not names:
+        return [("subagent", "*", "deny")]
+    return [("subagent", "*", "deny")] + [("subagent", name, "allow") for name in names]
+
+
 def agent_render_task(scope, text, allowed, allow_all=False):
-    """Schreibt ``permission.task`` und erhält alle anderen Zeilen unverändert."""
+    """Schreibt Subagenten-Rechte (v2, sonst v1-Fallback) und erhält alles andere."""
     if not allow_all:
         if not isinstance(allowed, list) or any(
             not isinstance(agent, str) or not NAME_RE.match(agent)
@@ -3428,6 +3578,39 @@ def agent_render_task(scope, text, allowed, allow_all=False):
             raise ValueError("Erlaubte Subagenten müssen eine Liste gültiger Agentennamen sein.")
     m, fm, _body, lines = _frontmatter_parts(text)
     sep = "\r\n" if "\r\n" in fm else "\n"
+    sections = _front_sections(lines)
+    v2 = next((section for section in sections if section["key"] == "permissions"), None)
+    if v2 is not None:
+        if v2["inline"]:
+            raise ValueError("permissions: wird nur in Blockform unterstützt; Inline-Rechte werden nicht verändert.")
+        rules = [rule for rule in (_v2_rules(lines) or []) if rule.get("action") != "subagent"]
+        rules += _subagent_rules(allowed, allow_all)
+        lines[v2["start"]:v2["end"]] = ["permissions:"] + _rules_lines(rules)
+        return text[:m.start(1)] + sep.join(lines) + text[m.end(1):]
+    permission = next((section for section in sections if section["key"] == "permission"), None)
+    if permission is None:
+        # Kein Rechteblock vorhanden: komplett als v2 anlegen.
+        lines.extend(["permissions:"] + _rules_lines(_subagent_rules(allowed, allow_all)))
+        return text[:m.start(1)] + sep.join(lines) + text[m.end(1):]
+    if permission["inline"]:
+        raise ValueError("permission: wird nur in Blockform unterstützt; Inline-Rechte werden nicht verändert.")
+    # v1-Block: Passt er zu einer Vorlage, wird komplett auf v2 migriert;
+    # ein individueller Block behält die v1-task-Syntax (Verhalten erhalten).
+    raw_permission = "\n".join(lines[permission["start"]:permission["end"]])
+    preset = None
+    for key in V1_PERMS:
+        if _same_block(raw_permission, "permission:\n" + V1_PERMS[key]):
+            preset = key
+            break
+    if preset is not None:
+        try:
+            dirs = None if scope == "global" else write_dirs(scope)
+        except ValueError:
+            dirs = None
+        rules = [rule for rule in _permission_rules(preset, dirs) if rule[0] != "subagent"]
+        rules += _subagent_rules(allowed, allow_all)
+        lines[permission["start"]:permission["end"]] = ["permissions:"] + _rules_lines(rules)
+        return text[:m.start(1)] + sep.join(lines) + text[m.end(1):]
     if allow_all:
         task_lines = ["  task: allow"]
     else:
@@ -3437,34 +3620,27 @@ def agent_render_task(scope, text, allowed, allow_all=False):
         else:
             task_lines = ["  task:", '    "*": deny']
             task_lines += ["    " + agent + ": allow" for agent in names]
-    sections = _front_sections(lines)
-    permission = next((section for section in sections if section["key"] == "permission"), None)
-    if permission and permission["inline"]:
-        raise ValueError("permission: wird nur in Blockform unterstützt; Inline-Rechte werden nicht verändert.")
-    if permission is None:
-        lines.extend(["permission:"] + task_lines)
+    start, end = permission["start"], permission["end"]
+    task_index = None
+    for index in range(start + 1, end):
+        if re.match(r"^[ \t]+task:", lines[index]):
+            task_index = index
+            break
+    if task_index is None:
+        lines[end:end] = task_lines
     else:
-        start, end = permission["start"], permission["end"]
-        task_index = None
-        for index in range(start + 1, end):
-            if re.match(r"^[ \t]+task:", lines[index]):
-                task_index = index
-                break
-        if task_index is None:
-            lines[end:end] = task_lines
-        else:
-            indent = len(lines[task_index]) - len(lines[task_index].lstrip(" \t"))
-            task_end = task_index + 1
-            while task_end < end:
-                if not lines[task_end].strip():
-                    task_end += 1
-                    continue
-                if len(lines[task_end]) - len(lines[task_end].lstrip(" \t")) <= indent:
-                    break
+        indent = len(lines[task_index]) - len(lines[task_index].lstrip(" \t"))
+        task_end = task_index + 1
+        while task_end < end:
+            if not lines[task_end].strip():
                 task_end += 1
-            while task_end > task_index + 1 and not lines[task_end - 1].strip():
-                task_end -= 1
-            lines[task_index:task_end] = task_lines
+                continue
+            if len(lines[task_end]) - len(lines[task_end].lstrip(" \t")) <= indent:
+                break
+            task_end += 1
+        while task_end > task_index + 1 and not lines[task_end - 1].strip():
+            task_end -= 1
+        lines[task_index:task_end] = task_lines
     return text[:m.start(1)] + sep.join(lines) + text[m.end(1):]
 
 
@@ -3582,9 +3758,16 @@ def agents_all():
 # Version 2 die ausdrückliche Liste der aktiven Agenten (``aktiv``) sowie
 # optionale Modellüberschreibungen (``modelle``). Ohne Datei ist nur der
 # Vibe-Agent aktiv. Version 1 (``deaktiviert``) wird beim Lesen migriert.
-PROJECT_AGENTS_VERSION = 2
-PROJECT_AGENTS_KEYS = ("version", "aktiv", "modelle")
+PROJECT_AGENTS_VERSION = 3
+PROJECT_AGENTS_KEYS = ("version", "aktiv", "modelle", "opencode")
 PROJECT_AGENT_MODEL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/@+-]*$")
+# opencode-eigene Subagenten (AP2-Korbat): keine Dateiagenten, werden allein
+# über die opencode-Subagenten-Mechanik gesteuert (disabled/model je Projekt).
+OPENCODE_AGENTS = ("general", "explore")
+OPENCODE_AGENT_DESCRIPTIONS = {
+    "general": "Allzweck-Subagent für Recherche, Code-Suche und mehrstufige Aufgaben.",
+    "explore": "Schneller Subagent, der Codebestände gezielt durchsucht (Dateien, Muster, Begriffe).",
+}
 
 
 def project_agents_path(name):
@@ -3608,6 +3791,8 @@ def _project_agents_check(data):
     for item in active:
         if not NAME_RE.match(item):
             raise ValueError("Ungültiger Agentenname in 'aktiv': " + repr(item))
+        if item in OPENCODE_AGENTS:
+            raise ValueError("Der opencode-Agent '" + item + "' ist kein Startagent und darf nicht in 'aktiv' stehen.")
     models = data.get("modelle", {})
     if not isinstance(models, dict):
         raise ValueError("'modelle' muss ein Objekt mit Agentenname und Modell sein.")
@@ -3622,16 +3807,49 @@ def _project_agents_check(data):
             if not PROJECT_AGENT_MODEL_RE.match(value):
                 raise ValueError("Das Modell muss die Form 'anbieter/modell' ohne Leerzeichen haben.")
             clean_models[agent] = value
+    opencode = data.get("opencode", {})
+    if not isinstance(opencode, dict):
+        raise ValueError("'opencode' muss ein Objekt mit den Agenten general/explore sein.")
+    opencode_unknown = sorted(set(opencode) - set(OPENCODE_AGENTS))
+    if opencode_unknown:
+        raise ValueError("Unbekannte opencode-Agenten: " + ", ".join(opencode_unknown))
+    clean_opencode = {}
+    for name in OPENCODE_AGENTS:
+        entry = opencode.get(name, {"aktiv": True, "modell": ""})
+        if not isinstance(entry, dict):
+            raise ValueError("Der opencode-Eintrag '" + name + "' muss ein Objekt sein.")
+        entry_unknown = sorted(set(entry) - {"aktiv", "modell"})
+        if entry_unknown:
+            raise ValueError("Unbekannte Felder beim opencode-Agenten '" + name + "': " + ", ".join(entry_unknown))
+        aktiv = entry.get("aktiv", True)
+        if not isinstance(aktiv, bool):
+            raise ValueError("'aktiv' des opencode-Agenten '" + name + "' muss ein JSON-Bool sein.")
+        modell = entry.get("modell", "")
+        if not isinstance(modell, str):
+            raise ValueError("Das Modell muss eine Zeichenkette sein.")
+        value = modell.strip()
+        if value:
+            if not PROJECT_AGENT_MODEL_RE.match(value):
+                raise ValueError("Das Modell muss die Form 'anbieter/modell' ohne Leerzeichen haben.")
+            clean_opencode[name] = {"aktiv": aktiv, "modell": value}
+        else:
+            clean_opencode[name] = {"aktiv": aktiv, "modell": ""}
     return {"version": PROJECT_AGENTS_VERSION,
             "aktiv": sorted(set(active)),
-            "modelle": dict(sorted(clean_models.items()))}
+            "modelle": dict(sorted(clean_models.items())),
+            "opencode": clean_opencode}
+
+
+def _default_opencode():
+    return {name: {"aktiv": True, "modell": ""} for name in OPENCODE_AGENTS}
 
 
 def _project_agents_default():
     vibe = vibe_agent_name()
     return {"version": PROJECT_AGENTS_VERSION,
             "aktiv": [vibe] if vibe else [],
-            "modelle": {}}
+            "modelle": {},
+            "opencode": _default_opencode()}
 
 
 def _project_agents_read(snapshot):
@@ -3659,6 +3877,10 @@ def _project_agents_read(snapshot):
             active.add(vibe)
         data = {"version": PROJECT_AGENTS_VERSION, "aktiv": sorted(active),
                 "modelle": data.get("modelle", {})}
+    elif version == 2:
+        data = dict(data)
+        data["version"] = PROJECT_AGENTS_VERSION
+        data.setdefault("opencode", _default_opencode())
     return _project_agents_check(data)
 
 
@@ -3710,6 +3932,30 @@ def project_agent_rows(name):
                    allowed_agents=policy["allowed"] if policy["mode"] == "custom" else [],
                    task_mode=policy["mode"])
         rows.append(row)
+    # opencode-eigene Subagenten general/explore: keine Dateiagenten, werden
+    # allein über die Projektkonfiguration (aktiv/modell) gesteuert.
+    opencode = config.get("opencode", {})
+    for agent in OPENCODE_AGENTS:
+        entry = opencode.get(agent, {"aktiv": True, "modell": ""})
+        aktiv = entry.get("aktiv", True)
+        modell = entry.get("modell", "")
+        rows.append({
+            "name": agent,
+            "scope": "opencode",
+            "opencode": True,
+            "model": "",
+            "mode": "subagent",
+            "description": OPENCODE_AGENT_DESCRIPTIONS.get(agent, ""),
+            "configured": aktiv,
+            "selected": aktiv,
+            "is_vibe": False,
+            "override": modell,
+            "effective_model": modell,
+            "result": "",
+            "role": "",
+            "allowed_agents": [],
+            "task_mode": "none",
+        })
     return rows
 
 
@@ -3718,11 +3964,14 @@ def project_agent_set(name, agent, selected=None, model=None):
 
     Es wird ausschließlich die Projektdatei geschrieben; Agentendateien und
     andere Projekte bleiben unverändert. Der Vibe-Agent bleibt immer aktiv.
+    Für ``general``/``explore`` wird nur der opencode-Abschnitt geschrieben.
     """
     if not NAME_RE.match(agent or ""):
         raise ValueError("Agentenname: nur a-z, 0-9, _ und -")
     if selected is not None and not isinstance(selected, bool):
         raise ValueError("'selected' muss wahr oder falsch sein.")
+    if agent in OPENCODE_AGENTS:
+        return _opencode_agent_set(name, agent, selected, model)
     inventory = project_agent_inventory(name)
     if agent not in inventory:
         raise ValueError(f"Agent '{agent}' ist für dieses Projekt nicht verfügbar.")
@@ -3752,7 +4001,38 @@ def project_agent_set(name, agent, selected=None, model=None):
     if active == set(config["aktiv"]) and models == config["modelle"]:
         return config
     return project_agents_save(name, {"version": PROJECT_AGENTS_VERSION,
-                                      "aktiv": sorted(active), "modelle": models},
+                                      "aktiv": sorted(active), "modelle": models,
+                                      "opencode": config.get("opencode", {})},
+                               expected=snapshot.digest if snapshot.exists else vibe_storage.MISSING)
+
+
+def _opencode_agent_set(name, agent, selected, model):
+    """Schreibt nur den opencode-Abschnitt für general/explore."""
+    config, snapshot = project_agents_load(name)
+    opencode = {key: dict(value) for key, value in config.get("opencode", {}).items()}
+    entry = opencode.setdefault(agent, {"aktiv": True, "modell": ""})
+    changed = False
+    if selected is not None and entry.get("aktiv", True) != selected:
+        entry["aktiv"] = selected
+        changed = True
+    if model is not None:
+        if not isinstance(model, str):
+            raise ValueError("Das Modell muss eine Zeichenkette sein.")
+        value = model.strip()
+        if value:
+            if not PROJECT_AGENT_MODEL_RE.match(value):
+                raise ValueError("Das Modell muss die Form 'anbieter/modell' ohne Leerzeichen haben.")
+            if entry.get("modell", "") != value:
+                entry["modell"] = value
+                changed = True
+        elif entry.get("modell", ""):
+            entry["modell"] = ""
+            changed = True
+    if not changed:
+        return config
+    new_config = dict(config)
+    new_config["opencode"] = opencode
+    return project_agents_save(name, new_config,
                                expected=snapshot.digest if snapshot.exists else vibe_storage.MISSING)
 
 
@@ -3922,23 +4202,31 @@ def agent_template(description, mode="subagent", model="", temperature="", steps
     if model: lines.append(f"model: {model}")
     if temperature: lines.append(f"temperature: {temperature}")
     if steps: lines.append(f"steps: {steps}")
-    lines += ["permission:", permission_block(perm, write_dirs), "---", "", prompt.strip() or "You are a helpful agent. Describe the task, rules and output format here."]
+    lines += ["permissions:", permission_block(perm, write_dirs), "---", "", prompt.strip() or "You are a helpful agent. Describe the task, rules and output format here."]
     return "\n".join(lines) + "\n"
 
 def _rewrite_edit_block(text, write_dirs):
-    """Ersetzt im Frontmatter nur den edit-Block und erhält alle anderen Zeilen."""
-    m = re.match(r"---[ \t]*\r?\n(.*?)\r?\n---[ \t]*(\r?\n|$)", text, flags=re.S)
-    if not m: raise ValueError("Die Datei muss mit einem Frontmatter-Block beginnen (--- ... ---).")
-    fm = m.group(1); sep = "\r\n" if "\r\n" in fm else "\n"; lines = fm.splitlines()
+    """Ersetzt im Frontmatter nur die edit-Regeln und erhält alle anderen Zeilen."""
+    m, fm, _body, lines = _frontmatter_parts(text)
+    sep = "\r\n" if "\r\n" in fm else "\n"
+    v2 = next((section for section in _front_sections(lines) if section["key"] == "permissions"), None)
+    if v2 is not None:
+        if v2["inline"]:
+            raise ValueError("permissions: wird nur in Blockform unterstützt; Inline-Rechte werden nicht verändert.")
+        rules = [rule for rule in (_v2_rules(lines) or []) if rule.get("action") != "edit"]
+        rules += _edit_rules(write_dirs)
+        lines[v2["start"]:v2["end"]] = ["permissions:"] + _rules_lines(rules)
+        return text[:m.start(1)] + sep.join(lines) + text[m.end(1):]
     for line in lines:
         inline = re.match(r"^permission:[ \t]*(.*)$", line)
         if inline and inline.group(1).strip():
             raise ValueError("permission: wird nur in Blockform unterstützt; Inline-Rechte werden nicht verändert.")
-    block = edit_permission_lines(write_dirs)
     p_idx = next((i for i, l in enumerate(lines) if re.match(r"^permission:\s*$", l)), None)
     if p_idx is None:
-        new_fm = sep.join(lines + ["permission:"] + block)
+        # Ohne jeden Rechteblock wird ein neuer v2-Block angelegt (Neuerzeugung ist v2).
+        new_fm = sep.join(lines + ["permissions:"] + _rules_lines(_edit_rules(write_dirs)))
         return text[:m.start(1)] + new_fm + text[m.end(1):]
+    block = _v1_edit_lines(write_dirs)
     p_end = p_idx + 1
     while p_end < len(lines) and (lines[p_end].startswith((" ", "\t")) or not lines[p_end].strip()): p_end += 1
     while p_end > p_idx + 1 and not lines[p_end - 1].strip(): p_end -= 1
@@ -3953,10 +4241,17 @@ def _rewrite_edit_block(text, write_dirs):
     return text[:m.start(1)] + sep.join(lines) + text[m.end(1):]
 
 def _edit_grants_write(text):
-    """True, wenn das Frontmatter Schreiben erlaubt (fehlender edit-Eintrag = Standard allow)."""
-    m = re.match(r"---[ \t]*\r?\n(.*?)\r?\n---[ \t]*(\r?\n|$)", text, flags=re.S)
-    if not m: return False
-    lines = m.group(1).splitlines()
+    """True, wenn das Frontmatter Schreiben erlaubt (keine edit-Regel = Standard allow)."""
+    try:
+        _m, _fm, _body, lines = _frontmatter_parts(text)
+    except ValueError:
+        return False
+    v2 = next((section for section in _front_sections(lines) if section["key"] == "permissions"), None)
+    if v2 is not None and not v2["inline"]:
+        edit = [rule for rule in (_v2_rules(lines) or []) if rule.get("action") == "edit"]
+        if not edit:
+            return True
+        return any(rule.get("effect") == "allow" for rule in edit)
     for i, line in enumerate(lines):
         inline = re.match(r"^permission:[ \t]*(.*)$", line)
         if inline and inline.group(1).strip():
@@ -4040,11 +4335,15 @@ def cmd_project_agents(name):
     if not rows: sys.exit("Keine Agenten gefunden. Globaler Ordner: " + AGENTS_DIR)
     print(col("b", f"{'Agent':28}{'Geltung':16}{'Auswahl':8}{'Modell':40}Überschreibung"))
     for row in rows:
-        scope = "global" if row["scope"] == "global" else "Projekt " + row["scope"]
+        if row.get("opencode"):
+            scope = "opencode"
+        else:
+            scope = "global" if row["scope"] == "global" else "Projekt " + row["scope"]
         print(f"{row['name'][:27]:28}{scope[:15]:16}{('ja' if row['selected'] else 'nein'):8}"
               f"{row['effective_model'][:39]:40}{row['override']}")
     print(col("d", "Auswahl und Modellüberschreibung gelten nur für dieses Projekt; "
-                   "ohne Überschreibung gilt das Modell aus der Agentendatei."))
+                   "ohne Überschreibung gilt das Modell aus der Agentendatei. "
+                   "general/explore sind opencode-eigene Subagenten (kein Dateiagent)."))
 
 def _editor(path):
     ed = os.environ.get("EDITOR") or shutil.which("nano") or shutil.which("vi") or "vi"

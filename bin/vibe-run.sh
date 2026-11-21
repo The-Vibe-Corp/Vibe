@@ -908,9 +908,43 @@ for agent, model in models.items():
         fail("Das Modell in der Agentenauswahl darf keine Leerzeichen enthalten.")
     clean[agent] = value
 
-if not clean:
-    # Keine wirksamen Projektmodelle: bestehende Konfiguration und Serverwahl
-    # bleiben exakt unverändert.
+# AP2-Korbat: opencode-eigene Subagenten general/explore je Projekt steuern.
+# aktiv=true + Modell -> Modell wie bei 'modelle' in beide Maps; aktiv=false ->
+# disabled ausschließlich in der aktuellen 'agents'-Map (die Legacy-'agent'-Map
+# ignoriert disabled; siehe opencode 2.3.0).
+opencode = project.get("opencode", {})
+if opencode is None:
+    opencode = {}
+if not isinstance(opencode, dict):
+    fail("'opencode' in der Agentenauswahl muss ein Objekt mit general/explore sein.")
+opencode_models = {}
+opencode_disabled = []
+for name in ("general", "explore"):
+    entry = opencode.get(name)
+    if entry is None:
+        continue
+    if not isinstance(entry, dict):
+        fail("Der opencode-Eintrag '" + name + "' in der Agentenauswahl muss ein Objekt sein.")
+    aktiv = entry.get("aktiv", True)
+    if not isinstance(aktiv, bool):
+        fail("'aktiv' des opencode-Agenten '" + name + "' muss ein JSON-Bool sein.")
+    modell = entry.get("modell", "")
+    if modell is None:
+        modell = ""
+    if not isinstance(modell, str):
+        fail("Das Modell des opencode-Agenten '" + name + "' muss eine Zeichenkette sein.")
+    modell = modell.strip()
+    if modell and not MODEL_RE.match(modell):
+        fail("Das Modell des opencode-Agenten '" + name + "' in der Agentenauswahl darf keine Leerzeichen enthalten.")
+    if aktiv:
+        if modell:
+            opencode_models[name] = modell
+    else:
+        opencode_disabled.append(name)
+
+if not clean and not opencode_models and not opencode_disabled:
+    # Keine wirksamen Projektmodelle und keine Deaktivierungen: bestehende
+    # Konfiguration und Serverwahl bleiben exakt unverändert.
     sys.exit(0)
 
 # 2) Vorhandene Inline-Konfiguration (JSON/JSONC) semantisch erhalten.
@@ -927,7 +961,8 @@ if existing.strip():
 # 3) Projektmodelle konsistent in vorhandene Maps einsetzen. v2.3.0 akzeptiert
 #    'agent' (legacy) und 'agents' (aktuell); sind beide vorhanden, gewinnt
 #    'agents' für model. Ohne vorhandene Map wird 'agent' für die Kompatibilität
-#    mit dem Projektprofil 2.1.4 angelegt.
+#    mit dem Projektprofil 2.1.4 angelegt (nur wenn tatsächlich Projektmodelle
+#    vorliegen).
 def ensure_map(config, key):
     entry = config.get(key)
     if entry is None:
@@ -937,24 +972,36 @@ def ensure_map(config, key):
         fail("OPENCODE_CONFIG_CONTENT: '" + key + "' muss ein Objekt sein.")
     return entry
 
+
+def set_entry(mapping, name, key, value):
+    entry = mapping.get(name)
+    if entry is None:
+        entry = {}
+        mapping[name] = entry
+    elif not isinstance(entry, dict):
+        fail("OPENCODE_CONFIG_CONTENT: Eintrag für '" + name + "' muss ein Objekt sein.")
+    entry[key] = value
+
+
 if "agent" in merged or "agents" in merged:
     agent_map = ensure_map(merged, "agent") if "agent" in merged else None
     agents_map = ensure_map(merged, "agents") if "agents" in merged else None
 else:
-    agent_map = ensure_map(merged, "agent")
+    agent_map = ensure_map(merged, "agent") if clean else None
     agents_map = None
 
 for agent, model in clean.items():
     for mapping in (agent_map, agents_map):
         if mapping is None:
             continue
-        entry = mapping.get(agent)
-        if entry is None:
-            entry = {}
-            mapping[agent] = entry
-        elif not isinstance(entry, dict):
-            fail("OPENCODE_CONFIG_CONTENT: Eintrag für '" + agent + "' muss ein Objekt sein.")
-        entry["model"] = model
+        set_entry(mapping, agent, "model", model)
+
+for name, model in opencode_models.items():
+    set_entry(ensure_map(merged, "agent"), name, "model", model)
+    set_entry(ensure_map(merged, "agents"), name, "model", model)
+
+for name in opencode_disabled:
+    set_entry(ensure_map(merged, "agents"), name, "disabled", True)
 
 print(json.dumps(merged, ensure_ascii=False))
 PY

@@ -8,6 +8,7 @@ Projektagenten.
 """
 import json
 import os
+import re
 import socket
 import subprocess
 import sys
@@ -25,15 +26,31 @@ SHOT = Path(os.environ.get("VIBE_VERIFY_SCREENSHOT_DIR", REPO / "docs" / "featur
 AGENT = """---
 description: Projektagent für die Browserprüfung
 mode: subagent
-permission:
-  read: allow
-  glob: allow
-  grep: allow
-  list: allow
-  edit: allow
-  bash: allow
-  webfetch: deny
-  websearch: deny
+permissions:
+  - action: read
+    resource: "*"
+    effect: allow
+  - action: glob
+    resource: "*"
+    effect: allow
+  - action: grep
+    resource: "*"
+    effect: allow
+  - action: edit
+    resource: "*"
+    effect: allow
+  - action: shell
+    resource: "*"
+    effect: allow
+  - action: subagent
+    resource: "*"
+    effect: deny
+  - action: webfetch
+    resource: "*"
+    effect: deny
+  - action: websearch
+    resource: "*"
+    effect: deny
 ---
 
 Du änderst ausschließlich Dateien im Projekt.
@@ -42,13 +59,58 @@ Du änderst ausschließlich Dateien im Projekt.
 READ_ONLY = """---
 description: Nur lesender Projektagent
 mode: subagent
-permission:
-  read: allow
-  edit: deny
+permissions:
+  - action: read
+    resource: "*"
+    effect: allow
+  - action: edit
+    resource: "*"
+    effect: deny
+  - action: shell
+    resource: "*"
+    effect: deny
+  - action: subagent
+    resource: "*"
+    effect: deny
+  - action: webfetch
+    resource: "*"
+    effect: deny
+  - action: websearch
+    resource: "*"
+    effect: deny
 ---
 
 Nur lesen.
 """
+
+
+def edit_pairs(text):
+    """Liest die v2-edit-Regeln als (resource, effect)-Paare."""
+    rules, current, collecting = [], None, False
+    for line in text.splitlines():
+        if re.match(r"^permissions:[ \t]*$", line):
+            collecting = True
+            continue
+        if not collecting:
+            continue
+        if line and not line.startswith((" ", "\t")):
+            break
+        entry = re.match(r"^[ \t]*-[ \t]+([A-Za-z_]+):[ \t]*(.*)$", line)
+        if entry:
+            if current is not None:
+                rules.append(current)
+            current = {entry.group(1): entry.group(2).strip().strip('"')}
+            continue
+        field = re.match(r"^[ \t]+([A-Za-z_]+):[ \t]*(.*)$", line)
+        if field and current is not None:
+            current[field.group(1)] = field.group(2).strip().strip('"')
+    if current is not None:
+        rules.append(current)
+    return [
+        (rule.get("resource"), rule.get("effect"))
+        for rule in rules
+        if rule.get("action") == "edit"
+    ]
 
 
 ISOLATED_ENV = (
@@ -327,11 +389,10 @@ class WriteDirsBrowserTest(unittest.TestCase):
 
         raw = form.locator("textarea.raw")
         self.wait_until(
-            lambda: "  edit: allow" in raw.input_value(),
+            lambda: edit_pairs(raw.input_value()) == [("*", "allow")],
             message="Globale Vorlage wurde eingeschränkt",
         )
         text = raw.input_value()
-        self.assertNotIn('"*": deny', text)
         self.assertNotIn(
             f'"{os.path.realpath(self.project)}/**": allow', text
         )
@@ -364,16 +425,22 @@ class WriteDirsBrowserTest(unittest.TestCase):
 
         card.get_by_role("button", name="Apply to project agents").click()
         self.wait_until(
-            lambda: '    "*": deny' in agent.read_text(encoding="utf-8"),
+            lambda: edit_pairs(agent.read_text(encoding="utf-8"))
+            == [
+                ("*", "deny"),
+                ("/tmp/opencode", "allow"),
+                ("/tmp/opencode/**", "allow"),
+                (os.path.realpath(self.project), "allow"),
+                (os.path.realpath(self.project) + "/**", "allow"),
+            ],
             message="Schreibrechte wurden nicht auf den Projektagenten angewendet",
         )
 
         text = agent.read_text(encoding="utf-8")
-        self.assertNotIn("  edit: allow", text)
-        self.assertIn(f'    "{os.path.realpath(self.project)}/**": allow', text)
-        self.assertIn('    "/tmp/opencode/**": allow', text)
-        self.assertIn("  bash: allow", text)
+        self.assertIn(f'resource: "{os.path.realpath(self.project)}/**"', text)
+        self.assertIn('resource: "/tmp/opencode/**"', text)
         self.assertIn("Du änderst ausschließlich Dateien im Projekt.", text)
+        self.assertNotIn("bash:", text)
 
         # Nach dem Anwenden lädt detail(name) das Projektdetail neu. Erst wenn die
         # alte Karte aus dem DOM entfernt und die neue aufgebaut ist, ist der

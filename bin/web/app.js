@@ -540,9 +540,9 @@ function projectAgentsCard(name,onPill){
   mo.setAttribute('data-model-override',a.name);mo.setAttribute('aria-label',tr('Modell für ')+a.name);
   mo.addEventListener('change',async()=>{const r=await api('/api/project-agents',{name,agent:a.name,model:mo.value});
    toast(bt(r.message));if(r.ok)load().catch(showErr)});
-  return el('tr',{'data-project-agent':a.name,'data-configured':a.configured?'ja':'nein'},
+  return el('tr',{'data-project-agent':a.name,'data-configured':a.configured?'ja':'nein','data-opencode':a.opencode?'ja':'nein'},
    el('td',{},cb),
-   el('td',{},a.name,a.is_vibe?el('span',{class:'pill ok'},' vibe'):null),
+   el('td',{},a.name,a.is_vibe?el('span',{class:'pill ok'},' vibe'):null,a.opencode?el('span',{class:'pill','data-opencode':''},' ',tr('OpenCode')):null),
    el('td',{'data-aufgabe':a.name},a.description||'—'),
    el('td',{class:'mut','data-ergebnis':a.name},a.result||'—'),
    el('td',{'data-erlaubt':a.name},allowedLabel(a)),
@@ -556,6 +556,7 @@ function projectAgentsCard(name,onPill){
   toggle.addEventListener('change',()=>{showUnconfigured=toggle.checked;rowsCard(data)});
   const parts=[
    el('div',{class:'mut'},tr('Projekte verwenden ausschließlich systemweite Agenten. Standardmäßig ist nur der Vibe-Agent konfiguriert; weitere Agenten lassen sich einblenden und auswählen. Das Modell gilt nur für dieses Projekt und ändert die Agentendatei nicht.')),
+   el('div',{class:'mut'},tr('OpenCode-Agenten (general, explore) sind eingebaute Subagenten ohne eigene Datei. Abwählen sperrt ihr Aufrufen durch andere Agenten in Läufen dieses Projekts; ihr Modell lässt sich hier je Projekt überschreiben.')),
    el('label',{style:'margin:6px 0'},toggle,tr(' Nicht konfigurierte Agenten anzeigen (')+hidden+')'),
    el('div',{class:'tablewrap'},el('table',{},el('tr',{},...[tr('Aktiv'),tr('Agent'),tr('Aufgabe'),tr('Ergebnis'),tr('Subagenten'),tr('Wirksames Modell'),tr('Modell für dieses Projekt')].map(h=>el('th',{},h))),...visible))];
   if(!visible.length)parts.push(el('span',{class:'mut'},tr('Keine Agenten sichtbar.')));

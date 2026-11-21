@@ -260,12 +260,28 @@ class ProjectAgentsBrowserTest(unittest.TestCase):
     def row_is_visible(self, locator):
         return locator.count() > 0 and locator.first.is_visible()
 
+    def row_is_opencode_marked(self, row):
+        blob = row.inner_text().lower()
+        attributes = row.evaluate(
+            "el => [...el.attributes].map(a => a.name + '=' + a.value).join(' ')"
+        )
+        return "opencode" in blob or "opencode" in attributes.lower()
+
     def reveal_unconfigured(self):
         if not self.row_is_visible(
             self.page.locator('tr[data-project-agent="tester"]')
         ):
             self.page.locator('input[data-toggle="unconfigured"]').check()
             self.page.locator('tr[data-project-agent="tester"]').wait_for()
+
+    def reveal_opencode_row(self, name):
+        row = self.page.locator(f'tr[data-project-agent="{name}"]')
+        if not self.row_is_visible(row):
+            toggle = self.page.locator('input[data-toggle="unconfigured"]')
+            if not toggle.is_checked():
+                toggle.check()
+            row.wait_for()
+        return row
 
     def test_editor_model_selection_is_saved_without_manual_render(self):
         """AK Editor: Modell und Prompt werden ohne Zwischenschritt gespeichert."""
@@ -363,8 +379,8 @@ class ProjectAgentsBrowserTest(unittest.TestCase):
         # Teil der Auswahl.
         self.assertEqual(self.page.locator('tr[data-project-agent="lokal"]').count(), 0)
 
-    def test_project_selection_writes_version_two_and_keeps_vibe(self):
-        """AK Projektauswahl: Version 2 mit aktiv; Vibe bleibt konfiguriert."""
+    def test_project_selection_writes_version_three_and_keeps_vibe(self):
+        """AK Projektauswahl: Version 3 mit aktiv; Vibe bleibt konfiguriert."""
         self.open_project_settings()
         self.reveal_unconfigured()
 
@@ -379,7 +395,7 @@ class ProjectAgentsBrowserTest(unittest.TestCase):
             message="Der ausgewählte Agent wurde nicht in 'aktiv' gespeichert",
         )
         config = self.agents_config()
-        self.assertEqual(config.get("version"), 2)
+        self.assertEqual(config.get("version"), 3)
         self.assertIn("tester", config.get("aktiv", []))
         self.assertIn("vibe-agent", config.get("aktiv", []))
 
@@ -391,8 +407,59 @@ class ProjectAgentsBrowserTest(unittest.TestCase):
             message="Der abgewählte Agent wurde nicht aus 'aktiv' entfernt",
         )
         config = self.agents_config()
-        self.assertEqual(config.get("version"), 2)
+        self.assertEqual(config.get("version"), 3)
         self.assertIn("vibe-agent", config.get("aktiv", []))
+
+    def test_opencode_agents_are_marked_toggleable_and_keep_state(self):
+        """AK B5: general/explore sind als OpenCode markiert und bleiben wählbar."""
+        self.open_project_settings()
+
+        for name in ("general", "explore"):
+            row = self.page.locator(f'tr[data-project-agent="{name}"]')
+            row.wait_for()
+            self.assertTrue(
+                self.row_is_opencode_marked(row),
+                f"OpenCode-Kennzeichnung fehlt bei {name}",
+            )
+        card = self.page.locator("#project-agents")
+        self.assertRegex(
+            card.inner_text().lower(),
+            r"sperr|verboten|blockiert|block|forbid",
+            "Die Umschaltung erklärt das Sperren für andere Agenten nicht",
+        )
+
+        configure = self.page.locator('input[data-configure="general"]')
+        self.assertTrue(configure.is_checked())
+        configure.uncheck()
+        self.wait_until(
+            lambda: self.agents_config().get("opencode", {})
+            .get("general", {}).get("aktiv") is False,
+            message="Der OpenCode-Toggle wurde nicht gespeichert",
+        )
+        config = self.agents_config()
+        self.assertEqual(config.get("version"), 3)
+        self.assertNotIn("general", config.get("aktiv", []))
+
+        model = self.page.locator('select[data-model-override="explore"]')
+        model.select_option("opencode/anderes")
+        self.wait_until(
+            lambda: self.agents_config().get("opencode", {})
+            .get("explore", {}).get("modell") == "opencode/anderes",
+            message="Das OpenCode-Modell wurde nicht gespeichert",
+        )
+
+        self.open_project_settings()
+        self.reveal_unconfigured()
+        self.page.locator('tr[data-project-agent="general"]').wait_for()
+        self.assertFalse(
+            self.page.locator('input[data-configure="general"]').is_checked(),
+            "Der OpenCode-Toggle ging beim Neuladen verloren",
+        )
+        self.assertEqual(
+            self.page.locator('select[data-model-override="explore"]').input_value(),
+            "opencode/anderes",
+            "Das OpenCode-Modell ging beim Neuladen verloren",
+        )
 
 
 if __name__ == "__main__":

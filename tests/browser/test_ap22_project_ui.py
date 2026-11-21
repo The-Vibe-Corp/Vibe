@@ -867,6 +867,74 @@ class TeamTest(AP22ProjectBrowserTest):
         self.assert_clean_page()
 
 
+class OpencodeTeamTest(AP22ProjectBrowserTest):
+    def test_opencode_team_agents_are_marked_toggleable_and_persisted(self):
+        """AK B5: general/explore sind als OpenCode markiert und bleiben wählbar.
+
+        Vorbedingung: globale Agenten; Projekt ``proj`` geöffnet.
+        Aktion: Team-Bereich öffnen, general abwählen, explore ein Modell
+        geben, Seite neu laden.
+        Erwartung: OpenCode-Kennzeichnung, gespeicherter Schalter und Modell
+        sind nach dem Reload unverändert sichtbar.
+        """
+        self.open_project()
+        self.open_tab("settings")
+
+        general = self.page.locator("[data-nv-team-agent='general']").first
+        general.wait_for(state="visible", timeout=20000)
+        explore = self.page.locator("[data-nv-team-agent='explore']").first
+        explore.wait_for(state="visible", timeout=20000)
+        for row in (general, explore):
+            self.assertIn(
+                "opencode", row.inner_text().lower(),
+                "Der opencode-Agent ist im Team-Bereich nicht als OpenCode markiert")
+        self.assertIn(
+            "opencode",
+            self.page.locator("[data-nv-psection='team']").inner_text().lower(),
+            "Die OpenCode-Kennzeichnung fehlt im Team-Bereich")
+
+        toggle = general.locator("input[data-nv-agent-toggle]")
+        self.assertTrue(toggle.is_checked(),
+                        "Der opencode-Agent general ist nicht standardmäßig erlaubt")
+        toggle.click()
+        self.wait_api(
+            f"/api/project-agents?name={PROJECT}",
+            lambda data: any(
+                agent.get("name") == "general" and agent.get("configured") is False
+                for agent in data.get("agents", [])),
+            message="Der OpenCode-Toggle wurde nicht gespeichert")
+
+        model = explore.locator("select[data-nv-agent-model]").first
+        self.wait_until(
+            lambda: model.locator(
+                "option[value='opencode/helper-modell']").count() == 1,
+            timeout=20,
+            message="Der Modellkatalog enthält das Ersatzmodell nicht")
+        model.select_option("opencode/helper-modell")
+        self.wait_api(
+            f"/api/project-agents?name={PROJECT}",
+            lambda data: any(
+                agent.get("name") == "explore"
+                and agent.get("override") == "opencode/helper-modell"
+                for agent in data.get("agents", [])),
+            message="Das OpenCode-Modell wurde nicht gespeichert")
+
+        self.page.reload()
+        self.page.locator("main#nv-main[data-nv-view='project']").wait_for(
+            state="visible", timeout=25000)
+        general = self.page.locator("[data-nv-team-agent='general']").first
+        general.wait_for(state="visible", timeout=20000)
+        self.assertFalse(
+            general.locator("input[data-nv-agent-toggle]").is_checked(),
+            "Der OpenCode-Schalter ging beim Reload verloren")
+        explore = self.page.locator("[data-nv-team-agent='explore']").first
+        self.assertEqual(
+            "opencode/helper-modell",
+            explore.locator("select[data-nv-agent-model]").input_value(),
+            "Das OpenCode-Modell ging beim Reload verloren")
+        self.assert_clean_page()
+
+
 class BasicsTest(AP22ProjectBrowserTest):
     def test_basics_has_init_button(self):
         """Vorbedingung: Projekt geöffnet. Aktion: Einstellungen, Bereich
