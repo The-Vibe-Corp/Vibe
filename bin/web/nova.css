@@ -1221,6 +1221,17 @@ input[data-nv-sub-steer] {
   font-size: 0.875rem;
 }
 button[data-nv-sub-steer-send] { padding: var(--nv-space-1) var(--nv-space-3); font-size: 0.875rem; }
+.nv-out-sub-steer { display: flex; flex-wrap: wrap; align-items: center; gap: var(--nv-space-2); margin-top: var(--nv-space-2); }
+/* Vergrößerung: Seite dahinter fixieren. Bewusst keine .nv-out-enlarged am Body —
+   die vergrößerte Fläche bleibt dadurch genau ein Element. */
+body.nv-out-enlarged-open { overflow: hidden; }
+/* Die Slide-in-Animation lässt .nv-card eine Identitäts-Transformation behalten;
+   die macht das Panel zum Bezugssystem für position:fixed. Während der
+   Vergrößerung entfernen, damit die Fläche den Viewport wirklich füllt. */
+html[data-animations="on"] .nv-out-enlarged-open .nv-ppanel {
+  animation: none;
+  transform: none;
+}
 /* ===== F33 WP5 styles (Aktivität/Einstellungen) — nur in diesem Block ergänzen ===== */
 /* Funktionsgruppen im responsiven Raster. */
 .nv-feature-groups, [data-nv-feature-groups] {

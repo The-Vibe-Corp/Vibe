@@ -93,6 +93,7 @@ function nvOutCleanup() {
     NV_OUTPUT.heroStop.removeAttribute('data-nv-hero-stop');
   }
   NV_OUTPUT.heroStop = null;
+  document.body.classList.remove('nv-out-enlarged-open');
 }
 
 NV.output = {
@@ -130,7 +131,7 @@ NV.output = {
     var running = false;
     var isPi = false;
     var mainText = '';
-    var focusedSession = '';
+    var focusTarget = '';
     var cards = {};
 
     /* ---------- DOM (rein deklarativ, keine Protokoll-innerHTML) ---------- */
@@ -142,6 +143,13 @@ NV.output = {
 
     var mainLog = el('pre', {class: 'nv-log nv-out-main', 'data-nv-out-main': '',
       role: 'log', tabindex: '0', 'aria-label': tr('Hauptagent')});
+    var mainFocusButton = el('button', {class: 'nv-btn nv-ghost', type: 'button',
+      'data-nv-action': 'out-focus', 'aria-label': tr('Hauptagent fokussieren'),
+      'aria-expanded': 'false'}, tr('Fokus'));
+    var mainWrap = el('div', {class: 'nv-out-main-wrap'},
+      el('div', {class: 'nv-out-main-head'},
+        el('b', {}, tr('Hauptagent')), mainFocusButton),
+      mainLog);
 
     var subs = el('div', {class: 'nv-out-subs', 'data-nv-out-subs': ''});
 
@@ -166,28 +174,37 @@ NV.output = {
     steerInput.hidden = true;
     steerButton.hidden = true;
 
+    /* Steuerblock vor dem Log: auch bei langem Protokoll ohne Scrollen da. */
     panelRoot.replaceChildren(el('div', {class: 'nv-out'},
-      overview, mainLog, subs, controls));
+      overview, controls, mainWrap, subs));
 
-    /* ---------- Fokus: genau eine Karte trägt das Merkmal ---------- */
+    /* ---------- Fokus/Vergrößern: genau eine Ausgabe ist flächig ---------- */
     function applyFocus() {
+      if (focusTarget !== 'main' && !cards[focusTarget]) focusTarget = '';
       Object.keys(cards).forEach(function (id) {
         var card = cards[id];
-        var on = id === focusedSession;
+        var on = focusTarget === id;
         card.node.classList.toggle('nv-out-focused', on);
+        card.node.classList.toggle('nv-out-enlarged', on);
         card.node.setAttribute('data-focus', on ? 'true' : 'false');
         card.focusButton.setAttribute('aria-expanded', on ? 'true' : 'false');
         setTx(card.focusButton, tr(on ? 'Fokus aufheben' : 'Fokus'));
       });
+      var mainOn = focusTarget === 'main';
+      mainWrap.classList.toggle('nv-out-enlarged', mainOn);
+      mainFocusButton.setAttribute('aria-expanded', mainOn ? 'true' : 'false');
+      setTx(mainFocusButton, tr(mainOn ? 'Fokus aufheben' : 'Fokus'));
+      document.body.classList.toggle('nv-out-enlarged-open', !!focusTarget);
     }
     function toggleFocus(id) {
-      focusedSession = focusedSession === id ? '' : id;
+      focusTarget = focusTarget === id ? '' : id;
       applyFocus();
     }
+    mainFocusButton.addEventListener('click', function () { toggleFocus('main'); });
     NV_OUTPUT.keyHandler = function (event) {
-      if (event.key === 'Escape' && focusedSession) {
+      if (event.key === 'Escape' && focusTarget) {
         event.preventDefault();
-        focusedSession = '';
+        focusTarget = '';
         applyFocus();
       }
     };
@@ -223,6 +240,7 @@ NV.output = {
       steerButton.hidden = !canSteer;
       stopButton.hidden = !running;
       piNote.hidden = !isPi;
+      Object.keys(cards).forEach(function (id) { cards[id].steerRow.hidden = !canSteer; });
     }
 
     function pollState() {
@@ -247,15 +265,36 @@ NV.output = {
       var status = el('span', {class: 'nv-pill'});
       var focusButton = el('button', {class: 'nv-btn nv-ghost', type: 'button',
         'aria-label': tr('Subagent fokussieren'), 'aria-expanded': 'false'}, tr('Fokus'));
+      var subSteer = el('input', {type: 'text', 'data-nv-sub-steer': '',
+        placeholder: tr('Anweisung an den Subagenten'),
+        'aria-label': tr('Anweisung an den Subagenten')});
+      var subSend = el('button', {class: 'nv-btn nv-secondary', type: 'button',
+        'data-nv-sub-steer-send': ''}, tr('Anweisung senden'));
+      var steerRow = el('div', {class: 'nv-out-sub-steer'}, subSteer, subSend);
       var node = el('article', {class: 'nv-card nv-out-sub', 'data-nv-out-sub': session},
         el('div', {class: 'nv-out-sub-head'},
           el('b', {}, String(entry.agent || tr('Subagent'))),
           status, focusButton),
-        log);
+        log, steerRow);
       var card = {node: node, log: log, status: status, focusButton: focusButton,
-        text: '', loading: false};
+        steerRow: steerRow, text: '', loading: false};
       cards[session] = card;
       focusButton.addEventListener('click', function () { toggleFocus(session); });
+      steerRow.hidden = !(running && !isPi);
+      subSend.addEventListener('click', async function () {
+        var text = String(subSteer.value || '').trim();
+        if (!text) { subSteer.focus(); toast(tr('Bitte eine Anweisung eingeben.')); return; }
+        subSteer.value = '';
+        try {
+          var result = await api('/api/steer', {name: name, text: text, session: session});
+          if (!alive()) return;
+          toast(bt(result && result.message)
+            || (result && result.ok ? tr('Anweisung übermittelt.') : tr('Anweisung abgelehnt.')));
+        } catch (error) {
+          if (!alive()) return;
+          toast(tr('Anweisung nicht gesendet: ') + String(error && error.message || error));
+        }
+      });
       return card;
     }
 
@@ -291,7 +330,7 @@ NV.output = {
           if (wanted[id]) return;
           cards[id].node.remove();
           delete cards[id];
-          if (focusedSession === id) focusedSession = '';
+          if (focusTarget === id) focusTarget = '';
         });
         subsRunning.forEach(function (entry) {
           var session = String(entry.session);
