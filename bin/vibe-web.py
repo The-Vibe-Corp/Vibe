@@ -1327,6 +1327,8 @@ class H(BaseHTTPRequestHandler):
                 return self._send(200, vibe_services.guide_info(vibe, known(q["name"][0])))
             if u.path == "/api/agents_file":
                 return self._send(200, vibe.agents_file_view(known(q["name"][0])))
+            if u.path == "/api/global_agents_file":
+                return self._send(200, vibe.global_agents_view())
             # AP11: Priorisierung je Projekt einsehen (konfigurierte Reihenfolge
             # mit Status und effektive Abarbeitungsreihenfolge).
             if u.path == "/api/priority":
@@ -1499,7 +1501,9 @@ class H(BaseHTTPRequestHandler):
         try:
             name = body.get("name", "")
             if u.path in ("/api/run", "/api/stop", "/api/verify", "/api/feedback", "/api/ticket", "/api/init", "/api/rights", "/api/pause", "/api/sandbox", "/api/guide", "/api/agents_file", "/api/costs", "/api/autonomous", "/api/steer", "/api/continue", "/api/sessions", "/api/github", "/api/priority"):
-                known(name)
+                # WP6.5: prices_global ist projektlos — es verlangt kein Projekt.
+                if not (u.path == "/api/costs" and body.get("action") == "prices_global"):
+                    known(name)
             extra = {}
             if u.path == "/api/security":
                 # AP13: Zugriffssicherheit je Aktion ändern. Validierung
@@ -1869,6 +1873,9 @@ class H(BaseHTTPRequestHandler):
                         vibe.costs_set_prices(name, body.get("prices") or {}, expected=body.get("expected"))
                         msg = "Preise gespeichert"
                         extra["costs"] = vibe.costs_project(name)
+                    elif act == "prices_global":
+                        vibe.costs_set_global_prices(body.get("prices"))
+                        msg = "Globale Preise gespeichert"
                     else:
                         ok, msg = False, "Unbekannte Aktion"
                 except vibe_storage.ConcurrentChangeError as e:
@@ -1963,6 +1970,19 @@ class H(BaseHTTPRequestHandler):
                     except ValueError as e:
                         ok, msg = False, str(e)
                     extra["agents_file"] = vibe.agents_file_view(name)
+                elif act == "backup":
+                    vibe.agents_file_backup(name)
+                    ok, msg = True, "AGENTS.md gesichert"
+                    extra["agents_file"] = vibe.agents_file_view(name)
+                elif act == "restore":
+                    if not body.get("confirm"):
+                        return self._error(
+                            400, "rejected",
+                            "Restore ohne Bestätigung nicht möglich — senden "
+                            "Sie {\"action\": \"restore\", \"confirm\": true}.")
+                    vibe.agents_file_restore(name)
+                    ok, msg = True, "AGENTS.md wiederhergestellt"
+                    extra["agents_file"] = vibe.agents_file_view(name)
                 elif act == "create":
                     try:
                         created = vibe.agents_file_create(name)
@@ -1976,6 +1996,25 @@ class H(BaseHTTPRequestHandler):
                 else:
                     # Der Test-Agent erwartet für unbekannte Aktionen einen
                     # Clientfehler; bekannte Fehler bleiben als ok:false.
+                    return self._error(400, "rejected", "Unbekannte Aktion")
+            elif u.path == "/api/global_agents_file":
+                act = body.get("action")
+                if act == "save":
+                    try:
+                        result = vibe.global_agents_save(
+                            body.get("text"), body.get("digest"))
+                        ok, msg = True, result["message"]
+                        extra["digest"] = result["digest"]
+                    except ValueError as e:
+                        ok, msg = False, str(e)
+                elif act == "create":
+                    try:
+                        created = vibe.global_agents_create()
+                        ok, msg = True, ("Vorlage angelegt" if created != "kept"
+                                         else "Vorlage war bereits vorhanden")
+                    except ValueError as e:
+                        ok, msg = False, str(e)
+                else:
                     return self._error(400, "rejected", "Unbekannte Aktion")
             elif u.path == "/api/priority":
                 # AP11: Priorisierung setzen oder leeren; die Antwort enthält
@@ -2105,6 +2144,13 @@ class H(BaseHTTPRequestHandler):
                         extra["text"] = snapshot.text
                         extra["digest"] = snapshot.digest
                         ok, msg = True, "Gespeichert" + (" – Hinweis: " + " ".join(warn) if warn else "")
+                    elif act == "backup":
+                        vibe.agent_backup(scope, an)
+                        snapshot = vibe.agent_snapshot(scope, an)
+                        extra["backups"] = vibe.agent_backups(scope, an)
+                        extra["text"] = snapshot.text
+                        extra["digest"] = snapshot.digest
+                        ok, msg = True, "Sicherung angelegt"
                     elif act == "delete":
                         vibe.agent_delete(scope, an)
                         ok, msg = True, "Gelöscht (Sicherung in agent-backups)"
@@ -2273,6 +2319,10 @@ STATIC_FILES = {
     "/static/nova-agents.js": ("web/nova-agents.js", "application/javascript"),
     "/static/nova-activity.js": ("web/nova-activity.js", "application/javascript"),
     "/static/nova-settings.js": ("web/nova-settings.js", "application/javascript"),
+    # WP6: die Dateien liegen noch nicht in bin/web/ (eigene Arbeitspakete).
+    # Ein fehlendes Ziel führt in static_asset zu None und damit zum normalen 404.
+    "/static/vibe.svg": ("web/vibe.svg", "image/svg+xml"),
+    "/static/nova-widgets.js": ("web/nova-widgets.js", "application/javascript"),
 }
 
 def page():

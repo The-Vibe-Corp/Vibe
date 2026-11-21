@@ -2730,6 +2730,120 @@ def agents_file_create(name):
     vibe_storage.write_text(path, content, expected=vibe_storage.MISSING)
     return "created"
 
+
+def agents_file_backup_dir(name):
+    """Verzeichnis der AGENTS.md-Sicherungen: ``BACKUPS/<safe(name)>-agents-md``."""
+    return os.path.join(BACKUPS, safe(name) + "-agents-md")
+
+
+def agents_file_backup(name):
+    """Sichert die AGENTS.md des Projekts; die Datei bleibt unverändert.
+
+    Der Sicherungsname trägt einen Zeitstempel und ist kollisionsfrei;
+    ``agents_file_restore`` stellt die neueste Sicherung wieder her.
+    """
+    target = os.path.join(ppath(name), "AGENTS.md")
+    return vibe_storage.backup_file(
+        target, agents_file_backup_dir(name), label="AGENTS.md")
+
+
+def agents_file_restore(name):
+    """Stellt die neueste AGENTS.md-Sicherung wieder.
+
+    Vor dem Zurückschreiben wird der aktuelle Stand als Safety-Sicherung
+    abgelegt. Ohne Sicherung wird ``ValueError`` geworfen.
+    """
+    directory = agents_file_backup_dir(name)
+    names = vibe_storage.list_backups(directory)
+    if not names:
+        raise ValueError("Keine AGENTS.md-Sicherung in " + directory)
+    target = os.path.join(ppath(name), "AGENTS.md")
+    newest = max(
+        names, key=lambda item: (os.path.getmtime(os.path.join(directory, item)),
+                                 item))
+    return vibe_storage.restore_backup(directory, newest, target,
+                                       label="AGENTS.md")
+
+
+_GLOBAL_AGENTS_TEMPLATE = """# Globale AGENTS.md
+
+Instruktionen, die für **alle** Projekte gelten, ergänzen Sie hier —
+zum Beispiel Codestil, Sicherheitsregeln oder Konsolidierungsrichtlinien.
+
+<!-- Ausgangspunkt — passen Sie diesen Block an oder entfernen Sie ihn. -->
+"""
+
+
+def global_agents_path(environ=None):
+    """Ort der universellen AGENTS.md im opencode-Konfigurationsordner (WP6.3).
+
+    Auflösungsreihenfolge: ``VIBE_GLOBAL_AGENTS`` →
+    ``XDG_CONFIG_HOME/opencode/AGENTS.md`` → ``~/.config/opencode/AGENTS.md``.
+    Nur auflösen, nie anlegen.
+    """
+    env = dict(os.environ if environ is None else environ)
+    override = env.get("VIBE_GLOBAL_AGENTS")
+    if vibe_paths._given(override):
+        return os.path.abspath(
+            vibe_paths._expand_user(override, vibe_paths._home(env)))
+    home = vibe_paths._home(env)
+    xdg = env.get("XDG_CONFIG_HOME")
+    base = vibe_paths._expand_user(xdg, home) if vibe_paths._given(xdg) \
+        else os.path.join(home, ".config")
+    return os.path.join(base, "opencode", "AGENTS.md")
+
+
+def global_agents_view():
+    """Ansicht der universellen AGENTS.md: ``exists``, ``digest``, ``text``, ``path_hint``.
+
+    Eine fehlende Datei ist kein Fehler (``exists`` falsch, Text leer); ein
+    Symlink wird nicht gelesen.
+    """
+    path = global_agents_path(None)
+    if os.path.islink(path):
+        return {"exists": False, "digest": "", "text": "",
+                "path_hint": "Symlink wird nicht gelesen: " + str(path)}
+    snapshot = vibe_storage.read_snapshot(path)
+    if not snapshot.exists:
+        return {"exists": False, "digest": "", "text": "",
+                "path_hint": str(path)}
+    return {"exists": True, "digest": snapshot.digest,
+            "text": snapshot.text, "path_hint": str(path)}
+
+
+def global_agents_save(text, digest):
+    """Schreibt die universelle AGENTS.md atomar mit Digest-Schutz.
+
+    Ein überholter Digest wird abgelehnt (``ConcurrentChangeError``), Symlinks
+    werden nicht verfolgt. Liefert ``{"ok", "message", "digest"}``.
+    """
+    if not isinstance(text, str) or not isinstance(digest, str) or not digest:
+        raise ValueError("Speichern der globalen AGENTS.md verlangt Text und "
+                         "Prüfsumme.")
+    path = global_agents_path(None)
+    if os.path.islink(path):
+        raise ValueError("Symlink wird nicht überschrieben.")
+    vibe_storage.write_text(path, text, expected=digest)
+    return {"ok": True, "message": "Gespeichert",
+            "digest": vibe_storage.digest_bytes(text.encode("utf-8"))}
+
+
+def global_agents_create():
+    """Legt eine minimale universelle AGENTS.md an, falls die Datei fehlt.
+
+    Vorhandene Dateien bleiben unverändert (``"kept"``); Symlinks werden
+    abgelehnt. Geschrieben wird atomar.
+    """
+    path = global_agents_path(None)
+    if os.path.islink(path):
+        raise ValueError("Symlink wird nicht überschrieben.")
+    if os.path.lexists(path):
+        return "kept"
+    vibe_storage.write_text(
+        path, _GLOBAL_AGENTS_TEMPLATE, expected=vibe_storage.MISSING)
+    return "created"
+
+
 def cmd_init(name, typ=None, out=None):
     out = out or sys.stdout
     p = ppath(name); typ = typ or ptype(name)
@@ -4263,6 +4377,17 @@ def agent_backups(scope, name):
     return [item for item in vibe_storage.list_backups(agent_backup_dir(scope), label=name)
             if pattern.match(item)]
 
+def agent_backup(scope, name):
+    """Sichert die unveränderte Agentendatei im Bereichssicherungsordner.
+
+    Unbekannte Agenten und unsichere Namen werfen ``ValueError``; keine
+    Sicherung wird angelegt. Die Agentendatei selbst bleibt byte-identisch.
+    """
+    p = agent_path(scope, name)
+    if not vibe_storage.read_snapshot(p).exists:
+        raise ValueError("Agent nicht gefunden: " + str(name))
+    return vibe_storage.backup_file(p, agent_backup_dir(scope), label=name)
+
 def agent_restore(scope, name, backup=None):
     """Stellt eine Sicherung wieder her; ohne Angabe die neueste."""
     items = agent_backups(scope, name)
@@ -4688,6 +4813,7 @@ def cmd_profile(action="list", name=None):
 COSTS_FILE = os.path.join(TOOLS, "costs.json")
 PRICES_FILE = os.path.join(TOOLS, "prices.json")
 COSTS_CURRENCY = "EUR"
+GLOBAL_PRICES_FILE = os.path.join(PATHS.state, "global-prices.json")
 COSTS_UNIT_TOKENS = 1_000_000
 COSTS_MAX_PRICE = 1_000_000.0
 PRICE_FIELDS = ("input", "cached_input", "output")
@@ -4905,6 +5031,64 @@ def costs_set_prices(name, prices, expected=None):
         COSTS_FILE, json.dumps(data, indent=1, ensure_ascii=False) + "\n",
         expected=expected)
     return project_prices(name)
+
+
+def costs_set_global_prices(prices):
+    """Speichert persönliche globale Modellpreise im Zustandsordner.
+
+    ``prices`` bildet Modell-ID auf ``{input, cached_input, output}`` ab; ein
+    ``None``-Wert entfernt den Eintrag. Ungültige Eingaben lösen
+    ``ValueError`` aus und schreiben nichts. Liefert ``global_prices()``.
+    """
+    if not isinstance(prices, dict):
+        raise ValueError("prices muss ein Objekt sein")
+    normalized = {}
+    for model, price in prices.items():
+        model = str(model).strip()
+        if not model:
+            raise ValueError("Modellname fehlt")
+        if len(model) > 200 or any(char in model for char in "\r\n\t"):
+            raise ValueError("Modellname ist ungültig: " + model[:60])
+        normalized[model] = None if price is None else _normalize_price(price)
+    kept = {model: price for model, price in normalized.items()
+            if price is not None}
+    vibe_storage.write_text(
+        GLOBAL_PRICES_FILE,
+        json.dumps(kept, indent=1, ensure_ascii=False, sort_keys=True) + "\n")
+    return global_prices()
+
+
+def global_prices():
+    """Globale Nutzerpreise: Modell → ``{input, cached_input, output}``.
+
+    Fehlende Datei ist das leere Objekt. Rangfolge bei der Berechnung:
+    Projektpreise > globale Nutzerpreise > Katalog.
+    """
+    snapshot = vibe_storage.read_snapshot(GLOBAL_PRICES_FILE)
+    if not snapshot.exists:
+        return {}
+    try:
+        data = json.loads(snapshot.text)
+    except ValueError:
+        raise ValueError("Globale Preise sind nicht lesbar (kein gültiges JSON): "
+                         + GLOBAL_PRICES_FILE)
+    if not isinstance(data, dict):
+        raise ValueError("Globale Preise haben ein unbekanntes Format: "
+                         + GLOBAL_PRICES_FILE)
+    out = {}
+    for model, price in data.items():
+        try:
+            out[str(model)] = _normalize_price(price)
+        except ValueError:
+            continue
+    return out
+
+
+def _global_user_prices(name):
+    """Nutzerpreise mit globalen Preisen: Projekt überlagert global."""
+    merged = global_prices()
+    merged.update(project_prices(name))
+    return merged
 
 
 def _system_prices():
@@ -5291,7 +5475,7 @@ def costs_project(name):
     path = _known_project(name)
     collected = _collect({name: os.path.realpath(path)})
     stats = _project_stats(name, collected["sessions"].get(name, []),
-                           collected["by_id"], project_prices(name),
+                           collected["by_id"], _global_user_prices(name),
                            _system_prices(), models_info_map())
     return {
         "available": collected["available"], "message": collected["message"],
@@ -5299,6 +5483,7 @@ def costs_project(name):
         "project": name, "sessions": stats["total"]["sessions"],
         "packages": stats["packages"], "total": stats["total"],
         "models": stats["models"], "user_prices": project_prices(name),
+        "global_prices": global_prices(),
     }
 
 
@@ -5313,7 +5498,7 @@ def costs_overview():
     total = {"tokens": _zero_tokens(), "cost": 0.0, "sessions": 0}
     for name in sorted(projects):
         stats = _project_stats(name, collected["sessions"].get(name, []),
-                               collected["by_id"], _project_prices_from(data, name),
+                               collected["by_id"], _global_user_prices(name),
                                system_prices, catalog)
         row = {"name": name, "packages": len(stats["packages"]),
                "sessions": stats["total"]["sessions"],
@@ -5324,7 +5509,8 @@ def costs_overview():
         total["sessions"] += row["sessions"]
     return {"available": collected["available"], "message": collected["message"],
             "db": collected["db"], "currency": COSTS_CURRENCY, "unit": "1M",
-            "projects": rows, "total": total}
+            "projects": rows, "total": total,
+            "global_prices": global_prices()}
 
 
 def _num(value):
