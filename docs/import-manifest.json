@@ -1264,6 +1264,19 @@
         "bin/web/nova-settings.js"
       ],
       "grund": "F33 WP5 Aktivität/Einstellungen (Nova): Aktivität — Reihenfolge Kacheln → Rückfragen (select data-nv-questions-project „Alle Projekte“ + je Projekt, hint p[data-nv-questions-hint], Session-Limit-Hinweis small[data-nv-limit-hint] „Gilt für das oben ausgewählte Projekt und begrenzt die Anzahl gelisteter Sitzungen“) → Läufe → Sessions; Einstellungen — Netzwerk in details[data-nv-network-advanced] (Standard zusammengeklappt, Portfelder darin), Feature-Schalter in div[data-nv-feature-groups], je Schranke small[data-nv-gate-help] (5 deutsche Schranken-Expertisen, incl. Form-Hilfe unter dem Auswahl-Knopf), Auswertungsgruppe „Auswertungen“ vor Kosten/Runs mit span[data-nv-eval-badge], Kosten-Karte: hint p[data-nv-costs-hint], Projektzeilen nv-clickable, Detailtabelle Kennung/Sitzungen/Eingabe/gecachte Eingabe/Ausgabe/Kosten + Gesamtzeile, globale Modellpreise (button data-nv-action=„cost-global-edit“ → input[data-nv-cost-global-model] + data-nv-cost-field, Speichern data-nv-action=„cost-global-save“ → POST /api/costs action=prices_global, Toast „Globale Preise gespeichert“), Run-Register: span[data-nv-run-pruneable] „bereinigbar“ + hint p[data-nv-runs-hint], Akzent select[data-nv-accent-select] mit 12 Vertrags-Optionen (defensive NV.setAccent), Globale AGENTS.md (GET /api/global_agents_file, create/save, textarea[data-nv-global-agents], Toast + lokaler Digest-Update, hint p[data-nv-global-agents-hint]). Da Programmdaten geändert wurden, sind Größe und SHA-256 der zwei betreffenden files-Einträge aktualisiert und dadurch begründet."
+    },
+    {
+      "arbeitspaket": "F33",
+      "datum": "2026-11-22",
+      "dateien": [
+        "bin/web/nova-agents.js",
+        "bin/web/nova-widgets.js",
+        "bin/web/nova-project.js",
+        "bin/web/nova-output.js",
+        "bin/web/nova.css",
+        "bin/web/i18n.js"
+      ],
+      "grund": "F33 (Nova-UI) abgeschlossen: WP2 Combobox/Agentenliste/Wizard/Editor (Combobox bin/web/nova-widgets.js überall, 5-Schritt-Wizard mit Rechte-Schritt und Einsatzart-Erklaerungen, primary nur ohne bestehenden Primaeragenten, Review einfach/formatiert mit stickyer Aktionsleiste, Abbruch-Inlinewarnung, Editor lazy Projektzuordnungen, dynamischer Rohtext-Umschalter mit Speichermodus-Hinweis, Backup ohne Versionswarnung, Kopieren mit Zielbestaetigung und Sprung, agent-back deterministisch zur Liste, animation-fill-mode backwards behebt den abgefangenen Combobox-Klick); WP3 Projektdetail (Uebersicht ohne Leitfaden-Link mit Autonom-Zeile und Pause-Pille im Held, Work mit Suche/Erledigte-Filter/Priorisierungsleiste (Drag/Pfeile/Reset/Badges)/Karten-Clamp/sichtbaren Bearbeiten-Loeschen-Knoepfen/bearbeitbarem Feedback/Kennungsvorschlag hoechsteNummer+1, Beschreibung-Tab ohne Notiz mit Status-Pillen und Antwort-Speichern ohne Voll-Neurender, Settings-Tab mit AGENTS.md-Sektion oben inkl. Backup/Restore und globalem readonly-Hinweis, Team-Modell-Combobox, GitHub-Branch-Erklaerungen, Auto-Merge-Schalter); WP4 Ausgabe (Fokus/Vergroessern statt Highlight mit Escape/Zweitklick-Ende, Steuerblock sticky unter der Statuszeile, Subagenten-Anweisung mit session, pre-wrap-Overflow); i18n-Zentralintegration (93 en-Uebersetzungen in den F33-Bloecken WP2-WP6, de-Dict unberuehrt nach Bestandskonvention). Bestandstests vertragsgemaess angeglichen (AP22 agents/project/settings, Shell-Race-Synchronisation, Playwright-Regex-Defekt, case-insensitive Label-Muster, flacher GET-/kanonischer Verwaltungsblock-Vertrag). Da Programmdaten geaendert wurden, sind Groesse und SHA-256 der fuenf betreffenden files-Eintraege aktualisiert und dadurch begruendet."
     }
   ],
   "files": [
@@ -1388,9 +1401,9 @@
       "sha256": "19ea677f5c3dc3579279fd9b5bf7584612967654b8ec0bbde3818576c78b46b5"
     },
     {
-      "bytes": 149971,
+      "bytes": 156959,
       "path": "bin/web/i18n.js",
-      "sha256": "ec58d805543733a541907ad300e221e7016ca5537caaf168e9433f17b0e86db8"
+      "sha256": "a212b7b661adfde7b86432c7326aa20e141c21fce8654ae803e133e9fdc49047"
     },
     {
       "bytes": 2711,
@@ -1403,9 +1416,9 @@
       "sha256": "2bb2c8c578d4b5e26ed273fa72d125ea997f1eafcafe259ad25045766bf81047"
     },
     {
-      "bytes": 39558,
+      "bytes": 39937,
       "path": "bin/web/nova-agents.js",
-      "sha256": "9f07a51911256ddf5155fca302e58e3d4c648c9f6e3de51c0fed163083ef56c2"
+      "sha256": "2de913e32a47ba8eb3be1f7c0cc65d1a02c1c49efd52ee9aef134c22306fc49d"
     },
     {
       "bytes": 24936,
@@ -1418,14 +1431,14 @@
       "sha256": "43641b4ceee30b724a38e63039298e3117bbec305bc81089d20887f1658c82db"
     },
     {
-      "bytes": 16315,
+      "bytes": 18646,
       "path": "bin/web/nova-output.js",
-      "sha256": "8c56aa9e89ece8d02ea76f5d1b11e43ff8466b1d3becb8956a98ae0f6036895b"
+      "sha256": "02b778a10acedb00957f0066d22397218eea4a6ead68f7d9ead00eb2e0081355"
     },
     {
-      "bytes": 49544,
+      "bytes": 61483,
       "path": "bin/web/nova-project.js",
-      "sha256": "e05e898aa38cca8f888e355681ea93d4c974affc8cae0574890502a779552974"
+      "sha256": "4e3f46404435ac08b029645a8ed08d0b2353e820190201de7863ee0c3aad8c28"
     },
     {
       "bytes": 58929,
@@ -1438,9 +1451,9 @@
       "sha256": "ab74aeb02b105df1227a28752f6e84686fef8ca5bef15a02dfa26ab86ee051f9"
     },
     {
-      "bytes": 53656,
+      "bytes": 55233,
       "path": "bin/web/nova.css",
-      "sha256": "9e54edb6282c9324d4ea96a3c66eb4d4c340129d1613dde361c696032cf5ef9b"
+      "sha256": "946155bf61b964b43a76d4ac5cd1a28a2ae7a37d08bf61c2b495c28f9ee2e34b"
     },
     {
       "bytes": 12751,
@@ -1624,6 +1637,6 @@
     "setup-vibe.cmd",
     "VERSION"
   ],
-  "stand": "2026-11-21",
+  "stand": "2026-11-22",
   "version": 1
 }
