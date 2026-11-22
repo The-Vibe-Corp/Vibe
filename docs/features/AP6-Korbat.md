@@ -415,3 +415,42 @@ Läufers, in der bwrap-abhängige Fälle über den T-BR2-Marker skippen):
 - `docs/import-manifest.json` (Größe/SHA-256 der geänderten
   Manifest-Dateien, Chronikeintrag AP6-Korbat)
 - `docs/features/AP6-Korbat.md` (dieses Dokument, neu)
+
+## 7. Nachtrag: Merge von `origin/dev` und Baseline-Nachschuss (2026-11-22)
+
+Der Abschlusslauf verlangte den Merge von `origin/dev` in den Paketbranch.
+Der Konflikt in `docs/import-manifest.json` wurde als echte Vereinigung
+aufgelöst (Merge-Commit `5e66e1c`): die beiden F33-Chronikeinträge von
+`origin/dev` und der AP6-Korbat-Eintrag stehen alle drei in der `aenderungen`-
+Liste; die `files`-Einträge wurden gegen den tatsächlich gemergten Stand
+geprüft (`check-import-manifest.py`: OK, 70 Dateien).
+
+**Erbefundung aus F33:** Die mit dem Merge eingereichten Routen
+`GET /api/global_agents_file` und `POST /api/global_agents_file`
+(`bin/vibe-web.py`, F33) sind in `docs/baseline.md` nicht dokumentiert —
+nachweislich bereits auf `origin/dev` selbst (Routen in
+`MERGE_HEAD:bin/vibe-web.py`, keine Erwähnung in
+`MERGE_HEAD:docs/baseline.md`), sodass
+`tests.unit.test_baseline_inventory.test_every_api_route_is_documented`
+im gemergten Stand wieder rot war (T-BR4 war bei der Abnahme grün; die
+Fehlbergabe der Konfliktauflösung ist ausgeschlossen, da beide Elternseiten
+die Diskrepanz enthalten bzw. unverändert übernahmen).
+
+**Entscheidung (Nutzer, Rückfrage `qd6061915a721`, Variante A):** Die zwei
+Routen in diesem Paket nachtragen, damit T-BR4 am finalen Stand grün bleibt;
+danach Review-Runde 3 und aktualisierter Ticket-Nachweis.
+
+**Umsetzung:** Zwei Zeilen am Ende der API-Tabelle in `docs/baseline.md` §6
+im etablierten T-BR4-Stil (Status „vorhanden und automatisiert geprüft“,
+Handlervertrag aus `do_GET`/`do_POST`, Testbelege aus
+`tests/unit/test_f33_global_agents.py`). `docs/baseline.md` liegt außerhalb
+der Manifest-Scopes; keine Manifest-Pflicht.
+
+**Verifikation:** `env -u SANDBOX python3 -m unittest
+tests.unit.test_baseline_inventory tests.unit.test_ap24_license
+tests.unit.test_f33_global_agents` → Ran 30, OK;
+`env -u SANDBOX bash scripts/verify.sh quick --project .` → Exit 0.
+
+**Neue Dateien in diesem Nachtrag:** `docs/baseline.md` (zwei API-Zeilen),
+dieses Dokument (§7), `TICKETS.md` (Nachweiszeile ergänzt),
+`docs/reviews/AP6-Korbat-review-3.md`.
