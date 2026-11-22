@@ -22,6 +22,7 @@ Zustandsordner; beim Import wird keine Datei berührt.
 import hashlib
 import ipaddress
 import json
+import math
 import os
 import secrets
 import tempfile
@@ -55,6 +56,14 @@ PBKDF2_ITERATIONS = 200000
 # Wörterbücher in bin/web/i18n.js.
 LANGUAGES = ("en", "de")
 DEFAULT_LANGUAGE = "en"
+
+# F34: Anzeigewährung und Umrechnung. Preise bleiben in Euro je 1 Mio. Tokens
+# gespeichert; ``usd_rate`` sind USD je 1 EUR (Standard 1.0 = keine Umrechnung).
+CURRENCIES = ("EUR", "USD")
+DEFAULT_CURRENCY = "EUR"
+DEFAULT_USD_RATE = 1.0
+USD_RATE_MIN = 0.01
+USD_RATE_MAX = 100.0
 
 
 class ConfigError(ValueError):
@@ -134,6 +143,25 @@ def validate_language(value):
     return value
 
 
+def validate_currency(value):
+    """Währung der Kostenanzeige; nur EUR und USD sind erlaubt (F34)."""
+    if not isinstance(value, str) or value not in CURRENCIES:
+        raise ConfigError(
+            f"currency muss einer der Werte {', '.join(CURRENCIES)} sein"
+        )
+    return value
+
+
+def validate_usd_rate(value):
+    """Umrechnung USD je EUR; streng 0.01..100, keine Bool-Werte (F34)."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ConfigError("usd_rate muss eine Zahl zwischen 0.01 und 100 sein")
+    rate = float(value)
+    if not math.isfinite(rate) or not USD_RATE_MIN <= rate <= USD_RATE_MAX:
+        raise ConfigError("usd_rate muss eine Zahl zwischen 0.01 und 100 sein")
+    return rate
+
+
 def validate(data):
     """Prüft ui.json-Inhalt und liefert ein bereinigtes Objekt ohne Unbekanntes.
 
@@ -146,6 +174,10 @@ def validate(data):
     cleaned = {}
     if data.get("language") is not None:
         cleaned["language"] = validate_language(data["language"])
+    if data.get("currency") is not None:
+        cleaned["currency"] = validate_currency(data["currency"])
+    if data.get("usd_rate") is not None:
+        cleaned["usd_rate"] = validate_usd_rate(data["usd_rate"])
     if data.get("ui_port") is not None:
         cleaned["ui_port"] = vibe_paths.validate_port(data["ui_port"])
     if data.get("ui_bind") is not None:

@@ -1328,6 +1328,19 @@
       ],
       "datum": "2026-11-22",
       "grund": "Key Management umgesetzt: bin/vibe_keys.py (neu) enthaelt reines Python-AES-GCM, den 0600-Vault keys.json mit AAD-Bindung, add/select/list/remove sowie den atomaren opencode-auth-sync mit Reset; bin/vibe bietet vibe keys add/select/list/remove mit getpass-Eingabe; bin/vibe-run.sh synchronisiert vor dem Agentenstart und entfernt die Harness-Zugangsdaten nach wait wieder. Groesse und SHA-256 von bin/vibe und bin/vibe-run.sh aktualisiert, neuen files-Eintrag fuer bin/vibe_keys.py aufgenommen."
+    },
+    {
+      "arbeitspaket": "F34",
+      "dateien": [
+        "bin/vibe",
+        "bin/vibe-web.py",
+        "bin/vibe_runs.py",
+        "bin/vibe_ui_config.py",
+        "scripts/setup-vibe.py",
+        "bin/web/nova-evals.js"
+      ],
+      "datum": "2026-11-22",
+      "grund": "F34 WP7: Löschschutz für abgeschlossene Einträge, Sitzungslimit je Projekt und gesammelte Schranken per API, Monatswerte in den Kosten, Währung in ui.json samt /api/ui_settings, Bereinigung abgeschlossener Läufe sowie Registrierung des Platzhalters bin/web/nova-evals.js für die Auswertungen."
     }
   ],
   "files": [
@@ -1343,8 +1356,8 @@
     },
     {
       "path": "bin/vibe",
-      "bytes": 306557,
-      "sha256": "0be708f1d0c5c31777fd2d003ac6112e36c6853896ecbe18c0d22661728696a2"
+      "bytes": 309967,
+      "sha256": "c4aa0dc09c2ad0312a01bdd0326813ed6b79094e560ef325e854d9965390267b"
     },
     {
       "bytes": 83973,
@@ -1352,9 +1365,9 @@
       "sha256": "4cae141ab3514404db9b678862c832163d36dd7c08b5539c5c17225bd213f57b"
     },
     {
-      "bytes": 124720,
+      "bytes": 131073,
       "path": "bin/vibe-web.py",
-      "sha256": "e54ad9e8bf0e0efa83ec774f8d3bf5e0ae741b0f5f9154ba136d6165b70d5d8b"
+      "sha256": "336eebbe8ec88a801abed442d80d2dfc58feb859a2649ec493a8d150b460e43c"
     },
     {
       "bytes": 5189,
@@ -1427,9 +1440,9 @@
       "sha256": "9a4bb9a2a182977c276b04676b133d918c97ed4f0a957c4d6f0e72835848b5cd"
     },
     {
-      "bytes": 67575,
+      "bytes": 70223,
       "path": "bin/vibe_runs.py",
-      "sha256": "7caaa7b0d518a161f5b6df436b64b425f01aacb02cf9bf9c951a5665dc439698"
+      "sha256": "7306ebe332888e7a107596635bbec459fd133dd1a4705471119a2c1086617f77"
     },
     {
       "bytes": 37162,
@@ -1447,9 +1460,9 @@
       "sha256": "7b6aa4118259dc3440b37eaeec5eaa96eac7d928e6e704b2310946490bd25fbb"
     },
     {
-      "bytes": 11206,
+      "bytes": 12460,
       "path": "bin/vibe_ui_config.py",
-      "sha256": "43805dba175b11e01392b376bc12f931d82c06c8ab82dfc60474b9e9170cdd0f"
+      "sha256": "baf438e2032b06a478b2a3debe6b62eff104f6d9a105f829013eabfcddf1acd5"
     },
     {
       "bytes": 156429,
@@ -1485,6 +1498,11 @@
       "bytes": 24936,
       "path": "bin/web/nova-core.js",
       "sha256": "c73d7565daeec0ad7a00bf93b6927025abdfbc98f263ca96a20acde1c8ea3f02"
+    },
+    {
+      "path": "bin/web/nova-evals.js",
+      "bytes": 201,
+      "sha256": "f7eff2aa8b20c671f8b2114c63c44f9dfd0a6d906d7c7496c0e8ccfcc390c2be"
     },
     {
       "bytes": 14476,
@@ -1537,9 +1555,9 @@
       "sha256": "7f8450dcf34c6b6f94695720954e2072edeb60d69f70b29bb3924882ed6c0f21"
     },
     {
-      "bytes": 74260,
+      "bytes": 74347,
       "path": "scripts/setup-vibe.py",
-      "sha256": "03a68edb5cc8c3d7ab79cb4834862cfb588c16ca6f846cee1fa2d8e79cb5009c"
+      "sha256": "1c62e6f4f7d14582367b0d33267020f4b2e722d2f5645480e2d0bc9255178890"
     },
     {
       "bytes": 377,
