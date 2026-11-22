@@ -75,10 +75,10 @@ Bewusste Vertragsableitungen
 * Für ``runs`` wird die in AP20 bewährte Technik genutzt: ``runs.json`` liegt
   **vor** dem Serverstart im Laufzeitordner; der Eintrag nennt eine sicher
   fehlende tmux-Sitzung, damit ``prune`` ihn als beendet markiert.
-* Die Paritätsmatrix führt ``priority`` unter „Arbeit“, der Auftrag zu
-  Meilenstein C nennt es zusätzlich als Projektbereich. Der Rundgang
-  akzeptiert daher sowohl ``[data-nv-psection="priority"]`` als auch den
-  dokumentierten Arbeitsbereich ``[data-nv-priority]``.
+* Die Paritätsmatrix führt ``priority`` unter „Arbeit“; F33 WP3/2o ersetzt
+  die alte Priorisierungskarte durch die Leiste
+  ``div[data-nv-priority-strip]`` im Arbeit-Tab (ohne eigene Sektion in den
+  Projekteinstellungen).
 
 Testfälle (Kurzfassung; Details in den Methoden)
 ------------------------------------------------
@@ -1157,8 +1157,14 @@ class RunsTest(AP22AdvancedBrowserTest):
         self.wait_until(pruned, timeout=30000,
                         message="Prune hat den verwaisten Eintrag nicht "
                                 "beendet: " + repr(self.api_json("/api/runs")))
-        self.assertRegex(runs.inner_text(), r"(?i)ended|beendet|bereinigt",
-                         "Die UI zeigt den bereinigten Zustand nicht")
+        # F33: die UI-Zeile folgt dem API-Zustand erst nach dem nächsten
+        # Rendering — Poll statt Sofortprüfung (sonst flaky).
+        self.wait_until(
+            lambda: any(token in (runs.inner_text() or "").lower()
+                        for token in ("ended", "beendet", "bereinigt")),
+            timeout=15,
+            message="Die UI zeigt den bereinigten Zustand nicht: "
+                    + repr(runs.inner_text()))
         self.assert_no_page_errors()
 
 
@@ -1171,9 +1177,10 @@ class ParityTest(AP22AdvancedBrowserTest):
         ``#/project/proj/settings`` öffnen.
 
         Erwartung: Alle 14 Schalter existieren; die Projektbereiche github,
-        writeaccess, sandbox, agentsfile und priority erscheinen mit einer
-        Überschrift und mindestens einem Bedienelement (priority alternativ
-        als Arbeitsbereich ``[data-nv-priority]``, siehe Moduldocstring).
+        writeaccess, sandbox und agentsfile erscheinen mit einer Überschrift
+        und mindestens einem Bedienelement. Die Priorisierung ist vertragsgemäß
+        keine Einstellungssektion mehr, sondern die Leiste
+        ``div[data-nv-priority-strip]`` im Arbeit-Tab mit Bedienelementen.
         """
         self.boot()
         self.open_settings()
@@ -1196,8 +1203,11 @@ class ParityTest(AP22AdvancedBrowserTest):
         for feature in PROJECT_FEATURES:
             with self.subTest(project_section=feature):
                 if feature == "priority":
-                    section = self.page.locator(
-                        "[data-nv-psection='priority'], [data-nv-priority]")
+                    # F33 WP3/2o: die alte Priorisierungskarte in den
+                    # Einstellungen entfällt; die Leiste liegt im Arbeit-Tab.
+                    self.page.locator("[data-nv-ptab='work']").click()
+                    section = self.page.locator("div[data-nv-priority-strip]")
+                    section.wait_for(state="visible", timeout=20000)
                 else:
                     section = self.page.locator(
                         f"[data-nv-psection='{feature}']")
@@ -1205,13 +1215,22 @@ class ParityTest(AP22AdvancedBrowserTest):
                     1, section.count(),
                     f"Der Projektbereich {feature!r} fehlt bei "
                     "eingeschaltetem Feature")
-                self.assertTrue(
-                    section.locator("h2, h3, h4").count() >= 1,
-                    f"Der Projektbereich {feature!r} hat keine Überschrift")
-                self.assertTrue(
-                    section.locator("input, select, textarea, button").count()
-                    >= 1,
-                    f"Der Projektbereich {feature!r} hat kein Bedienelement")
+                if feature == "priority":
+                    # Die Leiste ist ein Werkzeug ohne eigene Überschrift;
+                    # Drag-Griff/Zurücksetzen sind die Bedienelemente. Das
+                    # Rendering der Zeilen folgt dem Tab-Wechsel asynchron.
+                    self.wait_until(
+                        lambda: section.locator("button").count() >= 1,
+                        timeout=10,
+                        message="Die Priorisierungsleiste hat kein Bedienelement")
+                else:
+                    self.assertTrue(
+                        section.locator("h2, h3, h4").count() >= 1,
+                        f"Der Projektbereich {feature!r} hat keine Überschrift")
+                    self.assertTrue(
+                        section.locator("input, select, textarea, button").count()
+                        >= 1,
+                        f"Der Projektbereich {feature!r} hat kein Bedienelement")
         self.assert_no_page_errors()
 
 

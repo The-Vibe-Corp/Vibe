@@ -282,6 +282,14 @@ class AP22WorkBrowserTest(unittest.TestCase):
             state="visible", timeout=20000)
         return self.page.locator("section[data-nv-ppanel='work']")
 
+    def open_feedback_box(self):
+        """F33 WP3/2o: Feedback-Karten im zusammengeklappten details öffnen."""
+        box = self.page.locator("details[data-nv-feedback-box]")
+        box.wait_for(state="visible", timeout=20000)
+        if not box.evaluate("node => node.open"):
+            box.locator("summary").first.click()
+        return box
+
     def ticket_text(self):
         return (self.project / "TICKETS.md").read_text(encoding="utf-8")
 
@@ -376,13 +384,13 @@ class FeedbackListTest(AP22WorkBrowserTest):
     def test_feedback_list_shows_kind_badges(self):
         """Vorbedingung: ein Bug und ein gewöhnlicher Feedback-Eintrag.
 
-        Erwartung: ``[data-nv-feedback]`` enthält beide
-        ``article[data-nv-feedback-item]``; der Bug trägt ein Bug-Badge, der
-        andere Eintrag ein Feedback-Badge.
+        Erwartung: ``details[data-nv-feedback-box]`` enthält nach dem
+        Aufklappen beide ``article[data-nv-feedback-item]``; der Bug trägt ein
+        Bug-Badge, der andere Eintrag ein Feedback-Badge.
         """
         self.open_work()
-        list_box = self.page.locator("[data-nv-feedback]")
-        list_box.wait_for(state="visible", timeout=20000)
+        # F33 WP3/2o: die Feedback-Box ist standardmäßig zusammengeklappt.
+        list_box = self.open_feedback_box()
         bug = self.page.locator("[data-nv-feedback-item='BUG-7']")
         feedback = self.page.locator("[data-nv-feedback-item='FB-1']")
         self.assertEqual(1, bug.count(), "Der Bug fehlt in der Feedback-Liste")
@@ -503,8 +511,8 @@ class FeedbackCreateTest(AP22WorkBrowserTest):
         """Vorbedingung: Board geöffnet.
 
         Aktion: ``new-bug`` und ``new-feedback`` ausfüllen und speichern.
-        Erwartung: Beide erscheinen in ``[data-nv-feedback]`` mit dem
-        richtigen Art-Badge.
+        Erwartung: Beide erscheinen in ``details[data-nv-feedback-box]``
+        (nach dem Aufklappen) mit dem richtigen Art-Badge.
         """
         self.open_work()
         form = self.open_form("new-bug")
@@ -514,6 +522,8 @@ class FeedbackCreateTest(AP22WorkBrowserTest):
             lambda: "NEUER-BUG-AP22" in self.feedback_text(),
             timeout=20,
             message="Der neue Bug wurde nicht gespeichert")
+        # F33 WP3/2o: das Rendering nach dem Speichern klappt die Box wieder zu.
+        self.open_feedback_box()
         bug = self.page.locator("[data-nv-feedback-item]").filter(
             has_text="NEUER-BUG-AP22").first
         bug.wait_for(state="visible", timeout=20000)
@@ -527,6 +537,8 @@ class FeedbackCreateTest(AP22WorkBrowserTest):
             lambda: "NEUES-FEEDBACK-AP22" in self.feedback_text(),
             timeout=20,
             message="Das neue Feedback wurde nicht gespeichert")
+        # F33 WP3/2o: das Rendering nach dem Speichern klappt die Box wieder zu.
+        self.open_feedback_box()
         feedback = self.page.locator("[data-nv-feedback-item]").filter(
             has_text="NEUES-FEEDBACK-AP22").first
         feedback.wait_for(state="visible", timeout=20000)
@@ -542,14 +554,17 @@ class PriorityTest(AP22WorkBrowserTest):
         """Vorbedingung: Feature ``priority`` aus.
 
         Aktion: Schalter in ``#/settings`` aktivieren, Arbeit öffnen,
-        ``AP-OPEN2`` hochschieben, speichern, neu laden.
-        Erwartung: ``[data-nv-priority]`` erscheint mit Zeilen und
-        ``priority-up|down``/``priority-save``; die neue Reihenfolge bleibt
-        über den Reload erhalten.
+        ``AP-OPEN2`` hochschieben, neu laden.
+        Erwartung: ``div[data-nv-priority-strip]`` steht mit Drag-Griff,
+        ``priority-up|down`` und Zurücksetzen oberhalb des Boards; die neue
+        Reihenfolge wird sofort gespeichert und bleibt über den Reload
+        erhalten.
         """
         self.open_work()
+        # F33 WP3/2o: die alte Priorisierungskarte entfällt. Die Leiste ist
+        # als Arbeitswerkzeug immer im DOM; ohne Feature fehlen die P-Badges.
         self.assertEqual(
-            0, self.page.locator("[data-nv-priority]").count(),
+            0, self.page.locator("span[data-nv-prio-badge]").count(),
             "Die Priorisierung ist ohne Feature-Schalter sichtbar")
 
         self.page.goto(self.base + "/#/settings")
@@ -564,39 +579,36 @@ class PriorityTest(AP22WorkBrowserTest):
                         "Der Priority-Schalter ließ sich nicht einschalten")
 
         self.open_work()
-        card = self.page.locator("[data-nv-priority]")
-        card.wait_for(state="visible", timeout=20000)
+        strip = self.page.locator("div[data-nv-priority-strip]")
+        strip.wait_for(state="visible", timeout=20000)
+        # F33 WP3/2o: Leiste statt Karte; ↑/↓ speichern sofort, ein eigener
+        # Speichern-Knopf ist vertraglich entfallen.
         self.assertGreaterEqual(
-            self.page.locator(
-                "[data-nv-priority] [data-nv-action='priority-up']").count(), 1,
+            strip.locator("button[data-nv-drag-handle]").count(), 1,
+            "Die Priorisierungsleiste zeigt keine Drag-Griffe")
+        self.assertGreaterEqual(
+            strip.locator("[data-nv-action='priority-up']").count(), 1,
             "Die Priorisierung zeigt keine Hoch-Knöpfe")
         self.assertEqual(
-            1, self.page.locator(
-                "[data-nv-priority] [data-nv-action='priority-save']").count(),
-            "Der Speichern-Knopf der Priorisierung fehlt")
+            1, strip.locator("button[data-nv-priority-reset]").count(),
+            "Der Zurücksetzen-Knopf der Priorisierung fehlt")
 
         clicked = self.page.evaluate(
             """() => {
-              const card = document.querySelector('[data-nv-priority]');
-              if (!card) return false;
+              const strip = document.querySelector('[data-nv-priority-strip]');
+              if (!strip) return false;
               const buttons = Array.from(
-                card.querySelectorAll("[data-nv-action='priority-up']"));
+                strip.querySelectorAll("[data-nv-action='priority-up']"));
               const target = buttons.find(button => {
-                let node = button;
-                while (node && node !== card) {
-                  if ((node.textContent || '').includes('AP-OPEN2')) return true;
-                  node = node.parentElement;
-                }
-                return false;
+                const row = button.closest('[data-nv-priority-id]');
+                return row && (row.textContent || '').includes('AP-OPEN2');
               });
-              if (!target) return false;
+              if (!target || target.disabled) return false;
               target.click();
               return true;
             }""")
         self.assertTrue(clicked,
                         "Keine Priorisierungszeile für AP-OPEN2 gefunden")
-        self.page.locator(
-            "[data-nv-priority] [data-nv-action='priority-save']").click()
 
         def order_ids(view):
             # Der Backend-Vertrag von /api/priority liefert ``order`` als
@@ -620,11 +632,11 @@ class PriorityTest(AP22WorkBrowserTest):
         self.page.reload()
         self.page.locator("main#nv-main[data-nv-view='project']").wait_for(
             state="visible", timeout=25000)
-        card.wait_for(state="visible", timeout=20000)
+        strip.wait_for(state="visible", timeout=20000)
         positions = self.page.evaluate(
             """() => {
-              const card = document.querySelector('[data-nv-priority]');
-              const text = card ? card.innerText : '';
+              const strip = document.querySelector('[data-nv-priority-strip]');
+              const text = strip ? strip.innerText : '';
               return [text.search(/\\bAP-OPEN2\\b/), text.search(/\\bAP-OPEN\\b/)];
             }""")
         self.assertGreaterEqual(positions[0], 0,

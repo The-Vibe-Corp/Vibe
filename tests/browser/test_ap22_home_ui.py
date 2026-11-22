@@ -316,7 +316,9 @@ class AP22HomeTest(unittest.TestCase):
         Pakete.
         """
         self.boot()
-        self.page.locator("div[data-nv-projects]").wait_for(
+        # F33 WP1/2b: die Projektliste ist jetzt section[data-nv-projects]
+        # (oberhalb liegen Anpinnen-Sektion, Suche und Trefferzahl).
+        self.page.locator("section[data-nv-projects]").wait_for(
             state="visible", timeout=20000)
         for name in ("proj", "zweit"):
             with self.subTest(project=name):
