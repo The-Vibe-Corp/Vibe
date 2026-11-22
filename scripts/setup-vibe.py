@@ -1129,6 +1129,11 @@ def running_installation(logs_dir, runner=None, which=None):
     wenn seine tmux-Sitzung tatsächlich existiert. Sonst ist der Lauf verwaist
     und darf eine Aktualisierung nicht blockieren. Ohne prüfbare Sitzung
     (tmux fehlt oder Eintrag ohne Sitzungsangabe) bleibt die Sperre konservativ.
+
+    Eine vorhandene, aber leere (oder nur aus Leerraum bestehende) ``runs.json``
+    enthält nachweislich keine Läufe und sperrt wie eine fehlende Datei nicht.
+    Nur nicht-leerer Inhalt, der nicht lesbar/auswertbar ist, bleibt ein
+    Sperrgrund (``Laufzustand … ist nicht lesbar``).
     """
     reasons = []
     which = which or shutil.which
@@ -1165,14 +1170,21 @@ def running_installation(logs_dir, runner=None, which=None):
         return None
 
     runs_path = Path(logs_dir) / "runs.json"
+    data = None
     if runs_path.exists():
+        # B4: Eine leere (oder nur-Leerraum-) runs.json enthält nachweislich
+        # keine Läufe und sperrt wie eine fehlende Datei nicht. Nur Inhalt,
+        # der nicht lesbar/auswertbar ist, bleibt ein Sperrgrund.
         try:
-            data = json.loads(runs_path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
+            text = runs_path.read_text(encoding="utf-8")
+        except OSError:
             reasons.append(f"Laufzustand {runs_path} ist nicht lesbar")
-            data = None
-    else:
-        data = None
+        else:
+            if text.strip():
+                try:
+                    data = json.loads(text)
+                except ValueError:
+                    reasons.append(f"Laufzustand {runs_path} ist nicht lesbar")
     if isinstance(data, dict):
         for record in data.get("runs", []):
             if not isinstance(record, dict):
