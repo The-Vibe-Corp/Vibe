@@ -1515,9 +1515,9 @@
       "sha256": "cbca5b169f3c5052e50da0910560d7fbcd1b6c42380fe6b925a4f98021f753ab"
     },
     {
-      "bytes": 65841,
+      "bytes": 92010,
       "path": "bin/web/nova-project.js",
-      "sha256": "0c828555fc1f5d4d5f686defb0ab82fe3056c8bc923f67afe8238e5b464d91fc"
+      "sha256": "bf6dff356ef40cdfa925c9bf518a1a79559e46c141ab2d6b063472c2bac30f4e"
     },
     {
       "bytes": 60416,
