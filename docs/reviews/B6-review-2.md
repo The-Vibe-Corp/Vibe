@@ -1,79 +1,57 @@
-# Review-Ablage: Arbeitspaket B6 (Review Runde 2)
-
-Grundlage: Gleiche Basis wie Runde 1 (`docs/reviews/B6-review-1.md`:
-Produkt-Diff gegen `db45bd7` im Worktree `vibe-B6-KbOl3S`, Branch
-`vibe/vibe-B6-1794257245505672696-360176-25507`) plus die in Runde 1
-beanstandeten Lücken: echter Pi-Smoke-Nachweis, AK-Abschnitt,
-Grenzenerweiterungen (`docs/features/B6.md`), `verify.sh full`-Vergleich
-gegen den Baselinelauf am Ausgangscommit `db45bd7` (detached Git-Worktree
-`/dev/shm/vibe-b6-base`, identisches Verfahren). Reviewer: `code-reviewer`
-(Subagent, Modell GLM-5.3-Flash Free, Provider opencode), Datum 2026-11-09.
-
-Nachfolgend das unveränderte Reviewergebnis des Reviewers:
-
----
-
-# Review result – B6 (Review Runde 2)
-
-## Header / Review-Metadaten
-- Ticket: B6 (FEEDBACK.md Zeile 348) — „F24 funktioniert nicht richtig … darf nicht opencode spezifisch sein (pi harness muss funktionieren)"
-- Reviewer: code-reviewer (Subagent, Modell GLM-5.3-Flash Free, Provider opencode), Datum 2026-11-09
-- Arbeitsbasis: Ausgangs-Commit `db45bd7`, Branch `vibe/vibe-B6-1794257245505672696-360176-25507` (Worktree `vibe-B6-KbOl3S`), Reviewtyp Runde 2, nur lesend; Grundlage Runde 1 (`docs/reviews/B6-review-1.md`) unverändert gelesen
+# Review result
 
 ## Summary
 - Critical: 0
 - High: 0
 - Medium: 0
-- Minor: 2
+- Minor: 4
 - Verdict: PASS
 
-## Prüfung der fünf Runde-1-Befunde
-
-1. **[Medium] Abnahme gegen echtes Pi** — **behoben.** `docs/features/B6.md:150-186` dokumentiert den echten 1.5.0-Smoke exakt wie verlangt. Ich habe die Rohdaten **selbst gelesen** und bestätigt:
-   - `/tmp/opencode/pi-b6-smoke/pi-events.jsonl`: echter Session-Header mit `{"type":"session","version":3,"id":"01a1c22d-…","cwd":"/tmp/opencode/pi-b6-smoke"}` — deckt sich mit den von Runde 1 verifizierten Pi-Doku-Formen (`PI_EVENT_TYPES`, `id` im Header). `--no-session` unterdrückt den Header nicht; die Designentscheidung „Header nie in state" ist an der echten Umgebung bestätigt.
-   - `filtered.txt`: `[Session] 01a1c22d-…` plus unverändert durchgereichte Klartextzeile „No API key found for the selected model." — der reale Filter erkennt den echten Strom und verhält sich auf Nicht-JSON korrekt.
-   - `exitinfo.txt`: `PIPE-EXIT pi=1`, „pi stdout bytes: 148" — Agentenexit maßgeblich (AK5-Semantik).
-   - `agent/auth.json` und `agent/models-store.json` sind leer (`{}`): keine Anmeldung, keine Secrets, keine Modellkosten in den Nachweisen; die Nachweise dürfen existieren.
-   - Kein `*.state.json` im Smoke-Verzeichnis — „keine Zustandsdatei erzeugt" ist belegt.
-   - Die dokumentierte Grenze („No API key" schließt Text-/Werkzeug-/Subagentenebene des echten Laufs aus) ist ehrlich ausgeführt und mit der Pflichtregel in `docs/compatibility.md` (Pi 1.5.0, Abschnitte Zeilen 35 ff.) verknüpft. Diese Restattrappenabdeckung ist im Rahmen des Tatbestands (Kostenfreiheit, keine OAuth) die maximal mögliche Prüftung und vom Required fix ausdrücklich so akzeptiert.
-2. **[Minor] Grenzen-/Feldschema** — **behoben:** `docs/features/B6.md:190-198` nennt das konkrete Pi-1.5.0-Werkzeugschema (`agent, task, tasks, chain, cwd, agentScope, confirmProjectAgents`, kein `prompt`/`description`), die Tab-Label-Fallback-Konsequenz und den Folgepaketvorschlag über den Test-Agenten. Keine Codeänderung verlangt.
-3. **[Minor] `changed=True` ohne Differenz** — **behoben:** `docs/features/B6.md:199-202` hält die Grenze als dokumentierte spätere Optimierung fest. Gemäß Required fix keine zwingende Änderung.
-4. **[Minor] Web-Fallback an opencode-Server** — **behoben:** `docs/features/B6.md:203-207` dokumentiert den Vorfallback als unveränderten Altcode mit Folgepaketvorschlag (Aussetzen für Kennungen ohne `ses_`).
-5. **[Minor] AK-Abschnitt** — **behoben:** `docs/features/B6.md:72-97` enthält „## Akzeptanz" mit AK1–AK5; die Nummerierung stimmt mit den Testdatei-Dokstrings überein (eigener grep: AK1–AK5 in `tests/unit/test_b6_*.py`, z. B. `test_b6_pi_runner_events.py:320,419`, `test_b6_harness_events_flag.py:71,166`, `test_b6_pi_events.py:131`).
-
-## Produktcode und Testintegrität (Runde 2)
-
-- `git diff --stat db45bd7` ist **exakt identisch zu Runde 1** (`bin/vibe-run.sh +8/-…`, `bin/vibe_harness.py 18`, `bin/vibe_runs.py 203`, `bin/web/app.js 2`, `docs/import-manifest.json 16`); `scripts/` ist unverändert (kein Treffer in `git diff --name-only db45bd7 -- scripts/`). Kein Produktcode nodded seit Runde 1 — die Fundstellen aus Runde 1 bleiben gültig.
-- Full-Lauf-Nachweise **selbst gelesen** und mit der Differenzanalyse abgeglichen:
-  - `b6-full-run.log:1887-1889`: `Ran 1274 tests`, `FAILED (failures=15, errors=8)`; `b6-base-full-run.log:1867-1869`: `Ran 1240 tests`, `FAILED (failures=14, errors=10)`. Differenz 1274−1240 = **34** — exakt die drei neuen B6-Suiten.
-  - Fail-Listen einzeln abgeglichen: **22 Einträge identisch in Name, Modus und Reihenfolge**; einzige Abweichungen `test_every_checked_entry…` (B6-Lauf FAIL, Baseline ERROR, in beiden failend — Kopierartefakt der unversionierten FEEDBACK.md) und `test_f7_continuation…` (nur Baseline, FEEDBACK.md abwesend). Keine neue Fail-Klasse, keine verschobenen/weiterlaufenden B6-Tests.
-  - Alle **34 B6-Tests** stehen im full-Lauf mit `... ok` (`b6-full-run.log:181-214`); keine Skip-/xfail-/assume-Marker in den B6-Testdateien (eigener grep: „No matches found").
-- Test-Agent-Voraussetzung: `TESTER=test-agent` in `.vibe/project.env:12` vorhanden; die als Runde-1-Nachweis behandelten Testauthentiken (Rotphase, AK-Dokstrings) sind konsistent.
-
-## Akzeptanzkriterien
-| Kriterium | Status | Implementierung (file:line) | Test (file:method) / Evidence |
+## Acceptance criteria
+| Criterion | Status | Implementation (file:line) | Verification evidence |
 |---|---|---|---|
-| AK1: Pi-Ereignisse automatisch erkannt, Klartext, Header nie in state | PASS | `bin/vibe_runs.py:104-117, 405-490` (Runde 1, unverändert: diff-stat identisch) | `test_b6_pi_events.py` PiEventTranslationTest/PiStreamFormTest; full-Lauf `b6-full-run.log:187-202` ok; **echter Pi-Smoke**: Header + Filterausgabe gelesen, keine state-Datei |
-| AK2: opencode-Verhalten byte-identisch | PASS | `bin/vibe_runs.py:487-490` | OpencodeRegressionTest (`b6-full-run.log:187-191` ok); Rotphase dokumentiert `docs/features/B6.md:111-112` |
-| AK3: Subagentenerfassung Pi, UI-API unverändert | PASS | `bin/vibe_runs.py:322-402, 422-426` | PiSubagentCaptureTest/PiSubagentApiTest (`b6-full-run.log:203-210` ok); Smoke: `id` nur als `[Session]`-Zeile, keine state-Datei |
-| AK4: `run_argv(events=True)` fügt bei Pi `--mode json` ein | PASS | `bin/vibe_harness.py` (Runde 1 unverändert) | `test_b6_harness_events_flag.py` (`b6-full-run.log:182-186` ok) |
-| AK5: Läufer-Pi-Zweig, Agentenexit maßgeblich | PASS | `bin/vibe-run.sh` (Runde 1 unverändert) | `test_b6_pi_runner_events.py` (`b6-full-run.log:211-214` ok); Smoke `exitinfo.txt`: `PIPE-EXIT pi=1` |
-| Gesamt: F24 mit **echtem** Pi-Harness | PASS (Restrisiko sauber dokumentiert) | — | echter 1.5.0-Smoke, `docs/features/B6.md:150-186`; Rohdaten von mir gelesen; Grenze für Text-/Werkzeug-/Subagentenkontrakt mit `docs/compatibility.md`-Pflicht festgehalten |
+| Ticketziel: B5 (offen, mit eingefügten Laufberichtszeilen) ist nicht mehr gesperrt; Läufer wählt es wieder | PASS | `bin/vibe_packages.py:420-481` (`block_marker_state`), `484-495`, `755-840` (`select_package`), `1496-1514` (`status_report`); B5 in `FEEDBACK.md:174-200`, letzte nichtleere Zeile `Fast-forward` (Z. 200), Marken nur Z. 184/187/188 → Zustand `""` | Realfall laut gelieferter Roh-Evidenz: B5 `is_blocked`/`is_waiting_merge` False, `status_report` offen `[B5, B6]`, `select_package` mit `PACKAGE_ORDER="B6 B5"` wählt B6, dann B5. Statisch nachvollzogen; nicht selbst ausgeführt |
+| R1: Marke zählt nur an Statusposition (a) letzte nichtleere Zeile, (b) Kopffeld vor `Beschreibung:`/`Erwartet:`; nur bei vorhandener Beschreibungszeile | PASS | `bin/vibe_packages.py:433-481` (`desc_start` 436-441, `last_nonempty` 443-448, Kopffeld 462-472, Endzeile gewinnt 474-481) | `tests/unit/test_b6_ticket_marker_states.py:131-327` (17 Fälle); gelieferter Lauf: 56 Tests OK |
+| R2: Freitext (auch zeilenanfangend, beliebige Schreibweise) zählt nicht | PASS | `marker_of` = `line.strip().upper().startswith(...)` (`bin/vibe_packages.py:450-456`); nur Statusposition wird geprüft | Tests 131-147, 192-199, 214-246, 269-282, 607-645, 816-832, 1094-1134; nicht selbst ausgeführt |
+| R3: Läufer und Oberfläche klassifizieren identisch; Präzedenz erledigt > BLOCKIERT > WARTET > In-Progress > Draft > offen; AK3 „abgehakt ohne Nachweis + Kopffeld-Marke“ | PASS | `bin/vibe:580-595` (`open_items`), `620-683` (`_parse_entry`, Präzedenz 670-680); `bin/vibe_packages.py:1496-1514`, `1517-1593`, `755-840` | `tests/unit/test_b6_ticket_marker_states.py:342-419`, `787-804`, `1040-1134`; gelieferter Sammellauf 56+114 Tests OK |
+| R4: `mark_blocked`/`mark_waiting_merge` idempotent nur bei echter Statuspositions-Marke; Anhängen an Freitextblock möglich | PASS | `bin/vibe_packages.py:1318-1348`, `1351-1382` | Tests 434-527, 568-586; nicht selbst ausgeführt |
+| R5: B5-ähnlicher Block ist überall offen und auswählbar | PASS | wie Ticketziel; `bin/vibe_packages.py:420-481`, `755-840` | Tests 855-899; Realfall laut Roh-Evidenz |
+| R6: Bestandsverträge (AP3-Präzedenz, AP5, B3-AK3, B4, Feedback-Edit/Delete, `_apply_proof`) | PASS | `bin/vibe_packages.py:285-319` (`_apply_proof` unverändert), Marker-Erkennung 420-495 | Gelieferter Lauf `test_b3_merged_waiting`, `test_ap5_korbat_waiting_state`, `test_ap3_korbat_issues_backend`, `test_package_gates` → 114 OK; `_apply_proof`-Fall Test 989-1019. Doc-Lauf mit `test_feedback_edit_delete` (264 OK) nur Agentenangabe |
+| R1-Befund 1: Rotphasenbeleg wahrhaftig und konsistent | PASS | `docs/reviews/B6-test-agent-report.md:9-57` | Phasen 1–4: 34=20+14, 52=12+40, 56=27+29; die 27 in Phase 3 genannten Fehlschläge sind genau die 27 baseline-roten der finalen 56er-Suite (Namensabgleich); 170=56+114; Phase 2 ausdrücklich als „nach Teilimplementierung“ gekennzeichnet. Roh-Evidenz: 27 FAILED/29 OK am Baseline-Klon |
+| R1-Befund 2: Kollisionsauflösung (Alt-Reviews, B6.md, Gate) | PASS | `docs/reviews/B6-pi-review-1.md`, `B6-pi-review-2.md`, `B6-review-1.md`; `docs/features/B6.md:1-223` (Pi-Doku), `docs/features/B6-statusmarken.md:1-116` | `docs/reviews/B6-review*.md` enthält nur den neuen Runde-1-Bericht (FAIL, kein PASS); `gate_errors` globt `B6-review*.md` (`bin/vibe_packages.py:1459-1471`), der Alt-PASS in `B6-pi-review-2.md` wird nicht mehr erfasst; `docs/features/B6.md` existiert und ist nicht leer (Gate 1455-1457) |
+| R1-Befund 3: Docstrings `is_blocked`/`is_waiting_merge` auf Statuspositions-Regel | PASS | `bin/vibe_packages.py:484-495` | Docstrings nennen „letzte nichtleere Zeile oder Kopffeld vor der ersten Beschreibung:/Erwartet:-Zeile“ |
+| R1-Befund 4: Manifest-Begründung vollständige Regel | PASS | `docs/import-manifest.json:1318` | Text nennt Statuspositionen inkl. Kopffeld, späteste Position, BLOCKIERT vor WARTET; gelieferter Manifest-Check „OK: 70 Dateien“. Dateiliste des Eintrags: siehe Minor-Befund 2 |
+| R1-Befund 5: Test-Modul-/Klassen-Docstrings aktualisiert | PASS (Rest-Minor) | `tests/unit/test_b6_ticket_marker_states.py:1-8`, `114-120` | Klassen-Docstring ist aktualisiert; Modul-Docstring enthält aber weiter „(Rotphase)“ und in Z. 7-8 nur die Endzeilen-Regel → Minor-Befund 3 |
+| R1-Befunde 6/7 (optional): Randfälle + Grenzen in beide Richtungen | PASS | Tests 214-246 (kein Beschreibungsstart), 228-236 (Tab/Trailing), 238-246 (Titel), 396-406 (Statusreport abgehakt ohne Nachweis); `docs/features/B6-statusmarken.md:83-92` | 56er-Suite enthält die vier Randfälle; Grenzen-Abschnitt nennt beide Richtungen |
+| Doku `docs/features/B6-statusmarken.md`: Regel, Grenzen, Verifikation, keine Platzhalter | PASS (Rest-Minor) | `docs/features/B6-statusmarken.md:1-116` | Inhalt deckt Regel, Auswirkung, R1–R6, Grenzen, Verifikation; keine Platzhalter. Verifikationszahlen veraltet → Minor-Befund 1 |
+| Testqualität: 56 Fälle, Deckung R1–R6 + Randfälle, keine abgeschwächten Bestandstests | PASS | `tests/unit/test_b6_ticket_marker_states.py` (56 Testmethoden, 8 Klassen) | Keine Skip-/Mock-/Fake-Marker; echte Module `bin/vibe_packages.py` und `bin/vibe`, CLI per Subprozess; gelieferter Lauf 56 OK. Nur die neue Testdatei im Change-Set laut Arbeitspaket; nicht unabhängig per `git diff` bestätigt |
+| Manifest-Check | PASS | `docs/import-manifest.json` | Gelieferte Roh-Evidenz: `check-import-manifest.py` → „OK: 70 Dateien“. Prüfsummen nicht selbst nachgerechnet |
 
 ## Findings
-- [Minor] `docs/features/B6.md:176` — Filter-Exit-Code im Smoke-Artefakt nicht erfasst
-  - Evidence: `exitinfo.txt` hält nur `PIPE-EXIT pi=1` und die Bytezahl fest; der Exit-Code des Filters selbst ist weder als Artefaktdatei noch im Abschnitt dokumentiert (der Behebungstext nennt „Exit 0 des Filters"). Die Substanz (Filter lieferte vollständige Ausgabe, `filter-err.txt` leer, state-Datei abwesend) ist durch die vorhandenen Artefakte belegt — der Buchhaltungslücke obliegt nur der Feldnachweis zur Wiederholbarkeit.
-  - Required fix: Beim nächsten Smoke-Artefakt einfach eine Zeile `FILTER-EXIT <n>` in `exitinfo.txt` ergänzen; keine Codeänderung am Paket.
-- [Minor] `docs/features/B6.md:134-138` — Prüfabschnitt zur Full-Vergleichsrunde leicht unpräzise
-  - Evidence: „Nur im B6-Lauf FAIL `test_every_checked_entry…`" ist streng genommen ungenau — der Test failt in **beiden** Läufen, nur der Modus divergiert (Baseline: ERROR, weil FEEDBACK.md in der Baseline-Kopie fehlt); der anschließende Satz verschachtelt Klammern und Zitate ungelenk. Beeinträchtigt die Nachvollziehbarkeit der Äquivalenzaussage leicht.
-  - Required fix: Formulierung präzisieren („in beiden Läufen failend; FAIL-Modus nur im B6-Lauf, ERROR am Baseline-Worktree mangels unversionierter FEEDBACK.md") und Formatglitch (`F\`A…\``) glätten — reine Doku-Kosmetik, kein Blocker.
+
+1. [Minor] `docs/features/B6-statusmarken.md:101-102` — Verifikationsabschnitt nennt noch 52 Tests statt der finalen 56
+   - Evidence: Der Abschnitt dokumentiert `python3 -m unittest tests.unit.test_b6_ticket_marker_states -v` → „Ran 52 tests, OK“ und den Sammellauf mit 264 Tests. Die finale Datei enthält 56 Testmethoden; `docs/reviews/B6-test-agent-report.md:56-57` nennt 56 OK bzw. 170 OK, die gelieferte Roh-Evidenz ebenfalls 56 OK. Auch Zeile 3 („Review ausstehend“) ist nach der Runde-1-Wiederholung nicht mehr aktuell.
+   - Required fix: Verifikationszahlen auf die finale Suite (56 bzw. 268 im Sammellauf) aktualisieren und den Status auf den tatsächlichen Reviewstand setzen. Keine Codeänderung.
+
+2. [Minor] `docs/import-manifest.json:1314` — B6-Eintrag verweist auf die wiederhergestellte Pi-Doku statt auf die neue Marker-Doku
+   - Evidence: Der Eintrag `arbeitspaket: B6` (1309-1319) führt `docs/features/B6.md` in `dateien`. Diese Datei ist jetzt wieder die Pi-/F24-Doku (`docs/features/B6.md:1`), während die Marker-Doku unter `docs/features/B6-statusmarken.md:1` liegt. Der Manifest-Check prüft nur `files`/`scopes` (`scripts/check-import-manifest.py:132-137`, `docs/import-manifest.json:1675-1683`; docs liegen außerhalb der Scopes) und meldet deshalb trotzdem OK. Damit ist der Änderungsdatensatz für eine spätere Rekonstruktion irreführend.
+   - Required fix: In `dateien` `docs/features/B6-statusmarken.md` statt `docs/features/B6.md` führen (Testdatei optional ergänzen) und den Eintrag dadurch wieder an den tatsächlichen Change-Set angleichen.
+
+3. [Minor] `tests/unit/test_b6_ticket_marker_states.py:1-8` — Modul-Docstring widerspricht weiterhin den Kopffeld-Fällen
+   - Evidence: Zeile 1 nennt die Datei „(Rotphase)“, obwohl sie die finale Suite ist. Zeilen 7-8 sagen, Freitextmarken zählten nicht, „solange sie nicht die letzte nichtleere Blockzeile sind“ — das unterschlägt die Kopffeld-Regel (b). Die Tests 201-267 und 707-804 prüfen genau diese Kopffeld-Fälle; der Test-Agentenbericht zitiert in Zeile 128 nur den aktualisierten ersten Absatz. Damit ist R1-Befund 5 nur teilweise umgesetzt.
+   - Required fix: Der Test-Agent aktualisiert den zweiten Docstring-Absatz auf die endgültige Statuspositions-Regel und entfernt/ersetzt das „(Rotphase)“-Etikett. Keine Testlogik ändern.
+
+4. [Minor] `docs/reviews/B6-pi-review-2.md:3,21` — interner Verweis zeigt nach der Umbenennung auf den neuen Runde-1-Bericht
+   - Evidence: Der Wrapper und die Einleitung verweisen weiterhin auf `docs/reviews/B6-review-1.md` als Grundlage der alten Pi-Runde 1. Nach `git mv` ist `B6-review-1.md` aber der neue Marker-Review (FAIL), der alte Bericht liegt unter `B6-pi-review-1.md`.
+   - Required fix: Den Wrapper-Verweis auf `docs/reviews/B6-pi-review-1.md` umstellen oder einen kurzen Hinweis auf die Umbenennung ergänzen; der verbatim übernommene Reviewertext selbst bleibt unverändert.
 
 ## Verification
-- Change set reviewed: `db45bd7..working tree`; `docs/features/B6.md` vollständige Fassung (214 Zeilen), `docs/reviews/B6-review-1.md` unverändert, Smokes- und Full-Lauf-Artefakte in `/tmp/opencode/` gelesen.
-- Git commands run by me: `git status --short`, `git diff --stat db45bd7`, `git diff --name-only db45bd7 -- scripts/`; Shell-Zugriff weiter eingeschränkt (einzelne Simple-Aufrufe erlaubt, keine Kombis).
-- Checks with supplied output (Artefakte, die ich **gelesen und abgeglichen** habe): Full-Lauf-Logzeilen (1274/1240 Tests, 34 B6-Suiten `ok`), Fail-Listen (23/24 Zeilen, Äquivalenz verifiziert), Smoke-Rohdaten (`pi-events.jsonl`, `filtered.txt`, `filter-err.txt` leer, `exitinfo.txt`, leere `auth.json`/`models-store.json`, keine state-Datei), `verify.sh`-Konfig `.vibe/project.env`, `TESTER=test-agent`.
-- Checks not independently run: alle Build-/Test-/Smoke-Kommandos selbst (nur gelesen); `docs/import-manifest.json`-Prüfsummen nicht unabhängig nachgerechnet (Werkzeuge reichen bis `sha256sum` nicht).
-- Wichtig durchgesehene Bereiche: `docs/features/B6.md` komplett, B6-Testdateien strukturell (AK-Dokstrings, skip-frei), Produkt-Diff-Statistik gegen `db45bd7`, `scripts/`-Ordnung.
-- Remaining risks (keine Befunde, nur Abschlussvoraussetzungen): Trilium-Dokumentation ist in diesem Review nicht nachprüfbar — Ticketabhaken erst mit echtem `Trilium`-Nachweis; F24-Feedback-Kontraktteile (Text/Werkzeug/Subagent) am echten Pi bleiben Attrappen-basiert mit `docs/compatibility.md`-Pflicht; das F27-Strukturproblem der unversionierten FEEDBACK.md („Nachweis:"- statt `Commit:`-Zeile) ist ein **vorbestehender** fachübergreifender Defekt und gehört in `F27`/`Fehlermeldung`, nicht in `B6`.
+- Change set reviewed: Arbeitskopie `/var/log/custom/vibe-dev/worktrees/vibe-B6-iGrKk1` auf `feature/korbat/b6`; HEAD laut `.git/HEAD` und `.git/logs/HEAD` (Einträge 1-3) unverändert `c3d68dd75bee00b527ef2ada291e06cd1972d76e`, keine Commits seit dem Ausgangsstand. Gelesen: `bin/vibe_packages.py` (1-899 und 1290-1649), `bin/vibe` (500-840), `FEEDBACK.md` (1-204), `TICKETS.md` (1-208), `tests/unit/test_b6_ticket_marker_states.py` vollständig, `docs/features/B6-statusmarken.md` vollständig, `docs/features/B6.md` vollständig, `docs/reviews/B6-review-1.md`, `B6-pi-review-1.md`, `B6-pi-review-2.md`, `B6-test-agent-report.md`, die B6-Einträge/Scopes in `docs/import-manifest.json`, `scripts/check-import-manifest.py`.
+- Git commands run by me: keine. In dieser Sitzung gibt es kein Git-/Shell-Werkzeug; `git status --short` und `git diff c3d68dd` waren nicht ausführbar. HEAD/Branch wurden nur über die Git-Metadatendateien gelesen.
+- Checks evidenced by supplied raw output (vom Koordinator ausgeführt, von mir nicht nachvollzogen): `test_b6_ticket_marker_states` 56 OK; `test_b3_merged_waiting test_ap5_korbat_waiting_state test_ap3_korbat_issues_backend test_package_gates` 114 OK; `check-import-manifest.py` OK/70 Dateien; `bash scripts/verify.sh quick` Exit 0; Volllauf 2492 Tests mit 6 fehlgeschlagenen Modulen, identische Modulliste am Baseline-Commit `c3d68dd`, keine B6-Regression; `test_verify_script` 34 Tests/1 bekannter Baselinefehler; Rotphase 27 FAILED/29 OK am Baseline-Klon; Realfall B5/B6 inkl. `select_package`.
+- Checks reported only by the coding/test agent: 52er-/264er-Testlauf in `docs/features/B6-statusmarken.md:101-116`; Phase 1/2 des Test-Agentenberichts (34 Fälle/20 FAILED, 52 Fälle/12 FAILED) und der 170er-Sammellauf (`B6-test-agent-report.md:11-22,55-57`). Diese Zahlen sind mit den gelieferten Rohwerten konsistent, aber nicht unabhängig reproduziert.
+- Checks not independently run: sämtliche Build-, Test-, Manifest- und `verify.sh`-Prüfungen sowie der Realfall. Meine Aussagen zu `block_marker_state`, `is_blocked`/`is_waiting_merge`, `mark_*`, `_apply_proof`, `_parse_entry`/`open_items` und `gate_errors` beruhen ausschließlich auf Code-/Datenanalyse.
+- Important areas inspected: `block_marker_state` (Randfälle: leerer Block, Titelzeile, fehlende Beschreibungszeile, mehrere Marken, Endzeile vs. Kopffeld, Groß-/Kleinschreibung, Einrückung, Trailing-Whitespace, Freitext), `is_blocked`/`is_waiting_merge`, Idempotenz der `mark_*`-Befehle, Einfügeposition vor Leerzeilen, `_apply_proof` (breite Entfernung bewusst unverändert), `status_report`/`select_package`/`priority_view`, `_parse_entry`/`open_items` (Präzedenz, `need_proof`), Review-Glob in `gate_errors`, B5/B6 in `FEEDBACK.md`, AP5-Marker in `TICKETS.md:187` (abgehakter Block, daher ohne Wirkung), Testabdeckung R1–R6, Doku, Manifest, Alt-Nachweise.
+- Remaining risks: (a) `git status`/`git diff` und damit die Vollständigkeit des Change-Sets sind nicht unabhängig bestätigt; die erwarteten Dateien sind vorhanden, ein fremder Zusatzchange kann nicht ausgeschlossen werden. (b) Im Manifest ist außer dem neuen B6-Eintrag (1309-1319) kein weiterer B6-Eintrag sichtbar; ob der historische Pi-B6-`aenderungen`-Eintrag dabei ersetzt wurde, ist ohne Diff nicht feststellbar. (c) `bin/vibe-web.py`/`bin/web/*.js` wurden nicht auf eine eigene Marker-Erkennung geprüft (nicht im Change-Set; sie nutzen nach Aktenlage die `vibe`-Funktionen). (d) Der Vollauf und der 264er-Sammellauf sind nur geliefert, nicht von mir ausgeführt. (e) Die vier Minor-Befunde oben sind vor dem Commit zu bereinigen, blockieren die Abnahme nach den Minor-Regeln aber nicht.
 
-**Verdict: PASS**
+Verdict: PASS
