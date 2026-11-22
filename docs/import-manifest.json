@@ -1251,6 +1251,14 @@
       ],
       "datum": "2026-11-22",
       "grund": "GitHub-Issues-Sync (Opt-in nur bei exakt GITHUB_ISSUES_ENABLED='1'): neues Backbone bin/vibe_issues.py (REST ausschließlich über die vibe_github-Helper) mit Pull/Push/Close und State-Aktionen; Parser in bin/vibe liest Status/GitHub additiv, Draft-Auswahl in bin/vibe_packages.py, Web-API/CLI in bin/vibe-web.py und bin/vibe, Nova-Oberfläche in bin/web/nova-project.js mit i18n-Keys in bin/web/i18n.js. Review-Runde 1: scripts/setup-vibe.py installiert vibe_issues.py (sonst ModuleNotFoundError nach Installation); Beschreibungs-Folgezeilen aus Issue-Bodies werden beim Schreiben entschärft (Steuer-/Markerzeilen wie Status:/GitHub:/Art:/Priorität:/Abhängigkeiten:/BLOCKIERT:/WARTET AUF MERGE:/Commit: wirken nicht mehr als Metadaten); Nova zeigt die gelbe Pille auch für 'In Progress' und Zustandsaktionen für GH-<n>-Karten ohne Verweiszeile. Größe und SHA-256 der geänderten Manifest-Dateien aktualisiert und dadurch begründet."
+    },
+    {
+      "arbeitspaket": "B4",
+      "dateien": [
+        "scripts/setup-vibe.py"
+      ],
+      "datum": "2026-11-22",
+      "grund": "Installersperre blockiert Aktualisierung trotz leerem Laufregister (Bug B4): eine vorhandene, aber leere (oder nur aus Leerraum bestehende) runs.json wird wie eine fehlende Datei behandelt und sperrt nicht; nicht-leerer unlesbarer Inhalt bleibt konservativ ein Sperrgrund. Größe und SHA-256 des files-Eintrags von scripts/setup-vibe.py aktualisiert."
     }
   ],
   "files": [
@@ -1445,9 +1453,9 @@
       "sha256": "7f8450dcf34c6b6f94695720954e2072edeb60d69f70b29bb3924882ed6c0f21"
     },
     {
-      "bytes": 73448,
+      "bytes": 74119,
       "path": "scripts/setup-vibe.py",
-      "sha256": "026c0f3e4c4af6a4df59817de173ec2b4e07edb77ecf5452da404b495c41e0c3"
+      "sha256": "482cd6f835f0df1e02643bff16ed3fbcf6222055e82153d6b9e8f4276f9daa2f"
     },
     {
       "bytes": 377,
