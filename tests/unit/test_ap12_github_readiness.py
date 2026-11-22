@@ -333,7 +333,9 @@ class TrackedContentHygieneTest(unittest.TestCase):
             )
         lizenz = (REPO / "LICENSE").read_text(encoding="utf-8")
         self.assertIn(
-            "MIT", lizenz, "LICENSE nennt die Lizenz nicht als MIT"
+            "GNU Affero General Public License",
+            lizenz,
+            "LICENSE nennt die Lizenz nicht als GNU Affero General Public License",
         )
 
     def test_pull_request_and_issue_templates_exist(self):

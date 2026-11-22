@@ -74,3 +74,4 @@ Zuordnung der Projekt-Dokumentation zu den Notizen in Trilium (Stand 2026-11-19)
 | vibe | Features | AP21 Englische Sprache und i18n (global, UI-API) | `Vh6mV66XMgcm` |
 | vibe | Features | B20 Vorschaufenster scrollbar, Autoscroll an den Fuße, einheitliche Fokus-Toggles | `pi5Hxh82FLwa` |
 | vibe | Features | AP22 New vibe ui — Neuaufbau der Weboberfläche | `hdEzA6xNANuB` |
+| vibe | Features | AP24 Lizenz anpassung der projektes (Dual-Lizenz: AGPLv3 + kommerzielle Lizenz) | `d9QcZajOpUue` |
