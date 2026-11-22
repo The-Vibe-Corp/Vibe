@@ -108,6 +108,11 @@ import vibe_gates  # noqa: E402
 import vibe_runs  # noqa: E402
 import vibe_ui_config  # noqa: E402
 
+# Expliziter Opt-out: Anfrage bewusst OHNE Token senden. Der Default aller
+# Helfer ist dagegen, den Token des isolierten Dashboards mitzusenden.
+NO_TOKEN = object()
+USE_TOKEN = object()
+
 ISOLATED_ENV = (
     "VIBE",
     "VIBE_NO_CONTAINER",
@@ -316,19 +321,26 @@ class DashboardFixture(unittest.TestCase):
         method,
         path,
         body=None,
-        token=None,
+        token=USE_TOKEN,
         cookie=None,
         host=None,
         origin=None,
         extra_headers=None,
     ):
-        """HTTP-Anfrage mit Header-Kontrolle; Standard ist Loopback-Host."""
+        """HTTP-Anfrage mit Header-Kontrolle; Standard ist Loopback-Host.
+
+        Standardmäßig wird der Token mitgesendet. ``token=NO_TOKEN`` sendet die
+        Anfrage bewusst ohne Token (für die 403-Prüfungen); jeder andere Wert
+        wird als Token verwendet.
+        """
+        if token is USE_TOKEN:
+            token = self.token
         if body is not None and not isinstance(body, (bytes, bytearray)):
             body = json.dumps(body, ensure_ascii=False).encode("utf-8")
         headers = {
             "Host": host if host is not None else f"127.0.0.1:{self.port}"
         }
-        if token is not None:
+        if token is not NO_TOKEN:
             headers["X-Token"] = token
         if cookie is not None:
             headers["Cookie"] = cookie
@@ -347,18 +359,22 @@ class DashboardFixture(unittest.TestCase):
         finally:
             connection.close()
 
-    def post(self, path, body, token=None):
-        """POST mit Token und Same-Origin-Kontext (Muster AP13)."""
+    def post(self, path, body, token=USE_TOKEN):
+        """POST mit Token und Same-Origin-Kontext (Muster AP13).
+
+        ``token=NO_TOKEN`` erzeugt bewusst eine Anfrage ohne Token; ohne
+        Argument wird der Token des Dashboards verwendet.
+        """
         return self.request(
             "POST",
             path,
             body=body,
-            token=self.token if token is None else token,
+            token=token,
             origin=f"http://127.0.0.1:{self.port}",
             extra_headers={"Sec-Fetch-Site": "same-origin"},
         )
 
-    def get_json(self, path, token=None):
+    def get_json(self, path, token=USE_TOKEN):
         status, text, _headers = self.request(
             "GET", path, token=token)
         self.assertEqual(
@@ -540,7 +556,7 @@ class GatesCollectedTest(DashboardFixture):
     def setUpClass(cls):
         cls.start_server()
 
-    def gates_view(self, query="", token=None):
+    def gates_view(self, query="", token=USE_TOKEN):
         status, body, _headers = self.request(
             "GET", "/api/gates" + query, token=token)
         self.assertEqual(200, status, body)
@@ -667,11 +683,13 @@ class CurrencyUiSettingsTest(DashboardFixture):
         ``/api/ui_settings`` mit/ohne Token.
         Erwartung: ohne Token 403; POST speichert; GET liefert.
         """
-        status, body, _headers = self.request("GET", "/api/ui_settings", token=None)
+        status, body, _headers = self.request(
+            "GET", "/api/ui_settings", token=NO_TOKEN)
         self.assertEqual(403, status, body)
 
         status, body, _headers = self.post(
-            "/api/ui_settings", {"currency": "USD", "usd_rate": 0.5})
+            "/api/ui_settings", {"currency": "USD", "usd_rate": 0.5},
+            token=NO_TOKEN)
         self.assertEqual(403, status, body)
 
         status, body, _headers = self.post(
@@ -705,6 +723,10 @@ class CostsMonthlyTest(unittest.TestCase):
         (self.proj / ".vibe").mkdir(parents=True)
         (self.proj / ".vibe" / "project.env").write_text(
             "TYPE=generic\n", encoding="utf-8")
+        # package_catalog ordnet Sitzungen über die Paketkennungen in FEEDBACK.md
+        # zu; ohne Eintrag kennt der Katalog "F1" nicht.
+        (self.proj / "FEEDBACK.md").write_text(
+            "# FEEDBACK\n\n- [ ] F1 Testpaket\n", encoding="utf-8")
         self.root.joinpath("_toolchain").mkdir()
         self.db = self.root / "opencode.db"
         self.cli = load_vibe_module(self.root)
@@ -869,7 +891,7 @@ class StaticDeliveryTest(DashboardFixture):
         Erwartung: 200 plus JavaScript-Inhalt.
         """
         status, body, headers = self.request(
-            "GET", "/static/nova-evals.js", token=None)
+            "GET", "/static/nova-evals.js", token=NO_TOKEN)
         self.assertEqual(200, status, body)
         self.assertIn("javascript", headers.get("Content-Type", ""),
                      "nova-evals.js wird nicht als JavaScript ausgeliefert")

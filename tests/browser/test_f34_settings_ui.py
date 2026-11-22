@@ -196,6 +196,13 @@ class F34SettingsBrowserTest(unittest.TestCase):
             "# TICKETS\n", encoding="utf-8")
         (cls.root / "home" / ".config" / "opencode" / "agents").mkdir(
             parents=True, exist_ok=True)
+        # Echter MCP-Server in der isolierten HOME: /api/mcp liefert sonst
+        # servers=[] und die Kartenprüfung wäre eine Leerlaufprüfung.
+        (cls.root / "home" / ".config" / "opencode" / "opencode.json").write_text(
+            json.dumps({"mcp": {"servers": {"f34-test-server": {
+                "type": "local",
+                "command": ["echo", "f34-test-server"],
+            }}}}, indent=2) + "\n", encoding="utf-8")
         (cls.root / "tmp").mkdir(parents=True, exist_ok=True)
         cls.state_dir = cls.root / "_state"
         cls.state_dir.mkdir(parents=True)
@@ -577,7 +584,7 @@ class AppearanceSectionTest(F34SettingsBrowserTest):
             0, select.count(),
             "Die Akzentwahl darf kein select[data-nv-accent-select] verwenden")
         buttons = self.page.locator("button[data-nv-accent]")
-        buttons.wait_for(state="visible", timeout=20000)
+        buttons.first.wait_for(state="visible", timeout=20000)
         self.assertEqual(
             len(ACCENT_IDS), buttons.count(),
             "Das Akzentraster bietet nicht alle 12 Vertragsfarben")
@@ -671,9 +678,14 @@ class AppearanceSectionTest(F34SettingsBrowserTest):
             lambda payload: True, timeout=20,
             message="Es wurde kein POST /api/ui_settings gesendet")
 
+        # Vor dem Speichern stand EUR (siehe oben); nach dem Speichern muss
+        # die Auswahl auf USD stehen und der Reload sie erhalten.
         self.assertEqual(
-            "EUR", select.input_value(),
-            "Der Währung-Select steht nach dem Reload nicht auf EUR")
+            "USD", select.input_value(),
+            "Der Währung-Select steht nach dem Speichern nicht auf USD")
+        self.assertEqual(
+            "1.25", usd_rate.input_value(),
+            "Die USD-Rate steht nach dem Speichern nicht auf 1.25")
 
         self.page.reload()
         self.page.locator(
@@ -684,11 +696,14 @@ class AppearanceSectionTest(F34SettingsBrowserTest):
         usd_rate = self.page.locator("input[data-nv-usd-rate]")
         self.wait_until(
             lambda: usd_rate.is_visible(),
-            timeout=20000, message="Das Feld data-nv-usd-rate ist bei EUR nicht "
+            timeout=20000, message="Das Feld data-nv-usd-rate ist bei USD nicht "
                                   "sichtbar")
         self.assertEqual(
             "USD", select.input_value(),
             "Die Währungs-/USD-Auswahl ging beim Reload nicht verloren")
+        self.assertEqual(
+            "1.25", usd_rate.input_value(),
+            "Die gespeicherte USD-Rate ging beim Reload verloren")
         self.assert_no_page_errors()
 
 
@@ -772,9 +787,9 @@ class LimitsTest(F34SettingsBrowserTest):
         ``limits-stop``; aktueller Modus hervorgehoben; Wirkung erklärt; Wechsel
         bestätigt ``GET /api/limits``.
         """
-        self.enable_features("limits")
         self.boot()
         self.open_settings()
+        self.enable_features("limits")
         box = self.page.locator("[data-nv-advanced='limits']")
         box.wait_for(state="visible", timeout=20000)
         continue_button = self.page.locator(
@@ -819,9 +834,9 @@ class GatesTest(F34SettingsBrowserTest):
         je Zeile ``small[data-nv-gate-help]``, ``[data-nv-gate-value]``,
         ``[data-nv-gate-origin]``; Projektkontext mit Override-Feld.
         """
-        self.enable_features("gates")
         self.boot()
         self.open_settings()
+        self.enable_features("gates")
         view = self.api_json("/api/gates")
         self.assertTrue(view.get("ok"), view)
         table = self.page.locator("[data-nv-gates-table]")
@@ -859,10 +874,10 @@ class GatesTest(F34SettingsBrowserTest):
             "Der Gates-Projektfilter darf kein Freitextfeld sein")
 
         override = self.page.locator("input[data-nv-gate-override]")
-        override.wait_for(state="visible", timeout=20000)
+        override.first.wait_for(state="visible", timeout=20000)
         self.assertTrue(
-            override.is_visible(), "Im Projektkontext fehlt das "
-                                   "Override-Feld data-nv-gate-override")
+            override.first.is_visible(), "Im Projektkontext fehlt das "
+                                         "Override-Feld data-nv-gate-override")
         badge = self.page.locator("span[data-nv-gate-override-badge]")
         self.wait_until(
             lambda: badge.count() >= 0, timeout=20000,
@@ -874,9 +889,9 @@ class GatesTest(F34SettingsBrowserTest):
         Erwartung: genau ein POST /api/gates mit allen Werten;
         Render-Zähler unverändert; Reset-Knopf vorhanden.
         """
-        self.enable_features("gates")
         self.boot()
         self.open_settings()
+        self.enable_features("gates")
         gates = self.page.locator("[data-nv-advanced='gates']")
         gates.wait_for(state="visible", timeout=20000)
         save = self.page.locator("button[data-nv-action='gates-save']")
@@ -901,12 +916,13 @@ class ModelsSectionTest(F34SettingsBrowserTest):
         """Vorbedingung: Feature ``models`` an.
 
         Erwartung: ``details[data-nv-models][open]`` mit Modelltabelle;
-        ``details[data-nv-model-catalog]`` standardmäßig offen; Aktionen
-        ``models-prices`` / ``models-refresh``; Hinweis Preispflege Kosten-Dashboard.
+        ``details[data-nv-model-catalog]`` standardmäßig zu; nach dem
+        Aufklappen die Aktionen ``models-prices`` / ``models-refresh`` und der
+        Hinweis auf die Preispflege im Kosten-Dashboard.
         """
-        self.enable_features("models")
         self.boot()
         self.open_settings()
+        self.enable_features("models")
         models = self.page.locator("details[data-nv-models]")
         models.wait_for(state="visible", timeout=20000)
         self.assertTrue(
@@ -916,15 +932,25 @@ class ModelsSectionTest(F34SettingsBrowserTest):
         table.wait_for(state="visible", timeout=20000)
         catalog = self.page.locator("details[data-nv-model-catalog]")
         catalog.wait_for(state="visible", timeout=20000)
-        self.assertTrue(
+        self.assertFalse(
             catalog.evaluate("node => node.open"),
-            "details[data-nv-model-catalog] ist nicht standardmäßig offen")
+            "details[data-nv-model-catalog] ist nicht standardmäßig zugeklappt")
+        # Inhalt weiterhin prüfen: erst aufklappen, dann Aktionen und Hinweis.
+        catalog.locator("summary").first.click()
+        self.wait_until(
+            lambda: catalog.evaluate("node => node.open"),
+            timeout=10,
+            message="details[data-nv-model-catalog] lässt sich nicht aufklappen")
         prices = catalog.locator("button[data-nv-action='models-prices']")
         prices.wait_for(state="visible", timeout=20000)
         refresh = catalog.locator("button[data-nv-action='models-refresh']")
         refresh.wait_for(state="visible", timeout=20000)
         hint = self.page.locator(
             "p[data-nv-models-hint], small[data-nv-models-hint]")
+        hint.first.wait_for(state="visible", timeout=20000)
+        self.assertTrue(
+            (hint.first.inner_text() or "").strip(),
+            "Der Hinweis auf die Preispflege im Modellkatalog fehlt")
         self.assert_no_page_errors()
 
 
@@ -936,11 +962,11 @@ class ProfilesSectionTest(F34SettingsBrowserTest):
         Rollen-Comboboxen ``[data-nv-profile-role]``; Auswahl zeigt Einstellungen;
         ``profile-save`` / ``profile-apply`` vorhanden.
         """
-        self.enable_features("profiles")
         self.boot()
         self.open_settings()
+        self.enable_features("profiles")
         profiles = self.page.locator("article[data-nv-profile]")
-        profiles.wait_for(state="visible", timeout=20000)
+        profiles.first.wait_for(state="visible", timeout=20000)
         self.assertGreaterEqual(
             profiles.count(), 1, "Es existieren keine Profile als Artikel")
         for index in range(profiles.count()):
@@ -950,10 +976,10 @@ class ProfilesSectionTest(F34SettingsBrowserTest):
                 self.assertTrue(combobox.count() >= 1,
                                 "Dem Profil fehlt die Rollen-Combobox")
         save = self.page.locator("button[data-nv-action='profile-save']")
-        save.wait_for(state="visible", timeout=20000)
+        save.first.wait_for(state="visible", timeout=20000)
         apply_button = self.page.locator(
             "button[data-nv-action='profile-apply']")
-        apply_button.wait_for(state="visible", timeout=20000)
+        apply_button.first.wait_for(state="visible", timeout=20000)
 
 
 class McpSectionTest(F34SettingsBrowserTest):
@@ -963,27 +989,36 @@ class McpSectionTest(F34SettingsBrowserTest):
         Erwartung: ``article[data-nv-mcp-server]`` mit Status-Pille
         ``[data-nv-mcp-state]`` ("Aktiv"/"Inaktiv") und Umschalter
         ``[data-nv-action="mcp-toggle"]`` ("Aktivieren"/"Deaktivieren");
-        kein "Eintrag anzeigen"-Knopf; Scope wählbar ``[data-nv-mcp-scope]``;
-        Filter ``[data-nv-mcp-search]``.
+        kein "Eintrag anzeigen"-Knopf; Scope im Bearbeitungsformular wählbar
+        ``[data-nv-mcp-scope]``; Filter ``[data-nv-mcp-search]``.
         """
-        self.enable_features("mcp")
         self.boot()
         self.open_settings()
+        self.enable_features("mcp")
         cards = self.page.locator("article[data-nv-mcp-server]")
-        cards.wait_for(state="visible", timeout=20000)
+        cards.first.wait_for(state="visible", timeout=20000)
         self.assertGreaterEqual(cards.count(), 1, "Keine MCP-Karten")
         state = self.page.locator("span[data-nv-mcp-state]")
-        state.wait_for(state="visible", timeout=20000)
+        state.first.wait_for(state="visible", timeout=20000)
         toggle = self.page.locator(
             "button[data-nv-action='mcp-toggle']")
-        toggle.wait_for(state="visible", timeout=20000)
+        toggle.first.wait_for(state="visible", timeout=20000)
         entry_buttons = self.page.locator(
-            "button[data-nv-action='mcp-entry'], button[data-nv-mcp-entry']")
+            "button[data-nv-action='mcp-entry'], button[data-nv-mcp-entry]")
         self.assertEqual(
             0, entry_buttons.count(),
             "Der MCP-Bereich darf keinen 'Eintrag anzeigen'-Knopf haben")
-        scope = self.page.locator("select[data-nv-mcp-scope]")
+        # Der Scope wird im Bearbeitungsformular (Kontext-Panel) gewählt.
+        edit = cards.first.locator("button[data-nv-action='mcp-edit']")
+        edit.wait_for(state="visible", timeout=20000)
+        edit.click()
+        scope = self.page.locator(
+            "aside[data-nv-context] select[data-nv-mcp-scope]")
         scope.wait_for(state="visible", timeout=20000)
+        self.assertIn(
+            "global",
+            scope.evaluate("node => Array.from(node.options).map(o => o.value)"),
+            "Der Scope des MCP-Servers ist im Formular nicht wählbar")
         search = self.page.locator("input[data-nv-mcp-search]")
         search.wait_for(state="visible", timeout=20000)
         self.assert_no_page_errors()

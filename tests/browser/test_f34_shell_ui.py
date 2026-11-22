@@ -72,6 +72,7 @@ kein Fall aus Umgebungsgründen (Server, Port, Browser, Syntax).
 """
 import http.client
 import json
+import math
 import os
 import socket
 import subprocess
@@ -300,7 +301,15 @@ class F34ShellTest(unittest.TestCase):
         panel.wait_for(state="visible", timeout=10000)
         return panel
 
+    def ensure_bell_open(self):
+        """Glocke für Messungen offen halten (ein später Render schließt sie)."""
+        panel = self.page.locator("[data-nv-bell-panel]")
+        if panel.count() and panel.get_attribute("hidden") is None:
+            return panel
+        return self.open_bell()
+
     def bell_explain_text(self):
+        self.ensure_bell_open()
         explain = self.page.locator("p[data-nv-bell-explain]")
         explain.wait_for(state="visible", timeout=10000)
         return (explain.inner_text() or "").strip()
@@ -436,13 +445,22 @@ class F34BellTest(F34ShellTest):
 
         self.page.set_viewport_size(
             {"width": VIEWPORT_NARROW, "height": VIEWPORT_H_NARROW})
+        panel = self.ensure_bell_open()
+        panel.wait_for(state="visible", timeout=10000)
         explain = self.page.locator("p[data-nv-bell-explain]")
         explain.wait_for(state="visible", timeout=10000)
         box = explain.bounding_box()
         self.assertIsNotNone(box, "Die Erklärung hat keine Bounding-Box")
+        # Selektor im JS statt eines (nach einem Poll u. U. abgehängten)
+        # Element-Handles: die Glocke wird bei jedem Poll neu gezeichnet.
         line_height = float(self.page.evaluate(
-            "el => { var s = getComputedStyle(el); return parseFloat(s.lineHeight) "
-            "|| parseFloat(s.fontSize) * 1.2; }", explain))
+            "() => { var el = document.querySelector('p[data-nv-bell-explain]'); "
+            "var s = getComputedStyle(el); return parseFloat(s.lineHeight) "
+            "|| parseFloat(s.fontSize) * 1.2; }"))
+        self.assertTrue(
+            math.isfinite(line_height) and line_height > 0,
+            "Die Zeilenhöhe der Glocke-Erklärung ist nicht bestimmbar: "
+            + repr(line_height))
         self.assertLess(
             box["height"], 2.0 * line_height,
             "Die Glocke-Erklärung ist nicht einzeilig/kompakt (deutlich kleiner "
@@ -454,7 +472,7 @@ class F34BellTest(F34ShellTest):
             GERMAN_BELL_EXPLAIN, en_text,
             "Die englische Erklärung enthält einen unübersetzten deutschen Satz: "
             + repr(en_text))
-        self.assertNo_page_errors()
+        self.assert_no_page_errors()
 
 
 class F34BellDismissClearTest(F34ShellTest):
@@ -667,8 +685,9 @@ class F34SearchFilterComboboxTest(F34ShellTest):
             "deepseek-r1-distill-qwen-32b-long-name",
             "kimi-k2-instruct-long-model-identifier",
         ]
+        self.boot()
         self.page.evaluate(
-            "([values]) => {"
+            "(values) => {"
             " var host = document.createElement('div');"
             " host.id = 'nv-combobox-probe';"
             " document.body.appendChild(host);"
