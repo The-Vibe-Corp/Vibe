@@ -589,8 +589,8 @@ def open_items(name):
             pid, title = (item["id"], item["title"][:60]) if item else ("?", first[:60])
             if item and item["checked"] and (not need_proof or _proof_ok(root, b)):
                 continue
-            if "BLOCKIERT:" in b: res.append((pid, title, "BLOCKIERT"))
-            elif "WARTET AUF MERGE:" in b: res.append((pid, title, "WARTET AUF MERGE"))
+            if vibe_packages.is_blocked(b): res.append((pid, title, "BLOCKIERT"))
+            elif vibe_packages.is_waiting_merge(b): res.append((pid, title, "WARTET AUF MERGE"))
             elif not item or not item["checked"]: res.append((pid, title, "offen"))
             elif need_proof and not _proof_ok(root, b): res.append((pid, title, "ohne Nachweis"))
     return res
@@ -673,8 +673,8 @@ def _parse_entry(entry, root, need_proof=True):
     # In-Progress > Draft > offen. Die Runner-Schranken bleiben über dem
     # In-Progress-Zustand; Draft und In-Progress sind eigene Zustände.
     if done: state = "erledigt"
-    elif "BLOCKIERT:" in block: state = "BLOCKIERT"
-    elif "WARTET AUF MERGE:" in block: state = "WARTET AUF MERGE"
+    elif vibe_packages.is_blocked(block): state = "BLOCKIERT"
+    elif vibe_packages.is_waiting_merge(block): state = "WARTET AUF MERGE"
     elif status == "in-progress": state = "In Progress"
     elif status == "draft": state = "Draft"
     elif not checked: state = "offen"

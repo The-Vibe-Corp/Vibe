@@ -1317,6 +1317,17 @@
       ],
       "datum": "2026-11-22",
       "grund": "Key Management umgesetzt: bin/vibe_keys.py (neu) enthaelt reines Python-AES-GCM, den 0600-Vault keys.json mit AAD-Bindung, add/select/list/remove sowie den atomaren opencode-auth-sync mit Reset; bin/vibe bietet vibe keys add/select/list/remove mit getpass-Eingabe; bin/vibe-run.sh synchronisiert vor dem Agentenstart und entfernt die Harness-Zugangsdaten nach wait wieder. Groesse und SHA-256 von bin/vibe und bin/vibe-run.sh aktualisiert, neuen files-Eintrag fuer bin/vibe_keys.py aufgenommen."
+    },
+    {
+      "arbeitspaket": "B6",
+      "dateien": [
+        "bin/vibe_packages.py",
+        "bin/vibe",
+        "docs/features/B6-statusmarken.md",
+        "docs/import-manifest.json"
+      ],
+      "datum": "2026-11-22",
+      "grund": "Statusmarken (BLOCKIERT:/WARTET AUF MERGE:) zaehlen nur an Statuspositionen (letzte nichtleere Blockzeile oder Kopffeld vor Beschreibung:/Erwartet:); Freitext-Einfuegungen zaehlen nicht; spaeteste Position gewinnt, BLOCKIERT schlaegt WARTET im Kopffeld; Laeufer und Oberflaeche nutzen die gemeinsame Erkennung; Idempotenzpruefung der mark-Befehle strikt."
     }
   ],
   "files": [
@@ -1331,9 +1342,9 @@
       "sha256": "e5ae3183efcb76dace1e0bcbde9993be7afe82d93d7877da9ee39846cf45330a"
     },
     {
-      "bytes": 306519,
+      "bytes": 306557,
       "path": "bin/vibe",
-      "sha256": "a5fc465b701912767e048e26481afe90dcca3a9d4706589605b72036dd06af0c"
+      "sha256": "0be708f1d0c5c31777fd2d003ac6112e36c6853896ecbe18c0d22661728696a2"
     },
     {
       "bytes": 83973,
@@ -1356,9 +1367,9 @@
       "sha256": "0f6d9c2c9d72ff1400ba0c2e8173217102ac9f163a41191c34367dd5f81f5778"
     },
     {
-      "bytes": 77314,
+      "bytes": 79843,
       "path": "bin/vibe_github.py",
-      "sha256": "3b6f7e521b8f8d2763d059f931cc36852f686bb74f2644b33d19b351e5e905ad"
+      "sha256": "d5ddf9533920b08c262a45ee2d54a6b4346a496d9d6526e7c5f6f3781a44a9d0"
     },
     {
       "bytes": 27530,
@@ -1401,9 +1412,9 @@
       "sha256": "ac3b26da4208a087a09c67c389238c82802d7c1bd50b10d9bcd9492a07050462"
     },
     {
-      "bytes": 79220,
+      "bytes": 81843,
       "path": "bin/vibe_packages.py",
-      "sha256": "77c5a9f989219f9dd05f117e6e3d7e4e182f27f767e28a5ca3575670f22df495"
+      "sha256": "b1d0c86acdeb3a8af54f5eb4129345188e9f8c9b2ceace5ac7686d19529e861c"
     },
     {
       "bytes": 20789,
@@ -1496,6 +1507,11 @@
       "sha256": "e37f2fea39bb8f6b35a6837cd6660af6426f07dc9be7407f9218b120d5716e7c"
     },
     {
+      "bytes": 4602,
+      "path": "bin/web/nova-widgets.js",
+      "sha256": "ab74aeb02b105df1227a28752f6e84686fef8ca5bef15a02dfa26ab86ee051f9"
+    },
+    {
       "bytes": 55233,
       "path": "bin/web/nova.css",
       "sha256": "946155bf61b964b43a76d4ac5cd1a28a2ae7a37d08bf61c2b495c28f9ee2e34b"
@@ -1504,6 +1520,11 @@
       "bytes": 12751,
       "path": "bin/web/styles.css",
       "sha256": "daac654a2a524dd49561ba2580419bad6209ed8646670e993409b88f5cb0bb1e"
+    },
+    {
+      "bytes": 332,
+      "path": "bin/web/vibe.svg",
+      "sha256": "56b03e0b2fdb7960520d7f100b0bcf67e91b1c35f17bb5b9d892d653ce6c3faa"
     },
     {
       "bytes": 34162,
@@ -1664,16 +1685,6 @@
       "bytes": 5143,
       "path": "templates/web/AGENTS.md",
       "sha256": "1521d6b6403f686839836194b666e65ebfe5402d71124637abb64938e6343628"
-    },
-    {
-      "bytes": 4602,
-      "path": "bin/web/nova-widgets.js",
-      "sha256": "ab74aeb02b105df1227a28752f6e84686fef8ca5bef15a02dfa26ab86ee051f9"
-    },
-    {
-      "bytes": 332,
-      "path": "bin/web/vibe.svg",
-      "sha256": "56b03e0b2fdb7960520d7f100b0bcf67e91b1c35f17bb5b9d892d653ce6c3faa"
     }
   ],
   "hinweis": "SHA-256 der übernommenen Programmdateien. Beabsichtigte Änderungen an diesen Dateien sind nur zulässig, wenn dieser Eintrag im selben Arbeitspaket aktualisiert und begründet wird. Laufzeitdaten, Sicherungen und Geheimnisse sind nicht Bestandteil des Imports.",

@@ -417,14 +417,82 @@ def is_done(block):
     return bool(CHECKBOX_DONE.match(block))
 
 
+def block_marker_state(block):
+    """Zustandsmarke an einer Statusposition (B6).
+
+    Eine ``BLOCKIERT:``-/``WARTET AUF MERGE:``-Marke zählt genau dann, wenn
+    sie an einer Statusposition steht:
+    (a) als letzte nichtleere Blockzeile, oder
+    (b) im Kopffeld, d. h. vor der ersten ``Beschreibung:``-/``Erwartet:``-
+    Zeile (nur wenn eine solche Zeile existiert).
+    Die späteste Position gewinnt; im Kopffeld schlägt ``BLOCKIERT`` stets
+    ``WARTET AUF MERGE``. Freitext (auch zeilenanfangend, beliebige
+    Groß-/Kleinschreibung) zählt nicht. Groß-/Kleinschreibung wird ignoriert.
+    Rückgabe: ``"BLOCKIERT"``, ``"WARTET AUF MERGE"`` oder ``""``.
+    """
+    lines = str(block or "").splitlines()
+    # Beschreibungsstart: erste Zeile nach der Titelzeile, die mit
+    # Beschreibung:/Erwartet: beginnt (case-insensitiv).
+    desc_start = None
+    for index in range(1, len(lines)):
+        if re.match(r"\s*(Beschreibung|Erwartet)\s*:", lines[index],
+                    re.IGNORECASE):
+            desc_start = index
+            break
+
+    # Letzte nichtleere Zeile (Position (a)).
+    last_nonempty = None
+    for index in range(len(lines) - 1, -1, -1):
+        if lines[index].strip():
+            last_nonempty = index
+            break
+
+    def marker_of(line):
+        value = line.strip().upper()
+        if value.startswith(BLOCK_MARKER):
+            return "BLOCKIERT"
+        if value.startswith(WAITING_MARKER):
+            return "WARTET AUF MERGE"
+        return ""
+
+    end_marker = ""
+    if last_nonempty is not None:
+        end_marker = marker_of(lines[last_nonempty])
+
+    # Kopffeld-Marker (Position (b)): nur wenn eine Beschreibungszeile
+    # existiert. Mehrere Kopffeld-Marker: BLOCKIERT schlägt WARTET.
+    head_has_blocked = False
+    head_has_waiting = False
+    if desc_start is not None:
+        for index in range(1, desc_start):
+            value = marker_of(lines[index])
+            if value == "BLOCKIERT":
+                head_has_blocked = True
+            elif value == "WARTET AUF MERGE":
+                head_has_waiting = True
+
+    # Späteste Position gewinnt: Endzeile steht nach dem Kopffeld.
+    if end_marker:
+        return end_marker
+    if head_has_blocked:
+        return "BLOCKIERT"
+    if head_has_waiting:
+        return "WARTET AUF MERGE"
+    return ""
+
+
 def is_blocked(block):
-    """True, wenn der Block die Blockierungsmarke enthält."""
-    return BLOCK_MARKER in block.upper()
+    """True, wenn der Block eine echte BLOCKIERT:-Marke an einer
+    Statusposition trägt (letzte nichtleere Zeile oder Kopffeld vor der
+    ersten Beschreibung:/Erwartet:-Zeile) (B6)."""
+    return block_marker_state(block) == "BLOCKIERT"
 
 
 def is_waiting_merge(block):
-    """True, wenn der Block auf den Merge des Eigentümers wartet (AP5 4a)."""
-    return WAITING_MARKER in block.upper()
+    """True, wenn der Block eine echte WARTET AUF MERGE:-Marke an einer
+    Statusposition trägt (letzte nichtleere Zeile oder Kopffeld vor der
+    ersten Beschreibung:/Erwartet:-Zeile) (B6/AP5 4a)."""
+    return block_marker_state(block) == "WARTET AUF MERGE"
 
 
 # AP3: Entwurfs-Marke. Nur die exakte, zeilenankerierte Statuszeile gilt als
@@ -1267,7 +1335,8 @@ def mark_blocked(project, pid, note):
         if span is None:
             continue
         start, end = span
-        if any("BLOCKIERT" in line.upper() for line in lines[start:end]):
+        block_text = "\n".join(lines[start:end])
+        if is_blocked(block_text):
             return False, "Block " + pid + " ist bereits als blockiert vermerkt."
         insert = end
         while insert > start and not lines[insert - 1].strip():
@@ -1300,7 +1369,8 @@ def mark_waiting_merge(project, pid, note):
         if span is None:
             continue
         start, end = span
-        if any("WARTET AUF MERGE" in line.upper() for line in lines[start:end]):
+        block_text = "\n".join(lines[start:end])
+        if is_waiting_merge(block_text):
             return False, "Block " + pid + " ist bereits als wartend vermerkt."
         insert = end
         while insert > start and not lines[insert - 1].strip():
