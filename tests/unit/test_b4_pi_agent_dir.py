@@ -53,6 +53,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from tests.unit import env_support
+
 REPO = Path(__file__).resolve().parents[2]
 SANDBOX = REPO / "bin" / "vibe_sandbox.py"
 
@@ -319,6 +321,7 @@ class DisabledSandboxTest(B4Fixture):
 class PiAgentDirRunTest(B4Fixture):
     """AK5: Echte bwrap-Läufe — Pi-Agentenordner schreibbar, Host sichtbar."""
 
+    @env_support.skip_if_sandbox_nested
     def test_pi_agent_dir_writable_state_visible_and_home_denied(self):
         self.assertIsNotNone(shutil.which("bwrap"), "bubblewrap (bwrap) fehlt")
         before = roots_snapshot()

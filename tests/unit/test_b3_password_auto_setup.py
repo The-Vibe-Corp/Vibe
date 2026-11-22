@@ -279,20 +279,15 @@ class B3RunFixture(unittest.TestCase):
                         self.cli, "ensure_general_rules", return_value=False
                     ):
                         with mock.patch.object(
-                            self.cli,
-                            "ensure_test_agent",
-                            return_value={"agent": False, "config": False},
+                            self.cli, "run_registry", return_value=registry
                         ):
                             with mock.patch.object(
-                                self.cli, "run_registry", return_value=registry
+                                self.cli.vibe_runs, "rotate_log"
                             ):
                                 with mock.patch.object(
-                                    self.cli.vibe_runs, "rotate_log"
+                                    self.cli, "run", self.run_mock
                                 ):
-                                    with mock.patch.object(
-                                        self.cli, "run", self.run_mock
-                                    ):
-                                        self.cli.cmd_run(name, agent)
+                                    self.cli.cmd_run(name, agent)
         return calls
 
     @property

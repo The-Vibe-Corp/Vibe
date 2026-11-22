@@ -25,6 +25,8 @@ import urllib.request
 from pathlib import Path
 from unittest import mock
 
+from tests.unit import env_support
+
 REPO = Path(__file__).resolve().parents[2]
 BIN = REPO / "bin"
 CLI = BIN / "vibe"
@@ -605,7 +607,9 @@ class AgentApiConflictTest(unittest.TestCase):
         cls.agents = cls.home / ".config" / "opencode" / "agents"
         cls.agents.mkdir(parents=True)
         cls.port = free_port()
-        env = os.environ.copy()
+        # Der Testserver muss auf 127.0.0.1 binden (kein geerbtes
+        # VIBE_UI_BIND) und darf keine persönliche config.json lesen.
+        env = env_support.isolated_environ()
         env.update({
             "VIBE": str(cls.root / "vibe"),
             "VIBE_NO_CONTAINER": "1",

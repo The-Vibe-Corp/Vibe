@@ -26,6 +26,8 @@ import unittest
 from pathlib import Path
 from urllib.parse import quote
 
+from tests.unit import env_support
+
 REPO = Path(__file__).resolve().parents[2]
 WEB = REPO / "bin" / "vibe-web.py"
 
@@ -55,7 +57,10 @@ class WebApiFixture(unittest.TestCase):
         cls.port = free_port()
         cls.log_path = cls.root / "server.log"
         cls.log_file = open(cls.log_path, "w", encoding="utf-8")
-        env = os.environ.copy()
+        # Der Testserver muss auf 127.0.0.1 binden, weil der Test dort
+        # verbindet. Ein geerbtes VIBE_UI_BIND (z. B. aus der Läuferumgebung)
+        # würde das Dashboard an eine andere Adresse binden.
+        env = env_support.isolated_environ()
         env.update(
             {
                 "VIBE": str(cls.root),
@@ -494,7 +499,7 @@ class LoopbackBindTest(unittest.TestCase):
         try:
             root = Path(tmp.name)
             port = free_port()
-            env = os.environ.copy()
+            env = env_support.isolated_environ()
             env.update(
                 {
                     "VIBE": str(root),

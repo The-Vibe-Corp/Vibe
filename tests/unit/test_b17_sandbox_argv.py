@@ -83,6 +83,46 @@ class SandboxArgvTest(unittest.TestCase):
             if argv[index] in ("--bind", "--ro-bind", "--ro-bind-try")
         ]
 
+    def setenv_pairs(self, argv):
+        return [
+            (argv[index], argv[index + 1], argv[index + 2])
+            for index in range(len(argv) - 2)
+            if argv[index] == "--setenv"
+        ]
+
+    def test_nested_sandbox_marker_is_set_once_before_the_command(self):
+        """T-BR2: Der Sandbox-Start trägt den Verschachtelungsmarker.
+
+        Vorbedingung: ``SANDBOX=on`` im Projekt und eine ausführbare
+        ``VIBE_BWRAP``-Attrappe (es wird kein bubblewrap gestartet).
+
+        Aktion: ``bwrap_argv`` für einen Sandbox-Start erzeugen.
+
+        Erwartetes Ergebnis: Genau ein Paar
+        ``('--setenv', 'VIBE_SANDBOX_ACTIVE', '1')`` steht in der
+        Argumentliste, und zwar vor dem ``--``-Trenner. Nur so erbt der
+        gestartete Prozess den Marker; die Endprüfung erkennt daran eine
+        verschachtelte Sandbox und überspringt bwrap-abhängige Fälle mit
+        Begründung, ohne pauschal auf bwrap-Verfügbarkeit zu prüfen.
+
+        Fehlerfall: Marker fehlt, ist doppelt oder steht hinter ``--`` —
+        dann erhält der Prozess ihn nicht und ein echter Defekt würde
+        durch ein pauschales ``skipUnless`` verdeckt.
+        """
+        argv = self.sandbox.bwrap_argv(
+            self.project, ["true"], runtime=self.runtime
+        )
+
+        marker = ("--setenv", "VIBE_SANDBOX_ACTIVE", "1")
+        self.assertEqual(self.setenv_pairs(argv).count(marker), 1, argv)
+        separator = argv.index("--")
+        self.assertLess(
+            argv.index("VIBE_SANDBOX_ACTIVE"), separator,
+            "Marker steht hinter dem Kommandotrenner und erreicht den "
+            "gestarteten Prozess nicht",
+        )
+        self.assertNotIn("VIBE_SANDBOX_ACTIVE", argv[separator + 1:])
+
     def test_extra_write_dirs_are_bound_writable(self):
         argv = self.sandbox.bwrap_argv(
             self.project, ["true"],

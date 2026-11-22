@@ -72,6 +72,10 @@ ISOLATED_ENV = (
     "VIBE_RUNTIME", "VIBE_STATE", "VIBE_AGENTS_DIR", "VIBE_CONFIG_FILE",
     "VIBE_CONFIG_DIR", "VIBE_UI_PORT", "VIBE_OPENCODE_PORT", "VIBE_UI_BIND",
     "VIBE_CONTAINER", "VIBE_HARNESS", "GITHUB_TOKEN", "GH_TOKEN",
+    # Die Läuferumgebung setzt GITHUB_AUTO_MERGE=1 (autonomer Lauf); die
+    # Prüfungen hier erwarten PR-only (Standard aus), solange project.env
+    # den Schalter nicht ausdrücklich setzt.
+    "GITHUB_AUTO_MERGE",
     "GIT_TERMINAL_PROMPT", "GIT_ASKPASS", "SSH_ASKPASS",
     "GIT_CONFIG_GLOBAL", "GIT_CONFIG_SYSTEM", "GIT_CONFIG_NOSYSTEM",
     "http_proxy", "https_proxy", "all_proxy", "VIBE_GITHUB_CREDENTIAL",
@@ -198,9 +202,7 @@ class GithubCase(unittest.TestCase):
         self.state.mkdir()
         self.saved_env = {key: os.environ.get(key) for key in ISOLATED_ENV}
         self.addCleanup(self.restore_env)
-        for key in ("GITHUB_TOKEN", "GH_TOKEN", "GIT_TERMINAL_PROMPT",
-                    "GIT_ASKPASS", "SSH_ASKPASS", "http_proxy", "https_proxy",
-                    "all_proxy", "VIBE_GITHUB_CREDENTIAL"):
+        for key in ISOLATED_ENV:
             os.environ.pop(key, None)
         os.environ.update({
             "VIBE_STATE": str(self.state),
@@ -893,7 +895,13 @@ class RunnerFixtureMixin:
         return self.fixture.run_runner(self, project, **extra)
 
     def env(self, project, **extra):
-        return self.fixture.env(self, project, **extra)
+        env = self.fixture.env(self, project, **extra)
+        # Die Läuferumgebung setzt GITHUB_AUTO_MERGE=1 (autonomer Lauf). Der
+        # Läufer liest den Schalter aus seiner Prozessumgebung; ohne diese
+        # Bereinigung würde ein Projekt ohne project.env-Eintrag trotzdem
+        # automatisch mergen. Gesetzt wird er nur noch über project.env.
+        env.pop("GITHUB_AUTO_MERGE", None)
+        return env
 
     def log(self, project=None):
         return self.fixture.log(self, project)

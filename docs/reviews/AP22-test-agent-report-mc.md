@@ -108,7 +108,7 @@ selbst wurde nicht verändert (keine Commits, keine fremden Dateien).
 Befehl:
 
 ```
-PLAYWRIGHT_BROWSERS_PATH=/home/vibe/.cache/ms-playwright \
+PLAYWRIGHT_BROWSERS_PATH=/home/nutzer/.cache/ms-playwright \
   python3 -m unittest tests.browser.test_ap22_agents_ui -v
 ```
 
@@ -148,7 +148,7 @@ Fixture-Dateien und Browser starten, die Liste-Assertion erreicht die Seite.
 Befehl:
 
 ```
-PLAYWRIGHT_BROWSERS_PATH=/home/vibe/.cache/ms-playwright \
+PLAYWRIGHT_BROWSERS_PATH=/home/nutzer/.cache/ms-playwright \
   python3 -m unittest tests.browser.test_ap22_advanced_ui -v
 ```
 

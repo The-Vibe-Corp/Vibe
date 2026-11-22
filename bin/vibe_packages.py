@@ -185,17 +185,36 @@ def dirty_report(project):
     )
 
 
+def _file_has_uncommitted_changes(project, name):
+    """True, wenn ``name`` im Projekt gestagt oder ungestagt geändert ist."""
+    for extra in (("--name-only",), ("--name-only", "--cached")):
+        result = run_git(project, "diff", *extra, "--", name)
+        if result.returncode == 0 and name in result.stdout.splitlines():
+            return True
+    return False
+
+
 def copy_work_notes(project, worktree):
-    """Kopiert vorhandene Arbeitsnotizen in die Paket-Arbeitskopie."""
+    """Kopiert vorhandene Arbeitsnotizen in die Paket-Arbeitskopie.
+
+    F27: Eine uncommittet geänderte ``AGENTS.md`` gehört dem Nutzer. Sie wird
+    weder kopiert noch im Paketbranch committet noch vom Abschluss-Merge
+    überschrieben; der Paketbranch arbeitet mit dem committeten Stand (die
+    Arbeitskopie entsteht ohnehin aus HEAD). Rückgabe: (copied, skipped).
+    """
     project, worktree = Path(project), Path(worktree)
-    copied = []
+    copied, skipped = [], []
     for name in WORK_COPY_FILES:
         source = project / name
         if not source.is_file():
             continue
+        if name == PROJECT_RULES_FILE and _file_has_uncommitted_changes(
+                project, name):
+            skipped.append(name)
+            continue
         write_text_atomic(worktree / name, read_text(source))
         copied.append(name)
-    return copied
+    return copied, skipped
 
 
 def _exclude_project_env(worktree):
@@ -1586,9 +1605,12 @@ def command_preflight(args):
 
 def command_copy_notes(args):
     """Befehl ``copy-notes``: übernimmt Arbeitsnotizen in die Arbeitskopie."""
-    copied = copy_work_notes(args.project, args.worktree)
+    copied, skipped = copy_work_notes(args.project, args.worktree)
     for name in copied:
         print("OK: " + name + " in die Arbeitskopie übernommen.")
+    for name in skipped:
+        print("HINWEIS: " + name + " hat nicht committete Änderungen; "
+              "sie wurden nicht in die Arbeitskopie übernommen.")
     # AP5: read-only Einweg-Transport von .vibe/project.env (nie zurück).
     transported, exclude_ok = transport_project_env(args.project, args.worktree)
     if transported:

@@ -30,6 +30,8 @@ WEB = REPO / "bin" / "vibe-web.py"
 RUNNER = REPO / "bin" / "vibe-run.sh"
 TEMPLATES = REPO / "templates"
 
+from tests.unit import env_support
+
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import runner_support as support
 
@@ -38,7 +40,6 @@ TOOL_DEFAULTS = {
     "web": ["git", "node", "npm"],
     "android": ["git", "java", "android", "adb"],
     "docker": ["git", "docker"],
-    "openwrt": ["git", "make", "gcc"],
     "rebuild": [
         "git", "python3", "wine", "java", "ghidra", "analyzeHeadless",
         "gdb", "strace", "ltrace", "strings", "objdump", "readelf",
@@ -337,6 +338,7 @@ class SandboxCommandTest(SandboxFixture):
         )
         self.assertFalse((self.root / "_logs" / "questions").exists())
 
+    @env_support.skip_if_sandbox_nested
     def test_real_sandbox_allows_questions_but_not_the_web_token(self):
         self.assertIsNotNone(shutil.which("bwrap"), "bubblewrap (bwrap) fehlt")
         self.write_env('SANDBOX=on\nSANDBOX_TOOLS="git"\n')
@@ -411,6 +413,7 @@ class SandboxCommandTest(SandboxFixture):
                 self.assertEqual(result.returncode, 1, value)
                 self.assertEqual(result.stdout.strip(), "off")
 
+    @env_support.skip_if_sandbox_nested
     def test_cargo_file_cache_does_not_break_the_sandbox(self):
         self.write_env('SANDBOX=on\nSANDBOX_TOOLS="cargo"\n')
         cargo = self.home / ".cargo"
@@ -529,6 +532,7 @@ class SandboxCommandTest(SandboxFixture):
         self.assertFalse(result["ok"])
         self.assertIn("definitely-missing-f7-tool", result["message"])
 
+    @env_support.skip_if_sandbox_nested
     def test_check_passes_with_bwrap_and_available_tools(self):
         self.write_env("SANDBOX=on\nSANDBOX_TOOLS=\"git\"\n")
 
@@ -537,6 +541,7 @@ class SandboxCommandTest(SandboxFixture):
         self.assertTrue(result["ok"], result["message"])
         self.assertIn("bereit", result["message"].lower())
 
+    @env_support.skip_if_sandbox_nested
     def test_real_sandbox_allows_write_dirs_and_denies_unlisted_paths(self):
         self.assertIsNotNone(shutil.which("bwrap"), "bubblewrap (bwrap) fehlt")
         self.write_env("SANDBOX=on\nSANDBOX_TOOLS=\"git\"\n")
@@ -604,6 +609,7 @@ class SandboxCommandTest(SandboxFixture):
             timeout=60,
         )
 
+    @env_support.skip_if_sandbox_nested
     def test_real_sandbox_denies_writes_to_the_unlisted_tmp(self):
         self.assertIsNotNone(shutil.which("bwrap"), "bubblewrap (bwrap) fehlt")
         self.write_env('SANDBOX=on\nSANDBOX_TOOLS="git"\n')
@@ -624,6 +630,7 @@ class SandboxCommandTest(SandboxFixture):
         self.assertIn("TMPDIR_OK", result.stdout)
         self.assertFalse(escape.exists())
 
+    @env_support.skip_if_sandbox_nested
     def test_real_sandbox_keeps_the_project_configuration_read_only(self):
         self.assertIsNotNone(shutil.which("bwrap"), "bubblewrap (bwrap) fehlt")
         self.write_env('SANDBOX=on\nSANDBOX_TOOLS="git"\n')
@@ -650,6 +657,7 @@ class SandboxCommandTest(SandboxFixture):
 class SandboxRunnerTest(SandboxFixture):
     """Der echte Paket-Läufer muss den Agenten in der Sandbox starten."""
 
+    @env_support.skip_if_sandbox_nested
     def test_runner_uses_standalone_sandbox_and_blocks_home_writes(self):
         env, args_file, escape = self.prepare_runner("on")
 
@@ -662,6 +670,7 @@ class SandboxRunnerTest(SandboxFixture):
         self.assertIn("DENIED", recorded)
         self.assertFalse(escape.exists())
 
+    @env_support.skip_if_sandbox_nested
     def test_runner_sandboxes_every_documented_active_value(self):
         self.assertIsNotNone(shutil.which("bwrap"), "bubblewrap (bwrap) fehlt")
         for value in ("on", "TRUE", "yes", "1"):
@@ -826,14 +835,18 @@ class SandboxApiTest(unittest.TestCase):
             parents=True, exist_ok=True
         )
         cls.port = free_port()
-        env = os.environ.copy()
-        env.update(
-            {
-                "VIBE": str(cls.root),
-                "VIBE_NO_CONTAINER": "1",
-                "VIBE_UI_PORT": str(cls.port),
-                "HOME": str(cls.root / "home"),
-            }
+        # VIBE_UI_BIND/VIBE_UI_PORT und persönliche Konfiguration nicht erben:
+        # der Testserver muss auf 127.0.0.1 binden.
+        env = env_support.isolated_environ(
+            VIBE=cls.root,
+            VIBE_NO_CONTAINER="1",
+            VIBE_UI_PORT=cls.port,
+            VIBE_RUNTIME=cls.root / "_logs",
+            VIBE_STATE=cls.root / "_toolchain",
+            HOME=cls.root / "home",
+            VIBE_CONFIG_FILE=(
+                cls.root / "home" / ".config" / "vibe" / "config.json"
+            ),
         )
         cls.proc = subprocess.Popen(
             [sys.executable, str(WEB)],
@@ -909,6 +922,7 @@ class SandboxApiTest(unittest.TestCase):
         self.assertFalse(sandbox["enabled"])
         self.assertEqual(sandbox["tools"], [])
 
+    @env_support.skip_if_sandbox_nested
     def test_api_switches_sandbox_sets_tools_and_runs_the_check(self):
         status, body = self.additional_request(
             "/api/sandbox", {"name": "proj", "action": "on"}

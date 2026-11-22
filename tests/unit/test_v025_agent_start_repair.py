@@ -359,13 +359,6 @@ class AgentStartRepairFixture(unittest.TestCase):
         )
         stack.enter_context(
             mock.patch.object(
-                self.cli,
-                "ensure_test_agent",
-                return_value={"agent": False, "config": False},
-            )
-        )
-        stack.enter_context(
-            mock.patch.object(
                 self.cli, "ensure_opencode_password", return_value=""
             )
         )

@@ -21,6 +21,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+from tests.unit import env_support
 from tests.unit.web_page import served_page
 
 REPO = Path(__file__).resolve().parents[2]
@@ -599,7 +600,9 @@ class WriteDirsApiFixture(unittest.TestCase):
             "TYPE=generic\n", encoding="utf-8"
         )
         cls.port = free_port()
-        env = os.environ.copy()
+        # VIBE_UI_BIND aus der Läuferumgebung darf nicht erben: Der Test
+        # verbindet auf 127.0.0.1, der Server muss dort binden.
+        env = env_support.isolated_environ()
         env.update(
             {
                 "VIBE": str(cls.root),

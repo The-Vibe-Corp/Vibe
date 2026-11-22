@@ -233,7 +233,6 @@ class RunSessionSocketTest(CliModuleFixture):
             "pending_changes": lambda path: "",
             "changed_file": lambda path, name: False,
             "ensure_general_rules": lambda path: False,
-            "ensure_test_agent": lambda path: {"agent": False, "config": False},
             "sandbox_status": lambda name: {"enabled": False},
             "pause_after_active": lambda name: False,
             "penv": lambda name: {},
@@ -636,8 +635,10 @@ class SetupLockTest(unittest.TestCase):
             code = 0 if name == "vibe-proj" else 1
             return subprocess.CompletedProcess(command, code, "", "")
 
+        # Seit 67d53bc erwartet running_installation das Logverzeichnis, aus
+        # dem runs.json gelesen wird (nicht mehr den Workspace).
         reasons = self.setup.running_installation(
-            self.root, runner=runner, which=lambda name: "/fake/tmux"
+            self.runtime, runner=runner, which=lambda name: "/fake/tmux"
         )
 
         self.assertTrue(
