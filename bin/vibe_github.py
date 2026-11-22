@@ -1087,48 +1087,82 @@ def pull_integration(project_path):
         return True, False, "Aktualisierung fehlgeschlagen: " + str(error)
 
 
-def integration_state(project_path):
-    """Prüft vor dem Abschluss die Integrationslage des aktuellen Branches (B16).
+def integration_state(project_path, branch=None, base=None):
+    """Prüft vor dem Abschluss die Integrationslage eines Branches (B16/B5).
 
-    Liefert immer ``{"ok", "message", "ahead", "behind"}`` und wirft niemals.
-    Ein fehlgeschlagener Fetch, detached HEAD und ein zurückliegender Stand
-    (``behind > 0``) blockieren; eine Erstveröffentlichung ohne Fern-Branch
-    ist zulässig.
+    Ohne ``branch`` wird der aktuell ausgecheckte Branch geprüft (bisheriges
+    Verhalten). Mit ``branch`` wird genau dieser Branch gegen den Basis-Branch
+    (``base`` oder dessen Voreinstellung aus der Projektkonfiguration) geprüft
+    (B5): Damit wird die Abschlussschranke am Paketbranch gemessen und nicht am
+    Integrationsbranch, der während eines Laufs legitimerweise hinter origin
+    zurückliegen kann. Liefert immer ``{"ok", "message", "ahead", "behind"}``
+    und wirft niemals. Ein fehlgeschlagener Fetch, detached HEAD und ein
+    zurückliegender Stand (``behind > 0``) blockieren; eine
+    Erstveröffentlichung ohne Fern-Branch ist zulässig.
     """
     state = {"ok": False, "message": "", "ahead": 0, "behind": 0}
     project = str(project_path)
+    package_mode = branch is not None
     # Bewusste Ausnahme (broad-exception-caught): Diese Prüfung ist eine
     # Schranke und darf unter keiner Umständen einen Lauf mit einer Exception
     # abbrechen; alle Befunde stehen im Ergebnisdict.
     try:
-        branch = current_branch(project)
-        if not branch:
-            state["message"] = (
-                "Kein Branch ausgecheckt (detached HEAD): kein Abschluss "
-                "auf veraltetem Stand.")
-            return state
+        if branch is None:
+            branch = current_branch(project)
+            if not branch:
+                state["message"] = (
+                    "Kein Branch ausgecheckt (detached HEAD): kein Abschluss "
+                    "auf veraltetem Stand.")
+                return state
+            base_ref = "origin/" + branch
+        else:
+            branch = str(branch).strip()
+            if not branch:
+                state["message"] = (
+                    "Branch fehlt: kein Abschluss auf veraltetem Stand.")
+                return state
+            if base is None:
+                try:
+                    config = read_config(os.path.join(project, ".vibe", "project.env"))
+                    base = config.get("base") if isinstance(config, dict) else None
+                except Exception:  # noqa: BLE001
+                    base = None
+            if not base:
+                base = default_base(project)
+            base = str(base or "").strip()
+            base_ref = ("origin/" + base) if base else ""
+            if not base_ref or base_ref == "origin/":
+                base_ref = "origin/" + branch
         rc, out = git(project, "fetch", "--prune", "origin")
         if rc != 0:
-            # Ein Fetch kann auch an Zugangsdaten scheitern; die Guidance
-            # steht deshalb immer dabei, die URL bleibt maskiert.
             detail = mask_embedded_credentials(out or "unbekannter Fehler")
             state["message"] = _auth_guidance(
                 "Abruf von origin fehlgeschlagen: " + detail + "\n"
                 + _TOKEN_GUIDANCE)
             return state
-        rc, _ = git(project, "rev-parse", "--verify", "--quiet",
-                    "origin/" + branch)
+        rc, _ = git(project, "rev-parse", "--verify", "--quiet", base_ref)
         if rc != 0:
-            state["ok"] = True
-            state["message"] = (
-                "Branch " + branch + " ist noch nicht auf origin vorhanden "
-                "(Erstveröffentlichung).")
-            return state
+            rc2, _ = git(project, "rev-parse", "--verify", "--quiet",
+                         "origin/" + branch)
+            if rc2 != 0:
+                state["ok"] = True
+                state["message"] = (
+                    "Branch " + branch + " ist noch nicht auf origin vorhanden "
+                    "(Erstveröffentlichung).")
+                return state
+            base_ref = "origin/" + branch
+            rc, _ = git(project, "rev-parse", "--verify", "--quiet", base_ref)
+            if rc != 0:
+                state["ok"] = True
+                state["message"] = (
+                    "Branch " + branch + " ist noch nicht auf origin vorhanden "
+                    "(Erstveröffentlichung).")
+                return state
         rc, out = git(project, "rev-list", "--left-right", "--count",
-                      branch + "...origin/" + branch)
+                      branch + "..." + base_ref)
         if rc != 0:
             state["message"] = _auth_guidance(mask_embedded_credentials(
-                "Vergleich mit origin/" + branch + " nicht möglich: "
+                "Vergleich mit " + base_ref + " nicht möglich: "
                 + (out or "unbekannter Fehler")))
             return state
         parts = out.split()
@@ -1136,21 +1170,31 @@ def integration_state(project_path):
         state["ahead"], state["behind"] = ahead, behind
         if behind == 0:
             state["ok"] = True
-            state["message"] = (
-                "Integrationsstand aktuell (" + str(ahead)
-                + " ahead, 0 behind).")
+            if package_mode:
+                state["message"] = (
+                    "Paketbranch " + branch + " aktuell (" + str(ahead)
+                    + " ahead, 0 behind).")
+            else:
+                state["message"] = (
+                    "Integrationsstand aktuell (" + str(ahead)
+                    + " ahead, 0 behind).")
             return state
         lage = "divergiert" if ahead > 0 else "veraltet"
-        state["message"] = (
-            "Integrationsbranch " + branch + " " + lage + " von origin: "
-            + str(ahead) + " ahead / " + str(behind) + " behind; "
-            "kein Abschluss auf veraltetem Stand.")
+        if package_mode:
+            state["message"] = (
+                "Paketbranch " + branch + " " + lage + " von origin: "
+                + str(ahead) + " ahead / " + str(behind) + " behind; "
+                "kein Abschluss auf veraltetem Stand.")
+        else:
+            state["message"] = (
+                "Integrationsbranch " + branch + " " + lage + " von origin: "
+                + str(ahead) + " ahead / " + str(behind) + " behind; "
+                "kein Abschluss auf veraltetem Stand.")
         return state
     except Exception as error:  # noqa: BLE001; pylint: disable=broad-exception-caught
         state["message"] = ("Integrationsstand nicht prüfbar: "
                             + mask_embedded_credentials(str(error)))
         return state
-
 
 def _package_issue_number(project_path, package_id):
     """Issuenummer des Ticketblocks eines Pakets (AP3).
@@ -1218,10 +1262,14 @@ def complete_package(project_path, branch, package_id=None, title=None):
             return False, True, "Kein Remote origin: Übertragung übersprungen", result
         branch = branch_name(branch or current_branch(project))
         result["branch"] = branch
-        # B16: Vor Push und Merge-Request blockieren, wenn der Integrations-
-        # stand zurückliegt oder divergiert — sonst würde ein veralteter Stand
-        # trotz Fehlschlag lokal weitergemergt (F32/AP19).
-        state = integration_state(project)
+        # B16/B5: Vor Push und Merge-Request blockieren, wenn der Paketbranch
+        # (nicht der Integrationsbranch) hinter dem Fernstand zurückliegt oder
+        # divergiert — sonst würde ein veralteter Stand trotz Fehlschlag lokal
+        # weitergemergt (F32/AP19). Der Integrationsbranch selbst darf während
+        # eines Laufs hinter origin zurückliegen (B5); gemessen wird am
+        # Paketbranch gegen die Basis (origin/<base>).
+        base = config.get("base") or default_base(project)
+        state = integration_state(project, branch, base=base or None)
         if not state["ok"]:
             return True, False, state["message"], result
         ok, message = push(project, branch)
