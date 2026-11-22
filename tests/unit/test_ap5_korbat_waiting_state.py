@@ -542,13 +542,21 @@ class NovaWaitingSurfaceTest(unittest.TestCase):
     def test_nova_board_orders_the_waiting_column_between_open_and_blocked(self):
         """Vorbedingung: Board-Aufbau in ``nova-project.js``.
         Aktion: Spaltenliste prüfen.
-        Erwartung: ``open``, ``waiting``, ``blocked`` in dieser Reihenfolge.
-        Fehlerfall: Spalte fehlt oder steht an falscher Stelle.
+        Erwartung: vollständige Reihenfolge ``open``, ``progress``, ``draft``,
+        ``waiting``, ``blocked``, ``proof``, ``done``; die Wartet-Spalte
+        bleibt nach den Arbeitszuständen und vor ``blocked``.
+        Fehlerfall: Spalte fehlt, steht an falscher Stelle oder die
+        AP3-Spalten ``progress``/``draft`` fehlen.
         """
+        # AP3-Board-Vertragsänderung: 'progress' (In Progress) und 'draft'
+        # (Entwurf) sind vor 'waiting' neu; die Wartet-Spalte bleibt zwischen
+        # den Arbeitszuständen und 'blocked'.
         self.assertRegex(
             self.text,
-            r"\[\s*'open'\s*,\s*'waiting'\s*,\s*'blocked'\s*",
-            "Keine Spaltenfolge open → waiting → blocked",
+            r"\[\s*'open'\s*,\s*'progress'\s*,\s*'draft'\s*,\s*'waiting'"
+            r"\s*,\s*'blocked'\s*,\s*'proof'\s*,\s*'done'\s*\]",
+            "Keine Spaltenfolge open → progress → draft → waiting → blocked "
+            "→ proof → done",
         )
 
     def test_nova_overview_counts_waiting_packages(self):

@@ -68,6 +68,7 @@ PROGRAM_FILES = (
     "vibe_gates.py",
     "vibe_services.py",
     "vibe_github.py",
+    "vibe_issues.py",
     "fritz-reconnect.py",
 )
 WEB_FILES = (

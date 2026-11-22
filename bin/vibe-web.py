@@ -39,6 +39,7 @@ import vibe_autonomous  # pylint: disable=wrong-import-position
 import vibe_harness  # pylint: disable=wrong-import-position
 import vibe_github  # pylint: disable=wrong-import-position
 import vibe_packages  # pylint: disable=wrong-import-position
+import vibe_issues  # pylint: disable=wrong-import-position
 import vibe_services  # pylint: disable=wrong-import-position
 import vibe_limits  # pylint: disable=wrong-import-position
 import vibe_gates  # pylint: disable=wrong-import-position
@@ -1632,10 +1633,22 @@ class H(BaseHTTPRequestHandler):
                 act = body.get("action") or "add"
                 try:
                     if act == "add":
-                        # F23: Ohne ID vergibt add_ticket die ID automatisch.
-                        tid = vibe.add_ticket(
-                            name, (body.get("id") or "").strip(),
-                            body.get("title"), body.get("description", ""))
+                        # AP3: Im verbundenen Projekt wird zuerst das Issue
+                        # angelegt (Kategorie -> Label, draft -> ohne
+                        # Ready-Label); ein Fehlschlag lässt keinen halben
+                        # lokalen Eintrag zurück. Ohne Opt-in bleibt die
+                        # lokale AP-ID-Vergabe unverändert.
+                        config = vibe_github.read_config(vibe.github_env_path(name))
+                        if config["issues_enabled"]:
+                            category = str(body.get("category") or body.get("kind") or "").strip().lower()
+                            draft = bool(body.get("draft", True))
+                            tid = vibe_issues.add_ticket_connected(
+                                vibe.ppath(name), config, body.get("title"),
+                                body.get("description", ""), category, draft)
+                        else:
+                            tid = vibe.add_ticket(
+                                name, (body.get("id") or "").strip(),
+                                body.get("title"), body.get("description", ""))
                         ok, msg = True, f"{tid} angelegt"
                     elif act == "update":
                         tid = (body.get("id") or "").strip()
@@ -1768,6 +1781,24 @@ class H(BaseHTTPRequestHandler):
                         if "auto_merge" in body:
                             # AP4 (T-G0): Auto-Merge-Schalter als binärer Wert.
                             values["GITHUB_AUTO_MERGE"] = "1" if body.get("auto_merge") else ""
+                        if "issues_enabled" in body:
+                            # AP3: Issues-Sync als binäres Opt-in (nur "1").
+                            values["GITHUB_ISSUES_ENABLED"] = "1" if body.get("issues_enabled") else ""
+                        if "issues_in_progress" in body:
+                            label_value = str(body.get("issues_in_progress") or "").strip()
+                            if any(c in label_value for c in ("\n", "\r", "\x00")):
+                                raise ValueError("In-Progress-Label darf keine Zeilenumbrüche enthalten")
+                            values["GITHUB_ISSUES_IN_PROGRESS"] = label_value
+                        if "issues_ready" in body:
+                            ready_value = str(body.get("issues_ready") or "").strip()
+                            if any(c in ready_value for c in ("\n", "\r", "\x00")):
+                                raise ValueError("Ready-Label darf keine Zeilenumbrüche enthalten")
+                            values["GITHUB_ISSUES_READY"] = ready_value
+                        if "issues_assignee" in body:
+                            assignee_value = str(body.get("issues_assignee") or "").strip()
+                            if any(c in assignee_value for c in ("\n", "\r", "\x00", "/", "\\")):
+                                raise ValueError("Assignee darf keine Steuerzeichen oder Schrägstriche enthalten")
+                            values["GITHUB_ISSUES_ASSIGNEE"] = assignee_value
                         if values:
                             vibe.set_env_values(name, values)
                         msg = "GitHub-Einstellungen gespeichert"
@@ -1829,6 +1860,26 @@ class H(BaseHTTPRequestHandler):
                             msg = f"Keine neuen Issues ({seen} gesehen); TICKETS.md unverändert."
                         else:
                             msg = ("Arbeitspakete übernommen: " + ", ".join(added)) if added else "Keine offenen Issues."
+                    elif act == "issues.sync":
+                        # AP3: Pull + Push + Close; ohne Opt-in klare Meldung und
+                        # kein Netz. Die Statistik steht unter extra["stats"].
+                        config = vibe_github.read_config(vibe.github_env_path(name))
+                        if not config["issues_enabled"]:
+                            raise ValueError("Issues-Sync ist für dieses Projekt nicht aktiv (GITHUB_ISSUES_ENABLED=1).")
+                        stats = vibe_issues.sync_issues(vibe.ppath(name), config)
+                        extra["stats"] = stats
+                        msg = ("Issues synchronisiert: %d angelegt, %d aktualisiert, "
+                               "%d geschlossen, %d gepusht."
+                               % (stats["created"], stats["updated"],
+                                  stats["closed"], stats["pushed"]))
+                    elif act == "issues.state":
+                        config = vibe_github.read_config(vibe.github_env_path(name))
+                        if not config["issues_enabled"]:
+                            raise ValueError("Issues-Sync ist für dieses Projekt nicht aktiv (GITHUB_ISSUES_ENABLED=1).")
+                        number = vibe_issues.set_issue_state(
+                            vibe.ppath(name), config, str(body.get("id") or ""),
+                            str(body.get("state") or ""))
+                        msg = "Zustand von Issue #" + str(number) + " gespeichert"
                     elif act == "pr":
                         result = vibe.github_pr(name, title=body.get("title") or None,
                                                 base=body.get("base") or None,

@@ -1237,6 +1237,30 @@
       "grund": "NameError-Artefakte in init/Übernahme behoben (Meldung nur bei neu angelegter Test-Agent-Vorlage); read-only-Einwegtransport von .vibe/project.env in Arbeitskopien; VERIFY_PACKAGE_TESTS entkoppelt den Paketnachweis vom Vollmodus und der Verify-Tempfpfad ist kurz (vv-/VIBE_VERIFY_TMP); neuer Ticket-Zustand ‚WARTET AUF MERGE' (statt BLOCKIERT) für PR-only-Pakete inkl. GUI; ensure-mergeable löst das Git-Credential aus dem Projektpfad."
     },
     {
+      "arbeitspaket": "AP3-Korbat",
+      "dateien": [
+        "bin/vibe",
+        "bin/vibe-web.py",
+        "bin/vibe_github.py",
+        "bin/vibe_packages.py",
+        "bin/vibe_issues.py",
+        "bin/web/i18n.js",
+        "bin/web/nova-project.js",
+        "scripts/setup-vibe.py",
+        "docs/import-manifest.json"
+      ],
+      "datum": "2026-11-22",
+      "grund": "GitHub-Issues-Sync (Opt-in nur bei exakt GITHUB_ISSUES_ENABLED='1'): neues Backbone bin/vibe_issues.py (REST ausschließlich über die vibe_github-Helper) mit Pull/Push/Close und State-Aktionen; Parser in bin/vibe liest Status/GitHub additiv, Draft-Auswahl in bin/vibe_packages.py, Web-API/CLI in bin/vibe-web.py und bin/vibe, Nova-Oberfläche in bin/web/nova-project.js mit i18n-Keys in bin/web/i18n.js. Review-Runde 1: scripts/setup-vibe.py installiert vibe_issues.py (sonst ModuleNotFoundError nach Installation); Beschreibungs-Folgezeilen aus Issue-Bodies werden beim Schreiben entschärft (Steuer-/Markerzeilen wie Status:/GitHub:/Art:/Priorität:/Abhängigkeiten:/BLOCKIERT:/WARTET AUF MERGE:/Commit: wirken nicht mehr als Metadaten); Nova zeigt die gelbe Pille auch für 'In Progress' und Zustandsaktionen für GH-<n>-Karten ohne Verweiszeile. Größe und SHA-256 der geänderten Manifest-Dateien aktualisiert und dadurch begründet."
+    },
+    {
+      "arbeitspaket": "B4",
+      "dateien": [
+        "scripts/setup-vibe.py"
+      ],
+      "datum": "2026-11-22",
+      "grund": "Installersperre blockiert Aktualisierung trotz leerem Laufregister (Bug B4): eine vorhandene, aber leere (oder nur aus Leerraum bestehende) runs.json wird wie eine fehlende Datei behandelt und sperrt nicht; nicht-leerer unlesbarer Inhalt bleibt konservativ ein Sperrgrund. Größe und SHA-256 des files-Eintrags von scripts/setup-vibe.py aktualisiert."
+    },
+    {
       "arbeitspaket": "F33",
       "datum": "2026-11-21",
       "dateien": [
@@ -1255,15 +1279,6 @@
         "docs/import-manifest.json"
       ],
       "grund": "F33 (UI-Überarbeitung Nova) in Arbeit: Backend-Verträge umgesetzt (POST /api/agent action=backup ohne Versionswarnung, AGENTS.md-Sicherung/Wiederherstellung mit agents_file_backup_dir, GET/POST /api/global_agents_file, globale Modellpreise action=prices_global mit Rangfolge Projekt > global > Katalog und global_prices in Übersicht/Detail, STATIC_FILES-Einträge vibe.svg/nova-widgets.js); bin/web/nova.css vollständig überarbeitet (mattes Frosted Glass, 12 Akzentpaletten hell/dunkel, Sidebar-Breitbild ab 1280px, F33-Stilblöcke WP1-WP5); bin/web/i18n.js um F33-Koordinationsblöcke ergänzt. Da Programmdaten geändert wurden, sind Größe und SHA-256 der vier betreffenden files-Einträge aktualisiert und dadurch begründet. Merge origin/dev (AP5-Korbat 4cbf70d, B18 d53efa4): alle drei aenderungen-Datensaetze erhalten; Größe/SHA-256 von bin/vibe, bin/vibe-web.py und bin/web/i18n.js auf den gemergten Stand neu berechnet. CSS-Defektreparatur: backdrop-filter von Karten entfernt (Kompositierungs-/Timing-Defekt mit nv-slide-in und asynchronem Render belegt; Blur bleibt auf Header/Sidebar/Schublade/Toasts) und das Breitbild-Grid auf body:has(aside.nv-side) eingegrenzt — im sauberen HEAD-Vergleich validiert (AP22 Shell/Home/Settings/Activity grün)."
-    },
-    {
-      "arbeitspaket": "F33",
-      "datum": "2026-11-21",
-      "dateien": [
-        "bin/web/nova-activity.js",
-        "bin/web/nova-settings.js"
-      ],
-      "grund": "F33 WP5 Aktivität/Einstellungen (Nova): Aktivität — Reihenfolge Kacheln → Rückfragen (select data-nv-questions-project „Alle Projekte“ + je Projekt, hint p[data-nv-questions-hint], Session-Limit-Hinweis small[data-nv-limit-hint] „Gilt für das oben ausgewählte Projekt und begrenzt die Anzahl gelisteter Sitzungen“) → Läufe → Sessions; Einstellungen — Netzwerk in details[data-nv-network-advanced] (Standard zusammengeklappt, Portfelder darin), Feature-Schalter in div[data-nv-feature-groups], je Schranke small[data-nv-gate-help] (5 deutsche Schranken-Expertisen, incl. Form-Hilfe unter dem Auswahl-Knopf), Auswertungsgruppe „Auswertungen“ vor Kosten/Runs mit span[data-nv-eval-badge], Kosten-Karte: hint p[data-nv-costs-hint], Projektzeilen nv-clickable, Detailtabelle Kennung/Sitzungen/Eingabe/gecachte Eingabe/Ausgabe/Kosten + Gesamtzeile, globale Modellpreise (button data-nv-action=„cost-global-edit“ → input[data-nv-cost-global-model] + data-nv-cost-field, Speichern data-nv-action=„cost-global-save“ → POST /api/costs action=prices_global, Toast „Globale Preise gespeichert“), Run-Register: span[data-nv-run-pruneable] „bereinigbar“ + hint p[data-nv-runs-hint], Akzent select[data-nv-accent-select] mit 12 Vertrags-Optionen (defensive NV.setAccent), Globale AGENTS.md (GET /api/global_agents_file, create/save, textarea[data-nv-global-agents], Toast + lokaler Digest-Update, hint p[data-nv-global-agents-hint]). Da Programmdaten geändert wurden, sind Größe und SHA-256 der zwei betreffenden files-Einträge aktualisiert und dadurch begründet."
     },
     {
       "arbeitspaket": "F33",
@@ -1291,9 +1306,9 @@
       "sha256": "e5ae3183efcb76dace1e0bcbde9993be7afe82d93d7877da9ee39846cf45330a"
     },
     {
-      "bytes": 299978,
+      "bytes": 297043,
       "path": "bin/vibe",
-      "sha256": "a197931bdfb0aac8f9c7456d4f51ad00d36c9bce302cfbd06b6daec924022974"
+      "sha256": "8fda0f91bee3c72466e23e646c9cb5c0ebae6941a12b4995926e9f0e7156bacd"
     },
     {
       "bytes": 81878,
@@ -1301,9 +1316,9 @@
       "sha256": "874853f89c0c46e7ab65b8286d59b97da4645ed4e9b31f5d51a7bf094e41190c"
     },
     {
-      "bytes": 120834,
+      "bytes": 121825,
       "path": "bin/vibe-web.py",
-      "sha256": "f82b3ffa775fb045b892de21bdc03b29f494dd9c23396b11f87e8bfdc5a4affe"
+      "sha256": "b7f7e13f808885b6790dd5dcb0e22938049691924a9db100333fa6031dd504b9"
     },
     {
       "bytes": 5189,
@@ -1316,9 +1331,9 @@
       "sha256": "0f6d9c2c9d72ff1400ba0c2e8173217102ac9f163a41191c34367dd5f81f5778"
     },
     {
-      "bytes": 74772,
+      "bytes": 77314,
       "path": "bin/vibe_github.py",
-      "sha256": "05b357f627b08d93adfa092331309831c1ea1f244e164ba38094c0333d47a83b"
+      "sha256": "3b6f7e521b8f8d2763d059f931cc36852f686bb74f2644b33d19b351e5e905ad"
     },
     {
       "bytes": 27530,
@@ -1329,6 +1344,11 @@
       "bytes": 23512,
       "path": "bin/vibe_harness.py",
       "sha256": "30f0394d2ac58458ecf607159c6041ebe19d4aef73e4878a510db3902bd11670"
+    },
+    {
+      "bytes": 22190,
+      "path": "bin/vibe_issues.py",
+      "sha256": "d4e8df8736ef9aa1ca50afd7c395fba89ec98224b11f0d831d7f659cdbf871c4"
     },
     {
       "bytes": 4311,
@@ -1351,9 +1371,9 @@
       "sha256": "ac3b26da4208a087a09c67c389238c82802d7c1bd50b10d9bcd9492a07050462"
     },
     {
-      "bytes": 77744,
+      "bytes": 78181,
       "path": "bin/vibe_packages.py",
-      "sha256": "561ca9d26d466a099fcb48aa3475116f30c626d102b09ceed53d0b942914a721"
+      "sha256": "e0cffcd362e4e0f949d62d8501335efd80eaf18ecb4ee297799eacad20f2f56d"
     },
     {
       "bytes": 20789,
@@ -1391,9 +1411,9 @@
       "sha256": "43805dba175b11e01392b376bc12f931d82c06c8ab82dfc60474b9e9170cdd0f"
     },
     {
-      "bytes": 156155,
+      "bytes": 156429,
       "path": "bin/web/app.js",
-      "sha256": "f0cd5380898a5d617491109ac45cb5afbd9d14e7f861bcd2ac22c6a777dae03f"
+      "sha256": "dfceefa63c3321bd2ff6f8ca4a44ee660ca881d68b19f795d56114e5eefafa90"
     },
     {
       "bytes": 688,
@@ -1401,9 +1421,9 @@
       "sha256": "19ea677f5c3dc3579279fd9b5bf7584612967654b8ec0bbde3818576c78b46b5"
     },
     {
-      "bytes": 156959,
+      "bytes": 150637,
       "path": "bin/web/i18n.js",
-      "sha256": "a212b7b661adfde7b86432c7326aa20e141c21fce8654ae803e133e9fdc49047"
+      "sha256": "8a31e3c644a38abf36a984b24ce96309621707815495e2777170009982a97f98"
     },
     {
       "bytes": 2711,
@@ -1436,19 +1456,14 @@
       "sha256": "02b778a10acedb00957f0066d22397218eea4a6ead68f7d9ead00eb2e0081355"
     },
     {
-      "bytes": 61483,
+      "bytes": 53890,
       "path": "bin/web/nova-project.js",
-      "sha256": "4e3f46404435ac08b029645a8ed08d0b2353e820190201de7863ee0c3aad8c28"
+      "sha256": "217195188b3836addcbc6ea62c59aa7a7b5dfa2d1b091294c68187a95488f07d"
     },
     {
       "bytes": 58929,
       "path": "bin/web/nova-settings.js",
       "sha256": "e37f2fea39bb8f6b35a6837cd6660af6426f07dc9be7407f9218b120d5716e7c"
-    },
-    {
-      "bytes": 4602,
-      "path": "bin/web/nova-widgets.js",
-      "sha256": "ab74aeb02b105df1227a28752f6e84686fef8ca5bef15a02dfa26ab86ee051f9"
     },
     {
       "bytes": 55233,
@@ -1461,11 +1476,6 @@
       "sha256": "daac654a2a524dd49561ba2580419bad6209ed8646670e993409b88f5cb0bb1e"
     },
     {
-      "bytes": 332,
-      "path": "bin/web/vibe.svg",
-      "sha256": "56b03e0b2fdb7960520d7f100b0bcf67e91b1c35f17bb5b9d892d653ce6c3faa"
-    },
-    {
       "bytes": 34162,
       "path": "data/models.json",
       "sha256": "abdbe9d9b2c0896d6a632a5a8140c38bf7b61e9bf9b64a7cca03bd33a5ea6751"
@@ -1476,9 +1486,9 @@
       "sha256": "7f8450dcf34c6b6f94695720954e2072edeb60d69f70b29bb3924882ed6c0f21"
     },
     {
-      "bytes": 73547,
+      "bytes": 74119,
       "path": "scripts/setup-vibe.py",
-      "sha256": "9c3f08f32b3e9ed4900e5d81b136b58e3eeae4343737e24183925d94f767fc97"
+      "sha256": "482cd6f835f0df1e02643bff16ed3fbcf6222055e82153d6b9e8f4276f9daa2f"
     },
     {
       "bytes": 377,
@@ -1624,6 +1634,16 @@
       "bytes": 5143,
       "path": "templates/web/AGENTS.md",
       "sha256": "1521d6b6403f686839836194b666e65ebfe5402d71124637abb64938e6343628"
+    },
+    {
+      "bytes": 4602,
+      "path": "bin/web/nova-widgets.js",
+      "sha256": "ab74aeb02b105df1227a28752f6e84686fef8ca5bef15a02dfa26ab86ee051f9"
+    },
+    {
+      "bytes": 332,
+      "path": "bin/web/vibe.svg",
+      "sha256": "56b03e0b2fdb7960520d7f100b0bcf67e91b1c35f17bb5b9d892d653ce6c3faa"
     }
   ],
   "hinweis": "SHA-256 der übernommenen Programmdateien. Beabsichtigte Änderungen an diesen Dateien sind nur zulässig, wenn dieser Eintrag im selben Arbeitspaket aktualisiert und begründet wird. Laufzeitdaten, Sicherungen und Geheimnisse sind nicht Bestandteil des Imports.",

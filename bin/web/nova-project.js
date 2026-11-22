@@ -57,6 +57,8 @@ function nvpStateColumn(state) {
   if (state === 'offen') return 'open';
   if (state === 'WARTET AUF MERGE') return 'waiting';
   if (state === 'BLOCKIERT') return 'blocked';
+  if (state === 'In Progress') return 'progress';
+  if (state === 'Draft') return 'draft';
   if (state === 'ohne Nachweis') return 'proof';
   if (state === 'erledigt') return 'done';
   return 'open';
@@ -66,6 +68,8 @@ function nvpStateLabel(state) {
   if (state === 'offen') return tr('Offen');
   if (state === 'WARTET AUF MERGE') return tr('Wartet auf Merge');
   if (state === 'BLOCKIERT') return tr('Blockiert');
+  if (state === 'In Progress') return tr('In Progress');
+  if (state === 'Draft') return tr('Entwurf');
   if (state === 'ohne Nachweis') return tr('Ohne Nachweis');
   if (state === 'erledigt') return tr('Erledigt');
   return tr('Offen');
@@ -135,12 +139,15 @@ function nvpPost(name, path, body, successKey, token) {
 
 /* ---------- Arbeit: Board, Suche, Priorisierung, Feedback, Formular ---------- */
 
-function nvpBoardColumn(name, column, rows, token, prioRanks) {
+function nvpBoardColumn(name, column, rows, token, prioRanks, issuesEnabled) {
+
   var box = el('div', {class: 'nv-board-col', 'data-nv-col': column},
     el('h3', {}, nvpStateLabel(column === 'open' ? 'offen'
       : column === 'blocked' ? 'BLOCKIERT'
         : column === 'waiting' ? 'WARTET AUF MERGE'
-          : column === 'proof' ? 'ohne Nachweis' : 'erledigt')));
+          : column === 'progress' ? 'In Progress'
+            : column === 'draft' ? 'Draft'
+              : column === 'proof' ? 'ohne Nachweis' : 'erledigt')));
   if (!rows.length) {
     box.append(el('p', {class: 'nv-muted'}, tr('Keine Einträge')));
   }
@@ -180,6 +187,22 @@ function nvpBoardColumn(name, column, rows, token, prioRanks) {
           setTx(more, opened ? tr('mehr') : tr('weniger'));
         }}}, tr('mehr'));
     }
+    /* AP3: Issues-Zustandsaktionen nur bei aktivem Sync und vorhandenem
+       Issue-Bezug (draft/ready/in-progress). */
+    var issueActions = (issuesEnabled && !isFeedback && (row.github != null || /^GH-\d+$/.test(id)))
+      ? ['draft', 'ready', 'in-progress'].map(function (stateValue) {
+          return el('button', {class: 'nv-btn nv-ghost nv-compact', type: 'button',
+            'data-nv-action': 'issues-state', 'data-nv-state': stateValue,
+            on: {click: function () {
+              nvpPost(name, '/api/github',
+                {action: 'issues.state', id: id, state: stateValue},
+                'Gespeichert', token).then(function () {
+                if (!NV.stale(token)) NV.render();
+              });
+            }}}, tr(nvpIssueStateLabel(stateValue)));
+        })
+      : null;
+
     var card = el('article', {
       class: 'nv-card nv-ticket',
       'data-nv-ticket': id,
@@ -188,7 +211,8 @@ function nvpBoardColumn(name, column, rows, token, prioRanks) {
       el('div', {class: 'nv-ticket-head'},
         el('span', {class: 'nv-ticket-id'}, id),
         rank ? el('span', {'data-nv-prio-badge': ''}, 'P' + String(rank)) : null,
-        el('span', {class: 'nv-pill nv-state' + (row.state === 'WARTET AUF MERGE' ? ' nv-warn' : '')}, nvpStateLabel(row.state))),
+        el('span', {class: 'nv-pill nv-state' + ((row.state === 'WARTET AUF MERGE' || row.state === 'In Progress') ? ' nv-warn' : row.state === 'Draft' ? ' nv-muted' : '')}, nvpStateLabel(row.state))),
+
       el('div', {class: 'nv-ticket-title'}, title),
       descNode,
       el('div', {class: 'nv-row nv-ticket-actions'},
@@ -196,7 +220,9 @@ function nvpBoardColumn(name, column, rows, token, prioRanks) {
           'data-nv-action': 'ticket-edit', on: {click: function () {
             nvpOpenTicketForm(workPanelRoot(name), token, {
               mode: isFeedback ? 'feedback' : 'package',
-              id: id, title: title, description: description
+              id: id, title: title, description: String(row.description || ''),
+              issuesEnabled: issuesEnabled
+
             });
           }}}, tr('Bearbeiten')),
         el('button', {class: 'nv-btn nv-danger nv-compact', type: 'button',
@@ -208,12 +234,20 @@ function nvpBoardColumn(name, column, rows, token, prioRanks) {
               if (!NV.stale(token)) NV.render();
             });
           }}}, tr('Löschen')),
+        issueActions,
         closeAction,
         more),
+
       closeError);
     box.append(card);
   });
   return box;
+}
+
+function nvpIssueStateLabel(stateValue) {
+  if (stateValue === 'draft') return 'Entwurf';
+  if (stateValue === 'ready') return 'Bereit';
+  return 'In Progress';
 }
 
 /* Das Formular wird erst beim Klick erzeugt und nach Abbrechen entfernt; so
@@ -230,6 +264,7 @@ function nvpOpenTicketForm(root, token, options) {
   if (existing) existing.remove();
   var mode = options.mode || 'package';
   var editing = !!options.id;
+  var issuesEnabled = !!options.issuesEnabled;
   var titleInput = el('input', {'data-nv-field': 'title', type: 'text',
     value: options.title || '', 'aria-label': tr('Titel')});
   var descInput = el('textarea', {'data-nv-field': 'description', rows: '4',
@@ -243,6 +278,21 @@ function nvpOpenTicketForm(root, token, options) {
   if (!editing) {
     idInput.value = nvpSuggestId(options.rows, mode === 'bug' ? 'B' : 'F');
   }
+  /* AP3: Entwurf (Vorgabe gesetzt) und Kategorie (Bug/Feature) nur beim
+     Anlegen eines Pakets im verbundenen Projekt. */
+  var draftInput = null;
+  var categorySelect = null;
+  if (issuesEnabled && !editing && mode === 'package') {
+    draftInput = el('input', {'data-nv-field': 'draft', type: 'checkbox',
+      checked: true, 'aria-label': tr('Entwurf')});
+    categorySelect = el('select', {'data-nv-field': 'category',
+      'aria-label': tr('Kategorie')});
+    categorySelect.append(el('option', {value: 'bug'}, tr('Bug')));
+    categorySelect.append(el('option', {value: 'feature'}, tr('Feature')));
+    categorySelect.value = 'feature';
+
+
+  }
   var error = nvpErrorBox();
 
   var heading = mode === 'bug' ? tr('Neuer Bug')
@@ -255,6 +305,8 @@ function nvpOpenTicketForm(root, token, options) {
     idHint,
     nvpLabel(tr('Titel'), titleInput),
     nvpLabel(tr('Beschreibung'), descInput),
+    categorySelect ? nvpLabel(tr('Kategorie'), categorySelect) : null,
+    draftInput ? nvpLabel(tr('Entwurf'), draftInput) : null,
     el('div', {class: 'nv-row'},
       el('button', {class: 'nv-btn nv-primary', type: 'button',
         'data-nv-action': 'ticket-save', on: {click: async function () {
@@ -284,6 +336,8 @@ function nvpOpenTicketForm(root, token, options) {
           } else {
             body.action = 'add';
             if (mode === 'package') body.id = String(idInput.value || '');
+            if (categorySelect) body.category = String(categorySelect.value || '');
+            if (draftInput) body.draft = !!draftInput.checked;
           }
           try {
             var result = await api(path, Object.assign({name: nvpCurrentName()}, body));
@@ -718,10 +772,23 @@ function nvpGithubSection(name, token, github) {
     el('span', {class: 'nv-switch-text'},
       el('span', {}, tr('Merge-Requests automatisch mergen')),
       el('small', {}, tr('Merge-Requests automatisch mergen, wenn alle Schranken grün sind (sonst PR-only)'))));
+  
+  /* AP3: Issues-Sync (Opt-in) und seine Label-/Assignee-Einstellungen. */
+  var issuesEnabled = el('input', {type: 'checkbox', 'data-nv-field': 'github-issues-enabled',
+    'aria-label': tr('Issues-Sync aktivieren (GitHub als Quelle der Wahrheit)')});
+  issuesEnabled.checked = !!g.issues_enabled;
+  var issuesInProgress = el('input', {type: 'text', 'data-nv-field': 'issues_in_progress',
+    value: String(g.issues_in_progress_label || ''), 'aria-label': tr('In-Progress-Label')});
+  var issuesReady = el('input', {type: 'text', 'data-nv-field': 'issues_ready',
+    value: String(g.issues_ready_label || ''), 'aria-label': tr('Ready-Label')});
+  var issuesAssignee = el('input', {type: 'text', 'data-nv-field': 'issues_assignee',
+    value: String(g.issues_assignee || ''), 'aria-label': tr('Assignee (leer = alle)')});
   var save = nvpButton(tr('Einstellungen speichern'), 'github-settings-save', function () {
     post({action: 'settings', enabled: enabled.checked, repo: repo.value.trim(),
-      label: label.value.trim(), api: apiBase.value.trim(), base: base.value.trim(),
-      auto_merge: autoMerge.checked},
+      label: label.value.trim(), api: apiBase.value.trim(), base: base.value.trim(), auto_merge: autoMerge.checked,
+      issues_enabled: issuesEnabled.checked, issues_in_progress: issuesInProgress.value.trim(),
+      issues_ready: issuesReady.value.trim(), issues_assignee: issuesAssignee.value.trim()},
+
       function (result) {
         if (result && result.ok !== false) toast(bt(result.message) || tr('Gespeichert'));
       });
@@ -867,6 +934,14 @@ function nvpGithubSection(name, token, github) {
       if (result && result.ok !== false) NV.render();
     });
   });
+  /* AP3: Issues-Sync nur bei aktivem Opt-in sichtbar (Pull + Push + Close). */
+  var issuesSync = g.issues_enabled
+    ? nvpButton(tr('Issues synchronisieren'), 'issues-sync', function () {
+        post({action: 'issues.sync'}, function (result) {
+          if (result && result.ok !== false) refresh();
+        });
+      }, 'nv-primary')
+    : null;
 
   /* --- Merge-Request: Anfrage zeigt nur die Bestätigung; erst die
       ausdrückliche Bestätigung löst den REST-Aufruf aus. --- */
@@ -896,7 +971,11 @@ function nvpGithubSection(name, token, github) {
     nvpLabel(tr('API-Adresse'), apiBase),
     nvpLabel(tr('Basis-Branch (optional)'), base),
     autoMergeRow,
-    el('div', {class: 'nv-row'}, save),
+    nvpLabel(tr('Issues-Sync aktivieren (GitHub als Quelle der Wahrheit)'), issuesEnabled),
+    nvpLabel(tr('In-Progress-Label'), issuesInProgress),
+    nvpLabel(tr('Ready-Label'), issuesReady),
+    nvpLabel(tr('Assignee (leer = alle)'), issuesAssignee),
+    el('div', {class: 'nv-row'}, save, connect),
     el('h4', {}, tr('Verbinden')),
     authLine,
     el('div', {class: 'nv-row'}, tokenInput, tokenSave, tokenClear),
@@ -910,7 +989,7 @@ function nvpGithubSection(name, token, github) {
     el('h4', {}, tr('Merge-Request')),
     el('div', {class: 'nv-row'}, pr, prConfirm), prResult,
     el('h4', {}, tr('Issues als Arbeitspakete')),
-    el('div', {class: 'nv-row'}, issueFilter, loadIssues, importIssues),
+    el('div', {class: 'nv-row'}, issueFilter, loadIssues, importIssues, issuesSync),
     issuesResult,
     error
   ]);
@@ -1216,6 +1295,8 @@ NV.views.project = async function project(context, token) {
   var tiles = el('div', {class: 'nv-tiles'});
   [
     ['open', nvpCount(tickets, 'offen'), tr('Offene Pakete')],
+    ['progress', nvpCount(tickets, 'In Progress'), tr('In Progress')],
+    ['draft', nvpCount(tickets, 'Draft'), tr('Entwurf')],
     ['waiting', nvpCount(tickets, 'WARTET AUF MERGE'), tr('Wartet auf Merge')],
     ['blocked', nvpCount(tickets, 'BLOCKIERT'), tr('Blockiert')],
     ['proof', nvpCount(feedback, 'ohne Nachweis'), tr('Ohne Nachweis')],
@@ -1258,18 +1339,15 @@ NV.views.project = async function project(context, token) {
   panels.overview.append(nvpAutonomousRow(name, token, view.autonomous));
 
   /* ---- Work: Aktionsleiste → Suche/Filter → Priorisierung → Board → Feedback ---- */
-  var allRows = tickets.concat(feedback.map(function (row) {
-    return Object.assign({}, row, {__feedback: true});
-  }));
   var newRow = el('div', {class: 'nv-row nv-work-actions'},
     nvpButton(tr('Paket anlegen'), 'new-package', function () {
-      nvpOpenTicketForm(panels.work, token, {mode: 'package', rows: tickets});
+      nvpOpenTicketForm(panels.work, token, {mode: 'package', rows: tickets, issuesEnabled: issuesEnabled});
     }, 'nv-primary'),
     nvpButton(tr('Bug melden'), 'new-bug', function () {
-      nvpOpenTicketForm(panels.work, token, {mode: 'bug', rows: feedback});
+      nvpOpenTicketForm(panels.work, token, {mode: 'bug', rows: feedback, issuesEnabled: issuesEnabled});
     }),
     nvpButton(tr('Feedback geben'), 'new-feedback', function () {
-      nvpOpenTicketForm(panels.work, token, {mode: 'feedback', rows: feedback});
+      nvpOpenTicketForm(panels.work, token, {mode: 'feedback', rows: feedback, issuesEnabled: issuesEnabled});
     }));
   panels.work.append(newRow);
 
@@ -1288,12 +1366,16 @@ NV.views.project = async function project(context, token) {
   });
   panels.work.append(nvpPriorityStrip(name, token, view, tickets));
 
+  var issuesEnabled = !!(data.github && data.github.issues_enabled);
   var board = el('div', {class: 'nv-board'});
-  ['open', 'waiting', 'blocked', 'proof', 'done'].forEach(function (column) {
-    var rows = allRows.filter(function (row) {
+  ['open', 'progress', 'draft', 'waiting', 'blocked', 'proof', 'done'].forEach(function (column) {
+    var rows = tickets.concat(feedback.map(function (row) {
+      return Object.assign({}, row, {__feedback: true});
+    })).filter(function (row) {
       return nvpStateColumn(String(row.state || '')) === column;
     });
-    board.append(nvpBoardColumn(name, column, rows, token, prioRanks));
+    board.append(nvpBoardColumn(name, column, rows, token, prioRanks, issuesEnabled));
+
   });
   panels.work.append(board);
 

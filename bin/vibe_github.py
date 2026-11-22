@@ -453,6 +453,9 @@ def read_config(env_path):
     # AP4: Binärer Schalter — nur exakt "1" aktiviert den Auto-Merge; alles
     # andere (leer, "true", "on", …) bleibt aus (PR-only ist der Standard).
     auto_merge = str(values.get("GITHUB_AUTO_MERGE", "")).strip() == "1"
+    # AP3: Issues-Sync ist ein binäres Opt-in je Projekt — nur exakt "1"
+    # aktiviert ihn; ohne diesen Wert bleibt jedes Issue-Verhalten aus.
+    issues_enabled = str(values.get("GITHUB_ISSUES_ENABLED", "")).strip() == "1"
     return {
         "enabled": enabled,
         "repo": str(values.get("GITHUB_REPO", "")).strip(),
@@ -461,6 +464,12 @@ def read_config(env_path):
         # AP9: Basis-Branch für Merge-Requests (Leerwert = Standard der origin).
         "base": str(values.get("GITHUB_BASE", "")).strip(),
         "auto_merge": auto_merge,
+        "issues_enabled": issues_enabled,
+        "issues_in_progress_label": str(values.get("GITHUB_ISSUES_IN_PROGRESS", "")).strip()
+        or "in-progress",
+        "issues_ready_label": str(values.get("GITHUB_ISSUES_READY", "")).strip()
+        or "ready",
+        "issues_assignee": str(values.get("GITHUB_ISSUES_ASSIGNEE", "")).strip(),
     }
 
 
@@ -794,6 +803,10 @@ def status(project_path, *, remote=True, token=None):
         "api": config["api"],
         "base": config["base"],
         "auto_merge": config["auto_merge"],
+        "issues_enabled": config["issues_enabled"],
+        "issues_in_progress_label": config["issues_in_progress_label"],
+        "issues_ready_label": config["issues_ready_label"],
+        "issues_assignee": config["issues_assignee"],
         "remotes": remote_rows,
         "branch": branch or "-",
         "ahead": ahead,
@@ -1139,6 +1152,43 @@ def integration_state(project_path):
         return state
 
 
+def _package_issue_number(project_path, package_id):
+    """Issuenummer des Ticketblocks eines Pakets (AP3).
+
+    Ein Bezug ist entweder die Kennung selbst (``GH-<n>``) oder die
+    Verweiszeile ``GitHub: #<n>`` im Block. Ohne Bezug bleibt ``None``.
+    """
+    pid = str(package_id or "").strip()
+    if not pid:
+        return None
+    gh_match = re.match(r"^GH-(\d+)$", pid)
+    if gh_match:
+        return int(gh_match.group(1))
+    path = os.path.join(str(project_path), "TICKETS.md")
+    try:
+        with open(path, encoding="utf-8", errors="replace") as handle:
+            lines = handle.read().splitlines()
+    except OSError:
+        return None
+    header_re = re.compile(r"^- \[[^\]]*\]\s+(.+)$")
+    ref_re = re.compile(r"^\s*GitHub:\s*#\s*(\d+)\b")
+    in_block = False
+    for line in lines:
+        match = header_re.match(line)
+        if match:
+            ident = match.group(1).split(None, 1)[0]
+            if ident == pid:
+                in_block = True
+            elif in_block:
+                break
+            continue
+        if in_block:
+            ref = ref_re.match(line)
+            if ref:
+                return int(ref.group(1))
+    return None
+
+
 def complete_package(project_path, branch, package_id=None, title=None):
     """Überträgt einen abgeschlossenen Arbeitspaket-Branch und stellt den
     Merge-Request (AP9, seit B16 eine echte Abschlussschranke): Erst wird die
@@ -1149,7 +1199,12 @@ def complete_package(project_path, branch, package_id=None, title=None):
     liefert das 4-Tupel ``(performed, ok, message, result)`` mit ``result``
     als Dict mit ``branch`` und ``pr_url``. Bei einer blockierten Integrations-
     lage wird weder gepusht noch ein Merge-Request gestellt; Push- und
-    Request-Fehler melden ``ok=False``. Diese Funktion wirft niemals."""
+    Request-Fehler melden ``ok=False``. Diese Funktion wirft niemals.
+
+    Seit AP3 wird bei einem Issue-Bezug des Pakets ``Closes #<n>`` an den
+    PR-Body angehängt (ID ``GH-<n>`` oder Verweiszeile ``GitHub: #<n>``),
+    damit GitHub das Issue beim Merge automatisch schließt; ohne Bezug bleibt
+    der Body unverändert."""
     project = str(project_path)
     result = {"branch": str(branch or "").strip(), "pr_url": ""}
     # Bewusste Ausnahme (broad-exception-caught): Der Abschluss ist eine
@@ -1178,13 +1233,18 @@ def complete_package(project_path, branch, package_id=None, title=None):
             # Remote selbst ab (remote set-head --auto) — ein Fernaufruf.
             set_head_default(project)
         label = f"{package_id}: {branch}" if package_id else f"Merge-Request: {branch}"
+        # AP3: Issue-Bezug des Pakets -> ``Closes #<n>`` an den PR-Body hängen,
+        # damit GitHub das Issue beim Merge automatisch schließt.
+        body = "Automatischer Merge-Request des Arbeitspakets " + str(package_id or branch)
+        issue_number = _package_issue_number(project, package_id)
+        if issue_number:
+            body += "\n\nCloses #" + str(issue_number)
         try:
             request = create_pull_request(
                 project, config["repo"], branch,
                 base=config["base"] or None,
                 title=title or label,
-                body=("Automatischer Merge-Request des Arbeitspakets "
-                      + str(package_id or branch)),
+                body=body,
                 api=config["api"] or None,
                 token=token_for_rest(config["api"], project),
                 token_required=False)
