@@ -1261,6 +1261,39 @@
       "grund": "Installersperre blockiert Aktualisierung trotz leerem Laufregister (Bug B4): eine vorhandene, aber leere (oder nur aus Leerraum bestehende) runs.json wird wie eine fehlende Datei behandelt und sperrt nicht; nicht-leerer unlesbarer Inhalt bleibt konservativ ein Sperrgrund. Größe und SHA-256 des files-Eintrags von scripts/setup-vibe.py aktualisiert."
     },
     {
+      "arbeitspaket": "F33",
+      "datum": "2026-11-21",
+      "dateien": [
+        "bin/vibe",
+        "bin/vibe-web.py",
+        "bin/web/i18n.js",
+        "bin/web/nova.css",
+        "bin/web/index.html",
+        "bin/web/nova-core.js",
+        "bin/web/nova-home.js",
+        "bin/web/vibe.svg",
+        "bin/web/nova-agents.js",
+        "bin/web/nova-widgets.js",
+        "bin/web/nova-activity.js",
+        "bin/web/nova-settings.js",
+        "docs/import-manifest.json"
+      ],
+      "grund": "F33 (UI-Überarbeitung Nova) in Arbeit: Backend-Verträge umgesetzt (POST /api/agent action=backup ohne Versionswarnung, AGENTS.md-Sicherung/Wiederherstellung mit agents_file_backup_dir, GET/POST /api/global_agents_file, globale Modellpreise action=prices_global mit Rangfolge Projekt > global > Katalog und global_prices in Übersicht/Detail, STATIC_FILES-Einträge vibe.svg/nova-widgets.js); bin/web/nova.css vollständig überarbeitet (mattes Frosted Glass, 12 Akzentpaletten hell/dunkel, Sidebar-Breitbild ab 1280px, F33-Stilblöcke WP1-WP5); bin/web/i18n.js um F33-Koordinationsblöcke ergänzt. Da Programmdaten geändert wurden, sind Größe und SHA-256 der vier betreffenden files-Einträge aktualisiert und dadurch begründet. Merge origin/dev (AP5-Korbat 4cbf70d, B18 d53efa4): alle drei aenderungen-Datensaetze erhalten; Größe/SHA-256 von bin/vibe, bin/vibe-web.py und bin/web/i18n.js auf den gemergten Stand neu berechnet. CSS-Defektreparatur: backdrop-filter von Karten entfernt (Kompositierungs-/Timing-Defekt mit nv-slide-in und asynchronem Render belegt; Blur bleibt auf Header/Sidebar/Schublade/Toasts) und das Breitbild-Grid auf body:has(aside.nv-side) eingegrenzt — im sauberen HEAD-Vergleich validiert (AP22 Shell/Home/Settings/Activity grün)."
+    },
+    {
+      "arbeitspaket": "F33",
+      "datum": "2026-11-22",
+      "dateien": [
+        "bin/web/nova-agents.js",
+        "bin/web/nova-widgets.js",
+        "bin/web/nova-project.js",
+        "bin/web/nova-output.js",
+        "bin/web/nova.css",
+        "bin/web/i18n.js"
+      ],
+      "grund": "F33 (Nova-UI) abgeschlossen: WP2 Combobox/Agentenliste/Wizard/Editor (Combobox bin/web/nova-widgets.js überall, 5-Schritt-Wizard mit Rechte-Schritt und Einsatzart-Erklaerungen, primary nur ohne bestehenden Primaeragenten, Review einfach/formatiert mit stickyer Aktionsleiste, Abbruch-Inlinewarnung, Editor lazy Projektzuordnungen, dynamischer Rohtext-Umschalter mit Speichermodus-Hinweis, Backup ohne Versionswarnung, Kopieren mit Zielbestaetigung und Sprung, agent-back deterministisch zur Liste, animation-fill-mode backwards behebt den abgefangenen Combobox-Klick); WP3 Projektdetail (Uebersicht ohne Leitfaden-Link mit Autonom-Zeile und Pause-Pille im Held, Work mit Suche/Erledigte-Filter/Priorisierungsleiste (Drag/Pfeile/Reset/Badges)/Karten-Clamp/sichtbaren Bearbeiten-Loeschen-Knoepfen/bearbeitbarem Feedback/Kennungsvorschlag hoechsteNummer+1, Beschreibung-Tab ohne Notiz mit Status-Pillen und Antwort-Speichern ohne Voll-Neurender, Settings-Tab mit AGENTS.md-Sektion oben inkl. Backup/Restore und globalem readonly-Hinweis, Team-Modell-Combobox, GitHub-Branch-Erklaerungen, Auto-Merge-Schalter); WP4 Ausgabe (Fokus/Vergroessern statt Highlight mit Escape/Zweitklick-Ende, Steuerblock sticky unter der Statuszeile, Subagenten-Anweisung mit session, pre-wrap-Overflow); i18n-Zentralintegration (93 en-Uebersetzungen in den F33-Bloecken WP2-WP6, de-Dict unberuehrt nach Bestandskonvention). Bestandstests vertragsgemaess angeglichen (AP22 agents/project/settings, Shell-Race-Synchronisation, Playwright-Regex-Defekt, case-insensitive Label-Muster, flacher GET-/kanonischer Verwaltungsblock-Vertrag). Da Programmdaten geaendert wurden, sind Groesse und SHA-256 der fuenf betreffenden files-Eintraege aktualisiert und dadurch begruendet."
+    },
+    {
       "arbeitspaket": "AP6-Korbat",
       "dateien": [
         "bin/vibe-run.sh",
@@ -1286,9 +1319,9 @@
       "sha256": "e5ae3183efcb76dace1e0bcbde9993be7afe82d93d7877da9ee39846cf45330a"
     },
     {
-      "bytes": 297043,
+      "bytes": 304234,
       "path": "bin/vibe",
-      "sha256": "8fda0f91bee3c72466e23e646c9cb5c0ebae6941a12b4995926e9f0e7156bacd"
+      "sha256": "be665705925c7fb099135d44762190df9fb322020bfbd12e83e1eed56c6b4150"
     },
     {
       "bytes": 83185,
@@ -1296,9 +1329,9 @@
       "sha256": "37e5f3a6d693fe92919059e3b0b0049c65ab79712f533a0c645b4e3f2872afbd"
     },
     {
-      "bytes": 121825,
+      "bytes": 124720,
       "path": "bin/vibe-web.py",
-      "sha256": "b7f7e13f808885b6790dd5dcb0e22938049691924a9db100333fa6031dd504b9"
+      "sha256": "e54ad9e8bf0e0efa83ec774f8d3bf5e0ae741b0f5f9154ba136d6165b70d5d8b"
     },
     {
       "bytes": 5189,
@@ -1401,54 +1434,54 @@
       "sha256": "19ea677f5c3dc3579279fd9b5bf7584612967654b8ec0bbde3818576c78b46b5"
     },
     {
-      "bytes": 150637,
+      "bytes": 158180,
       "path": "bin/web/i18n.js",
-      "sha256": "8a31e3c644a38abf36a984b24ce96309621707815495e2777170009982a97f98"
+      "sha256": "4d12b06e8b5d7ad725a42635932a292322767012393686008134bc66500498e6"
     },
     {
-      "bytes": 2207,
+      "bytes": 2711,
       "path": "bin/web/index.html",
-      "sha256": "40050caa0fea3f2fd42934ed5eb2b2064ab7ab433ff7601f80733c82a11987ad"
+      "sha256": "e069a61b882b2abddf8c8b07277d82b82d56f525f2c305e1098c1e6921a2dfa3"
     },
     {
-      "bytes": 11903,
+      "bytes": 13653,
       "path": "bin/web/nova-activity.js",
-      "sha256": "9d4e6cc42dd93472f032cc171cf855fb8692d9534e7b43ed732b4efd156239a0"
+      "sha256": "2bb2c8c578d4b5e26ed273fa72d125ea997f1eafcafe259ad25045766bf81047"
     },
     {
-      "bytes": 27801,
+      "bytes": 39937,
       "path": "bin/web/nova-agents.js",
-      "sha256": "4bdb9dc747513a3437d2dd2abfabacce5a1569581b8f711988cdd10c2317b086"
+      "sha256": "2de913e32a47ba8eb3be1f7c0cc65d1a02c1c49efd52ee9aef134c22306fc49d"
     },
     {
-      "bytes": 21560,
+      "bytes": 24936,
       "path": "bin/web/nova-core.js",
-      "sha256": "8f521d6ca005e923e670b347ce3a66bc02e50298751ca7b299bfd5f71ea194c9"
+      "sha256": "c73d7565daeec0ad7a00bf93b6927025abdfbc98f263ca96a20acde1c8ea3f02"
     },
     {
-      "bytes": 11448,
+      "bytes": 14476,
       "path": "bin/web/nova-home.js",
-      "sha256": "1dcb7d926c65d12d884a38c641a77ebcd8e5e62a1f6b9f05a0a19c6db1065c2d"
+      "sha256": "43641b4ceee30b724a38e63039298e3117bbec305bc81089d20887f1658c82db"
     },
     {
-      "bytes": 16315,
+      "bytes": 18646,
       "path": "bin/web/nova-output.js",
-      "sha256": "8c56aa9e89ece8d02ea76f5d1b11e43ff8466b1d3becb8956a98ae0f6036895b"
+      "sha256": "02b778a10acedb00957f0066d22397218eea4a6ead68f7d9ead00eb2e0081355"
     },
     {
-      "bytes": 53890,
+      "bytes": 65841,
       "path": "bin/web/nova-project.js",
-      "sha256": "217195188b3836addcbc6ea62c59aa7a7b5dfa2d1b091294c68187a95488f07d"
+      "sha256": "0c828555fc1f5d4d5f686defb0ab82fe3056c8bc923f67afe8238e5b464d91fc"
     },
     {
-      "bytes": 46592,
+      "bytes": 58929,
       "path": "bin/web/nova-settings.js",
-      "sha256": "be83e52357bf9fee9b9337a33397be3abdfe3c1a67f66c647013431a98d84f46"
+      "sha256": "e37f2fea39bb8f6b35a6837cd6660af6426f07dc9be7407f9218b120d5716e7c"
     },
     {
-      "bytes": 22418,
+      "bytes": 55233,
       "path": "bin/web/nova.css",
-      "sha256": "a7a3b1d7e89c5ffe71ea302a621a0ad52525519a52335035b9f9619cf6541bbe"
+      "sha256": "946155bf61b964b43a76d4ac5cd1a28a2ae7a37d08bf61c2b495c28f9ee2e34b"
     },
     {
       "bytes": 12751,
@@ -1466,9 +1499,9 @@
       "sha256": "7f8450dcf34c6b6f94695720954e2072edeb60d69f70b29bb3924882ed6c0f21"
     },
     {
-      "bytes": 74119,
+      "bytes": 74240,
       "path": "scripts/setup-vibe.py",
-      "sha256": "482cd6f835f0df1e02643bff16ed3fbcf6222055e82153d6b9e8f4276f9daa2f"
+      "sha256": "07d72775798e5206f106f5bc8c33cb8ad0de32170b028493c9113802678a6fe2"
     },
     {
       "bytes": 377,
@@ -1614,6 +1647,16 @@
       "bytes": 5143,
       "path": "templates/web/AGENTS.md",
       "sha256": "1521d6b6403f686839836194b666e65ebfe5402d71124637abb64938e6343628"
+    },
+    {
+      "bytes": 4602,
+      "path": "bin/web/nova-widgets.js",
+      "sha256": "ab74aeb02b105df1227a28752f6e84686fef8ca5bef15a02dfa26ab86ee051f9"
+    },
+    {
+      "bytes": 332,
+      "path": "bin/web/vibe.svg",
+      "sha256": "56b03e0b2fdb7960520d7f100b0bcf67e91b1c35f17bb5b9d892d653ce6c3faa"
     }
   ],
   "hinweis": "SHA-256 der übernommenen Programmdateien. Beabsichtigte Änderungen an diesen Dateien sind nur zulässig, wenn dieser Eintrag im selben Arbeitspaket aktualisiert und begründet wird. Laufzeitdaten, Sicherungen und Geheimnisse sind nicht Bestandteil des Imports.",
@@ -1627,6 +1670,6 @@
     "setup-vibe.cmd",
     "VERSION"
   ],
-  "stand": "2026-11-21",
+  "stand": "2026-11-22",
   "version": 1
 }

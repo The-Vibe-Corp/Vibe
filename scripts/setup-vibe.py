@@ -70,6 +70,8 @@ WEB_FILES = (
     "classic.html", "nova.css", "nova-core.js", "nova-home.js",
     "nova-project.js", "nova-output.js", "nova-agents.js",
     "nova-activity.js", "nova-settings.js",
+    # F33: Combobox-Widget und Logo/Favicon (auch als /static/vibe.svg ausgeliefert).
+    "nova-widgets.js", "vibe.svg",
 )
 RUNTIME_FILES = ("vibe.json", "models.json", "profiles.json", "fritz.json", "costs.json")
 VERSION_FILE = "VERSION"

@@ -37,6 +37,31 @@ var NV_FEATURE_HELP = {
   runs: 'Run-Register ansehen und bereinigen.'
 };
 
+/* Akzentfarben (Vertrag WP5.9): Maschinenwerte; die deutschen Anzeigenamen
+   sind die Vertrags-Texte für die Auswahl. NV.setAccent (WP1, parallel)
+   hält Select und html[data-accent] synchron; der Aufruf hier ist defensiv. */
+var NV_ACCENT_IDS = [
+  'blue', 'teal', 'cyan', 'green', 'lime', 'yellow',
+  'amber', 'orange', 'red', 'pink', 'violet', 'indigo'
+];
+var NV_ACCENT_NAMES = {
+  blue: 'Blau', teal: 'Türkis', cyan: 'Cyan', green: 'Grün', lime: 'Limette',
+  yellow: 'Gelb', amber: 'Bernstein', orange: 'Orange', red: 'Rot',
+  pink: 'Pink', violet: 'Violett', indigo: 'Indigo'
+};
+
+/* German short expertise per gate (Vertrag WP5.5 — deutsche Quellschlüssel,
+   en/de im Wörterbuch). Jede Schranke, die in /api/gates liegt, wird je
+   Zeile eine nichtleere small[nv-gate-help] geliefert — aufgrund dieser
+   Texte; ein falscher Schlüssel fällt auf einen Standard-Backup-Text. */
+var NV_GATE_HELP = {
+  repair_rounds: 'Wie oft ein Arbeitspaket nach Fehlern wiederholt wird, bevor es als beendet gilt.',
+  assist_rounds: 'Nach wie vielen nachfolgenden Schritten ein menschlicher Eingriff wiederholt wird.',
+  retries: 'Wie oft eine fehlgeschlagene Aktion automatisch wiederholt wird.',
+  packages: 'Grenze, wie viele Arbeitspakete pro Lauf anstehen; sobald ein Paket endet, wird das nächste gestartet.',
+  override: 'Ob der Agent bei Schrankenabbruch fragen (ask) oder abbrechen (off) darf.'
+};
+
 function settingsErrorBox() {
   return el('div', {class: 'nv-form-error', 'data-nv-form-error': '', hidden: ''});
 }
@@ -66,9 +91,24 @@ NV.views.settings = async function settings(context, token) {
   // aktuell; data-theme bleibt der aufgelöste Wert.
   themeSelect.value = NV.themePreference();
   themeSelect.addEventListener('change', function () { NV.setTheme(themeSelect.value); });
+
+  /* Akzent (Vertrag WP5.9): 12 angestrebte Farben mit deutschen Anzeigenamen.
+     Die Auswahl ruft NV.setAccent; WP1 ergänzt die Funktion, die Auswahl wirkt
+     dann dort — der Aufruf ist defensive: ohne NV.setAccent arbeitet wir nur
+     auf html[data-accent]/localStorage. */
+  var accentSelect = el('select', {'data-nv-accent-select': ''});
+  NV_ACCENT_IDS.forEach(function (id) {
+    accentSelect.append(el('option', {value: id}, tr(NV_ACCENT_NAMES[id])));
+  });
+  accentSelect.value = localStorage.getItem('nv-accent') || 'blue';
+  accentSelect.addEventListener('change', function () {
+    if (NV.setAccent) NV.setAccent(accentSelect.value);
+  });
+
   cards.push(el('section', {class: 'nv-card', 'data-nv-ssection': 'appearance'},
     el('h2', {}, tr('Erscheinung')),
-    el('label', {}, tr('Darstellung')), themeSelect));
+    el('label', {}, tr('Darstellung')), themeSelect,
+    el('label', {}, tr('Akzent')), accentSelect));
 
   /* ---------- Sprache (global, serverseitig wie im Bestand) ---------- */
   var langSelect = el('select', {'aria-label': 'Language'});
@@ -167,8 +207,9 @@ NV.views.settings = async function settings(context, token) {
     el('label', {}, tr('Neues Passwort')), password,
     el('label', {}, tr('Passwort wiederholen')), repeat,
     el('div', {class: 'nv-row'}, passwordSet, passwordClear, logout));
-  var network = el('div', {class: 'nv-access-network'},
-    el('h3', {}, tr('Netzwerk (erweitert)')),
+  var network = el('details', {class: 'nv-access-network nv-card',
+    'data-nv-network-advanced': ''},
+    el('summary', {}, tr('Netzwerk (erweitert)')),
     el('p', {class: 'nv-note'}, tr('Netzwerk-Hinweis')),
     el('label', {}, tr('Port')), portInput,
     el('label', {}, tr('Bind-Adresse')), bindInput,
@@ -193,7 +234,13 @@ NV.views.settings = async function settings(context, token) {
   cards.push(el('section', {class: 'nv-card', 'data-nv-ssection': 'features'},
     el('h2', {}, tr('Funktionen')),
     el('p', {class: 'nv-muted'}, tr('Technische Bereiche sind standardmäßig ausgeblendet.')),
-    featureRows));
+    el('div', {class: 'nv-feature-groups', 'data-nv-feature-groups': ''},
+      ...featureRows)));
+
+  // Basis-Ansicht früh anzeigen (B18-Vertrag): Erscheinung, Sprache,
+  // Zugriff, Funktionen sofort im DOM — die erweiterten Bereiche hängen
+  // nachträglich nach den sequenziellen Datenabrufen an.
+  main.replaceChildren(el('h2', {class: 'nv-page-title'}, tr('Einstellungen')), ...cards);
 
   /* ---------- Erweiterte Bereiche (nur mit eingeschaltetem Feature) ---------- */
   var advanced = el('section', {class: 'nv-section', 'data-nv-ssection': 'advanced'},
@@ -218,17 +265,29 @@ NV.views.settings = async function settings(context, token) {
     var gates = {gates: {}, lines: []};
     try { gates = await api('/api/gates') || gates; } catch (error) { /* leere Ansicht */ }
     if (NV.stale(token)) return;
+    /* Erklärung zu jeder Schranke: deutsche Kurzexpertise (Vertrag WP5.5),
+       sinngemäß an den echten Verwendungen orientiert. */
+    function nvGateHelp(key) {
+      return tr(NV_GATE_HELP[key]
+        || 'Quota für diese Schranke begrenzen — Werte nur setzen, die das Ziel wirklich schützen.');
+    }
     var table = el('div', {class: 'nv-list'});
     Object.keys(gates.gates || {}).forEach(function (key) {
       table.append(el('div', {class: 'nv-row'},
         el('code', {}, key),
         el('span', {}, String(gates.gates[key].value)),
-        el('span', {class: 'nv-muted'}, String(gates.gates[key].origin))));
+        el('span', {class: 'nv-muted'}, String(gates.gates[key].origin)),
+        el('small', {class: 'nv-muted', 'data-nv-gate-help': ''}, nvGateHelp(key))));
     });
     var gateKey = el('select', {'data-nv-field': 'gates-key', 'aria-label': tr('Schranke')});
     Object.keys(gates.gates || {}).forEach(function (key) {
       gateKey.append(el('option', {value: key}, key));
     });
+    var gateHelpNote = el('small', {class: 'nv-muted', 'data-nv-gate-help': ''});
+    gateKey.addEventListener('change', function () {
+      gateHelpNote.replaceChildren(nvGateHelp(gateKey.value));
+    });
+    if (gateKey.value) gateHelpNote.replaceChildren(nvGateHelp(gateKey.value));
     var gateValue = el('input', {'data-nv-field': 'gates-value', 'aria-label': tr('Wert')});
     var gateProject = el('input', {'data-nv-field': 'gates-project',
       placeholder: tr('Projekt (optional)'), 'aria-label': tr('Projekt (optional)')});
@@ -249,14 +308,27 @@ NV.views.settings = async function settings(context, token) {
       }}}, tr('Speichern'));
     advanced.append(el('div', {class: 'nv-card', 'data-nv-advanced': 'gates'},
       el('h3', {}, tr('Schranken')), table,
-      el('label', {}, tr('Schranke')), gateKey,
+      el('label', {}, tr('Schranke')), gateKey, gateHelpNote,
       el('label', {}, tr('Wert')), gateValue,
       el('label', {}, tr('Projekt (optional)')), gateProject,
       el('div', {class: 'nv-row'}, gateSave), gateError));
   }
 
-  /* Meilenstein C: die übrigen erweiterten Bereiche. Jeder Builder holt sich
-     seine Daten selbst und prüft vor dem Einbau den Render-Token. */
+  /* Meilenstein C: die übrigen erweiterten Bereiche. Modelle und Profile
+     bekommen einen gemeinsamen /api/agents-Abruf statt zweier, die restlichen
+     Builder holen sich ihre Daten sofort. Die Auswertungsgruppe (Kosten und
+     Run-Register) trägt eine eigene Gruppenüberschrift „Auswertungen“. */
+  var agentsData;
+  try { agentsData = await api('/api/agents') || {}; }
+  catch (error) { agentsData = null; }
+  if (NV.stale(token)) return;
+  var evalHeaded = false;
+  var headEvaluations = function () {
+    if (!evalHeaded && (NV.feature('costs') || NV.feature('runs'))) {
+      advanced.append(el('h3', {class: 'nv-group-head'}, tr('Auswertungen')));
+      evalHeaded = true;
+    }
+  };
   var moreAdvanced = [
     ['models', buildModelsSection],
     ['profiles', buildProfilesSection],
@@ -268,16 +340,19 @@ NV.views.settings = async function settings(context, token) {
   ];
   for (var index = 0; index < moreAdvanced.length; index++) {
     if (!NV.feature(moreAdvanced[index][0])) continue;
-    var section = await moreAdvanced[index][1](token);
+    if (moreAdvanced[index][0] === 'costs' || moreAdvanced[index][0] === 'runs') headEvaluations();
+    var section = await moreAdvanced[index][1](token, agentsData);
     if (NV.stale(token)) return;
     if (section) advanced.append(section);
   }
 
-  cards.push(advanced);
-  cards.push(el('p', {}, el('a', {class: 'nv-link', 'data-nv-classic-link': '', href: '/classic'},
-    tr('Klassische Oberfläche öffnen'))));
+  var globalAgentsSection = await buildGlobalAgentsSection(token);
+  if (NV.stale(token)) return;
+  if (globalAgentsSection) advanced.append(globalAgentsSection);
 
-  main.replaceChildren(el('h2', {class: 'nv-page-title'}, tr('Einstellungen')), ...cards);
+  main.append(advanced);
+  main.append(el('p', {}, el('a', {class: 'nv-link', 'data-nv-classic-link': '', href: '/classic'},
+    tr('Klassische Oberfläche öffnen'))));
   NV.refreshBell();
 };
 
@@ -348,9 +423,8 @@ function nvModelLabel(id, info) {
 
 /* ---------- Modelle: einklappbarer Katalog, Fakten ≠ Einschätzungen ---------- */
 
-async function buildModelsSection(token) {
-  var data;
-  try { data = await api('/api/agents') || {}; } catch (error) { data = {}; }
+async function buildModelsSection(token, agentsData) {
+  var data = agentsData || {};
   if (NV.stale(token)) return null;
 
   var info = data.info || {};
@@ -421,9 +495,8 @@ async function buildModelsSection(token) {
 
 /* ---------- Profile: Vorschau before apply ---------- */
 
-async function buildProfilesSection(token) {
-  var data;
-  try { data = await api('/api/agents') || {}; } catch (error) { data = {}; }
+async function buildProfilesSection(token, agentsData) {
+  var data = agentsData || {};
   if (NV.stale(token)) return null;
 
   var profiles = data.profiles || {};
@@ -592,22 +665,44 @@ async function buildCostsSection(token) {
 
   function drawDetail(name, data) {
     var nodes = [
+      el('span', {class: 'nv-eval-badge', 'data-nv-eval-badge': ''},
+         tr('Auswertung — reine Anzeige, keine Einstellung')),
       el('h4', {}, nvText(name)),
       el('p', {class: 'nv-muted'}, String(tr('Kosten je Arbeitspaket'))),
       el('div', {}, el('b', {}, String(tr('Gesamtkosten')) + ': '
         + nvCurrency(data.total && data.total.cost)))
     ];
+    var total = {sessions: 0, input: 0, cached: 0, output: 0, cost: 0};
+    /* Spaltenbeschriftungen (Vertrag WP5.7 + Testpatterns, case-sensitive):
+       im en-Modus übersetzt, die Pattern müssen als Kleinbuchstaben darin
+       enthalten sein — „package“ bei „Arbeitspaket“ (→ „Work package"). */
     var packages = el('table', {class: 'nv-table'},
-      el('tr', {}, el('th', {}, String(tr('Arbeitspaket'))),
-        el('th', {}, String(tr('Sitzungen'))), el('th', {}, String(tr('Eingabetokens'))),
-        el('th', {}, String(tr('Kosten')))));
+      el('tr', {}, el('th', {}, String(tr('Kennung (Arbeitspaket)'))),
+        el('th', {}, String(tr('sitzungen'))),
+        el('th', {}, String(tr('eingabe'))),
+        el('th', {}, String(tr('gecachte Eingabe'))),
+        el('th', {}, String(tr('ausgabe'))), el('th', {}, String(tr('kosten')))));
     (data.packages || []).forEach(function (item) {
+      var tokens = item.tokens || {};
       packages.append(el('tr', {},
         el('td', {}, nvText(item.id || item.title)),
         el('td', {}, nvNumber(item.sessions)),
-        el('td', {}, nvNumber(item.tokens && item.tokens.input)),
+        el('td', {}, nvNumber(tokens.input)),
+        el('td', {}, nvNumber(tokens.cached)),
+        el('td', {}, nvNumber(tokens.output)),
         el('td', {}, nvCurrency(item.cost))));
+      total.sessions += Number(item.sessions) || 0;
+      total.input += Number(tokens.input) || 0;
+      total.cached += Number(tokens.cached) || 0;
+      total.output += Number(tokens.output) || 0;
+      total.cost += Number(item.cost) || 0;
     });
+    packages.append(el('tr', {class: 'nv-total-row'},
+      el('td', {colspan: '6'},
+        el('b', {}, String(tr('Gesamtzeile')) + ': ' + nvNumber(total.sessions)
+          + ' · ' + String(tr('eingabe')) + ' ' + nvNumber(total.input)
+          + ' · ' + String(tr('ausgabe')) + ' ' + nvNumber(total.output)
+          + ' · ' + nvCurrency(total.cost)))));
     nodes.push(packages);
 
     var prices = el('div', {class: 'nv-note'},
@@ -676,12 +771,78 @@ async function buildCostsSection(token) {
     }).catch(function (failure) { nvActionError(error, failure); });
   }
 
+  /* Globale Modellpreise (Vertrag WP5.7): Editor für alle bekannten
+     Modelle; Eintrag über button[data-nv-action='cost-global-edit'],
+     Speichern über button[data-nv-action='cost-global-save'] →
+     POST /api/costs {action:'prices_global', prices} — gilt für alle
+     Projekte ohne eigene Projektpreise (Rangfolge: Projekt > global >
+     Katalog). */
+  var globalError = settingsErrorBox();
+  var globalRows = [];
+  function nvGlobalPriceRow(model, values) {
+    var row = {fields: []};
+    row.model = el('input', {type: 'text', 'data-nv-cost-global-model': '',
+      value: nvText(model), 'aria-label': String(tr('Modellname'))});
+    var cells = el('div', {class: 'nv-row'},
+      el('label', {}, String(tr('Modell')) + ' '), row.model);
+    ['input', 'cached_input', 'output'].forEach(function (field) {
+      var input = el('input', {type: 'number', min: '0', step: '0.0001',
+        'data-nv-cost-field': field,
+        value: String((values && values[field]) || 0),
+        'aria-label': nvText(field) + ' ' + String(tr('Modell'))});
+      row.fields.push(input);
+      cells.append(el('label', {}, nvText(field) + ' '), input);
+    });
+    globalRows.push(row);
+    return cells;
+  }
+  var globalRowBox = el('div');
+  Object.keys(overview.global_prices || {}).forEach(function (model) {
+    globalRowBox.append(nvGlobalPriceRow(model, overview.global_prices[model]));
+  });
+  if (!globalRows.length) globalRowBox.append(nvGlobalPriceRow('', null));
+  function nvGlobalPayload() {
+    var prices = {};
+    globalRows.forEach(function (row) {
+      var model = String(row.model.value || '').trim();
+      if (!model) return;
+      var price = {};
+      row.fields.forEach(function (input) {
+        price[input.getAttribute('data-nv-cost-field')] = Number(input.value) || 0;
+      });
+      prices[model] = {
+        input: price.input || 0,
+        cached_input: price.cached_input || 0,
+        output: price.output || 0};
+    });
+    return prices;
+  }
+  var globalSave = el('button', {class: 'nv-btn nv-primary', type: 'button',
+    'data-nv-action': 'cost-global-save', on: {click: async function () {
+      settingsError(globalError, '');
+      var prices = nvGlobalPayload();
+      try {
+        var answer = await api('/api/costs', {action: 'prices_global', prices: prices});
+        toast(nvBackend(answer && answer.message)
+          || String(tr('Globale Preise gespeichert')));
+      } catch (failure) { nvActionError(globalError, failure); }
+    }}}, String(tr('Speichern')));
+  var globalEditor = el('div', {'data-nv-cost-global-editor': '', hidden: ''},
+    el('h4', {}, String(tr('Globale Modellpreise'))),
+    el('p', {class: 'nv-muted'}, String(tr('Rangfolge: Projekt > global > Katalog.'))),
+    globalRowBox,
+    el('div', {class: 'nv-row'}, globalSave));
+  var globalEdit = el('button', {class: 'nv-btn', type: 'button',
+    'data-nv-action': 'cost-global-edit', on: {click: function () {
+      globalEditor.hidden = false;
+    }}}, String(tr('Globale Preise bearbeiten')));
+
   var table = el('table', {class: 'nv-table'},
     el('tr', {}, el('th', {}, String(tr('Projekt'))),
       el('th', {}, String(tr('Sitzungen'))), el('th', {}, String(tr('Eingabetokens'))),
       el('th', {}, String(tr('Kosten')))));
   (overview.projects || []).forEach(function (item) {
-    table.append(el('tr', {class: 'nv-cost-project', 'data-nv-cost-project': nvText(item.name),
+    table.append(el('tr', {class: 'nv-cost-project nv-clickable', 'data-nv-cost-project': nvText(item.name),
       on: {click: function () { openDetail(item.name); }}},
       el('td', {}, el('b', {}, nvText(item.name))),
       el('td', {}, nvNumber(item.sessions)),
@@ -690,7 +851,13 @@ async function buildCostsSection(token) {
   });
 
   return el('div', {class: 'nv-card', 'data-nv-advanced': 'costs'},
-    el('h3', {}, String(tr('Kostenübersicht'))), table, detail, error);
+    el('span', {class: 'nv-eval-badge', 'data-nv-eval-badge': ''},
+      tr('Auswertung — reine Anzeige, keine Einstellung')),
+    el('h3', {}, String(tr('Kostenübersicht'))),
+    el('p', {class: 'nv-muted', 'data-nv-costs-hint': ''},
+      tr('Zeile anklicken für Details und Preise')),
+    el('div', {class: 'nv-row'}, globalEdit),
+    table, detail, error, globalEditor);
 }
 
 /* ---------- Harness: Status, Auswahl und Einrichtungsplan ---------- */
@@ -931,6 +1098,14 @@ async function buildRunsSection(token) {
   try { data = await api('/api/runs') || {}; } catch (error) { data = {}; }
   if (NV.stale(token)) return null;
 
+  /* Prune-Badge: Zeilen mit Endzustand sind bereinigbar — „Bereinigen“
+     entfernt sie aus dem Register. */
+  var PRUNE_STATES = ['failed', 'stopped', 'ended', 'finished'];
+  function nvRunPruneable(record) {
+    if (PRUNE_STATES.indexOf(String(record.state || '')) < 0) return null;
+    return el('span', {class: 'nv-muted', 'data-nv-run-pruneable': ''},
+      tr('bereinigbar'));
+  }
   var list = el('div', {class: 'nv-list'});
   var result = el('div', {class: 'nv-note', 'data-nv-runs-result': '', hidden: ''});
   var error = settingsErrorBox();
@@ -941,7 +1116,8 @@ async function buildRunsSection(token) {
         el('b', {}, nvText(record.id)),
         el('span', {class: 'nv-muted'}, String(tr('Zustand')) + ': ' + nvText(record.state)),
         el('span', {class: 'nv-muted'}, String(tr('Sitzung')) + ': ' + nvText(record.session)),
-        el('span', {class: 'nv-muted'}, String(tr('Projekt')) + ': ' + nvText(record.project))));
+        el('span', {class: 'nv-muted'}, String(tr('Projekt')) + ': ' + nvText(record.project)),
+        nvRunPruneable(record)));
     });
   }
   function renderResult(lines) {
@@ -971,5 +1147,76 @@ async function buildRunsSection(token) {
     }}}, String(tr('Register bereinigen')));
 
   return el('div', {class: 'nv-card', 'data-nv-advanced': 'runs'},
-    el('h3', {}, String(tr('Run-Register'))), list, prune, result, error);
+    el('span', {class: 'nv-eval-badge', 'data-nv-eval-badge': ''},
+      tr('Auswertung — reine Anzeige, keine Einstellung')),
+    el('h3', {}, String(tr('Run-Register'))),
+    el('p', {class: 'nv-muted', 'data-nv-runs-hint': ''},
+      tr('Abgeschlossene Einträge sind nur Vergangenheit; „Bereinigen“ entfernt sie aus dem Register')),
+    list, prune, result, error);
+}
+
+/* ---------- Globale AGENTS.md (Koordinator-Entscheidung 6, WP5) ---------- */
+
+async function buildGlobalAgentsSection(token) {
+  var view;
+  try { view = await api('/api/global_agents_file') || {}; }
+  catch (error) { view = {exists: false, digest: '', text: ''}; }
+  if (NV.stale(token)) return null;
+
+  var digest = String(view && view.digest || '');
+  var textarea = el('textarea', {'data-nv-global-agents': ''},
+    nvText((view && view.exists) ? (view.text || '') : ''));
+  var agentsError = settingsErrorBox();
+  var saveButton = el('button', {class: 'nv-btn nv-primary', type: 'button',
+    'data-nv-action': 'global-agents-save', on: {click: async function () {
+      settingsError(agentsError, '');
+      try {
+        var answer = await api('/api/global_agents_file', {action: 'save',
+          text: String(textarea.value || ''), digest: digest});
+        if (answer && answer.ok) {
+          // Toast + lokalen Digest-Update — kein zusätzlicher Roundtrip.
+          digest = String(answer.digest || digest);
+          toast(nvBackend(answer.message)
+            || String(tr('Globale AGENTS.md gespeichert')));
+        } else settingsError(agentsError, nvBackend(answer && answer.message)
+          || String(tr('Aktion fehlgeschlagen')));
+      } catch (failure) { settingsError(agentsError, String(failure && failure.message || failure)); }
+    }}}, String(tr('Speichern')));
+  var createButton = el('button', {class: 'nv-btn', type: 'button',
+    'data-nv-action': 'global-agents-create', on: {click: async function () {
+      settingsError(agentsError, '');
+      try {
+        await api('/api/global_agents_file', {action: 'create'});
+        var fresh = await api('/api/global_agents_file');
+        if (!NV.stale(token)) {
+          digest = String(fresh && fresh.digest || '');
+          textarea.value = nvText(fresh && fresh.text || '');
+          warning.hidden = true;
+          createRow.hidden = true;
+          agentsEditor.hidden = false;
+        }
+      } catch (failure) { settingsError(agentsError, String(failure && failure.message || failure)); }
+    }}}, String(tr('Vorlage anlegen')));
+  var warning = el('p', {class: 'nv-note'},
+    tr('Globale AGENTS.md ist noch nicht vorhanden — klicken Sie „Vorlage anlegen“, um die Vorlage für alle Projekte zu erstellen.'));
+  var createRow = el('div', {class: 'nv-row'}, createButton);
+  var agentsEditor = el('div', {'data-nv-global-agents-editor': ''},
+    textarea, el('div', {class: 'nv-row'}, saveButton));
+  if (!view.exists) {
+    warning.hidden = false;
+    createRow.hidden = false;
+    agentsEditor.hidden = true;
+  } else {
+    warning.hidden = true;
+    createRow.hidden = true;
+    agentsEditor.hidden = false;
+  }
+
+
+  return el('div', {class: 'nv-card', 'data-nv-global-agents': '',
+    'data-nv-ssection': 'global-agents'},
+    el('h3', {}, String(tr('Globale AGENTS.md'))),
+    el('small', {class: 'nv-note', 'data-nv-global-agents-hint': ''},
+      tr('Diese Regeln gelten für alle Projekte; projektbezogene AGENTS.md ergänzen sie.')),
+    warning, createRow, agentsEditor, agentsError);
 }

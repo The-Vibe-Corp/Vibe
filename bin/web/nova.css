@@ -46,6 +46,10 @@
   --nv-top-bg: #ffffff;
   --nv-focus: #1d4ed8;
   --nv-speed: 200ms;
+  /* F33: matte Frosted-Glass-Tokens — nur Blur, kein Gloss/Highlight. */
+  --nv-glass-fill: 88%;
+  --nv-glass-blur: 14px;
+  --nv-top-h: 4.25rem;
   /* AP22/F19: Farben der Protokoll-Hervorhebung (Semantik wie die klassische
      Ansicht, an die helle Nova-Palette angepasst). */
   --nv-hl-head: #2457c5;
@@ -57,6 +61,125 @@
   --nv-hl-path: #1d4ed8;
   --nv-hl-sha: #6d28d9;
   --nv-hl-num: #b45309;
+}
+
+/* ---------- F33: 12 Akzentpaletten, hell (Material-You-Vorauswahl) ----------
+ * Jeder Block leitet dieselben Tokens ab. Geprüfte Paare (WCAG 2.1 AA,
+ * mammals geprüft mit dem Standard-Kontrastalgorithmus):
+ *   --nv-primary als Text auf #fff / auf --nv-info-bg,
+ *   --nv-primary-text auf --nv-btn-primary-bg (und -hover),
+ *   --nv-accent-soft-fg auf --nv-accent-soft-bg.
+ * Alle Paare >= 4.5:1. blue entspricht exakt dem AP22-Standard.
+ * Gelbe/helle Akzente (yellow, lime, amber) nutzen bewusst DUNKLE
+ * Primärtexte auf ihren hellen Primärflächen.
+ * ------------------------------------------------------------------------ */
+/* blue (Standard): 6.47 / 5.55 / 6.47 / 7.48 : 1 — Fokus 6.70:1. */
+html[data-accent="blue"] {
+  --nv-primary: #2457c5; --nv-primary-hover: #1a45a3;
+  --nv-info-bg: #e6eefc; --nv-primary-text: #ffffff;
+  --nv-btn-primary-bg: #2457c5; --nv-btn-primary-fg: #ffffff;
+  --nv-btn-primary-border: #2457c5; --nv-btn-primary-hover: #1a45a3;
+  --nv-focus: #1d4ed8;
+  --nv-accent-soft-bg: #e6eefc; --nv-accent-soft-fg: #1e40af;
+}
+/* teal: 5.47 / 4.86 / 5.47 / 6.73 : 1 — Fokus 3.74:1. */
+html[data-accent="teal"] {
+  --nv-primary: #0f766e; --nv-primary-hover: #115e59;
+  --nv-info-bg: #ccfbf1; --nv-primary-text: #ffffff;
+  --nv-btn-primary-bg: #0f766e; --nv-btn-primary-fg: #ffffff;
+  --nv-btn-primary-border: #0f766e; --nv-btn-primary-hover: #115e59;
+  --nv-focus: #0d9488;
+  --nv-accent-soft-bg: #ccfbf1; --nv-accent-soft-fg: #115e59;
+}
+/* cyan: 5.36 / 4.79 / 5.36 / 6.49 : 1 — Fokus 3.68:1. */
+html[data-accent="cyan"] {
+  --nv-primary: #0e7490; --nv-primary-hover: #155e75;
+  --nv-info-bg: #cffafe; --nv-primary-text: #ffffff;
+  --nv-btn-primary-bg: #0e7490; --nv-btn-primary-fg: #ffffff;
+  --nv-btn-primary-border: #0e7490; --nv-btn-primary-hover: #155e75;
+  --nv-focus: #0891b2;
+  --nv-accent-soft-bg: #cffafe; --nv-accent-soft-fg: #155e75;
+}
+/* green: 5.02 / 4.57 / 5.02 / 6.49 : 1 — Fokus 3.30:1. */
+html[data-accent="green"] {
+  --nv-primary: #15803d; --nv-primary-hover: #166534;
+  --nv-info-bg: #dcfce7; --nv-primary-text: #ffffff;
+  --nv-btn-primary-bg: #15803d; --nv-btn-primary-fg: #ffffff;
+  --nv-btn-primary-border: #15803d; --nv-btn-primary-hover: #166534;
+  --nv-focus: #16a34a;
+  --nv-accent-soft-bg: #dcfce7; --nv-accent-soft-fg: #166534;
+}
+/* lime: 4.99 / 4.60 / hell #bef264 mit #1a2e05 11.19 / 6.52 : 1. */
+html[data-accent="lime"] {
+  --nv-primary: #4d7c0f; --nv-primary-hover: #3f6212;
+  --nv-info-bg: #ecfccb; --nv-primary-text: #1a2e05;
+  --nv-btn-primary-bg: #bef264; --nv-btn-primary-fg: #1a2e05;
+  --nv-btn-primary-border: #84cc16; --nv-btn-primary-hover: #a3e635;
+  --nv-focus: #65a30d;
+  --nv-accent-soft-bg: #ecfccb; --nv-accent-soft-fg: #3f6212;
+}
+/* yellow: 6.85 / 6.38 / hell #facc15 mit #3b2a00 9.04 / 6.38 : 1. */
+html[data-accent="yellow"] {
+  --nv-primary: #854d0e; --nv-primary-hover: #713f12;
+  --nv-info-bg: #fef9c3; --nv-primary-text: #3b2a00;
+  --nv-btn-primary-bg: #facc15; --nv-btn-primary-fg: #3b2a00;
+  --nv-btn-primary-border: #ca8a04; --nv-btn-primary-hover: #eab308;
+  --nv-focus: #a16207;
+  --nv-accent-soft-bg: #fef9c3; --nv-accent-soft-fg: #854d0e;
+}
+/* amber: 5.02 / 4.51 / hell #fbbf24 mit #3b2600 8.60 / 6.37 : 1. */
+html[data-accent="amber"] {
+  --nv-primary: #b45309; --nv-primary-hover: #92400e;
+  --nv-info-bg: #fef3c7; --nv-primary-text: #3b2600;
+  --nv-btn-primary-bg: #fbbf24; --nv-btn-primary-fg: #3b2600;
+  --nv-btn-primary-border: #d97706; --nv-btn-primary-hover: #f59e0b;
+  --nv-focus: #d97706;
+  --nv-accent-soft-bg: #fef3c7; --nv-accent-soft-fg: #92400e;
+}
+/* orange: 5.18 / 4.52 / 5.18 / 6.38 : 1 — Fokus 3.56:1. */
+html[data-accent="orange"] {
+  --nv-primary: #c2410c; --nv-primary-hover: #9a3412;
+  --nv-info-bg: #ffedd5; --nv-primary-text: #ffffff;
+  --nv-btn-primary-bg: #c2410c; --nv-btn-primary-fg: #ffffff;
+  --nv-btn-primary-border: #c2410c; --nv-btn-primary-hover: #9a3412;
+  --nv-focus: #ea580c;
+  --nv-accent-soft-bg: #ffedd5; --nv-accent-soft-fg: #9a3412;
+}
+/* red: 6.53 / 5.34 / 6.53 / 6.80 : 1 — Fokus 4.83:1. */
+html[data-accent="red"] {
+  --nv-primary: #b4232c; --nv-primary-hover: #991b1b;
+  --nv-info-bg: #fee2e2; --nv-primary-text: #ffffff;
+  --nv-btn-primary-bg: #b4232c; --nv-btn-primary-fg: #ffffff;
+  --nv-btn-primary-border: #b4232c; --nv-btn-primary-hover: #991b1b;
+  --nv-focus: #dc2626;
+  --nv-accent-soft-bg: #fee2e2; --nv-accent-soft-fg: #991b1b;
+}
+/* pink: 6.04 / 5.14 / 6.04 / 6.71 : 1 — Fokus 4.60:1. */
+html[data-accent="pink"] {
+  --nv-primary: #be185d; --nv-primary-hover: #9d174d;
+  --nv-info-bg: #fce7f3; --nv-primary-text: #ffffff;
+  --nv-btn-primary-bg: #be185d; --nv-btn-primary-fg: #ffffff;
+  --nv-btn-primary-border: #be185d; --nv-btn-primary-hover: #9d174d;
+  --nv-focus: #db2777;
+  --nv-accent-soft-bg: #fce7f3; --nv-accent-soft-fg: #9d174d;
+}
+/* violet: 7.10 / 5.98 / 7.10 / 7.57 : 1 — Fokus 5.70:1. */
+html[data-accent="violet"] {
+  --nv-primary: #6d28d9; --nv-primary-hover: #5b21b6;
+  --nv-info-bg: #ede9fe; --nv-primary-text: #ffffff;
+  --nv-btn-primary-bg: #6d28d9; --nv-btn-primary-fg: #ffffff;
+  --nv-btn-primary-border: #6d28d9; --nv-btn-primary-hover: #5b21b6;
+  --nv-focus: #7c3aed;
+  --nv-accent-soft-bg: #ede9fe; --nv-accent-soft-fg: #5b21b6;
+}
+/* indigo: 7.90 / 6.41 / 7.90 / 8.06 : 1 — Fokus 6.29:1. */
+html[data-accent="indigo"] {
+  --nv-primary: #4338ca; --nv-primary-hover: #3730a3;
+  --nv-info-bg: #e0e7ff; --nv-primary-text: #ffffff;
+  --nv-btn-primary-bg: #4338ca; --nv-btn-primary-fg: #ffffff;
+  --nv-btn-primary-border: #4338ca; --nv-btn-primary-hover: #3730a3;
+  --nv-focus: #4f46e5;
+  --nv-accent-soft-bg: #e0e7ff; --nv-accent-soft-fg: #3730a3;
 }
 
 /* ---------- Tokens: dunkel ---------- */
@@ -88,6 +211,7 @@ html[data-theme="dark"] {
   --nv-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
   --nv-top-bg: #1e2530;
   --nv-focus: #9dbaff;
+  --nv-glass-fill: 90%;
   /* AP22/F19: dunkle Entsprechung der Hervorhebungsfarben. */
   --nv-hl-head: #8ab4f8;
   --nv-hl-tool: #c9a7ff;
@@ -98,6 +222,126 @@ html[data-theme="dark"] {
   --nv-hl-path: #9ecbff;
   --nv-hl-sha: #c3a6ff;
   --nv-hl-num: #f0a66a;
+}
+
+/* ---------- F33: 12 Akzentpaletten, dunkel ----------
+ * Höchst spezifisch (data-theme + data-accent), daher unabhängig von der
+ * Reihenfolge wirksam. Geprüfte Paare je Block:
+ *   --nv-primary auf --nv-surface (#1e2530) / --nv-surface-2 (#273140) /
+ *   --nv-info-bg, --nv-primary-text auf --nv-primary,
+ *   Weiß auf --nv-btn-primary-bg (und -hover),
+ *   --nv-accent-soft-fg auf --nv-accent-soft-bg. Alle >= 4.5:1.
+ * ------------------------------------------------------------------------ */
+/* blue (Standard): 5.83 / 4.97 / 4.77 / 6.83 / 4.63 / 5.95 : 1. */
+html[data-theme="dark"][data-accent="blue"] {
+  --nv-primary: #6f9dff; --nv-primary-hover: #8bb2ff;
+  --nv-info-bg: #213354; --nv-primary-text: #101624;
+  --nv-btn-primary-bg: #3b6fe0; --nv-btn-primary-fg: #ffffff;
+  --nv-btn-primary-border: #3b6fe0; --nv-btn-primary-hover: #2f63d6;
+  --nv-focus: #9dbaff;
+  --nv-accent-soft-bg: #213354; --nv-accent-soft-fg: #8bb2ff;
+}
+/* teal: 10.42 / 8.87 / 9.85 / 9.78 / 5.47 / 9.85 : 1. */
+html[data-theme="dark"][data-accent="teal"] {
+  --nv-primary: #5eead4; --nv-primary-hover: #99f6e4;
+  --nv-info-bg: #0c2e2b; --nv-primary-text: #042f2e;
+  --nv-btn-primary-bg: #0f766e; --nv-btn-primary-fg: #ffffff;
+  --nv-btn-primary-border: #0f766e; --nv-btn-primary-hover: #115e59;
+  --nv-focus: #5eead4;
+  --nv-accent-soft-bg: #0c2e2b; --nv-accent-soft-fg: #5eead4;
+}
+/* cyan: 10.63 / 9.06 / 10.29 / 9.24 / 5.36 / 10.29 : 1. */
+html[data-theme="dark"][data-accent="cyan"] {
+  --nv-primary: #67e8f9; --nv-primary-hover: #a5f3fc;
+  --nv-info-bg: #0b2b33; --nv-primary-text: #083344;
+  --nv-btn-primary-bg: #0e7490; --nv-btn-primary-fg: #ffffff;
+  --nv-btn-primary-border: #0e7490; --nv-btn-primary-hover: #155e75;
+  --nv-focus: #67e8f9;
+  --nv-accent-soft-bg: #0b2b33; --nv-accent-soft-fg: #67e8f9;
+}
+/* green: 10.98 / 9.35 / 10.19 / 10.62 / 5.02 / 10.19 : 1. */
+html[data-theme="dark"][data-accent="green"] {
+  --nv-primary: #86efac; --nv-primary-hover: #bbf7d0;
+  --nv-info-bg: #12301f; --nv-primary-text: #052e16;
+  --nv-btn-primary-bg: #15803d; --nv-btn-primary-fg: #ffffff;
+  --nv-btn-primary-border: #15803d; --nv-btn-primary-hover: #166534;
+  --nv-focus: #86efac;
+  --nv-accent-soft-bg: #12301f; --nv-accent-soft-fg: #86efac;
+}
+/* lime — dunkle Primärtexte auf hellem Akzent: 11.80 / 10.05 / 10.73 /
+   11.19 / 4.99 / 10.73 : 1. */
+html[data-theme="dark"][data-accent="lime"] {
+  --nv-primary: #bef264; --nv-primary-hover: #d9f99d;
+  --nv-info-bg: #22300f; --nv-primary-text: #1a2e05;
+  --nv-btn-primary-bg: #4d7c0f; --nv-btn-primary-fg: #ffffff;
+  --nv-btn-primary-border: #4d7c0f; --nv-btn-primary-hover: #3f6212;
+  --nv-focus: #bef264;
+  --nv-accent-soft-bg: #22300f; --nv-accent-soft-fg: #bef264;
+}
+/* yellow — dunkle Primärtexte: 11.69 / 9.96 / 10.89 / 12.44 / 6.85 /
+   10.89 : 1. */
+html[data-theme="dark"][data-accent="yellow"] {
+  --nv-primary: #fde047; --nv-primary-hover: #fef08a;
+  --nv-info-bg: #33290a; --nv-primary-text: #2b1d05;
+  --nv-btn-primary-bg: #854d0e; --nv-btn-primary-fg: #ffffff;
+  --nv-btn-primary-border: #854d0e; --nv-btn-primary-hover: #713f12;
+  --nv-focus: #fde047;
+  --nv-accent-soft-bg: #33290a; --nv-accent-soft-fg: #fde047;
+}
+/* amber — dunkle Primärtexte: 10.69 / 9.10 / 10.51 / 11.63 / 5.02 /
+   10.51 : 1. */
+html[data-theme="dark"][data-accent="amber"] {
+  --nv-primary: #fcd34d; --nv-primary-hover: #fde68a;
+  --nv-info-bg: #33230a; --nv-primary-text: #2b1a04;
+  --nv-btn-primary-bg: #b45309; --nv-btn-primary-fg: #ffffff;
+  --nv-btn-primary-border: #b45309; --nv-btn-primary-hover: #92400e;
+  --nv-focus: #fcd34d;
+  --nv-accent-soft-bg: #33230a; --nv-accent-soft-fg: #fcd34d;
+}
+/* orange: 9.14 / 7.78 / 9.59 / 10.49 / 5.18 / 9.59 : 1. */
+html[data-theme="dark"][data-accent="orange"] {
+  --nv-primary: #fdba74; --nv-primary-hover: #fed7aa;
+  --nv-info-bg: #341a0c; --nv-primary-text: #2a1206;
+  --nv-btn-primary-bg: #c2410c; --nv-btn-primary-fg: #ffffff;
+  --nv-btn-primary-border: #c2410c; --nv-btn-primary-hover: #9a3412;
+  --nv-focus: #fdba74;
+  --nv-accent-soft-bg: #341a0c; --nv-accent-soft-fg: #fdba74;
+}
+/* red: 8.12 / 6.92 / 8.88 / 9.72 / 6.53 / 8.88 : 1. */
+html[data-theme="dark"][data-accent="red"] {
+  --nv-primary: #fca5a5; --nv-primary-hover: #fecaca;
+  --nv-info-bg: #331316; --nv-primary-text: #2a080b;
+  --nv-btn-primary-bg: #b4232c; --nv-btn-primary-fg: #ffffff;
+  --nv-btn-primary-border: #b4232c; --nv-btn-primary-hover: #991b1b;
+  --nv-focus: #fca5a5;
+  --nv-accent-soft-bg: #331316; --nv-accent-soft-fg: #fca5a5;
+}
+/* pink: 8.50 / 7.24 / 9.19 / 9.97 / 6.04 / 9.19 : 1. */
+html[data-theme="dark"][data-accent="pink"] {
+  --nv-primary: #f9a8d4; --nv-primary-hover: #fbcfe8;
+  --nv-info-bg: #33122a; --nv-primary-text: #2a0a1f;
+  --nv-btn-primary-bg: #be185d; --nv-btn-primary-fg: #ffffff;
+  --nv-btn-primary-border: #be185d; --nv-btn-primary-hover: #9d174d;
+  --nv-focus: #f9a8d4;
+  --nv-accent-soft-bg: #33122a; --nv-accent-soft-fg: #f9a8d4;
+}
+/* violet: 8.35 / 7.11 / 9.00 / 8.66 / 7.10 / 9.00 : 1. */
+html[data-theme="dark"][data-accent="violet"] {
+  --nv-primary: #c4b5fd; --nv-primary-hover: #ddd6fe;
+  --nv-info-bg: #241640; --nv-primary-text: #1e1b4b;
+  --nv-btn-primary-bg: #6d28d9; --nv-btn-primary-fg: #ffffff;
+  --nv-btn-primary-border: #6d28d9; --nv-btn-primary-hover: #5b21b6;
+  --nv-focus: #c4b5fd;
+  --nv-accent-soft-bg: #241640; --nv-accent-soft-fg: #c4b5fd;
+}
+/* indigo: 7.73 / 6.59 / 8.21 / 8.02 / 7.90 / 8.21 : 1. */
+html[data-theme="dark"][data-accent="indigo"] {
+  --nv-primary: #a5b4fc; --nv-primary-hover: #c7d2fe;
+  --nv-info-bg: #1c1c3d; --nv-primary-text: #1e1b4b;
+  --nv-btn-primary-bg: #4338ca; --nv-btn-primary-fg: #ffffff;
+  --nv-btn-primary-border: #4338ca; --nv-btn-primary-hover: #3730a3;
+  --nv-focus: #a5b4fc;
+  --nv-accent-soft-bg: #1c1c3d; --nv-accent-soft-fg: #a5b4fc;
 }
 
 /* ---------- Grundlagen und Typografie ---------- */
@@ -164,7 +408,15 @@ a { color: var(--nv-primary); }
   border-bottom: 1px solid var(--nv-border);
   box-shadow: var(--nv-shadow);
 }
-.nv-brand { margin: 0; font-weight: 700; letter-spacing: 0.04em; }
+.nv-brand { display: inline-flex; align-items: center; margin: 0; font-weight: 700; letter-spacing: 0.04em; }
+/* F33/3f: dezent eingebundenes Logo (Höhe 30px), kein eigener Rahmen/Schatten. */
+img.nv-logo[data-nv-logo] {
+  display: block;
+  height: 30px;
+  width: auto;
+  max-width: 130px;
+  object-fit: contain;
+}
 .nv-nav { display: flex; align-items: center; gap: var(--nv-space-1); }
 .nv-nav button {
   border: 0;
@@ -195,6 +447,7 @@ a { color: var(--nv-primary); }
   cursor: pointer;
 }
 .nv-top-actions { display: flex; align-items: center; gap: var(--nv-space-1); margin-left: auto; }
+/* F33/3d: dezenter Ghost-Schalter — keine Primärfarbe, kein präsentes Symbol. */
 .nv-anim-switch {
   display: inline-flex;
   align-items: center;
@@ -204,11 +457,15 @@ a { color: var(--nv-primary); }
   min-height: 44px;
   margin: 0;
   padding: 0 var(--nv-space-2);
+  border: 1px solid transparent;
   border-radius: var(--nv-radius-sm);
+  background: transparent;
+  color: var(--nv-muted);
   cursor: pointer;
 }
 .nv-anim-switch:hover { background: var(--nv-surface-2); }
-.nv-anim-glyph { font-size: 1.25rem; line-height: 1; color: var(--nv-primary); }
+.nv-anim-switch:has(input:not(:checked)) { opacity: 0.6; }
+.nv-anim-glyph { font-size: 1rem; line-height: 1; color: var(--nv-muted); opacity: 0.85; }
 .nv-icon-btn { min-width: 44px; min-height: 44px; padding: 0; font-size: 1.375rem; line-height: 1; }
 .nv-icon-btn.is-open { background: var(--nv-info-bg); color: var(--nv-primary); }
 .nv-bell-wrap { position: relative; }
@@ -216,6 +473,9 @@ a { color: var(--nv-primary); }
 
 /* ---------- Karten, Raster, Kacheln ---------- */
 .nv-main { max-width: 1200px; margin: 0 auto; padding: var(--nv-space-5); }
+/* F33: Sidebar existiert nur im Breitbild; darunter gilt die Kopf-Navigation
+   mit dem unveränderten data-nv-nav-toggle / nv-nav-scrim-Menü. */
+.nv-side { display: none; }
 .nv-section { margin-bottom: var(--nv-space-5); }
 .nv-card {
   background: var(--nv-surface);
@@ -490,9 +750,43 @@ html[data-animations="on"] .nv-skeleton {
 .nv-bell-item { display: block; padding: var(--nv-space-2) 0; border-bottom: 1px solid var(--nv-border); text-decoration: none; color: var(--nv-text); }
 .nv-bell-empty { margin: var(--nv-space-2) 0; font-size: 0.875rem; }
 
+/* ---------- F33: mattes Frosted Glass ----------
+ * Bewusst NUR blur + moderate Translenz (88% hell / 90% dunkel): keine
+ * Spiegelung, keine Gloss-Verläufe, keine Highlight-Overlays. Ohne
+ * backdrop-filter greift der @supports-Block nicht — die Flächen oben bleiben
+ * deckend (--nv-surface). Textkontrast bleibt durch den hohen Deckanteil
+ * erhalten.
+ */
+@supports ((backdrop-filter: blur(2px)) or (-webkit-backdrop-filter: blur(2px))) {
+  /* Reparatur des Interaktionsdefekts in den erweiterten Einstellungen:
+     backdrop-filter auf jeder .nv-card erzeugt einen composited Layer pro
+     Karte. Beim asynchronen NV.render() nach Aktionen (runs-prune, gates-save)
+     verzögert das den DOM-Austausch gegenueber dem Backend-State; Formular-
+     werte werden dabei verworfen. Karten behalten weiterhin die matte
+     color-mix-Translenz (88 % hell / 90 % dunkel) und die nv-slide-in-Bewegung;
+     der Frosted-Glass-Blur bleibt auf Header, Sidebar, Schublade und Toasts. */
+  .nv-top, .nv-drawer, .nv-toast, .nv-side {
+    background: var(--nv-surface);
+    background: color-mix(in srgb, var(--nv-surface) var(--nv-glass-fill), transparent);
+    -webkit-backdrop-filter: blur(var(--nv-glass-blur));
+    backdrop-filter: blur(var(--nv-glass-blur));
+  }
+  .nv-card {
+    background: var(--nv-surface);
+    background: color-mix(in srgb, var(--nv-surface) var(--nv-glass-fill), transparent);
+  }
+  .nv-card.nv-card-secondary {
+    background: var(--nv-surface-2);
+    background: color-mix(in srgb, var(--nv-surface-2) var(--nv-glass-fill), transparent);
+  }
+}
+
 /* ---------- Animationen (nur bei data-animations="on") ---------- */
+/* fill-mode "backwards" statt "both": ohne End-Fill bleibt kein animierter
+   Identity-Transform (matrix(1,0,0,1,0,0)) hängen. Der erzeugt einen
+   Stacking-Context und vergräbt z. B. Combobox-Optionen unter Nachbarkarten. */
 html[data-animations="on"] .nv-card,
-html[data-animations="on"] .nv-toast { animation: nv-slide-in var(--nv-speed) ease-out both; }
+html[data-animations="on"] .nv-toast { animation: nv-slide-in var(--nv-speed) ease-out backwards; }
 html[data-animations="on"] .nv-btn,
 html[data-animations="on"] .nv-nav button,
 html[data-animations="on"] .nv-tab { transition: background-color var(--nv-speed) ease, color var(--nv-speed) ease, transform var(--nv-speed) ease; }
@@ -513,6 +807,55 @@ html[data-animations="on"] .nv-drawer { animation: nv-fade-in var(--nv-speed) ea
 }
 
 /* ---------- Responsiv: Desktop / Tablet / Mobil ---------- */
+/* F33 Breitbild: Kopfzeile über voller Breite, darunter Sidebar + main.
+   Erwartetes DOM: aside.nv-side[data-nv-side] als Geschwister nach
+   header.nv-top und vor main.nv-main (beide direkt in body[data-nv-app]).
+   Reparatur: das Grid gilt NUR, wenn die Sidebar tatsächlich im DOM liegt.
+   Ohne diese Einschränkung bekommt jede Bestandsansicht am Breitbild eine
+   leere 220px-Spalte und einen geänderten Scroll-/Renderpfad — das hat die
+   Interaktion in den erweiterten Einstellungen (runs-prune, gates-save)
+   zusätzlich destabilisiert. Mit Sidebar bleibt das F33-Layout vollständig
+   erhalten. */
+@media (min-width: 1280px) {
+  body[data-nv-app]:has(aside.nv-side[data-nv-side]) {
+    display: grid;
+    grid-template-columns: 220px minmax(0, 1fr);
+    grid-template-rows: auto 1fr;
+    grid-template-areas: "top top" "side main";
+    min-height: 100vh;
+  }
+  body[data-nv-app]:has(aside.nv-side[data-nv-side]) .nv-top { grid-area: top; }
+  body[data-nv-app]:has(aside.nv-side[data-nv-side]) .nv-side {
+    grid-area: side;
+    display: block;
+    position: sticky;
+    top: var(--nv-top-h);
+    align-self: start;
+    height: calc(100vh - var(--nv-top-h));
+    overflow-y: auto;
+    padding: var(--nv-space-5) var(--nv-space-3);
+    border-right: 1px solid var(--nv-border);
+    background: var(--nv-surface);
+  }
+  body[data-nv-app]:has(aside.nv-side[data-nv-side]) .nv-side .nv-nav {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--nv-space-1);
+  }
+  body[data-nv-app]:has(aside.nv-side[data-nv-side]) .nv-side .nv-nav button { min-height: 44px; text-align: left; justify-content: flex-start; }
+  body[data-nv-app]:has(aside.nv-side[data-nv-side]) .nv-side .nv-nav button[aria-current="page"] { border-left-color: var(--nv-primary); }
+  /* Kopf-Navigation nur ausblenden, wenn die Sidebar die Navigation
+     tatsächlich enthält (sonst greift weiterhin die bestehende Kopf-Navigation
+     — wichtig für die Zeit bis zum DOM-Update und für Bestandsansichten). */
+  body[data-nv-app]:has(aside.nv-side[data-nv-side] [data-nv-nav]) .nv-top > .nv-nav { display: none; }
+  body[data-nv-app]:has(aside.nv-side[data-nv-side]) .nv-main {
+    grid-area: main;
+    max-width: none;
+    width: 100%;
+    margin: 0;
+  }
+}
 @media (max-width: 1023px) {
   .nv-top { padding: var(--nv-space-3) var(--nv-space-4); }
   .nv-main { max-width: 768px; padding: var(--nv-space-5) var(--nv-space-4); }
@@ -559,3 +902,412 @@ html[data-animations="on"] .nv-drawer { animation: nv-fade-in var(--nv-speed) ea
   .nv-grid, .nv-tiles, .nv-board { grid-template-columns: 1fr; }
   .nv-toasts { right: var(--nv-space-2); bottom: var(--nv-space-2); }
 }
+
+/* ===== F33 WP1 styles (Shell/Design/Home) — nur in diesem Block ergänzen ===== */
+/* Home: Suche + angeheftete Projekte bekommen eigene, ruhige Zeilen. */
+section[data-nv-pinned-projects] { margin-bottom: var(--nv-space-5); }
+section[data-nv-pinned-projects] > h2,
+section[data-nv-projects] > h2 { display: flex; align-items: center; gap: var(--nv-space-2); }
+p[data-nv-search-count] {
+  margin: calc(-1 * var(--nv-space-2)) 0 var(--nv-space-4);
+  color: var(--nv-muted);
+  font-size: 0.875rem;
+}
+input[data-nv-project-search] { max-width: 24rem; margin-bottom: var(--nv-space-3); }
+/* Anpinn-Knopf ★/☆: dezent, Zustand über aria-pressed erkennbar. */
+button[data-nv-action="project-pin"],
+button[data-nv-action="agent-pin"] {
+  min-width: 36px;
+  min-height: 36px;
+  padding: 0 var(--nv-space-2);
+  border: 1px solid transparent;
+  border-radius: var(--nv-radius-sm);
+  background: transparent;
+  color: var(--nv-muted);
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+button[data-nv-action="project-pin"]:hover,
+button[data-nv-action="agent-pin"]:hover { background: var(--nv-surface-2); color: var(--nv-text); }
+button[data-nv-action="project-pin"][aria-pressed="true"],
+button[data-nv-action="agent-pin"][aria-pressed="true"] {
+  background: var(--nv-accent-soft-bg);
+  color: var(--nv-accent-soft-fg);
+  border-color: var(--nv-accent-soft-fg);
+}
+/* Toast-Karten mit Auto-Dismiss: dezenter Fortschrittsstrich, der die
+   verbleibende Zeit andeutet — rein dekorativ und nur bei Motion an. */
+.nv-toast[data-nv-toast-auto] { position: relative; overflow: hidden; padding-bottom: calc(var(--nv-space-3) + 4px); }
+.nv-toast[data-nv-toast-auto]::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 2px;
+  width: 100%;
+  background: var(--nv-primary);
+  opacity: 0.55;
+}
+html[data-animations="on"] .nv-toast[data-nv-toast-auto]::after { animation: nv-toast-timer 6s linear both; }
+@keyframes nv-toast-timer { from { width: 100%; } to { width: 0; } }
+/* Dezenter Zustandswechsel der Sidebar (nur wenn Motion erwünscht). */
+html[data-animations="on"] .nv-main { transition: padding var(--nv-speed) ease; }
+/* ===== F33 WP2 styles (Combobox/Agenten/Wizard/Editor) — nur in diesem Block ergänzen ===== */
+/* Combobox: Eingabe + Liste, offen/geschlossen über [hidden] (JS). */
+.nv-combobox { position: relative; display: block; max-width: 32rem; }
+.nv-combobox input[data-nv-combobox-input] { width: 100%; padding-right: var(--nv-space-6); }
+.nv-combobox ul[data-nv-combobox-list] {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 2px);
+  left: 0;
+  right: 0;
+  max-height: 15rem;
+  overflow-y: auto;
+  margin: 0;
+  padding: var(--nv-space-1);
+  list-style: none;
+  background: var(--nv-surface);
+  border: 1px solid var(--nv-border);
+  border-radius: var(--nv-radius-sm);
+  box-shadow: var(--nv-shadow);
+}
+.nv-combobox li[data-nv-combobox-option] {
+  padding: var(--nv-space-2) var(--nv-space-3);
+  border-radius: calc(var(--nv-radius-sm) - 2px);
+  cursor: pointer;
+}
+.nv-combobox li[data-nv-combobox-option][aria-selected="true"],
+.nv-combobox li[data-nv-combobox-option]:hover,
+.nv-combobox li[data-nv-combobox-option].is-active {
+  background: var(--nv-accent-soft-bg);
+  color: var(--nv-accent-soft-fg);
+}
+/* Tags stehen unter dem Namen, umbrechen und überblenden nichts. */
+h3.nv-agent-name { white-space: normal; overflow: visible; text-overflow: clip; }
+div[data-nv-agent-tags] {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--nv-space-2);
+  margin-top: var(--nv-space-2);
+}
+div[data-nv-agent-tags] .nv-chip { background: var(--nv-accent-soft-bg); color: var(--nv-accent-soft-fg); }
+/* Tag-Filter-Chips mit aria-pressed-Zustand. */
+div[data-nv-agent-tag-filters] { display: flex; flex-wrap: wrap; gap: var(--nv-space-2); margin-bottom: var(--nv-space-4); }
+button[data-nv-tag-filter] {
+  padding: 0.3rem 0.7rem;
+  border: 1px solid var(--nv-border);
+  border-radius: 999px;
+  background: var(--nv-surface);
+  color: var(--nv-muted);
+  font: inherit;
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+button[data-nv-tag-filter]:hover { background: var(--nv-surface-2); color: var(--nv-text); }
+button[data-nv-tag-filter][aria-pressed="true"] {
+  background: var(--nv-accent-soft-bg);
+  border-color: var(--nv-accent-soft-fg);
+  color: var(--nv-accent-soft-fg);
+  font-weight: 600;
+}
+/* Wizard: Aktionsleiste bleibt ohne Scrollen erreichbar. */
+.nv-wizard-nav {
+  position: sticky;
+  bottom: 0;
+  z-index: 10;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--nv-space-2);
+  margin: var(--nv-space-4) calc(-1 * var(--nv-space-4)) calc(-1 * var(--nv-space-4));
+  padding: var(--nv-space-3) var(--nv-space-4);
+  background: var(--nv-surface);
+  border-top: 1px solid var(--nv-border);
+}
+/* Review-Prompt: Leerzeichen/Umbrüche sichtbar, begrenzter Scroll-Kasten. */
+pre[data-nv-review-prompt] {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-width: 100%;
+  max-height: 18rem;
+  overflow: auto;
+  margin: 0 0 var(--nv-space-4);
+  padding: var(--nv-space-3) var(--nv-space-4);
+  background: var(--nv-surface-2);
+  border: 1px solid var(--nv-border);
+  border-radius: var(--nv-radius-sm);
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+/* Inline-Warnung beim Abbrechen: dezent rot/amber. */
+[data-nv-wizard-cancel-confirm],
+.nv-wizard-cancel-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--nv-space-3);
+  margin-bottom: var(--nv-space-3);
+  padding: var(--nv-space-3);
+  background: var(--nv-warn-bg);
+  color: var(--nv-warn-text);
+  border: 1px solid currentColor;
+  border-radius: var(--nv-radius-sm);
+}
+/* Editor: Projektzuordnungen kompakt in einem geschlossenen details. */
+details[data-nv-assignments] {
+  margin-top: var(--nv-space-4);
+  padding: var(--nv-space-3);
+  border: 1px solid var(--nv-border);
+  border-radius: var(--nv-radius-sm);
+  background: var(--nv-surface-2);
+}
+details[data-nv-assignments] > summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.875rem;
+}
+details[data-nv-assignments][open] > summary { margin-bottom: var(--nv-space-3); }
+/* ===== F33 WP3 styles (Projektdetail) — nur in diesem Block ergänzen ===== */
+/* F33 WP3-Zusätze: Filterung per [hidden] muss auch Karten mit display-Regeln
+   zuverlässig ausblenden; Drag-Griff und Switch brauchen echte Boxen. */
+[data-nv-ticket][hidden], [data-nv-feedback-item][hidden] { display: none !important; }
+button[data-nv-drag-handle]::before { content: "⋮⋮"; letter-spacing: -2px; }
+label.nv-switch-row { display: flex; flex-wrap: wrap; }
+.nv-guide-actions { flex-wrap: wrap; gap: var(--nv-space-2); margin-top: var(--nv-space-2); }
+.nv-priority-rows { display: flex; flex-direction: column; gap: var(--nv-space-2); }
+[data-nv-agents-managed] { white-space: pre-wrap; padding: var(--nv-space-2); background: var(--nv-surface-2); }
+/* Beschreibung: zweispaltig ab Breitbild, einspaltig darunter. */
+.nv-guide-grid { display: grid; grid-template-columns: 1fr; gap: var(--nv-space-5); }
+@media (min-width: 1280px) {
+  .nv-guide-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+/* Status-Pillen klein und ruhig. */
+.nv-pill.nv-ok, span[data-nv-step-status].nv-ok {
+  background: var(--nv-ok-bg); color: var(--nv-ok-text);
+  font-size: 0.75rem; padding: 0.1rem 0.5rem;
+}
+.nv-pill.nv-warn, span[data-nv-step-status].nv-warn {
+  background: var(--nv-warn-bg); color: var(--nv-warn-text);
+  font-size: 0.75rem; padding: 0.1rem 0.5rem;
+}
+span[data-nv-pause-badge] { margin-left: var(--nv-space-2); }
+/* Großflächiger Schalter mit beschreibendem Text. */
+label.nv-switch-row {
+  align-items: flex-start !important;
+  gap: var(--nv-space-3) !important;
+  margin: var(--nv-space-3) 0 !important;
+  padding: var(--nv-space-3);
+  border: 1px solid var(--nv-border);
+  border-radius: var(--nv-radius);
+  background: var(--nv-surface-2);
+}
+.nv-switch-row .nv-switch-text { display: flex; flex-direction: column; line-height: 1.35; }
+.nv-switch-row .nv-switch-text small { color: var(--nv-muted); font-size: 0.8125rem; }
+.nv-switch-row input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  position: relative;
+  flex: 0 0 auto;
+  width: 46px;
+  height: 26px;
+  margin: 0;
+  border: 1px solid var(--nv-border);
+  border-radius: 999px;
+  background: var(--nv-surface);
+  cursor: pointer;
+}
+.nv-switch-row input[type="checkbox"]::before {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--nv-muted);
+}
+.nv-switch-row input[type="checkbox"]:checked {
+  background: var(--nv-primary);
+  border-color: var(--nv-primary);
+}
+.nv-switch-row input[type="checkbox"]:checked::before {
+  background: #ffffff;
+  transform: translateX(20px);
+}
+html[data-animations="on"] .nv-switch-row input[type="checkbox"] { transition: background-color var(--nv-speed) ease, border-color var(--nv-speed) ease; }
+html[data-animations="on"] .nv-switch-row input[type="checkbox"]::before { transition: transform var(--nv-speed) ease, background-color var(--nv-speed) ease; }
+/* Klickbare Kosten-/Projektzeilen mit dezentem ▸-Muster. */
+tr.nv-clickable, tr[data-nv-cost-project], tr.nv-cost { cursor: pointer; }
+tr.nv-clickable:hover > td, tr[data-nv-cost-project]:hover > td, tr.nv-cost:hover > td { background: var(--nv-accent-soft-bg); }
+tr.nv-clickable td:first-child::before,
+tr[data-nv-cost-project] td:first-child::before,
+tr.nv-cost td:first-child::before {
+  content: "▸";
+  display: inline-block;
+  width: 1.1em;
+  color: var(--nv-accent-soft-fg);
+  opacity: 0;
+}
+tr.nv-clickable:hover td:first-child::before,
+tr[data-nv-cost-project]:hover td:first-child::before,
+tr.nv-cost:hover td:first-child::before { opacity: 1; }
+/* Lange Ticketbeschreibungen begrenzen; Aufklappen über data-nv-ticket-more. */
+.nv-ticket-desc { max-height: 7.5rem; overflow: hidden; }
+.nv-ticket:has([data-nv-ticket-more][aria-expanded="true"]) .nv-ticket-desc,
+.nv-ticket-desc.is-open { max-height: none; }
+/* Priorisierungsleiste mit Griffen und P1/P2-Badges. */
+.nv-priority-strip, [data-nv-priority-strip] {
+  display: flex;
+  flex-direction: column;
+  gap: var(--nv-space-2);
+  margin-bottom: var(--nv-space-4);
+  padding: var(--nv-space-3);
+  border: 1px solid var(--nv-border);
+  border-radius: var(--nv-radius);
+  background: var(--nv-surface-2);
+}
+.nv-priority-row { display: flex; align-items: center; gap: var(--nv-space-2); }
+button[data-nv-drag-handle] {
+  min-width: 32px; min-height: 32px; padding: 0 var(--nv-space-2);
+  border: 1px solid var(--nv-border); border-radius: var(--nv-radius-sm);
+  background: var(--nv-surface); color: var(--nv-muted);
+  cursor: grab;
+}
+span[data-nv-prio-badge] {
+  padding: 0.1rem 0.5rem; border-radius: 999px;
+  background: var(--nv-accent-soft-bg); color: var(--nv-accent-soft-fg);
+  font-size: 0.75rem; font-weight: 700;
+}
+/* Formular-Karte direkt unter der Aktionsleiste. */
+[data-nv-ticket-form] {
+  margin: var(--nv-space-3) 0 var(--nv-space-5);
+  padding: var(--nv-space-4);
+  background: var(--nv-surface);
+  border: 1px solid var(--nv-border);
+  border-left: 3px solid var(--nv-primary);
+  border-radius: var(--nv-radius);
+}
+/* ===== F33 WP4 styles (Ausgabe) — nur in diesem Block ergänzen ===== */
+/* Log bricht Zeilen um — keine horizontalen Überläufe über den Rahmen. */
+.nv-log {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-width: 100%;
+}
+/* Fokus/Vergrößern: reine Optik, Escape/aria-expanded liegt bei nova-output.js. */
+.nv-out-enlarged {
+  position: fixed;
+  inset: 8px;
+  z-index: 90;
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: var(--nv-space-4);
+  background: var(--nv-surface);
+  border: 1px solid var(--nv-border);
+  border-radius: var(--nv-radius-lg);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.38);
+}
+.nv-out-enlarged .nv-log { flex: 1 1 auto; max-height: none; overflow: auto; }
+/* Steuerzeile direkt unter der Statuszeile — ohne Scrollen erreichbar.
+   Der Selektor mit :has() findet die Zeile auch ohne neuen JS-Hook. */
+.nv-out-controls,
+.nv-panel :has(> input[data-nv-steer]),
+[data-nv-view] :has(> input[data-nv-steer]) {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  padding: var(--nv-space-2) 0;
+  background: var(--nv-surface);
+  border-bottom: 1px solid var(--nv-border);
+}
+/* Subagenten-Anweisungen dezent und kompakt. */
+input[data-nv-sub-steer] {
+  width: auto;
+  min-width: 8rem;
+  max-width: 22rem;
+  padding: var(--nv-space-1) var(--nv-space-2);
+  font-size: 0.875rem;
+}
+button[data-nv-sub-steer-send] { padding: var(--nv-space-1) var(--nv-space-3); font-size: 0.875rem; }
+.nv-out-sub-steer { display: flex; flex-wrap: wrap; align-items: center; gap: var(--nv-space-2); margin-top: var(--nv-space-2); }
+/* Vergrößerung: Seite dahinter fixieren. Bewusst keine .nv-out-enlarged am Body —
+   die vergrößerte Fläche bleibt dadurch genau ein Element. */
+body.nv-out-enlarged-open { overflow: hidden; }
+/* Die Slide-in-Animation lässt .nv-card eine Identitäts-Transformation behalten;
+   die macht das Panel zum Bezugssystem für position:fixed. Während der
+   Vergrößerung entfernen, damit die Fläche den Viewport wirklich füllt. */
+html[data-animations="on"] .nv-out-enlarged-open .nv-ppanel {
+  animation: none;
+  transform: none;
+}
+/* ===== F33 WP5 styles (Aktivität/Einstellungen) — nur in diesem Block ergänzen ===== */
+/* Funktionsgruppen im responsiven Raster. */
+.nv-feature-groups, [data-nv-feature-groups] {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--nv-space-4);
+}
+.nv-feature-group { margin-bottom: 0; padding: var(--nv-space-3); border: 1px solid var(--nv-border); border-radius: var(--nv-radius); background: var(--nv-surface-2); }
+/* Auswertungs- und Bereinigungs-Badges: dezent, keine Einstellungs-Optik. */
+span[data-nv-eval-badge], span[data-nv-run-pruneable] {
+  display: inline-block;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  background: var(--nv-accent-soft-bg);
+  color: var(--nv-accent-soft-fg);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+span[data-nv-run-pruneable] { background: var(--nv-surface-2); color: var(--nv-muted); }
+small[data-nv-gate-help] {
+  display: block;
+  margin-top: var(--nv-space-1);
+  color: var(--nv-muted);
+  font-size: 0.8125rem;
+  line-height: 1.4;
+}
+/* Akzentwahl: 12 Farbmuster als Farbpunkte. */
+.nv-accent-swatches, [data-nv-accent-swatches] { display: flex; flex-wrap: wrap; gap: var(--nv-space-2); }
+.nv-accent-dot {
+  width: 24px; height: 24px; padding: 0;
+  border: 2px solid var(--nv-surface);
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px var(--nv-border);
+  cursor: pointer;
+}
+.nv-accent-dot[aria-pressed="true"],
+.nv-accent-dot[aria-checked="true"] { box-shadow: 0 0 0 2px var(--nv-focus); }
+.nv-accent-dot[data-accent="blue"]   { background: #2457c5; }
+.nv-accent-dot[data-accent="teal"]   { background: #0f766e; }
+.nv-accent-dot[data-accent="cyan"]   { background: #0e7490; }
+.nv-accent-dot[data-accent="green"]  { background: #15803d; }
+.nv-accent-dot[data-accent="lime"]   { background: #84cc16; }
+.nv-accent-dot[data-accent="yellow"] { background: #eab308; }
+.nv-accent-dot[data-accent="amber"]  { background: #f59e0b; }
+.nv-accent-dot[data-accent="orange"] { background: #ea580c; }
+.nv-accent-dot[data-accent="red"]    { background: #dc2626; }
+.nv-accent-dot[data-accent="pink"]   { background: #db2777; }
+.nv-accent-dot[data-accent="violet"] { background: #7c3aed; }
+.nv-accent-dot[data-accent="indigo"] { background: #4f46e5; }
+/* Formularwesen: klare Abstände zwischen Label, Eingabe und Knöpfen. */
+.nv-card label.nv-field { display: block; margin: var(--nv-space-5) 0 var(--nv-space-2); }
+.nv-card label.nv-field:first-child { margin-top: 0; }
+.nv-card input, .nv-card select, .nv-card textarea { margin-bottom: var(--nv-space-2); }
+.nv-form-actions, [data-nv-form-actions] {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--nv-space-2);
+  margin-top: var(--nv-space-5);
+}
+[data-nv-ssection] { margin-bottom: var(--nv-space-6); }
+/* Reduced Motion: neue Bewegung entfernen, Zustandsfeedback behalten. */
+@media (prefers-reduced-motion: reduce) {
+  html[data-animations="on"] .nv-toast[data-nv-toast-auto]::after { animation: none; width: 100%; opacity: 0.25; }
+  html[data-animations="on"] .nv-switch-row input[type="checkbox"],
+  html[data-animations="on"] .nv-switch-row input[type="checkbox"]::before,
+  html[data-animations="on"] .nv-main { transition: none; }
+}
+/* Ende der F33-Blöcke. */

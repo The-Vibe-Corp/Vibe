@@ -193,8 +193,22 @@ hin.
 V-001 aus TICKETS.md bearbeiten.
 Danach V-002, bevor funktionale Änderungen begonnen werden.
 
+## Lizenz
+
+Dieses Projekt ist unter der GNU Affero General Public License Version 3
+(AGPL-3.0-only) veröffentlicht. Der vollständige, unveränderte kanonische
+Lizenztext und die Projekt-Attribution stehen in `LICENSE`.
+
+Privatnutzung und AGPL-konforme Nutzung kostenlos; proprietär bzw. kommerzielle Nutzung ohne AGPL-Pflichten erfordert eine kommerzielle Lizenz.
+
+Wir stellen die Software Privatpersonen und allen, die die Copyleft-Pflichten
+der AGPLv3 akzeptieren, kostenlos bereit (siehe `LICENSE`). Unternehmen, die
+sie proprietär bzw. ohne Copyleft-Offenlegung nutzen wollen, kaufen eine
+separate kommerzielle Lizenz von uns.
+
 ## Mitwirken und Lizenz
 
 Beiträge: siehe `CONTRIBUTING.md`, Verhaltensregeln in
 `CODE_OF_CONDUCT.md`. Sicherheitsmeldungen bitte nicht öffentlich — siehe
-`SECURITY.md`. Das Projekt steht unter der MIT-Lizenz (`LICENSE`).
+`SECURITY.md`. Die Lizenzierung folgt dem Dual-Licensing-Modell oben; der
+vollständige Lizenztext steht in `LICENSE`.
