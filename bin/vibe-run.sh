@@ -633,6 +633,16 @@ run_agent_in() {
       set +m
       ensure_private_server "$dir" || exit 2
     fi
+    # AP23: Das ausgewählte Secret gilt nur für diesen einen Agentenlauf.
+    # Ohne Vault-Key oder bei einem anderen Fehler startet der Agent nicht.
+    # Das Modul ist Teil des Pakets; in älteren Installationen ist es noch
+    # nicht vorhanden — dann gilt kein Sync (keine Keys in diesem Install).
+    if [ -f "$BIN/vibe_keys.py" ]; then
+      if ! python3 "$BIN/vibe_keys.py" sync --state "$STATE" --harness "$HARNESS" >>"$LOG" 2>&1; then
+        echo "AP23: Key-Sync fehlgeschlagen; Agent nicht gestartet" >>"$LOG"
+        exit 2
+      fi
+    fi
     if [ "$HARNESS" = "pi" ]; then
       # B6: Pi gibt mit --mode json strukturierte Ereignisse aus. Derselbe
       # Erfassungsfilter wie beim opencode-Zweig macht daraus menschenlesbare
@@ -659,6 +669,10 @@ run_agent_in() {
   wait "$AGENT_PID"
   rc=$?
   AGENT_PID=""
+  # AP23: Least Privilege – nach der Sitzung keine Secrets in der Harness-Config.
+  if [ -f "$BIN/vibe_keys.py" ]; then
+    python3 "$BIN/vibe_keys.py" sync --reset --state "$STATE" --harness "$HARNESS" >>"$LOG" 2>&1 || true
+  fi
   return "$rc"
 }
 run_agent() {
