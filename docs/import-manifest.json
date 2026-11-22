@@ -1490,9 +1490,9 @@
       "sha256": "2bb2c8c578d4b5e26ed273fa72d125ea997f1eafcafe259ad25045766bf81047"
     },
     {
-      "bytes": 39937,
+      "bytes": 40839,
       "path": "bin/web/nova-agents.js",
-      "sha256": "2de913e32a47ba8eb3be1f7c0cc65d1a02c1c49efd52ee9aef134c22306fc49d"
+      "sha256": "ca1c1bb5d7a9eef2823978f76694c1beecf255a73d342756af00ed1d39bdb048"
     },
     {
       "bytes": 40808,
@@ -1505,9 +1505,9 @@
       "sha256": "f7eff2aa8b20c671f8b2114c63c44f9dfd0a6d906d7c7496c0e8ccfcc390c2be"
     },
     {
-      "bytes": 14476,
+      "bytes": 15653,
       "path": "bin/web/nova-home.js",
-      "sha256": "43641b4ceee30b724a38e63039298e3117bbec305bc81089d20887f1658c82db"
+      "sha256": "892e1813519fc47ec3f65101d6ab087d9557a97d6575da3582300694c5a517e1"
     },
     {
       "bytes": 18646,
