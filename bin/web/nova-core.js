@@ -26,6 +26,19 @@ var NV = window.NV = {
   ocUrl: OC_URL
 };
 
+/* ---------- Akzent (F33/4): gültige IDs für data-accent/localStorage. ---------- */
+var ACCENT_IDS = ['blue', 'teal', 'cyan', 'green', 'lime', 'yellow',
+  'amber', 'orange', 'red', 'pink', 'violet', 'indigo'];
+NV.accent = function () {
+  var stored = localStorage.getItem('nv-accent');
+  return ACCENT_IDS.indexOf(stored) !== -1 ? stored : 'blue';
+};
+NV.setAccent = function (id) {
+  localStorage.setItem('nv-accent', id);
+  document.documentElement.setAttribute('data-accent', id);
+};
+function applyAccent() { NV.setAccent(NV.accent()); }
+
 function errText(j, status) {
   var e = j && j.error;
   return (e && (e.message || e)) || (j && j.message) || ('HTTP ' + status);
@@ -106,6 +119,16 @@ function setAttrTx(node, name, key) {
   node.__i18nAttrs[name] = {key: key, vars: undefined};
 }
 
+/* F33/3d: Das Animations-Label trägt aria-label/title "Animationen: an/aus"
+   (Zustand im Label); die Glyph/der Glyph-Text bleibt unberührt. */
+function setAnimLabel(animToggle) {
+  var label = animToggle.closest('label');
+  var key = animToggle.checked ? 'Animationen: an' : 'Animationen: aus';
+  if (label) setAttrTx(label, 'aria-label', key);
+  setAttrTx(animToggle, 'aria-label', key);
+  setAttrTx(animToggle, 'title', key);
+}
+
 /* Shell-Chrome: das Markup ist sprachneutral (leere Attribute), die deutschen
    Quellschlüssel hier sind die einzige Textquelle. setTx/setAttrTx merken sich
    den Key, damit retranslateDOM() ihn beim Sprachwechsel neu übersetzt. */
@@ -148,10 +171,50 @@ function bt(value) {
 var toastBox = document.getElementById('nv-toasts');
 function toast(message) {
   if (!toastBox) return;
-  var card = el('div', {class: 'nv-toast'}, el('span', {}, String(message)),
+  var card = el('div', {class: 'nv-toast', 'data-nv-toast-auto': ''}, el('span', {}, String(message)),
     el('button', {class: 'nv-toast-close', type: 'button',
       'aria-label': tr('Meldung schließen'), on: {click: function () { card.remove(); }}}, '×'));
+  startToastTimer(card);
   toastBox.append(card);
+}
+
+/* F33/3c: Toasts sind kurzlebig — Karten mit data-nv-toast-auto werden
+   nach ~6 s selbst entfernt; Hover/Fokus in der Karte pausiert den Timer,
+   das manuelle Schließen bleibt immer möglich (der Timer prüft isConnected). */
+var TOAST_AUTO_MS = 6000;
+function startToastTimer(card) {
+  var remaining = TOAST_AUTO_MS;
+  var started = 0;
+  var timer = null;
+  var paused = false;
+  function tick() {
+    started = Date.now();
+    timer = setTimeout(function () {
+      timer = null;
+      if (card.isConnected) card.remove();
+    }, remaining);
+  }
+  function pause() {
+    if (!timer || paused) return;
+    clearTimeout(timer);
+    timer = null;
+    remaining -= Date.now() - started;
+    if (remaining < 0) remaining = 0;
+    paused = true;
+  }
+  function resume() {
+    if (!paused) return;
+    paused = false;
+    tick();
+  }
+  card.addEventListener('mouseenter', pause);
+  card.addEventListener('focusin', pause);
+  card.addEventListener('mouseleave', resume);
+  card.addEventListener('focusout', function (event) {
+    if (card.contains(event.relatedTarget)) return;
+    resume();
+  });
+  tick();
 }
 
 /* ---------- Präferenzen (localStorage, rein clientseitig) ---------- */
@@ -273,7 +336,30 @@ NV.render = render;
 
 var NAV_KEYS = {home: 'Start', agents: 'Agenten', activity: 'Aktivität', settings: 'Einstellungen'};
 
+/* F33/2a/3b: Die Nav existiert einmal. Unter ≥1280px wird dasselbe Nav in
+   die Aside (Sidebar) verschoben, darunter in die Kopfzeile — Handler und
+   Labels bleiben denselben Buttons, der globale [data-nv-nav]-Zähler (AP22)
+   bleibt 1 pro View. CSS: body:has(aside [data-nv-nav]) .nv-top > .nv-nav
+   blendet bei ≥1280 den Platzhalter im Header aus. */
+function syncSidebarNav() {
+  var nav = document.querySelector('header .nv-nav, aside.nv-side .nv-nav');
+  var aside = document.querySelector('aside.nv-side');
+  if (!nav || !aside) return;
+  var wide = media('(min-width: 1280px)');
+  if (wide && wide.matches) {
+    if (nav.parentNode !== aside) aside.appendChild(nav);
+  } else {
+    var header = document.querySelector('header');
+    if (header && nav.parentNode !== header) header.appendChild(nav);
+  }
+}
+
 function initChrome() {
+  syncSidebarNav();
+  var wideNav = media('(min-width: 1280px)');
+  if (wideNav && wideNav.addEventListener) {
+    wideNav.addEventListener('change', syncSidebarNav);
+  }
   var skip = document.querySelector('.nv-skip');
   if (skip) setTx(skip, tr('Zum Inhalt springen'));
   var toggle = document.querySelector('[data-nv-nav-toggle]');
@@ -300,9 +386,10 @@ function initChrome() {
   var animToggle = document.querySelector('[data-nv-anim-toggle]');
   if (animToggle) {
     animToggle.checked = document.documentElement.getAttribute('data-animations') !== 'off';
-    setChromeLabel(animToggle.parentNode, 'Animationen');
+    setAnimLabel(animToggle);
     animToggle.addEventListener('change', function () {
       NV.setAnimations(animToggle.checked);
+      setAnimLabel(animToggle);
     });
   }
   var themeToggle = document.querySelector('[data-nv-theme-toggle]');
@@ -498,6 +585,8 @@ async function refreshBell() {
       }
       var head = el('div', {class: 'nv-drawer-head'},
         el('span', {class: 'nv-drawer-title'}, tr('Benachrichtigungen')),
+        el('p', {class: 'nv-muted', 'data-nv-bell-explain': ''},
+          tr('Die Glocke sammelt dauerhafte Sammlung (Fragen, blockierte Pakete, fehlgeschlagene Läufe). Toasts sind kurzlebiges Aktionsfeedback.')),
         el('button', {class: 'nv-btn nv-ghost nv-close', type: 'button',
           'data-nv-bell-close': '', 'aria-label': tr('Benachrichtigungen schließen'),
           title: tr('Benachrichtigungen schließen')}, '×'));
@@ -540,6 +629,7 @@ function retranslateDOM() {
 async function boot() {
   applyTheme();
   applyAnimations();
+  applyAccent();
   initChrome();
   try {
     if (T) await api('/api/login', {token: T});

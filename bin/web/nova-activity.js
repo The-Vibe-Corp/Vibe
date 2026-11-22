@@ -77,31 +77,52 @@ NV.views.activity = function activity(context, token) {
   /* Zusammenfassung: dieselben Quellen wie die Glocke. Die Kacheln entstehen
      erst mit den echten Zahlen, damit nie ein veralteter Wert sichtbar wird. */
   var tilesBox = el('div', {class: 'nv-tiles', 'data-nv-activity-tiles': ''});
+  var questionsBody = el('div', {class: 'nv-questions-body'},
+    nvActivityEmpty(tr('Keine offenen Fragen — nichts wartet auf deine Antwort.')));
   var runsBody = el('div', {class: 'nv-runs-body'},
     nvActivityEmpty(tr('Gerade läuft keine Arbeit.')));
   var sessionsBody = el('div', {class: 'nv-sessions-body'},
     nvActivityEmpty(tr('Projekt wählen, um seine Sitzungen zu sehen.')));
-  var questionsBody = el('div', {class: 'nv-questions-body'},
-    nvActivityEmpty(tr('Keine offenen Fragen — nichts wartet auf deine Antwort.')));
+
+  /* Rückfragen: Das Projekt steht auf jeder Karte; der Filter wendet die
+     Projektwahl auf die Liste an — „Alle Projekte“ zeigt die vollständige
+     Liste. Der letzte Stand liegt in questionsData, paintQuestions bekommt
+     ihn über diese Variable, wenn sich die Projektwahl ändert. */
+  var questionFilter = '';
+  var questionsData = null;
+  var questionsHint = el('p', {class: 'nv-muted', 'data-nv-questions-hint': ''},
+    tr('Offene Rückfragen aller Projekte — das Projekt steht auf jeder Karte'));
+  /* Versteckt bis die Projekte geladen sind: wait_for(visible) beim Test-
+     und Nutzerzugriff geht erst dann — erst dann gibt es Auswahlmöglichkeiten
+     („Alle Projekte“ + Projekte). */
+  var questionProjectSelect = el('select', {
+    'data-nv-questions-project': '', 'aria-label': tr('Rückfragen nach Projekt filtern'),
+    hidden: ''});
+  questionProjectSelect.addEventListener('change', function () {
+    questionFilter = questionProjectSelect.value;
+    if (questionsData) paintQuestions(questionsData);
+  });
 
   var projectSelect = el('select', {'data-nv-sessions-project': '',
     'aria-label': tr('Projekt auswählen')});
   var limitInput = el('input', {type: 'number', min: '1', max: '100',
     'data-nv-sessions-limit': '', value: '5', 'aria-label': tr('Session-Limit')});
+  var limitHint = el('small', {'data-nv-limit-hint': ''},
+    tr('Gilt für das oben ausgewählte Projekt und begrenzt die Anzahl gelisteter Sitzungen'));
   var limitSave = el('button', {class: 'nv-btn', type: 'button',
     'data-nv-action': 'sessions-limit-save'}, tr('Limit speichern'));
 
   document.getElementById('nv-main').replaceChildren(
     el('h2', {class: 'nv-page-title'}, tr('Aktivität')),
     tilesBox,
+    el('section', {class: 'nv-card', 'data-nv-questions': ''},
+      el('h3', {}, tr('Rückfragen')), questionProjectSelect, questionsHint, questionsBody),
     el('section', {class: 'nv-card', 'data-nv-runs': ''},
       el('h3', {}, tr('Läufe')), runsBody),
     el('section', {class: 'nv-card', 'data-nv-sessions': ''},
       el('h3', {}, tr('Sessions')), projectSelect, sessionsBody,
       el('div', {class: 'nv-row nv-sessions-limit'},
-        el('label', {}, tr('Session-Limit')), limitInput, limitSave)),
-    el('section', {class: 'nv-card', 'data-nv-questions': ''},
-      el('h3', {}, tr('Rückfragen')), questionsBody));
+        el('label', {}, tr('Session-Limit')), limitInput, limitHint, limitSave)));
 
   /* ---------- Zusammenfassung und Läufe (eine gemeinsame Quelle) ---------- */
   NV.pulse().then(function (p) {
@@ -203,6 +224,12 @@ NV.views.activity = function activity(context, token) {
     projectSelect.replaceChildren.apply(projectSelect, names.map(function (name) {
       return el('option', {value: name}, name);
     }));
+    questionProjectSelect.replaceChildren.apply(questionProjectSelect,
+      [el('option', {value: ''}, tr('Alle Projekte'))]
+        .concat(names.map(function (name) { return el('option', {value: name}, name); })));
+    questionFilter = '';
+    questionProjectSelect.value = '';
+    questionProjectSelect.hidden = false;
     if (names.length) {
       projectSelect.value = names[0];
       loadSessionsFor(names[0], limitInput);
@@ -238,9 +265,14 @@ NV.views.activity = function activity(context, token) {
 
   /* ---------- Rückfragen ---------- */
   function paintQuestions(data) {
-    var list = ((data && data.questions) || []).map(function (question) {
-      return nvQuestionCard(question, token, paintQuestions);
-    });
+    questionsData = data || {};
+    var list = (questionsData.questions || [])
+      .filter(function (question) {
+        return !questionFilter || String(question.project || '') === questionFilter;
+      })
+      .map(function (question) {
+        return nvQuestionCard(question, token, paintQuestions);
+      });
     if (!list.length) list.push(nvActivityEmpty(tr('Keine offenen Fragen — nichts wartet auf deine Antwort.')));
     questionsBody.replaceChildren.apply(questionsBody, list);
   }

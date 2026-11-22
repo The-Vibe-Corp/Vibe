@@ -45,6 +45,8 @@ WEB_FILES = (
     "classic.html", "nova.css", "nova-core.js", "nova-home.js",
     "nova-project.js", "nova-output.js", "nova-agents.js",
     "nova-activity.js", "nova-settings.js",
+    # F33: Web-Dateien-Einträge auf den Stand von scripts/setup-vibe.py bringen.
+    "nova-widgets.js", "vibe.svg",
 )
 
 setup = None

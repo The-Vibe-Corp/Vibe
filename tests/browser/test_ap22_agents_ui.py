@@ -580,26 +580,30 @@ class WizardTest(Ap22AgentsBrowserTest):
         """Vorbedingung: die opencode-Attrappe meldet drei Modelle.
 
         Aktion: Wizard öffnen, Schritt 1 ausfüllen, weiter zu Schritt 2.
-        Erwartung: ``select[data-nv-field="model"]`` ist sichtbar und bietet
-        die gemeldeten Modelle (u. a. ``opencode/vibe-modell``) an.
+        Erwartung: die Modell-Combobox ``div[data-nv-combobox][data-nv-field="model"]``
+        ist sichtbar und bietet nach dem Öffnen die gemeldeten Modelle
+        (u. a. ``opencode/vibe-modell``) als Optionen an.
         """
         wizard = self.open_wizard()
         self.goto_step(1)
         wizard.locator("[data-nv-field='name']").fill("modellprobe")
         self.wizard_next()
         self.goto_step(2)
-        model = wizard.locator("select[data-nv-field='model']")
+        # F33 WP2: das Modell ist eine Combobox (kein select); die Optionsliste
+        # wird erst durch einen Klick auf das Eingabefeld geöffnet.
+        model = wizard.locator(
+            "div[data-nv-combobox][data-nv-field='model']")
         model.wait_for(state="visible", timeout=15000)
-        options = model.locator("option").evaluate_all(
-            "nodes => nodes.map(node => node.value)")
+        model.locator("input[data-nv-combobox-input]").click()
+        options = model.locator("li[data-nv-combobox-option]").all_inner_texts()
         self.assertIn("opencode/vibe-modell", options,
-                      "Das Modell-Select bietet die verbundenen Modelle nicht "
-                      "an: " + repr(options))
+                      "Die Modell-Combobox bietet die verbundenen Modelle "
+                      "nicht an: " + repr(options))
 
     def test_prompt_template_fills_the_prompt_field(self):
         """Vorbedingung: Wizard mit Name und Beschreibung.
 
-        Aktion: bis Schritt 3 navigieren, Vorlagenknopf
+        Aktion: bis Schritt 4 navigieren, Vorlagenknopf
         ``[data-nv-action="prompt-template"]`` klicken. Erwartung: Das
         Prompt-Feld ``textarea[data-nv-field="prompt"]`` ist vorher leer und
         wird durch die Vorlage (POST ``/api/agent_template``) gefüllt; ein
@@ -612,16 +616,19 @@ class WizardTest(Ap22AgentsBrowserTest):
             "Prüft die Vorlage")
         self.wizard_next()
         self.goto_step(2)
+        # F33 WP2: Schritt 3 ist neu (Rechte); der Prompt steht in Schritt 4.
         self.wizard_next()
         self.goto_step(3)
+        self.wizard_next()
+        self.goto_step(4)
         prompt = wizard.locator("textarea[data-nv-field='prompt']")
         prompt.wait_for(state="visible", timeout=15000)
         self.assertEqual("", prompt.input_value(),
                          "Das Prompt-Feld ist vor der Vorlage nicht leer")
-        helper = wizard.locator("[data-nv-step='3'] .nv-muted")
+        helper = wizard.locator("[data-nv-step='4'] .nv-muted")
         self.assertTrue(
             helper.count() and helper.first.is_visible(),
-            "Der Hilfetext zum Prompt fehlt in Schritt 3")
+            "Der Hilfetext zum Prompt fehlt in Schritt 4")
         wizard.locator("[data-nv-action='prompt-template']").click()
         self.wait_until(
             lambda: len(prompt.input_value().strip()) > 0,
@@ -633,7 +640,7 @@ class WizardTest(Ap22AgentsBrowserTest):
     def test_create_adds_the_agent_file_and_the_list_card(self):
         """Vorbedingung: Wizard, kein Agent ``neuling``.
 
-        Aktion: alle Schritte ausfüllen, Schritt 4 prüfen, „Anlegen“.
+        Aktion: alle Schritte ausfüllen, Schritt 5 prüfen, „Anlegen“.
         Erwartung: ``~/.config/opencode/agents/neuling.md`` existiert mit
         Beschreibung und Prompt; die Liste zeigt eine Karte ``neuling``.
         """
@@ -645,15 +652,28 @@ class WizardTest(Ap22AgentsBrowserTest):
         wizard.locator("[data-nv-field='role']").select_option("coder")
         self.wizard_next()
         self.goto_step(2)
-        wizard.locator("[data-nv-field='model']").select_option(
-            "opencode/test-modell")
+        # F33 WP2: Modell als Combobox in Schritt 2; Auswahl über Eingabefeld
+        # und Optionsliste statt select_option.
+        model = wizard.locator(
+            "div[data-nv-combobox][data-nv-field='model']")
+        model.locator("input[data-nv-combobox-input]").click()
+        model.locator("li[data-nv-combobox-option]",
+                      has_text="opencode/test-modell").first.click()
+        self.assertEqual(
+            "opencode/test-modell", model.get_attribute("data-nv-value"),
+            "Die Modellauswahl wurde nicht übernommen")
         self.wizard_next()
         self.goto_step(3)
-        wizard.locator("[data-nv-field='prompt']").fill("Arbeite sorgfältig.")
+        # F33 WP2: Schritt 3 ist neu (Rechte); der vorgegebene Standard genügt.
         self.wizard_next()
         self.goto_step(4)
+        wizard.locator("textarea[data-nv-field='prompt']").fill(
+            "Arbeite sorgfältig.")
+        self.wizard_next()
+        self.goto_step(5)
+        # F33 WP2: Prüfen & Anlegen ist Schritt 5 (statt 4).
         self.assertIn("neuling",
-                      wizard.locator("[data-nv-step='4']").inner_text(),
+                      wizard.locator("[data-nv-step='5']").inner_text(),
                       "Die Prüfseite nennt den Agentennamen nicht")
 
         wizard.locator("[data-nv-action='agent-create']").click()
@@ -980,21 +1000,33 @@ class AssignmentTest(Ap22AgentsBrowserTest):
         nicht zugeordnet.
 
         Aktion: Im Editor den Schalter ``[data-nv-assign="proj"]`` aktivieren,
-        im Modell-Override ``select[data-nv-assign-model="proj"]`` ein Modell
+        im Modell-Override ``div[data-nv-assign-model="proj"]`` ein Modell
         wählen und speichern. Erwartung: ``GET /api/project-agents?name=proj``
         führt ``tester`` als gewählt (``selected``) und mit
         ``override=opencode/test-modell``; nach dem Reload sind Schalter und
-        Override weiterhin gesetzt.
+        Override weiterhin gesetzt. Die Zuordnungen liegen vertragsgemäß im
+        standardmäßig geschlossenen ``details[data-nv-assignments]`` und
+        werden beim Aufklappen nachgeladen.
         """
         self.open_editor("tester")
         editor = self.page.locator("[data-nv-agent-editor]")
+        # F33 WP2: Zuordnungen erst beim Aufklappen laden (Vertrag).
+        details = editor.locator("details[data-nv-assignments]")
+        details.locator("summary").click()
         toggle = editor.locator("[data-nv-assign='proj']")
         toggle.wait_for(state="visible", timeout=15000)
         if not toggle.is_checked():
             toggle.check()
-        override = editor.locator("select[data-nv-assign-model='proj']")
+        # F33 WP2: der Override ist eine Combobox (kein select).
+        override = editor.locator(
+            "div[data-nv-combobox][data-nv-assign-model='proj']")
         override.wait_for(state="visible", timeout=15000)
-        override.select_option("opencode/test-modell")
+        override.locator("input[data-nv-combobox-input]").click()
+        override.locator("li[data-nv-combobox-option]",
+                         has_text="opencode/test-modell").first.click()
+        self.assertEqual(
+            "opencode/test-modell", override.get_attribute("data-nv-value"),
+            "Die Modellüberschreibung wurde nicht übernommen")
         editor.locator("[data-nv-action='agent-save']").click()
 
         def assigned():
@@ -1011,13 +1043,18 @@ class AssignmentTest(Ap22AgentsBrowserTest):
         self.page.locator("[data-nv-agent-editor]").wait_for(
             state="visible", timeout=25000)
         editor = self.page.locator("[data-nv-agent-editor]")
+        # F33 WP2: nach dem Reload ist das details wieder geschlossen.
+        editor.locator("details[data-nv-assignments] summary").click()
+        toggle = editor.locator("[data-nv-assign='proj']")
+        toggle.wait_for(state="visible", timeout=15000)
         self.assertTrue(
-            editor.locator("[data-nv-assign='proj']").is_checked(),
+            toggle.is_checked(),
             "Nach dem Reload ist der Projekt-Schalter nicht mehr gesetzt")
+        override = editor.locator(
+            "div[data-nv-combobox][data-nv-assign-model='proj']")
+        override.wait_for(state="visible", timeout=15000)
         self.assertEqual(
-            "opencode/test-modell",
-            editor.locator(
-                "select[data-nv-assign-model='proj']").input_value(),
+            "opencode/test-modell", override.get_attribute("data-nv-value"),
             "Nach dem Reload fehlt die Modellüberschreibung")
 
 
