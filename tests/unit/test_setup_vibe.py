@@ -305,7 +305,7 @@ class InstallFilesTest(unittest.TestCase):
                          + repr((shipped, WEB_FILES)))
 
     def test_fresh_install_copies_programs_templates_and_catalog(self):
-        result = setup.install_program_files(self.kit, self.vibe, mode="update", timestamp="20261026-120000")
+        result = setup.install_program_files(self.kit, self.vibe / "_toolchain", mode="update", timestamp="20261026-120000")
         toolchain = self.vibe / "_toolchain"
         for name in PROGRAM_FILES:
             self.assertTrue((toolchain / "bin" / name).is_file(), name)
@@ -328,7 +328,7 @@ class InstallFilesTest(unittest.TestCase):
 
     def test_installed_launcher_starts_with_all_options(self):
         """Reproduziert den Startfehler nach einem Update mit dem echten Quellstand."""
-        setup.install_program_files(REPO, self.vibe, mode="update", timestamp="20261026-120000")
+        setup.install_program_files(REPO, self.vibe / "_toolchain", mode="update", timestamp="20261026-120000")
         installed = self.vibe / "_toolchain" / "bin"
         home = self.root / "home"
         home.mkdir()
@@ -351,7 +351,7 @@ class InstallFilesTest(unittest.TestCase):
 
     def test_missing_catalog_is_a_warning_not_an_abort(self):
         kit = make_kit(self.root / "kit_ohne_katalog", models=False)
-        result = setup.install_program_files(kit, self.vibe, mode="update", timestamp="20261026-120000")
+        result = setup.install_program_files(kit, self.vibe / "_toolchain", mode="update", timestamp="20261026-120000")
         toolchain = self.vibe / "_toolchain"
         self.assertTrue((toolchain / "bin" / "vibe").is_file())
         self.assertFalse((toolchain / "models.json").exists())
@@ -368,7 +368,7 @@ class InstallFilesTest(unittest.TestCase):
         logs.mkdir()
         (logs / "projekt.log").write_text("lauf\n", encoding="utf-8")
 
-        setup.install_program_files(self.kit, self.vibe, mode="update", timestamp="20261026-120000")
+        setup.install_program_files(self.kit, self.vibe / "_toolchain", mode="update", timestamp="20261026-120000")
 
         self.assertEqual((toolchain / "vibe.json").read_text(encoding="utf-8"), '{"roots": ["/eigenes"]}\n')
         self.assertEqual((toolchain / "models.json").read_text(encoding="utf-8"), '{"models": [{"id": "lokal"}]}\n')
@@ -381,7 +381,7 @@ class InstallFilesTest(unittest.TestCase):
         (toolchain / "bin").mkdir(parents=True)
         (toolchain / "bin" / "vibe").write_text("ALT\n", encoding="utf-8")
 
-        result = setup.install_program_files(self.kit, self.vibe, mode="reuse", timestamp="20261026-120000")
+        result = setup.install_program_files(self.kit, self.vibe / "_toolchain", mode="reuse", timestamp="20261026-120000")
 
         self.assertEqual((toolchain / "bin" / "vibe").read_text(encoding="utf-8"), "ALT\n")
         self.assertTrue((toolchain / "bin" / "vibe_mcp.py").is_file())
@@ -396,7 +396,7 @@ class InstallFilesTest(unittest.TestCase):
         (toolchain / "templates" / "generic").mkdir(parents=True)
         (toolchain / "templates" / "generic" / "AGENTS.md").write_text("ALTE REGEL\n", encoding="utf-8")
 
-        result = setup.install_program_files(self.kit, self.vibe, mode="update", timestamp="20261026-120000")
+        result = setup.install_program_files(self.kit, self.vibe / "_toolchain", mode="update", timestamp="20261026-120000")
 
         self.assertNotEqual((toolchain / "bin" / "vibe").read_text(encoding="utf-8"), "ALT\n")
         backup = toolchain / "backup-20261026-120000"
@@ -406,13 +406,13 @@ class InstallFilesTest(unittest.TestCase):
         self.assertIn("templates/generic/AGENTS.md", result["backed_up"])
 
     def test_no_temporary_files_remain(self):
-        setup.install_program_files(self.kit, self.vibe, mode="update", timestamp="20261026-120000")
+        setup.install_program_files(self.kit, self.vibe / "_toolchain", mode="update", timestamp="20261026-120000")
         leftovers = [path for path in (self.vibe / "_toolchain").rglob("*") if ".vibe-setup-" in path.name]
         self.assertEqual(leftovers, [])
 
     def test_unknown_mode_is_rejected_before_writing(self):
         with self.assertRaises(setup.SetupError):
-            setup.install_program_files(self.kit, self.vibe, mode="kaputt", timestamp="20261026-120000")
+            setup.install_program_files(self.kit, self.vibe / "_toolchain", mode="kaputt", timestamp="20261026-120000")
         self.assertFalse((self.vibe / "_toolchain").exists())
 
 
@@ -430,7 +430,7 @@ class LauncherTest(unittest.TestCase):
 
     def test_posix_launcher_is_a_symlink_to_the_installed_program(self):
         result = setup.install_launcher(
-            self.vibe, self.home, platform_info(os_release={"ID": "ubuntu"}), timestamp="20261026-120000"
+            self.vibe / "_toolchain", self.home, platform_info(os_release={"ID": "ubuntu"}), timestamp="20261026-120000"
         )
         launcher = self.home / ".local" / "bin" / "vibe"
         self.assertTrue(launcher.is_symlink())
@@ -443,7 +443,7 @@ class LauncherTest(unittest.TestCase):
         launcher.write_text("ALT\n", encoding="utf-8")
 
         setup.install_launcher(
-            self.vibe, self.home, platform_info(os_release={"ID": "ubuntu"}), timestamp="20261026-120000"
+            self.vibe / "_toolchain", self.home, platform_info(os_release={"ID": "ubuntu"}), timestamp="20261026-120000"
         )
 
         self.assertTrue(launcher.is_symlink())
@@ -452,24 +452,30 @@ class LauncherTest(unittest.TestCase):
 
     def test_windows_launcher_starts_the_python_program(self):
         result = setup.install_launcher(
-            self.vibe, self.home, platform_info(system="Windows"), timestamp="20261026-120000"
+            self.vibe / "_toolchain", self.home, platform_info(system="Windows"), timestamp="20261026-120000"
         )
-        launcher = self.vibe / "vibe.cmd"
+        launcher = self.vibe / "_toolchain" / "vibe.cmd"
         content = launcher.read_text(encoding="utf-8")
         self.assertIn("py -3", content)
-        self.assertIn("_toolchain\\bin\\vibe", content)
+        # Der Startbefehl liegt im Installationsort und ruft das dort
+        # installierte Programm über seinen eigenen Ordner (%~dp0) auf.
+        self.assertIn("%~dp0bin\\vibe", content)
+        self.assertFalse((self.vibe / "vibe.cmd").exists())
         self.assertFalse((self.home / ".local" / "bin" / "vibe").exists())
         self.assertEqual(result["path"], str(launcher))
 
     def test_windows_launcher_is_not_rewritten_on_a_second_run(self):
         setup.install_launcher(
-            self.vibe, self.home, platform_info(system="Windows"), timestamp="20261026-120000"
+            self.vibe / "_toolchain", self.home, platform_info(system="Windows"), timestamp="20261026-120000"
         )
         second = setup.install_launcher(
-            self.vibe, self.home, platform_info(system="Windows"), timestamp="20261026-130000"
+            self.vibe / "_toolchain", self.home, platform_info(system="Windows"), timestamp="20261026-130000"
         )
         self.assertIsNone(second["backed_up"])
-        self.assertEqual(sorted(path.name for path in self.vibe.glob("vibe.cmd*")), ["vibe.cmd"])
+        self.assertEqual(
+            sorted(path.name for path in (self.vibe / "_toolchain").glob("vibe.cmd*")),
+            ["vibe.cmd"],
+        )
 
 
 class ProjectRegistrationTest(unittest.TestCase):
@@ -519,7 +525,7 @@ class ProjectRegistrationTest(unittest.TestCase):
         no_git = self.vibe / "ohne-git"
         no_git.mkdir()
 
-        result = setup.register_projects(self.vibe)
+        result = setup.register_projects(self.vibe, self.vibe / "_toolchain")
 
         self.assertEqual((existing / ".vibe" / "project.env").read_text(encoding="utf-8"), "TYPE=web\n")
         self.assertEqual((new / ".vibe" / "project.env").read_text(encoding="utf-8"), "TYPE=generic\n")
@@ -531,7 +537,14 @@ class ProjectRegistrationTest(unittest.TestCase):
         self.assertEqual(names, {"bestand", "neu", "worktree", "app"})
         self.assertEqual(result["created"], ["app", "neu", "worktree"])
 
-    def test_existing_and_new_projects_receive_the_test_agent(self):
+    def test_registration_does_not_create_a_hardcoded_test_agent(self):
+        """35233ff: kein hartkodierter Test-Agent und kein TESTER beim Eintragen.
+
+        Der Installer legt nur fehlende ``.vibe/project.env`` an. Eine
+        Test-Agent-Vorlage im Installationsort darf nicht automatisch in
+        bestehende oder neue Projekte kopiert werden; das ist Aufgabe des
+        Projektstarts und nur, wenn eine Vorlage die Datei tatsächlich liefert.
+        """
         existing = self.vibe / "bestand"
         (existing / ".git").mkdir(parents=True)
         (existing / ".vibe").mkdir()
@@ -539,19 +552,21 @@ class ProjectRegistrationTest(unittest.TestCase):
         new = self.vibe / "neu"
         (new / ".git").mkdir(parents=True)
 
-        result = setup.register_projects(self.vibe)
+        result = setup.register_projects(self.vibe, self.vibe / "_toolchain")
 
         for project in (existing, new):
-            agent = project / ".opencode" / "agents" / "test-agent.md"
-            self.assertTrue(agent.is_file(), project)
-            self.assertIn("Test-Agent", agent.read_text(encoding="utf-8"))
-        # Die vorhandene Projektkonfiguration bleibt unverändert; TESTER ergänzt
-        # der Projektstart, nicht die Installation.
+            self.assertFalse(
+                (project / ".opencode" / "agents" / "test-agent.md").exists(),
+                project,
+            )
+            env_text = (project / ".vibe" / "project.env").read_text(encoding="utf-8")
+            self.assertNotIn("TESTER=", env_text, project)
+        # Die vorhandene Projektkonfiguration bleibt unverändert.
         self.assertEqual(
             (existing / ".vibe" / "project.env").read_text(encoding="utf-8"),
             "TYPE=web\n",
         )
-        self.assertEqual(result["test_agent_created"], ["bestand", "neu"])
+        self.assertNotIn("test_agent_created", result)
 
     def test_register_projects_keeps_an_existing_test_agent(self):
         project = self.vibe / "bestand"
@@ -562,10 +577,10 @@ class ProjectRegistrationTest(unittest.TestCase):
         agent.parent.mkdir(parents=True)
         agent.write_text("# eigener Test-Agent\n", encoding="utf-8")
 
-        result = setup.register_projects(self.vibe)
+        result = setup.register_projects(self.vibe, self.vibe / "_toolchain")
 
         self.assertEqual(agent.read_text(encoding="utf-8"), "# eigener Test-Agent\n")
-        self.assertEqual(result["test_agent_created"], [])
+        self.assertNotIn("test_agent_created", result)
 
 
 class TargetValidationTest(unittest.TestCase):

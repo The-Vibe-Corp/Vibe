@@ -25,6 +25,7 @@ import urllib.request
 from pathlib import Path
 from unittest import mock
 
+from tests.unit import env_support
 from tests.unit.web_page import served_page
 
 REPO = Path(__file__).resolve().parents[2]
@@ -396,6 +397,7 @@ class ProjectGuideAgentTest(unittest.TestCase):
         self.assertEqual(command[0], "opencode")
         self.assertNotIn("bwrap", command)
 
+    @env_support.skip_if_sandbox_nested
     def test_agent_command_is_wrapped_when_the_sandbox_is_on(self):
         self.assertIsNotNone(shutil.which("bwrap"), "bubblewrap (bwrap) fehlt")
         self.write_sandbox_env()
@@ -409,6 +411,7 @@ class ProjectGuideAgentTest(unittest.TestCase):
         self.assertIn("opencode", command[marker + 1:])
         self.assertEqual(command[marker - 3:marker], ["--bind", str(folder), str(folder)])
 
+    @env_support.skip_if_sandbox_nested
     def test_sandboxed_command_can_write_the_draft_but_not_the_configuration(self):
         self.assertIsNotNone(shutil.which("bwrap"), "bubblewrap (bwrap) fehlt")
         self.write_sandbox_env()
@@ -564,13 +567,19 @@ class GuideApiFixture(unittest.TestCase):
         cls.log_dir = cls.root / "_logs"
         cls.log_dir.mkdir()
         cls.port = free_port()
-        env = os.environ.copy()
-        env.update(
-            {
-                "VIBE": str(cls.root),
-                "VIBE_NO_CONTAINER": "1",
-                "VIBE_UI_PORT": str(cls.port),
-            }
+        # Instanzvariablen nicht erben: Der Testserver muss auf 127.0.0.1
+        # binden, und eine geerbte persönliche config.json darf Laufzeit/State
+        # nicht auf produktive Pfade legen (EROFS im Läufer).
+        env = env_support.isolated_environ(
+            VIBE=cls.root,
+            VIBE_NO_CONTAINER="1",
+            VIBE_UI_PORT=cls.port,
+            VIBE_RUNTIME=cls.log_dir,
+            VIBE_STATE=cls.root / "_toolchain",
+            HOME=cls.root / "home",
+            VIBE_CONFIG_FILE=(
+                cls.root / "home" / ".config" / "vibe" / "config.json"
+            ),
         )
         cls.proc = subprocess.Popen(
             [sys.executable, str(WEB)],

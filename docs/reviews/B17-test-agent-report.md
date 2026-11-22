@@ -73,14 +73,14 @@ Für die Abgrenzung „pre-existing vs. B17" wurden Kopien der HEAD-Fassungen vo
 `test_setup_vibe.py` und `test_install_lifecycle.py` ausgeführt. Damit trat der
 in B17 beschriebene Vorfall erneut auf: Die echte Konfiguration
 `~/.config/vibe/config.json` und die echte Installation
-`/home/vibe/vibe-toolchain` wurden aktualisiert (u. a. `harness.json` auf `pi`).
+`/home/nutzer/vibe-toolchain` wurden aktualisiert (u. a. `harness.json` auf `pi`).
 Das bestätigt die Notwendigkeit von B17 unmittelbar.
 
 Der Zustand wurde vollständig zurückgesetzt:
 
 - `~/.config/vibe/config.json` aus der ersten Sicherung des Laufs
-  wiederhergestellt (MD5 `42f9a48e20…`, `prod.workspace=/home/vibe/VibeCode`).
-- `/home/vibe/vibe-toolchain/harness.json` auf den Standard `opencode` gesetzt.
+  wiederhergestellt (MD5 `42f9a48e20…`, `prod.workspace=/home/nutzer/VibeCode`).
+- `/home/nutzer/vibe-toolchain/harness.json` auf den Standard `opencode` gesetzt.
 - Die vier vom Testlauf erzeugten `backup-20261119-1047*`-Ordner entfernt.
 - Programmdateien und `version.json` waren inhaltlich unverändert; geprüft per
   Vergleich gegen die erste Sicherung.
@@ -208,7 +208,7 @@ Diese Baustelle ist nicht B17 und wurde bewusst nicht umgebaut.
 ## 5. Rotphase (vor der Implementierung)
 
 Alle Läufe mit dem `env -u`-Präfix aus Abschnitt 3, Arbeitsverzeichnis
-`/home/vibe/vibe-logs/worktrees/vibe-B17-m3QD8S`.
+`/home/nutzer/vibe-logs/worktrees/vibe-B17-m3QD8S`.
 
 ### 5.1 AK1/AK2/AK3/AK5 — `test_b17_isolation.py`
 
@@ -312,7 +312,7 @@ Testdateien und dieser Bericht); die Produktionsdateien sind die Fassungen von
 der ursprüngliche Lauf gegen `d3bed1a`; für die 24 neuen Fälle sind die
 Ergebnisse und Ursachen identisch.
 
-Arbeitsverzeichnis war `/home/vibe/vibe-logs/worktrees/vibe-B17-m3QD8S`,
+Arbeitsverzeichnis war `/home/nutzer/vibe-logs/worktrees/vibe-B17-m3QD8S`,
 ausgeführt mit Python 3.14.3. Jeder Lauf verwendete exakt dieses Präfix:
 
 ```bash

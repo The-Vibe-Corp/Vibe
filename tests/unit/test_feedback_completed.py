@@ -20,6 +20,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+from tests.unit import env_support
 from tests.unit.web_page import served_page
 
 REPO = Path(__file__).resolve().parents[2]
@@ -28,27 +29,27 @@ WEB = REPO / "bin" / "vibe-web.py"
 
 
 def load_cli(vibe_root):
-    """Lädt bin/vibe als Modul, ohne main() auszuführen, mit isoliertem VIBE."""
-    old_vibe = os.environ.get("VIBE")
-    old_container = os.environ.get("VIBE_NO_CONTAINER")
-    os.environ["VIBE"] = str(vibe_root)
-    os.environ["VIBE_NO_CONTAINER"] = "1"
-    try:
+    """Lädt bin/vibe als Modul, ohne main() auszuführen, isoliert.
+
+    ``HOME`` und die Pfadquellen werden mitgesetzt, damit keine geerbte
+    persönliche Konfiguration produktive Laufzeit-/Zustandsorte vorgibt.
+    """
+    with env_support.isolated_process_environment(
+        VIBE=vibe_root,
+        VIBE_NO_CONTAINER="1",
+        HOME=Path(vibe_root) / "home",
+        VIBE_RUNTIME=Path(vibe_root) / "_logs",
+        VIBE_STATE=Path(vibe_root) / "_toolchain",
+        VIBE_CONFIG_FILE=(
+            Path(vibe_root) / "home" / ".config" / "vibe" / "config.json"
+        ),
+    ):
         loader = importlib.machinery.SourceFileLoader(
             "vibe_feedback_completed_under_test", str(CLI)
         )
         spec = importlib.util.spec_from_loader(loader.name, loader)
         module = importlib.util.module_from_spec(spec)
         loader.exec_module(module)
-    finally:
-        if old_vibe is None:
-            os.environ.pop("VIBE", None)
-        else:
-            os.environ["VIBE"] = old_vibe
-        if old_container is None:
-            os.environ.pop("VIBE_NO_CONTAINER", None)
-        else:
-            os.environ["VIBE_NO_CONTAINER"] = old_container
     return module
 
 
@@ -186,13 +187,16 @@ class FeedbackCompletedApiFixture(unittest.TestCase):
         log_dir.mkdir()
         (log_dir / "proj.log").write_text("Startzeile\n", encoding="utf-8")
         cls.port = free_port()
-        env = os.environ.copy()
-        env.update(
-            {
-                "VIBE": str(cls.root),
-                "VIBE_NO_CONTAINER": "1",
-                "VIBE_UI_PORT": str(cls.port),
-            }
+        env = env_support.isolated_environ(
+            VIBE=cls.root,
+            VIBE_NO_CONTAINER="1",
+            VIBE_UI_PORT=cls.port,
+            VIBE_RUNTIME=cls.root / "_logs",
+            VIBE_STATE=cls.root / "_toolchain",
+            HOME=cls.root / "home",
+            VIBE_CONFIG_FILE=(
+                cls.root / "home" / ".config" / "vibe" / "config.json"
+            ),
         )
         cls.proc = subprocess.Popen(
             [sys.executable, str(WEB)],

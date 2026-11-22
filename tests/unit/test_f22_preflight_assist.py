@@ -509,10 +509,6 @@ class VibeRunLaunchTest(unittest.TestCase):
             ppath=lambda name: str(self.project),
             is_init=lambda name: True,
             ensure_general_rules=lambda project: False,
-            ensure_test_agent=lambda project: {
-                "agent": False,
-                "config": False,
-            },
             sandbox_status=lambda name: {"enabled": False},
             pause_after_active=lambda name: False,
             penv=lambda name: {"AGENT": "tester"},

@@ -32,6 +32,8 @@ from unittest import mock
 from pathlib import Path
 from urllib.parse import quote
 
+from tests.unit import env_support
+
 REPO = Path(__file__).resolve().parents[2]
 CLI = REPO / "bin" / "vibe"
 WEB = REPO / "bin" / "vibe-web.py"
@@ -114,7 +116,7 @@ class LifecycleFixture(unittest.TestCase):
         self.tmux_dir.mkdir()
         # tmux akzeptiert TMUX_TMPDIR nur ohne fremde Schreibrechte.
         self.tmux_dir.chmod(0o700)
-        self.env = os.environ.copy()
+        self.env = env_support.isolated_environ()
         for key in ("TMUX", "TMUX_PANE"):
             self.env.pop(key, None)
         self.env.update(

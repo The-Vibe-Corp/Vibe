@@ -3,7 +3,7 @@
 - **Arbeitspaket:** AP21 „Englische Sprache“ (`TICKETS.md`): komplette
   Übersetzung auf Englisch, i18n-Infrastruktur für weitere Sprachen,
   Sprachumschalter in den Einstellungen, Standard Englisch.
-- **Worktree (Soll):** `/home/vibe/vibe-logs/worktrees/vibe-AP21-u2YWyJ`
+- **Worktree (Soll):** `/home/nutzer/vibe-logs/worktrees/vibe-AP21-u2YWyJ`
 - **Branch:** `feature/m0p/ap21`, Basis `d227f19` (AP20-Stand)
 - **Rolle:** unabhängiger Test-Agent (TDD-Rotphase; keine Produktivänderung)
 - **Datum:** 2026-11-19
@@ -22,10 +22,10 @@ $ mount | grep ' /home '
 /dev/vda3 on /home type btrfs (ro,nosuid,nodev,relatime,seclabel,...)
 ```
 
-Beschreibbar sind nur einzelne Bind-Mounts (`/home/vibe/VibeCode/vibe`,
-`.git`, Caches, `/home/vibe/vibe-logs/questions`) sowie der Session-Temp-
+Beschreibbar sind nur einzelne Bind-Mounts (`/home/nutzer/VibeCode/vibe`,
+`.git`, Caches, `/home/nutzer/vibe-logs/questions`) sowie der Session-Temp-
 Bereich `/tmp/opencode/vibe-sandbox/vibe-949edb757a/tmp/opencode`.
-Der Integrationsstand `/home/vibe/VibeCode/vibe` wurde **nicht** verändert.
+Der Integrationsstand `/home/nutzer/VibeCode/vibe` wurde **nicht** verändert.
 
 **Konsequenz:** Die Testdateien und dieser Bericht liegen als
 übernahmefertige Kopien unter
@@ -294,7 +294,7 @@ Sobald der Worktree beschreibbar ist (Host/Koordinator), genügen:
 
 ```bash
 SRC=/tmp/opencode/vibe-sandbox/vibe-949edb757a/tmp/opencode/ap21-deliver
-DEST=/home/vibe/vibe-logs/worktrees/vibe-AP21-u2YWyJ
+DEST=/home/nutzer/vibe-logs/worktrees/vibe-AP21-u2YWyJ
 install -D -m 0644 "$SRC/tests/browser/test_ap21_i18n_ui.py" \
   "$DEST/tests/browser/test_ap21_i18n_ui.py"
 install -D -m 0644 "$SRC/tests/unit/test_ap21_i18n.py" \
@@ -379,7 +379,7 @@ Grundsätze:
 ### 12.4 Testisolation und Fixture-Korrekturen
 
 - `VIBE_RUNTIME` auf einen Temp-Ordner gesetzt, wo die persönliche
-  Konfiguration sonst `/home/vibe/vibe-logs` (im Sandbox-Lauf
+  Konfiguration sonst `/home/nutzer/vibe-logs` (im Sandbox-Lauf
   schreibgeschützt) gewählt hätte.
 - `VIBE_STATE` (und bei `test_rebuild_project_ui.py` zusätzlich
   `VIBE_INSTALL`) isoliert, damit `vibe.json` keine fremden
@@ -396,7 +396,7 @@ Grundsätze:
 
 ### 12.5 Reale Läufe (keine erfundenen Ergebnisse)
 
-Umgebung: `PLAYWRIGHT_BROWSERS_PATH=/home/vibe/.cache/ms-playwright`
+Umgebung: `PLAYWRIGHT_BROWSERS_PATH=/home/nutzer/.cache/ms-playwright`
 (nötig, weil `XDG_CACHE_HOME` im Sandbox-Lauf auf ein leeres Cache zeigt).
 
 Pflichtlauf 1 (fünf Altsuiten):
@@ -789,7 +789,7 @@ Toast+Rückfall bei POST-Fehler.
 ### 15.2 Redphase — tatsächlich ausgeführter Befehl
 
 ```
-$ PLAYWRIGHT_BROWSERS_PATH=/home/vibe/.cache/ms-playwright \
+$ PLAYWRIGHT_BROWSERS_PATH=/home/nutzer/.cache/ms-playwright \
     PYTHONDONTWRITEBYTECODE=1 python3 -m unittest \
     tests.unit.test_ap21_i18n.I18nMetaPriorityTest \
     tests.unit.test_ap21_i18n.UiConfigLanguageTest \

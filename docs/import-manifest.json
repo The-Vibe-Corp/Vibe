@@ -1292,6 +1292,19 @@
         "bin/web/i18n.js"
       ],
       "grund": "F33 (Nova-UI) abgeschlossen: WP2 Combobox/Agentenliste/Wizard/Editor (Combobox bin/web/nova-widgets.js überall, 5-Schritt-Wizard mit Rechte-Schritt und Einsatzart-Erklaerungen, primary nur ohne bestehenden Primaeragenten, Review einfach/formatiert mit stickyer Aktionsleiste, Abbruch-Inlinewarnung, Editor lazy Projektzuordnungen, dynamischer Rohtext-Umschalter mit Speichermodus-Hinweis, Backup ohne Versionswarnung, Kopieren mit Zielbestaetigung und Sprung, agent-back deterministisch zur Liste, animation-fill-mode backwards behebt den abgefangenen Combobox-Klick); WP3 Projektdetail (Uebersicht ohne Leitfaden-Link mit Autonom-Zeile und Pause-Pille im Held, Work mit Suche/Erledigte-Filter/Priorisierungsleiste (Drag/Pfeile/Reset/Badges)/Karten-Clamp/sichtbaren Bearbeiten-Loeschen-Knoepfen/bearbeitbarem Feedback/Kennungsvorschlag hoechsteNummer+1, Beschreibung-Tab ohne Notiz mit Status-Pillen und Antwort-Speichern ohne Voll-Neurender, Settings-Tab mit AGENTS.md-Sektion oben inkl. Backup/Restore und globalem readonly-Hinweis, Team-Modell-Combobox, GitHub-Branch-Erklaerungen, Auto-Merge-Schalter); WP4 Ausgabe (Fokus/Vergroessern statt Highlight mit Escape/Zweitklick-Ende, Steuerblock sticky unter der Statuszeile, Subagenten-Anweisung mit session, pre-wrap-Overflow); i18n-Zentralintegration (93 en-Uebersetzungen in den F33-Bloecken WP2-WP6, de-Dict unberuehrt nach Bestandskonvention). Bestandstests vertragsgemaess angeglichen (AP22 agents/project/settings, Shell-Race-Synchronisation, Playwright-Regex-Defekt, case-insensitive Label-Muster, flacher GET-/kanonischer Verwaltungsblock-Vertrag). Da Programmdaten geaendert wurden, sind Groesse und SHA-256 der fuenf betreffenden files-Eintraege aktualisiert und dadurch begruendet."
+    },
+    {
+      "arbeitspaket": "AP6-Korbat",
+      "dateien": [
+        "bin/vibe-run.sh",
+        "bin/vibe_packages.py",
+        "bin/vibe_sandbox.py",
+        "templates/web/.vibe/project.env",
+        "templates/docker/.vibe/project.env",
+        "docs/import-manifest.json"
+      ],
+      "datum": "2026-11-22",
+      "grund": "Test-Hygiene und Vorlagen-Fix (Audit AP10): VIBE_CLEAN_ENV entfernt zusaetzlich VIBE_UI_BIND, VIBE_UI_PORT und GITHUB_AUTO_MERGE (HOME bleibt bewusst fuer git/opencode, Home-Isolation in den Test-Harnesses); vibe_sandbox.py setzt VIBE_SANDBOX_ACTIVE=1 per --setenv in jeden Sandbox-Start, damit die Endpruefung verschachtelte bwrap-Laeufe erkennt; die Vorlagen web und docker fuehren wieder ihre dokumentierten Standardwerkzeuge (web: git node npm, docker: git docker) statt der Merge-Artefakte aus generic. Groesse und SHA-256 der geaenderten Manifest-Dateien aktualisiert. Nachtrag: merge_package verwirft vor dem ff-Merge nur die lokal geaenderten Dateien der Merge-Differenz HEAD..Branch (AGENTS.md eingeschlossen) und protokolliert den Verwurf; dirty Notizen, die der Branch nicht anfasst, bleiben unangetastet. Root-Cause F27: copy_work_notes ueberspringt eine uncommittet geaenderte AGENTS.md (weder Paketbranch noch Abschluss-Merge), command_copy_notes meldet das als HINWEIS."
     }
   ],
   "files": [
@@ -1311,9 +1324,9 @@
       "sha256": "be665705925c7fb099135d44762190df9fb322020bfbd12e83e1eed56c6b4150"
     },
     {
-      "bytes": 81878,
+      "bytes": 83185,
       "path": "bin/vibe-run.sh",
-      "sha256": "874853f89c0c46e7ab65b8286d59b97da4645ed4e9b31f5d51a7bf094e41190c"
+      "sha256": "37e5f3a6d693fe92919059e3b0b0049c65ab79712f533a0c645b4e3f2872afbd"
     },
     {
       "bytes": 124720,
@@ -1371,9 +1384,9 @@
       "sha256": "ac3b26da4208a087a09c67c389238c82802d7c1bd50b10d9bcd9492a07050462"
     },
     {
-      "bytes": 78181,
+      "bytes": 79220,
       "path": "bin/vibe_packages.py",
-      "sha256": "e0cffcd362e4e0f949d62d8501335efd80eaf18ecb4ee297799eacad20f2f56d"
+      "sha256": "77c5a9f989219f9dd05f117e6e3d7e4e182f27f767e28a5ca3575670f22df495"
     },
     {
       "bytes": 20789,
@@ -1391,9 +1404,9 @@
       "sha256": "7caaa7b0d518a161f5b6df436b64b425f01aacb02cf9bf9c951a5665dc439698"
     },
     {
-      "bytes": 36700,
+      "bytes": 37162,
       "path": "bin/vibe_sandbox.py",
-      "sha256": "139d0130ba41510f210f5cf28035535a9afe5e021961b83f9b474fbfc1a84bfe"
+      "sha256": "5d8d37b3ef92a446fca7679f6f51db2a811a6a0b129869e95338291075d15c5c"
     },
     {
       "bytes": 11226,
@@ -1536,9 +1549,9 @@
       "sha256": "c7b5f4e754661eabdf02ecf6a9c799e52c194126fa2df6dea2d725109d19e8b3"
     },
     {
-      "bytes": 353,
+      "bytes": 348,
       "path": "templates/docker/.vibe/project.env",
-      "sha256": "722919bbc27d3ec4bf3ccadaff4be18ff5cf6c9cb1e4666e6f080c467e48f1b7"
+      "sha256": "da366d196e69282f922723f0a0755f9cfe167d1dd210737668df0d8b76b71b8a"
     },
     {
       "bytes": 5093,
@@ -1626,9 +1639,9 @@
       "sha256": "d3ee44c1f74e2885b2e2700c57fc246269505ee272abe3fe3bcfec07db399b03"
     },
     {
-      "bytes": 354,
+      "bytes": 347,
       "path": "templates/web/.vibe/project.env",
-      "sha256": "54b4975a06030dc63f299d0a0e2ef8249857b08d62e3e35e61bacb2205c8e1c4"
+      "sha256": "84b60ea398f9969f924239023adf52eaa48410db66b3c7bcf9c6cc75fe624af4"
     },
     {
       "bytes": 5143,

@@ -765,7 +765,15 @@ def bwrap_argv(project, command, bwrap=None, runtime=None,
     pi_auth = os.path.expanduser("~/.pi/agent/auth.json")
     if os.path.isfile(pi_auth):
         argv += ["--ro-bind", pi_auth, os.path.join(pi_agent, "auth.json")]
+    # AP6 (T-BR2): Marker für jeden in der Sandbox gestarteten Prozess. Die
+    # Endprüfung erkennt damit eine verschachtelte Sandbox (bwrap kann in
+    # dieser Umgebung keine weitere Benutzernamensraum anlegen) und überspringt
+    # bwrap-abhängige Fälle mit Begründung. Nur innerhalb der Sandbox gesetzt;
+    # außerhalb bleibt die Variable unberührt, das Verhalten ändert sich nicht.
     argv += [
+        "--setenv",
+        "VIBE_SANDBOX_ACTIVE",
+        "1",
         "--setenv",
         "XDG_DATA_HOME",
         data_home,

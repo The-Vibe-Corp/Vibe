@@ -36,6 +36,8 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+from tests.unit import env_support
+
 REPO = Path(__file__).resolve().parents[2]
 CLI = REPO / "bin" / "vibe"
 WEB = REPO / "bin" / "vibe-web.py"
@@ -647,7 +649,9 @@ class CostsApiTest(CostFixture):
         con.commit()
         con.close()
         self.port = free_port()
-        env = os.environ.copy()
+        # Instanzvariablen der Läuferumgebung (u. a. VIBE_UI_BIND) nicht erben:
+        # der Testserver muss auf 127.0.0.1 binden.
+        env = env_support.isolated_environ()
         env.update({
             "VIBE": str(self.root),
             "VIBE_NO_CONTAINER": "1",

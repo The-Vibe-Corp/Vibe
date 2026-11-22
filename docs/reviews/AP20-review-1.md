@@ -48,7 +48,7 @@ geprüften Nachweise sind entsprechend gekennzeichnet.
   - Required fix: Je einen fokussierten Browser-Test für Sessionwechsel und Null-Subagenten-Zustand ergänzen.
 
 ## Verification
-- Change set reviewed: `20d1719..Arbeitskopie` im Worktree `/home/vibe/vibe-AP20-yBZNBt` (Branch `feature/m0p/ap20-2`), inklusive untracked `docs/features/AP20.md`, `docs/features/AP20-ausgabe.png`, `docs/reviews/AP20-test-agent-report.md`, `tests/browser/test_ap20_output_overview_ui.py`.
+- Change set reviewed: `20d1719..Arbeitskopie` im Worktree `/home/nutzer/vibe-AP20-yBZNBt` (Branch `feature/m0p/ap20-2`), inklusive untracked `docs/features/AP20.md`, `docs/features/AP20-ausgabe.png`, `docs/reviews/AP20-test-agent-report.md`, `tests/browser/test_ap20_output_overview_ui.py`.
 - Git commands run by me: `git status --short`, `git diff --stat 20d1719`, `git diff 20d1719 -- bin/web/app.js`, `git diff 20d1719 -- bin/web/styles.css`, `git diff 20d1719 -- docs/import-manifest.json docs/baseline.md`, `git diff --no-index /dev/null docs/features/AP20.md`, `git diff --check 20d1719`, `git log --oneline -5`, `git diff 20d1719 -- TICKETS.md` (alle erfolgreich; spätere Shell-Aufrufe wurden durch die Berechtigungsprüfung abgelehnt).
 - Checks with supplied output: Rotphase des Test-Agenten (7/8 Fehlschläge auf Basis, u. a. `scrollWidth=3400`, Karte rechts 1764) liegt als Ausgabe vor. Grünphase (8/8 AP20, 20/20 Regression) nur als Behauptung in Handoff/Feature-Doku, keine rohe Ausgabe.
 - Checks not independently run: Alle Build-, Test-, Hash- und Verifikationsläufe (`verify.sh quick`, pytest/Playwright, `sha256sum`); Ausführung ist durch die Read-only-Vorgabe bzw. verweigerte Shell-Berechtigung ausgeschlossen.

@@ -124,7 +124,7 @@ fehlerfrei — der Server ist also erreichbar.
 
 ### Bestands-Browsertest als Rotnachweis der Umstellung
 
-Befehl: `PLAYWRIGHT_BROWSERS_PATH=/home/vibe/.cache/ms-playwright python3 -m unittest tests.browser.test_tickets_ui -v`
+Befehl: `PLAYWRIGHT_BROWSERS_PATH=/home/nutzer/.cache/ms-playwright python3 -m unittest tests.browser.test_tickets_ui -v`
 
 ```
 Ran 3 tests in 91.417s
@@ -250,7 +250,7 @@ Befund, es musste nichts korrigiert werden.
 
 ### `tests/browser/test_ap22_project_ui.py`
 
-Befehl: `PLAYWRIGHT_BROWSERS_PATH=/home/vibe/.cache/ms-playwright python3 -m unittest tests.browser.test_ap22_project_ui -v`
+Befehl: `PLAYWRIGHT_BROWSERS_PATH=/home/nutzer/.cache/ms-playwright python3 -m unittest tests.browser.test_ap22_project_ui -v`
 
 ```
 Ran 9 tests in 199.699s
@@ -285,7 +285,7 @@ nach erfolgreicher Prüfung von Sichtbarkeit und Projekttitel.
 
 ### `tests/browser/test_ap22_work_ui.py`
 
-Befehl: `PLAYWRIGHT_BROWSERS_PATH=/home/vibe/.cache/ms-playwright python3 -m unittest tests.browser.test_ap22_work_ui -v`
+Befehl: `PLAYWRIGHT_BROWSERS_PATH=/home/nutzer/.cache/ms-playwright python3 -m unittest tests.browser.test_ap22_work_ui -v`
 
 ```
 Ran 8 tests in 200.500s
@@ -316,7 +316,7 @@ Feedback-Liste, Formulare oder Priorisierung. Die Fehler treten erst nach
 
 ### `tests/browser/test_ap22_output_ui.py`
 
-Befehl: `PLAYWRIGHT_BROWSERS_PATH=/home/vibe/.cache/ms-playwright python3 -m unittest tests.browser.test_ap22_output_ui -v`
+Befehl: `PLAYWRIGHT_BROWSERS_PATH=/home/nutzer/.cache/ms-playwright python3 -m unittest tests.browser.test_ap22_output_ui -v`
 
 ```
 Ran 6 tests in 132.844s
@@ -347,7 +347,7 @@ angelegt (sonst wäre `setUp`/`seed_live` gescheitert, nicht der Hook).
 
 ### `tests/browser/test_ap22_activity_ui.py`
 
-Befehl: `PLAYWRIGHT_BROWSERS_PATH=/home/vibe/.cache/ms-playwright python3 -m unittest tests.browser.test_ap22_activity_ui -v`
+Befehl: `PLAYWRIGHT_BROWSERS_PATH=/home/nutzer/.cache/ms-playwright python3 -m unittest tests.browser.test_ap22_activity_ui -v`
 
 ```
 Ran 8 tests in 147.050s
