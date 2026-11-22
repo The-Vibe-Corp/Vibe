@@ -1520,9 +1520,9 @@
       "sha256": "0c828555fc1f5d4d5f686defb0ab82fe3056c8bc923f67afe8238e5b464d91fc"
     },
     {
-      "bytes": 58929,
+      "bytes": 60416,
       "path": "bin/web/nova-settings.js",
-      "sha256": "e37f2fea39bb8f6b35a6837cd6660af6426f07dc9be7407f9218b120d5716e7c"
+      "sha256": "d03f7f704ed957089f502fa91dffb986188e47e80274b5f41c99168a81c4ee6a"
     },
     {
       "bytes": 9145,

@@ -1,60 +1,64 @@
-/* AP22 — Einstellungen: Erscheinung, Sprache, Zugriff, Feature-Schalter und
-   alle erweiterten Bereiche (Modelle, Profile, MCP, Kosten, Harness, Limits,
-   Schranken, Umgebung, Läufe). Jeder Bereich wird nur bei eingeschaltetem
-   Feature gerendert. Fachfehler erscheinen in [data-nv-form-error] und als
-   Toast; Backend-Antworten werden nie roh als HTML eingebaut. */
+/* F34 WP4 — Einstellungen: lokale Navigation, globale AGENTS.md, Darstellung,
+   Zugriff, Funktionen, Limits, Schranken, Modelle, Profile, MCP und Harness.
+   Die Ansicht baut ihr Gerüst sofort und füllt die Bereiche nach ihren
+   Datenabrufen. Lokale Aktionen zeichnen nur ihre eigene Karte neu und zeigen
+   einen Toast; NV.render() wird dafür nicht aufgerufen. DOM nur mit el() und
+   Textknoten, Zustände über [hidden]/[open], Hooks durchgehend data-nv-*. */
 'use strict';
 
-var NV_FEATURES = [
-  'github', 'models', 'profiles', 'mcp', 'costs', 'harness', 'limits',
-  'gates', 'env', 'sandbox', 'writeaccess', 'agentsfile', 'priority', 'runs'
+var NV_SETTINGS_SECTIONS = [
+  ['global-agents', 'Globale AGENTS.md'],
+  ['appearance', 'Darstellung'],
+  ['access', 'Zugriffssicherheit'],
+  ['features', 'Funktionen'],
+  ['limits', 'Laufverhalten'],
+  ['gates', 'Schranken'],
+  ['models', 'Modelle'],
+  ['profiles', 'Profile'],
+  ['mcp', 'MCP-Server'],
+  ['harness', 'Harness']
 ];
 
-/* Drei verständliche Gruppen statt 14 ungeordneter Zeilen. Die Reihenfolge
-   ist bewusst nach Nutzerinteresse, nicht nach Interna gewählt. */
-var NV_FEATURE_GROUPS = [
+/* Akzent-Raster: id, sichtbare Farbe und deutscher Quellschlüssel. */
+var NV_SETTINGS_ACCENTS = [
+  {id: 'blue', color: '#2457c5', name: 'Blau'},
+  {id: 'teal', color: '#0f766e', name: 'Türkis'},
+  {id: 'cyan', color: '#0e7490', name: 'Cyan'},
+  {id: 'green', color: '#15803d', name: 'Grün'},
+  {id: 'lime', color: '#4d7c0f', name: 'Limette'},
+  {id: 'yellow', color: '#854d0e', name: 'Gelb'},
+  {id: 'amber', color: '#b45309', name: 'Bernstein'},
+  {id: 'orange', color: '#c2410c', name: 'Orange'},
+  {id: 'red', color: '#b4232c', name: 'Rot'},
+  {id: 'pink', color: '#be185d', name: 'Pink'},
+  {id: 'violet', color: '#6d28d9', name: 'Violett'},
+  {id: 'indigo', color: '#4338ca', name: 'Indigo'}
+];
+
+/* Die Bereiche Kosten, Läufe, Umgebung, Prüfungen, Fritzbox, Emulator und
+   opencode-Server sind aus den Einstellungen entfernt (F34 WP3/WP7). */
+var NV_SETTINGS_FEATURE_GROUPS = [
   {title: 'Git & Code', ids: ['github', 'agentsfile', 'writeaccess']},
-  {title: 'Modelle & Agenten-Extras', ids: ['models', 'profiles', 'mcp', 'costs', 'harness']},
-  {title: 'Infrastruktur & Diagnose', ids: ['limits', 'gates', 'env', 'sandbox', 'priority', 'runs']}
+  {title: 'Modelle & Agenten-Extras', ids: ['models', 'profiles', 'mcp', 'harness']},
+  {title: 'Laufverhalten', ids: ['limits', 'gates', 'sandbox', 'priority']}
 ];
 
-/* Ein kurzer, laienverständlicher Hilfesatz je Schalter (deutsche
-   Quellschlüssel, en/de im Wörterbuch). */
-var NV_FEATURE_HELP = {
+var NV_SETTINGS_FEATURE_HELP = {
   github: 'GitHub verbinden und Projekte von dort auschecken.',
   agentsfile: 'Die AGENTS.md eines Projekts bearbeiten.',
   writeaccess: 'Schreibrechte für jedes Projekt festlegen.',
   models: 'Modellkatalog und Modellauswahl anzeigen.',
   profiles: 'Gespeicherte Profile ansehen und übernehmen.',
   mcp: 'Zusätzliche MCP-Werkzeuge verwalten.',
-  costs: 'Kostenübersicht und Preise anzeigen.',
   harness: 'Harness-Status und Auswahl anzeigen.',
   limits: 'Grenzen für Agentenläufe festlegen.',
   gates: 'Qualitäts-Schranken global und je Projekt setzen.',
-  env: 'Umgebung prüfen und Dienste wie Emulator oder Server steuern.',
   sandbox: 'Sandbox-Optionen für Projekte anzeigen.',
-  priority: 'Arbeitspakete nach Wichtigkeit sortieren.',
-  runs: 'Run-Register ansehen und bereinigen.'
+  priority: 'Arbeitspakete nach Wichtigkeit sortieren.'
 };
 
-/* Akzentfarben (Vertrag WP5.9): Maschinenwerte; die deutschen Anzeigenamen
-   sind die Vertrags-Texte für die Auswahl. NV.setAccent (WP1, parallel)
-   hält Select und html[data-accent] synchron; der Aufruf hier ist defensiv. */
-var NV_ACCENT_IDS = [
-  'blue', 'teal', 'cyan', 'green', 'lime', 'yellow',
-  'amber', 'orange', 'red', 'pink', 'violet', 'indigo'
-];
-var NV_ACCENT_NAMES = {
-  blue: 'Blau', teal: 'Türkis', cyan: 'Cyan', green: 'Grün', lime: 'Limette',
-  yellow: 'Gelb', amber: 'Bernstein', orange: 'Orange', red: 'Rot',
-  pink: 'Pink', violet: 'Violett', indigo: 'Indigo'
-};
-
-/* German short expertise per gate (Vertrag WP5.5 — deutsche Quellschlüssel,
-   en/de im Wörterbuch). Jede Schranke, die in /api/gates liegt, wird je
-   Zeile eine nichtleere small[nv-gate-help] geliefert — aufgrund dieser
-   Texte; ein falscher Schlüssel fällt auf einen Standard-Backup-Text. */
-var NV_GATE_HELP = {
+/* Deutsche Kurzerklärung je Schranke; fällt auf einen allgemeinen Text zurück. */
+var NV_SETTINGS_GATE_HELP = {
   repair_rounds: 'Wie oft ein Arbeitspaket nach Fehlern wiederholt wird, bevor es als beendet gilt.',
   assist_rounds: 'Nach wie vielen nachfolgenden Schritten ein menschlicher Eingriff wiederholt wird.',
   retries: 'Wie oft eine fehlgeschlagene Aktion automatisch wiederholt wird.',
@@ -73,45 +77,188 @@ function settingsError(box, message) {
   else box.setAttribute('hidden', '');
 }
 
+function nvText(value) { return String(value == null ? '' : value); }
+function nvBackend(value) { return String(bt(value)); }
+
+/* ------------------------------------------------------------------------- */
+/* Ansicht                                                                    */
+/* ------------------------------------------------------------------------- */
+
 NV.views.settings = async function settings(context, token) {
-  var engine = i18n();
-  var security = {port: '', bind: '', allowlist: [], password_set: false, restart_required: false};
-  try { security = await api('/api/security') || security; } catch (error) { /* Ansicht bleibt lesbar */ }
+  var main = document.getElementById('nv-main');
+  var sections = {};
+  var links = {};
+
+  function markSection(id) {
+    Object.keys(links).forEach(function (key) {
+      if (key === id) links[key].setAttribute('aria-current', 'true');
+      else links[key].removeAttribute('aria-current');
+    });
+  }
+
+  var nav = el('nav', {class: 'nv-settings-nav', 'data-nv-settings-nav': '',
+    'aria-label': tr('Einstellungsbereiche'),
+    style: 'flex: 0 0 12rem; max-width: 12rem; overflow-x: auto; flex-wrap: nowrap;'});
+  var content = el('div', {class: 'nv-settings-content'});
+  NV_SETTINGS_SECTIONS.forEach(function (entry) {
+    var id = entry[0];
+    var link = el('button', {class: 'nv-btn nv-ghost', type: 'button',
+      'data-nv-ssection-link': id,
+      on: {click: function () {
+        markSection(id);
+        if (sections[id] && sections[id].scrollIntoView) {
+          sections[id].scrollIntoView({behavior: 'smooth', block: 'start'});
+        }
+      }}}, tr(entry[1]));
+    links[id] = link;
+    nav.append(link);
+    var section = el('section', {class: 'nv-card', 'data-nv-ssection': id},
+      el('h2', {}, tr(entry[1])));
+    sections[id] = section;
+    content.append(section);
+  });
+  markSection(NV_SETTINGS_SECTIONS[0][0]);
+
+  main.replaceChildren(el('h2', {class: 'nv-page-title'}, tr('Einstellungen')),
+    el('div', {class: 'nv-settings-layout'}, nav, content),
+    el('p', {}, el('a', {class: 'nv-link', 'data-nv-classic-link': '', href: '/classic'},
+      tr('Klassische Oberfläche öffnen'))));
+
+  /* Reihenfolge der Füllung entspricht der Reihenfolge der Sektionen; die
+     Grundkarten stehen bereits im DOM, damit die Navigation stabil bleibt. */
+  await fillGlobalAgents(sections['global-agents'], token);
+  if (NV.stale(token)) return;
+  await fillAppearance(sections.appearance, token);
+  if (NV.stale(token)) return;
+  fillAccess(sections.access, token);
+  fillFeatures(sections.features);
+  if (NV.feature('limits')) await fillLimits(sections.limits, token);
+  if (NV.stale(token)) return;
+  if (NV.feature('gates')) await fillGates(sections.gates, token);
   if (NV.stale(token)) return;
 
-  var main = document.getElementById('nv-main');
-  var cards = [];
+  var agentsData = {};
+  try { agentsData = await api('/api/agents') || {}; }
+  catch (error) { agentsData = {}; }
+  if (NV.stale(token)) return;
+  if (NV.feature('models')) fillModels(sections.models, agentsData, token);
+  if (NV.feature('profiles')) fillProfiles(sections.profiles, agentsData, token);
+  if (NV.feature('mcp')) await fillMcp(sections.mcp, token);
+  if (NV.stale(token)) return;
+  await fillHarness(sections.harness, token);
+  if (NV.stale(token)) return;
 
-  /* ---------- Erscheinung ---------- */
+  NV.refreshBell();
+};
+
+/* ------------------------------------------------------------------------- */
+/* 1. Globale AGENTS.md                                                       */
+/* ------------------------------------------------------------------------- */
+
+async function fillGlobalAgents(section, token) {
+  var view;
+  try { view = await api('/api/global_agents_file') || {}; }
+  catch (error) { view = {exists: false, digest: '', text: ''}; }
+  if (NV.stale(token)) return;
+
+  var digest = String(view && view.digest || '');
+  var hint = el('small', {class: 'nv-note', 'data-nv-global-agents-hint': ''},
+    tr('Diese Regeln gelten für alle Projekte; projektbezogene AGENTS.md ergänzen sie.'));
+  var error = settingsErrorBox();
+  var editor = el('div', {'data-nv-global-agents-editor': ''});
+  var createRow = el('div', {class: 'nv-row'});
+  var details = el('details', {class: 'nv-card', 'data-nv-global-agents': '', open: ''},
+    el('summary', {}, tr('Regeln für alle Projekte bearbeiten')), hint, editor, createRow, error);
+  section.append(details);
+
+  function showEditor(text) {
+    var textarea = el('textarea', {'data-nv-global-agents': '', rows: '18'},
+      nvText(text));
+    var save = el('button', {class: 'nv-btn nv-primary', type: 'button',
+      'data-nv-action': 'global-agents-save', on: {click: async function () {
+        settingsError(error, '');
+        try {
+          var answer = await api('/api/global_agents_file', {action: 'save',
+            text: String(textarea.value || ''), digest: digest});
+          if (answer && answer.ok) {
+            digest = String(answer.digest || digest);
+            toast(nvBackend(answer.message) || tr('Globale AGENTS.md gespeichert'));
+          } else settingsError(error, nvBackend(answer && answer.message)
+            || tr('Aktion fehlgeschlagen'));
+        } catch (failure) {
+          settingsError(error, String(failure && failure.message || failure));
+        }
+      }}}, tr('Speichern'));
+    editor.replaceChildren(textarea, el('div', {class: 'nv-row'}, save));
+    createRow.hidden = true;
+    editor.hidden = false;
+  }
+
+  if (view.exists) {
+    showEditor(view.text || '');
+  } else {
+    editor.hidden = true;
+    var create = el('button', {class: 'nv-btn nv-primary', type: 'button',
+      'data-nv-action': 'global-agents-create', on: {click: async function () {
+        settingsError(error, '');
+        try {
+          var answer = await api('/api/global_agents_file', {action: 'create'});
+          if (answer && answer.ok === false) {
+            settingsError(error, nvBackend(answer.message) || tr('Aktion fehlgeschlagen'));
+            return;
+          }
+          var fresh = await api('/api/global_agents_file') || {};
+          if (NV.stale(token)) return;
+          digest = String(fresh.digest || '');
+          showEditor(fresh.text || '');
+          toast(nvBackend(answer && answer.message) || tr('Vorlage angelegt'));
+        } catch (failure) {
+          settingsError(error, String(failure && failure.message || failure));
+        }
+      }}}, tr('Vorlage anlegen'));
+    createRow.append(el('p', {class: 'nv-muted'},
+      tr('Die globale AGENTS.md fehlt noch. Mit der Vorlage legst du Regeln für alle Projekte an.')), create);
+  }
+}
+
+/* ------------------------------------------------------------------------- */
+/* 2. Darstellung: Akzent, Darstellung, Sprache, Währung                      */
+/* ------------------------------------------------------------------------- */
+
+async function fillAppearance(section, token) {
   var themeSelect = el('select', {'data-nv-theme-select': '', 'aria-label': tr('Darstellung')});
   [['light', 'Hell'], ['dark', 'Dunkel'], ['auto', 'System']].forEach(function (option) {
     themeSelect.append(el('option', {value: option[0]}, tr(option[1])));
   });
-  // Der Select zeigt die Präferenz, NV.setTheme hält ihn bei Header-Wechsel
-  // aktuell; data-theme bleibt der aufgelöste Wert.
   themeSelect.value = NV.themePreference();
   themeSelect.addEventListener('change', function () { NV.setTheme(themeSelect.value); });
+  section.append(el('label', {}, tr('Darstellung')), themeSelect);
 
-  /* Akzent (Vertrag WP5.9): 12 angestrebte Farben mit deutschen Anzeigenamen.
-     Die Auswahl ruft NV.setAccent; WP1 ergänzt die Funktion, die Auswahl wirkt
-     dann dort — der Aufruf ist defensive: ohne NV.setAccent arbeitet wir nur
-     auf html[data-accent]/localStorage. */
-  var accentSelect = el('select', {'data-nv-accent-select': ''});
-  NV_ACCENT_IDS.forEach(function (id) {
-    accentSelect.append(el('option', {value: id}, tr(NV_ACCENT_NAMES[id])));
+  var accentGrid = el('div', {class: 'nv-grid', 'data-nv-accents': ''});
+  var accentButtons = [];
+  var active = NV.accent();
+  NV_SETTINGS_ACCENTS.forEach(function (accent) {
+    var swatch = el('span', {class: 'nv-swatch', 'aria-hidden': 'true',
+      style: 'display:inline-block;width:1.4rem;height:1.4rem;border-radius:0.35rem;'
+        + 'background-color:' + accent.color + ';'});
+    var button = el('button', {class: 'nv-btn', type: 'button',
+      'data-nv-accent': accent.id,
+      'aria-pressed': String(accent.id === active),
+      'aria-label': tr(accent.name),
+      on: {click: function () {
+        NV.setAccent(accent.id);
+        accentButtons.forEach(function (other) {
+          other.setAttribute('aria-pressed',
+            String(other.getAttribute('data-nv-accent') === accent.id));
+        });
+      }}}, swatch, el('span', {}, tr(accent.name)));
+    accentButtons.push(button);
+    accentGrid.append(button);
   });
-  accentSelect.value = localStorage.getItem('nv-accent') || 'blue';
-  accentSelect.addEventListener('change', function () {
-    if (NV.setAccent) NV.setAccent(accentSelect.value);
-  });
+  section.append(el('h3', {}, tr('Akzent')), accentGrid);
 
-  cards.push(el('section', {class: 'nv-card', 'data-nv-ssection': 'appearance'},
-    el('h2', {}, tr('Erscheinung')),
-    el('label', {}, tr('Darstellung')), themeSelect,
-    el('label', {}, tr('Akzent')), accentSelect));
-
-  /* ---------- Sprache (global, serverseitig wie im Bestand) ---------- */
-  var langSelect = el('select', {'aria-label': 'Language'});
+  var engine = i18n();
+  var langSelect = el('select', {'data-nv-language-select': '', 'aria-label': tr('Sprache')});
   [['en', 'English'], ['de', 'Deutsch']].forEach(function (option) {
     langSelect.append(el('option', {value: option[0]}, option[1]));
   });
@@ -122,91 +269,85 @@ NV.views.settings = async function settings(context, token) {
     if (next === previous) return;
     langSelect.disabled = true;
     try {
-      // Erst speichern, dann lokal umschalten: der Reload danach liest die
-      // Sprache aus dem Meta-Feld und darf nicht auf den alten Stand fallen.
       var result = await api('/api/language', {language: next});
       if (!result.ok) throw new Error(errText(result, 400));
       engine.set(next);
       toast(bt(result.message) || tr('Sprache gespeichert'));
     } catch (error) {
       langSelect.value = previous;
-      toast(tr('Sprache konnte nicht gespeichert werden: ') + String(error && error.message || error));
-    } finally {
-      langSelect.disabled = false;
-    }
+      toast(tr('Sprache konnte nicht gespeichert werden: ')
+        + String(error && error.message || error));
+    } finally { langSelect.disabled = false; }
   });
-  cards.push(el('section', {class: 'nv-card', 'data-nv-ssection': 'language'},
-    el('h2', {}, tr('Sprache')),
-    el('p', {class: 'nv-muted'}, tr('ui.language.hint')), langSelect));
+  section.append(el('h3', {}, tr('Sprache')),
+    el('p', {class: 'nv-muted'}, tr('ui.language.hint')), langSelect);
 
-  /* ---------- Zugriff: Anmeldung prominent, Netzwerk untergeordnet ---------- */
+  var currency = {currency: 'EUR', usd_rate: 1.0};
+  try { currency = await api('/api/ui_settings') || currency; }
+  catch (error) { /* Anzeige bleibt mit Voreinstellung bedienbar */ }
+  if (NV.stale(token)) return;
+
+  var currencySelect = el('select', {'data-nv-currency': '', 'aria-label': tr('Währung')});
+  [['EUR', 'EUR'], ['USD', 'USD']].forEach(function (option) {
+    currencySelect.append(el('option', {value: option[0]}, option[1]));
+  });
+  currencySelect.value = currency.currency === 'USD' ? 'USD' : 'EUR';
+  var rateInput = el('input', {type: 'number', min: '0.01', max: '100', step: '0.01',
+    'data-nv-usd-rate': '', value: String(Number(currency.usd_rate) || 1),
+    'aria-label': tr('USD je 1 EUR')});
+  var rateRow = el('label', {}, tr('USD je 1 EUR'), rateInput);
+  rateRow.hidden = currencySelect.value !== 'USD';
+  currencySelect.addEventListener('change', function () {
+    rateRow.hidden = currencySelect.value !== 'USD';
+  });
+  var error = settingsErrorBox();
+  var save = el('button', {class: 'nv-btn nv-primary', type: 'button',
+    'data-nv-action': 'ui-settings-save', on: {click: async function () {
+      settingsError(error, '');
+      var rate = Number(String(rateInput.value || '').replace(',', '.'));
+      if (currencySelect.value === 'USD'
+          && (!isFinite(rate) || rate < 0.01 || rate > 100)) {
+        settingsError(error, tr('Bitte einen gültigen Umrechnungskurs eingeben.'));
+        return;
+      }
+      try {
+        var answer = await api('/api/ui_settings', {currency: currencySelect.value,
+          usd_rate: currencySelect.value === 'USD' ? rate : 1.0});
+        toast(nvBackend(answer && answer.message) || tr('Währung gespeichert'));
+      } catch (failure) {
+        settingsError(error, String(failure && failure.message || failure));
+      }
+    }}}, tr('Speichern'));
+  section.append(el('h3', {}, tr('Währung')),
+    el('p', {class: 'nv-muted'},
+      tr('Preise bleiben in Euro je 1 Mio. Tokens gespeichert und werden nur für die Anzeige umgerechnet.')),
+    currencySelect, rateRow, el('div', {class: 'nv-row'}, save), error);
+}
+
+/* ------------------------------------------------------------------------- */
+/* 3. Zugriff (bestehend)                                                     */
+/* ------------------------------------------------------------------------- */
+
+function fillAccess(section, token) {
+  var security = {port: '', bind: '', allowlist: [], password_set: false};
+  api('/api/security').then(function (answer) {
+    if (answer && !NV.stale(token)) {
+      security = answer;
+      portInput.placeholder = String(security.port || '');
+      bindInput.placeholder = String(security.bind || '');
+      allowInput.placeholder = (security.allowlist || []).join(', ');
+    }
+  }).catch(function () { /* Ansicht bleibt lesbar */ });
+
   var password = el('input', {type: 'password', 'data-nv-field': 'password',
     placeholder: tr('neues Passwort (mind. 8 Zeichen)'), 'aria-label': tr('Neues Passwort')});
   var repeat = el('input', {type: 'password', 'data-nv-field': 'password-repeat',
     placeholder: tr('Passwort wiederholen'), 'aria-label': tr('Passwort wiederholen')});
   var portInput = el('input', {inputmode: 'numeric', 'data-nv-field': 'port',
-    placeholder: String(security.port || ''), 'aria-label': tr('Port')});
-  var bindInput = el('input', {'data-nv-field': 'bind',
-    placeholder: String(security.bind || ''), 'aria-label': tr('Bind-Adresse')});
-  var allowInput = el('input', {'data-nv-field': 'allowlist',
-    placeholder: (security.allowlist || []).join(', '), 'aria-label': tr('IP-Allowlist')});
-  var accessError = settingsErrorBox();
-  var note = el('p', {class: 'nv-note', 'data-nv-restart-note': ''},
-    tr('Änderungen an Port, Bind-Adresse und Allowlist werden in ui.json gespeichert und wirken erst nach einem Neustart des Dashboards.'));
-  var passwordSet = el('button', {class: 'nv-btn nv-primary', type: 'button',
-    'data-nv-action': 'password-set', on: {click: async function () {
-      settingsError(accessError, '');
-      if (String(password.value || '') !== String(repeat.value || '')) {
-        settingsError(accessError, tr('Passwörter stimmen nicht überein'));
-        return;
-      }
-      try {
-        var result = await api('/api/security', {action: 'password', password: password.value});
-        if (result.ok) {
-          password.value = ''; repeat.value = '';
-          toast(bt(result.message) || tr('Kennwort gesetzt'));
-        } else settingsError(accessError, bt(result.message));
-      } catch (error) { settingsError(accessError, String(error && error.message || error)); }
-    }}}, tr('Passwort setzen'));
-  var passwordClear = el('button', {class: 'nv-btn', type: 'button',
-    'data-nv-action': 'password-clear', on: {click: async function () {
-      try {
-        var result = await api('/api/security', {action: 'password', clear: true});
-        toast(bt(result.message) || tr('Kennwort entfernt'));
-      } catch (error) { settingsError(accessError, String(error && error.message || error)); }
-    }}}, tr('Passwort entfernen'));
-  var securitySave = el('button', {class: 'nv-btn nv-secondary', type: 'button',
-    'data-nv-action': 'security-save', on: {click: async function () {
-      settingsError(accessError, '');
-      var update = {action: 'save'};
-      var rawPort = String(portInput.value || '').trim();
-      if (rawPort) {
-        if (!/^\d+$/.test(rawPort)) {
-          settingsError(accessError, tr('Bitte eine gültige Portnummer eingeben.'));
-          return;
-        }
-        update.port = Number(rawPort);
-      }
-      if (String(bindInput.value || '').trim()) update.bind = String(bindInput.value).trim();
-      if (String(allowInput.value || '').trim()) {
-        update.allowlist = String(allowInput.value).split(/[\s,]+/).filter(Boolean);
-      }
-      try {
-        var result = await api('/api/security', update);
-        if (result.ok) {
-          portInput.value = ''; bindInput.value = ''; allowInput.value = '';
-          toast(bt(result.message) || tr('Zugriffssicherheit gespeichert'));
-        } else settingsError(accessError, bt(result.message));
-      } catch (error) { settingsError(accessError, String(error && error.message || error)); }
-    }}}, tr('Speichern'));
-  var logout = el('button', {class: 'nv-btn', type: 'button',
-    'data-nv-action': 'logout', on: {click: function () { NV.logout(); }}}, tr('Abmelden'));
-
-  var signIn = el('div', {class: 'nv-access-signin'},
-    el('h3', {}, tr('Anmeldung')),
-    el('label', {}, tr('Neues Passwort')), password,
-    el('label', {}, tr('Passwort wiederholen')), repeat,
-    el('div', {class: 'nv-row'}, passwordSet, passwordClear, logout));
+    'aria-label': tr('Port')});
+  var bindInput = el('input', {'data-nv-field': 'bind', 'aria-label': tr('Bind-Adresse')});
+  var allowInput = el('input', {'data-nv-field': 'allowlist', 'aria-label': tr('IP-Allowlist')});
+  var error = settingsErrorBox();
   var network = el('details', {class: 'nv-access-network nv-card',
     'data-nv-network-advanced': ''},
     el('summary', {}, tr('Netzwerk (erweitert)')),
@@ -214,680 +355,671 @@ NV.views.settings = async function settings(context, token) {
     el('label', {}, tr('Port')), portInput,
     el('label', {}, tr('Bind-Adresse')), bindInput,
     el('label', {}, tr('IP-Allowlist')), allowInput,
-    el('div', {class: 'nv-row'}, securitySave), note);
-  cards.push(el('section', {class: 'nv-card', 'data-nv-ssection': 'access'},
-    el('h2', {}, tr('Zugriffssicherheit')), signIn, network, accessError));
+    el('div', {class: 'nv-row'}, el('button', {class: 'nv-btn nv-secondary', type: 'button',
+      'data-nv-action': 'security-save', on: {click: async function () {
+        settingsError(error, '');
+        var update = {action: 'save'};
+        var rawPort = String(portInput.value || '').trim();
+        if (rawPort) {
+          if (!/^\d+$/.test(rawPort)) {
+            settingsError(error, tr('Bitte eine gültige Portnummer eingeben.'));
+            return;
+          }
+          update.port = Number(rawPort);
+        }
+        if (String(bindInput.value || '').trim()) update.bind = String(bindInput.value).trim();
+        if (String(allowInput.value || '').trim()) {
+          update.allowlist = String(allowInput.value).split(/[\s,]+/).filter(Boolean);
+        }
+        try {
+          var answer = await api('/api/security', update);
+          if (answer.ok) {
+            portInput.value = ''; bindInput.value = ''; allowInput.value = '';
+            toast(bt(answer.message) || tr('Zugriffssicherheit gespeichert'));
+          } else settingsError(error, bt(answer.message));
+        } catch (failure) {
+          settingsError(error, String(failure && failure.message || failure));
+        }
+      }}}, tr('Speichern'))),
+    el('p', {class: 'nv-note', 'data-nv-restart-note': ''},
+      tr('Änderungen an Port, Bind-Adresse und Allowlist werden in ui.json gespeichert und wirken erst nach einem Neustart des Dashboards.')));
 
-  /* ---------- Feature-Schalter (alle standardmäßig aus) ---------- */
-  var featureRows = NV_FEATURE_GROUPS.map(function (group) {
+  section.append(el('div', {class: 'nv-access-signin'},
+    el('h3', {}, tr('Anmeldung')),
+    el('label', {}, tr('Neues Passwort')), password,
+    el('label', {}, tr('Passwort wiederholen')), repeat,
+    el('div', {class: 'nv-row'},
+      el('button', {class: 'nv-btn nv-primary', type: 'button',
+        'data-nv-action': 'password-set', on: {click: async function () {
+          settingsError(error, '');
+          if (String(password.value || '') !== String(repeat.value || '')) {
+            settingsError(error, tr('Passwörter stimmen nicht überein'));
+            return;
+          }
+          try {
+            var answer = await api('/api/security', {action: 'password', password: password.value});
+            if (answer.ok) {
+              password.value = ''; repeat.value = '';
+              toast(bt(answer.message) || tr('Kennwort gesetzt'));
+            } else settingsError(error, bt(answer.message));
+          } catch (failure) {
+            settingsError(error, String(failure && failure.message || failure));
+          }
+        }}}, tr('Passwort setzen')),
+      el('button', {class: 'nv-btn', type: 'button',
+        'data-nv-action': 'password-clear', on: {click: async function () {
+          try {
+            var answer = await api('/api/security', {action: 'password', clear: true});
+            toast(bt(answer.message) || tr('Kennwort entfernt'));
+          } catch (failure) {
+            settingsError(error, String(failure && failure.message || failure));
+          }
+        }}}, tr('Passwort entfernen')),
+      el('button', {class: 'nv-btn', type: 'button',
+        'data-nv-action': 'logout', on: {click: function () { NV.logout(); }}}, tr('Abmelden')))),
+    network, error);
+}
+
+/* ------------------------------------------------------------------------- */
+/* 4. Funktionsschalter                                                       */
+/* ------------------------------------------------------------------------- */
+
+function fillFeatures(section) {
+  var groups = NV_SETTINGS_FEATURE_GROUPS.map(function (group) {
     var rows = group.ids.map(function (id) {
       var box = el('input', {type: 'checkbox', 'data-nv-feature': id, checked: NV.feature(id)});
       box.addEventListener('change', function () { NV.setFeature(id, box.checked); });
       return el('label', {class: 'nv-switch-row'}, box,
         el('span', {class: 'nv-feature-text'},
-          el('strong', {}, id),
-          el('small', {}, tr(NV_FEATURE_HELP[id] || id))));
+          el('strong', {}, tr(id)),
+          el('small', {}, tr(NV_SETTINGS_FEATURE_HELP[id] || id))));
     });
-    return el('div', {class: 'nv-feature-group'},
-      el('h3', {}, tr(group.title)), ...rows);
+    return el('div', {class: 'nv-feature-group'}, el('h3', {}, tr(group.title)), ...rows);
   });
-  cards.push(el('section', {class: 'nv-card', 'data-nv-ssection': 'features'},
-    el('h2', {}, tr('Funktionen')),
-    el('p', {class: 'nv-muted'}, tr('Technische Bereiche sind standardmäßig ausgeblendet.')),
-    el('div', {class: 'nv-feature-groups', 'data-nv-feature-groups': ''},
-      ...featureRows)));
+  section.append(el('p', {class: 'nv-muted'},
+    tr('Technische Bereiche sind standardmäßig ausgeblendet.')),
+    el('div', {class: 'nv-feature-groups', 'data-nv-feature-groups': ''}, ...groups));
+}
 
-  // Basis-Ansicht früh anzeigen (B18-Vertrag): Erscheinung, Sprache,
-  // Zugriff, Funktionen sofort im DOM — die erweiterten Bereiche hängen
-  // nachträglich nach den sequenziellen Datenabrufen an.
-  main.replaceChildren(el('h2', {class: 'nv-page-title'}, tr('Einstellungen')), ...cards);
+/* ------------------------------------------------------------------------- */
+/* 5. Laufverhalten / Limits                                                  */
+/* ------------------------------------------------------------------------- */
 
-  /* ---------- Erweiterte Bereiche (nur mit eingeschaltetem Feature) ---------- */
-  var advanced = el('section', {class: 'nv-section', 'data-nv-ssection': 'advanced'},
-    el('h2', {}, tr('Erweiterte Bereiche')));
+async function fillLimits(section, token) {
+  var limits;
+  try { limits = await api('/api/limits') || {mode: 'stop'}; }
+  catch (error) { limits = {mode: 'stop'}; }
+  if (NV.stale(token)) return;
+  var mode = limits.mode === 'continue' ? 'continue' : 'stop';
 
-  if (NV.feature('limits')) {
-    var limits = {mode: 'stop', lines: []};
-    try { limits = await api('/api/limits') || limits; } catch (error) { /* Default anzeigen */ }
-    if (NV.stale(token)) return;
-    var limitsBox = el('div', {class: 'nv-card', 'data-nv-advanced': 'limits'},
-      el('h3', {}, tr('Limits')),
-      el('p', {}, tr('Modus') + ': ' + String(limits.mode || 'stop')),
-      el('div', {class: 'nv-row'},
-        el('button', {class: 'nv-btn', type: 'button', 'data-nv-action': 'limits-continue',
-          on: {click: async function () { await changeLimit('continue', token); }}}, tr('Fortsetzen')),
-        el('button', {class: 'nv-btn', type: 'button', 'data-nv-action': 'limits-stop',
-          on: {click: async function () { await changeLimit('stop', token); }}}, tr('Stopp'))));
-    advanced.append(limitsBox);
-  }
-
-  if (NV.feature('gates')) {
-    var gates = {gates: {}, lines: []};
-    try { gates = await api('/api/gates') || gates; } catch (error) { /* leere Ansicht */ }
-    if (NV.stale(token)) return;
-    /* Erklärung zu jeder Schranke: deutsche Kurzexpertise (Vertrag WP5.5),
-       sinngemäß an den echten Verwendungen orientiert. */
-    function nvGateHelp(key) {
-      return tr(NV_GATE_HELP[key]
-        || 'Quota für diese Schranke begrenzen — Werte nur setzen, die das Ziel wirklich schützen.');
-    }
-    var table = el('div', {class: 'nv-list'});
-    Object.keys(gates.gates || {}).forEach(function (key) {
-      table.append(el('div', {class: 'nv-row'},
-        el('code', {}, key),
-        el('span', {}, String(gates.gates[key].value)),
-        el('span', {class: 'nv-muted'}, String(gates.gates[key].origin)),
-        el('small', {class: 'nv-muted', 'data-nv-gate-help': ''}, nvGateHelp(key))));
-    });
-    var gateKey = el('select', {'data-nv-field': 'gates-key', 'aria-label': tr('Schranke')});
-    Object.keys(gates.gates || {}).forEach(function (key) {
-      gateKey.append(el('option', {value: key}, key));
-    });
-    var gateHelpNote = el('small', {class: 'nv-muted', 'data-nv-gate-help': ''});
-    gateKey.addEventListener('change', function () {
-      gateHelpNote.replaceChildren(nvGateHelp(gateKey.value));
-    });
-    if (gateKey.value) gateHelpNote.replaceChildren(nvGateHelp(gateKey.value));
-    var gateValue = el('input', {'data-nv-field': 'gates-value', 'aria-label': tr('Wert')});
-    var gateProject = el('input', {'data-nv-field': 'gates-project',
-      placeholder: tr('Projekt (optional)'), 'aria-label': tr('Projekt (optional)')});
-    var gateError = settingsErrorBox();
-    var gateSave = el('button', {class: 'nv-btn nv-secondary', type: 'button',
-      'data-nv-action': 'gates-save', on: {click: async function () {
-        settingsError(gateError, '');
-        var body = {key: gateKey.value, value: String(gateValue.value || '')};
-        var project = String(gateProject.value || '').trim();
-        if (project) body.project = project;
+  var box = el('div', {class: 'nv-grid', 'data-nv-advanced': 'limits'});
+  var buttons = {};
+  [
+    {id: 'continue', title: 'Fortsetzen', effect: 'Neue Läufe setzen eine vorhandene Sitzung fort und arbeiten dort weiter.'},
+    {id: 'stop', title: 'Stopp', effect: 'Neue Läufe werden gestoppt, statt eine bestehende Sitzung fortzusetzen.'}
+  ].forEach(function (option) {
+    var button = el('button', {class: 'nv-btn', type: 'button',
+      'data-nv-action': 'limits-' + option.id,
+      'aria-pressed': String(option.id === mode),
+      on: {click: async function () {
         try {
-          var result = await api('/api/gates', body);
-          if (result.ok) { gateValue.value = ''; NV.render(); }
-          else settingsError(gateError, bt(result.message) || tr('Speichern fehlgeschlagen'));
-        } catch (error) {
-          settingsError(gateError, tr('Speichern fehlgeschlagen: ') + String(error && error.message || error));
+          var answer = await api('/api/limits', {action: option.id});
+          if (answer && answer.ok === false) {
+            toast(nvBackend(answer.message) || tr('Speichern fehlgeschlagen'));
+            return;
+          }
+          mode = option.id;
+          Object.keys(buttons).forEach(function (key) {
+            buttons[key].setAttribute('aria-pressed', String(key === mode));
+            if (key === mode) buttons[key].classList.add('nv-primary');
+            else buttons[key].classList.remove('nv-primary');
+          });
+          toast(nvBackend(answer && answer.message) || tr('Laufverhalten gespeichert'));
+        } catch (failure) {
+          toast(tr('Speichern fehlgeschlagen: ') + String(failure && failure.message || failure));
         }
-      }}}, tr('Speichern'));
-    advanced.append(el('div', {class: 'nv-card', 'data-nv-advanced': 'gates'},
-      el('h3', {}, tr('Schranken')), table,
-      el('label', {}, tr('Schranke')), gateKey, gateHelpNote,
-      el('label', {}, tr('Wert')), gateValue,
-      el('label', {}, tr('Projekt (optional)')), gateProject,
-      el('div', {class: 'nv-row'}, gateSave), gateError));
-  }
+      }}}, tr(option.title));
+    buttons[option.id] = button;
+    if (option.id === mode) button.classList.add('nv-primary');
+    box.append(el('div', {class: 'nv-card'},
+      el('h4', {}, tr(option.title)),
+      el('p', {}, tr(option.effect)), button));
+  });
+  section.append(box,
+    el('p', {class: 'nv-muted'},
+      tr('Die Einstellung gilt für neue Läufe; eine bereits laufende Sitzung bleibt unberührt.')));
+}
 
-  /* Meilenstein C: die übrigen erweiterten Bereiche. Modelle und Profile
-     bekommen einen gemeinsamen /api/agents-Abruf statt zweier, die restlichen
-     Builder holen sich ihre Daten sofort. Die Auswertungsgruppe (Kosten und
-     Run-Register) trägt eine eigene Gruppenüberschrift „Auswertungen“. */
-  var agentsData;
-  try { agentsData = await api('/api/agents') || {}; }
-  catch (error) { agentsData = null; }
-  if (NV.stale(token)) return;
-  var evalHeaded = false;
-  var headEvaluations = function () {
-    if (!evalHeaded && (NV.feature('costs') || NV.feature('runs'))) {
-      advanced.append(el('h3', {class: 'nv-group-head'}, tr('Auswertungen')));
-      evalHeaded = true;
-    }
-  };
-  var moreAdvanced = [
-    ['models', buildModelsSection],
-    ['profiles', buildProfilesSection],
-    ['mcp', buildMcpSection],
-    ['costs', buildCostsSection],
-    ['harness', buildHarnessSection],
-    ['env', buildEnvSection],
-    ['runs', buildRunsSection]
-  ];
-  for (var index = 0; index < moreAdvanced.length; index++) {
-    if (!NV.feature(moreAdvanced[index][0])) continue;
-    if (moreAdvanced[index][0] === 'costs' || moreAdvanced[index][0] === 'runs') headEvaluations();
-    var section = await moreAdvanced[index][1](token, agentsData);
-    if (NV.stale(token)) return;
-    if (section) advanced.append(section);
-  }
+/* ------------------------------------------------------------------------- */
+/* 6. Schranken / Gates                                                       */
+/* ------------------------------------------------------------------------- */
 
-  var globalAgentsSection = await buildGlobalAgentsSection(token);
-  if (NV.stale(token)) return;
-  if (globalAgentsSection) advanced.append(globalAgentsSection);
-
-  main.append(advanced);
-  main.append(el('p', {}, el('a', {class: 'nv-link', 'data-nv-classic-link': '', href: '/classic'},
-    tr('Klassische Oberfläche öffnen'))));
-  NV.refreshBell();
-};
-
-async function changeLimit(mode, token) {
+async function fillGates(section, token) {
+  var view;
+  var projects = [];
   try {
-    var result = await api('/api/limits', {action: mode});
-    if (!result.ok) toast(bt(result.message) || tr('Speichern fehlgeschlagen'));
-  } catch (error) {
-    toast(tr('Speichern fehlgeschlagen: ') + String(error && error.message || error));
+    var answers = await Promise.all([api('/api/gates'), api('/api/projects')]);
+    view = answers[0] || {gates: {}};
+    projects = Array.isArray(answers[1]) ? answers[1].map(function (item) {
+      return typeof item === 'string' ? item : (item.name || '');
+    }).filter(Boolean) : [];
+  } catch (error) { view = {gates: {}}; }
+  if (NV.stale(token)) return;
+
+  var projectSelect = el('select', {'data-nv-gates-project': '', 'aria-label': tr('Projekt')});
+  projectSelect.append(el('option', {value: 'global'}, tr('Global')));
+  projects.forEach(function (name) {
+    projectSelect.append(el('option', {value: name}, name));
+  });
+  projectSelect.value = projects.length ? projects[0] : 'global';
+
+  var tableHolder = el('div', {class: 'nv-table-wrap'});
+  var error = settingsErrorBox();
+  var current = view;
+
+  function gateHelp(key) {
+    return tr(NV_SETTINGS_GATE_HELP[key]
+      || 'Quota für diese Schranke begrenzen — Werte nur setzen, die das Ziel wirklich schützen.');
   }
-  if (!NV.stale(token)) NV.render();
+
+  function draw(data) {
+    current = data;
+    var table = el('table', {class: 'nv-table', 'data-nv-gates-table': ''},
+      el('tr', {}, el('th', {}, tr('Schranke')), el('th', {}, tr('Wirkung')),
+        el('th', {}, tr('Wert')), el('th', {}, tr('Herkunft')),
+        el('th', {}, tr('Projektwert'))));
+    Object.keys(data.gates || {}).forEach(function (key) {
+      var entry = data.gates[key] || {};
+      var valueField;
+      if (key === 'override') {
+        valueField = el('select', {'data-nv-gate-value': '', 'aria-label': tr('Wert')});
+        ['ask', 'off'].forEach(function (option) {
+          valueField.append(el('option', {value: option},
+            option === 'ask' ? tr('Fragen') : tr('Abbrechen')));
+        });
+        valueField.value = String(entry.value == null ? '' : entry.value);
+      } else {
+        valueField = el('input', {'data-nv-gate-value': '', type: 'text',
+          value: nvText(entry.value), 'aria-label': tr('Wert')});
+      }
+      var cells = [
+        el('td', {}, el('b', {}, key)),
+        el('td', {}, el('small', {class: 'nv-muted', 'data-nv-gate-help': ''}, gateHelp(key))),
+        el('td', {}, valueField),
+        el('td', {}, el('span', {class: 'nv-badge', 'data-nv-gate-origin': ''},
+          tr(nvText(entry.origin || 'Standard'))))
+      ];
+      var overrideField = el('input', {'data-nv-gate-override': '', type: 'text',
+        value: nvText(entry.override), placeholder: tr('Globaler Wert'),
+        'aria-label': tr('Projektwert')});
+      var deviation = nvText(entry.override) !== ''
+        && nvText(entry.override) !== nvText(entry.global);
+      var overrideCell = el('td', {}, overrideField,
+        deviation ? el('span', {class: 'nv-badge', 'data-nv-gate-override-badge': ''},
+          tr('Weicht ab')) : null);
+      cells.push(projectSelect.value === 'global'
+        ? el('td', {}, el('span', {class: 'nv-muted'}, tr('—'))) : overrideCell);
+      table.append(el('tr', {'data-nv-gate': key}, ...cells));
+    });
+    tableHolder.replaceChildren(table);
+  }
+  draw(view);
+
+  function valuesFromTable() {
+    var values = {};
+    tableHolder.querySelectorAll('[data-nv-gate]').forEach(function (row) {
+      var key = row.getAttribute('data-nv-gate');
+      var field = projectSelect.value === 'global'
+        ? row.querySelector('[data-nv-gate-value]')
+        : row.querySelector('[data-nv-gate-override]');
+      if (!field) return;
+      values[key] = String(field.value || '');
+    });
+    return values;
+  }
+
+  async function send(values, message) {
+    settingsError(error, '');
+    try {
+      var answer = await api('/api/gates', {
+        project: projectSelect.value === 'global' ? '' : projectSelect.value,
+        values: values
+      });
+      if (answer && answer.ok === false) {
+        settingsError(error, nvBackend(answer.message) || tr('Aktion fehlgeschlagen'));
+        return;
+      }
+      draw(answer || view);
+      toast(nvBackend(answer && answer.message) || tr(message));
+    } catch (failure) {
+      settingsError(error, String(failure && failure.message || failure));
+    }
+  }
+
+  projectSelect.addEventListener('change', async function () {
+    try {
+      var path = projectSelect.value === 'global'
+        ? '/api/gates' : '/api/gates?name=' + encodeURIComponent(projectSelect.value);
+      var fresh = await api(path) || {gates: {}};
+      if (!NV.stale(token)) draw(fresh);
+    } catch (failure) { settingsError(error, String(failure && failure.message || failure)); }
+  });
+
+  section.append(el('div', {class: 'nv-grid', 'data-nv-advanced': 'gates'},
+    el('label', {}, tr('Projekt')), projectSelect, tableHolder,
+    el('div', {class: 'nv-row'},
+      el('button', {class: 'nv-btn nv-primary', type: 'button',
+        'data-nv-action': 'gates-save', on: {click: function () {
+          send(valuesFromTable(), 'Schranken gespeichert');
+        }}}, tr('Speichern')),
+      el('button', {class: 'nv-btn', type: 'button',
+        'data-nv-action': 'gates-reset', on: {click: function () {
+          var cleared = {};
+          Object.keys((current && current.gates) || {}).forEach(function (key) {
+            cleared[key] = null;
+          });
+          if (Object.keys(cleared).length) send(cleared, 'Projektabweichungen zurückgesetzt');
+        }}}, tr('Projektabweichungen zurücksetzen'))),
+    el('p', {class: 'nv-muted'},
+      tr('Ohne Projektwert gilt der globale Wert oder die Voreinstellung; Änderungen wirken auf neue Läufe.')),
+    error));
 }
 
-/* ---------- Gemeinsame Helfer der erweiterten Bereiche ---------- */
+/* ------------------------------------------------------------------------- */
+/* 7. Modelle und Modellkatalog                                               */
+/* ------------------------------------------------------------------------- */
 
-function nvText(value) { return String(value == null ? '' : value); }
-
-function nvNumber(value) {
-  var engine = i18n();
-  return engine && typeof engine.number === 'function'
-    ? String(engine.number(value)) : String(value || 0);
-}
-
-function nvCurrency(value) {
-  var engine = i18n();
-  return engine && typeof engine.currency === 'function'
-    ? String(engine.currency(value)) : String(value || 0) + ' €';
-}
-
-/* Backend-Antworten bleiben deutsch; bt() übersetzt nur bekannte Meldungen. */
-function nvBackend(value) { return String(bt(value)); }
-
-/* Ein Profilwechsel schreibt mehrere Agentendateien. Früher wurde dazu ein
-   synchroner XHR (nvPostSync) benutzt, um einen überholten Test-Wartezustand
-   zu bedienen. Der Test wartet jetzt auf die echte Wirkung in tester.md;
-   der gewöhnliche asynchrone api()-Aufruf genügt und blockiert den Browser
-   nicht mehr. */
-
-function nvActionError(box, error) {
-  settingsError(box, String(tr('Aktion fehlgeschlagen: ')) + String(error && error.message || error));
-}
-
-/* Modellkatalog: dieselbe Trennung von Fakten und Einschätzungen wie in der
-   klassischen UI (Wert, Art und Quelle je Angabe). */
 function nvMval(node) {
   if (node && typeof node === 'object') {
     return nvText(node.wert != null ? node.wert : (node.text != null ? node.text : tr('unbekannt')));
   }
   return String(tr('unbekannt'));
 }
+
 function nvMsrc(node) {
   if (!node || !node.quelle) return String(tr('unbekannt'));
   return nvText(node.quelle) + (node.datum ? ' (' + node.datum + ')' : '');
 }
-function nvMart(node) { return node && node.art ? ' [' + String(tr(node.art)) + ']' : ''; }
+
 function nvAssert(label, node) {
   return el('div', {class: 'nv-muted'},
-    el('b', {}, String(tr(label)) + ': '), nvMval(node), String(nvMart(node)),
+    el('b', {}, String(tr(label)) + ': '), nvMval(node),
     el('span', {class: 'nv-muted'}, ' — ' + nvMsrc(node)));
 }
-function nvModelLabel(id, info) {
-  var model = info[id];
-  if (!model) return id;
-  var price = (model.preis || {}).text || String(tr('unbekannt'));
-  var tempo = nvMval(((model.einschaetzungen || {}).tempo));
-  return nvText(tr('Modell')) + ' ' + id + ' — ' + price + ' · ' + tempo;
-}
 
-/* ---------- Modelle: einklappbarer Katalog, Fakten ≠ Einschätzungen ---------- */
+function fillModels(section, agentsData, token) {
+  var holder = el('div', {class: 'nv-table-wrap'});
 
-async function buildModelsSection(token, agentsData) {
-  var data = agentsData || {};
-  if (NV.stale(token)) return null;
+  function draw(data) {
+    var info = data.info || {};
+    var ids = (data.models || []).slice();
+    Object.keys(info).forEach(function (id) { if (ids.indexOf(id) < 0) ids.push(id); });
 
-  var info = data.info || {};
-  var katalog = data.katalog || {};
-  var ids = (data.models || []).slice();
-  Object.keys(info).forEach(function (id) { if (ids.indexOf(id) < 0) ids.push(id); });
-
-  // <details> ohne open: die Modellzeilen sind im Ruhezustand unsichtbar.
-  var details = el('details', {class: 'nv-card', 'data-nv-model-catalog': ''},
-    el('summary', {}, String(tr('Modellkatalog aufklappen'))));
-  details.append(el('p', {class: 'nv-muted'},
-    String(tr('Katalogstand')) + ': ' + nvText(data.stand || '?') + ' · '
-    + String(tr('Katalogversion')) + ': ' + nvText(katalog.version || '?')));
-  details.append(el('p', {class: 'nv-muted'}, nvBackend(data.hinweis || '')));
-
-  var findings = katalog.findings || [];
-  if (findings.length) {
-    var findingList = el('ul', {class: 'nv-list'});
-    findings.forEach(function (finding) {
-      findingList.append(el('li', {}, nvText(finding.text || finding)));
-    });
-    details.append(el('div', {class: 'nv-note'},
-      el('b', {}, String(tr('Katalogbefunde'))), findingList));
-  }
-  var sources = (katalog.quellen || []).map(function (source) {
-    return nvText(source.name) + (source.datum ? ' (' + source.datum + ')' : '');
-  });
-  if (sources.length) {
-    details.append(el('p', {class: 'nv-muted'},
-      String(tr('Quellen des Katalogs')) + ': ' + sources.join('; ')));
-  }
-
-  var table = el('table', {class: 'nv-table'},
-    el('tr', {}, el('th', {}, String(tr('Modell'))),
-      el('th', {}, String(tr('Anbieter'))), el('th', {}, String(tr('Preis')))));
-  ids.forEach(function (id) {
-    var model = info[id] || {};
-    var facts = model.fakten || {};
-    var assessments = model.einschaetzungen || {};
-    var factKeys = Object.keys(facts);
-    var assessKeys = Object.keys(assessments);
-    var factNodes = factKeys.map(function (key) { return nvAssert(key, facts[key]); });
-    var assessNodes = assessKeys.map(function (key) { return nvAssert(key, assessments[key]); });
-    var detail = el('tr', {class: 'nv-model-detail', 'data-nv-model-detail': id, hidden: ''},
-      el('td', {colspan: '3'},
-        el('div', {'data-nv-model-facts': ''},
-          el('b', {}, String(tr('Fakten'))),
-          ...factNodes,
-          factKeys.length ? null : el('div', {class: 'nv-muted'}, String(tr('keine Angaben')))),
-        el('div', {'data-nv-model-assessments': ''},
-          el('b', {}, String(tr('Einschätzungen'))),
-          ...assessNodes,
-          assessKeys.length ? null : el('div', {class: 'nv-muted'}, String(tr('keine Angaben')))),
-        el('div', {class: 'nv-muted'},
-          String(tr('ID-Beleg')) + ': ' + nvText((model.id_beleg || {}).quelle || '—'))));
-    var row = el('tr', {class: 'nv-model-row', 'data-nv-model': id,
-      on: {click: function () { detail.hidden = !detail.hidden; }}},
-      el('td', {}, nvModelLabel(id, info)),
-      el('td', {class: 'nv-muted'}, nvText(model.anbieter || '?')),
-      el('td', {}, nvText((model.preis || {}).text || String(tr('unbekannt')))));
-    table.append(row, detail);
-  });
-  details.append(table);
-
-  return el('div', {class: 'nv-card', 'data-nv-advanced': 'models'},
-    el('h3', {}, String(tr('Modelle'))), details);
-}
-
-/* ---------- Profile: Vorschau before apply ---------- */
-
-async function buildProfilesSection(token, agentsData) {
-  var data = agentsData || {};
-  if (NV.stale(token)) return null;
-
-  var profiles = data.profiles || {};
-  var names = Object.keys(profiles.profile || {});
-  var select = el('select', {'data-nv-field': 'profile',
-    'aria-label': String(tr('Profil auswählen'))});
-  names.forEach(function (name) { select.append(el('option', {value: name}, name)); });
-  if (profiles.aktiv) select.value = profiles.aktiv;
-
-  var list = el('div', {class: 'nv-list'});
-  names.forEach(function (name) {
-    var roles = profiles.profile[name] || {};
-    var summary = Object.keys(roles).filter(function (role) { return roles[role]; })
-      .map(function (role) { return role + ': ' + roles[role]; }).join(' · ');
-    list.append(el('div', {},
-      el('b', {}, name + (name === profiles.aktiv ? ' (' + String(tr('aktiv')) + ')' : '')),
-      el('div', {class: 'nv-muted'}, summary)));
-  });
-
-  var preview = el('div', {class: 'nv-note', 'data-nv-profile-preview': '', hidden: ''});
-  var error = settingsErrorBox();
-  var previewButton = el('button', {class: 'nv-btn', type: 'button',
-    'data-nv-action': 'profile-preview', on: {click: function () {
-      settingsError(error, '');
-      var chosen = select.value;
-      var profile = (profiles.profile || {})[chosen] || {};
-      var rows = el('div', {});
-      var any = false;
-      Object.keys(profiles.rollen || {}).forEach(function (agent) {
-        var model = profile[profiles.rollen[agent]];
-        if (!model) return;
-        any = true;
-        rows.append(el('div', {}, nvText(agent) + ' → ' + nvText(model)));
+    var table = el('table', {class: 'nv-table'},
+      el('tr', {}, el('th', {}, tr('Modell')), el('th', {}, tr('Anbieter')),
+        el('th', {}, tr('Preis')), el('th', {}, tr('Quelle')), el('th', {}, tr('Status'))));
+    ids.forEach(function (id) {
+      var model = info[id] || {};
+      var facts = Object.keys(model.fakten || {}).map(function (key) {
+        return nvAssert(key, model.fakten[key]);
       });
-      if (!any) {
-        rows.append(el('div', {class: 'nv-muted'},
-          String(tr('Für dieses Profil sind keine Modelle gesetzt.'))));
-      }
-      preview.replaceChildren(el('b', {}, String(tr('Profilvorschau')) + ': ' + chosen), rows);
-      preview.hidden = false;
-    }}}, String(tr('Vorschau anzeigen')));
-  var applyButton = el('button', {class: 'nv-btn nv-primary', type: 'button',
-    'data-nv-action': 'profile-apply', on: {click: async function () {
-      settingsError(error, '');
-      try {
-        var result = await api('/api/profiles', {action: 'use', profile: select.value});
-        if (result && result.ok) {
-          toast(nvBackend(result.message) || String(tr('Profil angewendet')));
-          NV.render();
-        } else settingsError(error, nvBackend(result && result.message) || String(tr('Aktion fehlgeschlagen')));
-      } catch (failure) { nvActionError(error, failure); }
-    }}}, String(tr('Profil anwenden')));
+      var assessments = Object.keys(model.einschaetzungen || {}).map(function (key) {
+        return nvAssert(key, model.einschaetzungen[key]);
+      });
+      var detail = el('tr', {'data-nv-model-detail': id, hidden: ''},
+        el('td', {colspan: '5'},
+          el('div', {}, el('b', {}, tr('Fakten')), ...facts,
+            facts.length ? null : el('div', {class: 'nv-muted'}, tr('keine Angaben'))),
+          el('div', {}, el('b', {}, tr('Einschätzungen')), ...assessments,
+            assessments.length ? null : el('div', {class: 'nv-muted'}, tr('keine Angaben'))),
+          el('div', {class: 'nv-muted'},
+            String(tr('Preisquelle')) + ': '
+            + nvText((model.preis || {}).quelle || tr('unbekannt')))));
+      var row = el('tr', {'data-nv-model': id, class: 'nv-clickable',
+        on: {click: function () { detail.hidden = !detail.hidden; }}},
+        el('td', {}, el('b', {}, id)),
+        el('td', {}, nvText(model.anbieter || tr('unbekannt'))),
+        el('td', {}, nvText((model.preis || {}).text || tr('unbekannt'))),
+        el('td', {}, nvText(((model.preis || {}).quelle) || tr('unbekannt'))),
+        el('td', {}, nvText(model.status || (model.einschaetzungen || {}).status || tr('unbekannt'))));
+      table.append(row, detail);
+    });
+    holder.replaceChildren(table);
+  }
+  draw(agentsData);
 
-  return el('div', {class: 'nv-card', 'data-nv-advanced': 'profiles'},
-    el('h3', {}, String(tr('Gespeicherte Profile'))), list,
-    el('label', {}, String(tr('Profil auswählen'))), select,
-    el('div', {class: 'nv-row'}, previewButton, applyButton), preview, error);
+  var catalog = el('details', {class: 'nv-card', 'data-nv-model-catalog': ''},
+    el('summary', {}, tr('Modellkatalog')),
+    el('p', {class: 'nv-muted'},
+      String(tr('Katalogstand')) + ': ' + nvText(agentsData.stand || tr('unbekannt'))),
+    el('p', {class: 'nv-muted'}, nvBackend(agentsData.hinweis || '')),
+    el('p', {class: 'nv-muted'},
+      String(tr('Quellen')) + ': '
+      + ((agentsData.katalog || {}).quellen || []).map(function (source) {
+        return nvText(source.name) + (source.datum ? ' (' + source.datum + ')' : '');
+      }).join('; ')),
+    el('div', {class: 'nv-note'},
+      el('b', {}, tr('Befunde')),
+      el('div', {}, ((agentsData.katalog || {}).findings || []).map(function (finding) {
+        return nvText(finding.text || finding);
+      }).join(' · ') || tr('keine Angaben'))),
+    el('div', {class: 'nv-row'},
+      el('button', {class: 'nv-btn', type: 'button', 'data-nv-action': 'models-prices',
+        on: {click: function () { NV.navigate('#/evaluations/costs'); }}}, tr('Preise bearbeiten')),
+      el('button', {class: 'nv-btn', type: 'button', 'data-nv-action': 'models-refresh',
+        on: {click: async function () {
+          try {
+            var fresh = await api('/api/agents') || {};
+            if (NV.stale(token)) return;
+            draw(fresh);
+            agentsData = fresh;
+            toast(tr('Modellkatalog neu geladen'));
+          } catch (failure) {
+            toast(tr('Aktion fehlgeschlagen: ') + String(failure && failure.message || failure));
+          }
+        }}}, tr('Katalog neu laden'))),
+    el('p', {class: 'nv-muted', 'data-nv-models-hint': ''},
+      tr('Der Katalog ist nur eine Referenz; Preise werden im Kosten-Dashboard gepflegt.')));
+
+  section.append(el('details', {class: 'nv-card', 'data-nv-models': '', open: ''},
+    el('summary', {}, tr('Modelle')), holder), catalog);
 }
 
-/* ---------- MCP: maskierte Server, Test, Schalter, Eintrag, Löschen ---------- */
+/* ------------------------------------------------------------------------- */
+/* 8. Profile                                                                 */
+/* ------------------------------------------------------------------------- */
 
-async function buildMcpSection(token) {
+async function fillProfiles(section, agentsData, token) {
+  var profiles = agentsData.profiles || {};
+  var modelIds = (agentsData.models || []).map(function (item) {
+    return typeof item === 'string' ? item : (item.id || '');
+  }).filter(Boolean);
+  var names = Object.keys(profiles.profile || {});
+  var roles = [];
+  Object.keys(profiles.rollen || {}).forEach(function (role) {
+    if (roles.indexOf(role) < 0) roles.push(role);
+  });
+  names.forEach(function (name) {
+    Object.keys((profiles.profile || {})[name] || {}).forEach(function (role) {
+      if (roles.indexOf(role) < 0) roles.push(role);
+    });
+  });
+  roles.sort();
+
+  var error = settingsErrorBox();
+  var cards = [];
+  var detailsBox = el('div', {class: 'nv-note', 'data-nv-profile-details': ''});
+  names.forEach(function (name) {
+    var profile = (profiles.profile || {})[name] || {};
+    var roleFields = {};
+    var combos = el('div', {class: 'nv-grid'});
+    roles.forEach(function (role) {
+      var combo = NV.combobox(modelIds, profile[role] || '', {
+        placeholder: tr('Modell suchen …'), field: role,
+        onchange: function (value) { roleFields[role] = value; }
+      });
+      combo.setAttribute('data-nv-profile-role', role);
+      combos.append(el('label', {}, tr(role)), combo);
+    });
+    var card = el('article', {class: 'nv-card', 'data-nv-profile': name,
+      on: {click: function () {
+        cards.forEach(function (other) { other.removeAttribute('data-nv-profile-selected'); });
+        card.setAttribute('data-nv-profile-selected', 'true');
+        detailsBox.replaceChildren(el('b', {}, String(tr('Profil')) + ': ' + name),
+          el('span', {}, Object.keys(profile).filter(function (role) {
+            return !!profile[role];
+          }).map(function (role) {
+            return role + ': ' + profile[role];
+          }).join(' · ') || tr('keine Angaben')));
+      }}},
+      el('div', {class: 'nv-row'}, el('h3', {}, name),
+        name === profiles.aktiv ? el('span', {class: 'nv-badge'}, tr('Aktiv')) : null),
+      combos,
+      el('div', {class: 'nv-row'},
+        el('button', {class: 'nv-btn', type: 'button', 'data-nv-action': 'profile-save',
+          on: {click: async function () {
+            settingsError(error, '');
+            var all = {};
+            cards.forEach(function (other) {
+              var values = {};
+              roles.forEach(function (role) {
+                var field = other.querySelector('[data-nv-profile-role="' + role + '"]');
+                values[role] = field ? String(field.getAttribute('data-nv-value') || '') : '';
+              });
+              all[other.getAttribute('data-nv-profile')] = values;
+            });
+            var assignment = {};
+            roles.forEach(function (role) { assignment[role] = role; });
+            try {
+              var answer = await api('/api/profiles', {action: 'save',
+                data: {rollen: Object.keys(profiles.rollen || {}).length
+                  ? profiles.rollen : assignment, profile: all}});
+              if (answer && answer.ok === false) {
+                settingsError(error, nvBackend(answer.message) || tr('Aktion fehlgeschlagen'));
+                return;
+              }
+              profiles.profile = all;
+              profiles.rollen = Object.keys(profiles.rollen || {}).length
+                ? profiles.rollen : assignment;
+              toast(nvBackend(answer && answer.message) || tr('Profile gespeichert'));
+            } catch (failure) {
+              settingsError(error, String(failure && failure.message || failure));
+            }
+          }}}, tr('Speichern')),
+        el('button', {class: 'nv-btn nv-primary', type: 'button',
+          'data-nv-action': 'profile-apply', on: {click: function () {
+            var preview = el('div', {class: 'nv-stack'},
+              el('p', {}, String(tr('Profil anwenden')) + ': ' + name),
+              el('p', {class: 'nv-muted'}, Object.keys(profile).map(function (role) {
+                return role + ' → ' + String(profile[role] || tr('unbekannt'));
+              }).join(' · ') || tr('keine Angaben')));
+            NV.context.open({title: tr('Profilvorschau'), content: preview,
+              footer: el('div', {class: 'nv-row'},
+                el('button', {class: 'nv-btn nv-primary', type: 'button',
+                  on: {click: async function () {
+                    try {
+                      var answer = await api('/api/profiles', {action: 'use', profile: name});
+                      if (answer && answer.ok === false) {
+                        settingsError(error, nvBackend(answer.message) || tr('Aktion fehlgeschlagen'));
+                        return;
+                      }
+                      profiles.aktiv = name;
+                      NV.context.close();
+                      toast(nvBackend(answer && answer.message) || tr('Profil angewendet'));
+                    } catch (failure) {
+                      settingsError(error, String(failure && failure.message || failure));
+                    }
+                  }}}, tr('Bestätigen')),
+                el('button', {class: 'nv-btn', type: 'button',
+                  on: {click: function () { NV.context.close(); }}}, tr('Abbrechen')))});
+          }}}, tr('Anwenden'))));
+    cards.push(card);
+    section.append(card);
+  });
+  if (!names.length) {
+    section.append(el('p', {class: 'nv-muted'}, tr('Keine Profile vorhanden.')));
+  }
+  section.append(detailsBox, error);
+  if (names.length) cards[0].click();
+}
+
+/* ------------------------------------------------------------------------- */
+/* 9. MCP-Server                                                              */
+/* ------------------------------------------------------------------------- */
+
+async function fillMcp(section, token) {
   var data;
-  try { data = await api('/api/mcp') || {}; } catch (error) { data = {}; }
-  if (NV.stale(token)) return null;
+  try { data = await api('/api/mcp') || {}; }
+  catch (error) { data = {}; }
+  if (NV.stale(token)) return;
+  var servers = Array.isArray(data.servers) ? data.servers : [];
 
-  var servers = data.servers || [];
-  var list = el('div', {class: 'nv-list'});
+  var list = el('div', {class: 'nv-stack'});
+  var scopeFilter = el('select', {'data-nv-mcp-scope-filter': '', 'aria-label': tr('Geltungsbereich')});
+  scopeFilter.append(el('option', {value: ''}, tr('Alle Bereiche')),
+    el('option', {value: 'global'}, tr('Global')));
+  (data.projects || []).forEach(function (project) {
+    scopeFilter.append(el('option', {value: project}, project));
+  });
+
+  var searchWrap = NV.search({placeholder: tr('MCP-Server suchen …'), oninput: applyFilter});
+  searchWrap.querySelector('[data-nv-search-input]').setAttribute('data-nv-mcp-search', '');
+  section.append(el('div', {class: 'nv-filter-bar', 'data-nv-filter-bar': ''},
+    searchWrap, scopeFilter));
+  section.append(list);
+
+  function applyFilter() {
+    var term = String(searchWrap.querySelector('[data-nv-search-input]').value || '').toLowerCase();
+    var scope = scopeFilter.value;
+    list.querySelectorAll('[data-nv-mcp-server]').forEach(function (card) {
+      var name = card.getAttribute('data-nv-mcp-server') || '';
+      var cardScope = card.getAttribute('data-nv-mcp-scope') || '';
+      card.hidden = name.toLowerCase().indexOf(term) < 0
+        || (!!scope && scope !== cardScope);
+    });
+  }
+  scopeFilter.addEventListener('change', applyFilter);
+
   servers.forEach(function (server) {
     if (server.error) {
       list.append(el('div', {class: 'nv-note'},
         nvText(server.scope) + ': ' + nvText(server.error)));
       return;
     }
-    var result = el('div', {class: 'nv-note', 'data-nv-mcp-result': '', hidden: ''});
-    var entryBox = el('div', {class: 'nv-note', hidden: ''});
-    var toggleButton = el('button', {class: 'nv-btn', type: 'button',
-      'data-nv-action': 'mcp-toggle', on: {click: async function () {
+    var name = nvText(server.name);
+    var active = server.enabled !== false;
+    var state = el('span', {class: active ? 'nv-badge' : 'nv-kind-badge',
+      'data-nv-mcp-state': ''}, active ? tr('Aktiv') : tr('Inaktiv'));
+    var toggle = el('button', {class: 'nv-btn', type: 'button',
+      'data-nv-action': 'mcp-toggle',
+      on: {click: async function () {
         try {
-          var answer = await api('/api/mcp', {action: 'toggle', scope: server.scope, name: server.name});
-          toast(nvBackend(answer && answer.message) || String(tr('Aktion fehlgeschlagen')));
-          if (answer && answer.ok) NV.render();
-        } catch (failure) { toast(String(tr('Aktion fehlgeschlagen: ')) + String(failure && failure.message || failure)); }
-      }}}, String(tr('Server ein- oder ausschalten')));
+          var answer = await api('/api/mcp', {action: 'toggle',
+            scope: server.scope, name: name});
+          if (answer && answer.ok === false) {
+            toast(nvBackend(answer.message) || tr('Aktion fehlgeschlagen'));
+            return;
+          }
+          active = !active;
+          state.textContent = active ? String(tr('Aktiv')) : String(tr('Inaktiv'));
+          toggle.textContent = String(tr(active ? 'Deaktivieren' : 'Aktivieren'));
+          toast(nvBackend(answer && answer.message) || tr('MCP-Server geändert'));
+        } catch (failure) {
+          toast(tr('Aktion fehlgeschlagen: ') + String(failure && failure.message || failure));
+        }
+      }}}, tr(active ? 'Deaktivieren' : 'Aktivieren'));
+
+    var result = el('div', {class: 'nv-note', 'data-nv-mcp-result': '', hidden: ''});
     var testButton = el('button', {class: 'nv-btn', type: 'button',
       'data-nv-action': 'mcp-test', on: {click: async function () {
         result.hidden = false;
-        result.removeAttribute('data-nv-ok');
         result.replaceChildren(el('span', {class: 'nv-muted'},
           String(tr('Verbindungstest läuft')) + ' …'));
         try {
-          var answer = await api('/api/mcp', {action: 'test', scope: server.scope, name: server.name});
+          var answer = await api('/api/mcp', {action: 'test', scope: server.scope, name: name});
           var report = answer && answer.result;
           var ok = !!(report && report.ok);
-          result.setAttribute('data-nv-ok', ok ? 'true' : 'false');
-          var message = (report && (report.error || report.hint))
-            || nvBackend(answer && answer.message) || String(tr('Test beendet'));
           result.replaceChildren(
             el('b', {class: ok ? 'nv-ok' : 'nv-bad'},
-              ok ? String(tr('Test bestanden')) : String(tr('Test fehlgeschlagen'))),
-            el('div', {}, nvText(message)));
+              ok ? tr('Test bestanden') : tr('Test fehlgeschlagen')),
+            el('div', {}, nvText((report && (report.error || report.hint))
+              || nvBackend(answer && answer.message) || tr('Test beendet'))));
         } catch (failure) {
-          result.setAttribute('data-nv-ok', 'false');
-          result.replaceChildren(
-            el('b', {class: 'nv-bad'}, String(tr('Test fehlgeschlagen'))),
+          result.replaceChildren(el('b', {class: 'nv-bad'}, tr('Test fehlgeschlagen')),
             el('div', {}, String(failure && failure.message || failure)));
         }
-      }}}, String(tr('Verbindung testen')));
-    var entryButton = el('button', {class: 'nv-btn', type: 'button',
-      on: {click: async function () {
-        entryBox.hidden = !entryBox.hidden;
-        if (!entryBox.hidden && !entryBox.childNodes.length) {
-          try {
-            var loaded = await api('/api/mcp_entry?scope='
-              + encodeURIComponent(server.scope) + '&name=' + encodeURIComponent(server.name));
-            var entry = loaded.entry || {};
-            // Auch der Eintrag kommt vom Server bereits maskiert (***) zurück.
-            var target = entry.type === 'local'
-              ? (entry.command || []).join(' ') : entry.url;
-            entryBox.replaceChildren(
-              el('div', {}, String(tr('Typ')) + ': ' + nvText(entry.type)),
-              el('div', {}, String(tr('Ziel')) + ': ' + nvText(target)),
-              el('div', {}, String(tr('Geltung')) + ': ' + nvText(server.scope)));
-          } catch (failure) {
-            entryBox.replaceChildren(el('div', {class: 'nv-bad'},
-              String(failure && failure.message || failure)));
-          }
-        }
-      }}}, String(tr('Eintrag anzeigen')));
-    var deleteButton = el('button', {class: 'nv-btn', type: 'button',
-      'data-nv-action': 'mcp-delete', on: {click: async function () {
-        if (!window.confirm(String(tr('MCP-Server löschen?')) + ' ' + server.name)) return;
-        try {
-          var answer = await api('/api/mcp', {action: 'delete', scope: server.scope, name: server.name});
-          toast(nvBackend(answer && answer.message) || String(tr('Aktion fehlgeschlagen')));
-          if (answer && answer.ok) NV.render();
-        } catch (failure) { toast(String(tr('Aktion fehlgeschlagen: ')) + String(failure && failure.message || failure)); }
-      }}}, String(tr('Server löschen')));
+      }}}, tr('Verbindung testen'));
 
-    list.append(el('div', {class: 'nv-card', 'data-nv-mcp-server': nvText(server.name)},
-      el('div', {class: 'nv-row'},
-        el('b', {}, nvText(server.name)),
-        el('span', {class: 'nv-muted'}, nvText(server.scope)),
-        el('span', {class: 'nv-muted'}, nvText(server.type)),
+    list.append(el('article', {class: 'nv-card', 'data-nv-mcp-server': name,
+      'data-nv-mcp-scope': nvText(server.scope)},
+      el('div', {class: 'nv-row'}, el('h3', {}, name),
+        el('span', {class: 'nv-kind-badge'}, nvText(server.scope)), state,
         el('span', {class: 'nv-muted'}, nvText(server.target))),
-      el('div', {class: 'nv-row'}, toggleButton, testButton, entryButton, deleteButton),
-      result, entryBox));
+      el('div', {class: 'nv-row'}, toggle, testButton,
+        el('button', {class: 'nv-btn', type: 'button', 'data-nv-action': 'mcp-edit',
+          on: {click: function () {
+            var scopeSelect = el('select', {'data-nv-mcp-scope': '',
+              'aria-label': tr('Geltungsbereich')});
+            [['global', tr('Global')]].concat((data.projects || []).map(function (project) {
+              return [project, project];
+            })).forEach(function (option) {
+              scopeSelect.append(el('option', {value: option[0]}, option[1]));
+            });
+            scopeSelect.value = server.scope;
+            NV.context.open({title: tr('MCP-Server bearbeiten') + ': ' + name,
+              content: el('div', {class: 'nv-stack'},
+                el('p', {class: 'nv-muted'},
+                  tr('Der Eintrag wird maskiert angezeigt; Geheimnisse bleiben verborgen.')),
+                el('label', {}, tr('Geltungsbereich')), scopeSelect),
+              footer: el('div', {class: 'nv-row'},
+                el('button', {class: 'nv-btn nv-primary', type: 'button',
+                  on: {click: async function () {
+                    try {
+                      var answer = await api('/api/mcp', {action: 'set',
+                        scope: scopeSelect.value, name: name});
+                      if (answer && answer.ok === false) {
+                        toast(nvBackend(answer.message) || tr('Aktion fehlgeschlagen'));
+                        return;
+                      }
+                      NV.context.close();
+                      toast(nvBackend(answer && answer.message) || tr('MCP-Server gespeichert'));
+                    } catch (failure) {
+                      toast(tr('Aktion fehlgeschlagen: ') + String(failure && failure.message || failure));
+                    }
+                  }}}, tr('Speichern')),
+                el('button', {class: 'nv-btn', type: 'button',
+                  on: {click: function () { NV.context.close(); }}}, tr('Abbrechen')))});
+          }}}, tr('Bearbeiten')),
+        el('button', {class: 'nv-btn', type: 'button', 'data-nv-action': 'mcp-delete',
+          on: {click: async function () {
+            if (!window.confirm(String(tr('MCP-Server löschen?')) + ' ' + name)) return;
+            try {
+              var answer = await api('/api/mcp', {action: 'delete', scope: server.scope, name: name});
+              if (answer && answer.ok === false) {
+                toast(nvBackend(answer.message) || tr('Aktion fehlgeschlagen'));
+                return;
+              }
+              toast(nvBackend(answer && answer.message) || tr('MCP-Server gelöscht'));
+            } catch (failure) {
+              toast(tr('Aktion fehlgeschlagen: ') + String(failure && failure.message || failure));
+            }
+          }}}, tr('Löschen'))),
+      result));
   });
 
-  var error = settingsErrorBox();
-  return el('div', {class: 'nv-card', 'data-nv-advanced': 'mcp'},
-    el('h3', {}, String(tr('MCP-Server'))),
-    el('p', {class: 'nv-muted'}, String(tr('MCP-Hinweis'))),
-    list, error);
+  if (!servers.length) {
+    list.append(el('p', {class: 'nv-muted'}, tr('Keine MCP-Server konfiguriert.')));
+  }
 }
 
-/* ---------- Kosten: Übersicht, Detail und Preise ---------- */
+/* ------------------------------------------------------------------------- */
+/* 10. Harness (bestehend, jetzt als Raster)                                  */
+/* ------------------------------------------------------------------------- */
 
-async function buildCostsSection(token) {
-  var overview;
-  try { overview = await api('/api/costs') || {}; } catch (error) { overview = {}; }
-  if (NV.stale(token)) return null;
-
-  var detail = el('div', {class: 'nv-card', 'data-nv-cost-detail': '', hidden: ''});
-  var error = settingsErrorBox();
-
-  function drawDetail(name, data) {
-    var nodes = [
-      el('span', {class: 'nv-eval-badge', 'data-nv-eval-badge': ''},
-         tr('Auswertung — reine Anzeige, keine Einstellung')),
-      el('h4', {}, nvText(name)),
-      el('p', {class: 'nv-muted'}, String(tr('Kosten je Arbeitspaket'))),
-      el('div', {}, el('b', {}, String(tr('Gesamtkosten')) + ': '
-        + nvCurrency(data.total && data.total.cost)))
-    ];
-    var total = {sessions: 0, input: 0, cached: 0, output: 0, cost: 0};
-    /* Spaltenbeschriftungen (Vertrag WP5.7 + Testpatterns, case-sensitive):
-       im en-Modus übersetzt, die Pattern müssen als Kleinbuchstaben darin
-       enthalten sein — „package“ bei „Arbeitspaket“ (→ „Work package"). */
-    var packages = el('table', {class: 'nv-table'},
-      el('tr', {}, el('th', {}, String(tr('Kennung (Arbeitspaket)'))),
-        el('th', {}, String(tr('sitzungen'))),
-        el('th', {}, String(tr('eingabe'))),
-        el('th', {}, String(tr('gecachte Eingabe'))),
-        el('th', {}, String(tr('ausgabe'))), el('th', {}, String(tr('kosten')))));
-    (data.packages || []).forEach(function (item) {
-      var tokens = item.tokens || {};
-      packages.append(el('tr', {},
-        el('td', {}, nvText(item.id || item.title)),
-        el('td', {}, nvNumber(item.sessions)),
-        el('td', {}, nvNumber(tokens.input)),
-        el('td', {}, nvNumber(tokens.cached)),
-        el('td', {}, nvNumber(tokens.output)),
-        el('td', {}, nvCurrency(item.cost))));
-      total.sessions += Number(item.sessions) || 0;
-      total.input += Number(tokens.input) || 0;
-      total.cached += Number(tokens.cached) || 0;
-      total.output += Number(tokens.output) || 0;
-      total.cost += Number(item.cost) || 0;
-    });
-    packages.append(el('tr', {class: 'nv-total-row'},
-      el('td', {colspan: '6'},
-        el('b', {}, String(tr('Gesamtzeile')) + ': ' + nvNumber(total.sessions)
-          + ' · ' + String(tr('eingabe')) + ' ' + nvNumber(total.input)
-          + ' · ' + String(tr('ausgabe')) + ' ' + nvNumber(total.output)
-          + ' · ' + nvCurrency(total.cost)))));
-    nodes.push(packages);
-
-    var prices = el('div', {class: 'nv-note'},
-      el('b', {}, String(tr('Preise je 1 Mio. Tokens'))));
-    var inputs = [];
-    (data.models || []).forEach(function (item) {
-      var price = item.price || {};
-      var model = nvText(item.model);
-      var row = el('div', {class: 'nv-row'}, el('b', {}, model));
-      [['input', String(tr('Eingabe'))],
-       ['cached_input', 'cached'],
-       ['output', String(tr('Ausgabe'))]].forEach(function (field) {
-        var input = el('input', {type: 'number', min: '0', step: '0.0001',
-          'data-nv-cost-model': model, 'data-nv-cost-field': field[0],
-          value: String(price[field[0]] != null ? price[field[0]] : 0),
-          'aria-label': field[1] + ' ' + model});
-        inputs.push(input);
-        row.append(el('label', {}, field[1] + ' ', input));
-      });
-      // Der Preis ist immer ein Zahlenblock; die Herkunft verrät, ob er
-      // belegt oder nur geschätzt/unbekannt ist.
-      row.append(el('span', {class: 'nv-muted'},
-        String(tr('Quelle')) + ': ' + nvText(item.price_source || String(tr('unbekannt')))));
-      prices.append(row);
-    });
-    var save = el('button', {class: 'nv-btn nv-primary', type: 'button',
-      'data-nv-action': 'cost-save', on: {click: async function () {
-        settingsError(error, '');
-        var values = {};
-        for (var index = 0; index < inputs.length; index++) {
-          var input = inputs[index];
-          var raw = String(input.value || '').trim().replace(',', '.');
-          if (!raw) {
-            settingsError(error, String(tr('Bitte alle Preise eintragen.')));
-            input.focus();
-            return;
-          }
-          var number = Number(raw);
-          if (!isFinite(number) || number < 0) {
-            settingsError(error, String(tr('Preis ist ungültig.')));
-            input.focus();
-            return;
-          }
-          var model = input.getAttribute('data-nv-cost-model');
-          var field = input.getAttribute('data-nv-cost-field');
-          values[model] = values[model] || {};
-          values[model][field] = number;
-        }
-        try {
-          var answer = await api('/api/costs', {name: name, action: 'prices', prices: values});
-          if (answer && answer.ok) {
-            toast(nvBackend(answer.message) || String(tr('Preise gespeichert')));
-            openDetail(name);
-          } else settingsError(error, nvBackend(answer && answer.message) || String(tr('Aktion fehlgeschlagen')));
-        } catch (failure) { nvActionError(error, failure); }
-      }}}, String(tr('Preise speichern')));
-    prices.append(el('div', {class: 'nv-row'}, save));
-    nodes.push(prices);
-    detail.replaceChildren.apply(detail, nodes);
-    detail.hidden = false;
-  }
-
-  function openDetail(name) {
-    api('/api/costs?name=' + encodeURIComponent(name)).then(function (data) {
-      if (!NV.stale(token)) drawDetail(name, data || {});
-    }).catch(function (failure) { nvActionError(error, failure); });
-  }
-
-  /* Globale Modellpreise (Vertrag WP5.7): Editor für alle bekannten
-     Modelle; Eintrag über button[data-nv-action='cost-global-edit'],
-     Speichern über button[data-nv-action='cost-global-save'] →
-     POST /api/costs {action:'prices_global', prices} — gilt für alle
-     Projekte ohne eigene Projektpreise (Rangfolge: Projekt > global >
-     Katalog). */
-  var globalError = settingsErrorBox();
-  var globalRows = [];
-  function nvGlobalPriceRow(model, values) {
-    var row = {fields: []};
-    row.model = el('input', {type: 'text', 'data-nv-cost-global-model': '',
-      value: nvText(model), 'aria-label': String(tr('Modellname'))});
-    var cells = el('div', {class: 'nv-row'},
-      el('label', {}, String(tr('Modell')) + ' '), row.model);
-    ['input', 'cached_input', 'output'].forEach(function (field) {
-      var input = el('input', {type: 'number', min: '0', step: '0.0001',
-        'data-nv-cost-field': field,
-        value: String((values && values[field]) || 0),
-        'aria-label': nvText(field) + ' ' + String(tr('Modell'))});
-      row.fields.push(input);
-      cells.append(el('label', {}, nvText(field) + ' '), input);
-    });
-    globalRows.push(row);
-    return cells;
-  }
-  var globalRowBox = el('div');
-  Object.keys(overview.global_prices || {}).forEach(function (model) {
-    globalRowBox.append(nvGlobalPriceRow(model, overview.global_prices[model]));
-  });
-  if (!globalRows.length) globalRowBox.append(nvGlobalPriceRow('', null));
-  function nvGlobalPayload() {
-    var prices = {};
-    globalRows.forEach(function (row) {
-      var model = String(row.model.value || '').trim();
-      if (!model) return;
-      var price = {};
-      row.fields.forEach(function (input) {
-        price[input.getAttribute('data-nv-cost-field')] = Number(input.value) || 0;
-      });
-      prices[model] = {
-        input: price.input || 0,
-        cached_input: price.cached_input || 0,
-        output: price.output || 0};
-    });
-    return prices;
-  }
-  var globalSave = el('button', {class: 'nv-btn nv-primary', type: 'button',
-    'data-nv-action': 'cost-global-save', on: {click: async function () {
-      settingsError(globalError, '');
-      var prices = nvGlobalPayload();
-      try {
-        var answer = await api('/api/costs', {action: 'prices_global', prices: prices});
-        toast(nvBackend(answer && answer.message)
-          || String(tr('Globale Preise gespeichert')));
-      } catch (failure) { nvActionError(globalError, failure); }
-    }}}, String(tr('Speichern')));
-  var globalEditor = el('div', {'data-nv-cost-global-editor': '', hidden: ''},
-    el('h4', {}, String(tr('Globale Modellpreise'))),
-    el('p', {class: 'nv-muted'}, String(tr('Rangfolge: Projekt > global > Katalog.'))),
-    globalRowBox,
-    el('div', {class: 'nv-row'}, globalSave));
-  var globalEdit = el('button', {class: 'nv-btn', type: 'button',
-    'data-nv-action': 'cost-global-edit', on: {click: function () {
-      globalEditor.hidden = false;
-    }}}, String(tr('Globale Preise bearbeiten')));
-
-  var table = el('table', {class: 'nv-table'},
-    el('tr', {}, el('th', {}, String(tr('Projekt'))),
-      el('th', {}, String(tr('Sitzungen'))), el('th', {}, String(tr('Eingabetokens'))),
-      el('th', {}, String(tr('Kosten')))));
-  (overview.projects || []).forEach(function (item) {
-    table.append(el('tr', {class: 'nv-cost-project nv-clickable', 'data-nv-cost-project': nvText(item.name),
-      on: {click: function () { openDetail(item.name); }}},
-      el('td', {}, el('b', {}, nvText(item.name))),
-      el('td', {}, nvNumber(item.sessions)),
-      el('td', {}, nvNumber(item.tokens && item.tokens.input)),
-      el('td', {}, nvCurrency(item.cost))));
-  });
-
-  return el('div', {class: 'nv-card', 'data-nv-advanced': 'costs'},
-    el('span', {class: 'nv-eval-badge', 'data-nv-eval-badge': ''},
-      tr('Auswertung — reine Anzeige, keine Einstellung')),
-    el('h3', {}, String(tr('Kostenübersicht'))),
-    el('p', {class: 'nv-muted', 'data-nv-costs-hint': ''},
-      tr('Zeile anklicken für Details und Preise')),
-    el('div', {class: 'nv-row'}, globalEdit),
-    table, detail, error, globalEditor);
-}
-
-/* ---------- Harness: Status, Auswahl und Einrichtungsplan ---------- */
-
-async function buildHarnessSection(token) {
+async function fillHarness(section, token) {
   var status;
-  try { status = await api('/api/harness') || {}; } catch (error) { status = {}; }
-  if (NV.stale(token)) return null;
+  try { status = await api('/api/harness') || {}; }
+  catch (error) { status = {}; }
+  if (NV.stale(token)) return;
 
-  var select = el('select', {'data-nv-field': 'harness',
-    'aria-label': String(tr('Harness-Auswahl'))});
+  var select = el('select', {'data-nv-field': 'harness', 'aria-label': tr('Harness-Auswahl')});
+  var error = settingsErrorBox();
+  var statusBox = el('div', {class: 'nv-grid', 'data-nv-harness-status': ''});
+  var installFeedback = el('div', {class: 'nv-note',
+    'data-nv-harness-install-feedback': '', hidden: ''});
+
   function syncSelect(data) {
-    var options = [];
-    (data.harnesses || []).forEach(function (item) {
-      // B18: Nicht installierte Harnesses sind deaktiviert — die Auswahl ist
-      // per UI nur dann wirksam, wenn das Programm tatsächlich läuft.
+    var options = (data.harnesses || []).map(function (item) {
       var option = el('option', {value: nvText(item.harness)},
         nvText(item.name) + ' (' + nvText(item.harness) + ')'
-          + (item.installed ? '' : String(tr(' (nicht installiert)'))));
+        + (item.installed ? '' : String(tr(' (nicht installiert)'))));
       if (!item.installed) option.setAttribute('disabled', '');
-      options.push(option);
+      return option;
     });
     select.replaceChildren.apply(select, options);
     select.value = data.selected || select.value;
   }
-  syncSelect(status);
 
-  var statusBox = el('div', {class: 'nv-note', 'data-nv-harness-status': ''});
-  var installFeedback = el('div', {class: 'nv-note',
-    'data-nv-harness-install-feedback': '', hidden: ''});
   function installButton(id) {
     return el('button', {class: 'nv-btn nv-secondary', type: 'button',
       'data-nv-action': 'harness-install', 'data-nv-harness': nvText(id),
@@ -895,328 +1027,260 @@ async function buildHarnessSection(token) {
         settingsError(error, '');
         try {
           var answer = await api('/api/harness', {action: 'install', harness: id});
-          // Erst Kind, dann Sichtbarkeit: der Test liest die Rückmeldung
-          // direkt nach der Sichtbarkeit, nicht nach einem leeren Feedback.
           installFeedback.replaceChildren(el('span', {},
-            nvBackend(answer && answer.message) || String(tr('Installation fehlgeschlagen'))));
+            nvBackend(answer && answer.message) || tr('Installation fehlgeschlagen')));
           installFeedback.hidden = false;
           if (answer && answer.ok && !NV.stale(token)) {
-            var fresh = await api('/api/harness');
-            draw(fresh);
+            draw(await api('/api/harness'));
           }
         } catch (failure) {
           installFeedback.replaceChildren(el('span', {},
             String(failure && failure.message || failure)));
           installFeedback.hidden = false;
         }
-      }}}, String(tr('Installieren')));
+      }}}, tr('Installieren'));
   }
+
   function draw(data) {
     syncSelect(data);
     var nodes = [el('p', {}, String(tr('Aktiver Harness')) + ': ' + nvText(data.selected))];
     (data.harnesses || []).forEach(function (item) {
-      var row = el('div', {class: 'nv-row'},
-        el('b', {}, nvText(item.name) + ' (' + nvText(item.harness) + ')'),
+      var row = el('div', {class: 'nv-card'},
+        el('h4', {}, nvText(item.name) + ' (' + nvText(item.harness) + ')'),
         el('span', {class: item.installed ? 'nv-ok' : 'nv-bad'},
-          item.installed ? String(tr('Installiert')) : String(tr('Nicht installiert'))));
-      if (!item.installed) row.append(installButton(item.harness));
-      if (item.version) row.append(el('span', {class: 'nv-muted'},
-        String(tr('Version')) + ' ' + nvText(item.version)));
+          item.installed ? tr('Installiert') : tr('Nicht installiert')),
+        item.installed ? null : installButton(item.harness),
+        item.version ? el('span', {class: 'nv-muted'},
+          String(tr('Version')) + ' ' + nvText(item.version)) : null,
+        item.hint ? el('div', {class: 'nv-muted'}, nvText(item.hint)) : null,
+        item.official ? el('div', {class: 'nv-muted'},
+          String(tr('Offizielle Anleitung')) + ': ' + nvText(item.official)) : null,
+        item.install_command && item.install_command.length
+          ? el('div', {class: 'nv-muted'},
+            String(tr('Einrichtungsplan')) + ': ' + item.install_command.join(' '))
+          : null);
       nodes.push(row);
-      if (item.hint) nodes.push(el('div', {class: 'nv-muted'}, nvText(item.hint)));
-      if (item.official) nodes.push(el('div', {class: 'nv-muted'},
-        String(tr('Offizielle Anleitung')) + ': ' + nvText(item.official)));
-      if (item.install_command && item.install_command.length) {
-        nodes.push(el('div', {class: 'nv-muted'},
-          String(tr('Einrichtungsplan')) + ': ' + item.install_command.join(' ')));
-      }
     });
     statusBox.replaceChildren.apply(statusBox, nodes);
   }
   draw(status);
 
-  var error = settingsErrorBox();
-  var useButton = el('button', {class: 'nv-btn nv-primary', type: 'button',
-    'data-nv-action': 'harness-use', on: {click: async function () {
-      settingsError(error, '');
-      try {
-        var answer = await api('/api/harness', {action: 'use', harness: select.value});
-        if (answer && answer.ok) {
-          toast(nvBackend(answer.message));
-          var fresh = await api('/api/harness');
-          if (!NV.stale(token)) { draw(fresh); select.value = fresh.selected; }
-        } else {
-          // B18: Ablehnung zeigt die Backend-Meldung und setzt die
-          // Auswahlanzeige auf den persistierten Wert zurück.
-          settingsError(error, nvBackend(answer && answer.message) || String(tr('Aktion fehlgeschlagen')));
-          var freshReset = await api('/api/harness');
-          if (!NV.stale(token)) select.value = freshReset.selected;
+  section.append(el('label', {}, tr('Harness-Auswahl')), select,
+    el('div', {class: 'nv-row'}, el('button', {class: 'nv-btn nv-primary', type: 'button',
+      'data-nv-action': 'harness-use', on: {click: async function () {
+        settingsError(error, '');
+        try {
+          var answer = await api('/api/harness', {action: 'use', harness: select.value});
+          if (answer && answer.ok) {
+            toast(nvBackend(answer.message));
+            draw(await api('/api/harness'));
+          } else {
+            settingsError(error, nvBackend(answer && answer.message)
+              || tr('Aktion fehlgeschlagen'));
+            draw(await api('/api/harness'));
+          }
+        } catch (failure) {
+          settingsError(error, String(failure && failure.message || failure));
         }
-      } catch (failure) { nvActionError(error, failure); }
-    }}}, String(tr('Harness übernehmen')));
-
-  return el('div', {class: 'nv-card', 'data-nv-advanced': 'harness'},
-    el('h3', {}, String(tr('Harness'))),
-    el('label', {}, String(tr('Harness-Auswahl'))), select,
-    el('div', {class: 'nv-row'}, useButton), statusBox, error, installFeedback);
+      }}}, tr('Harness übernehmen'))),
+    statusBox, error, installFeedback);
 }
 
-/* ---------- Umgebung: Doctor, Pfade, Fritz, Emulator, Server ---------- */
+/* ------------------------------------------------------------------------- */
+/* Übersetzungen: Schlüssel sind die deutschen Quelltexte.                    */
+/* ------------------------------------------------------------------------- */
 
-async function buildEnvSection(token) {
-  var doctor = [], paths = {}, fritz = {}, server = {};
-  try {
-    var answers = await Promise.all([
-      api('/api/doctor'), api('/api/paths'), api('/api/fritz'), api('/api/server')
-    ]);
-    doctor = answers[0] || [];
-    paths = (answers[1] && answers[1].paths) || {};
-    fritz = answers[2] || {};
-    server = answers[3] || {};
-  } catch (error) { /* leere, aber bedienbare Ansicht */ }
-  if (NV.stale(token)) return null;
-
-  var card = el('div', {class: 'nv-card', 'data-nv-advanced': 'env'},
-    el('h3', {}, String(tr('Umgebung'))));
-  var error = settingsErrorBox();
-
-  var doctorList = el('div', {class: 'nv-list'});
-  doctor.forEach(function (check) {
-    doctorList.append(el('div', {class: 'nv-row', 'data-nv-doctor-row': '',
-      'data-nv-ok': check.ok ? 'true' : 'false'},
-      el('span', {class: check.ok ? 'nv-ok' : 'nv-bad'},
-        check.ok ? 'OK' : String(tr('FEHL'))),
-      el('span', {}, nvBackend(check.label)),
-      check.ok || !check.hint ? null : el('span', {class: 'nv-muted'},
-        String(tr('Hinweis')) + ': ' + nvBackend(check.hint))));
-  });
-  card.append(el('h4', {}, String(tr('Prüfungen'))), doctorList);
-
-  var pathList = el('div', {'data-nv-paths': ''});
-  Object.keys(paths).forEach(function (key) {
-    pathList.append(el('div', {class: 'nv-row'},
-      el('code', {}, key), el('span', {}, nvText(paths[key]))));
-  });
-  card.append(el('h4', {}, String(tr('Aufgelöste Pfade'))), pathList);
-
-  var fritzResult = el('div', {class: 'nv-note', 'data-nv-fritz-result': '', hidden: ''});
-  var automationOn = el('button', {class: 'nv-btn', type: 'button',
-    'data-nv-action': 'fritz-automation-on', on: {click: async function () {
-      try {
-        var answer = await api('/api/fritz', {action: 'on'});
-        toast(nvBackend(answer && answer.message));
-        if (answer && answer.ok) NV.render();
-      } catch (failure) { nvActionError(error, failure); }
-    }}}, String(tr('Automatik einschalten')));
-  var automationOff = el('button', {class: 'nv-btn', type: 'button',
-    'data-nv-action': 'fritz-automation-off', on: {click: async function () {
-      try {
-        var answer = await api('/api/fritz', {action: 'off'});
-        toast(nvBackend(answer && answer.message));
-        if (answer && answer.ok) NV.render();
-      } catch (failure) { nvActionError(error, failure); }
-    }}}, String(tr('Automatik ausschalten')));
-  var reconnect = el('button', {class: 'nv-btn nv-primary', type: 'button',
-    'data-nv-action': 'fritz-reconnect', on: {click: async function () {
-      if (!window.confirm(String(tr('FRITZ!Box neu verbinden? Die Internetverbindung wird kurz getrennt.')))) return;
-      fritzResult.hidden = false;
-      fritzResult.replaceChildren(el('span', {class: 'nv-muted'},
-        String(tr('Reconnect läuft')) + ' …'));
-      try {
-        var answer = await api('/api/fritz', {action: 'reconnect'});
-        fritzResult.replaceChildren(
-          el('b', {class: answer && answer.ok ? 'nv-ok' : 'nv-bad'},
-            answer && answer.ok ? String(tr('Reconnect erfolgreich')) : String(tr('Reconnect fehlgeschlagen'))),
-          el('pre', {}, nvText((answer && answer.result && answer.result.output)
-            || (answer && answer.message) || '')));
-      } catch (failure) {
-        fritzResult.replaceChildren(el('div', {class: 'nv-bad'},
-          String(failure && failure.message || failure)));
-      }
-    }}}, String(tr('Neue IP anfordern')));
-  card.append(el('h4', {}, String(tr('Fritzbox'))),
-    el('p', {class: 'nv-muted'}, String(tr('Automatik: '))
-      + (fritz.automation ? String(tr('an')) : String(tr('aus')))),
-    el('div', {class: 'nv-row'}, automationOn, automationOff, reconnect), fritzResult);
-
-  var emuResult = el('div', {class: 'nv-note', 'data-nv-emu-result': '', hidden: ''});
-  function emulator(action) {
-    return async function () {
-      try {
-        var answer = await api('/api/emu', {action: action});
-        emuResult.replaceChildren(el('div',
-          {class: answer && answer.ok ? 'nv-ok' : 'nv-bad'},
-          nvBackend(answer && answer.message) || String(tr('Aktion fehlgeschlagen'))));
-        emuResult.hidden = false;
-        if (answer && !answer.ok) settingsError(error, nvBackend(answer.message));
-      } catch (failure) {
-        emuResult.replaceChildren(el('div', {class: 'nv-bad'},
-          String(failure && failure.message || failure)));
-        emuResult.hidden = false;
-      }
-    };
+VIBE_I18N.extend({
+  en: {
+    'Einstellungsbereiche': 'Settings sections',
+    'Globale AGENTS.md': 'Global AGENTS.md',
+    'Darstellung': 'Appearance',
+    'Zugriffssicherheit': 'Access security',
+    'Funktionen': 'Features',
+    'Laufverhalten': 'Run behaviour',
+    'Schranken': 'Guards',
+    'Modelle': 'Models',
+    'Profile': 'Profiles',
+    'MCP-Server': 'MCP servers',
+    'Regeln für alle Projekte bearbeiten': 'Edit rules for all projects',
+    'Die globale AGENTS.md fehlt noch. Mit der Vorlage legst du Regeln für alle Projekte an.':
+      'The global AGENTS.md is missing. Use the template to create rules for all projects.',
+    'Vorlage angelegt': 'Template created',
+    'Globale AGENTS.md gespeichert': 'Global AGENTS.md saved',
+    'Akzent': 'Accent',
+    'Blau': 'Blue', 'Türkis': 'Teal', 'Cyan': 'Cyan', 'Grün': 'Green',
+    'Limette': 'Lime', 'Gelb': 'Yellow', 'Bernstein': 'Amber',
+    'Orange': 'Orange', 'Rot': 'Red', 'Pink': 'Pink',
+    'Violett': 'Violet', 'Indigo': 'Indigo',
+    'Währung': 'Currency',
+    'USD je 1 EUR': 'USD per 1 EUR',
+    'Bitte einen gültigen Umrechnungskurs eingeben.': 'Please enter a valid exchange rate.',
+    'Währung gespeichert': 'Currency saved',
+    'Preise bleiben in Euro je 1 Mio. Tokens gespeichert und werden nur für die Anzeige umgerechnet.':
+      'Prices stay stored in euros per 1 million tokens and are converted for display only.',
+    'Fortsetzen': 'Continue',
+    'Stopp': 'Stop',
+    'Neue Läufe setzen eine vorhandene Sitzung fort und arbeiten dort weiter.':
+      'New runs continue an existing session and carry on there.',
+    'Neue Läufe werden gestoppt, statt eine bestehende Sitzung fortzusetzen.':
+      'New runs are stopped instead of continuing an existing session.',
+    'Die Einstellung gilt für neue Läufe; eine bereits laufende Sitzung bleibt unberührt.':
+      'The setting applies to new runs; a running session is not affected.',
+    'Laufverhalten gespeichert': 'Run behaviour saved',
+    'Wirkung': 'Effect',
+    'Wert': 'Value',
+    'Herkunft': 'Origin',
+    'Projektwert': 'Project value',
+    'Globaler Wert': 'Global value',
+    'Weicht ab': 'Differs',
+    'Fragen': 'Ask',
+    'Abbrechen': 'Cancel',
+    'Schranken gespeichert': 'Guards saved',
+    'Projektabweichungen zurückgesetzt': 'Project overrides reset',
+    'Ohne Projektwert gilt der globale Wert oder die Voreinstellung; Änderungen wirken auf neue Läufe.':
+      'Without a project value the global value or default applies; changes affect new runs.',
+    'Globale': 'Global',
+    'Quelle': 'Source',
+    'Status': 'Status',
+    'Anbieter': 'Provider',
+    'Fakten': 'Facts',
+    'Einschätzungen': 'Assessments',
+    'Preisquelle': 'Price source',
+    'Modellkatalog': 'Model catalogue',
+    'Katalogstand': 'Catalogue date',
+    'Befunde': 'Findings',
+    'Quellen': 'Sources',
+    'Preise bearbeiten': 'Edit prices',
+    'Katalog neu laden': 'Reload catalogue',
+    'Modellkatalog neu geladen': 'Model catalogue reloaded',
+    'Der Katalog ist nur eine Referenz; Preise werden im Kosten-Dashboard gepflegt.':
+      'The catalogue is reference only; prices are managed in the costs dashboard.',
+    'Aktiv': 'Active',
+    'Aktivieren': 'Activate',
+    'Deaktivieren': 'Deactivate',
+    'Anwenden': 'Apply',
+    'Profil anwenden': 'Apply profile',
+    'Profilvorschau': 'Profile preview',
+    'Bestätigen': 'Confirm',
+    'Profile gespeichert': 'Profiles saved',
+    'Profil angewendet': 'Profile applied',
+    'Keine Profile vorhanden.': 'No profiles available.',
+    'MCP-Server suchen …': 'Search MCP servers …',
+    'Alle Bereiche': 'All scopes',
+    'Geltungsbereich': 'Scope',
+    'Inaktiv': 'Inactive',
+    'MCP-Server bearbeiten': 'Edit MCP server',
+    'Der Eintrag wird maskiert angezeigt; Geheimnisse bleiben verborgen.':
+      'The entry is shown masked; secrets stay hidden.',
+    'Bearbeiten': 'Edit',
+    'Löschen': 'Delete',
+    'Verbindung testen': 'Test connection',
+    'Verbindungstest läuft': 'Connection test running',
+    'Test bestanden': 'Test passed',
+    'Test fehlgeschlagen': 'Test failed',
+    'Test beendet': 'Test finished',
+    'MCP-Server geändert': 'MCP server changed',
+    'MCP-Server gespeichert': 'MCP server saved',
+    'MCP-Server gelöscht': 'MCP server deleted',
+    'Keine MCP-Server konfiguriert.': 'No MCP servers configured.',
+    'MCP-Server löschen?': 'Delete MCP server?',
+    'unbekannt': 'unknown',
+    'keine Angaben': 'no data'
+  },
+  de: {
+    'Einstellungsbereiche': 'Einstellungsbereiche',
+    'Globale AGENTS.md': 'Globale AGENTS.md',
+    'Darstellung': 'Darstellung',
+    'Zugriffssicherheit': 'Zugriffssicherheit',
+    'Funktionen': 'Funktionen',
+    'Laufverhalten': 'Laufverhalten',
+    'Schranken': 'Schranken',
+    'Modelle': 'Modelle',
+    'Profile': 'Profile',
+    'MCP-Server': 'MCP-Server',
+    'Regeln für alle Projekte bearbeiten': 'Regeln für alle Projekte bearbeiten',
+    'Die globale AGENTS.md fehlt noch. Mit der Vorlage legst du Regeln für alle Projekte an.':
+      'Die globale AGENTS.md fehlt noch. Mit der Vorlage legst du Regeln für alle Projekte an.',
+    'Vorlage angelegt': 'Vorlage angelegt',
+    'Globale AGENTS.md gespeichert': 'Globale AGENTS.md gespeichert',
+    'Akzent': 'Akzent',
+    'Blau': 'Blau', 'Türkis': 'Türkis', 'Cyan': 'Cyan', 'Grün': 'Grün',
+    'Limette': 'Limette', 'Gelb': 'Gelb', 'Bernstein': 'Bernstein',
+    'Orange': 'Orange', 'Rot': 'Rot', 'Pink': 'Pink',
+    'Violett': 'Violett', 'Indigo': 'Indigo',
+    'Währung': 'Währung',
+    'USD je 1 EUR': 'USD je 1 EUR',
+    'Bitte einen gültigen Umrechnungskurs eingeben.': 'Bitte einen gültigen Umrechnungskurs eingeben.',
+    'Währung gespeichert': 'Währung gespeichert',
+    'Preise bleiben in Euro je 1 Mio. Tokens gespeichert und werden nur für die Anzeige umgerechnet.':
+      'Preise bleiben in Euro je 1 Mio. Tokens gespeichert und werden nur für die Anzeige umgerechnet.',
+    'Fortsetzen': 'Fortsetzen',
+    'Stopp': 'Stopp',
+    'Neue Läufe setzen eine vorhandene Sitzung fort und arbeiten dort weiter.':
+      'Neue Läufe setzen eine vorhandene Sitzung fort und arbeiten dort weiter.',
+    'Neue Läufe werden gestoppt, statt eine bestehende Sitzung fortzusetzen.':
+      'Neue Läufe werden gestoppt, statt eine bestehende Sitzung fortzusetzen.',
+    'Die Einstellung gilt für neue Läufe; eine bereits laufende Sitzung bleibt unberührt.':
+      'Die Einstellung gilt für neue Läufe; eine bereits laufende Sitzung bleibt unberührt.',
+    'Laufverhalten gespeichert': 'Laufverhalten gespeichert',
+    'Wirkung': 'Wirkung',
+    'Wert': 'Wert',
+    'Herkunft': 'Herkunft',
+    'Projektwert': 'Projektwert',
+    'Globaler Wert': 'Globaler Wert',
+    'Weicht ab': 'Weicht ab',
+    'Fragen': 'Fragen',
+    'Abbrechen': 'Abbrechen',
+    'Schranken gespeichert': 'Schranken gespeichert',
+    'Projektabweichungen zurückgesetzt': 'Projektabweichungen zurückgesetzt',
+    'Ohne Projektwert gilt der globale Wert oder die Voreinstellung; Änderungen wirken auf neue Läufe.':
+      'Ohne Projektwert gilt der globale Wert oder die Voreinstellung; Änderungen wirken auf neue Läufe.',
+    'Globale': 'Globale',
+    'Quelle': 'Quelle',
+    'Status': 'Status',
+    'Anbieter': 'Anbieter',
+    'Fakten': 'Fakten',
+    'Einschätzungen': 'Einschätzungen',
+    'Preisquelle': 'Preisquelle',
+    'Modellkatalog': 'Modellkatalog',
+    'Katalogstand': 'Katalogstand',
+    'Befunde': 'Befunde',
+    'Quellen': 'Quellen',
+    'Preise bearbeiten': 'Preise bearbeiten',
+    'Katalog neu laden': 'Katalog neu laden',
+    'Modellkatalog neu geladen': 'Modellkatalog neu geladen',
+    'Der Katalog ist nur eine Referenz; Preise werden im Kosten-Dashboard gepflegt.':
+      'Der Katalog ist nur eine Referenz; Preise werden im Kosten-Dashboard gepflegt.',
+    'Aktiv': 'Aktiv',
+    'Aktivieren': 'Aktivieren',
+    'Deaktivieren': 'Deaktivieren',
+    'Anwenden': 'Anwenden',
+    'Profil anwenden': 'Profil anwenden',
+    'Profilvorschau': 'Profilvorschau',
+    'Bestätigen': 'Bestätigen',
+    'Profile gespeichert': 'Profile gespeichert',
+    'Profil angewendet': 'Profil angewendet',
+    'Keine Profile vorhanden.': 'Keine Profile vorhanden.',
+    'MCP-Server suchen …': 'MCP-Server suchen …',
+    'Alle Bereiche': 'Alle Bereiche',
+    'Geltungsbereich': 'Geltungsbereich',
+    'Inaktiv': 'Inaktiv',
+    'MCP-Server bearbeiten': 'MCP-Server bearbeiten',
+    'Der Eintrag wird maskiert angezeigt; Geheimnisse bleiben verborgen.':
+      'Der Eintrag wird maskiert angezeigt; Geheimnisse bleiben verborgen.',
+    'Bearbeiten': 'Bearbeiten',
+    'Löschen': 'Löschen',
+    'Verbindung testen': 'Verbindung testen',
+    'Verbindungstest läuft': 'Verbindungstest läuft',
+    'Test bestanden': 'Test bestanden',
+    'Test fehlgeschlagen': 'Test fehlgeschlagen',
+    'Test beendet': 'Test beendet',
+    'MCP-Server geändert': 'MCP-Server geändert',
+    'MCP-Server gespeichert': 'MCP-Server gespeichert',
+    'MCP-Server gelöscht': 'MCP-Server gelöscht',
+    'Keine MCP-Server konfiguriert.': 'Keine MCP-Server konfiguriert.',
+    'MCP-Server löschen?': 'MCP-Server löschen?',
+    'unbekannt': 'unbekannt',
+    'keine Angaben': 'keine Angaben'
   }
-  card.append(el('h4', {}, String(tr('Emulator'))),
-    el('div', {class: 'nv-row'},
-      el('button', {class: 'nv-btn', type: 'button', 'data-nv-action': 'emu-start',
-        on: {click: emulator('start')}}, String(tr('Emulator starten'))),
-      el('button', {class: 'nv-btn', type: 'button', 'data-nv-action': 'emu-stop',
-        on: {click: emulator('stop')}}, String(tr('Emulator stoppen')))),
-    emuResult);
-
-  var serverStatus = el('div', {class: 'nv-note', 'data-nv-server-status': ''});
-  function drawServer(data) {
-    serverStatus.replaceChildren(
-      el('b', {}, data && data.up ? String(tr('Server läuft')) : String(tr('Server ist nicht erreichbar'))),
-      el('span', {class: 'nv-muted'}, ' ' + nvText(data && data.url || '')));
-  }
-  drawServer(server);
-  function serverAction(action) {
-    return async function () {
-      try {
-        var answer = await api('/api/server', {action: action});
-        toast(nvBackend(answer && answer.message));
-        var fresh = await api('/api/server');
-        if (!NV.stale(token)) drawServer(fresh);
-      } catch (failure) { nvActionError(error, failure); }
-    };
-  }
-  card.append(el('h4', {}, String(tr('opencode-Server'))), serverStatus,
-    el('div', {class: 'nv-row'},
-      el('button', {class: 'nv-btn', type: 'button', 'data-nv-action': 'server-start',
-        on: {click: serverAction('start')}}, String(tr('Server starten'))),
-      el('button', {class: 'nv-btn', type: 'button', 'data-nv-action': 'server-stop',
-        on: {click: serverAction('stop')}}, String(tr('Server stoppen')))),
-    error);
-  return card;
-}
-
-/* ---------- Läufe: Registerliste und Prune ---------- */
-
-async function buildRunsSection(token) {
-  var data;
-  try { data = await api('/api/runs') || {}; } catch (error) { data = {}; }
-  if (NV.stale(token)) return null;
-
-  /* Prune-Badge: Zeilen mit Endzustand sind bereinigbar — „Bereinigen“
-     entfernt sie aus dem Register. */
-  var PRUNE_STATES = ['failed', 'stopped', 'ended', 'finished'];
-  function nvRunPruneable(record) {
-    if (PRUNE_STATES.indexOf(String(record.state || '')) < 0) return null;
-    return el('span', {class: 'nv-muted', 'data-nv-run-pruneable': ''},
-      tr('bereinigbar'));
-  }
-  var list = el('div', {class: 'nv-list'});
-  var result = el('div', {class: 'nv-note', 'data-nv-runs-result': '', hidden: ''});
-  var error = settingsErrorBox();
-  function renderList(records) {
-    list.replaceChildren();
-    (records || []).forEach(function (record) {
-      list.append(el('div', {class: 'nv-row', 'data-nv-run': nvText(record.id)},
-        el('b', {}, nvText(record.id)),
-        el('span', {class: 'nv-muted'}, String(tr('Zustand')) + ': ' + nvText(record.state)),
-        el('span', {class: 'nv-muted'}, String(tr('Sitzung')) + ': ' + nvText(record.session)),
-        el('span', {class: 'nv-muted'}, String(tr('Projekt')) + ': ' + nvText(record.project)),
-        nvRunPruneable(record)));
-    });
-  }
-  function renderResult(lines) {
-    if (!lines || !lines.length) return;
-    var box = el('div', {});
-    lines.forEach(function (line) { box.append(el('div', {}, nvText(line))); });
-    result.replaceChildren(el('b', {}, String(tr('Bereinigungsergebnis'))), box);
-    result.hidden = false;
-  }
-  renderList(data.records || []);
-
-  var prune = el('button', {class: 'nv-btn nv-primary', type: 'button',
-    'data-nv-action': 'runs-prune', on: {click: async function () {
-      settingsError(error, '');
-      try {
-        var answer = await api('/api/runs', {action: 'prune'});
-        if (answer && answer.ok) {
-          toast(nvBackend(answer.message) || String(tr('Register bereinigt')));
-          // Ergebnis sofort aus der Antwort zeigen; die Liste aktualisiert
-          // sich im Hintergrund (kein zusätzlicher Roundtrip vor der Anzeige).
-          renderResult(answer.lines || []);
-          api('/api/runs').then(function (fresh) {
-            if (!NV.stale(token)) renderList(fresh.records || []);
-          }).catch(function () { /* Liste bleibt beim letzten Stand */ });
-        } else settingsError(error, nvBackend(answer && answer.message) || String(tr('Aktion fehlgeschlagen')));
-      } catch (failure) { nvActionError(error, failure); }
-    }}}, String(tr('Register bereinigen')));
-
-  return el('div', {class: 'nv-card', 'data-nv-advanced': 'runs'},
-    el('span', {class: 'nv-eval-badge', 'data-nv-eval-badge': ''},
-      tr('Auswertung — reine Anzeige, keine Einstellung')),
-    el('h3', {}, String(tr('Run-Register'))),
-    el('p', {class: 'nv-muted', 'data-nv-runs-hint': ''},
-      tr('Abgeschlossene Einträge sind nur Vergangenheit; „Bereinigen“ entfernt sie aus dem Register')),
-    list, prune, result, error);
-}
-
-/* ---------- Globale AGENTS.md (Koordinator-Entscheidung 6, WP5) ---------- */
-
-async function buildGlobalAgentsSection(token) {
-  var view;
-  try { view = await api('/api/global_agents_file') || {}; }
-  catch (error) { view = {exists: false, digest: '', text: ''}; }
-  if (NV.stale(token)) return null;
-
-  var digest = String(view && view.digest || '');
-  var textarea = el('textarea', {'data-nv-global-agents': ''},
-    nvText((view && view.exists) ? (view.text || '') : ''));
-  var agentsError = settingsErrorBox();
-  var saveButton = el('button', {class: 'nv-btn nv-primary', type: 'button',
-    'data-nv-action': 'global-agents-save', on: {click: async function () {
-      settingsError(agentsError, '');
-      try {
-        var answer = await api('/api/global_agents_file', {action: 'save',
-          text: String(textarea.value || ''), digest: digest});
-        if (answer && answer.ok) {
-          // Toast + lokalen Digest-Update — kein zusätzlicher Roundtrip.
-          digest = String(answer.digest || digest);
-          toast(nvBackend(answer.message)
-            || String(tr('Globale AGENTS.md gespeichert')));
-        } else settingsError(agentsError, nvBackend(answer && answer.message)
-          || String(tr('Aktion fehlgeschlagen')));
-      } catch (failure) { settingsError(agentsError, String(failure && failure.message || failure)); }
-    }}}, String(tr('Speichern')));
-  var createButton = el('button', {class: 'nv-btn', type: 'button',
-    'data-nv-action': 'global-agents-create', on: {click: async function () {
-      settingsError(agentsError, '');
-      try {
-        await api('/api/global_agents_file', {action: 'create'});
-        var fresh = await api('/api/global_agents_file');
-        if (!NV.stale(token)) {
-          digest = String(fresh && fresh.digest || '');
-          textarea.value = nvText(fresh && fresh.text || '');
-          warning.hidden = true;
-          createRow.hidden = true;
-          agentsEditor.hidden = false;
-        }
-      } catch (failure) { settingsError(agentsError, String(failure && failure.message || failure)); }
-    }}}, String(tr('Vorlage anlegen')));
-  var warning = el('p', {class: 'nv-note'},
-    tr('Globale AGENTS.md ist noch nicht vorhanden — klicken Sie „Vorlage anlegen“, um die Vorlage für alle Projekte zu erstellen.'));
-  var createRow = el('div', {class: 'nv-row'}, createButton);
-  var agentsEditor = el('div', {'data-nv-global-agents-editor': ''},
-    textarea, el('div', {class: 'nv-row'}, saveButton));
-  if (!view.exists) {
-    warning.hidden = false;
-    createRow.hidden = false;
-    agentsEditor.hidden = true;
-  } else {
-    warning.hidden = true;
-    createRow.hidden = true;
-    agentsEditor.hidden = false;
-  }
-
-
-  return el('div', {class: 'nv-card', 'data-nv-global-agents': '',
-    'data-nv-ssection': 'global-agents'},
-    el('h3', {}, String(tr('Globale AGENTS.md'))),
-    el('small', {class: 'nv-note', 'data-nv-global-agents-hint': ''},
-      tr('Diese Regeln gelten für alle Projekte; projektbezogene AGENTS.md ergänzen sie.')),
-    warning, createRow, agentsEditor, agentsError);
-}
+});
