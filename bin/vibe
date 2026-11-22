@@ -43,12 +43,13 @@ Aufruf:  vibe                 interaktives Menü
          vibe ui password [set [--stdin]|clear|status]  Anmeldekennwort des Dashboards setzen (Eingabe unsichtbar, nie als Argument), entfernen oder anzeigen
          vibe server [start|stop|status]  gemeinsamer opencode-Server mit Weboberfläche
          vibe harness [status|list|use <name>|setup [name]]  Harness (opencode/Pi) wählen und einrichten
+         vibe keys [add <name> [--provider P] [--secret S]|select <name>|list|remove <name>]  Secrets im lokalen Vault verwalten (ohne --secret: versteckte Eingabe)
          vibe gates [status] [<schranke> <wert>]  Schranken des Läufers zeigen oder setzen (global oder mit --project <p> je Projekt)
          vibe github <p> [status|token [clear]|link <url>|unlink|branches|fetch|pull|push [branch]|checkout <branch>|test|issues|issues-import|pr]  GitHub-Verknüpfung (optional je Projekt); alle Aktionen bewusst, Merge-Request nur mit --confirm; Token wird je Projekt verschlüsselt gespeichert (AP9), test prüft die Verbindungen
          vibe types           verfügbare Projekttypen
          vibe doctor          Umgebung prüfen
 """
-import os, sys, re, json, math, sqlite3, subprocess, shutil, time, tempfile, shlex, socket, errno, secrets
+import os, sys, re, json, math, sqlite3, subprocess, shutil, time, tempfile, shlex, socket, errno, secrets, getpass
 import urllib.parse
 
 try:  # Nur unter POSIX verfügbar; ohne flock bleibt die Sperre wirkungslos (siehe F18).
@@ -58,7 +59,7 @@ except ImportError:  # pragma: no cover - Windows ohne Paket-Läufer
 
 if __name__ == "__main__": sys.modules["vibe"] = sys.modules[__name__]
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
-import vibe_storage, vibe_paths, vibe_opencode, vibe_models, vibe_runs, vibe_questions, vibe_autonomous, vibe_harness, vibe_github, vibe_packages, vibe_issues, vibe_limits
+import vibe_storage, vibe_paths, vibe_opencode, vibe_models, vibe_runs, vibe_questions, vibe_autonomous, vibe_harness, vibe_github, vibe_packages, vibe_issues, vibe_limits, vibe_keys
 try:  # AP10: Ältere Installationen ohne vibe_gates.py dürfen weiterhin starten.
     import vibe_gates
 except ImportError:  # pragma: no cover - unvollständige Installation
@@ -5941,6 +5942,52 @@ def cmd_harness(action="status", name=None, out=None):
     except vibe_harness.HarnessError as error:
         sys.exit(str(error))
 
+def cmd_keys(args):
+    """AP23: Secrets im lokalen Vault speichern, auswählen und auflisten."""
+    usage = ("Aufruf: vibe keys add <name> [--provider P] [--secret S] | "
+             "vibe keys select <name> | vibe keys list | vibe keys remove <name>")
+    if not args:
+        sys.exit(usage)
+    action, rest = args[0], args[1:]
+    try:
+        if action == "add":
+            if not rest:
+                sys.exit(usage)
+            name = rest[0]
+            provider, secret, index = "generic", None, 1
+            while index < len(rest):
+                if rest[index] == "--provider" and index + 1 < len(rest):
+                    provider, index = rest[index + 1], index + 2
+                elif rest[index] == "--secret" and index + 1 < len(rest):
+                    secret, index = rest[index + 1], index + 2
+                else:
+                    sys.exit(usage)
+            if secret is None:
+                secret = getpass.getpass("Secret: ")
+            entry = vibe_keys.add_entry(PATHS.state, name, provider, secret)
+            print(f"Gespeichert: {entry['name']} ({entry['provider']}, {entry['id'][:8]})")
+        elif action == "select":
+            if not rest:
+                sys.exit(usage)
+            entry = vibe_keys.select_entry(PATHS.state, rest[0])
+            print(f"Ausgewählt: {entry['name']} ({entry['provider']})")
+        elif action == "list":
+            entries = vibe_keys.list_entries(PATHS.state)
+            print("Keine Einträge vorhanden" if not entries else "Name                 Provider          Maske")
+            for entry in entries:
+                print(f"{entry['name']:<20} {entry['provider']:<16} {entry['masked']}")
+        elif action == "remove":
+            if not rest:
+                sys.exit(usage)
+            ok, message = vibe_keys.remove_entry(PATHS.state, rest[0])
+            print(message)
+            if not ok:
+                sys.exit(2)
+        else:
+            sys.exit(usage)
+    except (ValueError, OSError) as error:
+        sys.exit("Keys: " + str(error))
+
 def ui_session():
     return profile_session("vibe-ui")
 
@@ -6503,6 +6550,7 @@ def main():
                  "emu": lambda: cmd_emu(r[0]), "paths": lambda: cmd_paths(*r),
                  "ui": lambda: cmd_ui(r), "server": lambda: cmd_server(r[0] if r else "status"),
                  "harness": lambda: cmd_harness(r[0] if r else "status", r[1] if len(r) > 1 else None),
+                 "keys": lambda: cmd_keys(r),
                  "limits": lambda: cmd_limits(r[0] if r else "status"),
                  "gates": lambda: cmd_gates(r),
                  "github": lambda: github_cli(r),
