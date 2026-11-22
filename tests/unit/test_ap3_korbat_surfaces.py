@@ -767,7 +767,9 @@ class NovaIssuesSurfaceTest(unittest.TestCase):
         Fehlerfall: Kategorien sind im verbundenen Projekt nicht waehlbar.
         """
         form = js_region(self.text, "function nvpOpenTicketForm(")
-        work = js_region(self.text, "/* ---- Work ---- */")
+        # F33 WP3: der alte /* ---- Work ---- */-Kommentar wurde durch die
+        # Arbeit-Sektion ersetzt; issues_enabled steht jetzt am Board-Aufbau.
+        work = js_region(self.text, "var issuesEnabled = !!(data.github")
         self.assertTrue(form, "nvpOpenTicketForm nicht gefunden")
         self.assertIn("category", form)
         self.assertRegex(form, r"(?i)bug")
