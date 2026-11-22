@@ -1020,6 +1020,18 @@
         "Für dieses Projekt sind keine Sitzungen aufgezeichnet.": "No sessions recorded for this project.",
         "OpenCode": "OpenCode",
         "OpenCode-Agenten (general, explore) sind eingebaute Subagenten ohne eigene Datei. Abwählen sperrt ihr Aufrufen durch andere Agenten in Läufen dieses Projekts; ihr Modell lässt sich hier je Projekt überschreiben.": "OpenCode agents (general, explore) are built-in subagents without their own file. Deselecting blocks other agents from calling them in runs of this project; their model can be overridden per project here.",
+        "Paket abschließen": "Close work package",
+        /* AP3-Korbat: GitHub-Issues-Sync (Zustände, Karte, Formular). */
+        "In Progress": "In Progress",
+        "Entwurf": "Draft",
+        "Kategorie": "Category",
+        "Feature": "Feature",
+        "In-Progress-Label": "In-progress label",
+        "Ready-Label": "Ready label",
+        "Assignee (leer = alle)": "Assignee (empty = all)",
+        "Issues-Sync aktivieren (GitHub als Quelle der Wahrheit)": "Enable issues sync (GitHub as source of truth)",
+        "Issues synchronisieren": "Sync issues",
+        "Bereit": "Ready",
     },
     de: {
         "ui.language.hint": "Die gesamte vibe-Oberfläche; Englisch ist der Standard.",
@@ -2032,6 +2044,18 @@
         "Für dieses Projekt sind keine Sitzungen aufgezeichnet.": "Für dieses Projekt sind keine Sitzungen aufgezeichnet.",
         "OpenCode": "OpenCode",
         "OpenCode-Agenten (general, explore) sind eingebaute Subagenten ohne eigene Datei. Abwählen sperrt ihr Aufrufen durch andere Agenten in Läufen dieses Projekts; ihr Modell lässt sich hier je Projekt überschreiben.": "OpenCode-Agenten (general, explore) sind eingebaute Subagenten ohne eigene Datei. Abwählen sperrt ihr Aufrufen durch andere Agenten in Läufen dieses Projekts; ihr Modell lässt sich hier je Projekt überschreiben.",
+        "Paket abschließen": "Paket abschließen",
+        /* AP3-Korbat: GitHub-Issues-Sync (Zustände, Karte, Formular). */
+        "In Progress": "In Bearbeitung",
+        "Entwurf": "Entwurf",
+        "Kategorie": "Kategorie",
+        "Feature": "Feature",
+        "In-Progress-Label": "In-Progress-Label",
+        "Ready-Label": "Ready-Label",
+        "Assignee (leer = alle)": "Assignee (leer = alle)",
+        "Issues-Sync aktivieren (GitHub als Quelle der Wahrheit)": "Issues-Sync aktivieren (GitHub als Quelle der Wahrheit)",
+        "Issues synchronisieren": "Issues synchronisieren",
+        "Bereit": "Bereit",
     }
 
   };

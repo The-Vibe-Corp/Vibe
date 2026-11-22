@@ -1235,6 +1235,22 @@
       ],
       "datum": "2026-11-21",
       "grund": "NameError-Artefakte in init/Übernahme behoben (Meldung nur bei neu angelegter Test-Agent-Vorlage); read-only-Einwegtransport von .vibe/project.env in Arbeitskopien; VERIFY_PACKAGE_TESTS entkoppelt den Paketnachweis vom Vollmodus und der Verify-Tempfpfad ist kurz (vv-/VIBE_VERIFY_TMP); neuer Ticket-Zustand ‚WARTET AUF MERGE' (statt BLOCKIERT) für PR-only-Pakete inkl. GUI; ensure-mergeable löst das Git-Credential aus dem Projektpfad."
+    },
+    {
+      "arbeitspaket": "AP3-Korbat",
+      "dateien": [
+        "bin/vibe",
+        "bin/vibe-web.py",
+        "bin/vibe_github.py",
+        "bin/vibe_packages.py",
+        "bin/vibe_issues.py",
+        "bin/web/i18n.js",
+        "bin/web/nova-project.js",
+        "scripts/setup-vibe.py",
+        "docs/import-manifest.json"
+      ],
+      "datum": "2026-11-22",
+      "grund": "GitHub-Issues-Sync (Opt-in nur bei exakt GITHUB_ISSUES_ENABLED='1'): neues Backbone bin/vibe_issues.py (REST ausschließlich über die vibe_github-Helper) mit Pull/Push/Close und State-Aktionen; Parser in bin/vibe liest Status/GitHub additiv, Draft-Auswahl in bin/vibe_packages.py, Web-API/CLI in bin/vibe-web.py und bin/vibe, Nova-Oberfläche in bin/web/nova-project.js mit i18n-Keys in bin/web/i18n.js. Review-Runde 1: scripts/setup-vibe.py installiert vibe_issues.py (sonst ModuleNotFoundError nach Installation); Beschreibungs-Folgezeilen aus Issue-Bodies werden beim Schreiben entschärft (Steuer-/Markerzeilen wie Status:/GitHub:/Art:/Priorität:/Abhängigkeiten:/BLOCKIERT:/WARTET AUF MERGE:/Commit: wirken nicht mehr als Metadaten); Nova zeigt die gelbe Pille auch für 'In Progress' und Zustandsaktionen für GH-<n>-Karten ohne Verweiszeile. Größe und SHA-256 der geänderten Manifest-Dateien aktualisiert und dadurch begründet."
     }
   ],
   "files": [
@@ -1249,9 +1265,9 @@
       "sha256": "e5ae3183efcb76dace1e0bcbde9993be7afe82d93d7877da9ee39846cf45330a"
     },
     {
-      "bytes": 292787,
+      "bytes": 297043,
       "path": "bin/vibe",
-      "sha256": "c8b4eadf92300d84ffb0810338699ed8181f3eb34e7cbf63a7104af2626f84ba"
+      "sha256": "8fda0f91bee3c72466e23e646c9cb5c0ebae6941a12b4995926e9f0e7156bacd"
     },
     {
       "bytes": 81878,
@@ -1259,9 +1275,9 @@
       "sha256": "874853f89c0c46e7ab65b8286d59b97da4645ed4e9b31f5d51a7bf094e41190c"
     },
     {
-      "bytes": 117939,
+      "bytes": 121825,
       "path": "bin/vibe-web.py",
-      "sha256": "dabc71aea345b4e04e620775fd5ae2ae0598f673263b32f05bda2b7e78c41162"
+      "sha256": "b7f7e13f808885b6790dd5dcb0e22938049691924a9db100333fa6031dd504b9"
     },
     {
       "bytes": 5189,
@@ -1274,9 +1290,9 @@
       "sha256": "0f6d9c2c9d72ff1400ba0c2e8173217102ac9f163a41191c34367dd5f81f5778"
     },
     {
-      "bytes": 74772,
+      "bytes": 77314,
       "path": "bin/vibe_github.py",
-      "sha256": "05b357f627b08d93adfa092331309831c1ea1f244e164ba38094c0333d47a83b"
+      "sha256": "3b6f7e521b8f8d2763d059f931cc36852f686bb74f2644b33d19b351e5e905ad"
     },
     {
       "bytes": 27530,
@@ -1287,6 +1303,11 @@
       "bytes": 23512,
       "path": "bin/vibe_harness.py",
       "sha256": "30f0394d2ac58458ecf607159c6041ebe19d4aef73e4878a510db3902bd11670"
+    },
+    {
+      "bytes": 22190,
+      "path": "bin/vibe_issues.py",
+      "sha256": "d4e8df8736ef9aa1ca50afd7c395fba89ec98224b11f0d831d7f659cdbf871c4"
     },
     {
       "bytes": 4311,
@@ -1309,9 +1330,9 @@
       "sha256": "ac3b26da4208a087a09c67c389238c82802d7c1bd50b10d9bcd9492a07050462"
     },
     {
-      "bytes": 77744,
+      "bytes": 78181,
       "path": "bin/vibe_packages.py",
-      "sha256": "561ca9d26d466a099fcb48aa3475116f30c626d102b09ceed53d0b942914a721"
+      "sha256": "e0cffcd362e4e0f949d62d8501335efd80eaf18ecb4ee297799eacad20f2f56d"
     },
     {
       "bytes": 20789,
@@ -1349,9 +1370,9 @@
       "sha256": "43805dba175b11e01392b376bc12f931d82c06c8ab82dfc60474b9e9170cdd0f"
     },
     {
-      "bytes": 156155,
+      "bytes": 156429,
       "path": "bin/web/app.js",
-      "sha256": "f0cd5380898a5d617491109ac45cb5afbd9d14e7f861bcd2ac22c6a777dae03f"
+      "sha256": "dfceefa63c3321bd2ff6f8ca4a44ee660ca881d68b19f795d56114e5eefafa90"
     },
     {
       "bytes": 688,
@@ -1359,9 +1380,9 @@
       "sha256": "19ea677f5c3dc3579279fd9b5bf7584612967654b8ec0bbde3818576c78b46b5"
     },
     {
-      "bytes": 149416,
+      "bytes": 150637,
       "path": "bin/web/i18n.js",
-      "sha256": "eb3e758659652b8e9ec25c788886ed27039049357cc8513068ca4677305c9be0"
+      "sha256": "8a31e3c644a38abf36a984b24ce96309621707815495e2777170009982a97f98"
     },
     {
       "bytes": 2207,
@@ -1394,9 +1415,9 @@
       "sha256": "8c56aa9e89ece8d02ea76f5d1b11e43ff8466b1d3becb8956a98ae0f6036895b"
     },
     {
-      "bytes": 49544,
+      "bytes": 53890,
       "path": "bin/web/nova-project.js",
-      "sha256": "e05e898aa38cca8f888e355681ea93d4c974affc8cae0574890502a779552974"
+      "sha256": "217195188b3836addcbc6ea62c59aa7a7b5dfa2d1b091294c68187a95488f07d"
     },
     {
       "bytes": 46592,
@@ -1424,9 +1445,9 @@
       "sha256": "7f8450dcf34c6b6f94695720954e2072edeb60d69f70b29bb3924882ed6c0f21"
     },
     {
-      "bytes": 73426,
+      "bytes": 73448,
       "path": "scripts/setup-vibe.py",
-      "sha256": "e143a668a4312a6f9cc69b66c8bc5ea61a2ada952ba8e7076d8b659b98aa9658"
+      "sha256": "026c0f3e4c4af6a4df59817de173ec2b4e07edb77ecf5452da404b495c41e0c3"
     },
     {
       "bytes": 377,

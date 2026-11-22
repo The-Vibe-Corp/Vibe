@@ -408,6 +408,16 @@ def is_waiting_merge(block):
     return WAITING_MARKER in block.upper()
 
 
+# AP3: Entwurfs-Marke. Nur die exakte, zeilenankerierte Statuszeile gilt als
+# Entwurf; das Wort „draft“ im Beschreibungstext ist ausdrücklich keiner.
+DRAFT_MARKER_RE = re.compile(r"(?m)^\s*Status:\s*(draft|entwurf)\s*$", re.IGNORECASE)
+
+
+def is_draft(block):
+    """True, wenn der Block die exakte ``Status: draft``-Zeile trägt (AP3)."""
+    return bool(DRAFT_MARKER_RE.search(block or ""))
+
+
 def proof_commits(block):
     """Alle Commits einer Nachweiszeile, auch über umbrochene Zeilen.
 
@@ -693,7 +703,8 @@ def select_package(project, skip=None, state_path=None, prefer=""):
 
     def _ready(pid):
         _, block = located[pid]
-        if is_blocked(block) or is_waiting_merge(block) or pid in done:
+        if is_blocked(block) or is_waiting_merge(block) or is_draft(block) \
+                or pid in done:
             return False
         return not any(
             dep in known and dep not in done for dep in dependencies(block)
@@ -1403,12 +1414,12 @@ def status_report(project):
             if not pid or pid in seen:
                 continue
             seen.add(pid)
-            if is_blocked(block):
+            if is_done(block) and proof_ok(project, block)[0]:
+                report["done"].append(pid)
+            elif is_blocked(block):
                 report["blocked"].append(pid)
             elif is_waiting_merge(block):
                 report["waiting"].append(pid)
-            elif is_done(block) and proof_ok(project, block)[0]:
-                report["done"].append(pid)
             else:
                 report["open"].append(pid)
     return report
