@@ -58,7 +58,7 @@ except ImportError:  # pragma: no cover - Windows ohne Paket-Läufer
 
 if __name__ == "__main__": sys.modules["vibe"] = sys.modules[__name__]
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
-import vibe_storage, vibe_paths, vibe_opencode, vibe_models, vibe_runs, vibe_questions, vibe_autonomous, vibe_harness, vibe_github, vibe_packages, vibe_limits
+import vibe_storage, vibe_paths, vibe_opencode, vibe_models, vibe_runs, vibe_questions, vibe_autonomous, vibe_harness, vibe_github, vibe_packages, vibe_issues, vibe_limits
 try:  # AP10: Ältere Installationen ohne vibe_gates.py dürfen weiterhin starten.
     import vibe_gates
 except ImportError:  # pragma: no cover - unvollständige Installation
@@ -598,10 +598,15 @@ def open_items(name):
 # FEEDBACK.md und TICKETS.md teilen sich denselben Blockaufbau. Der Unterschied
 # liegt nur im Abschlussnachweis: Feedback gilt erst mit Nachweis als erledigt,
 # Arbeitspakete wie in open_items schon mit gesetzter Checkbox.
+# AP3: ``Status`` (draft/in-progress) und ``GitHub`` (Verweiszeile #n) werden
+# additiv als Meta-Zeilen erkannt, damit sie weder die Beschreibung schlucken
+# noch die Bestandsfelder verändern. GitHub ist die Quelle des Issue-Bezugs.
 _FEEDBACK_LABEL = re.compile(
     r"^[ \t]+(Beschreibung|Erwartet|Schritte|Ist|Commit|BLOCKIERT|WARTET AUF MERGE|Art|Priorität|"
-    r"Abhängigkeiten|Umfang|Akzeptanz|Tests|Prüfungen|Review|Dokumentation|Doku):[ \t]?(.*)$")
+    r"Abhängigkeiten|Umfang|Akzeptanz|Tests|Prüfungen|Review|Dokumentation|Doku|Status|GitHub):[ \t]?(.*)$")
 _ART_LINE = re.compile(r"^[ \t]+Art:[ \t]?(.*)$")
+_STATUS_LINE = re.compile(r"^[ \t]+Status:[ \t]?(.*)$")
+_GITHUB_LINE = re.compile(r"^[ \t]+GitHub:[ \t]*#?\s*(\d+)\b")
 
 def _feedback_scan(text):
     """Liefert Feedback-Blöcke als (start, end, Zeilen) ohne HTML-Kommentare.
@@ -613,19 +618,41 @@ def _feedback_scan(text):
     return _scan_blocks(text)
 
 def _parse_entry(entry, root, need_proof=True):
-    """Liest ID, Titel, Beschreibung, Art und Status eines Blocks.
+    """Liest ID, Titel, Beschreibung, Art, Status und GitHub-Bezug eines Blocks.
 
     ``need_proof`` verlangt zusätzlich einen gültigen Nachweis für
     ``erledigt``. ``art`` unterscheidet Bugmeldungen (``Art: Bug``) von
-    gewöhnlichem Feedback.
+    gewöhnlichem Feedback. ``status`` ist der Issues-Zustand
+    (``in-progress``/``draft``, sonst leer) und ``github`` die Issuenummer
+    aus der ``GitHub: #n``-Zeile (sonst ``None``); beide werden additiv
+    gelesen, ohne Bestandsfelder zu verändern (AP3).
     """
     item = _parse_item_line(entry["lines"][0])
     if not item: return None
-    desc, desc_start, desc_end, art, i = [], None, None, "", 1
-    while i < len(entry["lines"]):
-        line = entry["lines"][i]
+    # AP3: Status/GitHub/Art werden in einem eigenen Durchlauf über alle Zeilen
+    # gelesen, damit sie auch nach einer Beschreibung noch erkannt werden. Die
+    # Präzedenz der Statuswerte ist In-Progress > Draft.
+    art, status, github = "", "", None
+    for line in entry["lines"][1:]:
         am = _ART_LINE.match(line)
         if am and not art: art = am.group(1).strip().lower()
+        sm = _STATUS_LINE.match(line)
+        if sm:
+            value = sm.group(1).strip().lower()
+            if "progress" in value.replace("-", " "):
+                status = "in-progress"
+            elif status != "in-progress" and value in ("draft", "entwurf"):
+                status = "draft"
+        if github is None:
+            gm = _GITHUB_LINE.match(line)
+            if gm:
+                try:
+                    github = int(gm.group(1))
+                except ValueError:
+                    github = None
+    desc, desc_start, desc_end, i = [], None, None, 1
+    while i < len(entry["lines"]):
+        line = entry["lines"][i]
         lm = _FEEDBACK_LABEL.match(line)
         if lm and lm.group(1) in ("Beschreibung", "Erwartet"):
             desc_start = i
@@ -641,14 +668,19 @@ def _parse_entry(entry, root, need_proof=True):
     block = "\n".join(entry["lines"])
     checked = item["checked"]
     done = checked and (not need_proof or not root or _proof_ok(root, block))
+    # AP3: Zustands-Präzedenz erledigt > BLOCKIERT > WARTET AUF MERGE >
+    # In-Progress > Draft > offen. Die Runner-Schranken bleiben über dem
+    # In-Progress-Zustand; Draft und In-Progress sind eigene Zustände.
     if done: state = "erledigt"
     elif "BLOCKIERT:" in block: state = "BLOCKIERT"
     elif "WARTET AUF MERGE:" in block: state = "WARTET AUF MERGE"
+    elif status == "in-progress": state = "In Progress"
+    elif status == "draft": state = "Draft"
     elif not checked: state = "offen"
     else: state = "ohne Nachweis"
     return {"id": item["id"], "title": item["title"], "description": "\n".join(desc),
             "state": state, "checked": checked, "desc_start": desc_start,
-            "desc_end": desc_end, "art": art}
+            "desc_end": desc_end, "art": art, "status": status, "github": github}
 
 def feedback_path(name):
     return os.path.join(ppath(name), "FEEDBACK.md")
@@ -667,6 +699,9 @@ def _entry_rows(name, fp, need_proof, with_kind=False):
         if item:
             row = {k: item[k] for k in ("id", "title", "description", "state")}
             row["completed"] = item["state"] == "erledigt"
+            # AP3: Issues-Zustand und GitHub-Bezug additiv sichtbar machen.
+            row["status"] = item.get("status") or ""
+            row["github"] = item.get("github")
             if with_kind:
                 row["kind"] = "bug" if item["art"] == "bug" else "feedback"
             out.append(row)
@@ -1129,6 +1164,30 @@ def github_issues_import(name, label=None):
     added = vibe_github.import_issues_into_tickets(ppath(name), list_out)
     return added, len(list_out)
 
+def github_issues_sync(name):
+    """Führt den Issues-Sync aus (Pull + Push + Close); Opt-in-Pflicht."""
+    project = ppath(name)
+    config = vibe_github.read_config(github_env_path(name))
+    if not config["issues_enabled"]:
+        raise ValueError("Issues-Sync ist für dieses Projekt nicht aktiv "
+                         "(GITHUB_ISSUES_ENABLED=1).")
+    stats = vibe_issues.sync_issues(project, config)
+    return True, ("Issues synchronisiert: %d angelegt, %d aktualisiert, "
+                  "%d geschlossen, %d gepusht."
+                  % (stats["created"], stats["updated"], stats["closed"],
+                     stats["pushed"]))
+
+def github_issues_state(name, ticket_id, state):
+    """Setzt den Issues-Zustand (draft/ready/in-progress/open)."""
+    project = ppath(name)
+    config = vibe_github.read_config(github_env_path(name))
+    if not config["issues_enabled"]:
+        raise ValueError("Issues-Sync ist für dieses Projekt nicht aktiv "
+                         "(GITHUB_ISSUES_ENABLED=1).")
+    number = vibe_issues.set_issue_state(project, config, ticket_id, state)
+    return True, ("Zustand von " + str(ticket_id) + " (Issue #" + str(number)
+                  + ") auf " + str(state) + " gesetzt.")
+
 def github_pr(name, title=None, base=None, branch=None, confirm=False):
     """Merge-Request stellen; Push und API nur mit ausdrücklicher Freigabe."""
     config = vibe_github.read_config(github_env_path(name))
@@ -1164,7 +1223,7 @@ def github_pr(name, title=None, base=None, branch=None, confirm=False):
             "message": "Merge-Request erstellt: " + (request.get("url") or branch)}
 
 def cmd_github(name=None, action="status", value=None, label=None, title=None,
-               base=None, branch=None, confirm=False, out=None):
+               base=None, branch=None, confirm=False, out=None, state=None):
     """CLI-Zugang zu den GitHub-Funktionen (optional, pro Projekt)."""
     if name is None:
         print(__doc__)
@@ -1190,6 +1249,9 @@ def cmd_github(name=None, action="status", value=None, label=None, title=None,
             line("Auto-Merge:", "ja (Läufer mergt freigegebene Merge-Requests selbst)"
                  if st["auto_merge"] else
                  "nein (PR-only: Eigentümer mergt und schließt mit 'vibe package close')")
+            line("Issues-Sync:", "aktiv (Label: " + st.get("issues_in_progress_label", "in-progress")
+                 + ", Ready: " + st.get("issues_ready_label", "ready") + ")"
+                 if st.get("issues_enabled") else "aus (GITHUB_ISSUES_ENABLED=1)")
             line("Branchübersicht: vibe github " + name + " branches")
         elif action == "link":
             if not value:
@@ -1262,6 +1324,17 @@ def cmd_github(name=None, action="status", value=None, label=None, title=None,
                      % (len(added), seen, ", ".join(added)))
             else:
                 line("Keine neuen Issues (%d gesehen); TICKETS.md unverändert." % seen)
+        elif action == "issues-sync":
+            ok, message = github_issues_sync(name)
+            line(message)
+            sys.exit(0 if ok else 1)
+        elif action == "issues-state":
+            if value is None or state is None:
+                raise ValueError("ID und Zustand fehlen: vibe github <projekt> "
+                                 "issues-state <id> draft|ready|in-progress|open")
+            ok, message = github_issues_state(name, value, state)
+            line(message)
+            sys.exit(0 if ok else 1)
         elif action == "pr":
             result = github_pr(name, title=title, base=base, branch=branch,
                                confirm=confirm)
@@ -1269,7 +1342,7 @@ def cmd_github(name=None, action="status", value=None, label=None, title=None,
         else:
             raise ValueError('Aktion unbekannt: "%s" (status|link|unlink|branches|'
                              'fetch|pull|push|checkout|test|issues|issues-import|'
-                             'token|pr)' % action)
+                             'issues-sync|issues-state|token|pr)' % action)
     except ValueError as e:
         sys.exit(str(e))
     except Exception as e:  # GitHubError u. a.: verständlich, ohne Token
@@ -1297,17 +1370,18 @@ def _parse_github_cli(rest):
     if len(positional) < 1:
         raise ValueError("Projekt fehlt: vibe github <projekt> [aktion]")
     return positional[0], (positional[1] if len(positional) > 1 else "status"), \
-           (positional[2] if len(positional) > 2 else None), options
+           (positional[2] if len(positional) > 2 else None), \
+           (positional[3] if len(positional) > 3 else None), options
 
 def github_cli(rest):
     """CLI-Dispatch: vibe github <projekt> [aktion|optionen]."""
     try:
-        name, action, value, options = _parse_github_cli(rest)
+        name, action, value, state, options = _parse_github_cli(rest)
     except ValueError as e:
         sys.exit(str(e))
     cmd_github(name, action, value, label=options["label"], title=options["title"],
                base=options["base"], branch=options["branch"],
-               confirm=options["confirm_on"])
+               confirm=options["confirm_on"], state=state)
 
 def sess(name): return profile_session("vibe-" + run_key(name))
 def tmux_has_session(name):
