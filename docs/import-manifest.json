@@ -1305,6 +1305,17 @@
       ],
       "datum": "2026-11-22",
       "grund": "Test-Hygiene und Vorlagen-Fix (Audit AP10): VIBE_CLEAN_ENV entfernt zusaetzlich VIBE_UI_BIND, VIBE_UI_PORT und GITHUB_AUTO_MERGE (HOME bleibt bewusst fuer git/opencode, Home-Isolation in den Test-Harnesses); vibe_sandbox.py setzt VIBE_SANDBOX_ACTIVE=1 per --setenv in jeden Sandbox-Start, damit die Endpruefung verschachtelte bwrap-Laeufe erkennt; die Vorlagen web und docker fuehren wieder ihre dokumentierten Standardwerkzeuge (web: git node npm, docker: git docker) statt der Merge-Artefakte aus generic. Groesse und SHA-256 der geaenderten Manifest-Dateien aktualisiert. Nachtrag: merge_package verwirft vor dem ff-Merge nur die lokal geaenderten Dateien der Merge-Differenz HEAD..Branch (AGENTS.md eingeschlossen) und protokolliert den Verwurf; dirty Notizen, die der Branch nicht anfasst, bleiben unangetastet. Root-Cause F27: copy_work_notes ueberspringt eine uncommittet geaenderte AGENTS.md (weder Paketbranch noch Abschluss-Merge), command_copy_notes meldet das als HINWEIS."
+    },
+    {
+      "arbeitspaket": "B6",
+      "dateien": [
+        "bin/vibe_packages.py",
+        "bin/vibe",
+        "docs/features/B6-statusmarken.md",
+        "docs/import-manifest.json"
+      ],
+      "datum": "2026-11-22",
+      "grund": "Statusmarken (BLOCKIERT:/WARTET AUF MERGE:) zaehlen nur an Statuspositionen (letzte nichtleere Blockzeile oder Kopffeld vor Beschreibung:/Erwartet:); Freitext-Einfuegungen zaehlen nicht; spaeteste Position gewinnt, BLOCKIERT schlaegt WARTET im Kopffeld; Laeufer und Oberflaeche nutzen die gemeinsame Erkennung; Idempotenzpruefung der mark-Befehle strikt."
     }
   ],
   "files": [
@@ -1319,9 +1330,9 @@
       "sha256": "e5ae3183efcb76dace1e0bcbde9993be7afe82d93d7877da9ee39846cf45330a"
     },
     {
-      "bytes": 304234,
+      "bytes": 304272,
       "path": "bin/vibe",
-      "sha256": "be665705925c7fb099135d44762190df9fb322020bfbd12e83e1eed56c6b4150"
+      "sha256": "3cf62d8e7820fe0dcdbf2c8d8e6bbae4ddf27c59ea8fdbc72c59cb72867c91de"
     },
     {
       "bytes": 83185,
@@ -1384,9 +1395,9 @@
       "sha256": "ac3b26da4208a087a09c67c389238c82802d7c1bd50b10d9bcd9492a07050462"
     },
     {
-      "bytes": 79220,
+      "bytes": 81843,
       "path": "bin/vibe_packages.py",
-      "sha256": "77c5a9f989219f9dd05f117e6e3d7e4e182f27f767e28a5ca3575670f22df495"
+      "sha256": "b1d0c86acdeb3a8af54f5eb4129345188e9f8c9b2ceace5ac7686d19529e861c"
     },
     {
       "bytes": 20789,
