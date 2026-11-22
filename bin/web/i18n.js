@@ -2239,11 +2239,25 @@
     return Number(value || 0).toLocaleString(locale(), {minimumFractionDigits: 4, maximumFractionDigits: 4}) + ' €';
   }
 
+  /* F34: Ansichtsdateien dürfen ihre eigenen Texte nachladen. Mehrfaches
+     Erweitern ist erlaubt; vorhandene Schlüssel werden überschrieben. */
+  function extend(dicts) {
+    if (!dicts || typeof dicts !== 'object') return api;
+    ['en', 'de'].forEach(function (lang) {
+      var extra = dicts[lang];
+      if (!extra || typeof extra !== 'object') return;
+      var target = DICTS[lang] || (DICTS[lang] = {});
+      Object.keys(extra).forEach(function (key) { target[key] = extra[key]; });
+    });
+    return api;
+  }
+
   var api = {
     available: available,
     current: current,
     set: set,
     t: t,
+    extend: extend,
     locale: locale,
     formatNumber: formatNumber,
     formatCurrency: formatCurrency,
@@ -2251,6 +2265,49 @@
     currency: formatCurrency,
     DICTS: DICTS
   };
+
+  /* F34 WP1 — Shell-Texte (Schlüssel = deutscher Quelltext). */
+  extend({
+    en: {
+      "Glocke: dauerhafte Hinweise. Toasts: kurzes Feedback.": "Bell: lasting notices. Toasts: brief feedback.",
+      "Alle als gelesen": "Mark all as read",
+      "Eintrag schließen": "Dismiss entry",
+      "Fragen": "Questions",
+      "Offene Fragen: {{n}}": "{{n}} open questions",
+      "{{n}} offene Fragen": "{{n}} open questions",
+      "Antworten": "Answer",
+      "Keine offenen Fragen.": "No open questions.",
+      "Suchen": "Search",
+      "Suche löschen": "Clear search",
+      "Kontext schließen": "Close panel",
+      "Auswertungen sind hier noch nicht verfügbar.": "Evaluations are not available here yet.",
+      "Modell suchen …": "Search model …",
+      "Bitte eine Antwort eingeben.": "Please enter an answer.",
+      "Antwort nicht gespeichert.": "Answer not saved.",
+      "Antwort gespeichert.": "Answer saved.",
+      "Auswertungen": "Evaluations"
+    },
+    de: {
+      "Glocke: dauerhafte Hinweise. Toasts: kurzes Feedback.": "Glocke: dauerhafte Hinweise. Toasts: kurzes Feedback.",
+      "Alle als gelesen": "Alle als gelesen",
+      "Eintrag schließen": "Eintrag schließen",
+      "Fragen": "Fragen",
+      "Offene Fragen: {{n}}": "Offene Fragen: {{n}}",
+      "{{n}} offene Fragen": "{{n}} offene Fragen",
+      "Antworten": "Antworten",
+      "Keine offenen Fragen.": "Keine offenen Fragen.",
+      "Suchen": "Suchen",
+      "Suche löschen": "Suche löschen",
+      "Kontext schließen": "Kontext schließen",
+      "Auswertungen sind hier noch nicht verfügbar.": "Auswertungen sind hier noch nicht verfügbar.",
+      "Modell suchen …": "Modell suchen …",
+      "Bitte eine Antwort eingeben.": "Bitte eine Antwort eingeben.",
+      "Antwort nicht gespeichert.": "Antwort nicht gespeichert.",
+      "Antwort gespeichert.": "Antwort gespeichert.",
+      "Auswertungen": "Auswertungen"
+    }
+  });
+
   global.VIBE_I18N = api;
   global.I18N = api;
   applyLang(lang);
