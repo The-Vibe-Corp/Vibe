@@ -1306,9 +1306,9 @@
       "sha256": "e5ae3183efcb76dace1e0bcbde9993be7afe82d93d7877da9ee39846cf45330a"
     },
     {
-      "bytes": 297043,
+      "bytes": 304234,
       "path": "bin/vibe",
-      "sha256": "8fda0f91bee3c72466e23e646c9cb5c0ebae6941a12b4995926e9f0e7156bacd"
+      "sha256": "be665705925c7fb099135d44762190df9fb322020bfbd12e83e1eed56c6b4150"
     },
     {
       "bytes": 81878,
@@ -1316,9 +1316,9 @@
       "sha256": "874853f89c0c46e7ab65b8286d59b97da4645ed4e9b31f5d51a7bf094e41190c"
     },
     {
-      "bytes": 121825,
+      "bytes": 124720,
       "path": "bin/vibe-web.py",
-      "sha256": "b7f7e13f808885b6790dd5dcb0e22938049691924a9db100333fa6031dd504b9"
+      "sha256": "e54ad9e8bf0e0efa83ec774f8d3bf5e0ae741b0f5f9154ba136d6165b70d5d8b"
     },
     {
       "bytes": 5189,
@@ -1421,9 +1421,9 @@
       "sha256": "19ea677f5c3dc3579279fd9b5bf7584612967654b8ec0bbde3818576c78b46b5"
     },
     {
-      "bytes": 150637,
+      "bytes": 158180,
       "path": "bin/web/i18n.js",
-      "sha256": "8a31e3c644a38abf36a984b24ce96309621707815495e2777170009982a97f98"
+      "sha256": "4d12b06e8b5d7ad725a42635932a292322767012393686008134bc66500498e6"
     },
     {
       "bytes": 2711,
@@ -1456,9 +1456,9 @@
       "sha256": "02b778a10acedb00957f0066d22397218eea4a6ead68f7d9ead00eb2e0081355"
     },
     {
-      "bytes": 53890,
+      "bytes": 65841,
       "path": "bin/web/nova-project.js",
-      "sha256": "217195188b3836addcbc6ea62c59aa7a7b5dfa2d1b091294c68187a95488f07d"
+      "sha256": "0c828555fc1f5d4d5f686defb0ab82fe3056c8bc923f67afe8238e5b464d91fc"
     },
     {
       "bytes": 58929,
@@ -1486,9 +1486,9 @@
       "sha256": "7f8450dcf34c6b6f94695720954e2072edeb60d69f70b29bb3924882ed6c0f21"
     },
     {
-      "bytes": 74119,
+      "bytes": 74240,
       "path": "scripts/setup-vibe.py",
-      "sha256": "482cd6f835f0df1e02643bff16ed3fbcf6222055e82153d6b9e8f4276f9daa2f"
+      "sha256": "07d72775798e5206f106f5bc8c33cb8ad0de32170b028493c9113802678a6fe2"
     },
     {
       "bytes": 377,
