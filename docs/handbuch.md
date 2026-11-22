@@ -64,15 +64,27 @@ Die Kopfzeile hat fünf Bereiche:
 
 | Bereich | Inhalt |
 | --- | --- |
-| Projekte | Projektliste, Entwicklungsordner, neues Projekt |
-| Agenten & Modelle | globale und projektbezogene Agenten, Modellkatalog, Profile |
-| MCP-Tools | MCP-Server anzeigen, bearbeiten, testen |
-| Umgebung | Release, Umgebungsprüfung, Fritzbox-Reconnect |
-| Kosten | Tokens und Kosten je Arbeitspaket und Projekt |
+| Start | Projektliste, angeheftete Projekte, Entwicklungsordner, neues Projekt |
+| Agenten | globale und projektbezogene Agenten, Modellkatalog, Profile |
+| Aktivität | laufende und beendete Läufe, offene Rückfragen |
+| Auswertungen | Kosten, Laufregister, Umgebung |
+| Einstellungen | globale AGENTS.md, Darstellung, Zugriff, Laufverhalten, Schranken, Modelle, Profile, MCP, Harness |
 
-Rechts oben stehen opencode- und Dashboard-Zustand. Rückfragen erscheinen als
-hervorgehobene Karte oberhalb des Arbeitsbereichs und bleiben sichtbar, bis sie
-beantwortet sind.
+Eine statische Seitenleiste gibt es nicht. Ergänzende Inhalte – etwa das
+Postfach der Rückfragen, ein Bearbeitungsformular oder der Preis-Editor –
+öffnen sich im situativen Panel am rechten Rand und schließen mit ×, Escape
+oder einem Klick auf den Hintergrund.
+
+Benachrichtigungen gibt es an genau einer Stelle: kurzlebige Hinweise
+erscheinen oben rechts unter der Glocke und werden zusätzlich als Eintrag in
+der Glocke gespeichert. Jeder Eintrag lässt sich einzeln schließen, „Alle als
+gelesen“ leert die Liste, und der Zähler zeigt die ungelesenen Einträge.
+
+Rückfragen von Agenten sind zentral sichtbar: als Banner unter der Kopfzeile,
+als hervorgehobener Zähler in der Kopfzeile, als Eintrag in der Glocke und als
+Postfach im situativen Panel. Antworten erfolgen per Option oder Freitext und
+entfernen die Frage, ohne die Ansicht neu zu laden. Rechts oben stehen
+opencode- und Dashboard-Zustand.
 
 ## Projekte
 
@@ -94,27 +106,34 @@ Assistent öffnen“ startet direkt den Projektassistenten. Typen:
 
 ### Projektdetail
 
-Das Detail gliedert sich in vier Register:
+Das Detail gliedert sich in fünf Register:
 
 | Register | Inhalt |
 | --- | --- |
-| Arbeit | offene Pakete, Feedback, Arbeitspakete, Bugmeldung, Pause, Prüfungen, Projektdaten |
-| Ausgabe | Live-Log des Laufs oder der Prüfung, Pause, Fortsetzen, Vollbild |
+| Überblick | autonomer Modus, Kacheln zum Zustand, letztes Arbeitspaket, Sitzungen mit Fortsetzen |
+| Arbeit | Pakete, Bugs und Feedback in einer filterbaren Liste, Priorisierung |
+| Ausgabe | Live-Log, Agentenübersicht, Fokus, Fortsetzen, Stoppen |
 | Assistent | fachliche Schritte für ein neues Projekt, Entwurf von SPEC und Agenten |
-| Einstellungen | Projektagenten, Schreibrechte, Shell-Sandbox |
+| Einstellungen | AGENTS.md, Basics, Sandbox, Team, GitHub, Schreibzugriff, Session-Limit |
 
 Die Register lassen sich mit Maus und Tastatur bedienen (Pfeiltasten, Home,
 Ende). Kopfaktionen und Laufzustand bleiben in jedem Register sichtbar.
 
 ## Arbeiten mit Paketen und Feedback
 
-- **Feedback** wird direkt im Projektdetail erfasst. Es gilt als offener Punkt
-  und zählt in der Projektliste mit.
-- **Arbeitspakete** werden im Register „Arbeit“ angelegt, bearbeitet und
-  gelöscht. Die ID vergibt der Nutzer; die Reihenfolge bleibt erhalten.
-- **Bugs** werden als Feedback mit `Art: Bug` gemeldet.
-- Erledigte Einträge sind standardmäßig ausgeblendet. Ein erledigter Eintrag
-  ohne Nachweis bleibt sichtbar und bearbeitbar.
+- **Arbeitspakete**, **Bugs** und **Feedback** stehen im Register „Arbeit“ in
+  einer gemeinsamen, filterbaren Liste. Ein Badge und eine farbige Kante
+  unterscheiden die Typen; die Bedienung ist für alle gleich.
+- Eine Suche filtert die Liste und schließt erledigte Einträge ausdrücklich
+  ein, auch wenn „Erledigte anzeigen“ ausgeschaltet ist.
+- Die Priorisierung enthält alle offenen Einträge; manuell priorisierte stehen
+  oben, erledigte und geschlossene nie. Beim Ziehen zeigt eine Einfügemarke die
+  Zielposition, die neue Reihenfolge wird nach dem Ablegen sofort gespeichert.
+- Abgeschlossene Einträge bleiben als Nachweis erhalten und lassen sich nicht
+  löschen; offene bleiben löschbar.
+- Ein **Entwurf** ist noch nicht zur Bearbeitung freigegeben. **Ohne Nachweis**
+  bedeutet, dass ein erledigter Eintrag weder Prüfung noch Commit vorweisen
+  kann. Beides erklärt ein Tooltip direkt am Eintrag.
 - `BLOCKIERT` bleibt offen und wird nicht als erledigt interpretiert.
 
 ## Agentenläufe
@@ -139,13 +158,18 @@ vibe runs [list|prune]       # Läufe anzeigen; verwaiste Einträge aufräumen
   werden dabei niemals Sitzungen beendet.
 - „Dashboard beenden“ beendet weder Agentenläufe noch opencode. opencode wird
   getrennt über `vibe server stop` beendet.
+- „Aktivität“ zeigt laufende und beendete Läufe mit Projekt, Zustand und
+  „Öffnen“. „Auswertungen → Läufe“ bietet dasselbe Register mit Suche und
+  Statusfilter sowie „Verwaiste beenden“ (prüft die tmux-Sitzung) und
+  „Abgeschlossene entfernen“ (löscht nur beendete Einträge).
 
 ### Rückfragen und autonomer Modus
 
 Ein Agent kann mit `vibe ask "Frage" --option "A" --option "B"` eine Rückfrage
-stellen. Sie erscheint im Dashboard und kann dort mit Option oder Freitext
-beantwortet werden. Im autonomen Modus entscheidet der Agent selbst und
-dokumentiert die Entscheidung:
+stellen. Sie ist im Dashboard zentral sichtbar – Banner unter der Kopfzeile,
+Zähler in der Kopfzeile, Eintrag in der Glocke und Postfach im situativen
+Panel – und lässt sich dort mit Option oder Freitext beantworten. Im autonomen
+Modus entscheidet der Agent selbst und dokumentiert die Entscheidung:
 
 ```
 vibe autonomous on|off|status [--projekt <p>]
@@ -159,6 +183,28 @@ Pro Projekt sind `quick` und `full` konfiguriert (`.vibe/project.env`). Die
 Ausgabe erscheint im Register „Ausgabe“. Exitcodes werden unverändert
 angezeigt; ein fehlender Prüfbefehl ist ein Fehler, kein Erfolg. Details zur
 Prüfumgebung: `docs/betrieb.md`, Abschnitt „Prüfungen und Nachweise“.
+
+## Einstellungen
+
+Die Einstellungen nutzen den verfügbaren Platz über eine eigene Navigation und
+gliedern sich in zehn Bereiche:
+
+| Bereich | Inhalt |
+| --- | --- |
+| Globale AGENTS.md | Regeln für alle Projekte, einklappbar, mit Vorlage und Sicherung |
+| Darstellung | Akzentfarbe (Farbmuster mit Vorschau), Sprache, Währung und Kurs |
+| Zugriffssicherheit | Anmeldung, Token und Kennwort |
+| Funktionen | optionale Funktionsschalter |
+| Laufverhalten | was ein neuer Lauf tut: fortsetzen oder stoppen |
+| Schranken | Werte global oder je Projekt, mit Herkunft und Abweichung |
+| Modelle | Katalog, Preise und Quellen, aufklappbar |
+| Profile | Rollen je Profil, anwenden mit Vorschau |
+| MCP-Server | Karten mit Status, Umschalter, Test, Bearbeiten im Panel |
+| Harness | Auswahl opencode oder Pi |
+
+„Schranken“ speichert alle Werte einer Ansicht gemeinsam und atomar; ein
+ungültiger Wert ändert nichts. Kosten, Laufregister und Umgebung liegen nicht
+mehr in den Einstellungen, sondern unter „Auswertungen“.
 
 ## Agenten, Modelle und Profile
 
@@ -186,8 +232,8 @@ Den verwalteten Block bringt vibe bei jedem Agentenlauf auf den aktuellen
 Stand. Inhalte außerhalb des Blocks bleiben dabei erhalten; nicht committete
 Änderungen werden vor einem Lauf gemäß F27 geschützt.
 
-Im Projektdetail unter „Assistent“ zeigt die Karte „AGENTS.md — Regeln für
-Agenten“ den Inhalt:
+Im Projektdetail unter „Einstellungen“ steht die Karte „AGENTS.md“ als erster
+Bereich und zeigt den Inhalt:
 
 - Die beiden Textfelder enthalten die freien Teile vor und nach dem
   verwalteten Block. Sie lassen sich bearbeiten; „Speichern“ schreibt die
@@ -215,13 +261,17 @@ vibe mcp list|show|test|on|off|rm|backups|restore [name] [global|<projekt>]
 
 ## Kosten
 
-„Kosten“ zeigt Tokens und Kosten je Arbeitspaket und Projekt. Unbekannte Preise
-bleiben unbekannt; eingegebene Preise überschreiben sie nachvollziehbar. Der
-Katalog enthält keine erfundenen Preise.
+„Auswertungen → Kosten“ zeigt Tokens und Kosten je Projekt und Arbeitspaket,
+aufgeschlüsselt nach Eingabe, Cache und Ausgabe, mit Monatssummen und dem
+Anteil am Gesamtbetrag. Fehlt ein Preis, markiert die Zeile „Preis fehlt“ und
+verlinkt in den Preis-Editor. Die Währung (EUR/USD samt Umrechnungskurs) wird
+unter „Einstellungen → Darstellung“ gewählt. Unbekannte Preise bleiben
+unbekannt; eingegebene Preise überschreiben sie nachvollziehbar. Der Katalog
+enthält keine erfundenen Preise.
 
 ## Umgebung und Release
 
-„Umgebung“ zeigt:
+„Auswertungen → Umgebung“ zeigt:
 
 - die Releasebasis: Version, Commit und Herkunft der Kennung (Installation oder
   Quelle),
