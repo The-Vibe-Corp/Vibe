@@ -7,7 +7,7 @@
 - High: 0
 - Medium: 0
 - Minor: 1
-- **Verdict: PASS**
+- Verdict: PASS
 
 ## Acceptance criteria
 | Criterion | Status | Implementation (file:line) | Verification evidence |
@@ -38,7 +38,7 @@
 
 ## Fazit
 
-**Verdict: PASS**
+Verdict: PASS
 
 | Schweregrad | Anzahl Befunde |
 |---|---|
