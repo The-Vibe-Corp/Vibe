@@ -45,15 +45,15 @@
 ## Prüfungen (echt ausgeführt, Ergebnisse wörtlich)
 
 ```
-$ PLAYWRIGHT_BROWSERS_PATH=/home/vibe/.cache/ms-playwright PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.unit.test_ap21_i18n -v
+$ PLAYWRIGHT_BROWSERS_PATH=/home/nutzer/.cache/ms-playwright PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.unit.test_ap21_i18n -v
 Ran 29 tests in 1.809s
 OK
 
-$ PLAYWRIGHT_BROWSERS_PATH=/home/vibe/.cache/ms-playwright PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.browser.test_ap21_i18n_ui -v
+$ PLAYWRIGHT_BROWSERS_PATH=/home/nutzer/.cache/ms-playwright PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.browser.test_ap21_i18n_ui -v
 Ran 25 tests in 57.171s
 OK
 
-$ PLAYWRIGHT_BROWSERS_PATH=/home/vibe/.cache/ms-playwright PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.unit.test_setup_vibe.InstallFilesTest.test_web_files_cover_all_shipped_web_files -v
+$ PLAYWRIGHT_BROWSERS_PATH=/home/nutzer/.cache/ms-playwright PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.unit.test_setup_vibe.InstallFilesTest.test_web_files_cover_all_shipped_web_files -v
 Ran 1 test in 0.034s
 OK
 

@@ -28,6 +28,8 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+from tests.unit import env_support
+
 REPO = Path(__file__).resolve().parents[2]
 CLI = REPO / "bin" / "vibe"
 WEB = REPO / "bin" / "vibe-web.py"
@@ -334,7 +336,8 @@ class FritzApiFixture(unittest.TestCase):
         cls.log = cls.root / "fake-fritz.log"
         cls.rc_file = cls.root / "fake-rc"
         cls.port = free_port()
-        env = os.environ.copy()
+        # VIBE_UI_BIND/VIBE_UI_PORT und persönliche Konfiguration nicht erben.
+        env = env_support.isolated_environ()
         env.update(
             {
                 "VIBE": str(cls.root),

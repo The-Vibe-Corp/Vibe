@@ -38,6 +38,8 @@ import time
 import unittest
 from pathlib import Path
 
+from tests.unit import env_support
+
 REPO = Path(__file__).resolve().parents[2]
 SANDBOX = REPO / "bin" / "vibe_sandbox.py"
 
@@ -252,6 +254,7 @@ class ShmArgumentTest(B5Fixture):
 class ShmIsolationTest(B5Fixture):
     """Zu 1: Echte bwrap-Läufe — /dev/shm ist isoliert und schreibbar."""
 
+    @env_support.skip_if_sandbox_nested
     def test_host_shm_content_is_invisible_inside_the_sandbox(self):
         self.assertIsNotNone(shutil.which("bwrap"), "bubblewrap (bwrap) fehlt")
         self.cleanup_state_dir(self.project)
@@ -272,6 +275,7 @@ class ShmIsolationTest(B5Fixture):
         self.assertIn("SHM_WRITABLE", result.stdout)
         self.assertIn("das-sieht-man-nicht", Path(host_marker).read_text(encoding="utf-8"))
 
+    @env_support.skip_if_sandbox_nested
     def test_sandbox_shm_content_is_invisible_to_the_host(self):
         self.assertIsNotNone(shutil.which("bwrap"), "bubblewrap (bwrap) fehlt")
         self.cleanup_state_dir(self.project)
@@ -297,6 +301,7 @@ class ShmProjectRunTest(B5Fixture):
     darf nicht auftauchen.
     """
 
+    @env_support.skip_if_sandbox_nested
     def test_project_under_shm_is_writable_and_host_shm_stays_isolated(self):
         self.assertIsNotNone(shutil.which("bwrap"), "bubblewrap (bwrap) fehlt")
         project = self.shm_project()

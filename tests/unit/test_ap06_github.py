@@ -967,11 +967,14 @@ class CliPushTest(ProjectFixture):
         stdout = io.StringIO()
         stderr = io.StringIO()
         exit_code = 0
-        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
-            try:
-                self.cli.cmd_github("proj", "push", out=stdout)
-            except SystemExit as exc:
-                exit_code = 0 if exc.code in (None, "") else int(exc.code)
+        # LC_ALL=C macht die Git-Fehlermeldung deterministisch (keine
+        # lokalisierte Übersetzung); der Test prüft den gemeldeten Kern.
+        with mock.patch.dict(os.environ, {"LC_ALL": "C", "LANG": "C"}):
+            with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                try:
+                    self.cli.cmd_github("proj", "push", out=stdout)
+                except SystemExit as exc:
+                    exit_code = 0 if exc.code in (None, "") else int(exc.code)
         return exit_code, stdout.getvalue() + stderr.getvalue()
 
     def test_cli_push_publishes_the_pending_commit_to_origin(self):
@@ -991,8 +994,17 @@ class CliPushTest(ProjectFixture):
     def test_cli_push_without_any_remote_reports_the_problem(self):
         code, output = self.run_push()
 
+        # Intent: Das Fehlen eines Remotes darf nicht verschluckt werden.
+        # Geprüft wird der Exit-Code und eine stabile, mit LC_ALL=C erzeugte
+        # Git-Fehlerkernstelle — nicht der frühere deutsche Substring
+        # "Remote", den Git selbst nicht ausgibt.
         self.assertEqual(code, 1, output)
-        self.assertIn("Remote", output)
+        self.assertTrue(output.strip(), "push meldete gar nichts")
+        self.assertTrue(
+            "does not appear to be a git repository" in output
+            or "Could not read from remote repository" in output,
+            "Git-Fehlerkern fehlt in der Meldung: " + output,
+        )
 
 
 class CheckApiTest(unittest.TestCase):

@@ -38,7 +38,13 @@ mkdir -p "$RUNTIME"
 # Agenten und Prüfungen erhalten eine bereinigte Umgebung; Laufsteuerung wie
 # VIBE_LOGNAME bleibt erhalten. Der Laufzeitordner wird dereferenziert, damit
 # Sandbox-Bindungen und der Rückfrage-Hinweis denselben Pfad nennen.
-VIBE_CLEAN_ENV=(env -u VIBE -u VIBE_PROFILE -u VIBE_INSTALL -u VIBE_STATE -u VIBE_RUNTIME -u VIBE_CONFIG_FILE -u VIBE_AGENTS_DIR)
+# AP6 (T-BR1): VIBE_UI_BIND/VIBE_UI_PORT leitet vibe_paths aus ui.json ab; das
+# Dashboard vererbt sie an den Läufer. Ungefiltert zwingen sie Testserver an
+# die produktive LAN-Bindung. GITHUB_AUTO_MERGE
+# kommt über `set -a` aus der Projektdatei; Prüfungen und Harnesses erwarten
+# den Standard PR-only. HOME bleibt bewusst gesetzt: git-Identität und
+# opencode-Daten brauchen es; die Home-Isolation gehört in die Test-Harnesses.
+VIBE_CLEAN_ENV=(env -u VIBE -u VIBE_PROFILE -u VIBE_INSTALL -u VIBE_STATE -u VIBE_RUNTIME -u VIBE_CONFIG_FILE -u VIBE_AGENTS_DIR -u VIBE_UI_BIND -u VIBE_UI_PORT -u GITHUB_AUTO_MERGE)
 RUNTIME="$(cd "$RUNTIME" && pwd -P)"
 # F19: Der gemeinsame opencode-Server ist mit Basic-Auth geschützt. Das
 # Kennwort steht in der Laufzeitdatei und wird nur als Umgebungsvariable an
@@ -809,19 +815,41 @@ ensure_mergeable_package() {
   return 0
 }
 merge_package() {
-  # Arbeitsnotizen sind Laufzeitstand (wie dirty_report): lokale, uncommittete
-  # Änderungen an ihnen — zurückgeschriebener Nachweis, Blockievermerk (AP10) —
-  # dürfen den ff-Merge nicht blockieren. Der Paketbranch enthält dieselben
-  # Notizen bereits (sie werden beim Paketstart in die Arbeitskopie kopiert
-  # und dort committet), deshalb liefert der Merge denselben Stand zurück.
-  # Manuelle Nutzeränderungen an diesen Dateien aus der Laufzeit gehen dabei
-  # ebenfalls verloren; der Verwurf wird deshalb sichtbar protokolliert.
-  local discarded_notes
-  discarded_notes="$(git -C "$P" diff --name-only -- TICKETS.md FEEDBACK.md 2>>"$LOG")"
-  if [ -n "$discarded_notes" ]; then
-    echo "WARNUNG: Uncommittete Änderungen an Arbeitsnotizen werden für den Merge verworfen: $(echo "$discarded_notes" | tr '\n' ' ')" | tee -a "$LOG"
+  # AP6 (F27, Variante A): Arbeitsnotizen sind Laufzeitstand (wie dirty_report):
+  # lokale, uncommittete Änderungen an ihnen — zurückgeschriebener Nachweis,
+  # Blockievermerk (AP10) — dürfen den ff-Merge nicht blockieren. Der
+  # Paketbranch enthält dieselben Notizen bereits (sie werden beim Paketstart
+  # in die Arbeitskopie kopiert und dort committet), deshalb liefert der Merge
+  # denselben Stand zurück. Genau deshalb werden nur die Dateien verworfen,
+  # die der Merge ohnehin überschreiben würde: die Differenz HEAD..$BRANCH.
+  # Eine dirty Notiz, die der Branch nicht ändert, bleibt unangetastet. Der
+  # Verwurf wird mit WARNUNG protokolliert; nicht versionierte Dateien werden
+  # nie gelöscht (sie können den Merge weiterhin blockieren).
+  local merge_files dirty_files discarded all_notes file
+  merge_files="$(git -C "$P" diff --name-only HEAD "$BRANCH" 2>>"$LOG" || true)"
+  dirty_files="$(
+    git -C "$P" diff --name-only 2>>"$LOG" || true
+    git -C "$P" diff --name-only --cached 2>>"$LOG" || true
+  )"
+  discarded=""
+  all_notes=1
+  while IFS= read -r file; do
+    [ -n "$file" ] || continue
+    printf '%s\n' "$dirty_files" | grep -Fxq -- "$file" || continue
+    discarded="$discarded $file"
+    case "$file" in
+      TICKETS.md|FEEDBACK.md|AGENTS.md) ;;
+      *) all_notes=0 ;;
+    esac
+    git -C "$P" checkout -q HEAD -- "$file" 2>>"$LOG" || true
+  done <<< "$merge_files"
+  if [ -n "$discarded" ]; then
+    if [ "$all_notes" = 1 ]; then
+      echo "WARNUNG: Uncommittete Änderungen an Arbeitsnotizen werden für den Merge verworfen:$discarded" | tee -a "$LOG"
+    else
+      echo "WARNUNG: Uncommittete Änderungen an Dateien werden für den Merge verworfen:$discarded" | tee -a "$LOG"
+    fi
   fi
-  git -C "$P" checkout -q -- TICKETS.md FEEDBACK.md 2>>"$LOG" || true
   if ! git -C "$P" merge --ff-only "$BRANCH" >>"$LOG" 2>&1; then
     echo "FEHLT: Merge von $BRANCH nach $BASE_BRANCH fehlgeschlagen." | tee -a "$LOG"
     return 1

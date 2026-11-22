@@ -25,33 +25,36 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest import mock
 
+from tests.unit import env_support
+
 REPO = Path(__file__).resolve().parents[2]
 CLI = REPO / "bin" / "vibe"
 WEB = REPO / "bin" / "vibe-web.py"
 
 
 def load_cli(vibe_root):
-    """Lädt bin/vibe als Modul, ohne main() auszuführen, mit isoliertem VIBE."""
-    old_vibe = os.environ.get("VIBE")
-    old_container = os.environ.get("VIBE_NO_CONTAINER")
-    os.environ["VIBE"] = str(vibe_root)
-    os.environ["VIBE_NO_CONTAINER"] = "1"
-    try:
+    """Lädt bin/vibe als Modul, ohne main() auszuführen, isoliert.
+
+    ``HOME`` und die Pfadquellen werden mitgesetzt, damit keine geerbte
+    persönliche Konfiguration produktive Laufzeit-/Zustandsorte vorgibt
+    (im Läufer sonst EROFS beim Anlegen von Laufzeitkennungen).
+    """
+    with env_support.isolated_process_environment(
+        VIBE=vibe_root,
+        VIBE_NO_CONTAINER="1",
+        HOME=Path(vibe_root) / "home",
+        VIBE_RUNTIME=Path(vibe_root) / "_logs",
+        VIBE_STATE=Path(vibe_root) / "_toolchain",
+        VIBE_CONFIG_FILE=(
+            Path(vibe_root) / "home" / ".config" / "vibe" / "config.json"
+        ),
+    ):
         loader = importlib.machinery.SourceFileLoader(
             "vibe_ticket_feedback_under_test", str(CLI)
         )
         spec = importlib.util.spec_from_loader(loader.name, loader)
         module = importlib.util.module_from_spec(spec)
         loader.exec_module(module)
-    finally:
-        if old_vibe is None:
-            os.environ.pop("VIBE", None)
-        else:
-            os.environ["VIBE"] = old_vibe
-        if old_container is None:
-            os.environ.pop("VIBE_NO_CONTAINER", None)
-        else:
-            os.environ["VIBE_NO_CONTAINER"] = old_container
     return module
 
 
@@ -286,7 +289,16 @@ class ProofStatusTest(FeedbackFixture):
 
 
 class BlockedEntryTest(FeedbackFixture):
-    def test_blocked_entry_stays_open_even_with_checkbox_and_proof(self):
+    def test_blocked_entry_with_checkbox_and_proof_is_done(self):
+        """AP3-Präzedenz: erledigt > BLOCKIERT.
+
+        Ein Punkt mit gesetztem Häkchen *und* gültigem Nachweis ist erledigt,
+        auch wenn im Block zusätzlich ``BLOCKIERT:`` steht. Die frühere
+        Erwartung (BLOCKIERT trotz Nachweis) war der Stand vor AP3; heute
+        entscheidet der vollständige Nachweis. Der Fall bleibt aussagekräftig:
+        Er belegt die dokumentierte Rangfolge und dass erledigte Punkte nicht
+        mehr als offen geführt werden.
+        """
         self.write_feedback(
             "- [x] F1 Blockiert\n"
             "  Beschreibung: Text\n"
@@ -295,9 +307,9 @@ class BlockedEntryTest(FeedbackFixture):
         )
 
         entry = self.entries()["F1"]
-        self.assertEqual(entry["state"], "BLOCKIERT")
-        self.assertFalse(entry["completed"])
-        self.assertEqual(self.open_items()["F1"], ("Blockiert", "BLOCKIERT"))
+        self.assertEqual(entry["state"], "erledigt")
+        self.assertTrue(entry["completed"])
+        self.assertNotIn("F1", self.open_items())
 
     def test_blocked_entry_does_not_block_new_ids(self):
         self.write_feedback(
@@ -310,8 +322,16 @@ class BlockedEntryTest(FeedbackFixture):
         self.assertIn("- [ ] F2 Neu", self.feedback_text())
 
     def test_blocked_ticket_stays_open(self):
+        """Ein BLOCKIERT markiertes, offenes Ticket bleibt sichtbar.
+
+        Die Checkbox bleibt hier bewusst ungesetzt: B3/AP3 führen vollständig
+        erledigte (angehakte) Einträge nicht mehr als BLOCKIERT/offen. Der
+        Zustand ``BLOCKIERT`` muss aber für ein noch offenes Ticket erhalten
+        bleiben, damit es nicht stillschweigend aus der Liste verschwindet.
+        """
         (self.project / "TICKETS.md").write_text(
-            "- [x] V-1 Blockiert\n"
+            "# TICKETS\n\n"
+            "- [ ] V-1 Blockiert\n"
             "  BLOCKIERT: fehlende Freigabe\n",
             encoding="utf-8",
         )
@@ -448,13 +468,16 @@ class ConcurrentIdTest(FeedbackFixture):
             "    time.sleep(delay)\n"
             "module.add_feedback('proj', title, 'parallel')\n"
         )
-        env = os.environ.copy()
-        env.update(
-            {
-                "VIBE": str(self.root),
-                "VIBE_NO_CONTAINER": "1",
-                "VIBE_STORAGE_LOCK_DIR": str(self.root / "locks"),
-            }
+        env = env_support.isolated_environ(
+            VIBE=self.root,
+            VIBE_NO_CONTAINER="1",
+            VIBE_RUNTIME=self.root / "_logs",
+            VIBE_STATE=self.root / "_toolchain",
+            HOME=self.root / "home",
+            VIBE_CONFIG_FILE=(
+                self.root / "home" / ".config" / "vibe" / "config.json"
+            ),
+            VIBE_STORAGE_LOCK_DIR=self.root / "locks",
         )
         start = time.time() + 1.5
         processes = [
@@ -500,14 +523,17 @@ class FeedbackApiConcurrencyTest(unittest.TestCase):
             "TYPE=generic\n", encoding="utf-8"
         )
         cls.port = free_port()
-        env = os.environ.copy()
-        env.update(
-            {
-                "VIBE": str(cls.root),
-                "VIBE_NO_CONTAINER": "1",
-                "VIBE_UI_PORT": str(cls.port),
-                "VIBE_STORAGE_LOCK_DIR": str(cls.root / "locks"),
-            }
+        env = env_support.isolated_environ(
+            VIBE=cls.root,
+            VIBE_NO_CONTAINER="1",
+            VIBE_UI_PORT=cls.port,
+            VIBE_RUNTIME=cls.root / "_logs",
+            VIBE_STATE=cls.root / "_toolchain",
+            HOME=cls.root / "home",
+            VIBE_CONFIG_FILE=(
+                cls.root / "home" / ".config" / "vibe" / "config.json"
+            ),
+            VIBE_STORAGE_LOCK_DIR=cls.root / "locks",
         )
         cls.proc = subprocess.Popen(
             [sys.executable, str(WEB)],

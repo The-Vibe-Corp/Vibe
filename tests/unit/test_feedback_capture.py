@@ -21,6 +21,7 @@ import urllib.request
 from pathlib import Path
 from unittest import mock
 
+from tests.unit import env_support
 from tests.unit.web_page import served_page
 
 REPO = Path(__file__).resolve().parents[2]
@@ -31,27 +32,28 @@ REMOVED_FIELDS = ("Schritte:", "Erwartet:", "Ist:")
 
 
 def load_cli(vibe_root):
-    """Lädt bin/vibe als Modul, ohne main() auszuführen, mit isoliertem VIBE."""
-    old_vibe = os.environ.get("VIBE")
-    old_container = os.environ.get("VIBE_NO_CONTAINER")
-    os.environ["VIBE"] = str(vibe_root)
-    os.environ["VIBE_NO_CONTAINER"] = "1"
-    try:
+    """Lädt bin/vibe als Modul, ohne main() auszuführen, isoliert.
+
+    Neben ``VIBE`` wird auch ``HOME`` auf das temporäre Prüfverzeichnis
+    gesetzt: Eine geerbte persönliche ``config.json`` kann ``runtime`` und
+    ``state`` auf produktive Pfade legen (im Läufer: EROFS).
+    """
+    with env_support.isolated_process_environment(
+        VIBE=vibe_root,
+        VIBE_NO_CONTAINER="1",
+        HOME=Path(vibe_root) / "home",
+        VIBE_RUNTIME=Path(vibe_root) / "_logs",
+        VIBE_STATE=Path(vibe_root) / "_toolchain",
+        VIBE_CONFIG_FILE=(
+            Path(vibe_root) / "home" / ".config" / "vibe" / "config.json"
+        ),
+    ):
         loader = importlib.machinery.SourceFileLoader(
             "vibe_feedback_under_test", str(CLI)
         )
         spec = importlib.util.spec_from_loader(loader.name, loader)
         module = importlib.util.module_from_spec(spec)
         loader.exec_module(module)
-    finally:
-        if old_vibe is None:
-            os.environ.pop("VIBE", None)
-        else:
-            os.environ["VIBE"] = old_vibe
-        if old_container is None:
-            os.environ.pop("VIBE_NO_CONTAINER", None)
-        else:
-            os.environ["VIBE_NO_CONTAINER"] = old_container
     return module
 
 
@@ -152,13 +154,16 @@ class FeedbackApiTest(unittest.TestCase):
             "TYPE=generic\n", encoding="utf-8"
         )
         cls.port = free_port()
-        env = os.environ.copy()
-        env.update(
-            {
-                "VIBE": str(cls.root),
-                "VIBE_NO_CONTAINER": "1",
-                "VIBE_UI_PORT": str(cls.port),
-            }
+        env = env_support.isolated_environ(
+            VIBE=cls.root,
+            VIBE_NO_CONTAINER="1",
+            VIBE_UI_PORT=cls.port,
+            VIBE_RUNTIME=cls.root / "_logs",
+            VIBE_STATE=cls.root / "_toolchain",
+            HOME=cls.root / "home",
+            VIBE_CONFIG_FILE=(
+                cls.root / "home" / ".config" / "vibe" / "config.json"
+            ),
         )
         cls.proc = subprocess.Popen(
             [sys.executable, str(WEB)],
@@ -274,7 +279,12 @@ class FeedbackApiTest(unittest.TestCase):
         start = html.index("Feedback eintragen")
         end = html.index("Live-Ausgabe", start)
         card = html[start:end]
-        labels = re.findall(r"el\('label',\{\},'([^']+)'\)", card)
+        # AP21: Beschriftungen laufen über tr('…'); ältere Stände schrieben
+        # den Text direkt. Beide Formen werden erkannt, die Aussage bleibt:
+        # genau die Felder Titel und Beschreibung.
+        labels = re.findall(
+            r"el\('label',\{\},(?:tr\()?'([^']+)'", card
+        )
         self.assertEqual(labels, ["Titel", "Beschreibung"])
         self.assertIn("description:f.", card)
         for removed in ("steps", "expected", "ist:"):

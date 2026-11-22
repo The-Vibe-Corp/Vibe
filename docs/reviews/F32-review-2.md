@@ -1,7 +1,7 @@
 # Review F32 „Subagenten-Parallelisierung" — Runde 2
 
 **Paket:** FEEDBACK.md F32 „Subagenten Parralelisierung" — **Ausgangsstand:** `c1825a1` (AP19), Änderungen uncommitted im Arbeitsbaum
-**Branch:** `vibe/vibe-F32-1795045520129299813-299324-27425` (Arbeitskopie `/home/vibe/vibe-logs/worktrees/vibe-F32-IhzyyA`)
+**Branch:** `vibe/vibe-F32-1795045520129299813-299324-27425` (Arbeitskopie `/home/nutzer/vibe-logs/worktrees/vibe-F32-IhzyyA`)
 **Vorlage:** `docs/reviews/F32-review-1.md` (Runde 1, Verdict CHANGES REQUIRED)
 **Datum:** 2026-11-19
 **Reviewer-Einschränkung:** Das maximale Schrittlimit des Review-Agenten wurde erreicht; Werkzeuge waren danach deaktiviert. Der Bericht basiert auf der zuvor durchgeführten Datei- und Log-Lektüre; Git-/Shell-Aufrufe waren in der Session gesperrt (`Permission denied: shell`), der Diff wurde durch Vergleich der Arbeitsbaum-Dateien mit dem `c1825a1`-Snapshot unter `/tmp/opencode/f32-baseline` rekonstruiert.

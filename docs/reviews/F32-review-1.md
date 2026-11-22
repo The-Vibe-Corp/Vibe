@@ -1,7 +1,7 @@
 # Review F32 „Subagenten-Parallelisierung" — Runde 1
 
 **Paket:** FEEDBACK.md F32 „Subagenten Parralelisierung" — **Ausgangscommit:** `c1825a1` (AP19)
-**Branch:** `vibe/vibe-F32-1795045520129299813-299324-27425` (Arbeitskopie `/home/vibe/vibe-logs/worktrees/vibe-F32-IhzyyA`, Änderungen uncommitted)
+**Branch:** `vibe/vibe-F32-1795045520129299813-299324-27425` (Arbeitskopie `/home/nutzer/vibe-logs/worktrees/vibe-F32-IhzyyA`, Änderungen uncommitted)
 **Geprüft:** `bin/vibe` (`agent_validate_hierarchy`), `bin/vibe-web.py` (`/api/agent` save/role), `bin/web/app.js` (`agentForm`), `docs/import-manifest.json`, `tests/unit/test_f32_subagent_self_spawn.py`, `tests/browser/test_f32_subagent_self_spawn_ui.py`, `tests/unit/test_ap03_agent_management.py` (Zeilen 485–544, 758–927), `docs/features/AP03.md`, `SPEC.md` (36–80, 300–329), `FEEDBACK.md:613`, `docs/reviews/` (Vollständigkeit), `docs/features/` (F1–F31, kein F32)
 **Datum:** 2026-11-19
 **Reviewer-Einschränkung:** Die Endphase der Prüfung lief mit gesperrten Werkzeugen (auch Shell → „Permission denied"); Manifest-Hashes konnten nicht nachgerechnet, Testläufe nicht selbst ausgeführt werden. Testergebnisse stammen aus den gelieferten Koordinator-Ausgaben.

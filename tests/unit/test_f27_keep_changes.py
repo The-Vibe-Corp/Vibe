@@ -605,10 +605,6 @@ class CliFixture(unittest.TestCase):
             "project_map": lambda: {"proj": str(self.project)},
             "ppath": lambda name: str(self.project),
             "is_init": lambda name: True,
-            "ensure_test_agent": lambda project: {
-                "agent": False,
-                "config": False,
-            },
             "sandbox_status": lambda name: {"enabled": False},
             "pause_after_active": lambda name: False,
             "penv": lambda name: {"AGENT": "test-agent"},

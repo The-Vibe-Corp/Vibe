@@ -109,7 +109,7 @@ class InstallLifecycleBase(unittest.TestCase):
 
     def install(self, mode="update", timestamp="20261101-120000", kit=None):
         return setup.install_program_files(
-            kit or self.kit, self.vibe, mode=mode, timestamp=timestamp
+            kit or self.kit, self.toolchain, mode=mode, timestamp=timestamp
         )
 
     def run_main(self, args, interactive=False, which=None, runner=None):
@@ -174,7 +174,7 @@ class PreviewTest(InstallLifecycleBase):
         )
         (self.toolchain / "models.json").write_text('{"models": [{"id": "lokal"}]}\n', encoding="utf-8")
 
-        plan = setup.build_install_plan(self.kit, self.vibe, mode="update")
+        plan = setup.build_install_plan(self.kit, self.toolchain, mode="update")
         actions = {entry["path"]: entry["action"] for entry in plan["files"]}
         self.assertEqual(actions["bin/vibe"], "backup")
         self.assertEqual(actions["bin/vibe_questions.py"], "skip")
@@ -227,7 +227,7 @@ class FreshInstallTest(InstallLifecycleBase):
 
         failed = [
             check["label"]
-            for check in setup.verify_installation(self.vibe)
+            for check in setup.verify_installation(self.toolchain)
             if not check["ok"]
         ]
 
@@ -287,7 +287,7 @@ class UpdateTest(InstallLifecycleBase):
         self.assertEqual(recorded["version"], "0.18.0")
         self.assertEqual(recorded["mode"], "reuse")
         self.assertEqual(
-            [check["label"] for check in setup.verify_installation(self.vibe) if not check["ok"]],
+            [check["label"] for check in setup.verify_installation(self.toolchain) if not check["ok"]],
             [],
         )
 
@@ -471,7 +471,7 @@ class RollbackTest(InstallLifecycleBase):
         (kit / "templates" / "generic" / "NEU.md").write_text("# neu\n", encoding="utf-8")
         self.install(kit=kit, timestamp="20261101-180000")
         self.assertTrue((self.toolchain / "templates" / "generic" / "NEU.md").is_file())
-        report = setup.rollback(self.vibe)
+        report = setup.rollback(self.toolchain)
 
         self.assertEqual((self.toolchain / "bin" / "vibe").read_text(encoding="utf-8"), "ALT\n")
         self.assertEqual(
@@ -487,7 +487,7 @@ class RollbackTest(InstallLifecycleBase):
         self.install(timestamp="20261101-100000")
         before = (self.toolchain / "bin" / "vibe").read_text(encoding="utf-8")
         with self.assertRaises(setup.SetupError):
-            setup.rollback(self.vibe)
+            setup.rollback(self.toolchain)
         self.assertEqual((self.toolchain / "bin" / "vibe").read_text(encoding="utf-8"), before)
 
     def test_cli_rollback_restores_the_previous_installation(self):
@@ -524,7 +524,7 @@ class RollbackTest(InstallLifecycleBase):
             backup = self.toolchain / f"backup-20261101-100000-{suffix}"
             backup.mkdir()
 
-        chosen = setup.select_backup(self.vibe)
+        chosen = setup.select_backup(self.toolchain)
 
         self.assertEqual(chosen.name, "backup-20261101-100000-10")
 
@@ -535,7 +535,7 @@ class RollbackTest(InstallLifecycleBase):
         (leftover / "templates" / "generic").mkdir(parents=True)
         (leftover / "templates" / "generic" / "AGENTS.md").write_text("# alt\n", encoding="utf-8")
 
-        chosen = setup.select_backup(self.vibe)
+        chosen = setup.select_backup(self.toolchain)
 
         self.assertEqual(chosen.name, "backup-20261101-100000")
 
@@ -551,7 +551,7 @@ class RollbackTest(InstallLifecycleBase):
         outside.write_text("original\n", encoding="utf-8")
 
         with self.assertRaises(setup.SetupError):
-            setup.rollback(self.vibe)
+            setup.rollback(self.toolchain)
 
         self.assertEqual(outside.read_text(encoding="utf-8"), "original\n")
 
@@ -569,7 +569,7 @@ class UninstallTest(InstallLifecycleBase):
         logs.mkdir()
         (logs / "projekt.log").write_text("lauf\n", encoding="utf-8")
 
-        report = setup.uninstall(self.vibe)
+        report = setup.uninstall(self.toolchain)
 
         self.assertFalse((self.toolchain / "bin" / "vibe").exists())
         self.assertFalse((self.toolchain / "templates").exists())
@@ -596,7 +596,7 @@ class UninstallTest(InstallLifecycleBase):
         other = self.home / ".local" / "bin" / "anderes"
         other.symlink_to(self.root / "irgendwo")
 
-        report = setup.uninstall(self.vibe, home=self.home, remove_launcher=True)
+        report = setup.uninstall(self.toolchain, home=self.home, remove_launcher=True)
 
         self.assertFalse(launcher.is_symlink())
         self.assertTrue(other.is_symlink())
@@ -607,10 +607,10 @@ class UninstallTest(InstallLifecycleBase):
         launcher = self.home / ".local" / "bin" / "vibe"
         launcher.parent.mkdir(parents=True)
         launcher.symlink_to(self.toolchain / "bin" / "vibe")
-        command = self.vibe / "vibe.cmd"
+        command = self.toolchain / "vibe.cmd"
         command.write_text("vibe\n", encoding="utf-8")
 
-        report = setup.uninstall(self.vibe, home=self.home, remove_launcher=True)
+        report = setup.uninstall(self.toolchain, home=self.home, remove_launcher=True)
 
         self.assertFalse(launcher.is_symlink())
         self.assertFalse(command.exists())
@@ -623,7 +623,7 @@ class UninstallTest(InstallLifecycleBase):
         edited = self.toolchain / "templates" / "generic" / "AGENTS.md"
         edited.write_text("# eigene Regel\n", encoding="utf-8")
 
-        report = setup.uninstall(self.vibe, timestamp="20261102-090000")
+        report = setup.uninstall(self.toolchain, timestamp="20261102-090000")
 
         self.assertFalse((self.toolchain / "templates").exists())
         backup = Path(report["backup"])
@@ -638,7 +638,7 @@ class UninstallTest(InstallLifecycleBase):
         )
 
     def test_uninstall_does_nothing_for_a_missing_installation(self):
-        report = setup.uninstall(self.vibe)
+        report = setup.uninstall(self.toolchain)
         self.assertTrue(report["missing"])
         self.assertEqual(report["removed"], [])
 

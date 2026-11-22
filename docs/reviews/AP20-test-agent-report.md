@@ -2,7 +2,7 @@
 
 - **Arbeitspaket:** AP20 „UI Verbesserungen Ausgabe“ (TICKETS.md, Screenshot
   `/tmp/opencode/vibe_ui.png`)
-- **Worktree:** `/home/vibe/vibe-logs/worktrees/vibe-AP20-yBZNBt`
+- **Worktree:** `/home/nutzer/vibe-logs/worktrees/vibe-AP20-yBZNBt`
 - **Branch:** `feature/m0p/ap20-2`, Basis `20d1719`
 - **Rolle:** unabhängiger Test-Agent (TDD-Rotphase und Review-Nachbesserung)
 - **Datum:** 2026-11-19
@@ -105,7 +105,7 @@ damaligen 8-Fall-Suite geprüft:
 
 ```bash
 BASE=/tmp/opencode/vibe-sandbox/vibe-949edb757a/tmp/opencode/ap20-red-<pid>
-git -C /home/vibe/vibe-logs/worktrees/vibe-AP20-yBZNBt archive 20d1719 | tar -x -C "$BASE"
+git -C /home/nutzer/vibe-logs/worktrees/vibe-AP20-yBZNBt archive 20d1719 | tar -x -C "$BASE"
 cp tests/browser/test_ap20_output_overview_ui.py "$BASE/tests/browser/"
 cd "$BASE" && python3 -m unittest tests.browser.test_ap20_output_overview_ui -v
 ```
@@ -205,7 +205,7 @@ Nach den parallelen Fixes des coding-agent (Haupt-Fokus-Handler und
 `sichtbarer Leerzustand`) wurde die vollständige Suite erneut ausgeführt:
 
 ```bash
-cd /home/vibe/vibe-logs/worktrees/vibe-AP20-yBZNBt
+cd /home/nutzer/vibe-logs/worktrees/vibe-AP20-yBZNBt
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest \
   tests.browser.test_ap20_output_overview_ui -v
 ```

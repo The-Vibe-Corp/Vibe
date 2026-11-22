@@ -44,6 +44,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from unittest import mock
 
+from tests.unit import env_support
+
 REPO = Path(__file__).resolve().parents[2]
 CLI = REPO / "bin" / "vibe"
 BIN = REPO / "bin"
@@ -501,10 +503,10 @@ class ApiProjectBlockingTest(unittest.TestCase):
         probe.bind(("127.0.0.1", 0))
         cls.port = probe.getsockname()[1]
         probe.close()
-        env = {k: v for k, v in os.environ.items() if k not in
-               ("GITHUB_TOKEN", "GH_TOKEN", "http_proxy", "https_proxy",
-                "all_proxy", "VIBE_RUNTIME", "VIBE_AGENTS_DIR", "VIBE_INSTALL",
-                "VIBE_CONFIG_FILE", "VIBE_PROFILE")}
+        env = env_support.isolated_environ()
+        for key in ("GITHUB_TOKEN", "GH_TOKEN", "http_proxy", "https_proxy",
+                    "all_proxy"):
+            env.pop(key, None)
         env.update({
             "VIBE": str(cls.ws),
             "VIBE_NO_CONTAINER": "1",

@@ -54,6 +54,8 @@ RUNNER = REPO / "bin" / "vibe-run.sh"
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import runner_support as support  # noqa: E402
+
+from tests.unit import env_support  # noqa: E402
 import test_b6_pi_runner_events as b6_support  # noqa: E402
 
 MAIN_SESSION = "ses_b13"
@@ -589,6 +591,7 @@ class StandaloneFallbackTest(B13RunnerFixture):
 class SandboxPrivateServerTest(B13RunnerFixture):
     """AK6: Der private Server läuft innerhalb der Sandbox-Wrapping-Kette."""
 
+    @env_support.skip_if_sandbox_nested
     def test_sandboxed_run_starts_the_private_server_inside_the_sandbox(self):
         """AK6: Sandbox-Lauf hüllt auch den privaten Server ein.
 

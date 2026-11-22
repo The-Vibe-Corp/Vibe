@@ -81,7 +81,7 @@ ROT-PHASE (2026-11-21, vor der Implementierung)
 ----------------------------------------------
 Aufruf::
 
-    PLAYWRIGHT_BROWSERS_PATH=/home/vibe/vibe-logs/playwright-browsers \\
+    PLAYWRIGHT_BROWSERS_PATH="$HOME/vibe-logs/playwright-browsers" \\
       python3 -m unittest discover -s tests/browser \\
       -p 'test_b18_harness_ui.py' -v
 
