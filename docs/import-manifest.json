@@ -1305,6 +1305,18 @@
       ],
       "datum": "2026-11-22",
       "grund": "Test-Hygiene und Vorlagen-Fix (Audit AP10): VIBE_CLEAN_ENV entfernt zusaetzlich VIBE_UI_BIND, VIBE_UI_PORT und GITHUB_AUTO_MERGE (HOME bleibt bewusst fuer git/opencode, Home-Isolation in den Test-Harnesses); vibe_sandbox.py setzt VIBE_SANDBOX_ACTIVE=1 per --setenv in jeden Sandbox-Start, damit die Endpruefung verschachtelte bwrap-Laeufe erkennt; die Vorlagen web und docker fuehren wieder ihre dokumentierten Standardwerkzeuge (web: git node npm, docker: git docker) statt der Merge-Artefakte aus generic. Groesse und SHA-256 der geaenderten Manifest-Dateien aktualisiert. Nachtrag: merge_package verwirft vor dem ff-Merge nur die lokal geaenderten Dateien der Merge-Differenz HEAD..Branch (AGENTS.md eingeschlossen) und protokolliert den Verwurf; dirty Notizen, die der Branch nicht anfasst, bleiben unangetastet. Root-Cause F27: copy_work_notes ueberspringt eine uncommittet geaenderte AGENTS.md (weder Paketbranch noch Abschluss-Merge), command_copy_notes meldet das als HINWEIS."
+    },
+    {
+      "arbeitspaket": "AP23",
+      "dateien": [
+        "bin/vibe_keys.py",
+        "bin/vibe",
+        "bin/vibe-run.sh",
+        "docs/features/AP23.md",
+        "docs/import-manifest.json"
+      ],
+      "datum": "2026-11-22",
+      "grund": "Key Management umgesetzt: bin/vibe_keys.py (neu) enthaelt reines Python-AES-GCM, den 0600-Vault keys.json mit AAD-Bindung, add/select/list/remove sowie den atomaren opencode-auth-sync mit Reset; bin/vibe bietet vibe keys add/select/list/remove mit getpass-Eingabe; bin/vibe-run.sh synchronisiert vor dem Agentenstart und entfernt die Harness-Zugangsdaten nach wait wieder. Groesse und SHA-256 von bin/vibe und bin/vibe-run.sh aktualisiert, neuen files-Eintrag fuer bin/vibe_keys.py aufgenommen."
     }
   ],
   "files": [
@@ -1319,14 +1331,14 @@
       "sha256": "e5ae3183efcb76dace1e0bcbde9993be7afe82d93d7877da9ee39846cf45330a"
     },
     {
-      "bytes": 304234,
+      "bytes": 306519,
       "path": "bin/vibe",
-      "sha256": "be665705925c7fb099135d44762190df9fb322020bfbd12e83e1eed56c6b4150"
+      "sha256": "a5fc465b701912767e048e26481afe90dcca3a9d4706589605b72036dd06af0c"
     },
     {
-      "bytes": 83185,
+      "bytes": 83719,
       "path": "bin/vibe-run.sh",
-      "sha256": "37e5f3a6d693fe92919059e3b0b0049c65ab79712f533a0c645b4e3f2872afbd"
+      "sha256": "902803a29d1c8d7c61cefc8bddd164ec74d08cacc9edf80715ffb89ce60a2118"
     },
     {
       "bytes": 124720,
@@ -1362,6 +1374,11 @@
       "bytes": 22190,
       "path": "bin/vibe_issues.py",
       "sha256": "d4e8df8736ef9aa1ca50afd7c395fba89ec98224b11f0d831d7f659cdbf871c4"
+    },
+    {
+      "bytes": 22514,
+      "path": "bin/vibe_keys.py",
+      "sha256": "ea1b39504b51d10e26408429930de59b4399cf130eb8ce10310443757e6fb9b7"
     },
     {
       "bytes": 4311,
