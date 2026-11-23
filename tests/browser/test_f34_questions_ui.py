@@ -60,6 +60,16 @@ F34ActivityQuestionsTest
    Antwort senden.
    Erwartung: Aktivität nutzt dieselbe Karte; Antwort funktioniert dort ebenfalls.)
 
+Laufzeit-Härtung (Sammellauf)
+-----------------------------
+``render()`` ruft ``closeBellPanel()``; ein später Render kann das
+Glocken-Panel zwischen zwei Messungen wieder schließen. Die Helfer
+``ensure_bell_open`` / ``ensure_bell_entry_visible`` prüfen den Zustand daher
+vor jedem Zugriff und öffnen die Glocke bei Bedarf erneut (Zeitbudget), wie in
+``test_f34_shell_ui``. Geprüft wird unverändert: genau ein Eintrag, genau ein
+``button.nv-bell-link[data-nv-notification-open]``, kein ``a[href='#/questions']``,
+Klick öffnet ``section[data-nv-question-inbox]`` mit der Karte.
+
 ROT-PHASE (2026-11-22, vor der Implementierung von F34 WP1/WP3)
 -----------------------------------------------------------
 Ausgeführt mit::
@@ -92,6 +102,7 @@ if not _BROWSERS:
     if _DEFAULT.is_dir():
         os.environ["PLAYWRIGHT_BROWSERS_PATH"] = str(_DEFAULT)
 
+from playwright.sync_api import Error as PlaywrightError  # noqa: E402
 from playwright.sync_api import sync_playwright  # noqa: E402
 
 REPO = Path(__file__).resolve().parents[2]
@@ -324,13 +335,49 @@ class F34QuestionsTest(unittest.TestCase):
         self.page.locator("main#nv-main[data-nv-view='home']").wait_for(
             state="visible", timeout=25000)
 
-    def open_bell(self):
-        bell = self.page.locator("[data-nv-bell]")
-        bell.wait_for(state="visible", timeout=10000)
-        bell.first.click()
+    def _bell_panel_is_open(self):
         panel = self.page.locator("[data-nv-bell-panel]")
-        panel.wait_for(state="visible", timeout=10000)
-        return panel
+        if panel.count() == 0:
+            return False
+        return panel.is_visible() and panel.get_attribute("hidden") is None
+
+    def ensure_bell_open(self, deadline_seconds=20):
+        """Glocke vor jedem Zugriff öffnen und offen halten.
+
+        ``render()`` ruft ``closeBellPanel()``; ein später Render kann das
+        Panel daher zwischen zwei Messungen wieder schließen (im Sammellauf
+        beobachtet). Deshalb wird der Zustand vor jedem Zugriff geprüft und bei
+        Bedarf erneut geklickt.
+        """
+        bell = self.page.locator("[data-nv-bell]")
+        panel = self.page.locator("[data-nv-bell-panel]")
+        deadline = time.time() + deadline_seconds
+        while time.time() < deadline:
+            if self._bell_panel_is_open():
+                return panel
+            try:
+                bell.wait_for(state="visible", timeout=10000)
+                bell.first.click()
+                panel.wait_for(state="visible", timeout=3000)
+            except PlaywrightError:
+                continue
+        self.fail("Die Glocke ließ sich nicht zuverlässig öffnen")
+
+    def ensure_bell_entry_visible(self, entry, deadline_seconds=20):
+        """Glocken-Eintrag sichtbar machen, auch wenn ein Render das Panel schließt."""
+        deadline = time.time() + deadline_seconds
+        while time.time() < deadline:
+            self.ensure_bell_open()
+            try:
+                if entry.count() >= 1 and entry.first.is_visible():
+                    return
+            except PlaywrightError:
+                pass
+            self.page.wait_for_timeout(100)
+        self.fail("Der Glocken-Eintrag wurde nicht sichtbar")
+
+    def open_bell(self):
+        return self.ensure_bell_open()
 
     def banner(self):
         return self.page.locator("div.nv-question-banner[data-nv-question-banner]")
@@ -689,6 +736,9 @@ class F34QuestionBellTest(F34QuestionsTest):
             message="Nach Erscheinen der neuen Rückfrage liegt kein gespeicherter "
                     "Glocken-Eintrag mit der Frage vor")
         entry = new_entry.first
+        # Ein später Render kann das Glocken-Panel schließen; vor Text- und
+        # Sichtbarkeitsprüfungen daher erneut öffnen (Sammellauf-Rennen).
+        self.ensure_bell_entry_visible(new_entry)
         text = entry.inner_text() or ""
         self.assertRegex(
             text, re.compile(r"(?i)neue rückfrage|new question"),
@@ -710,6 +760,7 @@ class F34QuestionBellTest(F34QuestionsTest):
         self.assertEqual(1, open_button.count(),
                          "Der gespeicherte Glocken-Eintrag hat keinen Knopf "
                          "button.nv-bell-link[data-nv-notification-open]")
+        self.ensure_bell_entry_visible(new_entry)
         self.assertTrue(open_button.first.is_visible(),
                         "Der ‚Öffnen‘-Knopf des gespeicherten Glocken-Eintrags "
                         "ist nicht sichtbar")
@@ -717,6 +768,7 @@ class F34QuestionBellTest(F34QuestionsTest):
             open_button.first.inner_text() or "",
             re.compile(r"(?i)öffnen|open"),
             "Der ‚Öffnen‘-Knopf …: " + repr(open_button.first.inner_text()))
+        self.ensure_bell_entry_visible(new_entry)
         open_button.first.click()
         inbox = self.page.locator(
             "aside[data-nv-context] section[data-nv-question-inbox]")

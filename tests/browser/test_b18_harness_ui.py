@@ -83,6 +83,18 @@ Testfälle (Name — Vorbedingung — Aktion — Erwartung)
     ``GET /api/harness`` meldet ``selected: "pi"``; ``harness.json`` enthält
     ``pi``; beide Ansichten zeigen nach dem Neuladen ``pi`` (Anzeige == Datei).
 
+Laufzeit-Härtung (Sammellauf)
+-----------------------------
+Nach ``page.reload()`` setzt der Router ``data-nv-view`` synchron, das Gerüst
+der Settings-Ansicht und ``fillFeatures`` entstehen danach. Unter Last kann der
+erste Render stattfinden, bevor ``nova-settings.js`` geladen ist; dann fehlt
+``NV.views.settings``, der Router fällt auf die Startseite zurück und die
+Funktionsschalter erscheinen nie von selbst. ``open_settings`` prüft deshalb
+das Gerüst ``[data-nv-ssection]`` und stößt bei dessen Fehlen die Navigation
+über die Startseite erneut an; ``wait_for_settings_feature`` wiederholt das
+innerhalb eines Zeitbudgets, ``wait_harness_section_filled`` wartet auf das
+asynchrone ``fillHarness``. Die fachlichen Assertions bleiben unverändert.
+
 ROT-PHASE (2026-11-21, vor der Implementierung)
 ----------------------------------------------
 Aufruf::
@@ -130,6 +142,7 @@ if not _BROWSERS:
     if _DEFAULT.is_dir():
         os.environ["PLAYWRIGHT_BROWSERS_PATH"] = str(_DEFAULT)
 
+from playwright.sync_api import Error as PlaywrightError  # noqa: E402
 from playwright.sync_api import sync_playwright  # noqa: E402
 
 REPO = Path(__file__).resolve().parents[2]
@@ -402,18 +415,83 @@ class HarnessUiTest(unittest.TestCase):
         self.page.locator("main#nv-main[data-nv-view='home']").wait_for(
             state="visible", timeout=25000)
 
-    def open_settings(self):
-        if not self.page.locator(
-                "main#nv-main[data-nv-view='settings']").count():
-            self.page.locator(
-                "nav[data-nv-navs] [data-nv-nav='settings']").click()
+    def _rerender_settings(self):
+        """Settings-Ansicht durch einen echten Routenwechsel neu rendern.
+
+        Nach einem Reload kann der erste Render stattfinden, bevor
+        ``nova-settings.js`` geladen ist; ``NV.views.settings`` fehlt dann und
+        der Router fällt auf die Startseite zurück. Ein Klick auf denselben
+        Hash löst kein ``hashchange`` aus, deshalb wird über die Startseite
+        navigiert.
+        """
+        self.page.locator("nav[data-nv-navs] [data-nv-nav='home']").click()
+        self.page.locator("main#nv-main[data-nv-view='home']").wait_for(
+            state="visible", timeout=20000)
+        self.page.locator("nav[data-nv-navs] [data-nv-nav='settings']").click()
         self.page.locator("main#nv-main[data-nv-view='settings']").wait_for(
             state="visible", timeout=20000)
+
+    def open_settings(self):
+        view = self.page.locator("main#nv-main[data-nv-view='settings']")
+        if not view.count():
+            self.page.locator(
+                "nav[data-nv-navs] [data-nv-nav='settings']").click()
+        view.wait_for(state="visible", timeout=20000)
+        # Das Sicht-Attribut wird synchron gesetzt, das Gerüst der Ansicht
+        # direkt danach erzeugt. Fehlt es, ist der Render auf die Startseite
+        # zurückgefallen → Navigation erneut anstoßen.
+        if self.page.locator("[data-nv-ssection]").count() == 0:
+            self._rerender_settings()
+
+    def wait_for_settings_feature(self, selector, timeout=25, attempt_seconds=8):
+        """Warten, bis fillFeatures den Schalter gerendert hat.
+
+        Das Settings-Gerüst ist synchron, die Funktionsschalter entstehen
+        asynchron. Fehlt nach einem Zeitfenster sogar das Gerüst, wurde die
+        Ansicht vor dem Laden von ``nova-settings.js`` gerendert; dann wird
+        die Navigation neu angestoßen und weiter gewartet.
+        """
+        feature = self.page.locator(selector)
+        deadline = time.time() + timeout
+        while True:
+            remaining = deadline - time.time()
+            if remaining <= 0:
+                self.fail(
+                    "Der Funktions-Schalter " + selector
+                    + " erschien nach dem Neuladen nicht (sections="
+                    + str(self.page.locator("[data-nv-ssection]").count())
+                    + ", inputs="
+                    + str(self.page.locator("input[data-nv-feature]").count())
+                    + ")")
+            try:
+                feature.first.wait_for(
+                    state="visible",
+                    timeout=int(min(attempt_seconds, remaining) * 1000))
+                return feature
+            except PlaywrightError:
+                pass
+            if self.page.locator("[data-nv-ssection]").count() == 0:
+                self._rerender_settings()
+            else:
+                self.page.wait_for_timeout(200)
+
+    def wait_harness_section_filled(self, section, timeout=25):
+        """Warten, bis fillHarness Auswahl, Status und Feedback aufgebaut hat.
+
+        Die Sektion steht als leeres Gerüst sofort; der Inhalt entsteht erst
+        mit ``fillHarness`` (GET /api/harness) nach dem Render, den
+        ``setFeature`` auslöst.
+        """
+        self.wait_until(
+            lambda: section.locator(
+                "select[data-nv-field='harness'] option").count() >= 1,
+            timeout=timeout,
+            message="Die Harness-Auswahl der Nova wurde nicht gefüllt")
 
     def open_nova_harness(self):
         self.boot_nova()
         self.open_settings()
-        box = self.page.locator("input[data-nv-feature='harness']")
+        box = self.wait_for_settings_feature("input[data-nv-feature='harness']")
         self.assertEqual(1, box.count(),
                          "Feature-Schalter data-nv-feature='harness' fehlt")
         if not box.is_checked():
@@ -421,6 +499,7 @@ class HarnessUiTest(unittest.TestCase):
         box.wait_for(state="visible", timeout=20000)
         section = self.page.locator("[data-nv-ssection='harness']")
         section.wait_for(state="visible", timeout=25000)
+        self.wait_harness_section_filled(section)
         return section
 
     def boot_classic_env(self):
@@ -717,13 +796,15 @@ class HarnessUiTest(unittest.TestCase):
         self.open_settings()
         # Vertragsableitung: Settings-View-Gerüst ist synchr., fillFeatures
         # läuft nach asynchron — auf das Erscheinen warten, nicht nur auf
-        # die View (same as open_nova_harness).
-        box = self.page.locator("input[data-nv-feature='harness']")
-        box.wait_for(state="visible", timeout=25000)
+        # die View (same as open_nova_harness). Bleibt der Schalter aus, wurde
+        # die Ansicht vor dem Laden von nova-settings.js gerendert; dann stößt
+        # der Helfer die Navigation erneut an.
+        box = self.wait_for_settings_feature("input[data-nv-feature='harness']")
         if not box.is_checked():
             box.check()
         section = self.page.locator("[data-nv-ssection='harness']")
         section.wait_for(state="visible", timeout=25000)
+        self.wait_harness_section_filled(section)
         self.assertEqual(
             "pi",
             section.locator("select[data-nv-field='harness']").input_value(),
