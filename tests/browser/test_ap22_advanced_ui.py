@@ -7,6 +7,9 @@ Die Fälle leiten sich aus ``docs/features/AP22.md`` ab — Abschnitt
 über ``#/settings`` ein (``input[data-nv-feature="<id>"]``); die Bereiche
 liegen danach ohne Neuladen sichtbar vor.
 
+F34-Anpassung: Die statische Sidebar entfällt; ``open_settings`` nutzt die
+permanente Kopf-Navigation (``nav[data-nv-navs]``).
+
 Das echte Dashboard läuft als eigener Prozess auf einem freien Loopback-Port
 mit isoliertem ``VIBE``/``HOME``/``VIBE_STATE``/``VIBE_INSTALL``. opencode und
 Pi sind Attrappen im ``PATH``, der opencode-Server ist eine lokale
@@ -604,7 +607,8 @@ class AP22AdvancedBrowserTest(unittest.TestCase):
     def open_settings(self):
         if not self.page.locator(
                 "main#nv-main[data-nv-view='settings']").count():
-            self.page.locator("aside[data-nv-side] [data-nv-nav='settings']").click()
+            self.page.locator(
+                "nav[data-nv-navs] [data-nv-nav='settings']").click()
         self.page.locator("main#nv-main[data-nv-view='settings']").wait_for(
             state="visible", timeout=20000)
 

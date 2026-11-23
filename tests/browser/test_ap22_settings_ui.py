@@ -6,6 +6,9 @@ Sprache ab. Das echte Dashboard läuft als eigener Prozess mit isoliertem
 VIBE-Root und opencode-Attrappe (Muster
 ``tests/browser/test_ap21_i18n_ui.py``).
 
+F34-Anpassung: Die statische Sidebar entfällt; ``open_settings`` nutzt die
+permanente Kopf-Navigation (``nav[data-nv-navs]``).
+
 Dokumentierte Lesarten, wo der Vertrag keinen eigenen Hook nennt:
 
 * Bestätigung nach „Kennwort setzen“ und sichtbare Fehler: Der Vertrag nennt
@@ -279,7 +282,7 @@ class AP22SettingsBrowserTest(unittest.TestCase):
             state="visible", timeout=25000)
 
     def open_settings(self):
-        self.page.locator("aside[data-nv-side] [data-nv-nav='settings']").click()
+        self.page.locator("nav[data-nv-navs] [data-nv-nav='settings']").click()
         self.page.locator("main#nv-main[data-nv-view='settings']").wait_for(
             state="visible", timeout=20000)
 

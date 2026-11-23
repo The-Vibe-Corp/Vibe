@@ -10,6 +10,12 @@ Die neue Oberfläche liegt unter ``/``, die alte unverändert unter
 ``/classic``. Getestet wird ausschließlich über die ``data-nv-*``-Hooks und
 ``I18N``-Texte des Vertrags.
 
+F34-Anpassung: Die fünf Navigationspunkte liegen dauerhaft in der
+Kopfzeile (``nav[data-nv-navs]`` mit ``button[data-nv-nav]``); die
+statische ``aside[data-nv-side]`` ist bewusst leer. Alle Selektoren auf
+Navigation und ``open_settings``-Absprünge sind auf ``nav[data-nv-navs]``
+umgestellt (Semantik Klick → Ansicht und ``aria-current`` unverändert).
+
 Sprachlabels: Der Vertrag legt die vier Navigationsbeschriftungen fest —
 englisch exakt ``Home``/``Agents``/``Activity``/``Settings``, deutsch exakt
 ``Start``/``Agenten``/``Aktivität``/``Einstellungen``. Die Quellschlüssel sind
@@ -403,11 +409,11 @@ class NavigationTest(AP22BrowserTest):
         (agents → agents, home → home).
         """
         self.boot()
-        # Die Shell hält genau eine Navigation und verschiebt sie per
-        # syncSidebarNav: ab 1280px in die Sidebar, darunter in die Kopfzeile.
-        # Der Scope wählt den tatsächlichen Ort; die Semantik (Klick auf die
-        # Navigation erreicht die Ansicht) bleibt unverändert.
-        nav_scope = "aside[data-nv-side]"
+        # Die fünf Navigationsknöpfe liegen dauerhaft in der Kopfzeile
+        # (nav[data-nv-navs]) — F34 entfernt die statische Sidebar. Die
+        # Semantik (Klick erreicht die Ansicht, aria-current wandert)
+        # bleibt unverändert.
+        nav_scope = "nav[data-nv-navs]"
         for key in NAV_LABELS_EN:
             self.assertEqual(
                 1,
@@ -540,9 +546,10 @@ class LanguageTest(AP22BrowserTest):
                     + repr(self.nav_labels()))
 
         # Der Sprachumschalter liegt im Einstellungsbereich (AP22-Vertrag).
-        # Bei 1400px hält die Shell die Navigation in der Sidebar.
+        # Die Navigationsknöpfe liegen dauerhaft in der Kopfzeile
+        # (nav[data-nv-navs]) — F34 entfernt die statische Sidebar.
         self.page.locator(
-            "aside[data-nv-side] [data-nv-nav='settings']").click()
+            "nav[data-nv-navs] [data-nv-nav='settings']").click()
         self.page.locator("main#nv-main[data-nv-view='settings']").wait_for(
             state="visible", timeout=20000)
         self.page.locator("select[aria-label='Language']").select_option("de")
@@ -559,7 +566,7 @@ class LanguageTest(AP22BrowserTest):
 
         self.page.reload()
         self.page.locator(
-            "aside[data-nv-side] [data-nv-nav='home']").wait_for(
+            "nav[data-nv-navs] [data-nv-nav='home']").wait_for(
             state="visible", timeout=25000)
         self.assertEqual(
             "de", self.page.evaluate("() => document.documentElement.lang"),
@@ -577,7 +584,8 @@ class ResponsiveTest(AP22BrowserTest):
 
         Erwartung: mobil ist ``button[data-nv-nav-toggle]`` sichtbar; der
         Klick setzt ``aria-expanded="true"`` und zeigt die Nav-Knöpfe; bei
-        1280×800 ist der Toggle verborgen und die Navigation direkt sichtbar.
+        1280×800 ist der Toggle verborgen und die Navigation direkt in der
+        Kopfzeile sichtbar (``nav[data-nv-navs]`` — F34: keine Sidebar).
         """
         self.boot()
         self.page.set_viewport_size({"width": 390, "height": 844})
@@ -603,9 +611,10 @@ class ResponsiveTest(AP22BrowserTest):
             message="Der Nav-Toggle bleibt auf dem Desktop sichtbar")
         self.wait_until(
             lambda: self.page.locator(
-                "aside[data-nv-side] [data-nv-nav='home']").is_visible(),
+                "nav[data-nv-navs] [data-nv-nav='home']").is_visible(),
             timeout=10,
-            message="Die Navigation ist auf dem Desktop nicht direkt sichtbar")
+            message="Die Navigation ist auf dem Desktop nicht direkt "
+                    "sichtbar (nav[data-nv-navs] in der Kopfzeile)")
 
 
 class BellTest(AP22BrowserTest):

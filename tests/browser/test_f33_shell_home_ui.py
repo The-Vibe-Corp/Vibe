@@ -18,11 +18,11 @@ Fachlicher Rahmen
   ``/static/vibe.svg``. Ausgeliefert wird die Datei durch WP6
   (``STATIC_FILES``); bis dahin ist der Auslieferungstest erwartungsgemäß rot
   und wird grün, sobald die Route registriert ist.
-* **Sidebar (Breitbild ≥ 1280px):** ``aside.nv-side[data-nv-side]`` unterhalb
-  des Headers mit der Navigation; unter 1280px greift wieder die
-  Kopf-Navigation.
-* **Breitbildnutzung:** ``main.nv-main`` ist ab Breitbild nicht mehr durch
-  ``max-width`` begrenzt (Viewport 1600px ⇒ sichtbar breiter als 1200px).
+* **Sidebar:** Entfällt (F34). Die fünf Navigationspunkte liegen dauerhaft
+  in der Kopfzeile (``nav[data-nv-navs]`` mit ``button[data-nv-nav]``);
+  ``aside.nv-side[data-nv-side]`` ist bewusst leer.
+* **Breitbildnutzung:** ``main.nv-main`` ist maximal durch ``max-width:
+  1600px`` begrenzt und zentriert (Viewport 1600px ⇒ Breite > 1200px).
 * **Akzent:** Standard ist ``blue`` als ``data-accent`` am ``<html>``.
 * **Toasts (3c):** ``toast()`` hängt Karten mit ``data-nv-toast-auto`` an, die
   sich ohne Klick nach ~6 s selbst entfernen.
@@ -36,7 +36,7 @@ Fachlicher Rahmen
 Testfälle (Kurzfassung; Details in den Methoden)
 ------------------------------------------------
 ``ShellChromeTest.test_logo_and_favicon_are_delivered``
-``ShellChromeTest.test_sidebar_at_wide_viewport_and_header_nav_below_1280``
+``ShellChromeTest.test_header_nav_visible_at_1400_1280_1000_and_sidebar_without_navs``
 ``ShellChromeTest.test_wide_layout_uses_the_full_width``
 ``ShellChromeTest.test_default_accent_is_blue``
 ``ShellChromeTest.test_toast_auto_dismisses_without_click``
@@ -358,65 +358,51 @@ class ShellChromeTest(F33ShellHomeTest):
         self.assertIn(b"<svg", body, "Die Datei enthält kein SVG")
         self.assert_no_page_errors()
 
-    def test_sidebar_at_wide_viewport_and_header_nav_below_1280(self):
-        """Vorbedingung: angemeldet. Aktion: Viewport 1400, 1000, 1280.
+    def test_header_nav_visible_at_1400_1280_1000_and_sidebar_without_navs(self):
+        """Vorbedingung: angemeldet. Aktion: Viewport 1400, 1280, 1000.
 
-        Erwartung: Ab 1280px ist ``aside[data-nv-side]`` sichtbar und enthält
-        die Navigation (``[data-nv-nav]``); bei 1000px ist die Sidebar
-        verborgen und die Navigation steht wieder oben in der Kopfzeile
-        (sichtbar, oberer Bildschirmbereich). Die Kopf-Navigation erscheint
-        nach dem Viewport-Wechsel asynchron.
+        Erwartung (F34: statische Sidebar entfällt): bei allen drei
+        Breiten ist ``nav[data-nv-navs]`` sichtbar und enthält die fünf
+        Navigationspunkte ``[data-nv-nav]`` (``home``, ``agents``,
+        ``activity``, ``evaluations``, ``settings``);
+        ``aside[data-nv-side]`` enthält keine ``[data-nv-nav]``-Knöpfe.
         """
         self.boot()
-        self.page.set_viewport_size({"width": 1400, "height": 900})
-        side = self.page.locator("aside[data-nv-side]")
-        self.wait_until(
-            lambda: side.count() == 1 and side.first.is_visible(),
-            timeout=10,
-            message="Bei 1400px fehlt die sichtbare Sidebar "
-                    "aside[data-nv-side]")
-        for key in ("home", "agents", "activity", "settings"):
-            nav = side.locator(f"[data-nv-nav='{key}']")
-            self.assertEqual(
-                1, nav.count(),
-                f"Die Sidebar enthält die Navigation {key!r} nicht")
-            self.assertTrue(
-                nav.first.is_visible(),
-                f"Der Navigationsknopf {key!r} ist in der Sidebar nicht "
-                "sichtbar")
-
-        self.page.set_viewport_size({"width": 1000, "height": 900})
-        self.wait_until(
-            lambda: not side.first.is_visible(),
-            timeout=10,
-            message="Bei 1000px bleibt die Sidebar sichtbar; erwartet wird "
-                    "die Kopf-Navigation")
-        home_nav = self.page.locator(".nv-top [data-nv-nav='home']")
-        # F33: die Nav-Verlagerung läuft asynchron im matchMedia-change-
-        # Listener (syncSidebarNav), während die Sidebar sofort verschwindet.
-        self.wait_until(
-            lambda: home_nav.first.is_visible(), timeout=10,
-            message="Bei 1000px ist keine Navigation sichtbar")
-        box = home_nav.first.bounding_box()
-        self.assertIsNotNone(box, "Die Navigation hat keine Position")
-        self.assertLess(
-            box["y"], 160,
-            "Bei 1000px steht die Navigation nicht in der Kopfzeile "
-            f"(y={box['y']})")
-
-        self.page.set_viewport_size({"width": 1280, "height": 900})
-        self.wait_until(
-            lambda: side.first.is_visible(),
-            timeout=10,
-            message="Bei 1280px ist die Sidebar nicht sichtbar")
+        nav = self.page.locator("nav[data-nv-navs]")
+        for width in (1400, 1280, 1000):
+            with self.subTest(width=width):
+                self.page.set_viewport_size({"width": width, "height": 900})
+                self.wait_until(
+                    lambda: nav.count() == 1 and nav.first.is_visible(),
+                    timeout=10,
+                    message=f"Bei {width}px fehlt die sichtbare "
+                            "Kopf-Navigation nav[data-nv-navs]")
+                for key in ("home", "agents", "activity",
+                            "evaluations", "settings"):
+                    point = nav.locator(f"[data-nv-nav='{key}']")
+                    self.assertEqual(
+                        1, point.count(),
+                        f"Bei {width}px fehlt der Navigationspunkt "
+                        f"{key!r} in nav[data-nv-navs]")
+                    self.assertTrue(
+                        point.first.is_visible(),
+                        f"Der Navigationspunkt {key!r} ist bei {width}px "
+                        "nicht sichtbar")
+                self.assertEqual(
+                    0, self.page.locator(
+                        "aside[data-nv-side] [data-nv-nav]").count(),
+                    f"Bei {width}px enthält aside[data-nv-side] noch "
+                    "[data-nv-nav]-Knöpfe (statische Sidebar)")
         self.assert_no_page_errors()
 
     def test_wide_layout_uses_the_full_width(self):
         """Vorbedingung: angemeldet. Aktion: Viewport 1600×1000.
 
-        Erwartung: ``main.nv-main`` nutzt die Breite (sichtbar breiter als
-        1200px) und ist nicht durch ``max-width`` begrenzt; die Sidebar steht
-        daneben.
+        Erwartung (F34: statische Sidebar entfällt): ``main.nv-main``
+        nutzt die Breite — sichtbar breiter als 1200px und maximal
+        1600px — und ist zentriert; das Dokument überläuft horizontal
+        nicht; ``aside[data-nv-side]`` enthält keine ``[data-nv-nav]``-
+        Knöpfe.
         """
         self.page.set_viewport_size({"width": 1600, "height": 1000})
         self.boot()
@@ -424,20 +410,31 @@ class ShellChromeTest(F33ShellHomeTest):
         main.wait_for(state="visible", timeout=20000)
         box = main.bounding_box()
         self.assertIsNotNone(box, "Der Hauptbereich hat keine Position")
+        self.assertLessEqual(
+            box["width"], 1600,
+            "Der Hauptbereich überschreitet die Breite von 1600px: "
+            f"{box['width']}px bei 1600px Viewport")
         self.assertGreater(
             box["width"], 1200,
             "Der Hauptbereich nutzt die Breitbildfläche nicht: "
             f"{box['width']}px bei 1600px Viewport")
-        max_width = self.page.evaluate(
-            "() => getComputedStyle(document.querySelector('main#nv-main'))"
-            ".maxWidth")
-        self.assertIn(
-            max_width, ("none", ""),
-            "main.nv-main ist weiterhin durch max-width begrenzt: "
-            + repr(max_width))
-        self.assertTrue(
-            self.page.locator("aside[data-nv-side]").first.is_visible(),
-            "Bei 1600px fehlt die Sidebar neben dem Hauptbereich")
+        center = box["x"] + box["width"] / 2
+        self.assertLess(
+            abs(center - 800), 10,
+            "Der Hauptbereich ist nicht zentriert: "
+            f"x={box['x']}, breit={box['width']} bei 1600px Viewport")
+        scroll_width = self.page.evaluate(
+            "() => Math.max(document.documentElement.scrollWidth,"
+            " document.body.scrollWidth, 0)")
+        self.assertLessEqual(
+            scroll_width, 1600 + 1,
+            "Das Dokument überläuft horizontal: "
+            f"{scroll_width}px bei 1600px Viewport")
+        self.assertEqual(
+            0, self.page.locator("aside[data-nv-side] [data-nv-nav]").count(),
+            "aside[data-nv-side] enthält noch [data-nv-nav]-Knöpfe "
+            "(statische Sidebar)")
+        self.assert_no_page_errors()
 
     def test_default_accent_is_blue(self):
         """Vorbedingung: frischer Kontext ohne gespeicherten Akzent.

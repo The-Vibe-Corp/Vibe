@@ -1,5 +1,8 @@
 """Browserabnahme B18 — Harness nur auswählbar, wenn installiert.
 
+F34-Anpassung: Die statische Sidebar entfällt; ``open_settings`` nutzt die
+permanente Kopf-Navigation (``nav[data-nv-navs]``).
+
 Fachlicher Rahmen
 -----------------
 Das Ticket B18 verlangt, dass ein nicht installierter Harness (Pi) über die
@@ -399,7 +402,8 @@ class HarnessUiTest(unittest.TestCase):
     def open_settings(self):
         if not self.page.locator(
                 "main#nv-main[data-nv-view='settings']").count():
-            self.page.locator("aside[data-nv-side] [data-nv-nav='settings']").click()
+            self.page.locator(
+                "nav[data-nv-navs] [data-nv-nav='settings']").click()
         self.page.locator("main#nv-main[data-nv-view='settings']").wait_for(
             state="visible", timeout=20000)
 
