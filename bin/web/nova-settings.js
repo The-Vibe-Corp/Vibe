@@ -516,6 +516,19 @@ async function fillGates(section, token) {
   var tableHolder = el('div', {class: 'nv-table-wrap'});
   var error = settingsErrorBox();
   var current = view;
+  var resetBtn = el('button', {class: 'nv-btn', type: 'button',
+    'data-nv-action': 'gates-reset', title: tr('Gilt nur für ein ausgewähltes Projekt'),
+    on: {click: function () {
+      var cleared = {};
+      Object.keys((current && current.gates) || {}).forEach(function (key) {
+        cleared[key] = null;
+      });
+      if (Object.keys(cleared).length) send(cleared, 'Projektabweichungen zurückgesetzt');
+    }}}, tr('Projektabweichungen zurücksetzen'));
+
+  function syncResetButton() {
+    resetBtn.disabled = projectSelect.value === 'global';
+  }
 
   function gateHelp(key) {
     return tr(NV_SETTINGS_GATE_HELP[key]
@@ -562,6 +575,7 @@ async function fillGates(section, token) {
       table.append(el('tr', {'data-nv-gate': key}, ...cells));
     });
     tableHolder.replaceChildren(table);
+    syncResetButton();
   }
   draw(view);
 
@@ -597,6 +611,7 @@ async function fillGates(section, token) {
   }
 
   projectSelect.addEventListener('change', async function () {
+    syncResetButton();
     try {
       var path = projectSelect.value === 'global'
         ? '/api/gates' : '/api/gates?name=' + encodeURIComponent(projectSelect.value);
@@ -612,14 +627,7 @@ async function fillGates(section, token) {
         'data-nv-action': 'gates-save', on: {click: function () {
           send(valuesFromTable(), 'Schranken gespeichert');
         }}}, tr('Speichern')),
-      el('button', {class: 'nv-btn', type: 'button',
-        'data-nv-action': 'gates-reset', on: {click: function () {
-          var cleared = {};
-          Object.keys((current && current.gates) || {}).forEach(function (key) {
-            cleared[key] = null;
-          });
-          if (Object.keys(cleared).length) send(cleared, 'Projektabweichungen zurückgesetzt');
-        }}}, tr('Projektabweichungen zurücksetzen'))),
+      resetBtn),
     el('p', {class: 'nv-muted'},
       tr('Ohne Projektwert gilt der globale Wert oder die Voreinstellung; Änderungen wirken auf neue Läufe.')),
     error));

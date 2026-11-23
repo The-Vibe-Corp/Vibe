@@ -74,6 +74,7 @@ umgesetzt); kein Fall aus Umgebungsgründen (Server, Port, Browser, Syntax).
 import http.client
 import json
 import os
+import re
 import secrets
 import socket
 import subprocess
@@ -634,6 +635,98 @@ class F34QuestionBellTest(F34QuestionsTest):
             timeout=10,
             message="Der Kopfzähler darf durch das Glocken-Ausblenden nicht "
                     "zurückgehen")
+        self.assert_no_page_errors()
+
+    def test_stored_bell_entry_for_new_question_opens_postbox(self):
+        """Vorbedingung: erster Fragen-Sync abgeschlossen (Kopfzähler/Banner
+        zeigen die beiden Fixture-Fragen), danach erscheint eine neue
+        Rückfrage (Runtime-Poll).
+        Aktion: Glocken öffnen, gespeicherten Eintrag prüfen, „Öffnen“ klicken.
+        Erwartung: gespeicherter Eintrag (kind question, „Neue Rückfrage: …“)
+        ohne toten Link ``a[href='#/questions']``, sondern mit Knopf
+        ``button.nv-bell-link[data-nv-notification-open]`` (sichtbarer Text
+        „Öffnen“); Klick öffnet das Fragen-Postfach
+        (``aside[data-nv-context] section[data-nv-question-inbox]``) und zeigt
+        die Karte der offenen Frage.
+        """
+        self.boot()
+        self.open_bell()
+        # Vorbedingung: der erste Fragen-Sync (loadQuestions beim Boot) ist
+        # abgeschlossen, bevor die neue Laufzeit-Frage angelegt wird — sonst
+        # würde der erste Sync die Datei als „bereits gesehen“ behandeln und
+        # bewusst keine Benachrichtigung erzeugen (kein Spam beim Start-Sync).
+        questions_count = self.questions_count()
+        questions_count.wait_for(state="visible", timeout=20000)
+        self.wait_until(
+            lambda: (questions_count.inner_text() or "").strip() == "2",
+            timeout=20,
+            message="Der erste Fragen-Sync hat die beiden Fixture-Fragen nicht "
+                    "gedeutet (Kopfzähler != 2)")
+        self.wait_until(
+            lambda: self.banner().first.is_visible(),
+            timeout=20,
+            message="Das Banner zu den beiden offenen Fragen ist nach dem ersten "
+                    "Sync nicht sichtbar")
+        new_qid = "q" + secrets.token_hex(6)
+        record = {
+            "id": new_qid,
+            "project": "alpha-projekt",
+            "agent": "general",
+            "text": QUESTION_NEW_TEXT,
+            "options": ["Ja", "Nein"],
+            "free_text": True,
+            "created": "2026-11-22T11:00:00Z",
+        }
+        (self.questions_dir / (new_qid + ".json")).write_text(
+            json.dumps(record, ensure_ascii=False, indent=1) + "\n",
+            encoding="utf-8")
+        new_entry = self.page.locator(
+            "div[data-nv-notification][data-nv-notification-id]"
+        ).filter(has_text=QUESTION_NEW_TEXT)
+        self.wait_until(
+            lambda: new_entry.count() >= 1,
+            timeout=15,
+            message="Nach Erscheinen der neuen Rückfrage liegt kein gespeicherter "
+                    "Glocken-Eintrag mit der Frage vor")
+        entry = new_entry.first
+        text = entry.inner_text() or ""
+        self.assertRegex(
+            text, re.compile(r"(?i)neue rückfrage|new question"),
+            "Der gespeicherte Glocken-Eintrag trägt nicht den „Neue Rückfrage“-Text: "
+            + repr(text))
+        self.assertIn(QUESTION_NEW_TEXT, text, "Der gespeicherte Glocken-Eintrag "
+                         "zeigt nicht den Frage-Text: " + repr(text))
+        kinds = self.page.evaluate(
+            "() => (JSON.parse(localStorage.getItem('nv-notifications') || '[]')"
+            ".map(entry => entry.kind))")
+        self.assertIn("question", kinds, "Der gespeicherte Glocken-Eintrag hat "
+                     "nicht kind=question: " + repr(kinds))
+        self.assertEqual(
+            0, entry.locator("a").count(),
+            "Der gespeicherte Glocken-Eintrag nutzt noch den toten Link "
+            "a[href='#/questions']: " + repr(kinds))
+        open_button = entry.locator(
+            "button.nv-bell-link[data-nv-notification-open]")
+        self.assertEqual(1, open_button.count(),
+                         "Der gespeicherte Glocken-Eintrag hat keinen Knopf "
+                         "button.nv-bell-link[data-nv-notification-open]")
+        self.assertTrue(open_button.first.is_visible(),
+                        "Der ‚Öffnen‘-Knopf des gespeicherten Glocken-Eintrags "
+                        "ist nicht sichtbar")
+        self.assertRegex(
+            open_button.first.inner_text() or "",
+            re.compile(r"(?i)öffnen|open"),
+            "Der ‚Öffnen‘-Knopf …: " + repr(open_button.first.inner_text()))
+        open_button.first.click()
+        inbox = self.page.locator(
+            "aside[data-nv-context] section[data-nv-question-inbox]")
+        inbox.wait_for(state="visible", timeout=20000)
+        card = self.page.locator(
+            f"article[data-nv-question][data-nv-question-id='{new_qid}']")
+        card.wait_for(state="visible", timeout=20000)
+        self.assertTrue(card.first.is_visible(),
+                        "Die Karte der offenen Frage ist nach dem Glocken-Klick "
+                        "nicht sichtbar")
         self.assert_no_page_errors()
 
 

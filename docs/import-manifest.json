@@ -1495,9 +1495,9 @@
       "sha256": "ca1c1bb5d7a9eef2823978f76694c1beecf255a73d342756af00ed1d39bdb048"
     },
     {
-      "bytes": 40808,
+      "bytes": 41070,
       "path": "bin/web/nova-core.js",
-      "sha256": "29aaeb4938d3c4115c4cf06702f2c9ba60b0e4c253808034ea6eeaa39839cef5"
+      "sha256": "a08273fcc262d0a90379e483347af0ee597efaa168cd3048beefa9e5babfa933"
     },
     {
       "path": "bin/web/nova-evals.js",
@@ -1515,14 +1515,14 @@
       "sha256": "cbca5b169f3c5052e50da0910560d7fbcd1b6c42380fe6b925a4f98021f753ab"
     },
     {
-      "bytes": 92779,
+      "bytes": 92911,
       "path": "bin/web/nova-project.js",
-      "sha256": "b67f342d98fdba76f7380815a39508892c30045bbeb1956599e58a82cbf72766"
+      "sha256": "8f40eb1707adade390438747095790313fc7000062a71ae18d85f0048a733986"
     },
     {
-      "bytes": 60416,
+      "bytes": 60613,
       "path": "bin/web/nova-settings.js",
-      "sha256": "d03f7f704ed957089f502fa91dffb986188e47e80274b5f41c99168a81c4ee6a"
+      "sha256": "15e8ad54cdc5f1b46abf3fe18e6d8f04b387e4b82bb8acf9cbb87642923a9d8a"
     },
     {
       "bytes": 9145,

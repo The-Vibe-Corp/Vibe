@@ -910,6 +910,48 @@ class GatesTest(F34SettingsBrowserTest):
         reset.wait_for(state="visible", timeout=20000)
         self.assertTrue(reset.is_visible(), "Der Reset-Knopf fehlt")
 
+    def test_gates_reset_button_is_disabled_without_project_context(self):
+        """Vorbedingung: Feature ``gates`` an, Gates-Ansicht geöffnet.
+
+        Aktion: Reset-Knopf im Global-Kontext prüfen, Projekt „global“ wählen,
+        dann ein Projekt wählen.
+
+        Erwartung: ``select[data-nv-gates-project]`` im Wert „global“;
+        Knopf ``button[data-nv-action='gates-reset']`` deaktiviert
+        (``disabled``) und trägt Erklärung im ``title`` (Projektkontext nötig);
+        nach Wahl eines Projekts ist der Knopf aktiv.
+        """
+        self.boot()
+        self.open_settings()
+        self.enable_features("gates")
+        gates = self.page.locator("[data-nv-advanced='gates']")
+        gates.wait_for(state="visible", timeout=20000)
+        reset = self.page.locator(
+            "section[data-nv-ssection='gates'] button[data-nv-action='gates-reset']")
+        reset.wait_for(state="visible", timeout=20000)
+        project_select = self.page.locator(
+            "section[data-nv-ssection='gates'] select[data-nv-gates-project]")
+        project_select.wait_for(state="visible", timeout=20000)
+        options = project_select.evaluate(
+            "node => Array.from(node.options).map(o => o.value)")
+        self.assertIn("global", options, "Der Gates-Filter fehlt 'global'")
+        self.assertIn(PROJECT, options, "Der Gates-Filter bietet das Projekt nicht an")
+        project_select.select_option("global")
+        self.wait_until(
+            lambda: reset.is_disabled(), timeout=15,
+            message="Der Reset-Knopf ist im Global-Kontext nicht deaktiviert")
+        title = (reset.get_attribute("title") or "").strip()
+        self.assertTrue(title, "Der Reset-Knopf trägt im Global-Kontext keine "
+                                "title-Erklärung (Projektkontext nötig)")
+        self.assertRegex(
+            title, re.compile(r"(?i)projekt|project|global"),
+            "Die title-Erklärung … fehlt: " + repr(title))
+        project_select.select_option(PROJECT)
+        self.wait_until(
+            lambda: not reset.is_disabled(), timeout=15,
+            message="Der Reset-Knopf wird nach Projektwahl nicht aktiv")
+        self.assert_no_page_errors()
+
 
 class ModelsSectionTest(F34SettingsBrowserTest):
     def test_models_details_open_table_and_catalog_actions(self):

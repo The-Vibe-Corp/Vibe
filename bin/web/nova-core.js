@@ -741,7 +741,14 @@ function renderBell(pulseData) {
   stored.forEach(function (entry) {
     var main = el('div', {class: 'nv-bell-row-main'},
       el('span', {class: 'nv-bell-text'}, entry.text));
-    if (entry.href) main.append(el('a', {class: 'nv-bell-link', href: entry.href}, tr('Öffnen')));
+    if (entry.kind === 'question') {
+      main.append(el('button', {class: 'nv-bell-link', type: 'button',
+        'data-nv-notification-open': '', on: {click: function () {
+          NV.questions.openInbox();
+        }}}, tr('Öffnen')));
+    } else if (entry.href) {
+      main.append(el('a', {class: 'nv-bell-link', href: entry.href}, tr('Öffnen')));
+    }
     list.append(el('div', {class: 'nv-bell-row', 'data-nv-notification': '',
       'data-nv-notification-id': entry.id}, main,
       el('button', {class: 'nv-bell-dismiss', type: 'button',

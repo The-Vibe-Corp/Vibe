@@ -103,6 +103,12 @@ Testfälle (Name, Vorbedingung, Aktion, Erwartung)
     (``div[data-nv-drop-marker]``); nach Drop POST ``/api/priority {action:"set"}``
     mit abweichender Permutation; Strip zeichnet neue Reihenfolge sofort;
     ``GET /api/priority`` liefert die neue Reihenfolge persistiert.
+``test_drag_and_drop_moves_card_to_exact_target_position``
+    Vorbedingung: explizite Priorität „F5 B7 F8 F1 F3 F4 F6 F7“.
+    Aktion: Drag-Griff von F1 auf die Zeile von F8 ziehen.
+    Erwartung: F1 steht an definierter Position (direkt vor F8); die
+    Kennung davor (B7) und danach (F8) stimmen; exakte neue Reihenfolge
+    persistiert.
 ``test_arrows_reorder_and_save``
     Vorbedingung: order „F5 F8“.
     Aktion: ↓-Knopf der ersten Zeile klicken.
@@ -1336,6 +1342,93 @@ class WorkTest(F34ProjectBrowserTest):
         self.wait_until(
             lambda: self.strip_ids() == posted_order, timeout=15,
             message="Der Strip zeichnet die neue Reihenfolge nicht sofort: "
+                    + repr(self.strip_ids()))
+        self.assert_clean_page()
+
+    def test_drag_and_drop_moves_card_to_exact_target_position(self):
+        """Vorbedingung: explizite Priorität „F5 B7 F8 F1 F3 F4 F6 F7“ über alle
+        offenen Einträge.
+        Aktion: Drag-Griff von F1 auf die Zeile von F8 ziehen.
+        Erwartung: F1 steht an definierter Position (direkt vor F8); die
+        Kennung davor (B7) und danach (F8) stimmen; die exakte neue
+        Reihenfolge wird per POST und ``GET /api/priority`` persistiert.
+        """
+        self.set_priority("F5 B7 F8 F1 F3 F4 F6 F7")
+        self.open_work()
+        self.page.locator("div[data-nv-priority-strip]").wait_for(
+            state="visible", timeout=20000)
+        expected_before = ["F5", "B7", "F8", "F1", "F3", "F4", "F6", "F7"]
+        self.wait_until(
+            lambda: self.strip_ids() == expected_before, timeout=20,
+            message="Die definierte Startreihenfolge der Strip-Liste fehlt: "
+                    + repr(self.strip_ids()))
+        source = self.page.locator(
+            "div[data-nv-priority-strip] [data-nv-priority-id='F1'] "
+            "button[data-nv-drag-handle]")
+        target = self.page.locator(
+            "div[data-nv-priority-strip] [data-nv-priority-id='F8'] "
+            "button[data-nv-drag-handle]")
+        source.wait_for(state="visible", timeout=20000)
+        target.wait_for(state="visible", timeout=20000)
+        source_box = source.bounding_box()
+        target_box = target.bounding_box()
+        self.assertIsNotNone(source_box)
+        self.assertIsNotNone(target_box)
+        self.page.mouse.move(source_box["x"] + source_box["width"] / 2,
+                             source_box["y"] + source_box["height"] / 2)
+        self.page.mouse.down()
+        self.page.mouse.move(target_box["x"] + target_box["width"] / 2,
+                             target_box["y"] + target_box["height"] / 2)
+        ghost = self.page.locator("[data-nv-drag-ghost]")
+        self.wait_until(
+            lambda: ghost.count() == 1 and ghost.is_visible(), timeout=15,
+            message="Der Drag-Start bricht ab: keine sichtbare Geisterzeile "
+                    "(div[data-nv-drag-ghost]) beim Ziehen")
+        # 2) Einfügemarke während des Ziehens. Headless-Chromium feuert
+        #    während manuellen Ziehen kein dragover; wir fahren es auf dem
+        #    Strip nach, um den Produkt-Pfad (Live-Einfügemarke) zu üben —
+        #    browserseitig wird dragover während eines Drags gefeuert.
+        self.page.evaluate(
+            """(y) => {
+              const strip = document.querySelector(
+                'div[data-nv-priority-strip]');
+              const dataTransfer = new DataTransfer();
+              strip.dispatchEvent(new DragEvent('dragover', {
+                bubbles: true, cancelable: true, clientY: y,
+                dataTransfer: dataTransfer}));
+            }""", target_box["y"] + target_box["height"] / 2)
+        marker = self.page.locator(
+            "div[data-nv-priority-strip] div[data-nv-drop-marker]")
+        self.wait_until(
+            lambda: marker.count() == 1 and marker.is_visible(), timeout=15,
+            message="Während des Ziehens ist keine sichtbare Einfügemarke "
+                    "(div[data-nv-drop-marker]) vorhanden")
+        self.page.mouse.up()
+        source.drag_to(target, force=True)
+        self.wait_until(
+            lambda: any(payload.get("action") == "set"
+                        for payload in self.posts_to("/api/priority")),
+            timeout=20,
+            message="Der Drop speichert nicht über POST /api/priority "
+                    "{action:'set'}: " + repr(self.posts_to("/api/priority")))
+        posted = [payload for payload in self.posts_to("/api/priority")
+                  if payload.get("action") == "set"][-1]
+        posted_order = [part for part in str(posted.get("order") or "").split()
+                        if part]
+        expected_after = ["F5", "B7", "F1", "F8", "F3", "F4", "F6", "F7"]
+        self.assertEqual(
+            expected_after, posted_order,
+            "Der Drop hat die exakte Zielposition nicht respektiert: "
+            "erwartet " + repr(expected_after) + ", erhalten: " + repr(posted_order))
+        self.wait_api(
+            f"/api/priority?name={PROJECT}",
+            lambda data: [str(entry.get("id"))
+                          for entry in (data.get("order") or [])] == posted_order,
+            message="Die per Drop gespeicherte Reihenfolge ist nicht persistiert: "
+                    + repr(posted_order))
+        self.wait_until(
+            lambda: self.strip_ids() == posted_order, timeout=15,
+            message="Der Strip zeichnet die exakte neue Reihenfolge nicht: "
                     + repr(self.strip_ids()))
         self.assert_clean_page()
 

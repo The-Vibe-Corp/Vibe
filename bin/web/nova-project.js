@@ -497,7 +497,9 @@ function nvpPriorityStrip(name, token, view, items) {
     for (var index = 0; index < rows.length; index += 1) {
       var middle = rows[index].offsetTop - rowsBox.offsetTop
         + rows[index].offsetHeight / 2;
-      if (y < middle) return index;
+      /* Kleine Toleranz für Subpixel-/Scroll-Drift zwischen Zeilenmitte und
+         Drop-Koordinate: ein Treffer knapp unter der Mitte bleibt „davor“. */
+      if (y < middle + 4) return index;
     }
     return rows.length;
   }
@@ -524,7 +526,7 @@ function nvpPriorityStrip(name, token, view, items) {
     if (!dragId) return;
     event.preventDefault();
     var source = dragId;
-    var insertAt = markerIndex >= 0 ? markerIndex : targetIndex(event.clientY);
+    var insertAt = targetIndex(event.clientY);
     clearPreview();
     dragId = null;
     var next = ids.slice();
