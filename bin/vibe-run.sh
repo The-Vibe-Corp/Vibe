@@ -678,20 +678,23 @@ run_agent_in() {
 run_agent() {
   run_agent_in "$WT" "$PROMPT" "$NAME $ID"
 }
-# AP7 (T-V21): Hash-Wächter für transportierte .vibe-Dateien. Nach dem
+# AP7 (T-V21): Hash-Wächter für die transportierte .vibe/project.env. Nach dem
 # Transport (Paketstart) wird der Inhalt erfasst und vor jeder Paketprüfung
 # erneut geprüft. Eine Abweichung ist Manipulation der autoritativen
 # Projektwerte und kein gewöhnlicher Defekt: blockieren ohne Reparaturrunde.
 # Best effort wie der Transport selbst (fehlende Startdatei = kein Wächter).
+# GH-46: .vibe/verify-baseline wird nicht mehr transportiert und nicht bewacht;
+# Arbeitskopien arbeiten mit der committeten Baseline aus dem Branch.
 package_file_hash() {
   local path="$1"
   [ -f "$path" ] || return 1
   sha256sum "$path" | awk '{print $1}'
 }
-# AP7 (T-V21): Prüft, ob eine beim Paketstart vorhandene transportierte
-# .vibe-Datei seither verändert oder entfernt wurde. Rückgabe 0 = unverändert
-# (bzw. kein Wächter), 1 = Manipulation; TAMPERED_FILE nennt die Datei. Eine
-# beim Start fehlende Datei hat keinen Wächter (best effort wie der Transport).
+# AP7 (T-V21): Prüft, ob die beim Paketstart vorhandene transportierte
+# .vibe/project.env seither verändert oder entfernt wurde. Rückgabe
+# 0 = unverändert (bzw. kein Wächter), 1 = Manipulation; TAMPERED_FILE nennt
+# die Datei. Eine beim Start fehlende Datei hat keinen Wächter (best effort).
+# GH-46: .vibe/verify-baseline wird nicht mehr bewacht (nicht transportiert).
 guard_transported_files() {
   TAMPERED_FILE=""
   if [ -n "$PKG_HASH_PROJECT_ENV" ]; then
@@ -699,13 +702,6 @@ guard_transported_files() {
       TAMPERED_FILE=".vibe/project.env"
     elif [ "$PKG_HASH_PROJECT_ENV" != "$(package_file_hash "$WT/.vibe/project.env")" ]; then
       TAMPERED_FILE=".vibe/project.env"
-    fi
-  fi
-  if [ -z "$TAMPERED_FILE" ] && [ -n "$PKG_HASH_BASELINE" ]; then
-    if [ ! -f "$WT/.vibe/verify-baseline" ]; then
-      TAMPERED_FILE=".vibe/verify-baseline"
-    elif [ "$PKG_HASH_BASELINE" != "$(package_file_hash "$WT/.vibe/verify-baseline")" ]; then
-      TAMPERED_FILE=".vibe/verify-baseline"
     fi
   fi
   [ -z "$TAMPERED_FILE" ]
@@ -1609,15 +1605,11 @@ STREAM_FILTER=(python3 "$RUNS_PY" stream --state "$LOG.state.json" --attempt --s
     echo "BLOCKIERT: $BLOCK_REASON" | tee -a "$LOG"
     STOP=1; break
   fi
-  # AP7 (T-V21): Hash der transportierten Dateien am Paketstart erfassen.
+  # AP7 (T-V21): Hash der transportierten Datei am Paketstart erfassen.
   # Eine beim Start fehlende Datei hat keinen Wächter (best effort).
   PKG_HASH_PROJECT_ENV=""
-  PKG_HASH_BASELINE=""
   if [ -f "$WT/.vibe/project.env" ]; then
     PKG_HASH_PROJECT_ENV="$(package_file_hash "$WT/.vibe/project.env")"
-  fi
-  if [ -f "$WT/.vibe/verify-baseline" ]; then
-    PKG_HASH_BASELINE="$(package_file_hash "$WT/.vibe/verify-baseline")"
   fi
   PROMPT="Arbeitspaket $ID. Der Punkt steht in $SOURCE des Projektordners. Wortlaut:
 $BLOCK
@@ -1667,10 +1659,11 @@ $QUESTION_HINT"
       PACKAGE_OK=0
       REPAIR_RC=0
       while :; do
-        # AP7 (T-V21): Vor jeder Paketprüfung die transportierten Dateien
-        # erneut hashen — auch nach einer Reparaturrunde. Eine Abweichung
-        # (Veränderung oder Löschung) ist Manipulation der autoritativen
-        # Projektwerte: blockieren ohne Reparaturrunde.
+        # AP7 (T-V21): Vor jeder Paketprüfung die transportierte
+        # .vibe/project.env erneut hashen — auch nach einer Reparaturrunde.
+        # Eine Abweichung (Veränderung oder Löschung) ist Manipulation der
+        # autoritativen Projektwerte: blockieren ohne Reparaturrunde.
+        # GH-46: .vibe/verify-baseline wird nicht mehr bewacht.
         if ! guard_transported_files; then
           BLOCK_REASON="Transportierte Konfiguration wurde verändert oder entfernt: $TAMPERED_FILE"
           record_block "$ID" "$BLOCK_REASON"

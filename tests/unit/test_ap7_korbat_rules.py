@@ -1,21 +1,24 @@
-"""AP7-Korbat — Agentenregeln (Baseline-Disziplin) und committed Baseline.
+"""AP7-Korbat / GH-46 — generische Agentenregeln und committete Baseline.
 
-Die Fälle leiten sich aus TICKETS.md (AP7-Korbat, Nutzerentscheidung:
-„AGENTS.md-Promptregeln ergänzen“), dem AP12-Audit (§5.5, T-V19) und dem
-AP7-Design-Brief ab:
+Die Fälle leiten sich aus TICKETS.md (GH-46: der verwaltete
+``GENERAL_RULES``-Block ist generisch und wandert in die ``AGENTS.md`` jedes
+Projekts) und dem AP7-Design-Brief ab:
 
-* Die Regelquelle ``GENERAL_RULES`` in ``bin/vibe`` enthält die angepasste
-  Sektion „Effizienz der Prüfungen“ (verify.sh als einzige Prüfschnittstelle)
-  und die neue Sektion „Baseline-Disziplin (verbindlich)“ mit den sechs
-  Kernaussagen: Exit 6/7 am Code beheben, monotone Schwellen/Einträge,
-  Änderungen nur per geprüftem Merge-Request, ``--write-baseline`` nur als
-  lokaler Vorschlag, keine Umgebungsangaben/Geheimnisse, keine
-  Selbstreferenz in ``VERIFY_*``.
-* Derselbe Block liegt konsistent in allen fünf ``templates/*/AGENTS.md``
+* Die Regelquelle ``GENERAL_RULES`` in ``bin/vibe`` nennt die Projektprüfung
+  ausschließlich über die Prüfbefehle aus ``.vibe/project.env``
+  (``VERIFY_QUICK``, ``VERIFY_PACKAGE``, ``VERIFY_FULL``) und behält die
+  Stufung der Nachweise (genau einmal vor der Abnahme, Code oder Tests,
+  Nachweisumfang). Projektspezifische bzw. Engine-Implementationsdetails der
+  vibe-Baseline (``verify.sh``, Exit-Codes, ``--write-baseline``,
+  ``VERIFY_MIN_TESTS``, Sektion „Baseline-Disziplin“) gehören nicht in den
+  Block, weil er für jedes beliebige Projekt gelten muss.
+* Derselbe Block liegt bytengleich in allen fünf ``templates/*/AGENTS.md``
   und in der ``AGENTS.md`` des Repositories (Marker-Invariante).
-* ``tests/verify-baseline.json`` existiert mit Schema v1 (version=1,
-  min_tests=2000, leere envs-Map) und enthält keine Hostnamen, IP-Adressen,
-  Geheimnisse oder absoluten Pfade (öffentliches Repository).
+* ``tests/verify-baseline.json`` ist die erste committete Baseline für die
+  Umgebung ``pi-aarch64-py3.14-namespaces``: Schema v1 (``version`` 1,
+  ``min_tests`` 2500) mit schema-konformen Failure-Einträgen
+  (``module``/``class``/``signature``) und ohne Hostnamen, IP-Adressen,
+  Geheimnisse oder absolute Pfade (öffentliches Repository).
 
 Es werden nur Dateien gelesen; keine Modellaufrufe, kein Netz.
 
@@ -39,10 +42,22 @@ AGENTS = REPO / "AGENTS.md"
 TEMPLATES = sorted((REPO / "templates").glob("*/AGENTS.md"))
 MANIFEST = REPO / "tests" / "verify-baseline.json"
 
-BASELINE_SECTION = "## Baseline-Disziplin (verbindlich)"
 EFFICIENCY_SECTION = "## Effizienz der Prüfungen (verbindlich)"
 MARK_START = "<!-- vibe:general-rules -->"
 MARK_END = "<!-- /vibe:general-rules -->"
+ENV_LABEL = "pi-aarch64-py3.14-namespaces"
+
+# GH-46: Der Block gilt generisch für jedes Projekt und enthält deshalb keine
+# Engine- oder vibe-Projektimplementationsdetails der Baseline.
+FORBIDDEN_RULE_FRAGMENTS = (
+    "Baseline-Disziplin",
+    "verify.sh",
+    "Exit 6",
+    "Exit 7",
+    "Exit 3",
+    "--write-baseline",
+    "VERIFY_MIN_TESTS",
+)
 
 
 def load_cli(vibe_root, home):
@@ -78,8 +93,17 @@ def section(text, heading):
     return rest[:following.start()] if following else rest
 
 
+def managed_block(text):
+    """Liefert den verwalteten Block einschließlich beider Marker."""
+    start = text.find(MARK_START)
+    end = text.find(MARK_END)
+    if start < 0 or end < start:
+        return ""
+    return text[start:end + len(MARK_END)]
+
+
 class GeneralRulesTest(unittest.TestCase):
-    """AK T-V19/AGENTS: eine Regelquelle mit Baseline-Disziplin."""
+    """AK GH-46: ein generischer Regelblock für jedes Projekt."""
 
     @classmethod
     def setUpClass(cls):
@@ -93,138 +117,93 @@ class GeneralRulesTest(unittest.TestCase):
     def tearDownClass(cls):
         cls.tmp.cleanup()
 
-    def test_rules_contain_the_baseline_discipline_exactly_once(self):
-        """Vorbedingung: ``GENERAL_RULES`` aus ``bin/vibe``.
-        Aktion: Überschrift zählen.
-        Erwartung: genau 1 Vorkommen.
-        Fehlerfall: Regel fehlt oder ist dupliziert.
-        """
-        rules = self.cli.GENERAL_RULES
-        self.assertEqual(1, rules.count(BASELINE_SECTION), rules)
-
-    def test_baseline_discipline_fixes_exit_codes_in_the_code(self):
-        """Vorbedingung: Sektion „Baseline-Disziplin“.
-        Aktion: Aussagen zu Exit 7/6 lesen.
-        Erwartung: Exit 7 = neue Regression, Exit 6 = fehlender
-        Testnachweis; beides ist am Code zu beheben, nie über die Baseline.
-        Fehlerfall: Ein Agent könnte Fehler in die Baseline schreiben.
-        """
-        text = section(self.cli.GENERAL_RULES, BASELINE_SECTION)
-        for marker in ("Exit 7", "Exit 6", "Code", "Baseline"):
-            self.assertIn(marker, text, "%r fehlt in %r" % (marker, BASELINE_SECTION))
-
-    def test_baseline_discipline_requires_monotone_reviewed_changes(self):
-        """Vorbedingung: Sektion „Baseline-Disziplin“.
-        Aktion: Aussagen zu Monotonie und Review lesen.
-        Erwartung: Schwellen nur erhöhen, Einträge nur entfernen, wenn das
-        Modul grün ist; Änderungen nur per geprüftem Merge-Request.
-        Fehlerfall: Absenkungen im Alleingang wären erlaubt.
-        """
-        text = section(self.cli.GENERAL_RULES, BASELINE_SECTION)
-        for marker in (
-            "monoton",
-            "VERIFY_MIN_TESTS",
-            "erhöhen",
-            "grün",
-            "Merge-Request",
-            "nie im Alleingang",
-        ):
-            self.assertIn(marker, text, "%r fehlt in %r" % (marker, BASELINE_SECTION))
-
-    def test_baseline_discipline_makes_write_baseline_a_local_proposal(self):
-        """Vorbedingung: Sektion „Baseline-Disziplin“.
-        Aktion: Aussage zu ``--write-baseline`` lesen.
-        Erwartung: nur lokaler, ignorierter Vorschlag; kanonisch ausschließlich
-        per geprüftem Merge-Request.
-        Fehlerfall: Der Schreibbefehl gälte als kanonische Änderung.
-        """
-        text = section(self.cli.GENERAL_RULES, BASELINE_SECTION)
-        self.assertIn("--write-baseline", text)
-        self.assertRegex(text.lower(), r"unversioniert|ignoriert")
-        self.assertIn("Merge-Request", text)
-
-    def test_baseline_discipline_forbids_environment_details(self):
-        """Vorbedingung: Sektion „Baseline-Disziplin“.
-        Aktion: Aussage zu Umgebungsangaben lesen.
-        Erwartung: IP-Adressen, Hostnamen, Geheimnisse und absolute Pfade
-        gehören nie in eine Baseline-Datei; das Repository ist öffentlich.
-        Fehlerfall: Umgebungsdaten könnten committet werden.
-        """
-        text = section(self.cli.GENERAL_RULES, BASELINE_SECTION)
-        for marker in (
-            "IP-Adressen",
-            "Hostnamen",
-            "Geheimnisse",
-            "absolute Pfade",
-            "öffentlich",
-        ):
-            self.assertIn(marker, text, "%r fehlt in %r" % (marker, BASELINE_SECTION))
-
-    def test_baseline_discipline_forbids_self_reference(self):
-        """Vorbedingung: Sektion „Baseline-Disziplin“.
-        Aktion: Aussage zur Selbstreferenz lesen.
-        Erwartung: ``VERIFY_QUICK``/``VERIFY_PACKAGE``/``VERIFY_FULL`` dürfen
-        die Prüfung nicht selbst aufrufen (Rekursionsschutz, Exit 3).
-        Fehlerfall: Die B1-Falle bleibt eine reine Konvention.
-        """
-        text = section(self.cli.GENERAL_RULES, BASELINE_SECTION)
-        for marker in ("VERIFY_QUICK", "VERIFY_PACKAGE", "VERIFY_FULL",
-                       "Rekursionsschutz", "Exit 3"):
-            self.assertIn(marker, text, "%r fehlt in %r" % (marker, BASELINE_SECTION))
-
-    def test_efficiency_section_names_verify_sh_as_the_single_interface(self):
+    def test_efficiency_section_names_the_project_env_commands(self):
         """Vorbedingung: Sektion „Effizienz der Prüfungen“.
         Aktion: Aussagen zur Prüfschnittstelle lesen.
-        Erwartung: Die Projektprüfung läuft ausschließlich über
-        ``verify.sh quick|package|full``; der Nachweisumfang bleibt erhalten.
-        Fehlerfall: Agenten setzen Prüfinhalte weiterhin selbst zusammen.
+        Erwartung: Die Projektprüfung läuft ausschließlich über die Befehle
+        aus ``.vibe/project.env`` (``VERIFY_QUICK``, ``VERIFY_PACKAGE``,
+        ``VERIFY_FULL``); der Nachweisumfang bleibt erhalten (genau einmal vor
+        der Abnahme, Code oder Tests).
+        Fehlerfall: Agenten setzen Prüfinhalte weiterhin selbst zusammen oder
+        der Block nennt eine projektspezifische Prüfdatei statt der
+        Projektkonfiguration.
         """
         text = section(self.cli.GENERAL_RULES, EFFICIENCY_SECTION)
         for marker in (
-            "verify.sh",
-            "quick|package|full",
+            ".vibe/project.env",
+            "VERIFY_QUICK",
+            "VERIFY_PACKAGE",
+            "VERIFY_FULL",
+            "betroffene Testmodule",
             "Prüfschnittstelle",
             "genau einmal",
+            "vor der Abnahme",
+            "Code oder Tests",
             "Nachweisumfang",
             "abgeschwächt",
         ):
             self.assertIn(marker, text,
                           "%r fehlt in %r" % (marker, EFFICIENCY_SECTION))
+        self.assertNotIn("verify.sh", text)
+        self.assertNotIn("quick|package|full", text)
 
-    def test_all_templates_carry_the_baseline_discipline(self):
+    def test_general_rules_stay_generic_no_baseline_implementation_details(self):
+        """Vorbedingung: ``GENERAL_RULES`` aus ``bin/vibe``.
+        Aktion: Block auf Engine- und Projektdetails durchsuchen.
+        Erwartung: keine Sektion „Baseline-Disziplin“, kein ``verify.sh``,
+        keine Exit-Codes 3/6/7, kein ``--write-baseline`` und kein
+        ``VERIFY_MIN_TESTS`` — der Block muss für jedes Projekt gelten.
+        Fehlerfall: vibe-spezifische Testimplementierung wandert in die
+        AGENTS.md fremder Projekte.
+        """
+        rules = self.cli.GENERAL_RULES
+        for marker in FORBIDDEN_RULE_FRAGMENTS:
+            self.assertNotIn(marker, rules,
+                             "%r gehört nicht in den generischen Block" % marker)
+
+    def test_all_templates_carry_the_general_rules_verbatim(self):
         """Vorbedingung: alle ``templates/*/AGENTS.md``.
         Aktion: verwalteten Block vergleichen.
         Erwartung: ``GENERAL_RULES`` ist bytengleich enthalten; genau ein
-        Markerpaar; die Baseline-Disziplin steht je genau einmal.
+        Markerpaar; der Block enthält keine Baseline-Implementationsdetails.
         Fehlerfall: Eine Vorlage driftet von der Regelquelle ab.
         """
         self.assertEqual(5, len(TEMPLATES), TEMPLATES)
         for path in TEMPLATES:
             with self.subTest(path=str(path)):
                 text = path.read_text(encoding="utf-8")
-                self.assertIn(self.cli.GENERAL_RULES, text,
-                              "Vorlage weicht von GENERAL_RULES ab")
                 self.assertEqual(1, text.count(MARK_START))
                 self.assertEqual(1, text.count(MARK_END))
-                self.assertEqual(1, text.count(BASELINE_SECTION), path)
+                block = managed_block(text)
+                self.assertTrue(block, "Markerpaar fehlt in %s" % path)
+                self.assertEqual(self.cli.GENERAL_RULES, block,
+                                 "Vorlage weicht von GENERAL_RULES ab: %s" % path)
+                for marker in FORBIDDEN_RULE_FRAGMENTS:
+                    self.assertNotIn(marker, block,
+                                     "%r steht noch in %s" % (marker, path))
 
-    def test_repository_agents_file_carries_the_baseline_discipline(self):
+    def test_repository_agents_file_carries_the_general_rules_verbatim(self):
         """Vorbedingung: ``AGENTS.md`` im Repository-Wurzelverzeichnis.
         Aktion: Marker und Block prüfen.
-        Erwartung: Der verwaltete Block steht genau einmal und enthält die
-        Baseline-Disziplin (Marker-Invariante).
+        Erwartung: Der verwaltete Block steht genau einmal, ist bytengleich
+        zu ``GENERAL_RULES`` und enthält keine Baseline-Implementationsdetails.
         Fehlerfall: Die Repository-Regeln weichen von der Regelquelle ab.
         """
         self.assertTrue(AGENTS.is_file(), "AGENTS.md fehlt im Repository")
         text = AGENTS.read_text(encoding="utf-8")
-        self.assertIn(self.cli.GENERAL_RULES, text)
         self.assertEqual(1, text.count(MARK_START))
         self.assertEqual(1, text.count(MARK_END))
-        self.assertEqual(1, text.count(BASELINE_SECTION))
+        block = managed_block(text)
+        self.assertTrue(block, "Markerpaar fehlt in AGENTS.md")
+        self.assertEqual(self.cli.GENERAL_RULES, block,
+                         "AGENTS.md weicht von GENERAL_RULES ab")
+        for marker in FORBIDDEN_RULE_FRAGMENTS:
+            self.assertNotIn(marker, block,
+                             "%r steht noch in AGENTS.md" % marker)
 
 
 class CommittedBaselineManifestTest(unittest.TestCase):
-    """AK: kanonische Baseline v1 ohne Umgebungsdetails."""
+    """AK: erste committete Baseline v1 ohne Umgebungsdetails."""
 
     def read(self):
         self.assertTrue(
@@ -233,17 +212,54 @@ class CommittedBaselineManifestTest(unittest.TestCase):
         )
         return json.loads(MANIFEST.read_text(encoding="utf-8"))
 
+    def failures(self, data):
+        envs = data.get("envs")
+        self.assertIsInstance(envs, dict, data)
+        self.assertIn(ENV_LABEL, envs, "Umgebungssektion fehlt: %r" % (envs,))
+        section = envs[ENV_LABEL]
+        self.assertIsInstance(section, dict, section)
+        failures = section.get("failures")
+        self.assertIsInstance(failures, list, section)
+        return failures
+
     def test_manifest_has_schema_v1_and_the_initial_values(self):
         """Vorbedingung: die committed Baseline.
         Aktion: JSON lesen.
-        Erwartung: ``version`` 1, ``min_tests`` 2000, ``envs`` ist eine leere
-        Map (Befüllung erfolgt per Review, nicht in diesem Paket).
-        Fehlerfall: Fehlende Datei, falsche Version oder abweichende Schwelle.
+        Erwartung: ``version`` 1, ``min_tests`` 2500 und eine nicht-leere
+        Failure-Liste für die Umgebung ``pi-aarch64-py3.14-namespaces``.
+        Fehlerfall: Fehlende Datei, falsche Version, abweichende Schwelle oder
+        eine leere Umgebungssektion.
         """
         data = self.read()
         self.assertEqual(1, data.get("version"))
-        self.assertEqual(2000, data.get("min_tests"))
-        self.assertEqual({}, data.get("envs"))
+        self.assertEqual(2500, data.get("min_tests"))
+        self.assertTrue(self.failures(data),
+                        "Failures für %r dürfen nicht leer sein" % ENV_LABEL)
+
+    def test_manifest_failure_entries_are_schema_conform(self):
+        """Vorbedingung: die committed Baseline.
+        Aktion: jeden Failure-Eintrag prüfen.
+        Erwartung: Einträge haben genau ``module``/``class``/``signature``;
+        ``module`` beginnt mit ``tests.unit.``, ``class`` ist nicht leer und
+        ``signature`` hat die Engine-Form ``sha256:<64 hex>``. Die exakte
+        Menge der Einträge ist nicht eingefroren, damit spätere Fortschreibung
+        per Review den Test nicht bricht.
+        Fehlerfall: Schemafremde Einträge oder fehlende Kennungen, die die
+        Engine nicht wiedererkennen kann.
+        """
+        for entry in self.failures(self.read()):
+            with self.subTest(entry=entry):
+                self.assertIsInstance(entry, dict, entry)
+                self.assertEqual(
+                    {"module", "class", "signature"}, set(entry), entry
+                )
+                self.assertIsInstance(entry["module"], str, entry)
+                self.assertTrue(entry["module"].startswith("tests.unit."),
+                                entry)
+                self.assertIsInstance(entry["class"], str, entry)
+                self.assertTrue(entry["class"].strip(), entry)
+                self.assertIsInstance(entry["signature"], str, entry)
+                self.assertRegex(entry["signature"], r"^sha256:[0-9a-f]{64}$")
 
     def test_manifest_has_only_the_minimal_top_level_fields(self):
         """Vorbedingung: die committed Baseline.
@@ -285,12 +301,12 @@ class CommittedBaselineManifestTest(unittest.TestCase):
     def test_manifest_min_tests_is_a_ratchet_floor(self):
         """Vorbedingung: die committed Baseline.
         Aktion: Schwelle prüfen.
-        Erwartung: ``min_tests`` ist mindestens 2000 — eine Senkung wäre nur
+        Erwartung: ``min_tests`` ist mindestens 2500 — eine Senkung wäre nur
         per Review zulässig, nicht durch dieses Paket.
-        Fehlerfall: Die Ausgangsschwelle liegt unter dem vereinbarten Wert.
+        Fehlerfall: Die Schwelle liegt unter dem operativen Mindestwert.
         """
         data = self.read()
-        self.assertGreaterEqual(data.get("min_tests", 0), 2000)
+        self.assertGreaterEqual(data.get("min_tests", 0), 2500)
 
 
 if __name__ == "__main__":

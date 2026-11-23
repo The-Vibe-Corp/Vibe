@@ -1,34 +1,36 @@
-"""AP7-Korbat — T-V21: Hash-/Diff-Wächter nach dem Agentenlauf.
+"""AP7-Korbat — T-V21: Hash-/Diff-Wächter nach dem Agentenlauf (GH-46).
 
-Die Fälle leiten sich aus TICKETS.md (AP7-Korbat), dem AP12-Audit (T-V21)
-und dem AP7-Design-Brief ab, nicht aus einem Implementierungsdiff:
+Die Fälle leiten sich aus TICKETS.md (AP7-Korbat), dem AP12-Audit (T-V21),
+dem AP7-Design-Brief und der GH-46-Entscheidung ab, nicht aus einem
+Implementierungsdiff:
 
 * Der Läufer erfasst nach dem Transport (Paketstart) den sha256 der
-  transportierten Dateien ``.vibe/project.env`` und — falls vorhanden —
-  ``.vibe/verify-baseline``. Nach der Rückkehr des Agenten und vor der
-  Paketprüfung hasht er erneut.
-* Weicht eine Datei ab, blockiert das Paket mit einer Meldung, die die
-  veränderte Datei nennt. Es gibt keine Reparaturrunde: Tampering ist kein
-  gewöhnlicher Defekt, sondern ein Abbruchgrund. Das Paket wird nicht
+  transportierten Datei ``.vibe/project.env``. Nach der Rückkehr des Agenten
+  und vor der Paketprüfung hasht er erneut.
+* Weicht die Datei ab oder fehlt sie, blockiert das Paket mit einer Meldung,
+  die die veränderte Datei nennt. Es gibt keine Reparaturrunde: Tampering ist
+  kein gewöhnlicher Defekt, sondern ein Abbruchgrund. Das Paket wird nicht
   gemergt, das Ticket bleibt offen.
 * Unveränderte Dateien blockieren nicht (kein Fehlalarm). Maßgeblich ist der
   Inhalt (sha256), nicht die Änderungszeit: Ein identisches Neuschreiben
   bleibt unverändert.
-* Das Löschen einer beim Start vorhandenen Datei ist ebenso eine Abweichung
-  vom erfassten Startzustand und blockiert mit Nennung der Datei — sonst
-  könnte ein Agent eine unbequeme Baseline oder Projektkonfiguration einfach
-  entfernen.
-* Eine beim Start fehlende Datei hat keinen Wächter (best effort wie der
-  Transport selbst): Legt der Agent ``.vibe/verify-baseline`` erst im Lauf
-  an, blockiert das nicht; ein folgenloses ``delete`` auf eine nie
-  vorhandene Datei ebenso wenig.
+* Das Löschen einer beim Start vorhandenen ``.vibe/project.env`` ist ebenso
+  eine Abweichung vom erfassten Startzustand und blockiert mit Nennung der
+  Datei — sonst könnte ein Agent die autoritative Projektkonfiguration
+  einfach entfernen.
+* ``.vibe/verify-baseline`` wird seit GH-46 nicht mehr transportiert und
+  deshalb auch nicht bewacht: Eine beim Paketstart vorhandene lokale Baseline
+  darf der Agent im Lauf verändern oder löschen, ohne dass das Paket
+  blockiert. Agenten arbeiten in der Arbeitskopie ausschließlich mit der
+  committeten ``tests/verify-baseline.json`` aus dem Branch; die lokale
+  Bootstrap-Datei ist nicht Teil des Pakets.
 
 Der echte ``bin/vibe-run.sh`` läuft in einer Fake-Toolchain (Muster
 ``test_ap9_runner_wiring.py``): nachgebildeter Agent, temporäre Installation,
 eigenes HOME/VIBE, keine Modellaufrufe, keine produktiven Pfade, begrenzte
 Timeouts. Der Agent wird über ``FAKE_TAMPER`` gesteuert
 (``runner_support.FAKE_OPENCODE``) und schließt das Paket weiterhin
-vollständig ab — der Block stammt damit eindeutig vom Wächter und nicht von
+vollständig ab — ein Block stammt damit eindeutig vom Wächter und nicht von
 einer fehlenden Abschlussschranke.
 
 Run:
@@ -64,12 +66,14 @@ BASELINE_TEXT = (
 
 
 class HashGuardFixture(AP9WiringFixture):
-    """Projekt mit transportierter project.env und optionaler Baseline.
+    """Projekt mit transportierter project.env und optionaler (nicht
+    transportierter) lokaler Baseline.
 
-    ``.vibe/`` ist wie im echten Projekt git-ignoriert; die Dateien liegen
-    damit unversioniert im Projekt und werden vom Transport in die
-    Arbeitskopie kopiert. Die Dateien entstehen erst nach dem
-    Ausgangscommit, damit keine versionierte Kopie den Transport überdeckt.
+    ``.vibe/`` ist wie im echten Projekt git-ignoriert; ``project.env`` liegt
+    damit unversioniert im Projekt und wird vom Transport in die Arbeitskopie
+    kopiert. ``verify-baseline`` entsteht ebenfalls im Projektordner, wird
+    seit GH-46 aber nicht mehr transportiert. Die Dateien entstehen erst nach
+    dem Ausgangscommit, damit keine versionierte Kopie den Transport überdeckt.
     """
 
     def make_guard_project(self, baseline=False, name="proj"):
@@ -129,6 +133,15 @@ class HashGuardFixture(AP9WiringFixture):
             % (self.agent_calls(),),
         )
 
+    def assert_not_blocked(self, result, project):
+        """Das Paket läuft trotz der Manipulation vollständig durch."""
+        log = self.log(project)
+        self.assertEqual(0, result.returncode,
+                         result.stdout + result.stderr + "\n" + log)
+        self.assertIn("FERTIG", log)
+        self.assertEqual([], self.blocked_lines(log), log)
+        self.assertIn("Geschlossen: F1", self.report(project))
+
 
 class TamperedProjectEnvTest(HashGuardFixture):
     """T-V21: veränderte ``.vibe/project.env`` blockiert das Paket."""
@@ -187,11 +200,12 @@ class UntouchedFilesTest(HashGuardFixture):
     """T-V21: unveränderte Dateien blockieren nicht."""
 
     def test_untouched_project_and_baseline_do_not_block(self):
-        """Vorbedingung: Projekt mit ``.vibe/project.env`` und
+        """Vorbedingung: Projekt mit ``.vibe/project.env`` und einer lokalen
         ``.vibe/verify-baseline``; der Agent verändert keine der Dateien.
         Aktion: Läufer einmal ausführen.
         Erwartung: Exit 0, ``Geschlossen: F1`` im Bericht, kein
-        BLOCKIERT-Vermerk — der Wächter greift nur bei Abweichung.
+        BLOCKIERT-Vermerk — der Wächter greift nur bei Abweichung einer
+        transportierten Datei.
         Fehlerfall: Der Wächter blockiert jedes Paket.
         """
         project = self.make_guard_project(baseline=True)
@@ -206,77 +220,16 @@ class UntouchedFilesTest(HashGuardFixture):
         self.assertIn("Geschlossen: F1", report)
 
 
-class TamperedBaselineTest(HashGuardFixture):
-    """T-V21: auch die transportierte ``.vibe/verify-baseline`` wird bewacht."""
-
-    def test_tampered_verify_baseline_blocks_and_names_the_file(self):
-        """Vorbedingung: Projekt mit ``.vibe/verify-baseline``; der Agent
-        schließt das Paket ab, verändert aber die transportierte Baseline.
-        Aktion: Läufer einmal ausführen.
-        Erwartung: Exit ungleich 0; eine BLOCKIERT-Zeile nennt
-        ``.vibe/verify-baseline``; keine Reparaturrunde, kein Merge, Ticket
-        offen.
-        Fehlerfall: Ein Agent könnte die Abnahmeschwelle/Baseline im
-        Arbeitsbaum manipulieren, ohne dass der Läufer es bemerkt.
-        """
-        project = self.make_guard_project(baseline=True)
-
-        result = self.run_runner(
-            project, FAKE_TAMPER="append:verify-baseline"
-        )
-
-        self.assertNotEqual(0, result.returncode,
-                            result.stdout + result.stderr)
-        log = self.log(project)
-        self.assert_blocked_for(log, ".vibe/verify-baseline")
-        self.assertNotEqual(
-            0, git(project, "cat-file", "-e", "HEAD:impl-F1.txt").returncode,
-            "Ein blockiertes Paket darf nicht lokal gemergt sein:\n" + log,
-        )
-        self.assertIn("- [ ] F1",
-                      (project / "FEEDBACK.md").read_text(encoding="utf-8"))
-
-
 class DeletedTransportedFileTest(HashGuardFixture):
     """T-V21: Löschen einer beim Start vorhandenen transportierten Datei.
 
     Der Wächter erfasst den Inhalt beim Paketstart. Fehlt die Datei nach dem
     Agentenlauf, ist das nicht „unverändert", sondern eine Manipulation: Der
-    Agent könnte damit unliebsame Projektwerte oder eine bekannte
-    Abnahmeschwelle (Baseline) beseitigen. Die Prüfung darf sich deshalb
-    nicht auf ``[ -f datei ]`` verlassen, sondern muss bereits das Fehlen als
-    Abweichung vom erfassten Startzustand werten.
+    Agent könnte damit unliebsame Projektwerte beseitigen. Die Prüfung darf
+    sich deshalb nicht auf ``[ -f datei ]`` verlassen, sondern muss bereits
+    das Fehlen als Abweichung vom erfassten Startzustand werten. Das gilt
+    ausschließlich für die transportierte ``.vibe/project.env``.
     """
-
-    def test_deleted_verify_baseline_blocks_and_names_the_file(self):
-        """Vorbedingung: Projekt mit transportierter
-        ``.vibe/verify-baseline`` (beim Paketstart vorhanden); der Agent
-        schließt das Paket ab, löscht aber die transportierte Datei
-        (``FAKE_TAMPER=delete:verify-baseline``).
-        Aktion: Läufer einmal ausführen.
-        Erwartung: Exit ungleich 0; eine BLOCKIERT-Zeile nennt
-        ``.vibe/verify-baseline``; keine Reparaturrunde (genau ein
-        Agentenaufruf), kein FERTIG, kein lokaler Merge, Ticket bleibt offen.
-        Fehlerfall: Das Entfernen der Baseline bleibt unbemerkt — der Agent
-        könnte so eine unbequeme Abnahmeschwelle oder bekannte Fehlerliste
-        „aufräumen", statt sie zu erfüllen.
-        """
-        project = self.make_guard_project(baseline=True)
-
-        result = self.run_runner(
-            project, FAKE_TAMPER="delete:verify-baseline"
-        )
-
-        self.assertNotEqual(0, result.returncode,
-                            result.stdout + result.stderr)
-        log = self.log(project)
-        self.assert_blocked_for(log, ".vibe/verify-baseline")
-        self.assertNotEqual(
-            0, git(project, "cat-file", "-e", "HEAD:impl-F1.txt").returncode,
-            "Ein blockiertes Paket darf nicht lokal gemergt sein:\n" + log,
-        )
-        self.assertIn("- [ ] F1",
-                      (project / "FEEDBACK.md").read_text(encoding="utf-8"))
 
     def test_deleted_project_env_blocks_and_names_the_file(self):
         """Vorbedingung: Projekt mit transportierter ``.vibe/project.env``;
@@ -306,17 +259,60 @@ class DeletedTransportedFileTest(HashGuardFixture):
         )
 
 
-class MissingFileAtStartTest(HashGuardFixture):
-    """T-V21: best effort — fehlende Datei beim Start hat keinen Wächter."""
+class UnwatchedVerifyBaselineTest(HashGuardFixture):
+    """GH-46: ``.vibe/verify-baseline`` wird nicht transportiert/bewacht.
+
+    Eine lokale Bootstrap-Baseline ist kein Paketinhalt mehr. Ob der Agent
+    eine solche Datei anlegt, verändert oder löscht, darf das Paket nicht
+    blockieren; maßgeblich ist allein die committete
+    ``tests/verify-baseline.json`` im Branch.
+    """
+
+    def test_changed_verify_baseline_present_at_start_does_not_block(self):
+        """Vorbedingung: Projekt mit ``.vibe/verify-baseline`` (beim
+        Paketstart vorhanden); der Agent verändert sie im Lauf
+        (``FAKE_TAMPER=append:verify-baseline``).
+        Aktion: Läufer einmal ausführen.
+        Erwartung: Exit 0, FERTIG, kein BLOCKIERT — für die nicht
+        transportierte Baseline gibt es keinen Wächter.
+        Fehlerfall: Der Läufer blockiert wegen einer Datei, die gar nicht Teil
+        des Pakets ist, und verhindert so jedes Paket in einem Projekt mit
+        lokaler Baseline.
+        """
+        project = self.make_guard_project(baseline=True)
+
+        result = self.run_runner(
+            project, FAKE_TAMPER="append:verify-baseline"
+        )
+
+        self.assert_not_blocked(result, project)
+
+    def test_deleted_verify_baseline_present_at_start_does_not_block(self):
+        """Vorbedingung: Projekt mit ``.vibe/verify-baseline`` (beim
+        Paketstart vorhanden); der Agent löscht sie im Lauf
+        (``FAKE_TAMPER=delete:verify-baseline``).
+        Aktion: Läufer einmal ausführen.
+        Erwartung: Exit 0, FERTIG, kein BLOCKIERT — das Löschen einer nicht
+        transportierten Datei ist keine Manipulation am Paket.
+        Fehlerfall: Ein veralteter Baseline-Wächter blockiert das Paket,
+        obwohl die Baseline nur lokal im Projektordner lag.
+        """
+        project = self.make_guard_project(baseline=True)
+
+        result = self.run_runner(
+            project, FAKE_TAMPER="delete:verify-baseline"
+        )
+
+        self.assert_not_blocked(result, project)
 
     def test_baseline_created_by_the_agent_does_not_block(self):
         """Vorbedingung: Projekt ohne ``.vibe/verify-baseline``; der Agent
         legt die Datei im Lauf selbst an (``FAKE_TAMPER=create:…``).
         Aktion: Läufer einmal ausführen.
-        Erwartung: Exit 0, FERTIG — für eine beim Start fehlende Datei gibt
-        es keinen Wächter (der Transport ist best effort).
-        Fehlerfall: Der Wächter verlangt Dateien, die gar nicht transportiert
-        wurden, und blockiert jeden Lauf mit lokal erzeugter Baseline.
+        Erwartung: Exit 0, FERTIG — eine im Lauf erzeugte Baseline ist kein
+        Abweichungsgrund.
+        Fehlerfall: Der Wächter verlangt oder verbietet Dateien, die nicht
+        transportiert wurden, und blockiert gesunde Pakete.
         """
         project = self.make_guard_project(baseline=False)
 
@@ -324,20 +320,15 @@ class MissingFileAtStartTest(HashGuardFixture):
             project, FAKE_TAMPER="create:verify-baseline"
         )
 
-        log = self.log(project)
-        self.assertEqual(0, result.returncode,
-                         result.stdout + result.stderr + "\n" + log)
-        self.assertIn("FERTIG", log)
-        self.assertEqual([], self.blocked_lines(log), log)
+        self.assert_not_blocked(result, project)
 
     def test_deleting_an_absent_baseline_does_not_block(self):
         """Vorbedingung: Projekt ohne ``.vibe/verify-baseline``; der Agent
         „löscht" die nie transportierte Datei
         (``FAKE_TAMPER=delete:verify-baseline``, folgenlos wie ``rm -f``).
         Aktion: Läufer einmal ausführen.
-        Erwartung: Exit 0, FERTIG, kein BLOCKIERT — der Wächter bestraft nur
-        das Verschwinden einer beim Start vorhandenen Datei (best effort wie
-        der Transport).
+        Erwartung: Exit 0, FERTIG, kein BLOCKIERT — es gibt keinen
+        Baseline-Wächter mehr.
         Fehlerfall: Ein Lauf ohne transportierte Baseline blockiert, weil der
         Wächter eine Startdatei unterstellt, die es nie gab.
         """
@@ -347,11 +338,7 @@ class MissingFileAtStartTest(HashGuardFixture):
             project, FAKE_TAMPER="delete:verify-baseline"
         )
 
-        log = self.log(project)
-        self.assertEqual(0, result.returncode,
-                         result.stdout + result.stderr + "\n" + log)
-        self.assertIn("FERTIG", log)
-        self.assertEqual([], self.blocked_lines(log), log)
+        self.assert_not_blocked(result, project)
 
 
 if __name__ == "__main__":

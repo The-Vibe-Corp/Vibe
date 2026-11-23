@@ -506,7 +506,7 @@ def parse_depth(raw):
 def normalize_message(message):
     """Entfernt absolute Pfade, Zeilennummern und Zeitangaben aus einer Meldung."""
     text = message or ""
-    text = re.sub(r"(?:^|\s)/[A-Za-z0-9_./\-]+", " <pfad>", text)
+    text = re.sub(r"(?:^|[\s\"'])/[A-Za-z0-9_./\-]+", " <pfad>", text)
     text = re.sub(r"[A-Za-z]:\\[^\s]+", "<pfad>", text)
     text = re.sub(r"\bline\s+\d+\b", "line <n>", text)
     text = re.sub(r"\b\d+:\d+\b", "<zeile>", text)
