@@ -459,7 +459,12 @@ function nvpPriorityStrip(name, token, view, items) {
       if (NV.stale(token)) return;
       if (result && result.ok === false) { toast(bt(result.message)); return; }
       toast(tr('Priorisierung gespeichert'));
-      if (!NV.stale(token)) NV.render();
+      /* Nach dem Speichern ist die ganze Liste die konfigurierte Reihenfolge:
+         Ränge und Zähler lokal nachziehen statt Voll-Neurender. */
+      ranks = {};
+      order.forEach(function (id, index) { ranks[id] = index + 1; });
+      setTx(count, String(order.length) + ' ' + tr('priorisiert'));
+      draw();
     } catch (e) {
       toast(tr('Speichern fehlgeschlagen: ') + String(e && e.message || e));
     }

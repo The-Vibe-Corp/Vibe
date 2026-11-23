@@ -883,7 +883,7 @@ async function loadQuestions() {
       running: (lastPulse && lastPulse.running) || []});
     additions.forEach(function (question) {
       NV.notify(tr('Neue Rückfrage') + ': ' + String(question.text || ''),
-        {kind: 'question', href: '#/questions'});
+        {kind: 'question'});
     });
   } catch (error) {
     if (error && error.status === 403) showLogin();

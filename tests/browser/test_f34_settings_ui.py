@@ -79,10 +79,12 @@ Testfälle (Name, Vorbedingung, Aktion, Erwartung)
 
 ``GatesTest.test_gates_save_sends_all_values_one_post_without_rerender``
     Vorbedingung: Feature ``gates`` an, Gates offen.
-    Aktion: Werte setzen, ``gates-save`` klicken, ``gates-reset`` prüfen.
-    Erwartung: genau ein ``POST /api/gates`` mit allen Werten
-    (``{project, values:{...}}``); Render-Zähler unverändert; Reset-Knopf
-    vorhanden.
+    Aktion: Werte in mehreren Zeilen ändern, ``gates-save`` klicken,
+    ``gates-reset`` prüfen.
+    Erwartung: genau ein ``POST /api/gates`` mit dem Projektkontext und ALLEN
+    Zeilenschlüsseln samt eingetragenen Werten (``{project, values:{...}}``);
+    der echte Render-Zähler (testseitig umhülltes ``NV.render``) unverändert;
+    Reset-Knopf vorhanden.
 
 ``ModelsSectionTest.test_models_details_open_table_and_catalog_actions``
     Vorbedingung: Feature ``models`` an.
@@ -372,12 +374,14 @@ class F34SettingsBrowserTest(unittest.TestCase):
         self.page.locator(
             "main#nv-main[data-nv-view='home']").wait_for(
                 state="visible", timeout=25000)
+        self.install_render_counter()
 
     def open_settings(self):
         self.page.goto(self.base + "/#/settings")
         self.page.locator(
             "main#nv-main[data-nv-view='settings']").wait_for(
                 state="visible", timeout=20000)
+        self.install_render_counter()
 
     def enable_features(self, *ids):
         for feature in ids:
@@ -408,10 +412,73 @@ class F34SettingsBrowserTest(unittest.TestCase):
         toasts = self.page.locator("#nv-toasts")
         return (toasts.inner_text() if toasts.count() else "") or ""
 
+    def install_render_counter(self):
+        """Umhüllt ``NV.render`` mit einem Zähler des TESTGERÜSTS.
+
+        Das Produkt besitzt keinen eigenen Render-Zähler (``NV.render`` wird
+        in ``bin/web/nova-core.js`` gesetzt); dieser Helfer hängt sich nach
+        dem Laden davor und erhöht ``window.__nvRenderCount`` bei jedem Aufruf
+        von ``NV.render``. Ein unveränderter Zähler belegt damit, dass eine
+        Aktion keinen Voll-Neurender ausgelöst hat — ohne Umhüllung würde die
+        Zusicherung nichts prüfen. Der Helfer ist idempotent (Seite wird nur
+        einmal umhüllt); nach einem ``page.goto`` muss er erneut laufen, weil
+        der Reload den Zähler zurücksetzt.
+        """
+        state = self.page.evaluate(
+            """() => {
+              if (window.__nvRenderCounterInstalled === true) {
+                return {ok: true, already: true};
+              }
+              if (typeof NV === 'undefined'
+                  || typeof NV.render !== 'function') {
+                return {ok: false, reason: 'NV.render fehlt'};
+              }
+              var original = NV.render;
+              window.__nvRenderCount = 0;
+              window.__nvRenderCountOriginal = original;
+              NV.render = function () {
+                window.__nvRenderCount += 1;
+                return original.apply(this, arguments);
+              };
+              window.__nvRenderCounterInstalled = true;
+              return {
+                ok: true,
+                already: false,
+                wrapped: NV.render !== window.__nvRenderCountOriginal,
+                countsInBody: String(NV.render)
+                  .indexOf('__nvRenderCount') !== -1
+              };
+            }""")
+        self.assertTrue(
+            state.get("ok"),
+            "Der Render-Zähler konnte nicht installiert werden: %r"
+            % (state.get("reason"),))
+        if not state.get("already"):
+            self.assertTrue(
+                state.get("wrapped") and state.get("countsInBody"),
+                "Die Umhüllung von NV.render zählt nicht wirklich: %r"
+                % (state,))
+
     def nv_render_count(self):
-        return self.page.evaluate(
-            "() => (typeof window.__nvRenderCount === 'number' "
-            "? window.__nvRenderCount : 0)")
+        """Zählerstand des testseitig umhüllten ``NV.render``.
+
+        Scheitert, wenn der Zähler nicht installiert ist — ein stiller
+        Rückfall auf 0 würde eine Zusicherung vortäuschen, die nichts prüft.
+        """
+        state = self.page.evaluate(
+            """() => ({
+              installed: window.__nvRenderCounterInstalled === true,
+              count: typeof window.__nvRenderCount === 'number'
+                ? window.__nvRenderCount : null
+            })""")
+        self.assertTrue(
+            state.get("installed"),
+            "Der Render-Zähler ist nicht installiert; nv_render_count() "
+            "kann keinen Voll-Neurender ausschließen")
+        self.assertIsNotNone(
+            state.get("count"),
+            "Der Render-Zähler hat keinen numerischen Stand")
+        return state["count"]
 
     def gate_value_differing_from(self, field):
         """Liefert einen gültigen Schrankenwert, der vom Feldwert abweicht.
@@ -558,9 +625,10 @@ class GlobalAgentsSectionTest(F34SettingsBrowserTest):
     def test_global_agents_save_writes_file_and_toasts_without_rerender(self):
         """Vorbedingung: globale AGENTS.md mit Inhalt vorhanden.
 
-        Aktion: Text ändern, Speichern, Toast abwarten, Render-Zähler prüfen.
+        Aktion: Text ändern, Speichern, Toast abwarten, echten Render-Zähler
+        (testseitig umhülltes ``NV.render``) prüfen.
         Erwartung: POST mit action=save; Datei enthält neuen Text; Toast;
-        Render-Zähler unverändert.
+        Render-Zähler unverändert (kein Voll-Neurender).
         """
         self.global_agents.write_text(GLOBAL_AGENTS_TEXT, encoding="utf-8")
         self.boot()
@@ -1032,8 +1100,14 @@ class GatesTest(F34SettingsBrowserTest):
     def test_gates_save_sends_all_values_one_post_without_rerender(self):
         """Vorbedingung: Feature ``gates`` an, Gates offen.
 
-        Erwartung: genau ein POST /api/gates mit allen Werten;
-        Render-Zähler unverändert; Reset-Knopf vorhanden.
+        Aktion: in mehreren Zeilen einen vom Feldwert abweichenden gültigen
+        Wert eintragen, Speichern klicken.
+
+        Erwartung: GENAU EIN ``POST /api/gates`` während des Speicherns; die
+        Nutzlast trägt den Projektkontext und ALLE Zeilenschlüssel mit genau
+        den eingetragenen Werten (``{project, values:{...}}``); der echte
+        Render-Zähler (umhülltes ``NV.render``, siehe
+        ``install_render_counter``) bleibt unverändert; Reset-Knopf vorhanden.
         """
         self.boot()
         self.open_settings()
@@ -1042,16 +1116,89 @@ class GatesTest(F34SettingsBrowserTest):
         gates.wait_for(state="visible", timeout=20000)
         save = self.page.locator("button[data-nv-action='gates-save']")
         save.wait_for(state="visible", timeout=20000)
+        project_select = gates.locator("select[data-nv-gates-project]")
+        project_select.wait_for(state="visible", timeout=20000)
+        context = project_select.input_value()
+        field_selector = ("[data-nv-gate-value]" if context == "global"
+                          else "[data-nv-gate-override]")
+        rows = gates.locator("table[data-nv-gates-table] tr[data-nv-gate]")
+        self.wait_until(
+            lambda: rows.count() >= 2, timeout=20,
+            message="Die Gates-Tabelle hat weniger als zwei Zeilen")
+
+        # In mehreren Zeilen abweichende Werte eintragen; die Nutzlast muss
+        # danach ALLE Zeilenschlüssel mit genau diesen Werten tragen.
+        changed = []
+        for index in range(rows.count()):
+            row = rows.nth(index)
+            key = row.get_attribute("data-nv-gate")
+            field = row.locator(field_selector)
+            self.assertEqual(
+                1, field.count(),
+                "Die Gates-Zeile %r hat kein eindeutiges Eingabefeld %s"
+                % (key, field_selector))
+            if len(changed) < 2 and key != "override":
+                before_value = field.input_value() or ""
+                new_value = self.gate_value_differing_from(field)
+                field.fill(new_value)
+                self.assertNotEqual(
+                    before_value, new_value,
+                    "Testaufbau: der neue Wert der Zeile %r weicht nicht vom "
+                    "Feldwert ab" % (key,))
+                changed.append((key, new_value))
+        self.assertGreaterEqual(
+            len(changed), 2,
+            "Es konnten nicht mindestens zwei Gates-Zeilen geändert werden")
+
+        expected_values = {}
+        for index in range(rows.count()):
+            row = rows.nth(index)
+            key = row.get_attribute("data-nv-gate")
+            expected_values[key] = (
+                row.locator(field_selector).input_value() or "")
+        for key, value in changed:
+            self.assertEqual(
+                value, expected_values.get(key),
+                "Testaufbau: der eingetragene Wert der Zeile %r ging im DOM "
+                "verloren" % (key,))
+
+        posts_before = len(self.posts_to("/api/gates"))
         render_before = self.nv_render_count()
         save.click()
-        self.wait_for_post(
-            "/api/gates",
-            lambda payload: payload.get("action") is None
-            or "values" in payload or "key" in payload,
+        self.wait_until(
+            lambda: len(self.posts_to("/api/gates")) > posts_before,
             timeout=20, message="Es wurde kein POST /api/gates gesendet")
+        # Auf das Ende der Speicherkette warten (Toast nach dem Redraw), damit
+        # ein später ausgelöster Voll-Neurender noch im Zähler ankommt.
+        self.wait_until(
+            lambda: re.search(r"gespeichert|saved", self.toast_text(), re.I)
+            is not None, timeout=20,
+            message="Das Gates-Speichern bestätigt nicht: "
+                    + repr(self.toast_text()))
+
         payloads = self.posts_to("/api/gates")
-        self.assertTrue(
-            len(payloads) >= 1, "Der Gates-Save hat nicht gesendet")
+        self.assertEqual(
+            posts_before + 1, len(payloads),
+            "Der Gates-Save sendet nicht genau einen POST /api/gates: "
+            + repr(payloads))
+        payload = payloads[-1]
+        self.assertIn("values", payload,
+                      "Der Gates-Save sendet keine Sammel-Nutzlast: "
+                      + repr(payload))
+        self.assertEqual(
+            "" if context == "global" else context,
+            str(payload.get("project") or ""),
+            "Die Nutzlast trägt nicht den gewählten Projektkontext: "
+            + repr(payload))
+        self.assertEqual(
+            expected_values, payload.get("values"),
+            "Die Nutzlast enthält nicht alle Zeilenschlüssel mit den "
+            "eingetragenen Werten")
+
+        self.assertEqual(
+            render_before, self.nv_render_count(),
+            "Das Speichern der Schranken vollneu-rendered (NV.render wurde "
+            "während des Speicherns aufgerufen)")
         reset = self.page.locator("button[data-nv-action='gates-reset']")
         reset.wait_for(state="visible", timeout=20000)
         self.assertTrue(reset.is_visible(), "Der Reset-Knopf fehlt")

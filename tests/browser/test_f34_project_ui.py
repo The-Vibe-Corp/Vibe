@@ -108,12 +108,15 @@ Testfälle (Name, Vorbedingung, Aktion, Erwartung)
     Aktion: Drag-Griff von F1 auf die Zeile von F8 ziehen.
     Erwartung: F1 steht an definierter Position (direkt vor F8); die
     Kennung davor (B7) und danach (F8) stimmen; exakte neue Reihenfolge
-    persistiert.
+    sichtbar, Toast und persistiert; KEIN Voll-Neurender (DOM-Sentinel am
+    Strip bleibt, echter Render-Zähler des Testgerüsts unverändert).
 ``test_arrows_reorder_and_save``
     Vorbedingung: order „F5 F8“.
     Aktion: ↓-Knopf der ersten Zeile klicken.
     Erwartung: ``POST /api/priority`` mit neuer Reihenfolge (F8 vor F5),
-    ``GET /api/priority`` bestätigt sie.
+    sichtbar im Strip, Toast, ``GET /api/priority`` bestätigt sie; KEIN
+    Voll-Neurender (DOM-Sentinel am Strip bleibt, echter Render-Zähler des
+    Testgerüsts unverändert).
 ``test_priority_reset``
     Vorbedingung: order „F5 F8“ (Badges vorhanden).
     Aktion: ``button[data-nv-priority-reset]`` klicken.
@@ -681,7 +684,74 @@ class F34ProjectBrowserTest(unittest.TestCase):
             state="visible", timeout=20000)
         self.page.locator("div[data-nv-priority-strip]").wait_for(
             state="visible", timeout=20000)
+        self.install_render_counter()
         return panel
+
+    def install_render_counter(self):
+        """Umhüllt ``NV.render`` mit einem Zähler des TESTGERÜSTS.
+
+        Das Produkt hat keinen eigenen Render-Zähler; dieser Helfer legt sich
+        nach dem Laden vor ``NV.render`` (``bin/web/nova-core.js``) und erhöht
+        ``window.__nvRenderCount`` bei jedem Aufruf. Ein unveränderter Zähler
+        belegt damit, dass eine Prioritätsaktion keinen Voll-Neurender
+        ausgelöst hat. Der Helfer ist idempotent; nach einem ``page.goto``
+        muss er erneut laufen.
+        """
+        state = self.page.evaluate(
+            """() => {
+              if (window.__nvRenderCounterInstalled === true) {
+                return {ok: true, already: true};
+              }
+              if (typeof NV === 'undefined'
+                  || typeof NV.render !== 'function') {
+                return {ok: false, reason: 'NV.render fehlt'};
+              }
+              var original = NV.render;
+              window.__nvRenderCount = 0;
+              window.__nvRenderCountOriginal = original;
+              NV.render = function () {
+                window.__nvRenderCount += 1;
+                return original.apply(this, arguments);
+              };
+              window.__nvRenderCounterInstalled = true;
+              return {
+                ok: true,
+                already: false,
+                wrapped: NV.render !== window.__nvRenderCountOriginal,
+                countsInBody: String(NV.render)
+                  .indexOf('__nvRenderCount') !== -1
+              };
+            }""")
+        self.assertTrue(
+            state.get("ok"),
+            "Der Render-Zähler konnte nicht installiert werden: %r"
+            % (state.get("reason"),))
+        if not state.get("already"):
+            self.assertTrue(
+                state.get("wrapped") and state.get("countsInBody"),
+                "Die Umhüllung von NV.render zählt nicht wirklich: %r"
+                % (state,))
+
+    def nv_render_count(self):
+        """Zählerstand des testseitig umhüllten ``NV.render``.
+
+        Scheitert, wenn der Zähler fehlt — ein stiller Rückfall auf 0 würde
+        eine Zusicherung vortäuschen, die nichts prüft.
+        """
+        state = self.page.evaluate(
+            """() => ({
+              installed: window.__nvRenderCounterInstalled === true,
+              count: typeof window.__nvRenderCount === 'number'
+                ? window.__nvRenderCount : null
+            })""")
+        self.assertTrue(
+            state.get("installed"),
+            "Der Render-Zähler ist nicht installiert; nv_render_count() "
+            "kann keinen Voll-Neurender ausschließen")
+        self.assertIsNotNone(
+            state.get("count"),
+            "Der Render-Zähler hat keinen numerischen Stand")
+        return state["count"]
 
     def open_assistant(self):
         self.open_project()
@@ -1362,6 +1432,13 @@ class WorkTest(F34ProjectBrowserTest):
             lambda: self.strip_ids() == expected_before, timeout=20,
             message="Die definierte Startreihenfolge der Strip-Liste fehlt: "
                     + repr(self.strip_ids()))
+        # Kein-Voll-Neurender-Messung: DOM-Sentinel am Strip (überlebt nur,
+        # wenn das Element nicht ersetzt wird) plus echter Render-Zähler
+        # (testseitig umhülltes NV.render, siehe install_render_counter).
+        strip = self.page.locator("div[data-nv-priority-strip]")
+        strip.evaluate(
+            "node => node.setAttribute('data-nv-f34-no-rerender', '1')")
+        render_before = self.nv_render_count()
         source = self.page.locator(
             "div[data-nv-priority-strip] [data-nv-priority-id='F1'] "
             "button[data-nv-drag-handle]")
@@ -1430,6 +1507,20 @@ class WorkTest(F34ProjectBrowserTest):
             lambda: self.strip_ids() == posted_order, timeout=15,
             message="Der Strip zeichnet die exakte neue Reihenfolge nicht: "
                     + repr(self.strip_ids()))
+        self.wait_until(
+            lambda: re.search(
+                r"priority saved|priorisierung gespeichert",
+                self.toast_text(), re.I) is not None, timeout=20,
+            message="Der Drop bestätigt das Speichern nicht: "
+                    + repr(self.toast_text()))
+        self.assertEqual(
+            "1", strip.get_attribute("data-nv-f34-no-rerender"),
+            "Der Drop hat den Priorisierungs-Strip ersetzt "
+            "(Voll-Neurender statt lokalem Neuzeichnen)")
+        self.assertEqual(
+            render_before, self.nv_render_count(),
+            "Der Drop vollneu-rendered (NV.render wurde während des "
+            "Speicherns aufgerufen)")
         self.assert_clean_page()
 
     def test_arrows_reorder_and_save(self):
@@ -1444,6 +1535,10 @@ class WorkTest(F34ProjectBrowserTest):
         self.open_work()
         self.page.locator("div[data-nv-priority-strip]").wait_for(
             state="visible", timeout=20000)
+        strip = self.page.locator("div[data-nv-priority-strip]")
+        strip.evaluate(
+            "node => node.setAttribute('data-nv-f34-no-rerender', '1')")
+        render_before = self.nv_render_count()
         down = self.page.locator(
             "div[data-nv-priority-strip] [data-nv-priority-id='F5'] "
             "button[data-nv-action='priority-down']")
@@ -1468,6 +1563,24 @@ class WorkTest(F34ProjectBrowserTest):
                           for entry in (data.get("order") or [])] == posted_order,
             message="Die per ↓ gespeicherte Reihenfolge ist nicht persistiert: "
                     + repr(posted_order))
+        self.wait_until(
+            lambda: self.strip_ids()[:2] == ["F8", "F5"], timeout=15,
+            message="Der Strip zeigt nach ↓ nicht sichtbar F8 vor F5: "
+                    + repr(self.strip_ids()))
+        self.wait_until(
+            lambda: re.search(
+                r"priority saved|priorisierung gespeichert",
+                self.toast_text(), re.I) is not None, timeout=20,
+            message="Der ↓-Knopf bestätigt das Speichern nicht: "
+                    + repr(self.toast_text()))
+        self.assertEqual(
+            "1", strip.get_attribute("data-nv-f34-no-rerender"),
+            "Der ↓-Knopf hat den Priorisierungs-Strip ersetzt "
+            "(Voll-Neurender statt lokalem Neuzeichnen)")
+        self.assertEqual(
+            render_before, self.nv_render_count(),
+            "Der ↓-Knopf vollneu-rendered (NV.render wurde während des "
+            "Speicherns aufgerufen)")
         self.assert_clean_page()
 
     def test_priority_reset(self):

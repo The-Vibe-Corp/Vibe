@@ -759,8 +759,9 @@ class BellTest(AP22ActivityBrowserTest):
         Fragetext und das Projekt (F34: Frage ist kein Link mehr, sondern
         ``button[data-nv-live-question-open]``); die Lauf-Zeile bietet
         ``a.nv-bell-link`` mit nichtleerem Ziel auf ``output``; nach der
-        Antwort verlässt die Frage die Live-Zeilen (Zähler kann durch das
-        gespeicherte Antwort-Toast nicht sinken).
+        Antwort verlässt die Frage die Live-Zeilen (der Zähler darf durch das
+        gespeicherte Antwort-Toast nicht sinken: er bleibt vorhanden, sichtbar
+        und zeigt weiterhin ≥ 1).
         """
         self.start_run()
         self.open_activity()
@@ -839,12 +840,26 @@ class BellTest(AP22ActivityBrowserTest):
                     "verschwunden")
         # F34: Das Antwort-Toast wird als gespeicherter Glocke-Eintrag
         # erhalten — der Zähler sinkt nicht mehr über die Frage, die Live-
-        # Zeile ist die Verschwindens-Prüfung.
-        badge = self.page.locator("span[data-nv-bell-count]").first
-        match = re.search(r"\d+", badge.inner_text() or "") if badge.count() else None
-        self.assertTrue(
-            badge.count() == 0 or (match and int(match.group(0)) >= 1),
-            "Der Glocken-Zähler zeigt nach der Antwort kleiner als 1 oder ist verborgen")
+        # Zeile ist die Verschwindens-Prüfung. Der Zähler muss aber vorhanden,
+        # sichtbar und mindestens 1 sein, solange der gespeicherte Antwort-
+        # Eintrag noch ungelesen ist (ein fehlender Zähler gälte sonst als
+        # „nicht gesunken“).
+        badge = self.page.locator("span[data-nv-bell-count]")
+        self.assertEqual(
+            1, badge.count(), "Der Glocken-Zähler fehlt nach der Antwort")
+        badge = badge.first
+        self.wait_until(
+            lambda: badge.is_visible(), timeout=20,
+            message="Der Glocken-Zähler bleibt nach der Antwort verborgen, "
+                    "obwohl der gespeicherte Antwort-Eintrag ungelesen ist")
+        match = re.search(r"\d+", badge.inner_text() or "")
+        self.assertIsNotNone(
+            match, "Der Glocken-Zähler zeigt keine Zahl: "
+                   + repr(badge.inner_text()))
+        self.assertGreaterEqual(
+            int(match.group(0)), 1,
+            "Der Glocken-Zähler zeigt nach der Antwort kleiner als 1, "
+            "obwohl der gespeicherte Antwort-Eintrag ungelesen ist")
         self.assert_clean_page()
 
 
