@@ -5,6 +5,10 @@ und Windows installieren, fehlende Werkzeuge nur mit Zustimmung nachinstallieren
 und eine bestehende Installation wiederverwenden können, ohne Laufzeitdaten zu
 überschreiben. Alle schreibenden Tests arbeiten in temporären Verzeichnissen;
 es werden keine Paketmanager, Router oder echten Installationen angefasst.
+
+F34-Anpassung: ``nova-evals.js`` kommt als ausgelieferte Web-Datei hinzu; der
+gespiegelte Programmsatz wird wieder vollständig (``vibe_keys.py``), weil
+``setup-vibe.py`` ihn installiert und ``make_kit`` sonst unvollständig ist.
 """
 import ast
 import contextlib
@@ -39,6 +43,10 @@ PROGRAM_FILES = (
     "vibe_guide.py",
     "vibe_questions.py",
     "vibe_autonomous.py",
+    # F34-Anpassung: AP23 liefert vibe_keys.py mit und setup-vibe.py
+    # installiert es; der Spiegel muss den vollständigen Programmsatz
+    # abbilden, sonst bricht make_kit() mit „Quellverzeichnis unvollständig“ ab.
+    "vibe_keys.py",
     "vibe_harness.py",
     "vibe_limits.py",
     "vibe_gates.py",
@@ -54,6 +62,9 @@ WEB_FILES = (
     "nova-activity.js", "nova-settings.js",
     # F33: Web-Dateien-Einträge auf den Stand von scripts/setup-vibe.py bringen.
     "nova-widgets.js", "vibe.svg",
+    # F34-Anpassung: WP3 legt nova-evals.js an; setup-vibe.py liefert sie als
+    # /static/nova-evals.js aus, also gehört sie in den Installationssatz.
+    "nova-evals.js",
 )
 
 

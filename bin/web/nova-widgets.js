@@ -23,15 +23,18 @@ NV.combobox = function (values, current, opts) {
   });
   var blank = opts && opts.blank != null ? String(opts.blank) : null;
   var onchange = opts && typeof opts.onchange === 'function' ? opts.onchange : null;
+  var placeholder = (opts && opts.placeholder) || tr('Modell suchen …');
 
   var list = el('ul', {class: 'nv-combobox-list',
     'data-nv-combobox-list': '', role: 'listbox',
     id: 'nv-combobox-' + (NV_COMBOBOX_SEQUENCE += 1), hidden: ''});
   var input = el('input', {'data-nv-combobox-input': '', type: 'text',
-    role: 'combobox', 'aria-expanded': 'false', 'aria-controls': list.id});
+    role: 'combobox', 'aria-expanded': 'false', 'aria-controls': list.id,
+    placeholder: placeholder, 'aria-label': placeholder});
+  var icon = el('span', {class: 'nv-combobox-icon', 'aria-hidden': 'true'}, '⌕');
   var container = el('div', {class: 'nv-combobox',
     'data-nv-combobox': '', 'data-nv-field': opts && opts.field
-      ? String(opts.field) : ''}, input, list);
+      ? String(opts.field) : ''}, icon, input, list);
 
   var selected = String(current == null ? '' : current);
   var filter = '';
@@ -109,9 +112,10 @@ NV.combobox = function (values, current, opts) {
     if (onchange) onchange(value);
   }
 
-  input.addEventListener('click', function () {
-    if (isOpen()) close(); else open();
-  });
+  /* F34: Fokus und Klick öffnen die Liste; ein offener Klick klappt sie nicht
+     wieder zu. Schließen über Escape oder Klick außerhalb. */
+  input.addEventListener('focus', function () { open(); });
+  input.addEventListener('click', function () { open(); });
 
   input.addEventListener('input', function () {
     if (!isOpen()) return;
@@ -144,4 +148,110 @@ NV.combobox = function (values, current, opts) {
   container.setAttribute('data-nv-value', selected);
   display();
   return container;
+};
+
+document.addEventListener('click', function (event) {
+  document.querySelectorAll('[data-nv-combobox]').forEach(function (container) {
+    if (container.contains(event.target)) return;
+    var input = container.querySelector('[data-nv-combobox-input]');
+    var list = container.querySelector('[data-nv-combobox-list]');
+    if (!input || input.getAttribute('aria-expanded') !== 'true') return;
+    if (list) list.hidden = true;
+    input.setAttribute('aria-expanded', 'false');
+  });
+});
+
+/* F34 — gemeinsame Rückfrage-Karte für Postfach und Aktivität.
+ * Antworten werden lokal gezeichnet (Karte entfernen, Toast, Zähler/Banner/
+ * Glocke über NV.questions aktualisieren); ein Voll-Neurender gibt es nicht.
+ */
+NV.questionCard = function (question, opts) {
+  var q = question || {};
+  var id = String(q.id || '');
+  var settings = opts || {};
+  var options = Array.isArray(q.options) ? q.options.map(String) : [];
+  var article = el('article', {class: 'nv-question-card',
+    'data-nv-question': '', 'data-nv-question-id': id});
+  var meta = [q.project, q.agent].filter(Boolean).map(String).join(' · ');
+  if (meta) article.append(el('div', {class: 'nv-question-meta'}, meta));
+  article.append(el('p', {class: 'nv-question-text'}, String(q.text || '')));
+
+  var error = el('p', {class: 'nv-form-error', 'data-nv-question-error': '', hidden: ''});
+  var fields = [];
+  var controls = [];
+
+  function setBusy(busy) {
+    if (busy) article.setAttribute('aria-busy', 'true');
+    else article.removeAttribute('aria-busy');
+    fields.forEach(function (field) { field.disabled = busy; });
+    controls.forEach(function (button) { button.disabled = busy; });
+  }
+
+  async function send(payload) {
+    if (article.getAttribute('aria-busy') === 'true') return;
+    error.hidden = true;
+    setBusy(true);
+    try {
+      var body = {action: 'answer', id: id};
+      Object.keys(payload).forEach(function (key) { body[key] = payload[key]; });
+      var result = await api('/api/questions', body);
+      if (result && result.ok === false) {
+        throw new Error(bt(result.message) || tr('Antwort nicht gespeichert.'));
+      }
+      var message = bt(result && result.message) || tr('Antwort gespeichert.');
+      article.remove();
+      if (NV.questions && typeof NV.questions.remove === 'function') {
+        NV.questions.remove(id);
+      }
+      toast(message);
+      if (typeof settings.onAnswered === 'function') settings.onAnswered(q, result);
+    } catch (e) {
+      error.hidden = false;
+      error.textContent = String(e && e.message || e);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (options.length) {
+    var choices = el('div', {class: 'nv-question-options'});
+    options.forEach(function (label, index) {
+      var button = el('button', {class: 'nv-btn nv-ghost', type: 'button',
+        'data-nv-answer': String(index + 1)}, String(label));
+      // Der Hook ist 1-basiert, das Backend erwartet den 0-basierten Index.
+      button.addEventListener('click', function () { send({option: index}); });
+      controls.push(button);
+      choices.append(button);
+    });
+    article.append(choices);
+  }
+
+  if (q.free_text !== false) {
+    var field = el('input', {type: 'text', 'data-nv-answer-field': '',
+      'data-nv-field': 'answer',
+      'aria-label': tr('Eigene Antwort …'), placeholder: tr('Eigene Antwort …')});
+    var sendButton = el('button', {class: 'nv-btn nv-primary', type: 'button',
+      'data-nv-answer-send': ''}, tr('Antwort senden'));
+    sendButton.addEventListener('click', function () {
+      var value = String(field.value || '').trim();
+      if (!value) {
+        error.hidden = false;
+        error.textContent = String(tr('Bitte eine Antwort eingeben.'));
+        field.focus();
+        return;
+      }
+      send({text: value});
+    });
+    field.addEventListener('keydown', function (event) {
+      if (event.key !== 'Enter') return;
+      event.preventDefault();
+      sendButton.click();
+    });
+    fields.push(field);
+    controls.push(sendButton);
+    article.append(el('div', {class: 'nv-question-answer'}, field, sendButton));
+  }
+
+  article.append(error);
+  return article;
 };

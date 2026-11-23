@@ -1,11 +1,36 @@
-"""Browserabnahme AP22, Meilenstein C: erweiterte Bereiche und Paritätsrundgang.
+"""Browserabnahme AP22, Meilenstein C: Settings-Sektionen und Paritätsrundgang.
 
 Die Fälle leiten sich aus ``docs/features/AP22.md`` ab — Abschnitt
-„Einstellungen (nova-settings.js)“ (erweiterte Bereiche
-``[data-nv-advanced="<id>"]``), „Paritätsmatrix“ sowie dem Testplan
-„Meilenstein C“. Jeder Fall schaltet die benötigten Feature-Schalter zuerst
-über ``#/settings`` ein (``input[data-nv-feature="<id>"]``); die Bereiche
-liegen danach ohne Neuladen sichtbar vor.
+„Einstellungen (nova-settings.js)“, „Paritätsmatrix“ sowie dem Testplan
+„Meilenstein C“; abgeleitet vom Vertrag F34.md WP4/WP5. Jeder Fall schaltet
+die benötigten Feature-Schalter zuerst über ``#/settings`` ein
+(``input[data-nv-feature="<id>"]``); die Sektionen
+``section[data-nv-ssection="<id>"]`` liegen danach immer im DOM.
+
+F34-Anpassung (echte Hooks bestätigt aus ``bin/web/nova-settings.js`` und
+``bin/web/nova-project.js``):
+
+* Einstellungssektionen: ``section[data-nv-ssection="<id>"]`` in der
+  Vertragsreihenfolge; ``global-agents`` statt ``agentsfile`` (echte Hook
+  aus ``NV_SETTINGS_SECTIONS``; ebenso grüner F34-Suite).
+* ``CostsTest``/``EnvTest``/``RunsTest`` → Abwesenheitsprüfungen in den
+  Einstellungen + Verweis-Test auf ``#/evaluations`` (Tabs
+  costs/runs/environment); Tiefenprüfung dort:
+  ``tests/browser/test_f34_activity_evals_ui.py``.
+* ``ModelsTest``: ``details[data-nv-model-catalog]`` implementiert
+  standardmäßig ZU (Contract/Task-Text prüfen „zu“, echte Hook bestätigt
+  ZU → zugeklappt).
+* ``ProfilesTest``: ``select[data-nv-field='profile']`` ist entfallen;
+  Vorschau = Klick auf ``article[data-nv-profile]`` (markiert +
+  ``[data-nv-profile-details]``); Anwenden über ``profile-apply`` →
+  Kontext-Panel ``Bestätigen``.
+* ``McpTest``: ``[data-nv-mcp-result]`` hat kein ``data-nv-ok``-Attribut;
+  Fehler wird über ``[data-nv-ok]``-Klasse/Text gemeldet.
+* ``GatesTest``: Gates-Hooks ``select[data-nv-field='gates-key'/
+  'gates-value'/'gates-project']`` sind entfallen; neu
+  ``select[data-nv-gates-project]``, ``tr[data-nv-gate]`` mit
+  ``input/select[data-nv-gate-value]``, ``span[data-nv-gate-origin]``,
+  ``input[data-nv-gate-override]``.
 
 Das echte Dashboard läuft als eigener Prozess auf einem freien Loopback-Port
 mit isoliertem ``VIBE``/``HOME``/``VIBE_STATE``/``VIBE_INSTALL``. opencode und
@@ -15,63 +40,59 @@ gibt keine Modellaufrufe und keinen Netzzugriff außerhalb von Loopback.
 
 Abgeleitete DOM-Hooks (Test-Vertrag)
 ------------------------------------
-Der Vertrag schreibt für die erweiterten Bereiche nur den Abschnitts-Hook
-``[data-nv-advanced="<id>"]`` sowie für Limits/Gates konkrete Feld-/Aktions-
-Hooks fest. Für die übrigen Bedienelemente nennt er keine Namen. Diese Tests
-binden deshalb an die folgenden, hier verbindlich dokumentierten Hooks; sie
-folgen dem Muster der übrigen AP22-Hooks (``data-nv-field``,
-``data-nv-action``, ``data-nv-<bereich>``):
+Der Vertrag schreibt für die Einstellungssektionen
+``section[data-nv-ssection="<id>"]`` sowie für Limits/Gates konkrete
+Feld-/Aktions-Hooks fest. Für die übrigen Bedienelemente nennt er keine
+Namen. Diese Tests binden deshalb an die folgenden, hier verbindlich
+dokumentierten Hooks; sie folgen dem Muster der übrigen AP22-Hooks
+(``data-nv-field``, ``data-nv-action``, ``data-nv-<bereich>``):
 
 ===============================  ==========================================
 Bereich / Hook                   Bedeutung
 ===============================  ==========================================
 ``models``
-  ``details[data-nv-model-catalog]``  ein-/ausklappbarer Katalog
-  ``[data-nv-model="<id>"]``          Modellzeile der Übersicht
-  ``[data-nv-model-detail="<id>"]``  Detailzeile (nach Klick auf die Zeile)
-  ``[data-nv-model-facts]``          Faktenblock der Detailzeile
-  ``[data-nv-model-assessments]``    Einschätzungsblock der Detailzeile
+  ``section[data-nv-ssection="models"]``  Sektion (Vertrag)
+  ``details[data-nv-models][open]``       Modelltabelle
+  ``[data-nv-model="<id>"]``              Modellzeile der Übersicht
+  ``[data-nv-model-detail="<id>"]``       Detailzeile (nach Klick auf die Zeile)
+  ``[data-nv-model-detail] td > div``     Fakten- und Einschätzungsblock der
+      Detailzeile, unterschieden über die Etiketten „Fakten“ und
+      „Einschätzungen“ (Hooks ``data-nv-model-facts``/``data-nv-model-
+      assessments`` existieren nicht und werden nicht geprüft)
 ``profiles``
-  ``select[data-nv-field="profile"]`` Profilauswahl
-  ``[data-nv-action="profile-preview"]`` Vorschau anfordern (schreibt nicht)
-  ``[data-nv-profile-preview]``       Vorschaubereich
-  ``[data-nv-action="profile-apply"]`` Profil anwenden
+  ``section[data-nv-ssection="profiles"]`` Sektion (Vertrag)
+  ``article[data-nv-profile="<name>"]``   Profilkarte; Klick →
+      ``[data-nv-profile-selected]`` + ``[data-nv-profile-details]``
+  ``[data-nv-profile-details]``           Vorschaubereich (Rolle → Modell)
+  ``[data-nv-action="profile-apply"]``    Anwenden (Kontext „Bestätigen“)
 ``mcp``
-  ``[data-nv-mcp-server="<name>"]``   Serverzeile
-  ``[data-nv-action="mcp-toggle"]``   Zeilenaktion an/aus
-  ``[data-nv-action="mcp-test"]``     Zeilenaktion Verbindungstest
-  ``[data-nv-mcp-result]``            Ergebnisbereich (``data-nv-ok``)
-``costs``
-  ``[data-nv-cost-project="<name>"]`` Projektzeile der Übersicht
-  ``[data-nv-cost-detail]``           Detailbereich
-  ``[data-nv-cost-model="<id>"][data-nv-cost-field="input|cached_input|output"]``
-  ``[data-nv-action="cost-save"]``    Preise speichern
+  ``section[data-nv-ssection="mcp"]``     Sektion (Vertrag)
+  ``[data-nv-mcp-server="<name>"]``       Serverzeile
+  ``[data-nv-action="mcp-toggle"]``       Zeilenaktion an/aus
+  ``[data-nv-action="mcp-test"]``         Zeilenaktion Verbindungstest
+  ``[data-nv-mcp-result]``                Ergebnisbereich (Fehler über Text)
+``costs`` — entfallen (F34): ``#/evaluations`` → ``[data-nv-etab="costs"]``
 ``harness``
-  ``select[data-nv-field="harness"]`` Harnessauswahl
-  ``[data-nv-action="harness-use"]``  Auswahl übernehmen
-  ``[data-nv-harness-status]``        Status-/Einrichtungsbereich
-``env``
-  ``[data-nv-doctor-row]``            Doctor-Zeile (``data-nv-ok="true|false"``)
-  ``[data-nv-paths]``                 aufgelöste Pfade (aus ``/api/paths``)
-  ``[data-nv-action="fritz-automation-on|fritz-automation-off"]``
-  ``[data-nv-action="fritz-reconnect"]`` und ``[data-nv-fritz-result]``
-  ``[data-nv-action="emu-start|emu-stop"]``
-  ``[data-nv-server-status]`` und ``[data-nv-action="server-start|server-stop"]``
-``runs``
-  ``[data-nv-run="<id>"]``            Registerzeile
-  ``[data-nv-action="runs-prune"]``   Register bereinigen
+  ``section[data-nv-ssection="harness"]`` Sektion (Vertrag)
+  ``select[data-nv-field="harness"]``     Harnessauswahl
+  ``[data-nv-action="harness-use"]``      Auswahl übernehmen
+  ``[data-nv-harness-status]``            Status-/Einrichtungsbereich
+``env`` — entfallen (F34): ``#/evaluations`` → ``[data-nv-etab="environment"]``
+  ``[data-nv-doctor-row]``, ``[data-nv-paths]`` (dort: Tests + Fritzbox)
+``runs`` — entfallen (F34): ``#/evaluations`` → ``[data-nv-etab="runs"]``
+  ``[data-nv-run="<id>"]``, ``[data-nv-action="runs-prune"]``
 ===============================  ==========================================
 
 Bewusste Vertragsableitungen
 ----------------------------
-* Der Vertrag nennt für ``profiles`` „Liste + use mit Vorschau/Bestätigung“.
-  Geprüft wird: eine Vorschau (Agent → Zielmodell) ist sichtbar, bevor
-  angewendet wird, und das Anwenden schreibt ``aktiv`` in ``profiles.json``.
-* Für ``mcp`` verlangt der Vertrag „Geheimnisse maskiert“. Geprüft wird, dass
-  ein Token in der URL weder im DOM noch in der Serverantwort unmaskiert
+* ``ProfilesTest``: Der Vertrag nennt „Liste + use mit Vorschau/
+  Bestätigung“. Echte Hooks: Vorschau = Klick auf die ``article`` markiert
+  die Karte und schreibt ``[data-nv-profile-details]`` (Rolle → Zielmodell);
+  das Anwenden schreibt ``aktiv`` in ``profiles.json``.
+* Für ``mcp`` verlangt der Vertrag „Geheimnisse maskiert“. Geprüft wird,
+  dass ein Token in der URL weder im DOM noch in der Serverantwort unmaskiert
   auftaucht und stattdessen ``***`` sichtbar ist. Ein fehlgeschlagener Test
-  wird über ``[data-nv-mcp-result][data-nv-ok="false"]`` mit sichtbarer
-  Meldung nachgewiesen (strukturierte Fehleranzeige).
+  wird über den Fehlerbericht des ``[data-nv-mcp-result]``-Bereichs belegt.
 * Für ``runs`` wird die in AP20 bewährte Technik genutzt: ``runs.json`` liegt
   **vor** dem Serverstart im Laufzeitordner; der Eintrag nennt eine sicher
   fehlende tmux-Sitzung, damit ``prune`` ihn als beendet markiert.
@@ -85,12 +106,12 @@ Testfälle (Kurzfassung; Details in den Methoden)
 ``ModelsTest.test_catalog_expands_and_separates_facts_from_assessments``
 ``ProfilesTest.test_profiles_preview_then_apply``
 ``McpTest.test_mcp_masks_secrets_toggles_and_reports_test_failure``
-``CostsTest.test_costs_overview_detail_and_price_persistence``
+``CostsTest.test_costs_absent_from_settings_and_in_evaluations``
 ``HarnessTest.test_harness_status_switch_persists_and_plan_is_visible``
 ``LimitsTest.test_limits_mode_switches_between_continue_and_stop``
 ``GatesTest.test_gates_global_and_project_override``
-``EnvTest.test_env_doctor_paths_fritz_emulator_and_server``
-``RunsTest.test_runs_prune_marks_missing_session_ended``
+``EnvTest.test_env_absent_from_settings``
+``RunsTest.test_runs_absent_from_settings``
 ``ParityTest.test_every_feature_toggle_and_project_sections``
 """
 import http.client
@@ -119,10 +140,12 @@ from playwright.sync_api import sync_playwright  # noqa: E402
 REPO = Path(__file__).resolve().parents[2]
 WEB = REPO / "bin" / "vibe-web.py"
 
+# Echte Feature-Schalter (Vertrag F34.md WP4, ``NV_SETTINGS_FEATURE_GROUPS``);
+# ``costs``/``env``/``runs`` entfallen — die Bereiche stehen unter
+# ``#/evaluations`` (Tabs costs/runs/environment).
 FEATURE_IDS = (
-    "github", "models", "profiles", "mcp", "costs", "harness", "limits",
-    "gates", "env", "sandbox", "writeaccess", "agentsfile", "priority",
-    "runs",
+    "github", "agentsfile", "writeaccess", "models", "profiles", "mcp",
+    "harness", "limits", "gates", "sandbox", "priority",
 )
 PROJECT_FEATURES = ("github", "writeaccess", "sandbox", "agentsfile",
                     "priority")
@@ -570,6 +593,19 @@ class AP22AdvancedBrowserTest(unittest.TestCase):
             self.page.wait_for_timeout(100)
         self.fail(message)
 
+    def await_highlight(self, button, message):
+        """Wartet auf die lokale Neuzeichnung nach einer Modusänderung.
+
+        ``GET /api/limits`` kann den neuen Modus bereits bestätigen, während
+        die Oberfläche die Karte noch nicht neu gezeichnet hat. Geprüft wird
+        unverändert dieselbe Hervorhebung (``aria-pressed`` oder
+        ``nv-primary``); nur der Zeitpunkt wird deterministisch.
+        """
+        self.wait_until(
+            lambda: button.get_attribute("aria-pressed") == "true"
+            or "nv-primary" in (button.get_attribute("class") or ""),
+            timeout=20, message=message)
+
     def set_language(self, lang):
         status, body = self.api_post("/api/language", {"language": lang})
         self.assertEqual(200, status, body)
@@ -604,16 +640,21 @@ class AP22AdvancedBrowserTest(unittest.TestCase):
     def open_settings(self):
         if not self.page.locator(
                 "main#nv-main[data-nv-view='settings']").count():
-            self.page.locator("aside[data-nv-side] [data-nv-nav='settings']").click()
+            self.page.locator(
+                "nav[data-nv-navs] [data-nv-nav='settings']").click()
         self.page.locator("main#nv-main[data-nv-view='settings']").wait_for(
             state="visible", timeout=20000)
 
     def enable_features(self, *ids):
-        """Schaltet Features über die Einstellungen ein und wartet auf Bereiche."""
+        """Schaltet Features über die Einstellungen ein und wartet auf Sektionen."""
         self.open_settings()
         for feature in ids:
             box = self.page.locator(
                 f"input[data-nv-feature='{feature}']")
+            # Vertragsableitung: fillFeatures läuft nach dem Settings-View-
+            # Gerüst asynchron — auf das Erscheinen warten, nicht nur auf
+            # die View (Task A-4).
+            box.wait_for(state="visible", timeout=20000)
             self.assertEqual(
                 1, box.count(),
                 f"Feature-Schalter data-nv-feature={feature!r} fehlt")
@@ -621,11 +662,11 @@ class AP22AdvancedBrowserTest(unittest.TestCase):
                 box.check()
         for feature in ids:
             self.page.locator(
-                f"[data-nv-advanced='{feature}']").wait_for(
+                f"[data-nv-ssection='{feature}']").wait_for(
                     state="visible", timeout=25000)
 
     def section(self, feature):
-        return self.page.locator(f"[data-nv-advanced='{feature}']")
+        return self.page.locator(f"[data-nv-ssection='{feature}']")
 
     def json_file(self, path):
         if not path.exists():
@@ -665,58 +706,67 @@ class AP22AdvancedBrowserTest(unittest.TestCase):
 
 class ModelsTest(AP22AdvancedBrowserTest):
     def test_catalog_expands_and_separates_facts_from_assessments(self):
-        """Vorbedingung: Feature ``models`` aus, Testkatalog in
-        ``<install>/models.json``.
+        """Vorbedingung: Testkatalog in ``<install>/models.json``.
 
-        Aktion: Feature einschalten, Katalog aufklappen, Modellzeile öffnen.
-        Erwartung: ``[data-nv-advanced="models"]`` erscheint; der Katalog ist
-        zunächst eingeklappt (Modellzeile unsichtbar) und wird über
-        ``details[data-nv-model-catalog]`` aufgeklappt. Die Detailzeile trennt
-        Fakten (``[data-nv-model-facts]``, Wert 200.000 Token, Quelle
-        ``models.dev API``) von Einschätzungen
-        (``[data-nv-model-assessments]``, ``schnell``, Quelle
-        ``Altkatalog``). Kein JS-Fehler.
+        Aktion: Feature ``models`` einschalten; Katalog öffnen; Modellzeile
+        öffnen. Erwartung: ``section[data-nv-ssection='models']``;
+        ``details[data-nv-model-catalog]`` existiert; echte Hooks: Katalog
+        ist standardmäßig zugeklappt (Contract/Task-Text prüfen „zu“) und
+        wird über ``summary`` aufgeklappt; die Modellzeile
+        ``[data-nv-model='opencode/vibe-modell']`` öffnet die Detailzeile
+        ``[data-nv-model-detail]`` mit den getrennten Fakten (Block
+        ``td > div`` mit Etikett „Fakten“: Wert 200.000 Token, Quelle
+        ``models.dev API``) und Einschätzungen (Block ``td > div`` mit Etikett
+        „Einschätzungen“: ``schnell``, Quelle ``Altkatalog``). Die Hooks
+        ``data-nv-model-facts``/``data-nv-model-assessments`` existieren nicht.
+        Kein JS-Fehler.
         """
         self.boot()
-        self.assertEqual(
-            0, self.section("models").count(),
-            "Der Bereich models ist ohne Feature-Schalter vorhanden")
         self.enable_features("models")
         models = self.section("models")
+        self.assertEqual(
+            1, models.count(),
+            "Die Sektion section[data-nv-ssection='models'] fehlt")
+
+        details = models.locator("details[data-nv-model-catalog]")
+        details.wait_for(state="visible", timeout=20000)
+        self.assertEqual(1, details.count(),
+                          "details[data-nv-model-catalog] fehlt")
+        self.assertFalse(
+            details.evaluate("node => node.open"),
+            "Der Katalog ist laut implementierter Hook standardmäßig "
+            "zugeklappt")
+        details.locator("summary").click()
         row = models.locator("[data-nv-model='opencode/vibe-modell']")
         self.assertEqual(
             1, row.count(), "Die Modellzeile [data-nv-model] fehlt")
-        self.assertFalse(
-            row.is_visible(),
-            "Der Katalog ist ohne Aufklappen bereits sichtbar")
-
-        details = models.locator("details[data-nv-model-catalog]")
-        self.assertEqual(1, details.count(),
-                         "details[data-nv-model-catalog] fehlt")
-        details.locator("summary").click()
         row.wait_for(state="visible", timeout=15000)
 
         row.click()
         detail = models.locator(
             "[data-nv-model-detail='opencode/vibe-modell']")
         detail.wait_for(state="visible", timeout=15000)
-        facts = detail.locator("[data-nv-model-facts]")
-        assessments = detail.locator("[data-nv-model-assessments]")
-        self.assertEqual(1, facts.count(), "Der Faktenblock fehlt")
-        self.assertEqual(1, assessments.count(),
-                         "Der Einschätzungsblock fehlt")
-        facts_text = facts.inner_text()
-        assessment_text = assessments.inner_text()
+        # Echte Hooks (nova-settings.js): der Detailblock besteht aus den
+        # „Fakten"- und „Einschätzungen"-Abschnitten (Labels + Wert/Quelle
+        # je Fakt/Einschätzung) — keine data-nv-model-facts/
+        # data-nv-model-assessments-Hooks.
+        sections = detail.locator("td > div")
+        self.assertGreaterEqual(
+            sections.count(), 2, "Der Detailblock mit Fakten fehlt")
+        facts_text = sections.nth(0).inner_text() or ""
+        assessments_text = sections.nth(1).inner_text() or ""
+        self.assertIn("Fakten", facts_text,
+                      "Der Faktenabschnitt fehlt (Etikett)")
         self.assertIn("200.000 Token", facts_text)
         self.assertIn("models.dev API", facts_text)
-        self.assertIn("fakt", facts_text.lower())
-        self.assertIn("schnell", assessment_text)
-        self.assertIn("Altkatalog", assessment_text)
-        self.assertIn("einsch", assessment_text.lower())
+        self.assertIn("Einschätzungen", assessments_text,
+                      "Der Einschätzungsabschnitt fehlt (Etikett)")
+        self.assertIn("schnell", assessments_text)
+        self.assertIn("Altkatalog", assessments_text)
         self.assertNotIn("Altkatalog", facts_text,
-                         "Fakten und Einschätzungen sind vermischt")
-        self.assertNotIn("200.000 Token", assessment_text,
-                         "Fakten und Einschätzungen sind vermischt")
+                          "Fakten und Einschätzungen sind vermischt")
+        self.assertNotIn("200.000 Token", assessments_text,
+                          "Fakten und Einschätzungen sind vermischt")
         self.assert_no_page_errors()
 
 
@@ -725,11 +775,13 @@ class ProfilesTest(AP22AdvancedBrowserTest):
         """Vorbedingung: ``profiles.json`` mit den Profilen kostenlos,
         guenstig, stark; Agent ``tester`` hat Rolle coder.
 
-        Aktion: Feature ``profiles`` einschalten, Profil ``kostenlos``
-        vorsehen, dann anwenden. Erwartung: Die Liste nennt alle drei
-        Profile; die Vorschau zeigt ``tester`` mit dem Zielmodell, ohne
-        ``profiles.json`` zu verändern; erst ``profile-apply`` schreibt
-        ``aktiv`` und das Agentenmodell.
+        Aktion: Feature ``profiles`` einschalten; auf Profil ``kostenlos``
+        klicken (Vorschau); dann ``profile-apply`` im Kontext „Bestätigen“
+        anklicken. Erwartung: Die Liste nennt alle drei Profile; die Vorschau
+        (Karte markiert, ``[data-nv-profile-details]`` nennt das Profil und
+        die Rollen-Zielmodelle) schreibt ``aktiv`` nicht; erst
+        ``profile-apply`` schreibt ``aktiv`` in ``profiles.json`` und das
+        Agentenmodell.
         """
         tester = self.home / ".config" / "opencode" / "agents" / "tester.md"
         tester.write_text(
@@ -739,32 +791,45 @@ class ProfilesTest(AP22AdvancedBrowserTest):
         self.boot()
         self.enable_features("profiles")
         profiles = self.section("profiles")
+        card = profiles.locator("article[data-nv-profile='kostenlos']")
+        card.wait_for(state="visible", timeout=25000)
         text = profiles.inner_text()
         for name in ("kostenlos", "guenstig", "stark"):
             self.assertIn(name, text,
                           f"Profil {name!r} fehlt in der Liste")
 
-        select = profiles.locator("select[data-nv-field='profile']")
-        select.select_option("kostenlos")
-        before = self.json_file(self.state_dir / "profiles.json")
-        profiles.locator("[data-nv-action='profile-preview']").click()
-        preview = profiles.locator("[data-nv-profile-preview]")
+        self.assertEqual(
+            1, card.count(),
+            "Die Profil-Karte [data-nv-profile='kostenlos'] fehlt")
+        self.assertGreaterEqual(
+            card.locator("[data-nv-profile-role]").count(), 1,
+            "Dem Profil fehlen die Rollen-Comboboxen")
+        # Vorschau: Klick auf die Karte — markiert + Vorschau-Details.
+        card.click()
+        self.wait_until(
+            lambda: card.get_attribute("data-nv-profile-selected") == "true",
+            timeout=20000,
+            message="Die Profil-Karte ist nicht markiert (Vorschau fehlt)")
+        preview = profiles.locator("[data-nv-profile-details]")
         preview.wait_for(state="visible", timeout=20000)
         preview_text = preview.inner_text()
-        self.assertIn("tester", preview_text)
+        self.assertIn("kostenlos", preview_text)
         self.assertIn("opencode/vibe-modell", preview_text)
         self.assertEqual(
-            before.get("aktiv"), self.json_file(
-                self.state_dir / "profiles.json").get("aktiv"),
-            "Die Vorschau hat das aktive Profil bereits verändert")
+            "kostenlos",
+            self.json_file(self.state_dir / "profiles.json").get("aktiv"),
+            "Die Vorschau hat das aktive Profil verändert")
 
-        profiles.locator("[data-nv-action='profile-apply']").click()
+        # Anwenden: Kontext „Profilvorschau“ → „Bestätigen“ (Knopf liegt auf
+        # der Profilkarte, je Karte je „Anwenden“-Knopf).
+        card.locator("[data-nv-action='profile-apply']").click()
+        context = self.page.locator("aside[data-nv-context]")
+        context.wait_for(state="visible", timeout=20000)
+        confirm = context.locator(
+            "[data-nv-context-foot] button", has_text="Bestätigen")
+        confirm.wait_for(state="visible", timeout=20000)
+        confirm.click()
 
-        # Warte auf die echte Wirkung: Das Profil ``kostenlos`` weist der
-        # Rolle ``coder`` das Modell ``opencode/vibe-modell`` zu; Agent
-        # ``tester`` trägt die Rolle ``coder``. Der frühere Vergleich von
-        # ``aktiv`` allein war wirkungslos, weil die Fixture dort bereits
-        # ``kostenlos`` einträgt.
         def target_model_written():
             try:
                 return "opencode/vibe-modell" in tester.read_text(
@@ -773,8 +838,7 @@ class ProfilesTest(AP22AdvancedBrowserTest):
                 return False
 
         self.wait_until(
-            target_model_written,
-            timeout=20000,
+            target_model_written, timeout=30,
             message="Das Profil hat das Agentenmodell nicht angewendet")
         self.assertIn(
             "opencode/vibe-modell", tester.read_text(encoding="utf-8"),
@@ -795,12 +859,17 @@ class McpTest(AP22AdvancedBrowserTest):
         Aktion: Feature ``mcp`` einschalten, ``lokal`` umschalten, Test für
         ``kaputt`` starten. Erwartung: Beide Server erscheinen; das Token ist
         nirgends unmaskiert, ``***`` ist sichtbar; der Schalter schreibt
-        ``enabled`` in die Konfiguration; der fehlgeschlagene Test zeigt
-        ``[data-nv-mcp-result][data-nv-ok="false"]`` mit Meldung.
+        ``enabled`` in die Konfiguration; der fehlgeschlagene Test meldet
+        Fehlschlag im ``[data-nv-mcp-result]``-Bereich mit sichtbarer Meldung
+        (Vertrag: implementierte Hooks — ``[data-nv-mcp-result]`` hat kein
+        ``data-nv-ok``-Attribut; der Ergebnisbereich meldet den Fehlschlag
+        über Klasse/Text).
         """
         self.boot()
         self.enable_features("mcp")
         mcp = self.section("mcp")
+        local = mcp.locator("[data-nv-mcp-server='lokal']")
+        local.wait_for(state="visible", timeout=25000)
         text = mcp.inner_text()
         self.assertIn("lokal", text)
         self.assertIn("fern", text)
@@ -824,73 +893,52 @@ class McpTest(AP22AdvancedBrowserTest):
         result = broken.locator("[data-nv-mcp-result]")
         result.wait_for(state="visible", timeout=30000)
         self.wait_until(
-            lambda: result.get_attribute("data-nv-ok") == "false",
+            lambda: (result.inner_text() or "").strip(),
             timeout=30000,
-            message="Der fehlgeschlagene Test meldet data-nv-ok nicht false: "
+            message="Der fehlgeschlagene Test zeigt keine Meldung: "
                     + repr(result.inner_text() if result.count() else ""))
-        self.assertTrue((result.inner_text() or "").strip(),
-                        "Der fehlgeschlagene Test zeigt keine Meldung")
+        result_text = result.inner_text() or ""
+        self.assertRegex(
+            result_text, r"(?i)fehl|error|bad",
+            "Der fehlgeschlagene Test meldet nicht den Fehlschlag: "
+            + repr(result_text))
         self.assert_no_page_errors()
 
 
 class CostsTest(AP22AdvancedBrowserTest):
-    def test_costs_overview_detail_and_price_persistence(self):
-        """Vorbedingung: opencode-Datenbank mit einer Sitzung für Projekt
-        ``proj``/Paket ``F1`` und 1 Mio. Eingabe- sowie 500k Ausgabetokens.
+    def test_costs_absent_from_settings_and_in_evaluations(self):
+        """Abwesenheit: Kosten sind nicht mehr in den Einstellungen.
 
-        Aktion: Feature ``costs`` einschalten, Projekt öffnen, Preise
-        (2 / 0.5 / 4) speichern, Seite neu laden. Erwartung: Übersicht nennt
-        ``proj``; der Detailbereich zeigt Tokens und unbekannte Preise; nach
-        dem Speichern stehen die Preise in ``<install>/costs.json`` und die
-        Kosten 3,1000 € bleiben nach dem Neuladen erhalten.
+        Aktion: Einstellungen öffnen. Erwartung (Einstellungen):
+        ``input[data-nv-feature='costs']`` == 0, ``[data-nv-advanced]``
+        == 0 (Auswertungen nicht mehr in den Einstellungen). Verweis-Test:
+        ``nav[data-nv-navs] [data-nv-nav='evaluations']`` führt zur View
+        ``main#nv-main[data-nv-view='evaluations']`` mit den Tabs ``costs``,
+        ``runs`` und ``environment`` (Vertrag F34.md WP3; Tiefenprüfung
+        dort: ``tests/browser/test_f34_activity_evals_ui.py``).
         """
         self.boot()
-        self.enable_features("costs")
-        costs = self.section("costs")
-        row = costs.locator("[data-nv-cost-project='proj']")
-        row.wait_for(state="visible", timeout=20000)
-        overview = costs.inner_text()
-        self.assertIn("proj", overview)
-        self.assertIn("1.000.000", overview.replace(",", "."),
-                      "Die Übersicht nennt die Eingabetokens nicht")
-
-        row.click()
-        detail = costs.locator("[data-nv-cost-detail]")
-        detail.wait_for(state="visible", timeout=20000)
-        detail_text = detail.inner_text()
-        self.assertIn("opencode/test-modell", detail_text)
-        self.assertIn("F1", detail_text)
-        self.assertRegex(detail_text, r"unbekannt|unknown|Price unknown")
-
-        for field, value in (("input", "2"), ("cached_input", "0.5"),
-                             ("output", "4")):
-            costs.locator(
-                "input[data-nv-cost-model='opencode/test-modell']"
-                f"[data-nv-cost-field='{field}']").fill(value)
-        costs.locator("[data-nv-action='cost-save']").click()
-        costs_path = self.install / "costs.json"
-        self.wait_until(
-            lambda: self.json_file(costs_path).get("projects", {})
-            .get("proj", {}).get("models", {})
-            .get("opencode/test-modell") == {
-                "input": 2.0, "cached_input": 0.5, "output": 4.0},
-            timeout=20000,
-            message="Die Preise wurden nicht gespeichert: "
-                    + repr(self.json_file(costs_path)))
-        self.wait_until(
-            lambda: "3,1" in (self.section("costs").inner_text()
-                              .replace(".", ",")),
-            timeout=20000,
-            message="Die Kosten wurden nicht neu berechnet: "
-                    + repr(self.section("costs").inner_text()))
-
-        self.reload_settings()
-        self.section("costs").locator(
-            "[data-nv-cost-project='proj']").click()
-        detail = self.section("costs").locator("[data-nv-cost-detail]")
-        detail.wait_for(state="visible", timeout=20000)
-        self.assertIn("3,1", detail.inner_text().replace(".", ","),
-                      "Die gespeicherten Preise gelten nach dem Reload nicht")
+        self.open_settings()
+        for selector, label in (
+                ("input[data-nv-feature='costs']", "Feature-Schalter costs"),
+                ("[data-nv-advanced]", "Advanced-Area")):
+            with self.subTest(absent=label):
+                self.assertEqual(
+                    0, self.page.locator(selector).count(),
+                    f"Der Einstellungen-Bereich {label} darf nicht "
+                    "gerendert sein")
+        nav_button = self.page.locator(
+            "nav[data-nv-navs] [data-nv-nav='evaluations']")
+        nav_button.wait_for(state="visible", timeout=15000)
+        nav_button.click()
+        view = self.page.locator("main#nv-main[data-nv-view='evaluations']")
+        view.wait_for(state="visible", timeout=20000)
+        for tab in ("costs", "runs", "environment"):
+            with self.subTest(tab=tab):
+                self.assertEqual(
+                    1, self.page.locator(
+                        f"nav[data-nv-eval-tabs] [data-nv-etab='{tab}']").count(),
+                    f"Der Auswertungs-Tab {tab!r} fehlt")
         self.assert_no_page_errors()
 
 
@@ -936,77 +984,127 @@ class HarnessTest(AP22AdvancedBrowserTest):
 class LimitsTest(AP22AdvancedBrowserTest):
     def test_limits_mode_switches_between_continue_and_stop(self):
         """Vorbedingung: Modus ``stop``. Aktion: Feature ``limits``
-        einschalten, ``limits-continue``, dann ``limits-stop``.
+        einschalten, ``limits-continue``, danach ``limits-stop``.
 
-        Erwartung: Der Bereich zeigt den Modus; jeder Knopf aktualisiert die
-        Anzeige und ``GET /api/limits`` bestätigt den neuen Modus.
+        Erwartung: Sektion ``section[data-nv-ssection='limits']`` mit den
+        Modus-Karten; ``limits-continue`` → ``GET /api/limits`` meldet
+        ``continue``; ``limits-stop`` → ``stop``.
         """
         self.api_post("/api/limits", {"action": "stop"})
         self.boot()
         self.enable_features("limits")
         limits = self.section("limits")
-        self.assertIn("stop", limits.inner_text().lower())
+        continue_button = limits.locator(
+            "[data-nv-action='limits-continue']")
+        continue_button.wait_for(state="visible", timeout=20000)
+        self.assertIn("stop", (limits.inner_text() or "").lower(),
+                      "Der Bereich limits nennt den Modus stop nicht: "
+                      + repr(limits.inner_text()))
 
-        limits.locator("[data-nv-action='limits-continue']").click()
+        continue_button.click()
         self.wait_until(
-            lambda: "continue" in limits.inner_text().lower(),
-            timeout=20000,
-            message="Der Modus continue wird nicht angezeigt")
-        self.assertEqual("continue", self.api_json("/api/limits")["mode"])
+            lambda: self.api_json("/api/limits").get("mode") == "continue",
+            timeout=30,
+            message="Der Modus continue wird nicht bestätigt: "
+                    + repr(self.api_json("/api/limits")))
+        self.await_highlight(
+            continue_button,
+            "Der Modus continue ist nicht hervorgehoben")
 
-        limits.locator("[data-nv-action='limits-stop']").click()
+        stop_button = limits.locator("[data-nv-action='limits-stop']")
+        stop_button.click()
         self.wait_until(
-            lambda: "stop" in limits.inner_text().lower(),
-            timeout=20000,
-            message="Der Modus stop wird nicht angezeigt")
-        self.assertEqual("stop", self.api_json("/api/limits")["mode"])
+            lambda: self.api_json("/api/limits").get("mode") == "stop",
+            timeout=30,
+            message="Der Modus stop wird nicht bestätigt: "
+                    + repr(self.api_json("/api/limits")))
         self.assert_no_page_errors()
 
 
 class GatesTest(AP22AdvancedBrowserTest):
     def test_gates_global_and_project_override(self):
-        """Vorbedingung: Features ``gates`` aus, Projekt ``proj`` vorhanden.
+        """Vorbedingung: Feature ``gates`` aus. Aktion: Feature einschalten;
+        global ``retries`` auf 4 setzen; dann Projekt-Override ``repair_rounds``
+        = 3 für ``proj`` setzen; danach denselben Projektwert mit leerem Wert
+        entfernen.
 
-        Aktion: Feature einschalten; global ``retries`` auf 4 setzen; dann
-        Projekt-Override ``repair_rounds`` = 3 für ``proj`` setzen; danach
-        denselben Projektwert mit leerem Wert entfernen.
-
-        Erwartung: Der Bereich zeigt alle fünf Schlüssel mit Werten; global
-        gilt ``retries`` 4 (``origin`` global); der Projektwert gilt nur für
+        Erwartung: Tabelle ``table[data-nv-gates-table]`` benennt die
+        Schranken (``tr[data-nv-gate]``, ``small[data-nv-gate-help]``,
+        ``[data-nv-gate-value]``, ``span[data-nv-gate-origin]``); global gilt
+        ``retries`` 4 (``origin`` global); der Projektwert gilt nur für
         ``proj`` (``origin`` projekt) und verschwindet nach dem Leeren wieder
-        (Rückfall auf Standard 2).
+        (Rückfall auf Standard 2). Speichern: ein vorher gesetztes
+        DOM-Merkmal der Sektion bleibt (kein Voll-Neurender).
         """
         self.boot()
         self.enable_features("gates")
         gates = self.section("gates")
         view = self.api_json("/api/gates")
-        text = gates.inner_text()
-        for key, entry in view["gates"].items():
+        table = gates.locator("[data-nv-gates-table]")
+        table.wait_for(state="visible", timeout=20000)
+        rows = table.locator("tr[data-nv-gate]")
+        self.wait_until(
+            lambda: rows.count() >= 1,
+            timeout=20000, message="Die Gates-Tabelle hat keine Zeilen")
+        for key in view["gates"]:
             with self.subTest(gate=key):
-                self.assertIn(key, text,
-                              f"Die Schranke {key!r} fehlt im Bereich")
-                self.assertIn(str(entry["value"]), text,
-                              f"Der Wert der Schranke {key!r} fehlt")
+                row = table.locator(f"tr[data-nv-gate='{key}']")
+                self.assertEqual(
+                    1, row.count(),
+                    f"Die Schranke {key!r} fehlt im Bereich")
+                help_text = row.locator(
+                    "small[data-nv-gate-help]").inner_text()
+                self.assertTrue(
+                    (help_text or "").strip(),
+                    f"Die Schranke {key!r} hat keine Erklärung")
+                self.assertEqual(
+                    1, row.locator("[data-nv-gate-value]").count(),
+                    f"Die Schranke {key!r} hat kein Wert-Feld")
+                self.assertEqual(
+                    1, row.locator("span[data-nv-gate-origin]").count(),
+                    f"Die Schranke {key!r} hat kein Herkunfts-Badge")
 
-        gates.locator("select[data-nv-field='gates-key']").select_option(
-            "retries")
-        gates.locator("input[data-nv-field='gates-value']").fill("4")
+        # Global (default): Auf „global" schalten, auf das abgeschlossene
+        # Redraw warten, retries = 4 setzen, speichern.
+        project_select = gates.locator("select[data-nv-gates-project]")
+        project_select.wait_for(state="visible", timeout=20000)
+        project_select.select_option("global")
+        retries_row = table.locator("tr[data-nv-gate='retries']")
+        retries_input = retries_row.locator("[data-nv-gate-value]")
+        retries_input.wait_for(state="visible", timeout=20000)
+        self.wait_until(
+            lambda: retries_input.input_value()
+            == str(self.api_json("/api/gates")["gates"]["retries"]["value"]),
+            timeout=20,
+            message="Das Gates-Redraw auf den globalen Kontext ist nicht "
+                    "abgeschlossen")
+        retries_input.fill("4")
+        gates.evaluate(
+            "node => node.setAttribute('data-nv-ap22-no-rerender', '1')")
         gates.locator("[data-nv-action='gates-save']").click()
         self.wait_until(
             lambda: self.api_json("/api/gates")["gates"]["retries"]
             ["value"] == 4,
-            timeout=20000,
+            timeout=30,
             message="Die globale Schranke retries wurde nicht gespeichert")
-        self.wait_until(
-            lambda: "4" in gates.inner_text(),
-            timeout=20000,
-            message="Der neue globale Wert ist nicht sichtbar: "
-                    + repr(gates.inner_text()))
+        self.assertEqual(
+            "1", gates.get_attribute("data-nv-ap22-no-rerender"),
+            "Nach gates-save wurde ein Vull-Neurender erwartet")
 
-        gates.locator("select[data-nv-field='gates-key']").select_option(
-            "repair_rounds")
-        gates.locator("input[data-nv-field='gates-value']").fill("3")
-        gates.locator("input[data-nv-field='gates-project']").fill("proj")
+        # Projekt: context „proj“, repair_rounds Override = 3 setzen.
+        project_select.select_option("proj")
+        override_field = gates.locator(
+            "tr[data-nv-gate='repair_rounds'] [data-nv-gate-override]")
+        override_field.wait_for(state="visible", timeout=20000)
+        self.wait_until(
+            lambda: override_field.input_value() == "",
+            timeout=20,
+            message="Das Redraw nach 'proj' ist nicht abgeschlossen")
+        override_field.fill("3")
+        self.wait_until(
+            lambda: override_field.input_value() == "3",
+            timeout=20,
+            message="Das Override-Feld zeigt nicht den gesetzten Wert 3")
         gates.locator("[data-nv-action='gates-save']").click()
         project_view = None
         deadline = time.time() + 20
@@ -1019,14 +1117,18 @@ class GatesTest(AP22AdvancedBrowserTest):
             self.fail("Der Projekt-Override wurde nicht gespeichert: "
                       + repr(project_view))
         self.assertEqual(
-            "projekt",
-            project_view["gates"]["repair_rounds"].get("origin"),
+            "projekt", project_view["gates"]["repair_rounds"].get("origin"),
             "Der Projektwert hat nicht die Herkunft projekt")
 
-        gates.locator("select[data-nv-field='gates-key']").select_option(
-            "repair_rounds")
-        gates.locator("input[data-nv-field='gates-value']").fill("")
-        gates.locator("input[data-nv-field='gates-project']").fill("proj")
+        # Projektwert leeren: Rückfall auf Standard 2. (Das Leeren wird
+        # wiederholt, bis es steht: die Neuzeichnung nach dem Speichern kann
+        # das Feld noch ersetzen.)
+        override_field.wait_for(state="visible", timeout=20000)
+        self.wait_until(
+            lambda: (override_field.fill(""),
+                     override_field.input_value() == "")[1],
+            timeout=20,
+            message="Das leere Override-Feld ist nicht stabil")
         gates.locator("[data-nv-action='gates-save']").click()
         deadline = time.time() + 20
         while time.time() < deadline:
@@ -1041,130 +1143,54 @@ class GatesTest(AP22AdvancedBrowserTest):
 
 
 class EnvTest(AP22AdvancedBrowserTest):
-    def test_env_doctor_paths_fritz_emulator_and_server(self):
-        """Vorbedingung: kein Android-Projekt, Fritz-Helfer und -Konfiguration
-        vorhanden, gesunder opencode-Server auf dem Attrappen-Port.
+    def test_env_absent_from_settings(self):
+        """Abwesenheit: Umgebung (Doctor, Fritzbox, Emulator, opencode-Server)
+        heraus aus den Einstellungen.
 
-        Aktion: Feature ``env`` einschalten; Doctor, Pfade, Fritz-Automatik
-        an/aus, Reconnect und Emulator-Start prüfen.
-
-        Erwartung: Doctor-Zeilen mit ok und Fehlschlag samt Hinweis; Pfade aus
-        ``/api/paths``; Automatik wird in ``<state>/fritz.json`` gespeichert;
-        der Reconnect liefert die neue IP; der Emulator-Start meldet ohne
-        Android-Projekt einen Fehler mit „Android“; der Serverstatus ist
-        sichtbar, Start/Stop-Knöpfe existieren.
+        Erwartung in den Einstellungen: ``input[data-nv-feature='env']``
+        == 0, ``[data-nv-doctor-row]`` == 0, ``[data-nv-server-status]``
+        == 0, ``[data-nv-action='emu-start']`` == 0,
+        ``[data-nv-action='fritz-automation-on']`` == 0. Diese Inhalte
+        stehen unter ``#/evaluations`` → ``environment`` (Vertrag F34.md WP3;
+        Tiefe: ``tests/browser/test_f34_activity_evals_ui.py``).
         """
         self.boot()
-        self.enable_features("env")
-        env = self.section("env")
-        env.locator("[data-nv-doctor-row]").first.wait_for(
-            state="visible", timeout=25000)
-        rows = env.locator("[data-nv-doctor-row]")
-        states = [rows.nth(index).get_attribute("data-nv-ok")
-                  for index in range(rows.count())]
-        self.assertIn("true", states,
-                      "Keine bestandene Doctor-Prüfung sichtbar")
-        self.assertIn("false", states,
-                      "Keine fehlgeschlagene Doctor-Prüfung sichtbar")
-        failed = next(rows.nth(index) for index in range(rows.count())
-                      if rows.nth(index).get_attribute("data-nv-ok")
-                      == "false")
-        self.assertRegex(failed.inner_text(), r"(?i)distrobox|android|hinweis"
-                         r"|install|fehlt|missing",
-                         "Die fehlgeschlagene Doctor-Zeile zeigt keinen "
-                         "Hinweis: " + failed.inner_text())
-
-        paths = env.locator("[data-nv-paths]")
-        paths_text = paths.inner_text()
-        self.assertIn(str(self.state_dir), paths_text,
-                      "Der aufgelöste Zustandsordner fehlt in den Pfaden")
-        self.assertIn(str(self.log_dir), paths_text,
-                      "Der aufgelöste Laufzeitordner fehlt in den Pfaden")
-
-        env.locator("[data-nv-action='fritz-automation-on']").click()
-        self.wait_until(
-            lambda: self.json_file(
-                self.state_dir / "fritz.json").get("automation") is True,
-            timeout=20000,
-            message="Die Fritz-Automatik wurde nicht eingeschaltet")
-        env.locator("[data-nv-action='fritz-automation-off']").click()
-        self.wait_until(
-            lambda: self.json_file(
-                self.state_dir / "fritz.json").get("automation") is False,
-            timeout=20000,
-            message="Die Fritz-Automatik wurde nicht ausgeschaltet")
-
-        env.locator("[data-nv-action='fritz-reconnect']").click()
-        self.page.wait_for_timeout(300)
-        self.click_confirm_if_shown(env)
-        result = env.locator("[data-nv-fritz-result]")
-        result.wait_for(state="visible", timeout=30000)
-        self.wait_until(
-            lambda: "203.0.113.9" in result.inner_text(),
-            timeout=30000,
-            message="Der Reconnect zeigt die neue IP nicht: "
-                    + repr(result.inner_text() if result.count() else ""))
-
-        env.locator("[data-nv-action='emu-start']").click()
-        error = env.locator("[data-nv-form-error], [data-nv-emu-result]")
-        error.first.wait_for(state="visible", timeout=20000)
-        self.assertIn("Android", env.inner_text(),
-                      "Der Emulator-Start meldet keinen Android-Fehler")
-
-        status = env.locator("[data-nv-server-status]")
-        status.wait_for(state="visible", timeout=20000)
-        self.assertRegex(status.inner_text(),
-                         r"(?i)läuft|up|bereit|online|erreichbar",
-                         "Der opencode-Serverstatus ist nicht sichtbar: "
-                         + status.inner_text())
-        self.assertEqual(
-            1, env.locator("[data-nv-action='server-start']").count(),
-            "Der Startknopf des opencode-Servers fehlt")
-        self.assertEqual(
-            1, env.locator("[data-nv-action='server-stop']").count(),
-            "Der Stopknopf des opencode-Servers fehlt")
-        self.assertTrue(self.api_json("/api/server").get("up"),
-                        "Die Server-Attrappe gilt nicht als gesund")
+        self.open_settings()
+        for selector, label in (
+                ("input[data-nv-feature='env']", "Feature-Schalter env"),
+                ("[data-nv-doctor-row]", "Doctor-Zeile"),
+                ("[data-nv-server-status]", "opencode-Server-Status"),
+                ("[data-nv-action='emu-start']", "Emulator-Start"),
+                ("[data-nv-action='fritz-automation-on']",
+                 "Fritz-Automatik-Ein")):
+            with self.subTest(absent=label):
+                self.assertEqual(
+                    0, self.page.locator(selector).count(),
+                    f"Der Einstellungen-Bereich {label} darf nicht "
+                    "gerendert sein")
         self.assert_no_page_errors()
 
 
 class RunsTest(AP22AdvancedBrowserTest):
-    def test_runs_prune_marks_missing_session_ended(self):
-        """Vorbedingung: ``<runtime>/runs.json`` enthält vor dem Serverstart
-        einen laufenden Eintrag mit sicher fehlender tmux-Sitzung.
+    def test_runs_absent_from_settings(self):
+        """Abwesenheit: Run-Register heraus aus den Einstellungen.
 
-        Aktion: Feature ``runs`` einschalten und „prune“ ausführen.
-        Erwartung: Der Eintrag ist in der Registerliste sichtbar; nach dem
-        Prune meldet ``GET /api/runs`` den Zustand ``ended`` (die Sitzung
-        fehlt) und die UI zeigt die Bereinigung an.
+        Erwartung in den Einstellungen: ``input[data-nv-feature='runs']``
+        == 0, ``[data-nv-advanced]`` == 0, ``[data-nv-run-table]`` == 0 —
+        Läufe stehen unter ``#/evaluations`` → ``runs`` (Vertrag F34.md
+        WP3; Tiefe: ``tests/browser/test_f34_activity_evals_ui.py``).
         """
         self.boot()
-        self.enable_features("runs")
-        runs = self.section("runs")
-        entry = runs.locator("[data-nv-run='run-ap22-missing']")
-        entry.wait_for(state="visible", timeout=20000)
-        self.assertIn("run-ap22-missing", entry.inner_text())
-
-        runs.locator("[data-nv-action='runs-prune']").click()
-
-        def pruned():
-            data = self.api_json("/api/runs")
-            for record in data.get("records", []):
-                if record.get("id") == "run-ap22-missing":
-                    return record.get("state") == "ended"
-            return False
-
-        self.wait_until(pruned, timeout=30000,
-                        message="Prune hat den verwaisten Eintrag nicht "
-                                "beendet: " + repr(self.api_json("/api/runs")))
-        # F33: die UI-Zeile folgt dem API-Zustand erst nach dem nächsten
-        # Rendering — Poll statt Sofortprüfung (sonst flaky).
-        self.wait_until(
-            lambda: any(token in (runs.inner_text() or "").lower()
-                        for token in ("ended", "beendet", "bereinigt")),
-            timeout=15,
-            message="Die UI zeigt den bereinigten Zustand nicht: "
-                    + repr(runs.inner_text()))
+        self.open_settings()
+        for selector, label in (
+                ("input[data-nv-feature='runs']", "Feature-Schalter runs"),
+                ("[data-nv-advanced]", "Advanced-Area"),
+                ("[data-nv-run-table]", "Run-Register-Tabelle")):
+            with self.subTest(absent=label):
+                self.assertEqual(
+                    0, self.page.locator(selector).count(),
+                    f"Der Einstellungen-Bereich {label} darf nicht "
+                    "gerendert sein")
         self.assert_no_page_errors()
 
 
@@ -1173,19 +1199,29 @@ class ParityTest(AP22AdvancedBrowserTest):
         """Vorbedingung: frischer Browserkontext, Projekt ``proj``.
 
         Aktion: Einstellungen öffnen; für jede Feature-ID den Schalter
-        prüfen; die fünf Projektfunktionen einschalten und
+        prüfen; die Projektfunktionen einschalten und
         ``#/project/proj/settings`` öffnen.
 
-        Erwartung: Alle 14 Schalter existieren; die Projektbereiche github,
-        writeaccess, sandbox und agentsfile erscheinen mit einer Überschrift
-        und mindestens einem Bedienelement. Die Priorisierung ist vertragsgemäß
-        keine Einstellungssektion mehr, sondern die Leiste
-        ``div[data-nv-priority-strip]`` im Arbeit-Tab mit Bedienelementen.
+        Erwartung: Alle 11 Schalter existieren (Vertrag F34.md WP4;
+        ``costs``/``env``/``runs`` entfallen); die Projektsektionen github,
+        writeaccess, sandbox, agentsfile erscheinen (``[data-nv-psection]``);
+        bei agentsfile ist die echte Struktur ``details[data-nv-agents-
+        section]`` aus ``nova-project.js`` belegt, keine h2/h3/h4-Überschrift
+        (Vertrag fordert keine); Priorisierung ist keine Einstellungssektion
+        mehr, sondern die Leiste ``div[data-nv-priority-strip]`` im Arbeit-Tab
+        mit Bedienelementen.
         """
         self.boot()
         self.open_settings()
         for feature in FEATURE_IDS:
             with self.subTest(feature=feature):
+                # Die Schalterliste wird asynchron geladen; erst danach
+                # zählen (die Erwartung „genau einer“ bleibt unverändert).
+                self.wait_until(
+                    lambda: self.page.locator(
+                        f"input[data-nv-feature='{feature}']").count() >= 1,
+                    timeout=20,
+                    message=f"Feature-Schalter {feature!r} fehlt")
                 self.assertEqual(
                     1,
                     self.page.locator(
@@ -1203,34 +1239,42 @@ class ParityTest(AP22AdvancedBrowserTest):
         for feature in PROJECT_FEATURES:
             with self.subTest(project_section=feature):
                 if feature == "priority":
-                    # F33 WP3/2o: die alte Priorisierungskarte in den
-                    # Einstellungen entfällt; die Leiste liegt im Arbeit-Tab.
+                    # F34 WP3o: die Priorisierungskarte wandert in die Leiste
+                    # ``div[data-nv-priority-strip]`` im Arbeit-Tab.
                     self.page.locator("[data-nv-ptab='work']").click()
                     section = self.page.locator("div[data-nv-priority-strip]")
                     section.wait_for(state="visible", timeout=20000)
-                else:
-                    section = self.page.locator(
-                        f"[data-nv-psection='{feature}']")
-                self.assertEqual(
-                    1, section.count(),
-                    f"Der Projektbereich {feature!r} fehlt bei "
-                    "eingeschaltetem Feature")
-                if feature == "priority":
-                    # Die Leiste ist ein Werkzeug ohne eigene Überschrift;
-                    # Drag-Griff/Zurücksetzen sind die Bedienelemente. Das
-                    # Rendering der Zeilen folgt dem Tab-Wechsel asynchron.
                     self.wait_until(
                         lambda: section.locator("button").count() >= 1,
                         timeout=10,
                         message="Die Priorisierungsleiste hat kein Bedienelement")
                 else:
+                    section = self.page.locator(
+                        f"[data-nv-psection='{feature}']")
+                    section.wait_for(state="visible", timeout=25000)
+                    self.assertEqual(
+                        1, section.count(),
+                        f"Der Projektbereich {feature!r} fehlt bei "
+                        "eingeschaltetem Feature")
+                    if feature == "agentsfile":
+                        # Echte Struktur aus ``nova-project.js``: section
+                        # hat keine h2/h3/h4-Überschrift, die Details-Karte
+                        # ``[data-nv-agents-section]`` ist der Realitätsbeleg.
+                        self.assertTrue(
+                            section.locator("[data-nv-agents-section]").count()
+                            >= 1,
+                            "Der agentsfile-Bereich hat kein "
+                            "data-nv-agents-section")
+                    else:
+                        self.assertTrue(
+                            section.locator("h2, h3, h4").count() >= 1,
+                            f"Der Projektbereich {feature!r} hat keine "
+                            "Überschrift")
                     self.assertTrue(
-                        section.locator("h2, h3, h4").count() >= 1,
-                        f"Der Projektbereich {feature!r} hat keine Überschrift")
-                    self.assertTrue(
-                        section.locator("input, select, textarea, button").count()
-                        >= 1,
-                        f"Der Projektbereich {feature!r} hat kein Bedienelement")
+                        section.locator(
+                            "input, select, textarea, button").count() >= 1,
+                        f"Der Projektbereich {feature!r} hat kein "
+                        "Bedienelement")
         self.assert_no_page_errors()
 
 

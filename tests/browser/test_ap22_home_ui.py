@@ -5,6 +5,10 @@ echte Dashboard läuft als eigener Prozess mit isoliertem VIBE-Root, zwei
 registrierten Projekten und einer opencode-Attrappe
 (``tests/browser/test_ap21_i18n_ui.py`` als Muster).
 
+F34-Anpassung: Die statische Sidebar entfällt; die Sidebar-Klicks auf
+``aside[data-nv-side]`` sind auf die permanenten Kopf-Navigationsknöpfe
+(``nav[data-nv-navs]``) umgestellt.
+
 Der Vertrag definiert für einige Bedienelemente keinen eigenen Hook; die
 Tests halten sich an folgende, dokumentierte Lesart:
 
@@ -423,7 +427,7 @@ class AP22HomeTest(unittest.TestCase):
             "section[data-nv-ppanel='assistant']").wait_for(
                 state="visible", timeout=20000)
 
-        self.page.locator("aside[data-nv-side] [data-nv-nav='home']").click()
+        self.page.locator("nav[data-nv-navs] [data-nv-nav='home']").click()
         self.page.locator("main#nv-main[data-nv-view='home']").wait_for(
             state="visible", timeout=25000)
         self.card("neu-ap22").wait_for(state="visible", timeout=20000)
@@ -445,14 +449,14 @@ class AP22HomeTest(unittest.TestCase):
             clone.is_visible() if clone.count() else False,
             "Die Clone-Karte ist ohne Feature github sichtbar")
 
-        self.page.locator("aside[data-nv-side] [data-nv-nav='settings']").click()
+        self.page.locator("nav[data-nv-navs] [data-nv-nav='settings']").click()
         self.page.locator(
             "main#nv-main[data-nv-view='settings']").wait_for(
                 state="visible", timeout=20000)
         toggle = self.page.locator("input[data-nv-feature='github']")
         toggle.wait_for(state="visible", timeout=15000)
         toggle.check()
-        self.page.locator("aside[data-nv-side] [data-nv-nav='home']").click()
+        self.page.locator("nav[data-nv-navs] [data-nv-nav='home']").click()
         self.page.locator("main#nv-main[data-nv-view='home']").wait_for(
             state="visible", timeout=25000)
 

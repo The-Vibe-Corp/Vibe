@@ -20,24 +20,36 @@
 <button type="button" data-nv-nav="home"></button>
 <button type="button" data-nv-nav="agents"></button>
 <button type="button" data-nv-nav="activity"></button>
+<button type="button" data-nv-nav="evaluations"></button>
 <button type="button" data-nv-nav="settings"></button>
 </nav>
 <div class="nv-nav-scrim" data-nv-nav-scrim aria-hidden="true"></div>
 <div class="nv-top-actions">
 <label class="nv-anim-switch" aria-label="" title=""><input type="checkbox" data-nv-anim-toggle checked><span class="nv-anim-glyph" aria-hidden="true">✦</span></label>
 <button type="button" class="nv-btn nv-ghost nv-icon-btn" data-nv-theme-toggle aria-label="" title=""></button>
+<button type="button" class="nv-btn nv-ghost nv-questions-button" data-nv-questions-button aria-label="" title=""><span class="nv-questions-label"></span><span class="nv-badge" data-nv-questions-count hidden>0</span></button>
 <div class="nv-bell-wrap">
 <button type="button" class="nv-btn nv-ghost nv-icon-btn" data-nv-bell aria-label="" title="">🔔<span class="nv-badge" data-nv-bell-count hidden>0</span></button>
 <div class="nv-drawer" data-nv-bell-panel hidden></div>
 </div>
 </div>
 </header>
-<!-- F33/2a/3b: Breitbild-Sidebar unterhalb des Headers (CSS blendet sie unter
-     1280px aus; darunter greift die Kopf-Navigation). nova-core schiebt das
-    selbe Nav in die Aside bei ≥1280 (syncSidebarNav) — die Nav lebt einmal,
-     und der globale [data-nv-nav]-Zähler (AP22) bleibt pro View 1. -->
+<!-- F34: Rückfragen sind auf jeder Ansicht sichtbar; das Banner sitzt direkt
+     unter der Kopfzeile und wird von NV.questions befüllt. -->
+<div class="nv-question-banner" data-nv-question-banner hidden></div>
+<!-- F34: Die statische Sidebar-Navigation entfällt. Das leere Aside bleibt nur
+     für Bestands-Hooks im DOM und enthält bewusst keine [data-nv-nav]-Knöpfe. -->
 <aside class="nv-side" data-nv-side></aside>
 <main id="nv-main" data-nv-view="home" class="nv-main"></main>
+<div class="nv-context-scrim" data-nv-context-scrim hidden></div>
+<aside class="nv-context" data-nv-context hidden>
+<div class="nv-context-head">
+<h2 data-nv-context-title></h2>
+<button type="button" class="nv-btn nv-ghost nv-close" data-nv-context-close aria-label="" title="">×</button>
+</div>
+<div class="nv-context-body" data-nv-context-body></div>
+<div class="nv-context-foot" data-nv-context-foot></div>
+</aside>
 <div id="nv-toasts" class="nv-toasts" aria-live="polite"></div>
 <script src="/static/i18n.js"></script>
 <script src="/static/nova-core.js"></script>
@@ -47,6 +59,7 @@
 <script src="/static/nova-output.js"></script>
 <script src="/static/nova-agents.js"></script>
 <script src="/static/nova-activity.js"></script>
+<script src="/static/nova-evals.js"></script>
 <script src="/static/nova-settings.js"></script>
 </body>
 </html>

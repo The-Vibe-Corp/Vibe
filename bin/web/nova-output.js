@@ -1,4 +1,4 @@
-/* AP22 — Live-Ausgabe (Meilenstein B): Hauptagent, laufende Subagenten,
+/* AP22/F34 — Live-Ausgabe (Meilenstein B): Hauptagent, laufende Subagenten,
  * Fokus, Steuern, Fortsetzen und Stoppen.
  *
  * Der Router der neuen Shell kennt keine eigene Output-Route: `#/project/<name>/output`
@@ -14,6 +14,13 @@
  * (`renderLogChunk`/`hlLine` aus app.js, F19/AP16): nur `span`-Knoten mit
  * `hl-*`-Klassen, deren Farben nova.css für beide Themes definiert. Zeilen mit
  * Markup-Zeichen bleiben als ein einziger Textknoten wörtlich sichtbar.
+ *
+ * F34/WP6: Eine kompakte, horizontal scrollende Kopfzusammenfassung zeigt
+ * Hauptagent und Subagenten mit Name, Rolle, Zustand, Modell und Sitzung; jede
+ * Zeile fokussiert die zugehörige Ausgabe. Haupt- und Subagenten-Protokolle
+ * haben eine begrenzte Höhe mit eigenem Scroll und „Alles anzeigen“. Styles,
+ * die nova.css (WP1) nicht hergibt, werden lokal über `style` gesetzt — keine
+ * CSS-Datei eines anderen WP wird berührt.
  */
 'use strict';
 
@@ -64,6 +71,15 @@ function nvRenderLog(text) {
     if (line) frag.append(nvHlLine(line));
   });
   return frag;
+}
+
+/* F34: kompakte, aber eindeutige Sitzungsanzeige. Der volle Wert bleibt im
+   title, damit gekürzte Kennungen nicht unverständlich werden. */
+function nvOutShort(value, max) {
+  var text = String(value || '');
+  var limit = max || 18;
+  if (text.length <= limit) return text;
+  return text.slice(0, limit - 1) + '…';
 }
 
 var NV_OUTPUT = {
@@ -132,26 +148,88 @@ NV.output = {
     var isPi = false;
     var mainText = '';
     var focusTarget = '';
+    var mainSession = '';
+    var mainModel = '';
+    var mainAgent = '';
     var cards = {};
+    var summaryRows = {};
+    var expanded = {main: false};
+    var lastRunning = null;
 
     /* ---------- DOM (rein deklarativ, keine Protokoll-innerHTML) ---------- */
+
+    /* F34: Die Zusammenfassung scrollt horizontal, nicht die Seite. Jede Zeile
+       ist ein Knopf, der die passende Ausgabe fokussiert und anscrollt. */
+    var summary = el('div', {
+      class: 'nv-out-summary', 'data-nv-out-summary': '', role: 'group',
+      'aria-label': tr('Zusammenfassung'),
+      style: 'display:flex; flex-wrap:nowrap; gap:var(--nv-space-3); '
+        + 'overflow-x:auto; overflow-y:hidden; max-width:100%; '
+        + 'padding-bottom:var(--nv-space-2);'
+    });
+
+    function makeSummaryRow(target) {
+      var name = el('b', {class: 'nv-out-sum-name'}, '');
+      var role = el('span', {class: 'nv-out-sum-role nv-muted', title: tr('Rolle/Agent')}, '');
+      var state = el('span', {class: 'nv-pill', 'data-state': 'stopped'}, tr('gestoppt'));
+      var model = el('span', {class: 'nv-out-sum-model nv-muted', title: tr('Modell')}, '–');
+      var session = el('code', {class: 'nv-out-sum-session', title: ''}, '–');
+      var row = el('button', {
+        class: 'nv-out-summary-row', type: 'button', 'data-nv-out-summary-row': '',
+        'data-nv-summary-target': target, 'data-focus': 'false',
+        style: 'flex:0 0 auto; display:flex; flex-wrap:nowrap; align-items:center; '
+          + 'gap:var(--nv-space-2); padding:var(--nv-space-2) var(--nv-space-3); '
+          + 'text-align:left; max-width:min(38rem,86vw); min-width:0;'
+      }, name, role, state,
+        el('span', {class: 'nv-muted'}, tr('Modell') + ': '), model,
+        el('span', {class: 'nv-muted'}, tr('Sitzung') + ': '), session);
+      row.addEventListener('click', function () { focusAndScroll(target); });
+      summary.append(row);
+      var entry = {node: row, name: name, role: role, state: state,
+        model: model, session: session};
+      summaryRows[target] = entry;
+      return entry;
+    }
+    makeSummaryRow('main');
+
     var overview = el('div', {class: 'nv-out-overview', 'data-nv-out-overview': ''});
     var statePill = el('span', {class: 'nv-pill', 'data-nv-run-state': '', 'data-state': 'stopped'}, tr('gestoppt'));
     var agentLabel = el('span', {class: 'nv-out-agent'});
     var countLabel = el('span', {class: 'nv-out-count'});
     overview.append(statePill, agentLabel, countLabel);
 
-    var mainLog = el('pre', {class: 'nv-log nv-out-main', 'data-nv-out-main': '',
-      role: 'log', tabindex: '0', 'aria-label': tr('Hauptagent')});
+    var mainState = el('span', {class: 'nv-pill', 'data-nv-out-main-state': '', 'data-state': 'stopped'}, tr('gestoppt'));
+    var mainSessionCode = el('code', {class: 'nv-out-session', 'data-nv-out-session': '', title: ''}, '–');
+    var mainFocusText = el('span', {class: 'nv-out-focus-text'}, tr('Fokus'));
     var mainFocusButton = el('button', {class: 'nv-btn nv-ghost', type: 'button',
       'data-nv-action': 'out-focus', 'aria-label': tr('Hauptagent fokussieren'),
-      'aria-expanded': 'false'}, tr('Fokus'));
-    var mainWrap = el('div', {class: 'nv-out-main-wrap'},
-      el('div', {class: 'nv-out-main-head'},
-        el('b', {}, tr('Hauptagent')), mainFocusButton),
+      'aria-expanded': 'false'},
+      el('span', {class: 'nv-out-icon', 'aria-hidden': 'true'}, '⤢'), ' ', mainFocusText);
+    var mainExpandText = el('span', {class: 'nv-out-expand-text'}, tr('Alles anzeigen'));
+    var mainExpandButton = el('button', {class: 'nv-btn nv-ghost nv-out-expand', type: 'button',
+      'data-nv-log-expand': '', 'data-nv-log-target': 'main', 'aria-expanded': 'false',
+      'aria-label': tr('Hauptprotokoll alles anzeigen')},
+      el('span', {class: 'nv-out-icon', 'aria-hidden': 'true'}, '↕'), ' ', mainExpandText);
+
+    var mainLog = el('pre', {class: 'nv-log nv-out-main', 'data-nv-out-main': '',
+      role: 'log', tabindex: '0', 'aria-label': tr('Hauptagent'),
+      style: 'max-height:60vh; overflow:auto;'});
+    var mainWrap = el('section', {class: 'nv-card nv-out-main-wrap', 'data-nv-out-main-wrap': ''},
+      el('div', {class: 'nv-out-main-head',
+        style: 'display:flex; flex-wrap:wrap; align-items:center; '
+          + 'gap:var(--nv-space-3); margin-bottom:var(--nv-space-3);'},
+        el('b', {}, tr('Hauptagent')), mainState,
+        el('span', {class: 'nv-muted'}, tr('Sitzung') + ':'), mainSessionCode,
+        el('span', {style: 'flex:1 1 auto'}), mainExpandButton, mainFocusButton),
       mainLog);
 
-    var subs = el('div', {class: 'nv-out-subs', 'data-nv-out-subs': ''});
+    var subs = el('div', {class: 'nv-out-subs', 'data-nv-out-subs': '',
+      style: 'display:grid; grid-template-columns:repeat(auto-fit, '
+        + 'minmax(min(100%, 30rem), 1fr)); gap:var(--nv-space-4); align-items:start;'});
+
+    var resumeBox = el('section', {class: 'nv-card nv-out-resume', 'data-nv-out-resume': '',
+      style: 'padding:var(--nv-space-4);'});
+    resumeBox.hidden = true;
 
     var steerInput = el('input', {type: 'text', 'data-nv-steer': '',
       placeholder: tr('Anweisung an den Agenten'),
@@ -159,7 +237,13 @@ NV.output = {
     var steerButton = el('button', {class: 'nv-btn nv-primary', type: 'button',
       'data-nv-action': 'steer'}, tr('Anweisung senden'));
     var continueButton = el('button', {class: 'nv-btn', type: 'button',
-      'data-nv-action': 'continue'}, tr('Fortsetzen'));
+      'data-nv-action': 'continue', title: tr('Keine Sitzung – Fortsetzen nicht möglich.')},
+      tr('Fortsetzen'));
+    var continueHint = el('small', {class: 'nv-muted', 'data-nv-continue-hint': ''},
+      tr('Sendet ‚weiter‘ an die laufende Sitzung'));
+    var continueWrap = el('div', {class: 'nv-out-continue',
+      style: 'display:flex; flex-direction:column; gap:2px; min-width:0;'},
+      continueButton, continueHint);
     var stopButton = el('button', {class: 'nv-btn nv-danger', type: 'button',
       'data-nv-action': 'stop'}, tr('Stoppen'));
     var piNote = el('p', {class: 'nv-muted nv-out-pi-note'},
@@ -168,7 +252,7 @@ NV.output = {
 
     var controls = el('div', {class: 'nv-out-controls'},
       el('div', {class: 'nv-out-steer'}, steerInput, steerButton),
-      el('div', {class: 'nv-out-actions'}, continueButton, stopButton),
+      el('div', {class: 'nv-out-actions'}, continueWrap, stopButton),
       piNote);
     stopButton.hidden = true;
     steerInput.hidden = true;
@@ -176,9 +260,22 @@ NV.output = {
 
     /* Steuerblock vor dem Log: auch bei langem Protokoll ohne Scrollen da. */
     panelRoot.replaceChildren(el('div', {class: 'nv-out'},
-      overview, controls, mainWrap, subs));
+      summary, overview, controls, mainWrap, resumeBox, subs));
 
     /* ---------- Fokus/Vergrößern: genau eine Ausgabe ist flächig ---------- */
+    function setLogLimit(target) {
+      var card = target === 'main' ? null : cards[target];
+      var log = target === 'main' ? mainLog : (card && card.log);
+      var button = target === 'main' ? mainExpandButton : (card && card.expandButton);
+      var text = target === 'main' ? mainExpandText : (card && card.expandText);
+      if (!log || !button || !text) return;
+      var open = !!expanded[target];
+      var focused = focusTarget === target;
+      log.style.maxHeight = (open || focused) ? 'none' : (target === 'main' ? '60vh' : '40vh');
+      button.setAttribute('aria-expanded', open ? 'true' : 'false');
+      setTx(text, tr(open ? 'Weniger anzeigen' : 'Alles anzeigen'));
+    }
+
     function applyFocus() {
       if (focusTarget !== 'main' && !cards[focusTarget]) focusTarget = '';
       Object.keys(cards).forEach(function (id) {
@@ -188,19 +285,38 @@ NV.output = {
         card.node.classList.toggle('nv-out-enlarged', on);
         card.node.setAttribute('data-focus', on ? 'true' : 'false');
         card.focusButton.setAttribute('aria-expanded', on ? 'true' : 'false');
-        setTx(card.focusButton, tr(on ? 'Fokus aufheben' : 'Fokus'));
+        setTx(card.focusText, tr(on ? 'Fokus aufheben' : 'Fokus'));
       });
       var mainOn = focusTarget === 'main';
       mainWrap.classList.toggle('nv-out-enlarged', mainOn);
       mainFocusButton.setAttribute('aria-expanded', mainOn ? 'true' : 'false');
-      setTx(mainFocusButton, tr(mainOn ? 'Fokus aufheben' : 'Fokus'));
+      setTx(mainFocusText, tr(mainOn ? 'Fokus aufheben' : 'Fokus'));
+      Object.keys(summaryRows).forEach(function (target) {
+        summaryRows[target].node.setAttribute('data-focus',
+          focusTarget === target ? 'true' : 'false');
+      });
       document.body.classList.toggle('nv-out-enlarged-open', !!focusTarget);
+      setLogLimit('main');
+      Object.keys(cards).forEach(setLogLimit);
     }
     function toggleFocus(id) {
       focusTarget = focusTarget === id ? '' : id;
       applyFocus();
     }
+    function focusAndScroll(target) {
+      if (target !== 'main' && !cards[target]) return;
+      toggleFocus(target);
+      var node = target === 'main' ? mainWrap : cards[target].node;
+      if (node && node.scrollIntoView) {
+        try { node.scrollIntoView({block: 'nearest', inline: 'nearest', behavior: 'smooth'}); }
+        catch (error) { node.scrollIntoView(); }
+      }
+    }
     mainFocusButton.addEventListener('click', function () { toggleFocus('main'); });
+    mainExpandButton.addEventListener('click', function () {
+      expanded.main = !expanded.main;
+      setLogLimit('main');
+    });
     NV_OUTPUT.keyHandler = function (event) {
       if (event.key === 'Escape' && focusTarget) {
         event.preventDefault();
@@ -234,6 +350,36 @@ NV.output = {
     }
 
     /* ---------- Zustand und Subagenten ---------- */
+    function syncMainMeta() {
+      var label = tr(running ? 'läuft' : 'gestoppt');
+      statePill.setAttribute('data-state', running ? 'running' : 'stopped');
+      setTx(statePill, label);
+      mainState.setAttribute('data-state', running ? 'running' : 'stopped');
+      setTx(mainState, label);
+
+      var row = summaryRows.main;
+      row.state.setAttribute('data-state', running ? 'running' : 'stopped');
+      setTx(row.state, label);
+      setTx(row.name, mainAgent || tr('Hauptagent'));
+      setTx(row.role, tr('Hauptagent'));
+      setTx(row.model, mainModel || '–');
+      setTx(row.session, mainSession || '–');
+      row.session.title = mainSession || '';
+      mainSessionCode.textContent = mainSession || '–';
+      mainSessionCode.title = mainSession || '';
+    }
+
+    function syncContinue() {
+      var hasSession = !!mainSession;
+      continueButton.disabled = !hasSession;
+      continueButton.title = hasSession
+        ? tr('Sitzung') + ': ' + mainSession
+        : tr('Keine Sitzung – Fortsetzen nicht möglich.');
+      setTx(continueHint, hasSession
+        ? tr('Sendet ‚weiter‘ an die laufende Sitzung')
+        : tr('Ohne Sitzung kann der Lauf nicht fortgesetzt werden.'));
+    }
+
     function syncControls() {
       var canSteer = running && !isPi;
       steerInput.hidden = !canSteer;
@@ -241,15 +387,19 @@ NV.output = {
       stopButton.hidden = !running;
       piNote.hidden = !isPi;
       Object.keys(cards).forEach(function (id) { cards[id].steerRow.hidden = !canSteer; });
+      syncContinue();
     }
 
     function pollState() {
       api('/api/run-state?name=' + encodeURIComponent(name)).then(function (data) {
         if (!alive()) return;
         running = !!(data && data.running);
-        statePill.setAttribute('data-state', running ? 'running' : 'stopped');
-        setTx(statePill, tr(running ? 'läuft' : 'gestoppt'));
+        syncMainMeta();
         syncControls();
+        if (lastRunning !== running) {
+          lastRunning = running;
+          loadSessions();
+        }
       }).catch(function () { /* Laufzustand bleibt beim letzten Stand */ });
     }
 
@@ -259,27 +409,68 @@ NV.output = {
       card.log.scrollTop = card.log.scrollHeight;
     }
 
+    function syncSubRow(session, entry, status) {
+      var row = summaryRows[session];
+      if (!row) return;
+      var text = tr(status === 'running' ? 'läuft' : 'gestoppt');
+      row.state.setAttribute('data-state', status === 'running' ? 'running' : 'stopped');
+      setTx(row.state, text);
+      setTx(row.name, String(entry.agent || tr('Subagent')));
+      setTx(row.role, String(entry.description || tr('Subagent')));
+      setTx(row.model, String(entry.model || '–'));
+      setTx(row.session, nvOutShort(session));
+      row.session.title = session;
+    }
+
     function makeCard(entry) {
       var session = String(entry.session || '');
-      var log = el('pre', {class: 'nv-log nv-out-sub-log'});
-      var status = el('span', {class: 'nv-pill'});
+      var status = el('span', {class: 'nv-pill', 'data-nv-sub-state': '', 'data-state': 'stopped'});
+      var focusText = el('span', {class: 'nv-out-focus-text'}, tr('Fokus'));
       var focusButton = el('button', {class: 'nv-btn nv-ghost', type: 'button',
-        'aria-label': tr('Subagent fokussieren'), 'aria-expanded': 'false'}, tr('Fokus'));
+        'data-nv-sub-focus': '', 'aria-label': tr('Subagent fokussieren'),
+        'aria-expanded': 'false'},
+        el('span', {class: 'nv-out-icon', 'aria-hidden': 'true'}, '⤢'), ' ', focusText);
+      var expandText = el('span', {class: 'nv-out-expand-text'}, tr('Alles anzeigen'));
+      var expandButton = el('button', {class: 'nv-btn nv-ghost nv-out-expand', type: 'button',
+        'data-nv-log-expand': '', 'data-nv-log-target': session, 'aria-expanded': 'false',
+        'aria-label': tr('Subagentenprotokoll alles anzeigen')},
+        el('span', {class: 'nv-out-icon', 'aria-hidden': 'true'}, '↕'), ' ', expandText);
+      var log = el('pre', {class: 'nv-log nv-out-sub-log', role: 'log', tabindex: '0',
+        'aria-label': tr('Subagent') + ': ' + String(entry.agent || ''),
+        style: 'max-height:40vh; overflow:auto;'});
       var subSteer = el('input', {type: 'text', 'data-nv-sub-steer': '',
         placeholder: tr('Anweisung an den Subagenten'),
         'aria-label': tr('Anweisung an den Subagenten')});
       var subSend = el('button', {class: 'nv-btn nv-secondary', type: 'button',
         'data-nv-sub-steer-send': ''}, tr('Anweisung senden'));
       var steerRow = el('div', {class: 'nv-out-sub-steer'}, subSteer, subSend);
-      var node = el('article', {class: 'nv-card nv-out-sub', 'data-nv-out-sub': session},
-        el('div', {class: 'nv-out-sub-head'},
-          el('b', {}, String(entry.agent || tr('Subagent'))),
-          status, focusButton),
+      var sessionCode = el('code', {class: 'nv-out-sub-session'}, nvOutShort(session));
+      sessionCode.title = session;
+      var node = el('article', {class: 'nv-card nv-out-sub', 'data-nv-out-sub': session,
+        'data-focus': 'false',
+        style: 'padding:var(--nv-space-4); min-width:0; display:flex; '
+          + 'flex-direction:column; gap:var(--nv-space-3);'},
+        el('div', {class: 'nv-out-sub-head',
+          style: 'display:flex; flex-wrap:wrap; align-items:center; '
+            + 'gap:var(--nv-space-2);'},
+          el('b', {class: 'nv-out-sub-name'}, String(entry.agent || tr('Subagent'))),
+          el('span', {class: 'nv-out-sub-role nv-muted'}, String(entry.description || '')),
+          status, sessionCode,
+          el('span', {style: 'flex:1 1 auto'}), expandButton, focusButton),
         log, steerRow);
       var card = {node: node, log: log, status: status, focusButton: focusButton,
+        focusText: focusText, expandButton: expandButton, expandText: expandText,
         steerRow: steerRow, text: '', loading: false};
       cards[session] = card;
+      expanded[session] = false;
+      makeSummaryRow(session);
+      syncSubRow(session, entry, entry.status);
+      setLogLimit(session);
       focusButton.addEventListener('click', function () { toggleFocus(session); });
+      expandButton.addEventListener('click', function () {
+        expanded[session] = !expanded[session];
+        setLogLimit(session);
+      });
       steerRow.hidden = !(running && !isPi);
       subSend.addEventListener('click', async function () {
         var text = String(subSteer.value || '').trim();
@@ -324,12 +515,20 @@ NV.output = {
           ? String(tr('Hauptagent')) + ': ' + String(data.agent) : '';
         if (!subsRunning.length) countLabel.textContent = String(tr('Keine laufenden Subagenten.'));
 
+        mainSession = String((data && data.session) || '');
+        mainModel = String((data && data.model) || '');
+        mainAgent = String((data && data.agent) || '');
+        syncMainMeta();
+        syncContinue();
+
         var wanted = {};
         subsRunning.forEach(function (entry) { wanted[String(entry.session)] = entry; });
         Object.keys(cards).forEach(function (id) {
           if (wanted[id]) return;
           cards[id].node.remove();
           delete cards[id];
+          delete expanded[id];
+          if (summaryRows[id]) { summaryRows[id].node.remove(); delete summaryRows[id]; }
           if (focusTarget === id) focusTarget = '';
         });
         subsRunning.forEach(function (entry) {
@@ -337,12 +536,71 @@ NV.output = {
           var card = cards[session] || makeCard(entry);
           if (!card.text && entry.output) setCardText(card, entry.output);
           setTx(card.status, tr(entry.status === 'running' ? 'läuft' : 'gestoppt'));
+          card.status.setAttribute('data-state',
+            entry.status === 'running' ? 'running' : 'stopped');
+          syncSubRow(session, entry, entry.status);
           if (card.node.parentNode !== subs) subs.append(card.node);
         });
         subs.hidden = subsRunning.length === 0;
         applyFocus();
         subsRunning.forEach(loadCardOutput);
       }).catch(function () { /* Liste bleibt beim letzten Stand */ });
+    }
+
+    /* ---------- Resume beendeter Läufe: mit Kontext, nicht nackt ---------- */
+    function renderResume(sessions) {
+      var usable = (sessions || []).filter(function (row) {
+        return row && (row.session || row.id);
+      });
+      resumeBox.replaceChildren();
+      if (running || !usable.length) {
+        resumeBox.hidden = true;
+        return;
+      }
+      resumeBox.append(
+        el('h3', {}, tr('Beendete Läufe fortsetzen')),
+        el('p', {class: 'nv-muted'},
+          tr('Diese Sitzungen sind beendet. Wähle eine Sitzung, um sie fortzusetzen.')));
+      usable.forEach(function (row) {
+        var session = String(row.session || row.id || '');
+        var pkg = String(row.package_id || row.package || '');
+        var context = (pkg ? tr('Paket') + ': ' + pkg + ' · ' : '') + tr('Sitzung') + ': ' + session;
+        var button = el('button', {class: 'nv-btn', type: 'button',
+          'data-nv-action': 'session-resume', 'data-nv-session': session,
+          title: context + ' — ' + tr('Setzt diese Sitzung fort.')}, tr('Fortsetzen'));
+        button.addEventListener('click', async function () {
+          try {
+            var result = await api('/api/sessions', {action: 'continue', session: session});
+            if (!alive()) return;
+            toast(bt(result && result.message)
+              || (result && result.ok ? tr('Sitzung fortgesetzt.') : tr('Sitzung nicht fortgesetzt.')));
+            loadSessions();
+            pollState();
+          } catch (error) {
+            if (!alive()) return;
+            toast(tr('Sitzung nicht fortgesetzt: ')
+              + String(error && error.message || error));
+          }
+        });
+        resumeBox.append(el('div', {class: 'nv-out-resume-row',
+          style: 'display:flex; flex-wrap:wrap; align-items:center; '
+            + 'gap:var(--nv-space-3); padding:var(--nv-space-3) 0; '
+            + 'border-top:1px solid var(--nv-border);'},
+          el('div', {style: 'flex:1 1 20rem; min-width:0;'},
+            el('b', {}, context), el('br'),
+            el('small', {class: 'nv-muted'},
+              (row.state_label ? String(row.state_label) + ' · ' : '')
+              + tr('Setzt diese Sitzung fort.'))),
+          button));
+      });
+      resumeBox.hidden = false;
+    }
+
+    function loadSessions() {
+      api('/api/sessions?name=' + encodeURIComponent(name)).then(function (data) {
+        if (!alive()) return;
+        renderResume((data && data.sessions) || []);
+      }).catch(function () { /* Resume-Block bleibt beim letzten Stand */ });
     }
 
     function checkPi() {
@@ -369,6 +627,7 @@ NV.output = {
     });
 
     continueButton.addEventListener('click', async function () {
+      if (!mainSession) return;
       try {
         var result = await api('/api/continue', {name: name});
         if (!alive()) return;
@@ -391,9 +650,12 @@ NV.output = {
     });
 
     /* ---------- Start und Timer-Disziplin ---------- */
+    syncMainMeta();
+    syncContinue();
     streamMain();
     pollState();
     pollAgents();
+    loadSessions();
     checkPi();
     NV_OUTPUT.timer = setInterval(function () { pollState(); pollAgents(); }, 2000);
   }
@@ -422,3 +684,103 @@ NV.views.output = function outputView(context, token) {
     });
   };
 })();
+
+/* F34/WP6: Übersetzungen gehören zur Ansicht. Schlüssel sind die deutschen
+   Quelltexte, `de` ist die Identität, `en` die englische Fassung. WP1 stellt
+   VIBE_I18N.extend bereit; mehrfaches Erweitern ist erlaubt. */
+if (window.VIBE_I18N && typeof VIBE_I18N.extend === 'function') {
+  VIBE_I18N.extend({
+    de: {
+      'Ausgabe': 'Ausgabe',
+      'gestoppt': 'gestoppt',
+      'läuft': 'läuft',
+      'Hauptagent': 'Hauptagent',
+      'Hauptagent fokussieren': 'Hauptagent fokussieren',
+      'Fokus': 'Fokus',
+      'Fokus aufheben': 'Fokus aufheben',
+      'Alles anzeigen': 'Alles anzeigen',
+      'Weniger anzeigen': 'Weniger anzeigen',
+      'Hauptprotokoll alles anzeigen': 'Hauptprotokoll alles anzeigen',
+      'Subagentenprotokoll alles anzeigen': 'Subagentenprotokoll alles anzeigen',
+      'Anweisung an den Agenten': 'Anweisung an den Agenten',
+      'Anweisung an den Subagenten': 'Anweisung an den Subagenten',
+      'Anweisung senden': 'Anweisung senden',
+      'Bitte eine Anweisung eingeben.': 'Bitte eine Anweisung eingeben.',
+      'Anweisung übermittelt.': 'Anweisung übermittelt.',
+      'Anweisung abgelehnt.': 'Anweisung abgelehnt.',
+      'Anweisung nicht gesendet: ': 'Anweisung nicht gesendet: ',
+      'Fortsetzen': 'Fortsetzen',
+      'Sendet ‚weiter‘ an die laufende Sitzung': 'Sendet ‚weiter‘ an die laufende Sitzung',
+      'Keine Sitzung – Fortsetzen nicht möglich.': 'Keine Sitzung – Fortsetzen nicht möglich.',
+      'Ohne Sitzung kann der Lauf nicht fortgesetzt werden.': 'Ohne Sitzung kann der Lauf nicht fortgesetzt werden.',
+      'Der Lauf wird fortgesetzt.': 'Der Lauf wird fortgesetzt.',
+      'Fortsetzen abgelehnt.': 'Fortsetzen abgelehnt.',
+      'Fortsetzen nicht gesendet: ': 'Fortsetzen nicht gesendet: ',
+      'Stoppen': 'Stoppen',
+      'Lauf gestoppt.': 'Lauf gestoppt.',
+      'Stoppen fehlgeschlagen: ': 'Stoppen fehlgeschlagen: ',
+      'Bei Pi ist das Steuern nicht möglich: Pi läuft im Print-Modus (--no-session) ohne fortsetzbare Session.': 'Bei Pi ist das Steuern nicht möglich: Pi läuft im Print-Modus (--no-session) ohne fortsetzbare Session.',
+      'Subagent': 'Subagent',
+      'Subagent fokussieren': 'Subagent fokussieren',
+      ' Subagenten': ' Subagenten',
+      'Keine laufenden Subagenten.': 'Keine laufenden Subagenten.',
+      'Zusammenfassung': 'Zusammenfassung',
+      'Rolle/Agent': 'Rolle/Agent',
+      'Modell': 'Modell',
+      'Sitzung': 'Sitzung',
+      'Beendete Läufe fortsetzen': 'Beendete Läufe fortsetzen',
+      'Diese Sitzungen sind beendet. Wähle eine Sitzung, um sie fortzusetzen.': 'Diese Sitzungen sind beendet. Wähle eine Sitzung, um sie fortzusetzen.',
+      'Paket': 'Paket',
+      'Setzt diese Sitzung fort.': 'Setzt diese Sitzung fort.',
+      'Sitzung fortgesetzt.': 'Sitzung fortgesetzt.',
+      'Sitzung nicht fortgesetzt.': 'Sitzung nicht fortgesetzt.',
+      'Sitzung nicht fortgesetzt: ': 'Sitzung nicht fortgesetzt: '
+    },
+    en: {
+      'Ausgabe': 'Output',
+      'gestoppt': 'stopped',
+      'läuft': 'running',
+      'Hauptagent': 'Main agent',
+      'Hauptagent fokussieren': 'Focus main agent',
+      'Fokus': 'Focus',
+      'Fokus aufheben': 'Unfocus',
+      'Alles anzeigen': 'Show all',
+      'Weniger anzeigen': 'Show less',
+      'Hauptprotokoll alles anzeigen': 'Show the entire main log',
+      'Subagentenprotokoll alles anzeigen': 'Show the entire subagent log',
+      'Anweisung an den Agenten': 'Instruction for the agent',
+      'Anweisung an den Subagenten': 'Instruction for the subagent',
+      'Anweisung senden': 'Send instruction',
+      'Bitte eine Anweisung eingeben.': 'Please enter an instruction.',
+      'Anweisung übermittelt.': 'Instruction delivered.',
+      'Anweisung abgelehnt.': 'Instruction rejected.',
+      'Anweisung nicht gesendet: ': 'Instruction not sent: ',
+      'Fortsetzen': 'Continue',
+      'Sendet ‚weiter‘ an die laufende Sitzung': 'Sends “continue” to the running session',
+      'Keine Sitzung – Fortsetzen nicht möglich.': 'No session — continuing is not possible.',
+      'Ohne Sitzung kann der Lauf nicht fortgesetzt werden.': 'Without a session the run cannot be continued.',
+      'Der Lauf wird fortgesetzt.': 'The run is being continued.',
+      'Fortsetzen abgelehnt.': 'Continue rejected.',
+      'Fortsetzen nicht gesendet: ': 'Continue not sent: ',
+      'Stoppen': 'Stop',
+      'Lauf gestoppt.': 'Run stopped.',
+      'Stoppen fehlgeschlagen: ': 'Stop failed: ',
+      'Bei Pi ist das Steuern nicht möglich: Pi läuft im Print-Modus (--no-session) ohne fortsetzbare Session.': 'With Pi, steering is not possible: Pi runs in print mode (--no-session) without a resumable session.',
+      'Subagent': 'Subagent',
+      'Subagent fokussieren': 'Focus subagent',
+      ' Subagenten': ' subagents',
+      'Keine laufenden Subagenten.': 'No running subagents.',
+      'Zusammenfassung': 'Summary',
+      'Rolle/Agent': 'Role/agent',
+      'Modell': 'Model',
+      'Sitzung': 'Session',
+      'Beendete Läufe fortsetzen': 'Resume finished runs',
+      'Diese Sitzungen sind beendet. Wähle eine Sitzung, um sie fortzusetzen.': 'These sessions have finished. Choose a session to resume it.',
+      'Paket': 'Package',
+      'Setzt diese Sitzung fort.': 'Resumes this session.',
+      'Sitzung fortgesetzt.': 'Session resumed.',
+      'Sitzung nicht fortgesetzt.': 'Session not resumed.',
+      'Sitzung nicht fortgesetzt: ': 'Session not resumed: '
+    }
+  });
+}

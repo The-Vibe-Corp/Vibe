@@ -1,143 +1,158 @@
-"""Browserabnahme F33, WP5: Aktivität und Einstellungen (Nova-Überarbeitung).
+"""Browserabnahme F34 WP4: Einstellungen (Sektionen, Akzent-Raster, Absences).
 
-Ableitung ausschließlich aus ``docs/features/F33.md`` („Nutzerentscheidungen“
-Punkt 4, „Dom-Hook-Vertrag → WP5“) sowie dem Arbeitspaket. Das echte Dashboard
-läuft als eigener Prozess mit isoliertem VIBE-Root; offene Rückfragen, das
-Laufregister und eine temporäre opencode-Datenbank liegen **vor** dem
-Serverstart bereit (Muster ``tests/browser/test_ap22_activity_ui.py`` und
-``tests/browser/test_costs_ui.py``).
+Ableitung aus ``docs/features/F34.md`` (WP4 + Leitentscheidungen 2/3/8) und
+dem Arbeitspaket F34. Das alte F33-Vertrag (Auswertungen in den Einstellungen,
+Advanced-Bereiche, ``select[data-nv-accent]``, Sessions/Limit-Hinweise in der
+Aktivität) wird durch die ``F34-Anpassung:``-Abschnitte im Modul-Docstring
+abgedeckt: Jeder neu geprüfte oder ersetzte Fall nennt, warum sein neuer
+Vertrag gelten wird. Das echte Dashboard läuft als eigener Prozess mit
+isoliertem VIBE-Root; offene Rückfragen, das Laufregister und eine temporäre
+opencode-Datenbank liegen **vor** dem Serverstart bereit (Muster
+``tests/browser/test_ap22_activity_ui.py`` und ``tests/browser/test_costs_ui.py``).
 
 Testfälle (Kurzfassung; Details in den Methoden)
------------------------------------------------
+------------------------------------------------
 ``ActivityOrderTest.test_activity_sections_follow_the_contract_order``
-    Erwartung: Kacheln → Rückfragen → Läufe → Sessions in genau dieser
-    DOM-Reihenfolge.
+    Erwartung: ``[data-nv-activity-tiles]`` → ``[data-nv-questions]`` →
+    ``[data-nv-runs]`` in genau dieser DOM-Reihenfolge; absence:
+    ``[data-nv-sessions]``, ``[data-nv-sessions-limit]``, ``[data-nv-limit-hint]``.
 ``ActivityOrderTest.test_question_project_filter_limits_the_cards``
-    Aktion: Projekt im Fragenfilter wählen, dann „Alle Projekte“.
-    Erwartung: nur die Karten des gewählten Projekts sind sichtbar; „Alle“
-    zeigt wieder beide.
+    Erwartung: Die Auswahl bietet „Alle Projekte“ und beide Projekte; nach
+    Auswahl zeigt die Aktivität nur die Karte des Projekts
+    (``article[data-nv-question]`` mit ``data-nv-question-id`` in
+    ``[data-nv-questions]``), „Alle“ zeigt wieder beide.
 ``ActivityOrderTest.test_question_and_limit_hints_are_present``
-    Erwartung: ``p[data-nv-questions-hint]`` und
-    ``small[data-nv-limit-hint]`` sind sichtbar; der Limit-Hinweis nennt das
-    gewählte Projekt.
+    Erwartung: ``p[data-nv-questions-hint]`` sichtbar und nicht leer;
+    ``p[data-nv-activity-sessions-hint]`` sichtbar und verweist auf die
+    Projekte (Link ``#/``); ``[data-nv-limit-hint]`` ist entfallen.
+``SettingsStructureTest.test_settings_sections_in_contract_order`` (NEW)
+    Erwartung: ``section[data-nv-ssection]`` in Vertragsreihenfolge:
+    global-agents, appearance, access, features, limits, gates, models,
+    profiles, mcp, harness; ``nav[data-nv-settings-nav]`` in der gleichen
+    Reihenfolge; absence ``section[data-nv-ssection='language']`` und die
+    F33-Sektionen ``[data-nv-advanced='costs'|'runs'|'env']``.
 ``SettingsStructureTest.test_network_advanced_is_collapsed_and_opens``
-    Erwartung: ``details[data-nv-network-advanced]`` ist standardmäßig zu und
-    öffnet per Klick; die Portfelder liegen darin.
+    Erwartung: ``details[data-nv-network-advanced]`` liegt in
+    ``section[data-nv-ssection='access']``, ist standardmäßig geschlossen
+    (``input[data-nv-field='port']`` unsichtbar) und öffnet per Klick auf die
+    Zusammenfassung; danach ist das Portfeld sichtbar.
 ``SettingsStructureTest.test_feature_groups_live_in_a_responsive_grid``
-    Erwartung: ``div[data-nv-feature-groups]`` umschließt die
-    Feature-Schalter.
+    Erwartung: ``div[data-nv-feature-groups]`` umschließt die Feature-Schalter
+    (mindestens ein ``input[data-nv-feature]``).
 ``SettingsStructureTest.test_every_visible_gate_has_a_help_text``
-    Vorbedingung: Feature ``gates`` an. Erwartung: je Schranke ein nichtleeres
-    ``small[data-nv-gate-help]``.
-``EvaluationsGroupTest.test_evaluations_group_has_heading_and_badges``
-    Erwartung: eigene Gruppenüberschrift „Auswertungen“; Kosten- und
-    Run-Karte tragen ``span[data-nv-eval-badge]``.
-``EvaluationsGroupTest.test_cost_rows_are_clickable_and_detail_lists_token_columns``
-    Aktion: Projektzeile anklicken. Erwartung: ``nv-clickable``-Zeile öffnet
-    ``div[data-nv-cost-detail]`` mit Kennung, Sitzungen, Eingabe (davon
-    gecached), Ausgabe und Kosten.
-``EvaluationsGroupTest.test_global_prices_editor_posts_and_confirms``
-    Aktion: Globalpreis-Editor öffnen, Wert setzen, speichern. Erwartung:
-    POST ``action=prices_global`` und Toast „gespeichert“.
-``RunRegisterTest.test_pruneable_runs_carry_badge_and_hint``
-    Vorbedingung: abgeschlossener Eintrag im Register. Erwartung: Hinweis
-    ``p[data-nv-runs-hint]`` und ``span[data-nv-run-pruneable]``.
-``AccentTest.test_accent_select_has_twelve_options_and_persists``
-    Aktion: Akzent wählen, neu laden. Erwartung: 12 Optionen,
-    ``html[data-accent]`` und ``localStorage['nv-accent']`` bleiben gesetzt.
+    Erwartung: Die Sektion ``section[data-nv-ssection='gates']`` ist
+    immer sichtbar (vor dem Einschalten keine Tabelle); nach Einschalten
+    des Feature-Schalters ``input[data-nv-feature='gates']`` zeigt die
+    Tabelle ``table[data-nv-gates-table]`` je Schranke eine Zeile
+    ``tr[data-nv-gate]`` mit nichtleerem ``small[data-nv-gate-help]``.
+``EvaluationsGroupTest.test_evaluations_absent_from_settings`` (NEW)
+    Erwartung: In den Einstellungen sind Kosten/Läufe/Umgebung entfallen:
+    absence der Feature-Schalter ``input[data-nv-feature='costs'|'runs'|'env']``
+    und der F33-Hooks ``[data-nv-advanced='costs']``, ``p[data-nv-costs-hint]``,
+    ``tr[data-nv-cost-project]``, ``div[data-nv-cost-detail]``,
+    ``button[data-nv-action='cost-global-edit']``,
+    ``input[data-nv-cost-global-model]``, ``[data-nv-advanced='runs']``,
+    ``p[data-nv-runs-hint]``, ``span[data-nv-run-pruneable]``,
+    ``[data-nv-advanced='env']``.
+``EvaluationsGroupTest.test_evaluations_reachable_via_main_nav`` (NEW)
+    Erwartung: Der Hauptpunkt ``nav[data-nv-navs] [data-nv-nav='evaluations']``
+    führt nach ``main#nv-main[data-nv-view='evaluations']``; die drei Tabs
+    ``button[data-nv-etab='costs'|'runs'|'environment']`` zeigen.
+``RunRegisterTest.test_run_register_absent_from_settings`` (NEW)
+    Erwartung: Das Run-Register ist in den Einstellungen entfallen:
+    ``p[data-nv-runs-hint]``, ``span[data-nv-run-pruneable]``,
+    ``[data-nv-advanced='runs']``, ``input[data-nv-feature='runs']`` absence.
+``AccentTest.test_accent_grid_has_twelve_buttons_without_select``
+    Erwartung: ``div[data-nv-accents]`` im Sektion ``appearance`` bietet
+    exakt die 12 Vertrags-Akzente; je Knopf ein sichtbarer ``span.nv-swatch``,
+    ``aria-pressed`` und übersetzter Name; absence ``select[data-nv-accent]``;
+    die Wahl setzt ``html[data-accent]``/``localStorage['nv-accent']`` und
+    überlebt das Neuladen.
 ``GlobalAgentsFileTest.test_missing_file_shows_hint_and_create_button``
-    Vorbedingung: globale AGENTS.md fehlt. Erwartung: Hinweis auf das Fehlen;
-    ``global-agents-create`` sendet ``{action:"create"}`` und der Editor
-    erscheint mit der Vorlage.
 ``GlobalAgentsFileTest.test_existing_file_editor_prefills_and_saves_with_digest``
-    Vorbedingung: globale AGENTS.md vorhanden. Erwartung: Editor vorbelegt;
-    ``{action:"save", text, digest}`` mit der geladenen Prüfsumme, Toast und
-    lokalem Digest-Update (zweites Speichern nutzt den neuen Digest).
 ``GlobalAgentsFileTest.test_hint_explains_the_scope_of_the_global_file``
-    Erwartung: ``small[data-nv-global-agents-hint]`` erklärt „gilt für alle
-    Projekte; projektbezogene AGENTS.md ergänzt sie“.
 
-Vertragsunklarheiten (bewusst so geprüft und dokumentiert)
-----------------------------------------------------------
-1. **Sprache.** Die Fälle laufen wie im Bestand mit ``en``; sichtbare Texte
-   stammen daher aus dem en-Wörterbuch. Geprüft werden die im Vertrag
-   genannten Hooks und ihre Bedeutung (z. B. „Hinweis nennt das Projekt“),
-   nicht ein bestimmter englischer Wortlaut.
-2. **Speichern-Knopf des Globalpreis-Editors.** Der Vertrag nennt nur
-   ``button[data-nv-action="cost-global-edit"]``, ``input[data-nv-cost-global-model]``
-   und den POST. Der Test sucht den Speichern-Knopf im Editor-Umfeld des
-   Eingabefelds über seinen Text („speichern“/„save“).
-3. **Gruppenüberschrift.** Der Vertrag nennt „Auswertungen“; der Test
-   akzeptiert die deutsche oder englische Beschriftung.
+F34-Anpassung:
 
-ROT-PHASE (2026-11-21, vor der Implementierung von WP5)
-------------------------------------------------------
-Ausgeführt mit::
+Alte F33-Klassifikation: Die Fälle prüfen den alten Vertrag, in dem
+Auswertungen (Kosten/Läufe/Umgebung) in den Einstellungen lagen, es einen
+``select[data-nv-accent]`` gab, die Aktivität Sessions und einen
+Limit-Hinweis hatte. Die neuen Fälle sind den F34-Hooks
+(``docs/features/F34.md``, WP4/WP7) gewidmet; ersetzte Verhaltenserwartungen
+werden durch Abwesenheitsprüfungen ergänzt.
 
-    python3 -m unittest discover -s tests/browser \
-        -p 'test_f33_settings_ui.py' -v
-
-Ergebnis: 11 Fälle, 11 rot (3 ``AssertionError`` = Verhalten fehlt,
-8 ``playwright TimeoutError`` = DOM-Hook fehlt). Kein Fall war grün.
-
-* ``test_activity_sections_follow_the_contract_order`` — AssertionError:
-  Ist-Reihenfolge ist Kacheln → Läufe → Sessions → Rückfragen.
-* ``test_question_project_filter_limits_the_cards`` — TimeoutError:
-  ``select[data-nv-questions-project]`` fehlt.
-* ``test_question_and_limit_hints_are_present`` — TimeoutError:
-  ``p[data-nv-questions-hint]`` und ``small[data-nv-limit-hint]`` fehlen.
-* ``test_network_advanced_is_collapsed_and_opens`` — TimeoutError:
-  ``details[data-nv-network-advanced]`` fehlt (Netzwerk ist ein ``div``).
-* ``test_feature_groups_live_in_a_responsive_grid`` — TimeoutError:
-  ``div[data-nv-feature-groups]`` fehlt.
-* ``test_every_visible_gate_has_a_help_text`` — AssertionError: 0 von 5
-  ``small[data-nv-gate-help]`` vorhanden.
-* ``test_evaluations_group_has_heading_and_badges`` — AssertionError:
-  keine Gruppenüberschrift „Auswertungen“, keine ``data-nv-eval-badge``.
-* ``test_cost_rows_are_clickable_and_detail_lists_token_columns`` —
-  TimeoutError: ``p[data-nv-costs-hint]``/``nv-clickable`` fehlen; die
-  Detailtabelle hat keine Eingabe-/gecached-/Ausgabe-Spalten.
-* ``test_global_prices_editor_posts_and_confirms`` — TimeoutError:
-  ``button[data-nv-action="cost-global-edit"]`` fehlt.
-* ``test_pruneable_runs_carry_badge_and_hint`` — TimeoutError:
-  ``p[data-nv-runs-hint]``/``span[data-nv-run-pruneable]`` fehlen.
-* ``test_accent_select_has_twelve_options_and_persists`` — TimeoutError:
-  ``select[data-nv-accent-select]`` fehlt.
-
-ROT-PHASE ``GlobalAgentsFileTest`` (2026-11-21, vor der Implementierung
-der globalen AGENTS.md-Sektion)
---------------------------------------------------------------------
-Ausgeführt mit::
-
-    PLAYWRIGHT_BROWSERS_PATH=/home/vibe/vibe-logs/playwright-browsers \
-        python3 -m unittest -v test_f33_settings_ui.GlobalAgentsFileTest
-
-Gelaufen gegen einen sauberen ``git archive HEAD``-Baum (temporär entpackt),
-weil die globale Sektion im Arbeitsbaum von einem parallelen Agenten bereits
-implementiert wurde. Der Baseline-Baum enthält den committeten
-WP6-Backendstand (``GET /api/global_agents_file``, POST ``create``/``save``),
-aber keine Sektion im Frontend — das ist der Stand „vor der
-Implementierung“. Die Testdatei ist unverändert die finale Fassung.
-
-Ergebnis: **3 Fälle, 3 rot, 0 grün.** Alle drei scheitern mit
-``TimeoutError``, weil die Sektion samt Editor, Anlegen-Knopf und Hinweis
-fehlt; kein Umgebungsfehler.
-
-* ``test_missing_file_shows_hint_and_create_button`` — TimeoutError:
-  ``div[data-nv-global-agents]`` fehlt (kein Hinweis, kein
-  ``global-agents-create``).
-* ``test_existing_file_editor_prefills_and_saves_with_digest`` —
-  TimeoutError: ``textarea[data-nv-global-agents]`` fehlt.
-* ``test_hint_explains_the_scope_of_the_global_file`` — TimeoutError:
-  ``small[data-nv-global-agents-hint]`` fehlt.
-
-Hinweis zur Rotphase im laufenden Arbeitsbaum: Während der Testarbeit hat
-ein paralleler Agent die Sektion implementiert. Ein Lauf gegen den
-Arbeitsbaum zeigte deshalb zwei Fälle grün und zunächst einen echten
-Vertragsfehler (der „Datei fehlt“-Hinweis war bei fehlender Datei
-ausgeblendet). Dieser Fehler wurde vom parallelen Agenten behoben; die
-Rotphase oben wurde deshalb bewusst gegen den unveränderten
-``HEAD``-Baseline-Baum ausgeführt und dokumentiert.
+1. ``ActivityOrderTest.test_activity_sections_follow_the_contract_order`` —
+   F34 WP3: Der Bereichsvergleich prüft jetzt nur ``[data-nv-activity-tiles]``
+   → ``[data-nv-questions]`` → ``[data-nv-runs]``; das ehemalige
+   Sessions-Bereich ``[data-nv-sessions]``/``[data-nv-sessions-limit]`` und
+   der Limit-Hinweis ``[data-nv-limit-hint]`` sind entfallen —
+   Abwesenheitsprüfungen.
+2. ``ActivityOrderTest.test_question_project_filter_limits_the_cards`` —
+   F34 WP3: Die Rückfrage-Karten nutzen die gemeinsame F34-Karte
+   ``article[data-nv-question]`` mit ``data-nv-question-id`` im Bereich
+   ``[data-nv-questions]`` (nova-widgets.js ``NV.questionCard``); der
+   F33-Vertrag hatte die Karten über ``[data-nv-question]`` und den ID-Wert
+   angeführt — die Hooks sind vertagt: Aktion und Erwartung nur auf die
+   neuen Hooks umgestellt.
+3. ``ActivityOrderTest.test_question_and_limit_hints_are_present`` —
+   F34: ``p[data-nv-questions-hint]`` bleibt. Der Hinweis
+   ``p[data-nv-activity-sessions-hint]`` ist neu/gelockert: er verweist auf
+   die Projekte (Link ``#/``); der F33-Hinweis ``[data-nv-limit-hint]`` ist
+   entfallen — Abwesenheitsprüfung.
+4. ``SettingsStructureTest.test_settings_sections_in_contract_order`` — NEW
+   (F34): Vertragsreihenfolge der ``section[data-nv-ssection]``-Sektionen,
+   übereinstimmende lokale Navigation (``nav[data-nv-settings-nav]``),
+   absence ``section[data-nv-ssection='language']`` und der F33-Sektionen
+   ``[data-nv-advanced='costs'|'runs'|'env']``.
+5. ``SettingsStructureTest.test_network_advanced_is_collapsed_and_opens`` —
+   F34 WP4: ``details[data-nv-network-advanced]`` liegt jetzt in
+   ``section[data-nv-ssection='access']``; prüft weiterhin standardmäßig zu
+   (Portfeld unsichtbar), öffnet per Klick, danach ist
+   ``input[data-nv-field='port']`` sichtbar.
+6. ``SettingsStructureTest.test_every_visible_gate_has_a_help_text`` —
+   F34: Die Sektion ``section[data-nv-ssection='gates']`` ist immer
+   sichtbar (geprüft, auch vor dem Einschalten: Tabelle noch nicht
+   vorhanden). Der Inhalt — ``table[data-nv-gates-table]`` mit
+   ``tr[data-nv-gate]`` und nichtleerem ``small[data-nv-gate-help]`` —
+   kommt bei Einschalten des Feature-Schalters
+   ``input[data-nv-feature='gates']``; F34 lässt den Inhalt
+   feature-gated (``NV_SETTINGS_FEATURE_GROUPS``, nova-settings.js:137);
+   das Einschalten löst via ``nv:featureschange`` → ``render()`` auf die
+   Tabelle aus (nova-core.js:564). Die Zeilen-/Hilfetext-Prüfungen bleiben
+   unverändert vollständig.
+7. ``EvaluationsGroupTest.test_evaluations_absent_from_settings`` — NEW
+   (F34 WP3/WP7): Abwesenheitsprüfungen der Feature-Schalter
+   ``input[data-nv-feature='costs'|'runs'|'env']`` sowie der F33-Hooks
+   ``[data-nv-advanced='costs']``, ``p[data-nv-costs-hint]``,
+   ``tr[data-nv-cost-project]``, ``div[data-nv-cost-detail]``,
+   ``button[data-nv-action='cost-global-edit']``,
+   ``input[data-nv-cost-global-model]``, ``[data-nv-advanced='runs']``,
+   ``p[data-nv-runs-hint]``, ``span[data-nv-run-pruneable']``,
+   ``[data-nv-advanced='env']`` in den Einstellungen. Die inhaltliche Tiefe
+   (Summen, Preislink, Währung) liegt in ``tests/browser/test_f34_activity_evals_ui.py``
+   — dort nicht dupliziert.
+8. ``EvaluationsGroupTest.test_evaluations_reachable_via_main_nav`` — NEW
+   (F34): Verweis-Test: Der Hauptpunkt
+   ``nav[data-nv-navs] [data-nv-nav='evaluations']`` führt nach
+   ``main#nv-main[data-nv-view='evaluations']``; die drei Tabs
+   ``button[data-nv-etab='costs'|'runs'|'environment']`` zeigen.
+9. ``RunRegisterTest.test_run_register_absent_from_settings`` — NEW (F34):
+   Abwesenheitsprüfungen ``p[data-nv-runs-hint]``,
+   ``span[data-nv-run-pruneable']``, ``[data-nv-advanced='runs']``,
+   ``input[data-nv-feature='runs']`` in den Einstellungen.
+10. ``AccentTest.test_accent_grid_has_twelve_buttons_without_select`` —
+    F34: Der Akzent ist ein Raster ``div[data-nv-accents]`` mit je 12
+    ``button[data-nv-accent]`` (sichtbarer ``span.nv-swatch``,
+    ``aria-pressed``, übersetzter Name); Abwesenheitsprüfung
+    ``select[data-nv-accent]``. Die Wahl via ``NV.setAccent`` persistiert
+    nach ``localStorage['nv-accent']`` und ``html[data-accent]``; die
+    Reload-Prüfung bleibt.
+11. ``SettingsStructureTest.test_feature_groups_live_in_a_responsive_grid`` —
+    F34: ``div[data-nv-feature-groups]`` bleibt im Einstellungs-Raster.
+12. ``GlobalAgentsFileTest.*`` — F34: Die Sektions-Hook ``section()`` an den
+    Vertrag (``section[data-nv-ssection='global-agents']`` mit
+    ``details[data-nv-global-agents][open]``); Beschriftung, Editor,
+    Anlegen-Knopf, Vorlage und Hinweis bleiben unverändert.
 """
 import http.client
 import json
@@ -177,8 +192,7 @@ ACCENT_IDS = [
 
 GLOBAL_AGENTS_TEXT = "GLOBALE-REGEL-4711: gilt für alle Projekte.\n"
 
-# Minimale opencode-Datenbank, damit die Kosten-Detailansicht echte Zeilen hat
-# (Struktur wie tests/browser/test_costs_ui.py).
+# Minimale opencode-Datenbank (Struktur wie tests/browser/test_costs_ui.py).
 DDL_V2 = """
 CREATE TABLE `session_v2` (
   `id` text PRIMARY KEY,
@@ -462,22 +476,17 @@ class F33SettingsBrowserTest(unittest.TestCase):
         self.page.locator("main#nv-main[data-nv-view='settings']").wait_for(
             state="visible", timeout=20000)
 
-    def enable_features(self, *ids):
-        for feature in ids:
-            toggle = self.page.locator(f"input[data-nv-feature='{feature}']")
-            toggle.wait_for(state="visible", timeout=20000)
-            if not toggle.is_checked():
-                toggle.check()
-        self.page.locator("main#nv-main[data-nv-view='settings']").wait_for(
-            state="visible", timeout=20000)
-
     def visible_question_ids(self):
-        cards = self.page.locator("[data-nv-question]")
+        # F34: Die Rückfrage-Karten sind article[data-nv-question] mit
+        # data-nv-question-id innerhalb [data-nv-questions]
+        # (nova-widgets.js NV.questionCard).
+        cards = self.page.locator(
+            "[data-nv-questions] article[data-nv-question]")
         result = []
         for index in range(cards.count()):
             card = cards.nth(index)
             if card.is_visible():
-                result.append(card.get_attribute("data-nv-question"))
+                result.append(card.get_attribute("data-nv-question-id"))
         return result
 
     def toast_text(self):
@@ -494,18 +503,18 @@ class ActivityOrderTest(F33SettingsBrowserTest):
         """Vorbedingung: eine offene Frage je Projekt.
 
         Erwartung: Die Bereiche stehen in der Reihenfolge Kacheln →
-        Rückfragen → Läufe → Sessions; ``[data-nv-questions]`` liegt vor
-        ``[data-nv-runs]`` und dieses vor ``[data-nv-sessions]``.
+        Rückfragen → Läufe: ``[data-nv-activity-tiles]`` liegt vor
+        ``[data-nv-questions]`` und dieses vor ``[data-nv-runs]``.
         """
         self.open_activity()
-        self.page.locator("[data-nv-question]").first.wait_for(
+        self.page.locator(
+            "[data-nv-questions] article[data-nv-question]").first.wait_for(
             state="visible", timeout=20000)
         ordered = self.page.evaluate(
             """() => {
               const selectors = ['[data-nv-activity-tiles]',
                                  '[data-nv-questions]',
-                                 '[data-nv-runs]',
-                                 '[data-nv-sessions]'];
+                                 '[data-nv-runs]'];
               const nodes = selectors.map(s => document.querySelector(s));
               if (nodes.some(node => !node)) return null;
               return nodes.every((node, index) => index === 0 ||
@@ -513,11 +522,19 @@ class ActivityOrderTest(F33SettingsBrowserTest):
                  & Node.DOCUMENT_POSITION_FOLLOWING) !== 0);
             }""")
         self.assertIsNotNone(
-            ordered, "Mindestens einer der Bereiche Kacheln/Rückfragen/Läufe/"
-                     "Sessions fehlt")
+            ordered, "Mindestens einer der Bereiche Kacheln/Rückfragen/Läufe fehlt")
         self.assertTrue(
             ordered, "Die Aktivitätsbereiche stehen nicht in der Reihenfolge "
-                     "Kacheln → Rückfragen → Läufe → Sessions")
+                     "Kacheln → Rückfragen → Läufe")
+        self.assertEqual(
+            0, self.page.locator("[data-nv-sessions]").count(),
+            "Der Sessions-Bereich ist in der Aktivität nicht entfernt")
+        self.assertEqual(
+            0, self.page.locator("[data-nv-sessions-limit]").count(),
+            "Der Sessions-Limit-Bereich ist in der Aktivität nicht entfernt")
+        self.assertEqual(
+            0, self.page.locator("[data-nv-limit-hint]").count(),
+            "Der Limit-Hinweis ist in der Aktivität nicht entfernt")
         self.assert_no_page_errors()
 
     def test_question_project_filter_limits_the_cards(self):
@@ -525,12 +542,18 @@ class ActivityOrderTest(F33SettingsBrowserTest):
 
         Aktion: Im Filter ``select[data-nv-questions-project]`` das Projekt
         ``zweit`` wählen, dann wieder „Alle Projekte“.
-        Erwartung: Die Auswahl bietet „Alle Projekte“ und beide Projekte; nach
-        der Wahl ist nur die Karte des Projekts sichtbar, „Alle“ zeigt beide.
+        Erwartung: Die Auswahl bietet „Alle Projekte“ und beide Projekte;
+        nach der Wahl ist nur die Karte des Projekts sichtbar, „Alle“
+        zeigt beide.
         """
         self.open_activity()
-        self.page.locator("[data-nv-question]").first.wait_for(
+        self.page.locator(
+            "[data-nv-questions] article[data-nv-question]").first.wait_for(
             state="visible", timeout=20000)
+        self.wait_until(
+            lambda: len(self.visible_question_ids()) == 2, timeout=20,
+            message="Beide offenen Rückfragen sind in der Aktivität "
+                    "sichtbar: " + repr(self.visible_question_ids()))
         select = self.page.locator("select[data-nv-questions-project]")
         select.wait_for(state="visible", timeout=20000)
         options = select.evaluate(
@@ -554,7 +577,7 @@ class ActivityOrderTest(F33SettingsBrowserTest):
                     "die Karte des Projekts: "
                     + repr(self.visible_question_ids()))
 
-        select.select_option(options[0][0])
+        select.select_option(index=0)
         self.wait_until(
             lambda: set(self.visible_question_ids())
             == {QUESTION_PROJ, QUESTION_OTHER},
@@ -566,42 +589,98 @@ class ActivityOrderTest(F33SettingsBrowserTest):
     def test_question_and_limit_hints_are_present(self):
         """Vorbedingung: Aktivität offen.
 
-        Erwartung: ``p[data-nv-questions-hint]`` ist sichtbar und nicht leer;
-        ``small[data-nv-limit-hint]`` ist sichtbar und nennt, dass das Limit
-        für das oben gewählte Projekt gilt.
+        Erwartung: ``p[data-nv-questions-hint]`` ist sichtbar und nicht
+        leer; ``p[data-nv-activity-sessions-hint]`` ist sichtbar und
+        verweist auf die Projekte (Linkziel ``#/``). F34:
+        ``[data-nv-limit-hint]`` ist entfallen.
         """
         self.open_activity()
         hint = self.page.locator("p[data-nv-questions-hint]")
         hint.wait_for(state="visible", timeout=20000)
         self.assertTrue((hint.inner_text() or "").strip(),
                         "Der Hinweis zur Rückfragenliste ist leer")
-        limit_hint = self.page.locator(
-            "[data-nv-sessions] small[data-nv-limit-hint]")
-        limit_hint.wait_for(state="visible", timeout=20000)
-        text = (limit_hint.inner_text() or "").strip()
-        self.assertTrue(text, "Der Session-Limit-Hinweis ist leer")
+        sessions_hint = self.page.locator("p[data-nv-activity-sessions-hint]")
+        sessions_hint.wait_for(state="visible", timeout=20000)
+        text = (sessions_hint.inner_text() or "").strip()
         self.assertTrue(
             re.search(r"projekt|project", text, re.I),
-            "Der Session-Limit-Hinweis nennt das gewählte Projekt nicht: "
-            + repr(text))
+            "Der Sitzungs-Hinweis nennt die Projekte nicht: " + repr(text))
+        link = sessions_hint.locator("a").first
+        self.assertEqual(
+            1, link.count(), "Der Sitzungs-Hinweis verweist auf kein Ziel")
+        self.assertTrue(
+            (link.get_attribute("href") or "").startswith("#/"),
+            "Der Link des Sitzungs-Hinweises zielt nicht auf die Projekte: "
+            + repr(link.get_attribute("href")))
+        self.assertEqual(
+            0, self.page.locator("[data-nv-limit-hint]").count(),
+            "Der Session-Limit-Hinweis ist in der Aktivität nicht entfernt")
         self.assert_no_page_errors()
 
 
 class SettingsStructureTest(F33SettingsBrowserTest):
+    SETTINGS_SECTIONS = [
+        "global-agents", "appearance", "access", "features", "limits",
+        "gates", "models", "profiles", "mcp", "harness"]
+
+    def test_settings_sections_in_contract_order(self):
+        """Vorbedingung: Einstellungen offen.
+
+        Erwartung: Die Sektionen ``section[data-nv-ssection]`` stehen in
+        Vertragsreihenfolge (global-agents, appearance, access, features,
+        limits, gates, models, profiles, mcp, harness); die lokale Navigation
+        ``nav[data-nv-settings-nav]`` in der gleichen Reihenfolge. Absence:
+        ``section[data-nv-ssection='language']`` und die F33-Sektionen
+        ``[data-nv-advanced='costs'|'runs'|'env']``.
+        """
+        self.open_settings()
+        ids = self.page.evaluate(
+            "() => Array.from(document.querySelectorAll("
+            "'section[data-nv-ssection]')).map(n => "
+            "n.getAttribute('data-nv-ssection'))")
+        self.assertEqual(
+            self.SETTINGS_SECTIONS, ids,
+            "Die Sektionen stehen nicht in Vertragsreihenfolge: " + repr(ids))
+        links = self.page.evaluate(
+            "() => Array.from(document.querySelectorAll("
+            "'nav[data-nv-settings-nav] button[data-nv-ssection-link]')).map("
+            "n => n.getAttribute('data-nv-ssection-link'))")
+        self.assertEqual(
+            self.SETTINGS_SECTIONS, links,
+            "Die lokale Navigation steht nicht in Vertragsreihenfolge: "
+            + repr(links))
+        for hook in ("section[data-nv-ssection='language']",
+                     "[data-nv-advanced='costs']", "[data-nv-advanced='runs']",
+                     "[data-nv-advanced='env']"):
+            self.assertEqual(
+                0, self.page.locator(hook).count(),
+                f"{hook} existiert in den Einstellungen, ist in F34 aber "
+                "entfernt")
+        self.assert_no_page_errors()
+
     def test_network_advanced_is_collapsed_and_opens(self):
         """Vorbedingung: Einstellungen offen.
 
-        Erwartung: ``details[data-nv-network-advanced]`` ist standardmäßig
-        geschlossen (``open`` fehlt, Portfeld unsichtbar) und öffnet per
-        Klick auf die Zusammenfassung; danach ist das Portfeld sichtbar.
+        Erwartung: ``details[data-nv-network-advanced]`` liegt in
+        ``section[data-nv-ssection='access']``, ist standardmäßig
+        geschlossen (Portfeld ``input[data-nv-field='port']`` unsichtbar)
+        und öffnet per Klick auf die Zusammenfassung; danach ist das
+        Portfeld sichtbar.
         """
         self.open_settings()
-        details = self.page.locator("details[data-nv-network-advanced]")
+        access = self.page.locator("section[data-nv-ssection='access']")
+        access.wait_for(state="visible", timeout=20000)
+        details = access.locator("details[data-nv-network-advanced]")
+        self.assertEqual(
+            1, details.count(),
+            "Der Netzwerk-Bereich liegt nicht in der Sektion access")
         details.wait_for(state="visible", timeout=20000)
         self.assertFalse(
             details.evaluate("node => node.open"),
             "Der Netzwerk-Bereich ist standardmäßig aufgeklappt")
         port = details.locator("input[data-nv-field='port']")
+        self.assertEqual(
+            1, port.count(), "Das Portfeld fehlt im Netzwerk-Bereich")
         self.assertFalse(
             port.is_visible() if port.count() else False,
             "Das Portfeld ist trotz geschlossenem Netzwerk-Bereich sichtbar")
@@ -628,228 +707,180 @@ class SettingsStructureTest(F33SettingsBrowserTest):
         self.assert_no_page_errors()
 
     def test_every_visible_gate_has_a_help_text(self):
-        """Vorbedingung: Feature ``gates`` wird eingeschaltet.
+        """Vorbedingung: Schranken sind geliefert (GET /api/gates).
 
-        Erwartung: Der Schrankenbereich nennt je Schranke aus ``GET
-        /api/gates`` eine nichtleere Erklärung ``small[data-nv-gate-help]``.
+        Erwartung: Die Sektion ``section[data-nv-ssection='gates']`` ist
+        immer sichtbar (vor dem Einschalten noch ohne Tabelle); nach
+        Einschalten des Feature-Schalters ``input[data-nv-feature='gates']``
+        zeigt die Tabelle ``table[data-nv-gates-table]`` je Schranke eine
+        Zeile ``tr[data-nv-gate]`` mit nichtleerem
+        ``small[data-nv-gate-help]``.
         """
         self.open_settings()
+        section = self.page.locator("section[data-nv-ssection='gates']")
+        section.wait_for(state="visible", timeout=20000)
+        # Vertrag: die Sektion ist immer vorhanden; die Tabelle kommt
+        # erst mit dem Funktionsschalter gates (nova-settings.js:137).
+        self.assertEqual(
+            0, section.locator("table[data-nv-gates-table]").count(),
+            "Vor dem Einschalten muss die Gates-Tabelle noch nicht liegen")
+        toggle = self.page.locator("input[data-nv-feature='gates']")
+        toggle.wait_for(state="visible", timeout=20000)
+        if not toggle.is_checked():
+            toggle.check()
+        table = section.locator("table[data-nv-gates-table]")
+        table.wait_for(state="visible", timeout=20000)
         gates_view = self.api_json("/api/gates")
         self.assertTrue(gates_view.get("ok"), gates_view)
         keys = list(gates_view["gates"])
-        self.enable_features("gates")
-        box = self.page.locator("[data-nv-advanced='gates']")
-        box.wait_for(state="visible", timeout=20000)
-        helps = box.locator("small[data-nv-gate-help]")
+        rows = table.locator("tr[data-nv-gate]")
         self.wait_until(
-            lambda: helps.count() >= len(keys), timeout=20,
+            lambda: rows.count() == len(keys), timeout=20,
             message="Der Schrankenbereich zeigt nicht je Schranke eine "
-                    "Erklärung: " + repr(helps.count()) + " von "
-                    + repr(len(keys)))
-        for index in range(helps.count()):
-            text = (helps.nth(index).inner_text() or "").strip()
-            with self.subTest(index=index):
-                self.assertTrue(text, "Eine Schranken-Erklärung ist leer")
+                    "Zeile: " + repr(rows.count()) + " von " + repr(len(keys)))
+        for index in range(rows.count()):
+            row = rows.nth(index)
+            help_text = row.locator("small[data-nv-gate-help]")
+            with self.subTest(gate=row.get_attribute("data-nv-gate")):
+                self.assertEqual(
+                    1, help_text.count(),
+                    "Die Schranke trägt kein small[data-nv-gate-help]")
+                self.assertTrue(
+                    (help_text.first.inner_text() or "").strip(),
+                    "Ein Schranken-Hinweis ist leer")
         self.assert_no_page_errors()
 
 
 class EvaluationsGroupTest(F33SettingsBrowserTest):
-    def test_evaluations_group_has_heading_and_badges(self):
-        """Vorbedingung: Features ``costs`` und ``runs`` an.
+    def test_evaluations_absent_from_settings(self):
+        """Vorbedingung: Einstellungen offen, Datenbank mit einer Sitzung.
 
-        Erwartung: Eine eigene Gruppenüberschrift „Auswertungen“ steht vor den
-        Karten; die Kosten- und die Run-Karte tragen je ein nichtleeres
-        ``span[data-nv-eval-badge]``.
+        Erwartung: In den Einstellungen sind die Auswertungen (Kosten,
+        Läufe, Umgebung) entfallen: absence der Feature-Schalter
+        ``input[data-nv-feature='costs'|'runs'|'env']`` sowie der F33-Hooks
+        ``[data-nv-advanced='costs']``, ``p[data-nv-costs-hint]``,
+        ``tr[data-nv-cost-project]``, ``div[data-nv-cost-detail]``,
+        ``button[data-nv-action='cost-global-edit']``,
+        ``input[data-nv-cost-global-model]``, ``[data-nv-advanced='runs']``,
+        ``p[data-nv-runs-hint]``, ``span[data-nv-run-pruneable']``,
+        ``[data-nv-advanced='env']`` in den Einstellungen.
         """
         self.open_settings()
-        self.enable_features("costs", "runs")
-        costs = self.page.locator("[data-nv-advanced='costs']")
-        runs = self.page.locator("[data-nv-advanced='runs']")
-        costs.wait_for(state="visible", timeout=20000)
-        runs.wait_for(state="visible", timeout=20000)
-
-        heading_ok = self.page.evaluate(
-            """() => {
-              const costs = document.querySelector("[data-nv-advanced='costs']");
-              const nodes = Array.from(document.querySelectorAll(
-                "main h2, main h3"));
-              return nodes.some(node =>
-                /auswertungen|evaluations/i.test(node.textContent || '')
-                && (node.compareDocumentPosition(costs)
-                    & Node.DOCUMENT_POSITION_FOLLOWING) !== 0);
-            }""")
-        self.assertTrue(
-            heading_ok,
-            "Es fehlt die eigene Gruppenüberschrift „Auswertungen“ vor den "
-            "Auswertungskarten")
-        for name, card in (("Kosten", costs), ("Run-Register", runs)):
-            badge = card.locator("span[data-nv-eval-badge]")
-            with self.subTest(card=name):
+        settings = self.page.locator("main#nv-main[data-nv-view='settings']")
+        settings.wait_for(state="visible", timeout=20000)
+        for feature in ("costs", "runs", "env"):
+            self.assertEqual(
+                0, settings.locator(
+                    f"input[data-nv-feature='{feature}']").count(),
+                f"Es gibt den Feature-Schalter {feature!r} noch in den "
+                "Einstellungen")
+        for hook in (
+                "[data-nv-advanced='costs']", "p[data-nv-costs-hint]",
+                "tr[data-nv-cost-project]", "div[data-nv-cost-detail]",
+                "button[data-nv-action='cost-global-edit']",
+                "input[data-nv-cost-global-model]", "[data-nv-advanced='runs']",
+                "p[data-nv-runs-hint]", "span[data-nv-run-pruneable]",
+                "[data-nv-advanced='env']"):
+            with self.subTest(hook=hook):
                 self.assertEqual(
-                    1, badge.count(),
-                    f"Die {name}-Karte trägt kein span[data-nv-eval-badge]")
-                self.assertTrue(
-                    (badge.first.inner_text() or "").strip(),
-                    f"Das Auswertungs-Badge der {name}-Karte ist leer")
+                    0, settings.locator(hook).count(),
+                    f"{hook} existiert in den Einstellungen, ist in F34 "
+                    "aber entfernt")
         self.assert_no_page_errors()
 
-    def test_cost_rows_are_clickable_and_detail_lists_token_columns(self):
-        """Vorbedingung: Feature ``costs`` an, eine Sitzung in der Datenbank.
+    def test_evaluations_reachable_via_main_nav(self):
+        """Vorbedingung: Einstellungen sind zugänglich.
 
-        Aktion: Projektzeile ``tr[data-nv-cost-project]`` anklicken.
-        Erwartung: ``p[data-nv-costs-hint]`` nennt das Anklicken; die Zeile
-        trägt ``nv-clickable``; der Klick öffnet ``div[data-nv-cost-detail]``
-        mit Spalten Kennung, Sitzungen, Eingabe (davon gecached), Ausgabe,
-        Kosten.
+        Aktion: Über den Hauptpunkt
+        ``nav[data-nv-navs] [data-nv-nav='evaluations']`` in die
+        Auswertungen gehen.
+
+        Erwartung: ``main#nv-main[data-nv-view='evaluations']`` ist
+        sichtbar; die drei Tabs ``button[data-nv-etab='costs']``,
+        ``button[data-nv-etab='runs']`` und
+        ``button[data-nv-etab='environment']`` zeigen.
         """
-        self.open_settings()
-        self.enable_features("costs")
-        card = self.page.locator("[data-nv-advanced='costs']")
-        card.wait_for(state="visible", timeout=20000)
-        hint = card.locator("p[data-nv-costs-hint]")
-        hint.wait_for(state="visible", timeout=20000)
-        self.assertTrue(
-            re.search(r"anklick|click", hint.inner_text() or "", re.I),
-            "Der Kosten-Hinweis nennt das Anklicken der Zeile nicht: "
-            + repr(hint.inner_text()))
-
-        row = card.locator(f"tr[data-nv-cost-project='{PROJECT}']")
-        row.wait_for(state="visible", timeout=20000)
-        self.assertIn(
-            "nv-clickable", (row.get_attribute("class") or "").split(),
-            "Die Projektzeile der Kosten trägt nicht die Klasse nv-clickable")
-        row.click()
-
-        detail = card.locator("div[data-nv-cost-detail]")
-        detail.wait_for(state="visible", timeout=20000)
-        headers = " ".join(detail.locator("th").all_inner_texts())
-        for pattern in (r"kennung|arbeitspaket|paket|^id$|package",
-                        r"sitzung|session",
-                        r"eingabe|input",
-                        r"gecach|cach",
-                        r"ausgabe|output",
-                        r"kosten|cost"):
-            with self.subTest(column=pattern):
-                self.assertRegex(
-                    headers, pattern,
-                    "Die Detailtabelle der Kosten nennt die Spalte "
-                    f"{pattern!r} nicht: " + repr(headers))
-        self.assert_no_page_errors()
-
-    def test_global_prices_editor_posts_and_confirms(self):
-        """Vorbedingung: Feature ``costs`` an.
-
-        Aktion: ``button[data-nv-action="cost-global-edit"]`` klicken, einen
-        Modellpreis eintragen und speichern.
-        Erwartung: Der Editor zeigt ``input[data-nv-cost-global-model]``; der
-        Speichern-Klick sendet ``POST /api/costs`` mit ``action=prices_global``
-        und die Oberfläche bestätigt mit „gespeichert“.
-        """
-        self.open_settings()
-        self.enable_features("costs")
-        card = self.page.locator("[data-nv-advanced='costs']")
-        card.wait_for(state="visible", timeout=20000)
-        requests = []
-        self.page.on(
-            "request",
-            lambda request: requests.append(request)
-            if request.method == "POST" and request.url.endswith("/api/costs")
-            else None)
-
-        card.locator("button[data-nv-action='cost-global-edit']").click()
-        field = self.page.locator("input[data-nv-cost-global-model]").first
-        field.wait_for(state="visible", timeout=20000)
-        field.fill("opencode/model-a")
-        fields = self.page.locator("[data-nv-cost-field]")
-        self.assertGreaterEqual(
-            fields.count(), 1,
-            "Der Globalpreis-Editor bietet keine Preisfelder "
-            "([data-nv-cost-field])")
-
-        editor = self.page.locator(
-            "xpath=//input[@data-nv-cost-global-model]/ancestor::*[.//button][1]")
-        save = editor.locator("button").filter(
-            has_text=re.compile(r"speicher|save", re.I)).first
-        self.assertEqual(
-            1, save.count(),
-            "Im Globalpreis-Editor fehlt ein Speichern-Knopf")
-        save.click()
-        self.wait_until(
-            lambda: re.search(r"gespeichert|saved", self.toast_text(), re.I)
-            is not None,
-            timeout=20,
-            message="Das Speichern der globalen Preise bestätigt nicht: "
-                    + repr(self.toast_text()))
-
-        payloads = []
-        for request in requests:
-            try:
-                payloads.append(json.loads(request.post_data or "{}"))
-            except ValueError:
-                payloads.append({})
-        self.assertTrue(
-            any(payload.get("action") == "prices_global" for payload in payloads),
-            "Der Editor sendet nicht action=prices_global: " + repr(payloads))
-        self.assertTrue(
-            any("opencode/model-a" in (payload.get("prices") or {})
-                for payload in payloads),
-            "Der Editor sendet den eingegebenen Modellpreis nicht: "
-            + repr(payloads))
+        self.boot()
+        nav = self.page.locator("nav[data-nv-navs] [data-nv-nav='evaluations']")
+        nav.wait_for(state="visible", timeout=20000)
+        nav.click()
+        self.page.locator("main#nv-main[data-nv-view='evaluations']").wait_for(
+            state="visible", timeout=25000)
+        for name in ("costs", "runs", "environment"):
+            tab = self.page.locator(f"button[data-nv-etab='{name}']")
+            self.assertEqual(
+                1, tab.count(),
+                f"Der Tab {name!r} ist in den Auswertungen nicht da")
+            tab.wait_for(state="visible", timeout=20000)
         self.assert_no_page_errors()
 
 
 class RunRegisterTest(F33SettingsBrowserTest):
-    def test_pruneable_runs_carry_badge_and_hint(self):
+    def test_run_register_absent_from_settings(self):
         """Vorbedingung: ein abgeschlossener Lauf (``failed``) im Register.
 
-        Erwartung: Feature ``runs`` an; ``p[data-nv-runs-hint]`` ist sichtbar;
-        der Eintrag mit Endzustand trägt ``span[data-nv-run-pruneable]`` mit
-        dem Hinweis „bereinigbar“.
+        Erwartung: Das Run-Register ist in den Einstellungen entfallen:
+        ``p[data-nv-runs-hint]``, ``span[data-nv-run-pruneable]``,
+        ``[data-nv-advanced='runs']`` und ``input[data-nv-feature='runs']``
+        sind in den Einstellungen abwesent.
         """
         (self.log_dir / "runs.json").write_text(
             self.failed_runs_text, encoding="utf-8")
         self.open_settings()
-        self.enable_features("runs")
-        card = self.page.locator("[data-nv-advanced='runs']")
-        card.wait_for(state="visible", timeout=20000)
-        hint = card.locator("p[data-nv-runs-hint]")
-        hint.wait_for(state="visible", timeout=20000)
-        self.assertTrue((hint.inner_text() or "").strip(),
-                        "Der Hinweis zum Run-Register ist leer")
-        badge = card.locator("span[data-nv-run-pruneable]")
-        self.wait_until(
-            lambda: badge.count() >= 1, timeout=20,
-            message="Der abgeschlossene Registereintrag trägt kein "
-                    "span[data-nv-run-pruneable]")
-        self.assertTrue(
-            re.search(r"bereinig|prune", badge.first.inner_text() or "", re.I),
-            "Das Register-Badge sagt nicht, dass der Eintrag bereinigbar ist: "
-            + repr(badge.first.inner_text()))
+        for hook in ("p[data-nv-runs-hint]", "span[data-nv-run-pruneable]",
+                     "[data-nv-advanced='runs']",
+                     "input[data-nv-feature='runs']"):
+            self.assertEqual(
+                0, self.page.locator(hook).count(),
+                f"{hook} existiert in den Einstellungen, ist in F34 aber "
+                "entfernt")
         self.assert_no_page_errors()
 
 
 class AccentTest(F33SettingsBrowserTest):
-    def test_accent_select_has_twelve_options_and_persists(self):
-        """Vorbedingung: Einstellungen offen, Akzent ``blue``.
+    def test_accent_grid_has_twelve_buttons_without_select(self):
+        """Vorbedingung: Einstellungen offen, Sprache ``en``.
 
-        Aktion: ``select[data-nv-accent-select]`` auf ``teal`` stellen, Seite
-        neu laden.
-        Erwartung: genau die 12 Vertrags-Akzente; die Wahl setzt
-        ``html[data-accent]`` und ``localStorage['nv-accent']`` und bleibt
-        nach dem Reload erhalten.
+        Erwartung: ``div[data-nv-accents]`` im Sektion ``appearance``
+        bietet exakt die 12 Vertrags-Akzente; je Knopf ein sichtbarer
+        ``span.nv-swatch``, ein ``aria-pressed`` und ein übersetzter Name;
+        absence ``select[data-nv-accent]``. Die Wahl setzt
+        ``html[data-accent]`` und ``localStorage['nv-accent']`` und überlebt
+        das Neuladen.
         """
         self.open_settings()
-        select = self.page.locator(
-            "[data-nv-ssection='appearance'] select[data-nv-accent-select]")
-        select.wait_for(state="visible", timeout=20000)
-        values = select.evaluate(
-            "node => Array.from(node.options).map(o => o.value)")
+        grid = self.page.locator(
+            "[data-nv-ssection='appearance'] div[data-nv-accents]")
+        grid.wait_for(state="visible", timeout=20000)
+        buttons = grid.locator("button[data-nv-accent]")
+        self.assertEqual(12, buttons.count())
+        values = self.page.evaluate(
+            "() => Array.from(document.querySelectorAll("
+            "'div[data-nv-accents] button[data-nv-accent]'))"
+            ".map(n => n.getAttribute('data-nv-accent'))")
         self.assertEqual(
             ACCENT_IDS, values,
-            "Die Akzentauswahl bietet nicht die 12 Vertragsfarben: "
+            "Das Akzent-Raster bietet nicht die 12 Vertragsfarben: "
             + repr(values))
+        for index in range(buttons.count()):
+            button = buttons.nth(index)
+            with self.subTest(accent=values[index]):
+                self.assertTrue(button.is_visible())
+                self.assertIsNotNone(
+                    button.get_attribute("aria-pressed"),
+                    "Der Akzent-Knopf trägt kein aria-pressed")
+                self.assertTrue(
+                    button.locator("span.nv-swatch").is_visible(),
+                    "Der Akzent-Knopf trägt keinen sichtbaren span.nv-swatch")
+                self.assertTrue(
+                    (button.inner_text() or "").strip(),
+                    "Der Akzent-Knopf trägt keinen übersetzten Namen")
+        self.assertEqual(
+            0, self.page.locator("select[data-nv-accent]").count(),
+            "Es gibt ein select[data-nv-accent], ist aber in F34 entfernt")
 
-        select.select_option("teal")
+        teal = buttons.nth(ACCENT_IDS.index("teal"))
+        teal.click()
         self.wait_until(
             lambda: self.page.evaluate(
                 "() => document.documentElement.getAttribute('data-accent')")
@@ -860,6 +891,9 @@ class AccentTest(F33SettingsBrowserTest):
             "teal",
             self.page.evaluate("() => localStorage.getItem('nv-accent')"),
             "Die Akzentwahl speichert nicht localStorage['nv-accent']")
+        self.assertEqual(
+            "true", teal.get_attribute("aria-pressed"),
+            "Der gewählte Akzent-Knopf ist nicht aria-pressed gesetzt")
 
         self.page.reload()
         self.page.locator("main#nv-main[data-nv-view='settings']").wait_for(
@@ -876,10 +910,11 @@ class AccentTest(F33SettingsBrowserTest):
 class GlobalAgentsFileTest(F33SettingsBrowserTest):
     """Globale AGENTS.md im Einstellungs-Tab (F33 WP5, Koordinator-Entscheidung 6).
 
-    Vorbedingung: Feature ``agentsfile`` an (über ``localStorage['nv-features']``
-    vor dem Laden gesetzt, damit die Sektion ohne UI-Klick sichtbar ist). Die
-    globale Datei liegt unter ``HOME/.config/opencode/AGENTS.md``; jeder Fall
-    legt sie selbst an oder löscht sie, damit die Fälle unabhängig bleiben.
+    Vorbedingung: Die globale Datei liegt unter ``HOME/.config/opencode/AGENTS.md``;
+    jeder Fall legt sie selbst an oder löscht sie, damit die Fälle
+    unabhängig bleiben. Der Editor zuhanden erfolgt unter
+    ``section[data-nv-ssection='global-agents']`` (F34-Vertrag: ``details[
+    data-nv-global-agents][open]``).
     """
 
     def setUp(self):
@@ -892,8 +927,8 @@ class GlobalAgentsFileTest(F33SettingsBrowserTest):
             "request",
             lambda request: self.post_requests.append(request)
             if request.method == "POST" else None)
-        # Feature vor dem ersten Laden setzen; open_settings() lädt die Seite
-        # danach neu, sodass die Sektion sicher eingeschaltet ist.
+        # Vor dem ersten Laden der Editor-State setzen, sodass die Sektion
+        # sicher eingeschaltet ist.
         self.page.goto(self.base + "/#t=" + self.token)
         self.page.evaluate(
             "() => localStorage.setItem('nv-features', "
@@ -913,10 +948,10 @@ class GlobalAgentsFileTest(F33SettingsBrowserTest):
         return self.api_json("/api/global_agents_file")
 
     def section(self):
-        # Der Vertrag nennt keine Sektions-ID; die Karte trägt
-        # data-nv-global-agents (wie der Editor). Die Sektion wird
-        # asynchron nach der Ansicht eingehängt, deshalb wartet der Aufrufer.
-        return self.page.locator("div[data-nv-global-agents]")
+        # F34-Vertrag: Sektion global-agents mit details[data-nv-global-agents].
+        return self.page.locator(
+            "section[data-nv-ssection='global-agents'] "
+            "details[data-nv-global-agents]")
 
     def test_missing_file_shows_hint_and_create_button(self):
         """Vorbedingung: globale AGENTS.md existiert nicht.

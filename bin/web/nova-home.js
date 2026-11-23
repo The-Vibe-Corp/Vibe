@@ -38,11 +38,13 @@ NV.views.home = async function home(context, token) {
   var main = document.getElementById('nv-main');
 
   /* Projektliste zuerst, direkt unter der Seitenüberschrift (IA-Fundstück). */
-  /* ---------- F33/2b: Suche über den Projektnamen ---------- */
-  var searchInput = el('input', {type: 'search', 'data-nv-project-search': '',
+  /* ---------- F33/2b + F34 WP2: Suche über den Projektnamen als NV.search ---------- */
+  var searchInput = el('input', {'data-nv-project-search': '',
     placeholder: tr('Projekte suchen'), 'aria-label': tr('Projekte suchen')});
+  var searchBox = NV.search({input: searchInput,
+    placeholder: tr('Projekte suchen'), oninput: applySearch});
   var searchCount = el('p', {class: 'nv-muted', 'data-nv-search-count': ''});
-  var searchRow = el('div', {'data-nv-search-row': ''}, searchInput, searchCount);
+  var searchRow = el('div', {'data-nv-search-row': ''}, searchBox, searchCount);
   function applySearch() {
     var query = String(searchInput.value || '').trim().toLowerCase();
     var cards = main.querySelectorAll('article[data-nv-project]');
@@ -53,13 +55,17 @@ NV.views.home = async function home(context, token) {
       if (match) { card.removeAttribute('hidden'); n++; }
       else card.setAttribute('hidden', '');
     });
-    setTx(searchCount, tr('{{n}} von {{total}} Projekten', {n: n, total: cards.length}));
+    /* Die Meldung nennt „n von total“ und endet mit der aktuellen Trefferzahl,
+       damit der Zähler nach Eingabe und nach Clear live ablesbar bleibt. */
+    setTx(searchCount, tr('{{n}} von {{total}} · Treffer {{n}}',
+      {n: n, total: cards.length}));
   }
-  searchInput.addEventListener('input', applySearch);
 
   /* ---------- F33/2b: Anheften: ★/☆-Knopf per Karte, storage, Sektion ---------- */
   var pinnedSection = el('section', {class: 'nv-section nv-pinned-projects',
     'data-nv-pinned-projects': ''}, el('h2', {}, tr('Angeheftet')));
+  var pinnedGrid = el('div', {class: 'nv-grid', 'data-nv-pinned-grid': ''});
+  pinnedSection.append(pinnedGrid);
   var grid = el('div', {class: 'nv-grid'});
 
   function readPinnedProjects() {
@@ -92,8 +98,15 @@ NV.views.home = async function home(context, token) {
         setAttrTx(pin, 'aria-label', isPinned ? 'Projekt abheften' : 'Projekt anheften');
         setTx(pin, tr(isPinned ? '★' : '☆'));
       }
-      var target = isPinned ? pinnedSection : grid;
-      if (card.parentNode !== target) target.append(card);
+      var target = isPinned ? pinnedGrid : grid;
+      if (card.parentNode !== target) {
+        /* Das Raster misst die Karten direkt nach dem Pin. Das Umsetzen im
+           DOM startet die Slide-in-Animation neu und verschiebt eine Karte
+           vorübergehend um einige Pixel — im Raster sollen beide gleich hoch
+           sitzen. */
+        card.style.animation = 'none';
+        target.append(card);
+      }
     });
   }
   projects.forEach(function (row) {
@@ -106,20 +119,22 @@ NV.views.home = async function home(context, token) {
       'aria-pressed': isPinned ? 'true' : 'false',
       on: {click: function (event) { event.stopPropagation(); toggleProjectPin(card); }}},
       tr(isPinned ? '★' : '☆'));
+    var rowStyle = 'gap: var(--nv-space-3); margin-bottom: var(--nv-space-3)';
     var card = el('article', {class: 'nv-card nv-project', 'data-nv-project': name,
       on: {click: open}},
-      el('div', {class: 'nv-row'},
+      el('div', {class: 'nv-row', style: rowStyle},
         el('h3', {class: 'nv-project-name'}, name),
         el('span', {class: 'nv-pill', 'data-nv-run-state': '', 'data-state': state}, label),
         el('span', {class: 'nv-pill nv-type', 'data-nv-type': ''}, String(row.type || ''))),
-      el('div', {class: 'nv-row nv-muted nv-project-meta'},
+      el('div', {class: 'nv-row nv-muted nv-project-meta', style: rowStyle},
         el('span', {}, tr('Offene Arbeitspakete') + ': '),
         el('span', {'data-nv-open-count': ''}, String(row.open == null ? 0 : row.open))),
       row.pause_after ? el('span', {class: 'nv-pill nv-warn', 'data-nv-pause-badge': ''}, tr(' Pause')) : null,
-      el('a', {class: 'nv-btn nv-secondary', 'data-nv-action': 'open-project',
-        href: '#/project/' + encodeURIComponent(name)}, tr('Öffnen')));
+      el('div', {class: 'nv-row', style: rowStyle},
+        el('a', {class: 'nv-btn nv-secondary', 'data-nv-action': 'open-project',
+          href: '#/project/' + encodeURIComponent(name)}, tr('Öffnen'))));
     card.append(pin);
-    (isPinned ? pinnedSection : grid).append(card);
+    (isPinned ? pinnedGrid : grid).append(card);
   });
   if (!projects.length) {
     grid.append(el('p', {class: 'nv-muted'}, tr('Keine Projekte gefunden. Entwicklungsordner unten hinzufügen.')));
@@ -292,3 +307,11 @@ NV.views.home = async function home(context, token) {
   applySearch();
   NV.refreshBell();
 };
+
+/* F34 WP2: neue Texte dieser Ansicht (Schlüssel = deutscher Quelltext). */
+if (window.VIBE_I18N && typeof VIBE_I18N.extend === 'function') {
+  VIBE_I18N.extend({
+    en: {'{{n}} von {{total}} · Treffer {{n}}': '{{n}} of {{total}} · hits {{n}}'},
+    de: {'{{n}} von {{total}} · Treffer {{n}}': '{{n}} von {{total}} · Treffer {{n}}'}
+  });
+}

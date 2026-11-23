@@ -16,10 +16,16 @@ PR-only-Pakete warten auf den Merge des Eigentümers. Dafür gilt:
 * ``_apply_proof`` räumt WARTET-Zeilen beim Zurückschreiben des Nachweises ab.
 * Der Läufer ruft in ``pr_only_fallback`` ``mark-waiting`` statt
   ``mark-blocked`` auf; die Logzeile „WARTET AUF MERGE“ bleibt.
-* GUI: Nova-Spalte ``waiting`` (zwischen offen und blockiert), Kachel,
-  „Paket abschließen“ auch für wartende Pakete (nur Pakete), gelbe Pille;
-  klassische Oberfläche: WARTET → ``warn``, BLOCKIERT bleibt ``bad``;
-  i18n EN „Waiting for merge“.
+* GUI: Nova zeigt „Wartet auf Merge“ in der integrierten Liste (Label und
+  gelbe Pille), die Uebersichtskachel ``waiting`` zaehlt wartende Pakete,
+  „Paket abschließen“ bleibt fuer wartende Pakete im Kontext-Panel
+  verfuegbar; klassische Oberflaeche: WARTET → ``warn``, BLOCKIERT bleibt
+  ``bad``; i18n EN „Waiting for merge“.
+
+F34-Anpassung: Das Board ist entfernt (Leitentscheidung 7). Die Nova-Faelle
+pruefen deshalb Karten-Zustandspille und Kontext-Panel statt
+``nvpStateColumn``/``nvpBoardColumn``/Spaltenreihenfolge; Board-Hooks duerfen
+nicht mehr existieren.
 
 Keine Netzverbindungen, keine Modellaufrufe, keine produktiven Pfade.
 
@@ -524,39 +530,50 @@ class NovaWaitingSurfaceTest(unittest.TestCase):
     def setUp(self):
         self.text = NOVA.read_text(encoding="utf-8")
 
-    def test_nova_maps_waiting_to_its_own_column_and_label(self):
+    def test_nova_maps_waiting_to_its_label_and_warning_pill(self):
         """Vorbedingung: ``nova-project.js``.
-        Aktion: ``nvpStateColumn``/``nvpStateLabel`` prüfen.
-        Erwartung: „WARTET AUF MERGE“ → Spalte ``waiting`` und Label
-        „Wartet auf Merge“.
-        Fehlerfall: Wartende landen in ``blocked`` oder ``open``.
+        Aktion: ``nvpStateLabel`` und die Zustands-Pille der Karte pruefen.
+        Erwartung (F34): „WARTET AUF MERGE“ wird mit „Wartet auf Merge“
+        beschriftet und an der Karte als gelbe Pille ``nv-warn`` dargestellt;
+        eine eigene Board-Spalte existiert nicht mehr.
+        Fehlerfall: Wartende erscheinen wie offen oder ohne Warnfarbe.
         """
-        column = js_region(self.text, "function nvpStateColumn(")
         label = js_region(self.text, "function nvpStateLabel(")
+        card = js_region(self.text, "function nvpTicketCard(")
 
-        self.assertTrue(column, "nvpStateColumn nicht gefunden")
-        self.assertIn(WAITING, column)
-        self.assertIn("waiting", column)
+        self.assertTrue(label, "nvpStateLabel nicht gefunden")
+        self.assertTrue(card, "nvpTicketCard nicht gefunden")
+        self.assertIn(WAITING, label)
         self.assertIn("Wartet auf Merge", label)
+        self.assertIn(WAITING, card)
+        self.assertIn("nv-warn", card)
+        self.assertNotIn("nvpStateColumn", self.text,
+                         "Die entfernte Board-Spaltenabbildung existiert noch")
 
-    def test_nova_board_orders_the_waiting_column_between_open_and_blocked(self):
-        """Vorbedingung: Board-Aufbau in ``nova-project.js``.
-        Aktion: Spaltenliste prüfen.
-        Erwartung: vollständige Reihenfolge ``open``, ``progress``, ``draft``,
-        ``waiting``, ``blocked``, ``proof``, ``done``; die Wartet-Spalte
-        bleibt nach den Arbeitszuständen und vor ``blocked``.
-        Fehlerfall: Spalte fehlt, steht an falscher Stelle oder die
-        AP3-Spalten ``progress``/``draft`` fehlen.
+    def test_nova_integrated_list_replaces_the_board_columns(self):
+        """Vorbedingung: Arbeit-Aufbau in ``nova-project.js``.
+        Aktion: Liste, Karten und Board-Abwesenheit pruefen.
+        Erwartung (F34): Die Arbeit ist die integrierte Liste
+        ``div.nv-ticket-list[data-nv-ticket-list]``; alle Eintraege laufen
+        durch ``nvpTicketCard``, damit wartende Pakete in der Liste
+        erscheinen. Die fruehere Spaltenreihenfolge (``open``, ``progress``,
+        ``draft``, ``waiting``, ``blocked``, ``proof``, ``done``) und
+        ``.nv-board`` existieren nicht mehr.
+        Fehlerfall: Spalte fehlt, steht an falscher Stelle oder das Board
+        besteht weiter.
         """
-        # AP3-Board-Vertragsänderung: 'progress' (In Progress) und 'draft'
-        # (Entwurf) sind vor 'waiting' neu; die Wartet-Spalte bleibt zwischen
-        # den Arbeitszuständen und 'blocked'.
-        self.assertRegex(
+        work = js_region(self.text, "var ticketList = el('div'")
+        self.assertTrue(work, "Integrierte Arbeitsliste nicht gefunden")
+        self.assertIn("data-nv-ticket-list", work)
+        self.assertIn("nvpTicketCard", work)
+        self.assertIn("allItems.forEach", work)
+        self.assertNotIn(".nv-board", self.text)
+        self.assertNotIn("nvpBoardColumn", self.text)
+        self.assertNotRegex(
             self.text,
             r"\[\s*'open'\s*,\s*'progress'\s*,\s*'draft'\s*,\s*'waiting'"
             r"\s*,\s*'blocked'\s*,\s*'proof'\s*,\s*'done'\s*\]",
-            "Keine Spaltenfolge open → progress → draft → waiting → blocked "
-            "→ proof → done",
+            "Die entfernte Board-Spaltenfolge existiert noch",
         )
 
     def test_nova_overview_counts_waiting_packages(self):
@@ -574,22 +591,24 @@ class NovaWaitingSurfaceTest(unittest.TestCase):
         )
         self.assertIn("Wartet auf Merge", self.text)
 
-    def test_nova_offers_package_close_in_blocked_and_waiting_columns(self):
-        """Vorbedingung: ``nvpBoardColumn`` in ``nova-project.js``.
-        Aktion: Bedingung für den Abschluss-Button prüfen.
-        Erwartung: Der Button erscheint in ``blocked`` UND ``waiting``, aber
-        nur für Pakete (nicht für Feedback).
-        Fehlerfall: Wartende Pakete lassen sich nicht über die GUI schließen.
+    def test_nova_offers_package_close_for_blocked_and_waiting_packages(self):
+        """Vorbedingung: ``nvpOpenTicketDetail`` in ``nova-project.js``.
+        Aktion: Bedingung fuer den Abschluss-Button im Kontext-Panel pruefen.
+        Erwartung (F34): Der Button erscheint bei ``BLOCKIERT`` und bei
+        ``WARTET AUF MERGE``, aber nur fuer Pakete (nicht fuer Feedback).
+        Fehlerfall: Wartende Pakete lassen sich nicht ueber die GUI schliessen.
         """
-        region = js_region(self.text, "function nvpBoardColumn(")
-        self.assertTrue(region)
+        region = js_region(self.text, "function nvpOpenTicketDetail(")
+        self.assertTrue(region, "nvpOpenTicketDetail nicht gefunden")
         condition = (
-            r"column\s*===\s*'blocked'[\s\S]{0,200}column\s*===\s*'waiting'"
-            r"|\[\s*'blocked'\s*,\s*'waiting'\s*\]\.includes\(column\)"
-            r"|column\s*===\s*'waiting'[\s\S]{0,200}column\s*===\s*'blocked'"
+            r"row\.state\s*===\s*'BLOCKIERT'[\s\S]{0,200}"
+            r"row\.state\s*===\s*'WARTET AUF MERGE'"
+            r"|row\.state\s*===\s*'WARTET AUF MERGE'[\s\S]{0,200}"
+            r"row\.state\s*===\s*'BLOCKIERT'"
+            r"|\[\s*'BLOCKIERT'\s*,\s*'WARTET AUF MERGE'\s*\]\.includes\("
         )
         self.assertRegex(region, condition)
-        self.assertIn("!isFeedback", region)
+        self.assertIn("kind === 'package'", region)
         self.assertIn("package-close", region)
 
     def test_nova_waiting_pill_uses_the_warning_colors(self):

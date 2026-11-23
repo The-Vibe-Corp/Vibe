@@ -1,10 +1,13 @@
-/* F33 WP3 — Projektansicht (Überarbeitung).
+/* F34 WP5 — Projektdetail (Überblick, Arbeit, Beschreibung, Einstellungen).
  *
- * Held, Tabs, Überblick, Arbeit (Suche/Filter, Priorisierungsleiste, Board,
- * Feedback), Beschreibung und Projekteinstellungen. Alle Daten kommen aus den
- * bestehenden /api-Endpunkten; die Ansicht verändert kein Backend-Verhalten.
- * Jede asynchrone Fortsetzung prüft NV.stale(token), bevor sie DOM ersetzt
- * (Render-Rennschutz wie AP21). Die Ausgabe delegiert an NV.output.render().
+ * Held, Tabs, Überblick (Autonom-Karte, Kacheln, Zustand, Sitzungen), Arbeit
+ * (Aktionsleiste, NV.search/Chips, Priorisierung mit Live-Vorschau,
+ * integrierte Ticketliste samt Kontext-Panel), Beschreibung mit
+ * Schrittübersicht und die neu geordneten Projekteinstellungen. Alle Daten
+ * kommen aus den bestehenden /api-Endpunkten; die Ansicht verändert kein
+ * Backend-Verhalten. Jede asynchrone Fortsetzung prüft NV.stale(token), bevor
+ * sie DOM ersetzt (Render-Rennschutz wie AP21). Die Ausgabe delegiert an
+ * NV.output.render().
  */
 'use strict';
 
@@ -51,18 +54,56 @@ function nvpText(node) {
   return node ? String(node.textContent || '') : '';
 }
 
-/* ---------- Help: Zustand/Formatierung ---------- */
+/* ---------- F34: gemeinsame Bausteine der Projektansicht ---------- */
 
-function nvpStateColumn(state) {
-  if (state === 'offen') return 'open';
-  if (state === 'WARTET AUF MERGE') return 'waiting';
-  if (state === 'BLOCKIERT') return 'blocked';
-  if (state === 'In Progress') return 'progress';
-  if (state === 'Draft') return 'draft';
-  if (state === 'ohne Nachweis') return 'proof';
-  if (state === 'erledigt') return 'done';
-  return 'open';
+/* Freundliche relative Zeit für Sitzungszeilen. */
+function nvpRelativeTime(value) {
+  var stamp = Number(value);
+  if (!isFinite(stamp) || stamp <= 0) return tr('unbekannt');
+  var seconds = Math.max(0, Math.floor(Date.now() / 1000 - stamp));
+  if (seconds < 60) return tr('gerade eben');
+  if (seconds < 3600) return tr('vor {{n}} Min.', {n: Math.floor(seconds / 60)});
+  if (seconds < 86400) return tr('vor {{n}} Std.', {n: Math.floor(seconds / 3600)});
+  return tr('vor {{n}} Tagen', {n: Math.floor(seconds / 86400)});
 }
+
+function nvpShortId(value, max) {
+  var text = String(value || '');
+  var limit = max || 10;
+  return text.length > limit ? text.slice(0, limit - 1) + '…' : text;
+}
+
+function nvpIsDone(row) {
+  return String(row && row.state || '') === 'erledigt';
+}
+
+function nvpRowKind(row) {
+  if (!row) return 'package';
+  if (row.__feedback) return nvpFeedbackKind(row);
+  return 'package';
+}
+
+function nvpKindBadge(kind) {
+  var label = kind === 'bug' ? tr('Bug')
+    : kind === 'feedback' ? tr('Feedback') : tr('Paket');
+  return el('span', {class: 'nv-kind-badge', 'data-nv-kind': kind}, label);
+}
+
+/* „ohne Nachweis“ ist kein Zustand mehr, sondern ein Badge am Eintrag. */
+function nvpProofBadge() {
+  return el('span', {class: 'nv-pill nv-warn', 'data-nv-proof': '',
+    title: tr('Für diesen Eintrag liegt kein Nachweis vor.')},
+  tr('ohne Nachweis'));
+}
+
+/* Linke Farbkante: gleiche Bedienung, unterschiedliche Farbe je Typ. */
+function nvpKindColor(kind) {
+  if (kind === 'bug') return 'var(--nv-error-text, #b3261e)';
+  if (kind === 'feedback') return 'var(--nv-warn-text, #8a5a00)';
+  return 'var(--nv-primary, #2b6cb0)';
+}
+
+/* ---------- Help: Zustand/Formatierung ---------- */
 
 function nvpStateLabel(state) {
   if (state === 'offen') return tr('Offen');
@@ -137,111 +178,116 @@ function nvpPost(name, path, body, successKey, token) {
   });
 }
 
-/* ---------- Arbeit: Board, Suche, Priorisierung, Feedback, Formular ---------- */
+/* ---------- Arbeit: integrierte Liste, Kontext-Panel, Formular ---------- */
 
-function nvpBoardColumn(name, column, rows, token, prioRanks, issuesEnabled) {
-
-  var box = el('div', {class: 'nv-board-col', 'data-nv-col': column},
-    el('h3', {}, nvpStateLabel(column === 'open' ? 'offen'
-      : column === 'blocked' ? 'BLOCKIERT'
-        : column === 'waiting' ? 'WARTET AUF MERGE'
-          : column === 'progress' ? 'In Progress'
-            : column === 'draft' ? 'Draft'
-              : column === 'proof' ? 'ohne Nachweis' : 'erledigt')));
-  if (!rows.length) {
-    box.append(el('p', {class: 'nv-muted'}, tr('Keine Einträge')));
+/* Eine Karte für alle Typen. Badge und linke Farbkante trennen visuell, die
+   Bedienung (Klick öffnet Details, Beschreibung klappt auf) ist identisch. */
+function nvpTicketCard(name, token, row, rank) {
+  var id = String(row.id || '');
+  var kind = nvpRowKind(row);
+  var description = String(row.description || '');
+  var descNode = null;
+  var more = null;
+  if (description) {
+    descNode = el('div', {class: 'nv-muted nv-ticket-desc nv-feedback-desc',
+      style: 'max-height:4.5rem;overflow:hidden;'}, description);
+    more = el('button', {class: 'nv-btn nv-ghost nv-compact', type: 'button',
+      'data-nv-ticket-more': '', 'aria-expanded': 'false',
+      on: {click: function (event) {
+        event.stopPropagation();
+        var opened = more.getAttribute('aria-expanded') === 'true';
+        more.setAttribute('aria-expanded', opened ? 'false' : 'true');
+        descNode.style.maxHeight = opened ? '4.5rem' : 'none';
+        setTx(more, opened ? tr('mehr') : tr('weniger'));
+      }}}, tr('mehr'));
   }
-  rows.forEach(function (row) {
-    var id = String(row.id || '');
-    var isFeedback = !!row.__feedback;
-    var title = String(row.title || id);
-    var description = String(row.description || '');
-    var rank = (prioRanks && prioRanks[id]) || 0;
-    var closeError = el('div', {class: 'nv-form-error', 'data-nv-form-error': '', hidden: ''});
-    var closeAction = ((column === 'blocked' || column === 'waiting') && !isFeedback)
-      ? el('button', {class: 'nv-btn nv-ghost nv-compact', type: 'button',
-          'data-nv-action': 'package-close', on: {click: function () {
-            nvpShowError(closeError, '');
-            api('/api/package', {name: name, id: id, action: 'close'}).then(function (result) {
-              if (NV.stale(token)) return;
-              if (result && result.ok === false) {
-                nvpShowError(closeError, bt(result.message));
-                return;
-              }
-              toast(bt(result && result.message) || tr('Paket abgeschlossen'));
-              NV.render();
-            }).catch(function (e) {
-              if (!NV.stale(token)) nvpShowError(closeError, String(e && e.message || e));
-            });
-          }}}, tr('Paket abschließen'))
-      : null;
-    var descNode = null;
-    var more = null;
-    if (description) {
-      descNode = el('div', {class: 'nv-muted nv-ticket-desc'}, description);
-      more = el('button', {class: 'nv-btn nv-ghost nv-compact', type: 'button',
-        'data-nv-ticket-more': '', 'aria-expanded': 'false',
-        on: {click: function () {
-          var opened = more.getAttribute('aria-expanded') === 'true';
-          more.setAttribute('aria-expanded', opened ? 'false' : 'true');
-          setTx(more, opened ? tr('mehr') : tr('weniger'));
-        }}}, tr('mehr'));
-    }
-    /* AP3: Issues-Zustandsaktionen nur bei aktivem Sync und vorhandenem
-       Issue-Bezug (draft/ready/in-progress). */
-    var issueActions = (issuesEnabled && !isFeedback && (row.github != null || /^GH-\d+$/.test(id)))
-      ? ['draft', 'ready', 'in-progress'].map(function (stateValue) {
-          return el('button', {class: 'nv-btn nv-ghost nv-compact', type: 'button',
-            'data-nv-action': 'issues-state', 'data-nv-state': stateValue,
-            on: {click: function () {
-              nvpPost(name, '/api/github',
-                {action: 'issues.state', id: id, state: stateValue},
-                'Gespeichert', token).then(function () {
-                if (!NV.stale(token)) NV.render();
-              });
-            }}}, tr(nvpIssueStateLabel(stateValue)));
-        })
-      : null;
-
-    var card = el('article', {
-      class: 'nv-card nv-ticket',
-      'data-nv-ticket': id,
-      'data-nv-state': String(row.state || '')
-    },
-      el('div', {class: 'nv-ticket-head'},
-        el('span', {class: 'nv-ticket-id'}, id),
-        rank ? el('span', {'data-nv-prio-badge': ''}, 'P' + String(rank)) : null,
-        el('span', {class: 'nv-pill nv-state' + ((row.state === 'WARTET AUF MERGE' || row.state === 'In Progress') ? ' nv-warn' : row.state === 'Draft' ? ' nv-muted' : '')}, nvpStateLabel(row.state))),
-
-      el('div', {class: 'nv-ticket-title'}, title),
-      descNode,
-      el('div', {class: 'nv-row nv-ticket-actions'},
-        el('button', {class: 'nv-btn nv-secondary nv-compact', type: 'button',
-          'data-nv-action': 'ticket-edit', on: {click: function () {
-            nvpOpenTicketForm(workPanelRoot(name), token, {
-              mode: isFeedback ? 'feedback' : 'package',
-              id: id, title: title, description: String(row.description || ''),
-              issuesEnabled: issuesEnabled
-
-            });
-          }}}, tr('Bearbeiten')),
-        el('button', {class: 'nv-btn nv-danger nv-compact', type: 'button',
-          'data-nv-action': 'ticket-delete', on: {click: function () {
-            if (!window.confirm(String(tr('wirklich löschen?')) + ' ' + id)) return;
-            var body = {action: 'delete', id: id};
-            var path = isFeedback ? '/api/feedback' : '/api/ticket';
-            nvpPost(name, path, body, 'Gelöscht', token).then(function () {
-              if (!NV.stale(token)) NV.render();
-            });
-          }}}, tr('Löschen')),
-        issueActions,
-        closeAction,
-        more),
-
-      closeError);
-    box.append(card);
+  var card = el('article', {
+    class: 'nv-card nv-ticket',
+    'data-nv-kind': kind,
+    'data-nv-state': String(row.state || ''),
+    style: 'border-left: 4px solid ' + nvpKindColor(kind) + '; cursor: pointer;'
   });
-  return box;
+  if (kind === 'package') card.setAttribute('data-nv-ticket', id);
+  else card.setAttribute('data-nv-feedback-item', id);
+  card.append(
+    el('div', {class: 'nv-ticket-head'},
+      nvpKindBadge(kind),
+      el('span', {class: 'nv-ticket-id'}, id),
+      rank ? el('span', {'data-nv-prio-badge': ''}, 'P' + String(rank)) : null,
+      el('span', {class: 'nv-pill nv-state'
+        + ((row.state === 'WARTET AUF MERGE' || row.state === 'In Progress') ? ' nv-warn'
+          : row.state === 'Draft' ? ' nv-muted' : '')}, nvpStateLabel(row.state))),
+    el('div', {class: 'nv-ticket-title'}, String(row.title || id)),
+    descNode,
+    el('div', {class: 'nv-row nv-ticket-meta'},
+      String(row.state) === 'ohne Nachweis' ? nvpProofBadge() : null,
+      more));
+  card.addEventListener('click', function () {
+    nvpOpenTicketDetail(name, token, row, kind);
+  });
+  return card;
+}
+
+/* Details und Aktionen stehen im zentralen Kontext-Panel. Abgeschlossene
+   Einträge behalten ihren Nachweis: kein Löschen, Bearbeiten bleibt gesperrt. */
+function nvpOpenTicketDetail(name, token, row, kind) {
+  var id = String(row.id || '');
+  var title = String(row.title || id);
+  var done = nvpIsDone(row);
+  var error = nvpErrorBox();
+  var body = el('div', {class: 'nv-stack', 'data-nv-ticket-detail': id},
+    el('div', {class: 'nv-row'}, nvpKindBadge(kind),
+      el('span', {class: 'nv-pill nv-state'}, nvpStateLabel(row.state))),
+    el('h3', {}, title),
+    el('p', {class: 'nv-muted'}, el('code', {}, id)),
+    el('p', {}, String(row.description || tr('Keine Beschreibung vorhanden.'))),
+    String(row.state) === 'ohne Nachweis' ? nvpProofBadge() : null);
+  var actions = el('div', {class: 'nv-row nv-ticket-detail-actions'});
+  if (done) {
+    actions.append(el('span', {class: 'nv-pill nv-warn', 'data-nv-done-notice': '',
+      title: tr('Abgeschlossene Einträge bleiben als Nachweis erhalten')},
+    tr('Abgeschlossene Einträge bleiben als Nachweis erhalten')));
+  } else {
+    actions.append(el('button', {class: 'nv-btn nv-secondary', type: 'button',
+      'data-nv-action': 'ticket-edit', on: {click: function () {
+        nvpOpenTicketForm(name, token, {
+          mode: kind, id: id, title: title,
+          description: String(row.description || '')
+        });
+      }}}, tr('Bearbeiten')));
+    actions.append(el('button', {class: 'nv-btn nv-danger', type: 'button',
+      'data-nv-action': 'ticket-delete', on: {click: function () {
+        if (!window.confirm(String(tr('wirklich löschen?')) + ' ' + id)) return;
+        var path = kind === 'package' ? '/api/ticket' : '/api/feedback';
+        nvpPost(name, path, {action: 'delete', id: id}, 'Gelöscht', token)
+          .then(function (result) {
+            if (NV.stale(token) || !result || result.ok === false) return;
+            NV.context.close();
+            NV.render();
+          });
+      }}}, tr('Löschen')));
+    if (kind === 'package'
+        && (row.state === 'BLOCKIERT' || row.state === 'WARTET AUF MERGE')) {
+      actions.append(el('button', {class: 'nv-btn nv-ghost', type: 'button',
+        'data-nv-action': 'package-close', on: {click: function () {
+          nvpShowError(error, '');
+          api('/api/package', {name: name, id: id, action: 'close'}).then(function (result) {
+            if (NV.stale(token)) return;
+            if (result && result.ok === false) {
+              nvpShowError(error, bt(result.message));
+              return;
+            }
+            toast(bt(result && result.message) || tr('Paket abgeschlossen'));
+            NV.context.close();
+            NV.render();
+          }).catch(function (e) {
+            if (!NV.stale(token)) nvpShowError(error, String(e && e.message || e));
+          });
+        }}}, tr('Paket abschließen')));
+    }
+  }
+  body.append(actions, error);
+  NV.context.open({title: title, content: body});
 }
 
 function nvpIssueStateLabel(stateValue) {
@@ -250,33 +296,25 @@ function nvpIssueStateLabel(stateValue) {
   return 'In Progress';
 }
 
-/* Das Formular wird erst beim Klick erzeugt und nach Abbrechen entfernt; so
-   bleibt [data-nv-ticket-form] im Ruhezustand vollständig aus dem DOM. */
-function workPanelRoot(name) {
-  return document.querySelector('main[data-nv-view="project"] section[data-nv-ppanel="work"]');
-}
-
-/* Das Formular steht direkt unter der Aktionsleiste (vor dem Board), nicht am
-   Seitenende. Der Name wird bei Bedarf aus dem Hash geholt. */
-function nvpOpenTicketForm(root, token, options) {
-  if (!root) return;
-  var existing = root.querySelector('[data-nv-ticket-form]');
-  if (existing) existing.remove();
-  var mode = options.mode || 'package';
-  var editing = !!options.id;
-  var issuesEnabled = !!options.issuesEnabled;
+/* Das Formular für „Anlegen/Bearbeiten“ öffnet im zentralen Kontext-Panel.
+   Der Name wird bei Bedarf aus dem Hash geholt. */
+function nvpOpenTicketForm(name, token, options) {
+  var opts = options || {};
+  var mode = opts.mode || 'package';
+  var editing = !!opts.id;
+  var issuesEnabled = !!opts.issuesEnabled;
   var titleInput = el('input', {'data-nv-field': 'title', type: 'text',
-    value: options.title || '', 'aria-label': tr('Titel')});
+    value: opts.title || '', 'aria-label': tr('Titel')});
   var descInput = el('textarea', {'data-nv-field': 'description', rows: '4',
-    'aria-label': tr('Beschreibung')}, options.description || '');
+    'aria-label': tr('Beschreibung')}, opts.description || '');
   var idInput = el('input', {'data-nv-field': 'id', type: 'text',
-    value: options.id || '', placeholder: tr('leer lassen = automatisch vergeben'),
+    value: opts.id || '', placeholder: tr('leer lassen = automatisch vergeben'),
     'aria-label': tr('Kennung')});
   if (editing) idInput.setAttribute('readonly', '');
   var idHint = el('small', {'data-nv-id-hint': '', class: 'nv-muted'},
     tr('Die Kennung wird automatisch vergeben, wenn das Feld leer bleibt — oder selbst benennen.'));
   if (!editing) {
-    idInput.value = nvpSuggestId(options.rows, mode === 'bug' ? 'B' : 'F');
+    idInput.value = nvpSuggestId(opts.rows, mode === 'bug' ? 'B' : 'F');
   }
   /* AP3: Entwurf (Vorgabe gesetzt) und Kategorie (Bug/Feature) nur beim
      Anlegen eines Pakets im verbundenen Projekt. */
@@ -347,21 +385,20 @@ function nvpOpenTicketForm(root, token, options) {
               return;
             }
             toast(bt(result && result.message) || tr('Gespeichert'));
+            NV.context.close();
             NV.render();
           } catch (e) {
             nvpShowError(error, tr('Speichern fehlgeschlagen: ') + String(e && e.message || e));
           }
         }}}, tr('Speichern')),
       el('button', {class: 'nv-btn nv-ghost', type: 'button',
-        'data-nv-action': 'ticket-cancel', on: {click: function () { form.remove(); }}},
+        'data-nv-action': 'ticket-cancel', on: {click: function () { NV.context.close(); }}},
         tr('Abbrechen'))),
     error);
-  var anchor = root.querySelector('.nv-board')
-    || root.querySelector('input[data-nv-work-search]')
-    || root.querySelector('.nv-work-actions');
-  if (anchor && anchor.parentNode) anchor.parentNode.insertBefore(form, anchor);
-  else root.append(form);
-  form.scrollIntoView({block: 'nearest'});
+  NV.context.open({
+    title: heading,
+    content: el('div', {'data-nv-ticket-form-wrap': ''}, form)
+  });
   titleInput.focus();
 }
 
@@ -373,37 +410,79 @@ function nvpCurrentName() {
   try { return decodeURIComponent(match[1]); } catch (e) { return match[1]; }
 }
 
-/* Die Priorisierungsleiste steht oberhalb des Boards. Ein Drop speichert die
-   komplette neue Reihenfolge als Permutation; ↑/↓ sind die
-   Tastatur-Alternative. Beide Wege schreiben POST /api/priority {action:set}. */
-function nvpPriorityStrip(name, token, view, tickets) {
+/* Rangkarte aus einer Priorisierungsreihenfolge (Objekte mit id oder reine
+   ID-Strings): einzige Quelle für Strip, Speichern und Karten-Badges. */
+function nvpRankMap(order) {
+  var ranks = {};
+  (order || []).forEach(function (entry, index) {
+    var id = typeof entry === 'string' ? entry : String(entry && entry.id || '');
+    if (id) ranks[id] = index + 1;
+  });
+  return ranks;
+}
+
+/* Badges der Karten lokal nachziehen (ohne NV.render): vorhandenen Text
+   aktualisieren, fehlende Badges ergänzen, nicht mehr priorisierte entfernen. */
+function nvpUpdateCardBadges(list, ranks) {
+  if (!list) return;
+  Array.prototype.slice.call(list.querySelectorAll('.nv-ticket')).forEach(function (card) {
+    var id = card.getAttribute('data-nv-ticket')
+      || card.getAttribute('data-nv-feedback-item') || '';
+    var rank = ranks[id];
+    var badge = card.querySelector('[data-nv-prio-badge]');
+    if (rank) {
+      if (!badge) {
+        badge = el('span', {'data-nv-prio-badge': ''});
+        var idNode = card.querySelector('.nv-ticket-id');
+        if (idNode && idNode.parentNode) idNode.parentNode.insertBefore(badge, idNode.nextSibling);
+        else {
+          var head = card.querySelector('.nv-ticket-head');
+          if (head) head.append(badge);
+        }
+      }
+      badge.textContent = 'P' + String(rank);
+    } else if (badge) {
+      badge.remove();
+    }
+  });
+}
+
+/* Die Priorisierungsleiste steht zwischen Filtern und Liste. Manuell
+   priorisierte Einträge stehen zuerst, danach die Standardreihenfolge;
+   erledigte Einträge erscheinen nie. Drag & Drop zeigt eine Live-Vorschau
+   (Zeiger-Geist + Einfügemarke), ↑/↓ bleiben die Tastaturalternative. */
+function nvpPriorityStrip(name, token, view, items, cards) {
   var strip = el('div', {class: 'nv-priority-strip', 'data-nv-priority-strip': ''});
   var priority = (view && view.priority) || {};
   var configured = priority.order || [];
+  var standard = priority.standard || [];
   var titles = {};
-  configured.forEach(function (entry) {
-    var id = String(entry && entry.id || '');
-    if (id) titles[id] = String(entry && entry.title || id);
-  });
-  (tickets || []).forEach(function (row) {
+  var open = {};
+  (items || []).forEach(function (row) {
     var id = String(row && row.id || '');
-    if (id && !titles[id]) titles[id] = String(row && row.title || id);
+    if (!id || nvpIsDone(row)) return;
+    open[id] = true;
+    titles[id] = String(row && row.title || id);
   });
+  var ids = [];
+  function add(entry) {
+    var id = String(entry && entry.id || '');
+    if (!id || !open[id] || ids.indexOf(id) >= 0) return;
+    ids.push(id);
+    if (!titles[id]) titles[id] = String(entry && entry.title || id);
+  }
+  configured.forEach(add);
+  standard.forEach(add);
+  (items || []).forEach(add);
+  var ranks = nvpRankMap(configured);
   var count = el('div', {class: 'nv-muted', 'data-nv-prio-count': ''},
     String(configured.length) + ' ' + tr('priorisiert'));
   var rowsBox = el('div', {class: 'nv-priority-rows'});
-
-  var ids = [];
-  configured.forEach(function (entry) {
-    var id = String(entry && entry.id || '');
-    if (id && ids.indexOf(id) < 0) ids.push(id);
-  });
-  (tickets || []).forEach(function (row) {
-    var id = String(row && row.id || '');
-    var state = String(row && row.state || '');
-    if (id && state !== 'erledigt' && ids.indexOf(id) < 0) ids.push(id);
-  });
+  var marker = el('div', {'data-nv-drop-marker': '', 'aria-hidden': 'true',
+    style: 'height:3px;border-radius:2px;background:var(--nv-primary, #2b6cb0);margin:2px 0;'});
   var dragId = null;
+  var ghost = null;
+  var markerIndex = -1;
 
   async function saveOrder(order) {
     try {
@@ -413,7 +492,12 @@ function nvpPriorityStrip(name, token, view, tickets) {
       if (NV.stale(token)) return;
       if (result && result.ok === false) { toast(bt(result.message)); return; }
       toast(tr('Priorisierung gespeichert'));
-      if (!NV.stale(token)) NV.render();
+      /* Nach dem Speichern ist die ganze Liste die konfigurierte Reihenfolge:
+         Ränge, Zähler und Karten-Badges lokal nachziehen statt Voll-Neurender. */
+      ranks = nvpRankMap(order);
+      setTx(count, String(order.length) + ' ' + tr('priorisiert'));
+      draw();
+      nvpUpdateCardBadges(cards, ranks);
     } catch (e) {
       toast(tr('Speichern fehlgeschlagen: ') + String(e && e.message || e));
     }
@@ -432,10 +516,72 @@ function nvpPriorityStrip(name, token, view, tickets) {
   });
   reset.setAttribute('data-nv-priority-reset', '');
 
+  function priorityRows() {
+    return Array.prototype.slice.call(rowsBox.querySelectorAll('.nv-priority-row'));
+  }
+  function clearPreview() {
+    if (ghost) { ghost.remove(); ghost = null; }
+    marker.remove();
+    priorityRows().forEach(function (row) {
+      row.style.transform = '';
+      row.style.opacity = '';
+    });
+    markerIndex = -1;
+  }
+  function targetIndex(clientY) {
+    var rows = priorityRows();
+    var boxTop = rowsBox.getBoundingClientRect().top;
+    var y = Number(clientY) - boxTop;
+    for (var index = 0; index < rows.length; index += 1) {
+      var middle = rows[index].offsetTop - rowsBox.offsetTop
+        + rows[index].offsetHeight / 2;
+      /* Kleine Toleranz für Subpixel-/Scroll-Drift zwischen Zeilenmitte und
+         Drop-Koordinate: ein Treffer knapp unter der Mitte bleibt „davor“. */
+      if (y < middle + 4) return index;
+    }
+    return rows.length;
+  }
+  function showMarker(index) {
+    if (index === markerIndex) return;
+    markerIndex = index;
+    var rows = priorityRows();
+    var shift = ghost ? ghost.offsetHeight : 34;
+    rows.forEach(function (row, rowIndex) {
+      row.style.transform = rowIndex >= index
+        ? 'translateY(' + shift + 'px)' : '';
+    });
+    if (index >= rows.length) rowsBox.append(marker);
+    else rowsBox.insertBefore(marker, rows[index]);
+  }
+
+  strip.addEventListener('dragover', function (event) {
+    if (!dragId) return;
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+    showMarker(targetIndex(event.clientY));
+  });
+  strip.addEventListener('drop', function (event) {
+    if (!dragId) return;
+    event.preventDefault();
+    var source = dragId;
+    var insertAt = targetIndex(event.clientY);
+    clearPreview();
+    dragId = null;
+    var next = ids.slice();
+    var from = next.indexOf(source);
+    if (from < 0) return;
+    next.splice(from, 1);
+    if (insertAt > from) insertAt -= 1;
+    next.splice(insertAt, 0, source);
+    ids = next;
+    draw();
+    saveOrder(ids.slice());
+  });
+
   function draw() {
     rowsBox.replaceChildren();
     if (!ids.length) {
-      rowsBox.append(el('p', {class: 'nv-muted'}, tr('Keine offenen Pakete')));
+      rowsBox.append(el('p', {class: 'nv-muted'}, tr('Keine offenen Einträge')));
       return;
     }
     ids.forEach(function (id, index) {
@@ -447,6 +593,7 @@ function nvpPriorityStrip(name, token, view, tickets) {
         on: {click: function () {
           if (index > 0) {
             var tmp = ids[index - 1]; ids[index - 1] = ids[index]; ids[index] = tmp;
+            draw();
             saveOrder(ids.slice());
           }
         }}};
@@ -455,6 +602,7 @@ function nvpPriorityStrip(name, token, view, tickets) {
         on: {click: function () {
           if (index < ids.length - 1) {
             var tmp = ids[index + 1]; ids[index + 1] = ids[index]; ids[index] = tmp;
+            draw();
             saveOrder(ids.slice());
           }
         }}};
@@ -462,7 +610,8 @@ function nvpPriorityStrip(name, token, view, tickets) {
       if (index === ids.length - 1) downAttrs.disabled = '';
       var row = el('div', {class: 'nv-priority-row', 'data-nv-priority-id': id},
         handle,
-        el('span', {class: 'nv-priority-label'}, id + ' ' + (titles[id] || '')),
+        el('span', {class: 'nv-priority-label'},
+          (ranks[id] ? 'P' + ranks[id] + ' ' : '') + id + ' ' + (titles[id] || '')),
         el('button', upAttrs, '↑'),
         el('button', downAttrs, '↓'));
       handle.addEventListener('dragstart', function (event) {
@@ -470,28 +619,35 @@ function nvpPriorityStrip(name, token, view, tickets) {
         if (event.dataTransfer) {
           event.dataTransfer.effectAllowed = 'move';
           try { event.dataTransfer.setData('text/plain', id); } catch (e) { /* noop */ }
+          try {
+            var image = document.createElement('img');
+            image.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+            event.dataTransfer.setDragImage(image, 0, 0);
+          } catch (e) { /* noop */ }
         }
+        ghost = row.cloneNode(true);
+        ghost.setAttribute('data-nv-drag-ghost', '');
+        ghost.removeAttribute('data-nv-priority-id');
+        ghost.querySelectorAll('[data-nv-drag-handle], [data-nv-action]').forEach(function (node) {
+          node.removeAttribute('data-nv-drag-handle');
+          node.removeAttribute('data-nv-action');
+        });
+        ghost.style.cssText = 'position:fixed;z-index:9999;pointer-events:none;'
+          + 'opacity:.92;box-shadow:var(--nv-shadow, 0 6px 18px rgba(0,0,0,.2));'
+          + 'background:var(--nv-surface, #fff);padding:6px 10px;border-radius:8px;'
+          + 'width:' + row.offsetWidth + 'px;';
+        document.body.append(ghost);
+        row.style.opacity = '0.35';
+        markerIndex = -1;
       });
-      row.addEventListener('dragover', function (event) {
-        event.preventDefault();
-        if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+      handle.addEventListener('drag', function (event) {
+        if (!ghost) return;
+        ghost.style.left = (Number(event.clientX || 0) + 12) + 'px';
+        ghost.style.top = (Number(event.clientY || 0) + 12) + 'px';
       });
-      row.addEventListener('drop', function (event) {
-        event.preventDefault();
-        var source = dragId;
-        if (!source && event.dataTransfer) {
-          try { source = event.dataTransfer.getData('text/plain'); } catch (e) { /* noop */ }
-        }
+      handle.addEventListener('dragend', function () {
+        clearPreview();
         dragId = null;
-        if (!source || source === id) return;
-        var next = ids.slice();
-        var from = next.indexOf(source);
-        var to = next.indexOf(id);
-        if (from < 0 || to < 0) return;
-        next.splice(from, 1);
-        next.splice(to, 0, source);
-        ids = next;
-        saveOrder(ids.slice());
       });
       rowsBox.append(row);
     });
@@ -501,10 +657,15 @@ function nvpPriorityStrip(name, token, view, tickets) {
   return strip;
 }
 
-/* Live-Suche und „Erledigte ausblenden“ teilen eine Sichtbarkeitsfunktion. */
+/* Live-Suche, Typ-Chips und „Erledigte anzeigen“ teilen eine
+   Sichtbarkeitsfunktion. Ein Suchtreffer wird immer eingeblendet — auch bei
+   erledigten Einträgen und unabhängig vom Erledigt-Schalter. */
 function nvpWireWorkFilters(panel, toggle, doneCount) {
   var search = panel.querySelector('input[data-nv-work-search]');
+  if (!search) return;
   var hideDone = true;
+  var kind = 'all';
+  var chips = panel.querySelectorAll('button[data-nv-work-kind]');
   function cardText(card) {
     var id = card.getAttribute('data-nv-ticket')
       || card.getAttribute('data-nv-feedback-item') || '';
@@ -516,8 +677,9 @@ function nvpWireWorkFilters(panel, toggle, doneCount) {
     var query = String(search.value || '').trim().toLowerCase();
     panel.querySelectorAll('[data-nv-ticket], [data-nv-feedback-item]').forEach(function (card) {
       var matches = !query || cardText(card).indexOf(query) >= 0;
+      var matchesKind = kind === 'all' || card.getAttribute('data-nv-kind') === kind;
       var isDone = card.getAttribute('data-nv-state') === 'erledigt';
-      var hide = !matches || (hideDone && isDone);
+      var hide = !matches || !matchesKind || (!query && hideDone && isDone);
       if (hide) card.setAttribute('hidden', '');
       else card.removeAttribute('hidden');
     });
@@ -525,55 +687,108 @@ function nvpWireWorkFilters(panel, toggle, doneCount) {
     setTx(toggle, hideDone
       ? tr('Erledigte anzeigen') + ' (' + String(doneCount) + ')'
       : tr('Erledigte ausblenden'));
+    chips.forEach(function (chip) {
+      chip.setAttribute('aria-pressed',
+        chip.getAttribute('data-nv-work-kind') === kind ? 'true' : 'false');
+    });
   }
   search.addEventListener('input', apply);
   toggle.addEventListener('click', function () { hideDone = !hideDone; apply(); });
+  chips.forEach(function (chip) {
+    chip.addEventListener('click', function () {
+      kind = chip.getAttribute('data-nv-work-kind') || 'all';
+      apply();
+    });
+  });
   apply();
 }
 
-/* ---------- Überblick: autonomer Modus ---------- */
+/* ---------- Überblick: autonomer Modus als große Karte ---------- */
 
-function nvpAutonomousRow(name, token, autonomous) {
+function nvpAutonomousCard(name, token, autonomous) {
   var on = !!(autonomous && autonomous.enabled);
   var input = el('input', {type: 'checkbox', 'data-nv-autonomous': '',
     'aria-label': tr('Autonomer Modus')});
   input.checked = on;
+  var state = el('span', {class: 'nv-pill ' + (on ? 'nv-ok' : 'nv-warn'),
+    'data-nv-autonomous-state': ''}, on ? tr('aktiv') : tr('inaktiv'));
   input.addEventListener('change', function () {
-    nvpPost(name, '/api/autonomous', {action: input.checked ? 'on' : 'off'},
+    var next = !!input.checked;
+    setTx(state, next ? tr('aktiv') : tr('inaktiv'));
+    state.classList.toggle('nv-ok', next);
+    state.classList.toggle('nv-warn', !next);
+    nvpPost(name, '/api/autonomous', {action: next ? 'on' : 'off'},
       'Autonomer Modus', token);
   });
-  return el('div', {class: 'nv-row nv-autonomous', 'data-nv-autonomous-row': ''},
-    el('span', {}, tr('Autonomer Modus')),
-    el('small', {class: 'nv-muted'},
-      tr('Beantwortet offene Rückfragen automatisch, wenn keine Antwort kommt')),
-    input);
+  return el('section', {class: 'nv-card nv-autonomous-card',
+    'data-nv-autonomous-card': '',
+    style: 'padding:var(--nv-space-5, 24px);border:2px solid var(--nv-primary, #2b6cb0);'
+      + 'display:flex;flex-wrap:wrap;align-items:center;gap:var(--nv-space-4, 16px);'},
+    el('div', {style: 'flex:1 1 24rem;min-width:0;'},
+      el('h3', {style: 'margin:0 0 8px;font-size:1.35rem;'}, tr('Autonomer Modus')),
+      el('p', {class: 'nv-muted', style: 'margin:0;'},
+        tr('Beantwortet offene Rückfragen automatisch, wenn keine Antwort kommt'))),
+    state,
+    el('div', {class: 'nv-row nv-autonomous', 'data-nv-autonomous-row': ''},
+      el('small', {class: 'nv-muted'},
+        tr('Beantwortet offene Rückfragen automatisch, wenn keine Antwort kommt')),
+      input));
 }
 
-/* ---------- Beschreibung (ehemals Assistent) ---------- */
+/* ---------- Beschreibung: Leitfaden mit Schrittübersicht ---------- */
+
+/* Schrittüberschriften sind übersetzbare Quelltexte. Der Backend-Titel
+   „Produktziel“ erscheint im Deutschen als „Projektziel“. */
+function nvpGuideTitle(step) {
+  var raw = String(step && step.title || '');
+  if (raw === 'Produktziel') return tr('Projektziel');
+  return raw ? tr(raw) : tr('Schritt');
+}
 
 function nvpAssistantPanel(name, token, guide) {
-  var holder = el('div', {class: 'nv-card nv-assistant', 'data-nv-assistant': ''},
-    el('h3', {}, tr('Projektleitfaden')));
   var steps = (guide && guide.steps) || [];
-  if (!steps.length) {
-    holder.append(el('p', {class: 'nv-muted'}, tr('Keine Schritte vorhanden')));
+  var statusById = {};
+  steps.forEach(function (step) {
+    statusById[String(step.id || '')] = String(step && step.status || '');
+  });
+  function filledCount() {
+    return steps.filter(function (step) {
+      return statusById[String(step.id || '')] === 'gefüllt';
+    }).length;
   }
-  var grid = el('div', {class: 'nv-guide-grid'});
+  function progressText(count) {
+    return String(count) + ' ' + tr('von') + ' ' + String(steps.length)
+      + ' ' + tr('ausgefüllt');
+  }
+  var progress = el('div', {class: 'nv-muted', 'data-nv-guide-progress': ''},
+    progressText(filledCount()));
+  var holder = el('div', {class: 'nv-card nv-assistant', 'data-nv-assistant': ''},
+    el('div', {class: 'nv-row', style: 'justify-content:space-between;flex-wrap:wrap;'},
+      el('h3', {}, tr('Projektleitfaden')),
+      progress));
+  var nav = el('nav', {'data-nv-guide-nav': '', 'aria-label': tr('Schrittübersicht'),
+    style: 'display:flex;flex-wrap:wrap;gap:var(--nv-space-2, 8px);'});
+  var content = el('div', {class: 'nv-guide-grid'});
+  if (!steps.length) {
+    content.append(el('p', {class: 'nv-muted'}, tr('Keine Schritte vorhanden')));
+  }
   steps.forEach(function (step, index) {
     var id = String(step.id || '');
-    var filled = String(step.status || '') === 'gefüllt';
-    var answer = el('textarea', {rows: '4', 'data-nv-answer-field': id,
-      'aria-label': tr('Antwort')}, String(step.value || ''));
-    var pill = el('span', {class: 'nv-pill ' + (filled ? 'nv-ok' : 'nv-warn'),
-      'data-nv-step-status': '',
-      title: tr('Zeigt an, ob dieser Abschnitt schon beantwortet ist')},
-      filled ? tr('ausgefüllt') : tr('offen'));
-    var stepBox = el('div', {class: 'nv-guide-step'},
-      el('h4', {}, String(index + 1) + '. ' + String(step.title || id)),
-      el('div', {class: 'nv-row'}, pill),
+    var title = nvpGuideTitle(step);
+    var stepBox = el('section', {class: 'nv-guide-step',
+      'data-nv-guide-step-id': id, id: 'nv-guide-' + id,
+      style: 'scroll-margin-top: 96px;'},
+      el('h4', {}, String(index + 1) + '. ' + title),
       el('p', {}, String(step.question || '')),
       el('p', {class: 'nv-muted'}, String(step.help || '')),
-      answer);
+      el('textarea', {rows: '6', 'data-nv-answer-field': id,
+        'aria-label': tr('Antwort')}, String(step.value || '')));
+    nav.append(el('button', {class: 'nv-btn nv-ghost nv-compact', type: 'button',
+      'data-nv-guide-step': id,
+      'aria-label': tr('Zu Schritt {{n}}', {n: index + 1}),
+      on: {click: function () {
+        stepBox.scrollIntoView({behavior: 'smooth', block: 'start'});
+      }}}, title));
     var buttons = [el('button', {class: 'nv-btn nv-secondary nv-compact', type: 'button',
       on: {click: function () {
         nvpGuideAction(name, token, {action: 'agent', step: id});
@@ -586,30 +801,34 @@ function nvpAssistantPanel(name, token, guide) {
         on: {click: function () { nvpGuideAction(name, token, {action: 'draft_discard', step: id}); }}},
         tr('Entwurf verwerfen')));
     }
-    /* Speichern aktualisiert nur die Status-Pille lokal — kein Voll-Neurender,
-       damit Fokus und Antwort erhalten bleiben. */
     buttons.push(el('button', {class: 'nv-btn nv-primary nv-compact', type: 'button',
       'data-nv-answer-save': '',
       on: {click: async function () {
         var answers = {};
-        answers[id] = String(answer.value || '');
+        answers[id] = String(stepBox.querySelector('[data-nv-answer-field]').value || '');
         try {
           var result = await api('/api/guide', Object.assign(
             {name: name, action: 'save', answers: answers}));
           if (NV.stale(token)) return;
           if (result && result.ok === false) { toast(bt(result.message)); return; }
-          pill.classList.remove('nv-warn');
-          pill.classList.add('nv-ok');
-          setTx(pill, tr('ausgefüllt'));
           toast(tr('Antwort gespeichert'));
+          statusById[id] = answers[id].trim() ? 'gefüllt' : 'offen';
+          setTx(progress, progressText(filledCount()));
         } catch (e) {
           toast(tr('Speichern fehlgeschlagen: ') + String(e && e.message || e));
         }
       }}}, tr('Antwort speichern')));
     stepBox.append(el('div', {class: 'nv-row nv-guide-actions'}, buttons));
-    grid.append(stepBox);
+    content.append(stepBox);
   });
-  holder.append(grid);
+  /* Desktop: Schritte links, Übersicht als rechte Spalte. Schmal: die Leiste
+     bricht um und liegt als horizontale Leiste über/unter den Schritten. */
+  holder.append(el('div', {
+    style: 'display:flex;flex-wrap:wrap;gap:var(--nv-space-5, 24px);align-items:flex-start;'
+  },
+    el('div', {style: 'flex:1 1 32rem;min-width:0;'}, content),
+    el('div', {style: 'flex:0 1 16rem;min-width:min(100%, 12rem);position:sticky;top:96px;'},
+      el('h4', {}, tr('Schrittübersicht')), nav)));
   return holder;
 }
 
@@ -624,7 +843,9 @@ function nvpGuideAction(name, token, body) {
 function nvpTeamSection(name, token, agents) {
   var rows = (agents && agents.agents) || [];
   var models = (agents && agents.models) || [];
-  var body = el('div', {class: 'nv-list'});
+  var body = el('div', {class: 'nv-list nv-team-grid',
+    style: 'display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));'
+      + 'gap:var(--nv-space-2, 8px);'});
   var error = nvpErrorBox();
   if (!rows.length) body.append(el('p', {class: 'nv-muted'}, tr('Keine Agenten vorhanden')));
   rows.forEach(function (row) {
@@ -660,16 +881,30 @@ function nvpTeamSection(name, token, agents) {
       }
     });
     combo.setAttribute('data-nv-agent-model', '');
-    body.append(el('div', {class: 'nv-row nv-team-row', 'data-nv-team-agent': agent},
-      toggle, el('span', {class: 'nv-team-name'}, agent),
+    combo.style.width = '100%';
+    body.append(el('div', {class: 'nv-row nv-team-row', 'data-nv-team-agent': agent,
+      style: 'gap:var(--nv-space-2, 8px);align-items:center;flex-wrap:wrap;'},
+      toggle,
+      el('span', {class: 'nv-team-name', style: 'flex:0 0 7rem;white-space:nowrap;'}, agent),
       row.opencode ? el('span', {class: 'nv-tag'}, tr('OpenCode')) : null,
-      combo));
+      el('div', {style: 'flex:1 1 14rem;min-width:0;'}, combo)));
   });
   return nvpSection('team', tr('Team'), [body, error]);
 }
 
+var NVP_TYPE_HELP = {
+  generic: 'Allgemeines Projekt ohne besondere Werkzeuge.',
+  android: 'Android-Projekt mit Emulator und Gradle-Werkzeugen.',
+  swift: 'Swift-Projekt für Apple-Plattformen.',
+  python: 'Python-Projekt mit virtueller Umgebung.',
+  node: 'Node- und TypeScript-Projekt mit npm-Werkzeugen.',
+  rust: 'Rust-Projekt mit Cargo-Werkzeugen.',
+  go: 'Go-Projekt mit den Go-Werkzeugen.'
+};
+
 function nvpBasicsSection(name, token, data) {
   var type = String(data.type || '');
+  var prepared = !!data.init;
   var typeSelect = el('select', {'data-nv-field': 'type', 'aria-label': tr('Typ')});
   ['generic', 'android', 'swift', 'python', 'node', 'rust', 'go'].forEach(function (value) {
     nvpOption(typeSelect, value, value === type);
@@ -677,13 +912,42 @@ function nvpBasicsSection(name, token, data) {
   if (type && !Array.prototype.some.call(typeSelect.options, function (o) { return o.value === type; })) {
     nvpOption(typeSelect, type, true);
   }
+  var typeHelp = el('small', {'data-nv-type-help': '', class: 'nv-muted'},
+    tr(NVP_TYPE_HELP[type] || NVP_TYPE_HELP.generic));
+  typeSelect.addEventListener('change', function () {
+    setTx(typeHelp, tr(NVP_TYPE_HELP[typeSelect.value] || NVP_TYPE_HELP.generic));
+    if (typeSelect.value !== type) confirmBox.removeAttribute('hidden');
+    else confirmBox.setAttribute('hidden', '');
+  });
   var error = nvpErrorBox();
-  var init = nvpButton(tr('Projekt vorbereiten'), 'init', function () {
+  var confirmText = el('p', {class: 'nv-muted'}, '');
+  var confirmBox = el('div', {class: 'nv-confirm', 'data-nv-type-confirm': '', hidden: ''},
+    confirmText,
+    el('div', {class: 'nv-row'},
+      nvpButton(tr('Ja, Typ ändern'), 'type-confirm-yes', async function () {
+        try {
+          var result = await api('/api/init', {name: name, type: typeSelect.value});
+          if (NV.stale(token)) return;
+          if (result && result.ok === false) { nvpShowError(error, bt(result.message)); return; }
+          toast(bt(result && result.message) || tr('Projekttyp gespeichert'));
+          NV.render();
+        } catch (e) {
+          nvpShowError(error, tr('Speichern fehlgeschlagen: ') + String(e && e.message || e));
+        }
+      }, 'nv-primary'),
+      nvpButton(tr('Abbrechen'), 'type-confirm-no', function () {
+        typeSelect.value = type;
+        setTx(typeHelp, tr(NVP_TYPE_HELP[type] || NVP_TYPE_HELP.generic));
+        confirmBox.setAttribute('hidden', '');
+      })));
+  typeSelect.addEventListener('change', function () {
+    setTx(confirmText, tr('Den Projekttyp wirklich auf {{type}} ändern? '
+      + 'Bestehende Einstellungen bleiben erhalten.', {type: typeSelect.value}));
+  });
+  var init = prepared ? null : nvpButton(tr('Projekt vorbereiten'), 'init', function () {
     nvpPost(name, '/api/init', {type: typeSelect.value}, 'Vorbereitung gestartet', token)
       .then(function () { if (!NV.stale(token)) NV.render(); });
   }, 'nv-primary');
-  /* Ein Feld pro Zeile: Beschriftung links, Wert rechts. Als Definitionsliste
-     bleibt die Zuweisung auch bei langen Pfaden eindeutig. */
   return nvpSection('basics', tr('Grundlagen'), [
     el('dl', {class: 'nv-kv nv-kv-list'},
       el('div', {class: 'nv-kv-row'}, el('dt', {}, tr('Pfad')),
@@ -691,47 +955,68 @@ function nvpBasicsSection(name, token, data) {
       el('div', {class: 'nv-kv-row'}, el('dt', {}, tr('Typ')),
         el('dd', {}, String(type || '-'))),
       el('div', {class: 'nv-kv-row'}, el('dt', {}, '.vibe'),
-        el('dd', {}, String(data.init ? tr('Vorhanden') : tr('Fehlt'))))),
-    nvpLabel(tr('Typ'), typeSelect),
-    el('div', {class: 'nv-row'}, init), error
+        el('dd', {}, String(prepared ? tr('Vorhanden') : tr('Fehlt'))))),
+    nvpLabel(tr('Typ'), typeSelect), typeHelp,
+    init ? el('div', {class: 'nv-row'}, init) : null,
+    confirmBox, error
   ]);
 }
 
-function nvpChecksSection(name, token, data) {
-  var state = el('p', {}, tr('Prüfung') + ': '
-    + String(data.verify_cmd ? tr('Verfügbar') : tr('Nicht konfiguriert')));
-  var tail = el('pre', {class: 'nv-log', role: 'log'},
-    (data.verify_tail || []).join('\n') || String(tr('Kein Prüfprotokoll vorhanden')));
-  return nvpSection('checks', tr('Prüfungen'), [state, tail]);
+/* Session-Limit ist eine projektspezifische Einstellung und steht nicht mehr
+   im Überblick. Der Wert gilt ausschließlich für dieses Projekt. */
+function nvpSessionLimitSection(name, token, sessions) {
+  var current = sessions && sessions.limit;
+  var input = el('input', {type: 'number', min: '1', max: '100',
+    'data-nv-session-limit': '',
+    value: current == null ? '' : String(current),
+    'aria-label': tr('Sitzungslimit für dieses Projekt')});
+  var error = nvpErrorBox();
+  var save = nvpButton(tr('Speichern'), 'session-limit-save', async function () {
+    nvpShowError(error, '');
+    var value = parseInt(String(input.value || '').trim(), 10);
+    if (!isFinite(value) || value < 1 || value > 100) {
+      nvpShowError(error, tr('Bitte ein Limit zwischen 1 und 100 angeben.'));
+      return;
+    }
+    try {
+      var result = await api('/api/sessions', {name: name, action: 'limit', limit: value});
+      if (NV.stale(token)) return;
+      if (result && result.ok === false) { nvpShowError(error, bt(result.message)); return; }
+      toast(bt(result && result.message) || tr('Sitzungslimit gespeichert'));
+    } catch (e) {
+      nvpShowError(error, String(e && e.message || e));
+    }
+  }, 'nv-primary');
+  return nvpSection('session-limit', tr('Sitzungslimit'), [
+    el('p', {class: 'nv-muted'}, tr('gilt nur für dieses Projekt')),
+    nvpLabel(tr('Sitzungslimit'), input),
+    el('div', {class: 'nv-row'}, save), error
+  ]);
 }
 
-function nvpSessionsSection(name, token, sessions) {
-  var rows = (sessions && sessions.sessions) || (sessions && sessions.entries) || [];
-  var body = el('div', {class: 'nv-list'});
-  if (!rows.length) body.append(el('p', {class: 'nv-muted'}, tr('Keine Sitzungen vorhanden')));
-  rows.forEach(function (row) {
-    var session = String(row.session || row.id || row.name || '');
-    body.append(el('div', {class: 'nv-row nv-session-row'},
-      el('span', {}, session + ' ' + String(row.project || '')),
-      el('span', {class: 'nv-muted', 'data-nv-session-attach': ''},
-        (row.package_id || row.worktree_path)
-          ? tr('Paket ') + String(row.package_id || '?') + tr(' · Arbeitskopie ') + String(row.worktree_path || '?')
-          : ''),
-      nvpButton(tr('Fortsetzen'), 'session-resume-settings', function () {
-        nvpPost(name, '/api/sessions', {action: 'continue', session: session},
-          'Sitzung fortgesetzt', token);
-      })));
-  });
-  var limit = sessions && sessions.limit;
-  return nvpSection('sessions', tr('Sitzungen'), [
-    el('p', {class: 'nv-muted'}, tr('Sitzungslimit') + ': '
-      + (limit == null ? '-' : String(limit))), body
+/* Fehlerbehebung ist nur für Android-Projekte relevant. */
+function nvpTroubleshootingSection(name, token, data) {
+  if (String(data && data.type || '') !== 'android') return null;
+  return nvpSection('troubleshooting', tr('Fehlerbehebung'), [
+    el('details', {'data-nv-emulator': ''},
+      el('summary', {}, tr('Emulator')),
+      el('p', {class: 'nv-muted'},
+        tr('nur nötig, wenn etwas nicht funktioniert')),
+      el('div', {class: 'nv-row'},
+        nvpButton(tr('Emulator starten'), 'emulator-start', function () {
+          nvpPost(name, '/api/emu', {action: 'start'}, 'Emulator gestartet', token);
+        }, 'nv-primary'),
+        nvpButton(tr('Emulator stoppen'), 'emulator-stop', function () {
+          nvpPost(name, '/api/emu', {action: 'stop'}, 'Emulator gestoppt', token);
+        })))
   ]);
 }
 
 /* Git & GitHub: vollständige CLI-Parität als bewusste Aktionen. Die Payloads
    entsprechen eins zu eins der klassischen Karte (app.js githubBody); der
-   Zugriff ist je Projekt und der Token wird nie in den DOM geschrieben. */
+   Zugriff ist je Projekt und der Token wird nie in den DOM geschrieben.
+   F34: fünf Blöcke Verbindung → Branches → Synchronisieren → Merge-Request
+   → Issues. */
 function nvpGithubSection(name, token, github) {
   var g = github || {};
   var error = nvpErrorBox();
@@ -751,7 +1036,27 @@ function nvpGithubSection(name, token, github) {
       });
   }
 
-  /* --- Aktivierung und Einstellungen --- */
+  var branchNames = [];
+  (g.branches || []).forEach(function (branch) {
+    var value = String(branch && branch.name || '');
+    if (value && branchNames.indexOf(value) < 0) branchNames.push(value);
+  });
+  var currentBranch = String(g.branch || '');
+  if (currentBranch && currentBranch !== '-' && branchNames.indexOf(currentBranch) < 0) {
+    branchNames.unshift(currentBranch);
+  }
+  function branchSelect(hook, field, placeholder, selected) {
+    var select = el('select', {['data-nv-' + hook]: '', 'data-nv-field': field,
+      'aria-label': placeholder});
+    select.append(el('option', {value: ''}, placeholder));
+    branchNames.forEach(function (value) {
+      select.append(el('option', {value: value}, value));
+    });
+    if (selected) select.value = selected;
+    return select;
+  }
+
+  /* --- Block 1: Verbindung --- */
   var enabled = el('input', {type: 'checkbox', 'data-nv-field': 'github-enabled',
     'aria-label': tr('GitHub-Verknüpfung aktiv')});
   enabled.checked = !!g.enabled;
@@ -772,41 +1077,24 @@ function nvpGithubSection(name, token, github) {
     el('span', {class: 'nv-switch-text'},
       el('span', {}, tr('Merge-Requests automatisch mergen')),
       el('small', {}, tr('Merge-Requests automatisch mergen, wenn alle Schranken grün sind (sonst PR-only)'))));
-  
-  /* AP3: Issues-Sync (Opt-in) und seine Label-/Assignee-Einstellungen. */
-  var issuesEnabled = el('input', {type: 'checkbox', 'data-nv-field': 'github-issues-enabled',
-    'aria-label': tr('Issues-Sync aktivieren (GitHub als Quelle der Wahrheit)')});
-  issuesEnabled.checked = !!g.issues_enabled;
-  var issuesInProgress = el('input', {type: 'text', 'data-nv-field': 'issues_in_progress',
-    value: String(g.issues_in_progress_label || ''), 'aria-label': tr('In-Progress-Label')});
-  var issuesReady = el('input', {type: 'text', 'data-nv-field': 'issues_ready',
-    value: String(g.issues_ready_label || ''), 'aria-label': tr('Ready-Label')});
-  var issuesAssignee = el('input', {type: 'text', 'data-nv-field': 'issues_assignee',
-    value: String(g.issues_assignee || ''), 'aria-label': tr('Assignee (leer = alle)')});
-  var save = nvpButton(tr('Einstellungen speichern'), 'github-settings-save', function () {
-    post({action: 'settings', enabled: enabled.checked, repo: repo.value.trim(),
-      label: label.value.trim(), api: apiBase.value.trim(), base: base.value.trim(), auto_merge: autoMerge.checked,
-      issues_enabled: issuesEnabled.checked, issues_in_progress: issuesInProgress.value.trim(),
-      issues_ready: issuesReady.value.trim(), issues_assignee: issuesAssignee.value.trim()},
 
-      function (result) {
-        if (result && result.ok !== false) toast(bt(result.message) || tr('Gespeichert'));
-      });
-  }, 'nv-primary');
-
-  /* --- Zugang (Token): nur Quelle/status, niemals der Wert selbst --- */
-  function setAuth(source) {
-    var text = source === 'umgebung'
-      ? tr('GitHub-Zugang über die Umgebung.')
-      : source === 'projekt'
-        ? tr('GitHub-Projekt-Token gespeichert (verschlüsselt).')
-        : source === 'gespeichert'
-          ? tr('GitHub-Zugang über den gespeicherten Token.')
-          : tr('Kein Token hinterlegt.');
-    return tr('GitHub-Zugang: ') + text;
+  var connectionState = el('span', {class: 'nv-pill',
+    'data-nv-github-connection-state': ''},
+    g.repo ? tr('Verknüpft') : tr('Nicht verknüpft'));
+  var tokenState = el('span', {class: 'nv-pill ' + (g.auth && g.auth.set ? 'nv-ok' : 'nv-warn'),
+    'data-nv-github-token-state': ''},
+  g.auth && g.auth.set ? tr('Token hinterlegt') : tr('Kein Token'));
+  function syncToken(result) {
+    var auth = result && (result.auth || (result.github && result.github.auth));
+    if (!auth) return;
+    var hasToken = !!auth.set;
+    setTx(tokenState, hasToken ? tr('Token hinterlegt') : tr('Kein Token'));
+    tokenState.classList.toggle('nv-ok', hasToken);
+    tokenState.classList.toggle('nv-warn', !hasToken);
   }
   var authLine = el('div', {class: 'nv-muted', 'data-nv-github-auth': ''},
-    setAuth(g.auth && g.auth.set ? g.auth.source : ''));
+    g.auth && g.auth.set
+      ? tr('GitHub-Zugang eingerichtet.') : tr('Kein Token hinterlegt.'));
   var tokenInput = el('input', {type: 'password', 'data-nv-field': 'github-token',
     placeholder: tr('GitHub-Token einfügen'), 'aria-label': tr('GitHub-Token einfügen')});
   var tokenSave = nvpButton(tr('Token speichern'), 'github-token-save', function () {
@@ -815,8 +1103,8 @@ function nvpGithubSection(name, token, github) {
     post({action: 'token.save', token: value}, function (result) {
       if (!result || result.ok === false) return;
       tokenInput.value = '';
-      var a = result.auth || (result.github && result.github.auth) || {};
-      setTx(authLine, setAuth(a.set ? a.source : ''));
+      syncToken(result);
+      setTx(authLine, tr('GitHub-Zugang eingerichtet.'));
       toast(bt(result.message) || tr('Token gespeichert'));
     });
   }, 'nv-primary');
@@ -824,13 +1112,12 @@ function nvpGithubSection(name, token, github) {
     post({action: 'token.clear'}, function (result) {
       if (!result || result.ok === false) return;
       tokenInput.value = '';
-      var a = result.auth || (result.github && result.github.auth) || {};
-      setTx(authLine, setAuth(a.set ? a.source : ''));
+      syncToken(result);
+      setTx(authLine, tr('Kein Token hinterlegt.'));
       toast(bt(result.message) || tr('Token entfernt'));
     });
   });
-
-  /* --- Verbindung --- */
+  var connResult = el('div', {class: 'nv-muted', 'data-nv-github-connection': '', hidden: ''});
   var connect = nvpButton(tr('Verbindung prüfen'), 'github-connection', function () {
     post({action: 'connection'}, function (result) {
       if (!result) return;
@@ -842,9 +1129,42 @@ function nvpGithubSection(name, token, github) {
       connResult.removeAttribute('hidden');
     });
   });
-  var connResult = el('div', {class: 'nv-muted', 'data-nv-github-connection': '', hidden: ''});
+  var link = nvpButton(tr('Mit GitHub verknüpfen'), 'github-link', function () {
+    var value = String(repo.value || '').trim();
+    if (!value || value.indexOf('/') < 0) {
+      nvpShowError(error, tr('Repository in der Form owner/name angeben'));
+      return;
+    }
+    post({action: 'link', url: 'https://github.com/' + value + '.git'}, function (result) {
+      if (result && result.ok !== false) {
+        setTx(connectionState, tr('Verknüpft'));
+        NV.render();
+      }
+    });
+  });
+  var unlink = nvpButton(tr('Verknüpfung lösen'), 'github-unlink', function () {
+    post({action: 'unlink'}, function (result) {
+      if (result && result.ok !== false) {
+        setTx(connectionState, tr('Nicht verknüpft'));
+        NV.render();
+      }
+    });
+  });
+  var save = nvpButton(tr('Einstellungen speichern'), 'github-settings-save', function () {
+    post({action: 'settings', enabled: enabled.checked, repo: repo.value.trim(),
+      label: label.value.trim(), api: apiBase.value.trim(), base: base.value.trim(),
+      auto_merge: autoMerge.checked, issues_enabled: issuesEnabled.checked,
+      issues_in_progress: issuesInProgress.value.trim(),
+      issues_ready: issuesReady.value.trim(),
+      issues_assignee: issuesAssignee.value.trim()}, function (result) {
+      if (result && result.ok !== false) {
+        setTx(connectionState, repo.value.trim() ? tr('Verknüpft') : tr('Nicht verknüpft'));
+        toast(bt(result.message) || tr('Gespeichert'));
+      }
+    });
+  }, 'nv-primary');
 
-  /* --- Branches mit zeilenlokalem Checkout --- */
+  /* --- Block 2: Branches --- */
   var branchRows = el('div', {class: 'nv-list'});
   (g.branches || []).forEach(function (branch) {
     var branchName = String(branch.name || '');
@@ -861,42 +1181,18 @@ function nvpGithubSection(name, token, github) {
   if (!(g.branches || []).length) {
     branchRows.append(el('p', {class: 'nv-muted'}, tr('Keine lokalen Branches erkannt.')));
   }
+  var pushBranch = branchSelect('github-push-branch', 'github-push-branch',
+    tr('Quell-Branch wählen'), currentBranch !== '-' ? currentBranch : '');
+  var pushTarget = branchSelect('github-push-target', 'github-push-target',
+    tr('Ziel-Branch wählen'), '');
+  var sourceHelp = el('small', {'data-nv-github-help-source': '', class: 'nv-muted'},
+    tr('Quell-Branch: der lokale Branch, dessen Stand übertragen wird'));
+  var targetHelp = el('small', {'data-nv-github-help-target': '', class: 'nv-muted'},
+    tr('Ziel-Branch: Remote-Branch, der den Stand erhält — leer lassen für denselben Namen'));
 
-  /* --- Pull / Push --- */
+  /* --- Block 3: Synchronisieren --- */
   var pull = nvpButton(tr('Pull (aufholen, --ff-only)'), 'github-pull', function () {
     post({action: 'pull'}, function (result) {
-      if (result && result.ok !== false) NV.render();
-    });
-  });
-  var pushBranch = el('input', {type: 'text', 'data-nv-field': 'github-push-branch',
-    placeholder: tr('Quell-Branch'), 'aria-label': tr('Quell-Branch')});
-  var pushTarget = el('input', {type: 'text', 'data-nv-field': 'github-push-target',
-    placeholder: tr('Ziel-Branch (leer = gleicher Name)'),
-    'aria-label': tr('Ziel-Branch (leer = gleicher Name)')});
-  var sourceHelp = el('small', {'data-nv-github-help-source': ''},
-    tr('Quell-Branch: der lokale Branch, dessen Stand übertragen wird'));
-  var targetHelp = el('small', {'data-nv-github-help-target': ''},
-    tr('Ziel-Branch: Remote-Branch, der den Stand erhält — leer lassen für denselben Namen'));
-  var push = nvpButton(tr('Push'), 'github-push', function () {
-    post({action: 'push', branch: pushBranch.value.trim(), target: pushTarget.value.trim()},
-      function (result) {
-        if (result && result.ok !== false) NV.render();
-      });
-  }, 'nv-primary');
-
-  /* --- Verknüpfung herstellen/lösen, Abruf (fetch) --- */
-  var link = nvpButton(tr('Mit GitHub verknüpfen'), 'github-link', function () {
-    var value = String(repo.value || '').trim();
-    if (!value || value.indexOf('/') < 0) {
-      nvpShowError(error, tr('Repository in der Form owner/name angeben'));
-      return;
-    }
-    post({action: 'link', url: 'https://github.com/' + value + '.git'}, function (result) {
-      if (result && result.ok !== false) NV.render();
-    });
-  });
-  var unlink = nvpButton(tr('Verknüpfung lösen'), 'github-unlink', function () {
-    post({action: 'unlink'}, function (result) {
       if (result && result.ok !== false) NV.render();
     });
   });
@@ -905,8 +1201,23 @@ function nvpGithubSection(name, token, github) {
       if (result && result.ok !== false) NV.render();
     });
   });
+  var push = nvpButton(tr('Push'), 'github-push', function () {
+    post({action: 'push', branch: String(pushBranch.value || '').trim(),
+      target: String(pushTarget.value || '').trim()}, function (result) {
+      if (result && result.ok !== false) NV.render();
+    });
+  }, 'nv-primary');
 
-  /* --- Issues als Arbeitspakete --- */
+  /* --- Block 5: Issues (Opt-in) --- */
+  var issuesEnabled = el('input', {type: 'checkbox', 'data-nv-field': 'github-issues-enabled',
+    'aria-label': tr('Issues-Sync aktivieren (GitHub als Quelle der Wahrheit)')});
+  issuesEnabled.checked = !!g.issues_enabled;
+  var issuesInProgress = el('input', {type: 'text', 'data-nv-field': 'issues_in_progress',
+    value: String(g.issues_in_progress_label || ''), 'aria-label': tr('In-Progress-Label')});
+  var issuesReady = el('input', {type: 'text', 'data-nv-field': 'issues_ready',
+    value: String(g.issues_ready_label || ''), 'aria-label': tr('Ready-Label')});
+  var issuesAssignee = el('input', {type: 'text', 'data-nv-field': 'issues_assignee',
+    value: String(g.issues_assignee || ''), 'aria-label': tr('Assignee (leer = alle)')});
   var issueFilter = el('input', {type: 'text', 'data-nv-field': 'github-issue-label',
     value: String(g.label || 'vibe'), placeholder: tr('Label (leer = alle)'),
     'aria-label': tr('Label-Filter')});
@@ -934,17 +1245,15 @@ function nvpGithubSection(name, token, github) {
       if (result && result.ok !== false) NV.render();
     });
   });
-  /* AP3: Issues-Sync nur bei aktivem Opt-in sichtbar (Pull + Push + Close). */
   var issuesSync = g.issues_enabled
     ? nvpButton(tr('Issues synchronisieren'), 'issues-sync', function () {
         post({action: 'issues.sync'}, function (result) {
-          if (result && result.ok !== false) refresh();
+          if (result && result.ok !== false) NV.render();
         });
       }, 'nv-primary')
     : null;
 
-  /* --- Merge-Request: Anfrage zeigt nur die Bestätigung; erst die
-      ausdrückliche Bestätigung löst den REST-Aufruf aus. --- */
+  /* --- Block 4: Merge-Request --- */
   var prConfirm = el('div', {class: 'nv-confirm', 'data-nv-github-pr-confirm': '', hidden: ''},
     el('p', {class: 'nv-muted'}, tr('Merge-Request wirklich stellen? Der aktuelle Branch wird nach origin gepusht und der Merge-Request über GitHub angelegt.')),
     nvpButton(tr('Ja, bestätigen'), 'github-pr-confirm', function () {
@@ -961,35 +1270,51 @@ function nvpGithubSection(name, token, github) {
     prConfirm.removeAttribute('hidden');
     prResult.setAttribute('hidden', '');
   }, 'nv-primary');
+  var prExplain = el('p', {class: 'nv-muted'},
+    tr('Der aktuelle Branch {{source}} wird nach {{target}} übernommen.',
+      {source: currentBranch || '-', target: base.value.trim() || currentBranch || '-'}));
 
-  /* Fachliche Reihenfolge: Einstellungen → Verbinden → Branches → Pull/Push
-     → Merge-Request → Issues. */
   return nvpSection('github', tr('Git & GitHub'), [
-    nvpLabel(tr('GitHub-Verknüpfung aktiv'), enabled),
+    el('h4', {}, tr('Verbindung')),
+    el('div', {class: 'nv-row'}, connectionState, tokenState),
     nvpLabel(tr('Repository (owner/name)'), repo),
+    el('p', {class: 'nv-muted'}, tr('Status: ')
+      + (g.repo ? tr('Verknüpft') : tr('Nicht verknüpft'))
+      + (g.branch && g.branch !== '-' ? ' · ' + tr('Branch') + ': ' + currentBranch : '')),
+    authLine,
+    el('div', {class: 'nv-row'}, tokenInput, tokenSave, tokenClear),
+    el('div', {class: 'nv-row'}, connect, link, unlink),
+    connResult,
+    nvpLabel(tr('GitHub-Verknüpfung aktiv'), enabled),
     nvpLabel(tr('Label für vibe-Aufgaben'), label),
     nvpLabel(tr('API-Adresse'), apiBase),
     nvpLabel(tr('Basis-Branch (optional)'), base),
     autoMergeRow,
+    el('div', {class: 'nv-row'}, save),
+
+    el('h4', {}, tr('Branches')),
+    el('p', {class: 'nv-muted'}, tr('Aktueller Branch: ') + currentBranch),
+    branchRows,
+    nvpLabel(tr('Quell-Branch'), pushBranch), sourceHelp,
+    nvpLabel(tr('Ziel-Branch'), pushTarget), targetHelp,
+
+    el('h4', {}, tr('Synchronisieren')),
+    el('div', {class: 'nv-row'}, pull, fetch, push),
+
+    el('h4', {}, tr('Merge-Request')),
+    prExplain,
+    el('div', {class: 'nv-row'}, pr, prConfirm), prResult,
+
+    el('h4', {}, tr('Issues als Arbeitspakete')),
     nvpLabel(tr('Issues-Sync aktivieren (GitHub als Quelle der Wahrheit)'), issuesEnabled),
+    el('p', {class: 'nv-muted'}, tr('GitHub-Issues können als Arbeitspakete importiert und synchronisiert werden.')),
     nvpLabel(tr('In-Progress-Label'), issuesInProgress),
     nvpLabel(tr('Ready-Label'), issuesReady),
     nvpLabel(tr('Assignee (leer = alle)'), issuesAssignee),
-    el('div', {class: 'nv-row'}, save, connect),
-    el('h4', {}, tr('Verbinden')),
-    authLine,
-    el('div', {class: 'nv-row'}, tokenInput, tokenSave, tokenClear),
-    el('div', {class: 'nv-row'}, connect, link, unlink, fetch),
-    connResult,
-    el('h4', {}, tr('Branches')), branchRows,
-    el('h4', {}, tr('Pull / Push')),
-    el('div', {class: 'nv-row'}, pull, push),
-    nvpLabel(tr('Quell-Branch'), pushBranch), sourceHelp,
-    nvpLabel(tr('Ziel-Branch'), pushTarget), targetHelp,
-    el('h4', {}, tr('Merge-Request')),
-    el('div', {class: 'nv-row'}, pr, prConfirm), prResult,
-    el('h4', {}, tr('Issues als Arbeitspakete')),
-    el('div', {class: 'nv-row'}, issueFilter, loadIssues, importIssues, issuesSync),
+    nvpLabel(tr('Label-Filter'), issueFilter),
+    el('p', {class: 'nv-muted'}, tr('„Issues laden“ zeigt die Treffer nur an; „Issues importieren“ legt daraus neue Einträge an.')),
+    el('p', {class: 'nv-muted'}, tr('Die Verknüpfung erfolgt über den Freitext im Titel oder über ein Label.')),
+    el('div', {class: 'nv-row'}, loadIssues, importIssues, issuesSync),
     issuesResult,
     error
   ]);
@@ -998,7 +1323,9 @@ function nvpGithubSection(name, token, github) {
 function nvpRightsSection(name, token, data) {
   var path = el('input', {type: 'text', 'data-nv-field': 'path',
     placeholder: tr('Verzeichnis'), 'aria-label': tr('Verzeichnis')});
-  var list = el('div', {class: 'nv-list'});
+  var list = el('div', {class: 'nv-list',
+    style: 'display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));'
+      + 'gap:var(--nv-space-2, 8px);'});
   function addRow(dir) {
     var row = el('div', {class: 'nv-row nv-right-row'}, el('code', {}, String(dir)));
     row.append(nvpButton(tr('Löschen'), 'rights-remove', function () {
@@ -1028,7 +1355,8 @@ function nvpRightsSection(name, token, data) {
 }
 
 function nvpSandboxSection(name, token, sandbox) {
-  var enabled = !!(sandbox && sandbox.enabled);
+  var info = sandbox || {};
+  var enabled = !!info.enabled;
   var toggle = nvpButton(enabled ? tr('Ausschalten') : tr('Einschalten'),
     'sandbox-toggle', function () {
       nvpPost(name, '/api/sandbox', {action: enabled ? 'off' : 'on'},
@@ -1037,24 +1365,34 @@ function nvpSandboxSection(name, token, sandbox) {
   var check = nvpButton(tr('Prüfen'), 'sandbox-check', function () {
     nvpPost(name, '/api/sandbox', {action: 'check'}, 'Geprüft', token);
   });
+  var writeDirs = (info.write_dirs || []).join(', ') || '-';
+  var tools = (info.tools || []).join(', ') || '-';
   return nvpSection('sandbox', tr('Sandbox'), [
-    el('p', {class: 'nv-muted'}, String((sandbox && sandbox.error) || '')
-      || tr('Sandbox-Status')),
+    el('p', {}, tr('Die Sandbox grenzt die Arbeit des Agenten ein: '
+      + 'Lesen und Arbeiten bleiben im Projekt, nach außen wirkt sie nur '
+      + 'über ausdrücklich freigegebene Wege.')),
+    el('ul', {},
+      el('li', {}, tr('Erlaubt: Lesen im Projekt und Schreiben in freigegebenen Verzeichnissen.')),
+      el('li', {}, tr('Verboten: Zugriffe außerhalb des Projekts und ungewollte Netzwerkzugriffe.')),
+      el('li', {}, tr('Schreibverzeichnisse: {{dirs}}', {dirs: writeDirs})),
+      el('li', {}, tr('Werkzeuge: {{tools}}', {tools: tools}))),
+    el('p', {class: 'nv-muted'}, String(info.error || '')
+      || tr('Sandbox-Status') + ': ' + (enabled ? tr('aktiv') : tr('inaktiv'))),
     el('div', {class: 'nv-row'}, toggle, check)
   ]);
 }
 
-/* AGENTS.md als erste Sektion: freier Teil davor, verwalteter Block (readonly)
-   und freier Teil danach. Speichern sendet before/after/digest; die globale
-   Datei erscheint als readonly-Hinweis. Backup/Restore mit Inline-Bestätigung.
-   Nach dem Speichern bleibt die Ansicht stehen (Digest lokal aktualisiert). */
-function nvpAgentsFileSection(name, token, view, globalView) {
+/* AGENTS.md als erste Sektion: einklappbarer, standardmäßig offener Editor
+   mit freiem Teil davor, verwaltetem Block und freiem Teil danach. Sicherungen
+   werden mit Zeitstempel ausgewählt und vor der Wiederherstellung benannt.
+   Das globale AGENTS.md-Details gibt es hier nicht mehr. */
+function nvpAgentsFileSection(name, token, view) {
   var file = (view && view.agents_file) || {};
-  var before = el('textarea', {rows: '6', 'data-nv-agents-before': '',
+  var before = el('textarea', {rows: '14', 'data-nv-agents-before': '',
     'aria-label': tr('Freier Teil davor')}, String(file.before || ''));
   var managed = el('pre', {class: 'nv-managed-block', 'data-nv-agents-managed': '',
     readonly: ''}, file.managed == null ? '' : String(file.managed));
-  var after = el('textarea', {rows: '6', 'data-nv-agents-after': '',
+  var after = el('textarea', {rows: '14', 'data-nv-agents-after': '',
     'aria-label': tr('Freier Teil danach')}, String(file.after || ''));
   var digest = String(file.digest || '');
   var error = nvpErrorBox();
@@ -1067,27 +1405,56 @@ function nvpAgentsFileSection(name, token, view, globalView) {
     if (fresh.managed != null) setTx(managed, String(fresh.managed));
   }
 
+  function backupLabel(entry) {
+    if (entry && typeof entry === 'object') {
+      return String(entry.name || entry.label || entry.timestamp
+        || entry.ts || entry.time || tr('Sicherung'));
+    }
+    return String(entry || tr('Sicherung'));
+  }
+  var backupSelect = el('select', {'data-nv-agents-backup': '',
+    'aria-label': tr('Sicherung auswählen')});
+  function renderBackupOptions(entries) {
+    backupSelect.replaceChildren();
+    if (!entries || !entries.length) {
+      backupSelect.append(el('option', {value: ''}, tr('Keine Sicherungen vorhanden')));
+      return;
+    }
+    entries.forEach(function (entry) {
+      var label = backupLabel(entry);
+      backupSelect.append(el('option', {value: label}, label));
+    });
+  }
+  renderBackupOptions(file.backups);
+  function selectedBackup() {
+    return String(backupSelect.value || '');
+  }
+
+  var restoreText = el('p', {class: 'nv-muted'}, '');
   var restoreConfirm = el('div', {class: 'nv-confirm',
     'data-nv-agents-restore-confirm': '', hidden: ''},
-    el('p', {class: 'nv-muted'},
-      tr('Die letzte Sicherung wiederherstellen? Der aktuelle Stand wird zuvor gesichert.')),
-    el('div', {class: 'nv-row'},
-      nvpButton(tr('Ja, wiederherstellen'), 'agents-file-restore-confirm', async function () {
-        nvpShowError(error, '');
-        try {
-          var result = await api('/api/agents_file', {
-            name: name, action: 'restore', confirm: true
-          });
-          if (NV.stale(token)) return;
-          if (result && result.ok === false) { nvpShowError(error, bt(result.message)); return; }
-          restoreConfirm.setAttribute('hidden', '');
-          adoptFile(result && result.agents_file);
-          toast(bt(result && result.message) || tr('Wiederhergestellt'));
-        } catch (e) { nvpShowError(error, String(e && e.message || e)); }
-      }, 'nv-primary'),
-      nvpButton(tr('Abbrechen'), 'agents-file-restore-cancel', function () {
+  restoreText,
+  el('div', {class: 'nv-row'},
+    nvpButton(tr('Ja, wiederherstellen'), 'agents-file-restore-confirm', async function () {
+      nvpShowError(error, '');
+      try {
+        var result = await api('/api/agents_file', {
+          name: name, action: 'restore', confirm: true,
+          backup: selectedBackup()
+        });
+        if (NV.stale(token)) return;
+        if (result && result.ok === false) { nvpShowError(error, bt(result.message)); return; }
         restoreConfirm.setAttribute('hidden', '');
-      })));
+        adoptFile(result && result.agents_file);
+        if (result && result.agents_file) {
+          renderBackupOptions(result.agents_file.backups);
+        }
+        toast(bt(result && result.message) || tr('Wiederhergestellt'));
+      } catch (e) { nvpShowError(error, String(e && e.message || e)); }
+    }, 'nv-primary'),
+    nvpButton(tr('Abbrechen'), 'agents-file-restore-cancel', function () {
+      restoreConfirm.setAttribute('hidden', '');
+    })));
 
   var save = nvpButton(tr('Speichern'), 'agents-file-save', async function () {
     nvpShowError(error, '');
@@ -1105,35 +1472,42 @@ function nvpAgentsFileSection(name, token, view, globalView) {
     } catch (e) { nvpShowError(error, String(e && e.message || e)); }
   }, 'nv-primary');
 
-  var create = nvpButton(tr('Datei anlegen'), 'agents-file-create', function () {
+  var create = file.exists ? null : nvpButton(tr('Vorlage anlegen'), 'agents-file-create', function () {
     nvpPost(name, '/api/agents_file', {action: 'create'}, 'Gespeichert', token)
       .then(function (result) {
         if (NV.stale(token) || !result || result.ok === false) return;
         adoptFile(result.agents_file);
+        NV.render();
       });
   });
   var backup = nvpButton(tr('Sicherung anlegen'), 'agents-file-backup', function () {
-    nvpPost(name, '/api/agents_file', {action: 'backup'}, 'Gesichert', token);
+    nvpPost(name, '/api/agents_file', {action: 'backup'}, 'Gesichert', token)
+      .then(function (result) {
+        if (NV.stale(token)) return;
+        if (result && result.agents_file) {
+          renderBackupOptions(result.agents_file.backups);
+        }
+      });
   });
   var restore = nvpButton(tr('Wiederherstellen'), 'agents-file-restore', function () {
+    setTx(restoreText, tr('Sicherung „{{name}}“ wiederherstellen? '
+      + 'Der aktuelle Stand wird zuvor gesichert.', {name: selectedBackup() || '-'}));
     restoreConfirm.removeAttribute('hidden');
   });
 
-  var globalDetails = el('details', {open: '', 'data-nv-global-agents-hint': ''},
-    el('summary', {}, tr('Globale AGENTS.md (immer gültig)')),
-    el('pre', {readonly: ''}, String((globalView && globalView.text) || '')));
-
-  return nvpSection('agentsfile', 'AGENTS.md', [
+  var section = nvpSection('agentsfile', 'AGENTS.md', []);
+  section.replaceChildren(el('details', {open: '', 'data-nv-agents-section': ''},
+    el('summary', {}, tr('AGENTS.md bearbeiten')),
     el('p', {class: 'nv-muted'},
       tr('Freier Text vor und nach dem verwalteten Block. Der verwaltete Block ist schreibgeschützt.')),
     nvpLabel(tr('Freier Teil davor'), before),
     el('div', {class: 'nv-managed'}, el('span', {class: 'nv-tag'}, tr('Verwaltet')), managed),
     nvpLabel(tr('Freier Teil danach'), after),
     el('div', {class: 'nv-row nv-form-actions'}, save, create, backup, restore),
+    nvpLabel(tr('Sicherung auswählen'), backupSelect),
     restoreConfirm,
-    globalDetails,
-    error
-  ]);
+    error));
+  return section;
 }
 
 /* ---------- Ansicht ---------- */
@@ -1231,10 +1605,13 @@ NV.views.project = async function project(context, token) {
     parent.append(node);
     placeholders.push(node);
   }
+  if (NV.feature('agentsfile')) placeholder(nvpAgentsFileSection(name, token, {}), panels.settings);
+  placeholder(nvpBasicsSection(name, token, {}), panels.settings);
+  if (NV.feature('sandbox')) placeholder(nvpSandboxSection(name, token, {}), panels.settings);
+  placeholder(nvpTeamSection(name, token, {}), panels.settings);
   if (NV.feature('github')) placeholder(nvpGithubSection(name, token, {}), panels.settings);
   if (NV.feature('writeaccess')) placeholder(nvpRightsSection(name, token, {}), panels.settings);
-  if (NV.feature('sandbox')) placeholder(nvpSandboxSection(name, token, {}), panels.settings);
-  if (NV.feature('agentsfile')) placeholder(nvpAgentsFileSection(name, token, {}, {}), panels.settings);
+  placeholder(nvpSessionLimitSection(name, token, {}), panels.settings);
 
   var view = {};
   try {
@@ -1289,132 +1666,181 @@ NV.views.project = async function project(context, token) {
   nvpSyncPauseBadge(!!data.pause_after);
   nvpStartRunPoll(name, token, pill, stopButton);
 
-  /* ---- Overview ---- */
+  /* ---- Überblick: Autonom-Karte, Kacheln, Zustand, Sitzungen ---- */
   var tickets = data.tickets || [];
   var feedback = data.feedback || [];
+  var allItems = tickets.concat(feedback.map(function (row) {
+    return Object.assign({}, row, {__feedback: true});
+  }));
+
+  panels.overview.append(nvpAutonomousCard(name, token, view.autonomous));
+
   var tiles = el('div', {class: 'nv-tiles'});
   [
-    ['open', nvpCount(tickets, 'offen'), tr('Offene Pakete')],
-    ['progress', nvpCount(tickets, 'In Progress'), tr('In Progress')],
-    ['draft', nvpCount(tickets, 'Draft'), tr('Entwurf')],
-    ['waiting', nvpCount(tickets, 'WARTET AUF MERGE'), tr('Wartet auf Merge')],
-    ['blocked', nvpCount(tickets, 'BLOCKIERT'), tr('Blockiert')],
-    ['proof', nvpCount(feedback, 'ohne Nachweis'), tr('Ohne Nachweis')],
-    ['done', nvpCount(tickets, 'erledigt'), tr('Erledigt')],
-    ['feedback', feedback.length, tr('Feedback')]
+    ['open', nvpCount(tickets, 'offen'), tr('Offene Pakete'),
+      tr('Pakete, die noch nicht begonnen wurden')],
+    ['progress', nvpCount(tickets, 'In Progress'), tr('In Progress'),
+      tr('Pakete, an denen gerade gearbeitet wird')],
+    ['blocked', nvpCount(tickets, 'BLOCKIERT'), tr('Blockiert'),
+      tr('Pakete mit einer offenen Hürde')],
+    ['waiting', nvpCount(tickets, 'WARTET AUF MERGE'), tr('Wartet auf Merge'),
+      tr('Fertige Pakete, deren Merge noch aussteht')],
+    ['done', nvpCount(tickets, 'erledigt'), tr('Erledigt'),
+      tr('Abgeschlossene Pakete mit Nachweis')],
+    ['draft', nvpCount(tickets, 'Draft'), tr('Entwurf'),
+      tr('Noch nicht freigegebene Pakete')]
   ].forEach(function (tile) {
-    tiles.append(el('div', {class: 'nv-card nv-tile', 'data-nv-tile': tile[0]},
+    tiles.append(el('div', {class: 'nv-card nv-tile', 'data-nv-tile': tile[0],
+      title: tile[3]},
       el('div', {class: 'nv-tile-num'}, String(tile[1])),
       el('div', {class: 'nv-tile-label'}, tile[2])));
   });
   panels.overview.append(tiles);
 
-  panels.overview.append(el('div', {class: 'nv-card nv-kv'},
+  /* Letztes Arbeitspaket aus der effektiven Reihenfolge: manuell priorisierte
+     Einträge zuerst, danach die automatische Standardreihenfolge. */
+  var priorityView = view.priority || {};
+  var effectiveIds = [];
+  function collectEffective(entries) {
+    (entries || []).forEach(function (entry) {
+      var id = String(entry && entry.id || '');
+      if (!id || String(entry.status || '') === 'erledigt'
+          || effectiveIds.indexOf(id) >= 0) return;
+      effectiveIds.push(id);
+    });
+  }
+  collectEffective(priorityView.order);
+  collectEffective(priorityView.standard);
+  var lastId = effectiveIds[effectiveIds.length - 1] || '';
+  var lastEntry = null;
+  [].concat(priorityView.order || [], priorityView.standard || [], allItems)
+    .some(function (entry) {
+      if (String(entry && entry.id || '') === lastId) {
+        lastEntry = entry;
+        return true;
+      }
+      return false;
+    });
+  var lastText = lastId
+    ? lastId + ' · ' + String(lastEntry && lastEntry.title || lastId)
+      + ' · ' + nvpStateLabel(lastEntry && lastEntry.state)
+    : tr('Kein offenes Arbeitspaket');
+  panels.overview.append(el('section', {class: 'nv-card nv-kv', 'data-nv-state-card': ''},
     el('h3', {}, tr('Zustand')),
-    el('div', {}, tr('Letzter Commit') + ': '),
-    el('code', {}, String(data.last || tr('Kein Commit vorhanden'))),
-    el('div', {}, tr('Prüfung') + ': '
-      + String(data.verify_cmd ? tr('Verfügbar') : tr('Nicht konfiguriert')))));
+    el('div', {}, el('strong', {}, tr('Letztes Arbeitspaket') + ': '), lastText),
+    el('div', {}, el('strong', {}, tr('Letzter Commit') + ': '),
+      el('code', {}, String(data.last || tr('Kein Commit vorhanden')))),
+    el('div', {}, el('strong', {}, tr('Prüfung') + ': '),
+      String(data.verify_cmd ? tr('Verfügbar') : tr('Nicht konfiguriert')))));
 
-  var sessionBox = el('div', {'data-nv-sessions': ''},
-    el('h3', {}, tr('Sitzungen')));
+  var sessionBox = el('section', {class: 'nv-card nv-sessions-card'},
+    el('h3', {}, tr('Sitzungen')),
+    el('div', {'data-nv-sessions': ''}));
+  var sessionList = sessionBox.querySelector('[data-nv-sessions]');
   var sessionRows = (view.sessions && (view.sessions.sessions || view.sessions.entries)) || [];
   if (!sessionRows.length) {
-    sessionBox.append(el('p', {class: 'nv-muted'}, tr('Keine Sitzungen vorhanden')));
+    sessionList.append(el('p', {class: 'nv-muted'}, tr('Keine Sitzungen vorhanden')));
   }
   sessionRows.forEach(function (row) {
     var session = String(row.session || row.id || row.name || '');
-    sessionBox.append(el('div', {class: 'nv-row nv-session-row'},
-      el('span', {}, session),
-      el('span', {class: 'nv-muted', 'data-nv-session-attach': ''},
-        (row.package_id || row.worktree_path)
-          ? tr('Paket ') + String(row.package_id || '?') + tr(' · Arbeitskopie ') + String(row.worktree_path || '?')
-          : ''),
-      nvpButton(tr('Fortsetzen'), 'session-resume', function () {
-        nvpPost(name, '/api/sessions', {action: 'continue', session: session},
-          'Sitzung fortgesetzt', token);
-      })));
+    var packageId = String(row.package_id || '');
+    var related = allItems.filter(function (item) {
+      return String(item && item.id || '') === packageId;
+    })[0];
+    var packageText = packageId
+      ? packageId + (related ? ' · ' + String(related.title || '') : '')
+      : tr('Ohne Paket');
+    var resume = nvpButton(tr('Fortsetzen'), 'session-resume', function () {
+      nvpPost(name, '/api/sessions', {action: 'continue', session: session},
+        'Sitzung fortgesetzt', token);
+    }, 'nv-compact');
+    resume.setAttribute('title', tr('Setzt diese Sitzung fort'));
+    var line = el('div', {class: 'nv-row nv-session-row',
+      style: 'display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr) '
+        + 'minmax(0,1fr) minmax(0,1fr) auto;gap:var(--nv-space-2, 8px);'
+        + 'align-items:center;width:100%;'},
+      el('span', {'data-nv-session-attach': '', style: 'min-width:0;'}, packageText),
+      el('span', {class: 'nv-muted', style: 'min-width:0;'},
+        String(row.agent || '-')),
+      el('span', {class: 'nv-pill nv-session-state'},
+        String(row.state_label || row.state || tr('unbekannt'))),
+      el('span', {class: 'nv-muted'}, nvpRelativeTime(row.last_seen)),
+      el('span', {style: 'text-align:right;white-space:nowrap;'}, resume),
+      el('code', {class: 'nv-session-id', title: session,
+        style: 'grid-column:1/-1;font-size:.75rem;color:var(--nv-muted);'},
+      nvpShortId(session, 12)));
+    sessionList.append(line);
   });
-  panels.overview.append(el('section', {class: 'nv-card'}, sessionBox));
-  panels.overview.append(nvpAutonomousRow(name, token, view.autonomous));
+  panels.overview.append(sessionBox);
 
-  /* ---- Work: Aktionsleiste → Suche/Filter → Priorisierung → Board → Feedback ---- */
+  /* ---- Arbeit: Aktionsleiste → Filter → Priorisierung → Liste ---- */
+  var issuesEnabled = !!(data.github && data.github.issues_enabled);
   var newRow = el('div', {class: 'nv-row nv-work-actions'},
     nvpButton(tr('Paket anlegen'), 'new-package', function () {
-      nvpOpenTicketForm(panels.work, token, {mode: 'package', rows: tickets, issuesEnabled: issuesEnabled});
+      nvpOpenTicketForm(name, token, {mode: 'package', rows: tickets,
+        issuesEnabled: issuesEnabled});
     }, 'nv-primary'),
     nvpButton(tr('Bug melden'), 'new-bug', function () {
-      nvpOpenTicketForm(panels.work, token, {mode: 'bug', rows: feedback, issuesEnabled: issuesEnabled});
+      nvpOpenTicketForm(name, token, {mode: 'bug', rows: feedback,
+        issuesEnabled: issuesEnabled});
     }),
     nvpButton(tr('Feedback geben'), 'new-feedback', function () {
-      nvpOpenTicketForm(panels.work, token, {mode: 'feedback', rows: feedback, issuesEnabled: issuesEnabled});
+      nvpOpenTicketForm(name, token, {mode: 'feedback', rows: feedback,
+        issuesEnabled: issuesEnabled});
     }));
   panels.work.append(newRow);
 
   var hideDoneButton = el('button', {class: 'nv-btn nv-secondary nv-compact',
     type: 'button', 'data-nv-work-hide-done': '', 'aria-pressed': 'true'},
-    tr('Erledigte anzeigen') + ' (' + String(nvpCount(tickets, 'erledigt')) + ')');
+  tr('Erledigte anzeigen') + ' (' + String(nvpCount(tickets, 'erledigt')) + ')');
   var searchInput = el('input', {type: 'search', 'data-nv-work-search': '',
-    placeholder: tr('Arbeitspakete suchen'), 'aria-label': tr('Arbeitspakete suchen')});
-  panels.work.append(el('div', {class: 'nv-row nv-work-filters'},
-    searchInput, hideDoneButton));
-
-  var prioRanks = {};
-  var configured = ((view.priority && view.priority.order) || []);
-  configured.forEach(function (entry, index) {
-    prioRanks[String(entry && entry.id || '')] = index + 1;
-  });
-  panels.work.append(nvpPriorityStrip(name, token, view, tickets));
-
-  var issuesEnabled = !!(data.github && data.github.issues_enabled);
-  var board = el('div', {class: 'nv-board'});
-  ['open', 'progress', 'draft', 'waiting', 'blocked', 'proof', 'done'].forEach(function (column) {
-    var rows = tickets.concat(feedback.map(function (row) {
-      return Object.assign({}, row, {__feedback: true});
-    })).filter(function (row) {
-      return nvpStateColumn(String(row.state || '')) === column;
+    placeholder: tr('Arbeitspakete suchen'),
+    'aria-label': tr('Arbeitspakete suchen')});
+  var chips = el('div', {class: 'nv-row', 'data-nv-work-kinds': ''});
+  [['all', tr('Alle')], ['package', tr('Pakete')], ['bug', tr('Bugs')],
+    ['feedback', tr('Feedback')]].forEach(function (def) {
+      chips.append(el('button', {class: 'nv-btn nv-ghost nv-compact',
+        type: 'button', 'data-nv-work-kind': def[0],
+        'aria-pressed': def[0] === 'all' ? 'true' : 'false'}, def[1]));
     });
-    board.append(nvpBoardColumn(name, column, rows, token, prioRanks, issuesEnabled));
+  panels.work.append(NV.filterBar(
+    NV.search({input: searchInput, placeholder: tr('Arbeitspakete suchen')}),
+    chips, hideDoneButton));
 
-  });
-  panels.work.append(board);
-
-  var openFeedback = feedback.filter(function (row) {
-    return String(row.state || '') === 'offen';
-  });
-  var feedbackBox = el('details', {class: 'nv-card nv-feedback-box',
-    'data-nv-feedback-box': ''},
-    el('summary', {}, tr('Feedback') + ' (' + String(openFeedback.length)
-      + ' ' + tr('offen') + ')'));
-  if (!feedback.length) {
-    feedbackBox.append(el('p', {class: 'nv-muted'}, tr('Keine Einträge')));
+  var ranks = nvpRankMap(priorityView.order);
+  var ticketList = el('div', {class: 'nv-ticket-list', 'data-nv-ticket-list': ''});
+  if (!allItems.length) {
+    ticketList.append(el('p', {class: 'nv-muted'}, tr('Keine Einträge')));
   }
-  feedback.forEach(function (row) {
-    var id = String(row.id || '');
-    var isBug = nvpFeedbackKind(row) === 'bug';
-    feedbackBox.append(el('article', {class: 'nv-card nv-feedback-item',
-      'data-nv-feedback-item': id},
-      el('div', {}, el('span', {class: 'nv-pill nv-kind'}, tr(isBug ? 'Bug' : 'Feedback'))),
-      el('div', {class: 'nv-feedback-title'}, String(row.title || id)),
-      el('div', {class: 'nv-muted nv-feedback-desc'}, String(row.description || '')),
-      el('div', {class: 'nv-row'},
-        el('button', {class: 'nv-btn nv-secondary nv-compact', type: 'button',
-          'data-nv-action': 'feedback-edit', on: {click: function () {
-            nvpOpenTicketForm(panels.work, token, {
-              mode: 'feedback', id: id, rows: feedback,
-              title: String(row.title || ''), description: String(row.description || '')
-            });
-          }}}, tr('Bearbeiten')),
-        el('button', {class: 'nv-btn nv-danger nv-compact', type: 'button',
-          'data-nv-action': 'feedback-delete', on: {click: function () {
-            if (!window.confirm(String(tr('wirklich löschen?')) + ' ' + id)) return;
-            nvpPost(name, '/api/feedback', {action: 'delete', id: id},
-              'Gelöscht', token).then(function () {
-                if (!NV.stale(token)) NV.render();
-              });
-          }}}, tr('Löschen')))));
+  allItems.forEach(function (row) {
+    ticketList.append(nvpTicketCard(name, token, row,
+      ranks[String(row.id || '')]));
   });
-  panels.work.append(feedbackBox);
+  panels.work.append(nvpPriorityStrip(name, token, view, allItems, ticketList));
+  panels.work.append(ticketList);
+
+  var backToTop = el('button', {class: 'nv-btn nv-back-to-top', type: 'button',
+    'data-nv-back-to-top': '', hidden: '', title: tr('Zurück zum Listenanfang')},
+  '↑ ' + tr('Nach oben'));
+  backToTop.style.cssText = 'position:fixed;right:24px;bottom:24px;z-index:60;';
+  function nvpSyncBackToTop() {
+    if (!document.contains(backToTop) || !document.contains(ticketList)) {
+      window.removeEventListener('scroll', nvpSyncBackToTop);
+      return;
+    }
+    var depth = Math.max(window.scrollY || 0,
+      document.documentElement.scrollTop || 0);
+    if (depth >= 600) backToTop.removeAttribute('hidden');
+    else backToTop.setAttribute('hidden', '');
+  }
+  backToTop.addEventListener('click', function () {
+    var top = ticketList.getBoundingClientRect().top
+      + (window.scrollY || 0) - 16;
+    window.scrollTo({top: Math.max(0, top), behavior: 'smooth'});
+  });
+  panels.work.append(backToTop);
+  window.addEventListener('scroll', nvpSyncBackToTop, {passive: true});
+  nvpSyncBackToTop();
   nvpWireWorkFilters(panels.work, hideDoneButton, nvpCount(tickets, 'erledigt'));
 
   /* ---- Output: nur Container, Inhalt kommt aus B2 ---- */
@@ -1431,19 +1857,177 @@ NV.views.project = async function project(context, token) {
   /* ---- Beschreibung ---- */
   panels.assistant.append(nvpAssistantPanel(name, token, view.guide));
 
-  /* ---- Settings: AGENTS.md zuerst, keine eigene Pause-Sektion ---- */
+  /* ---- Einstellungen: AGENTS.md → Basics → Sandbox → Team → GitHub →
+     Schreibzugriff → Session-Limit → Fehlerbehebung (nur Android). ---- */
   placeholders.forEach(function (node) { node.remove(); });
   if (NV.feature('agentsfile')) {
-    panels.settings.append(nvpAgentsFileSection(name, token, view, view.global_agents));
+    panels.settings.append(nvpAgentsFileSection(name, token, view));
+  }
+  panels.settings.append(nvpBasicsSection(name, token, data));
+  if (NV.feature('sandbox')) {
+    panels.settings.append(nvpSandboxSection(name, token, data.sandbox));
   }
   panels.settings.append(nvpTeamSection(name, token, view.agents));
-  panels.settings.append(nvpBasicsSection(name, token, data));
-  panels.settings.append(nvpChecksSection(name, token, data));
-  panels.settings.append(nvpSessionsSection(name, token, view.sessions));
   if (NV.feature('github')) panels.settings.append(nvpGithubSection(name, token, data.github));
   if (NV.feature('writeaccess')) panels.settings.append(nvpRightsSection(name, token, data));
-  if (NV.feature('sandbox')) panels.settings.append(nvpSandboxSection(name, token, data.sandbox));
+  panels.settings.append(nvpSessionLimitSection(name, token, view.sessions));
+  var troubleshooting = nvpTroubleshootingSection(name, token, data);
+  if (troubleshooting) panels.settings.append(troubleshooting);
 
   if (!NV.stale(token)) panels[active].removeAttribute('hidden');
   NV.refreshBell();
 };
+
+/* F34 WP5: neue Texte dieser Ansicht (Schlüssel = deutscher Quelltext). */
+if (window.VIBE_I18N && typeof VIBE_I18N.extend === 'function') {
+  VIBE_I18N.extend({
+    en: {
+      "gerade eben": "just now",
+      "vor {{n}} Min.": "{{n}} min ago",
+      "vor {{n}} Std.": "{{n}} h ago",
+      "vor {{n}} Tagen": "{{n}} days ago",
+      "Paket": "Package",
+      "Für diesen Eintrag liegt kein Nachweis vor.": "No proof is available for this entry.",
+      "ohne Nachweis": "no proof",
+      "Keine Beschreibung vorhanden.": "No description available.",
+      "Abgeschlossene Einträge bleiben als Nachweis erhalten": "Completed entries are kept as evidence",
+      "Paket abgeschlossen": "Package completed",
+      "Keine offenen Einträge": "No open entries",
+      "inaktiv": "inactive",
+      "Projektziel": "Project goal",
+      "Schritt": "Step",
+      "von": "of",
+      "Schrittübersicht": "Step overview",
+      "Zu Schritt {{n}}": "Go to step {{n}}",
+      "Ja, Typ ändern": "Yes, change type",
+      "Projekttyp gespeichert": "Project type saved",
+      "Den Projekttyp wirklich auf {{type}} ändern? ": "Really change the project type to {{type}}? ",
+      "Sitzungslimit für dieses Projekt": "Session limit for this project",
+      "Bitte ein Limit zwischen 1 und 100 angeben.": "Please enter a limit between 1 and 100.",
+      "Sitzungslimit gespeichert": "Session limit saved",
+      "gilt nur für dieses Projekt": "applies to this project only",
+      "Fehlerbehebung": "Troubleshooting",
+      "nur nötig, wenn etwas nicht funktioniert": "only needed when something does not work",
+      "Auto-Merge aktivieren (Läufer mergt freigegebene Merge-Requests selbst)": "Enable auto-merge (runner merges approved merge requests itself)",
+      "Verknüpft": "Linked",
+      "Nicht verknüpft": "Not linked",
+      "Token hinterlegt": "Token stored",
+      "Kein Token": "No token",
+      "GitHub-Zugang eingerichtet.": "GitHub access configured.",
+      "Quell-Branch wählen": "Select source branch",
+      "Ziel-Branch wählen": "Select target branch",
+      "Der aktuelle Branch {{source}} wird nach {{target}} übernommen.": "The current branch {{source}} is transferred to {{target}}.",
+      "Verbindung": "Connection",
+      "Status: ": "Status: ",
+      "Aktueller Branch: ": "Current branch: ",
+      "Synchronisieren": "Synchronize",
+      "GitHub-Issues können als Arbeitspakete importiert und synchronisiert werden.": "GitHub issues can be imported and synchronized as work packages.",
+      "„Issues laden“ zeigt die Treffer nur an; „Issues importieren“ legt daraus neue Einträge an.": "'Load issues' only shows matches; 'Import issues' creates new entries from them.",
+      "Die Verknüpfung erfolgt über den Freitext im Titel oder über ein Label.": "Linking works through free text in the title or through a label.",
+      "Die Sandbox grenzt die Arbeit des Agenten ein: ": "The sandbox confines the agent's work: ",
+      "Erlaubt: Lesen im Projekt und Schreiben in freigegebenen Verzeichnissen.": "Allowed: reading in the project and writing in permitted directories.",
+      "Verboten: Zugriffe außerhalb des Projekts und ungewollte Netzwerkzugriffe.": "Forbidden: access outside the project and unintended network access.",
+      "Schreibverzeichnisse: {{dirs}}": "Write directories: {{dirs}}",
+      "Werkzeuge: {{tools}}": "Tools: {{tools}}",
+      "Sicherung": "Backup",
+      "Sicherung auswählen": "Select backup",
+      "Keine Sicherungen vorhanden": "No backups available",
+      "Sicherung „{{name}}“ wiederherstellen? ": "Restore backup '{{name}}'? ",
+      "AGENTS.md bearbeiten": "Edit AGENTS.md",
+      "Pakete, die noch nicht begonnen wurden": "Packages that have not been started",
+      "Pakete, an denen gerade gearbeitet wird": "Packages currently in progress",
+      "Pakete mit einer offenen Hürde": "Packages with an open blocker",
+      "Fertige Pakete, deren Merge noch aussteht": "Finished packages whose merge is still pending",
+      "Abgeschlossene Pakete mit Nachweis": "Completed packages with proof",
+      "Noch nicht freigegebene Pakete": "Packages not yet approved",
+      "Kein offenes Arbeitspaket": "No open work package",
+      "Letztes Arbeitspaket": "Last work package",
+      "Ohne Paket": "Without package",
+      "Setzt diese Sitzung fort": "Resumes this session",
+      "Alle": "All",
+      "Bugs": "Bugs",
+      "Zurück zum Listenanfang": "Back to the start of the list",
+      "Allgemeines Projekt ohne besondere Werkzeuge.": "General project without special tools.",
+      "Android-Projekt mit Emulator und Gradle-Werkzeugen.": "Android project with emulator and Gradle tools.",
+      "Swift-Projekt für Apple-Plattformen.": "Swift project for Apple platforms.",
+      "Python-Projekt mit virtueller Umgebung.": "Python project with a virtual environment.",
+      "Node- und TypeScript-Projekt mit npm-Werkzeugen.": "Node and TypeScript project with npm tools.",
+      "Rust-Projekt mit Cargo-Werkzeugen.": "Rust project with Cargo tools.",
+      "Go-Projekt mit den Go-Werkzeugen.": "Go project with the Go tools."
+    },
+    de: {
+      "gerade eben": "gerade eben",
+      "vor {{n}} Min.": "vor {{n}} Min.",
+      "vor {{n}} Std.": "vor {{n}} Std.",
+      "vor {{n}} Tagen": "vor {{n}} Tagen",
+      "Paket": "Paket",
+      "Für diesen Eintrag liegt kein Nachweis vor.": "Für diesen Eintrag liegt kein Nachweis vor.",
+      "ohne Nachweis": "ohne Nachweis",
+      "Keine Beschreibung vorhanden.": "Keine Beschreibung vorhanden.",
+      "Abgeschlossene Einträge bleiben als Nachweis erhalten": "Abgeschlossene Einträge bleiben als Nachweis erhalten",
+      "Paket abgeschlossen": "Paket abgeschlossen",
+      "Keine offenen Einträge": "Keine offenen Einträge",
+      "inaktiv": "inaktiv",
+      "Projektziel": "Projektziel",
+      "Schritt": "Schritt",
+      "von": "von",
+      "Schrittübersicht": "Schrittübersicht",
+      "Zu Schritt {{n}}": "Zu Schritt {{n}}",
+      "Ja, Typ ändern": "Ja, Typ ändern",
+      "Projekttyp gespeichert": "Projekttyp gespeichert",
+      "Den Projekttyp wirklich auf {{type}} ändern? ": "Den Projekttyp wirklich auf {{type}} ändern? ",
+      "Sitzungslimit für dieses Projekt": "Sitzungslimit für dieses Projekt",
+      "Bitte ein Limit zwischen 1 und 100 angeben.": "Bitte ein Limit zwischen 1 und 100 angeben.",
+      "Sitzungslimit gespeichert": "Sitzungslimit gespeichert",
+      "gilt nur für dieses Projekt": "gilt nur für dieses Projekt",
+      "Fehlerbehebung": "Fehlerbehebung",
+      "nur nötig, wenn etwas nicht funktioniert": "nur nötig, wenn etwas nicht funktioniert",
+      "Auto-Merge aktivieren (Läufer mergt freigegebene Merge-Requests selbst)": "Auto-Merge aktivieren (Läufer mergt freigegebene Merge-Requests selbst)",
+      "Verknüpft": "Verknüpft",
+      "Nicht verknüpft": "Nicht verknüpft",
+      "Token hinterlegt": "Token hinterlegt",
+      "Kein Token": "Kein Token",
+      "GitHub-Zugang eingerichtet.": "GitHub-Zugang eingerichtet.",
+      "Quell-Branch wählen": "Quell-Branch wählen",
+      "Ziel-Branch wählen": "Ziel-Branch wählen",
+      "Der aktuelle Branch {{source}} wird nach {{target}} übernommen.": "Der aktuelle Branch {{source}} wird nach {{target}} übernommen.",
+      "Verbindung": "Verbindung",
+      "Status: ": "Status: ",
+      "Aktueller Branch: ": "Aktueller Branch: ",
+      "Synchronisieren": "Synchronisieren",
+      "GitHub-Issues können als Arbeitspakete importiert und synchronisiert werden.": "GitHub-Issues können als Arbeitspakete importiert und synchronisiert werden.",
+      "„Issues laden“ zeigt die Treffer nur an; „Issues importieren“ legt daraus neue Einträge an.": "„Issues laden“ zeigt die Treffer nur an; „Issues importieren“ legt daraus neue Einträge an.",
+      "Die Verknüpfung erfolgt über den Freitext im Titel oder über ein Label.": "Die Verknüpfung erfolgt über den Freitext im Titel oder über ein Label.",
+      "Die Sandbox grenzt die Arbeit des Agenten ein: ": "Die Sandbox grenzt die Arbeit des Agenten ein: ",
+      "Erlaubt: Lesen im Projekt und Schreiben in freigegebenen Verzeichnissen.": "Erlaubt: Lesen im Projekt und Schreiben in freigegebenen Verzeichnissen.",
+      "Verboten: Zugriffe außerhalb des Projekts und ungewollte Netzwerkzugriffe.": "Verboten: Zugriffe außerhalb des Projekts und ungewollte Netzwerkzugriffe.",
+      "Schreibverzeichnisse: {{dirs}}": "Schreibverzeichnisse: {{dirs}}",
+      "Werkzeuge: {{tools}}": "Werkzeuge: {{tools}}",
+      "Sicherung": "Sicherung",
+      "Sicherung auswählen": "Sicherung auswählen",
+      "Keine Sicherungen vorhanden": "Keine Sicherungen vorhanden",
+      "Sicherung „{{name}}“ wiederherstellen? ": "Sicherung „{{name}}“ wiederherstellen? ",
+      "AGENTS.md bearbeiten": "AGENTS.md bearbeiten",
+      "Pakete, die noch nicht begonnen wurden": "Pakete, die noch nicht begonnen wurden",
+      "Pakete, an denen gerade gearbeitet wird": "Pakete, an denen gerade gearbeitet wird",
+      "Pakete mit einer offenen Hürde": "Pakete mit einer offenen Hürde",
+      "Fertige Pakete, deren Merge noch aussteht": "Fertige Pakete, deren Merge noch aussteht",
+      "Abgeschlossene Pakete mit Nachweis": "Abgeschlossene Pakete mit Nachweis",
+      "Noch nicht freigegebene Pakete": "Noch nicht freigegebene Pakete",
+      "Kein offenes Arbeitspaket": "Kein offenes Arbeitspaket",
+      "Letztes Arbeitspaket": "Letztes Arbeitspaket",
+      "Ohne Paket": "Ohne Paket",
+      "Setzt diese Sitzung fort": "Setzt diese Sitzung fort",
+      "Alle": "Alle",
+      "Bugs": "Bugs",
+      "Zurück zum Listenanfang": "Zurück zum Listenanfang",
+      "Allgemeines Projekt ohne besondere Werkzeuge.": "Allgemeines Projekt ohne besondere Werkzeuge.",
+      "Android-Projekt mit Emulator und Gradle-Werkzeugen.": "Android-Projekt mit Emulator und Gradle-Werkzeugen.",
+      "Swift-Projekt für Apple-Plattformen.": "Swift-Projekt für Apple-Plattformen.",
+      "Python-Projekt mit virtueller Umgebung.": "Python-Projekt mit virtueller Umgebung.",
+      "Node- und TypeScript-Projekt mit npm-Werkzeugen.": "Node- und TypeScript-Projekt mit npm-Werkzeugen.",
+      "Rust-Projekt mit Cargo-Werkzeugen.": "Rust-Projekt mit Cargo-Werkzeugen.",
+      "Go-Projekt mit den Go-Werkzeugen.": "Go-Projekt mit den Go-Werkzeugen."
+    }
+  });
+}

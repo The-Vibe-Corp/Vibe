@@ -853,6 +853,20 @@ class RunRegistry:
         """Alle erfassten Läufe; die Reihenfolge folgt dem Register."""
         return self._read()
 
+    def cleanup_completed(self):
+        """Entfernt abgeschlossene Läufe; live bleibende Einträge bleiben (F34).
+
+        Rückgabe ist ``{"removed": n, "remaining": m}``. Im Gegensatz zu
+        ``prune`` werden keine Sitzungen beendet und keine Läufe verändert.
+        """
+        with self._locked():
+            runs = self._read()
+            kept = [item for item in runs if item.get("state") in LIVE_STATES]
+            removed = len(runs) - len(kept)
+            if removed:
+                self._write(kept)
+            return {"removed": removed, "remaining": len(kept)}
+
     def get(self, run_id):
         """Laufdatensatz als Kopie oder None, wenn die ID unbekannt ist."""
         for record in reversed(self._read()):
@@ -994,7 +1008,22 @@ class SessionRegistry:
                 dict(item) for item in entries
                 if isinstance(item, dict) and isinstance(item.get("session"), str)
             ],
+            "project_limits": self._read_project_limits(data.get("project_limits")),
         }
+
+    @staticmethod
+    def _read_project_limits(raw):
+        """Projekt-Overrides lesen; ungültige Werte werden verworfen (F34)."""
+        if not isinstance(raw, dict):
+            return {}
+        limits = {}
+        for key, value in raw.items():
+            if (isinstance(value, bool) or not isinstance(value, int)
+                    or not 1 <= value <= SESSION_LIMIT_MAX):
+                continue
+            real = os.path.realpath(os.path.abspath(str(key)))
+            limits[real] = int(value)
+        return limits
 
     def _write(self, data):
         sessions = list(data.get("sessions") or [])
@@ -1016,7 +1045,9 @@ class SessionRegistry:
             sessions = [item for index, item in enumerate(sessions) if index in keep]
         text = json.dumps(
             {"limit": int(data.get("limit", SESSION_LIMIT_DEFAULT)),
-             "sessions": sessions},
+             "sessions": sessions,
+             "project_limits": self._read_project_limits(
+                 data.get("project_limits"))},
             indent=1, ensure_ascii=False,
         ) + "\n"
         _atomic_write(self.path, text)
@@ -1085,6 +1116,30 @@ class SessionRegistry:
         with self._locked():
             data = self._read()
             data["limit"] = int(value)
+            self._write(data)
+        return int(value)
+
+    @staticmethod
+    def _project_key(project):
+        """Schlüssel eines Projekt-Overrides: immer der echte Pfad (F34)."""
+        return os.path.realpath(os.path.abspath(str(project or "")))
+
+    def project_limit(self, project):
+        """Projekt-Override (1..100) oder ``None``, wenn keiner gesetzt ist."""
+        return self._read()["project_limits"].get(self._project_key(project))
+
+    def set_project_limit(self, project, value):
+        """Setzt das Limit für ein Projekt (1..100), ohne die Einträge zu ändern."""
+        if (isinstance(value, bool) or not isinstance(value, int)
+                or not 1 <= value <= SESSION_LIMIT_MAX):
+            raise ValueError(
+                f"Session-Limit muss 1 bis {SESSION_LIMIT_MAX} sein: {value!r}")
+        if not str(project or "").strip():
+            raise ValueError("Projektpfad fehlt")
+        key = self._project_key(project)
+        with self._locked():
+            data = self._read()
+            data["project_limits"][key] = int(value)
             self._write(data)
         return int(value)
 
@@ -1282,8 +1337,8 @@ class WorktreeRegistry:
 def session_overview(runtime, project=None, limit=None, text=None):
     """Sessions jüngste zuerst, mit Zustand aus dem Laufregister (AP19).
 
-    Die Rangfolge des Limits ist Parameter > gespeicherter Standard > 5. Der
-    Projektfilter vergleicht über ``realpath``, der Textfilter sucht ohne
+    Die Rangfolge des Limits ist Parameter > Projekt-Override > gespeicherter
+    Standard > 5. Der Projektfilter vergleicht über ``realpath``, der Textfilter sucht ohne
     Rücksicht auf Groß-/Kleinschreibung in der Session-Kennung. Jeder Eintrag
     trägt die Registerfelder sowie ``state`` und ``state_label``. Ein Eintrag
     mit unlesbarem ``last_seen`` wird übersprungen statt die Auflistung
@@ -1291,7 +1346,10 @@ def session_overview(runtime, project=None, limit=None, text=None):
     """
     registry = SessionRegistry(runtime)
     if limit is None:
-        effective = registry.limit()
+        # F34: Ohne ausdrückliches Limit gilt das Projekt-Override, sonst das
+        # globale Limit. Ein explizites Limit gewinnt immer.
+        override = registry.project_limit(project) if project else None
+        effective = override if override is not None else registry.limit()
     elif (isinstance(limit, bool) or not isinstance(limit, int)
           or not 1 <= limit <= SESSION_LIMIT_MAX):
         raise ValueError(

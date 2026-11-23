@@ -5,6 +5,11 @@ Abgeschlossen heißt nach SPEC.md: Checkbox gesetzt *und* Nachweis vorhanden
 mit ``completed``, die HTTP-API lehnt Änderungen daran ab. Geprüft wird auf
 echten Dateien in einem temporären Arbeitsbereich; die API-Tests starten
 bin/vibe-web.py auf einem eigenen Port.
+
+F34-Anpassung: (WP7.1) Abgeschlossene Feedback-Punkte sind Nachweise und
+dürfen nicht gelöscht werden; offene Punkte bleiben löschbar
+(Bestandsschutz). Die Tests sichern Ablehnung, unveränderte Datei und den
+weiterhin erlaubten Löschpfad für offene Einträge ab.
 """
 import importlib.machinery
 import importlib.util
@@ -156,7 +161,14 @@ class FeedbackCompletedModelTest(unittest.TestCase):
         self.assertIn("- [x] F2 Neuer Titel", self.text())
         self.assertIn("Test: test_x", self.text(), "erledigter Nachweis bleibt erhalten")
 
-    def test_delete_still_removes_completed_entry(self):
+    def test_delete_rejects_completed_entry_and_keeps_file(self):
+        """F34 WP7.1: Abgeschlossene Punkte sind Nachweise.
+
+        Vorbedingung: F1 abgeschlossen (Nachweis), F2 offen. Aktion: Löschen
+        von F1, danach von F2. Erwartung: F1 wird mit ValueError abgelehnt und
+        bleibt samt Nachweis erhalten; der offene F2 bleibt löschbar.
+        Fehlerfall: Ein Nachweis verschwindet oder offenes Feedback ist gesperrt.
+        """
         self.write_feedback(
             "- [x] F1 Erledigter Punkt\n"
             "  Beschreibung: Alt\n"
@@ -164,12 +176,24 @@ class FeedbackCompletedModelTest(unittest.TestCase):
             "- [ ] F2 Offener Punkt\n"
             "  Beschreibung: Offen\n"
         )
+        before = self.text()
 
-        self.cli.feedback_delete("proj", "F1")
+        with self.assertRaisesRegex(ValueError, "bleiben als Nachweis erhalten"):
+            self.cli.feedback_delete("proj", "F1")
+
+        self.assertEqual(self.text(), before,
+                         "Die abgelehnte Löschung veränderte FEEDBACK.md")
+        self.assertIn("F1 Erledigter Punkt", self.text())
+        self.assertIn("Test: test_x", self.text(),
+                      "Der Nachweis des abgeschlossenen Punkts ging verloren")
+
+        self.cli.feedback_delete("proj", "F2")
 
         text = self.text()
-        self.assertNotIn("F1 Erledigter Punkt", text)
-        self.assertIn("- [ ] F2 Offener Punkt", text)
+        self.assertNotIn("F2 Offener Punkt", text,
+                         "Der offene Punkt blieb trotz Löschung erhalten")
+        self.assertIn("F1 Erledigter Punkt", text,
+                      "Das Löschen des offenen Punkts entfernte den Nachweis")
 
 
 class FeedbackCompletedApiFixture(unittest.TestCase):
@@ -315,15 +339,36 @@ class FeedbackCompletedApiTest(FeedbackCompletedApiFixture):
         self.assertIn("- [ ] F2 Geänderter Titel", text)
         self.assertIn("- [x] F1 Erledigter Punkt", text)
 
-    def test_api_delete_still_removes_completed_entry(self):
+    def test_api_delete_rejects_completed_entry_and_keeps_file(self):
+        """F34 WP7.1: Die API liefert 400 ``ok:false`` statt zu löschen.
+
+        Vorbedingung: F1 abgeschlossen (Nachweis), F2 offen. Aktion: Löschen
+        von F1, danach von F2. Erwartung: F1 wird mit derselben Meldung
+        abgelehnt, die Datei bleibt byte-gleich; F2 bleibt löschbar.
+        Fehlerfall: Die API löscht einen Nachweis oder sperrt offenes Feedback.
+        """
+        before = self.feedback_text()
+
         status, body = self.request(
             "/api/feedback", {"name": "proj", "action": "delete", "id": "F1"}
         )
 
-        self.assertEqual(status, 200, body)
+        self.assertEqual(400, status, body)
+        data = json.loads(body)
+        self.assertIs(data.get("ok"), False, body)
+        self.assertIn("bleiben als Nachweis erhalten", body)
+        self.assertEqual(self.feedback_text(), before,
+                         "Die abgelehnte Löschung veränderte FEEDBACK.md")
+
+        status, body = self.request(
+            "/api/feedback", {"name": "proj", "action": "delete", "id": "F2"}
+        )
+
+        self.assertEqual(200, status, body)
         text = self.feedback_text()
-        self.assertNotIn("F1 Erledigter Punkt", text)
-        self.assertIn("- [ ] F2 Offener Punkt", text)
+        self.assertNotIn("F2 Offener Punkt", text)
+        self.assertIn("- [x] F1 Erledigter Punkt", text,
+                      "Das Löschen des offenen Punkts entfernte den Nachweis")
 
     def test_detail_page_mentions_completed_toggle(self):
         html = served_page(self.request)

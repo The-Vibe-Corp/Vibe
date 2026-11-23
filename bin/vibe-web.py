@@ -817,6 +817,23 @@ def known_scope(s):
 # "message": …} zurück (wie /api/ticket), damit die neue UI sie einheitlich
 # behandeln kann.
 
+def _currency_view():
+    """F34: Anzeigewährung und Umrechnung, ohne Zugriffsgeheimnisse."""
+    try:
+        cleaned = vibe_ui_config.validate({
+            "currency": UI_DATA.get("currency") or vibe_ui_config.DEFAULT_CURRENCY,
+            "usd_rate": (UI_DATA.get("usd_rate") if UI_DATA.get("usd_rate") is not None
+                         else vibe_ui_config.DEFAULT_USD_RATE),
+        })
+    except vibe_ui_config.ConfigError:
+        cleaned = {}
+    return {
+        "ok": True,
+        "currency": cleaned.get("currency", vibe_ui_config.DEFAULT_CURRENCY),
+        "usd_rate": cleaned.get("usd_rate", vibe_ui_config.DEFAULT_USD_RATE),
+    }
+
+
 def _limits_view():
     """AP22: wirksames Limitverhalten (global, ohne Projekt)."""
     mode, problem = vibe_limits.load(PATHS.state)
@@ -839,19 +856,86 @@ def _limits_set(action):
     return _limits_view()
 
 
+def _gate_value(key, raw):
+    """Normierte Schranke: ``(wert, problem)``; None bei leerem Projektwert."""
+    if raw is None or (isinstance(raw, str) and not raw.strip()):
+        return None, ""
+    try:
+        return vibe_gates.validate(key, raw), ""
+    except ValueError as error:
+        return None, str(error)
+
+
 def _gates_view(project=None):
-    """AP22: wirksame Schranken, global oder im Projektkontext."""
+    """AP22/F34: wirksame Schranken samt Default, Global und Override.
+
+    ``gates`` bleibt rückwärtskompatibel (``value``/``origin``) und trägt F34
+    zusätzlich ``default``, ``global`` und ``override`` je Schranke.
+    """
     folder = vibe.ppath(project) if project else None
     result = vibe_gates.effective(PATHS.state, folder)
+    global_data, _problem = vibe_gates.load(PATHS.state)
+    env_data = (vibe_gates.read_env(
+        os.path.join(folder, ".vibe", "project.env")) if folder else {})
+    gates, defaults, overrides, globals_ = {}, {}, {}, {}
+    for key, default in vibe_gates.DEFAULTS.items():
+        entry = dict(result["gates"][key])
+        global_value, _ = _gate_value(key, global_data.get(key))
+        override, _ = _gate_value(key, env_data.get(vibe_gates.PROJECT_ENV_KEYS[key]))
+        entry.update({"default": default, "global": global_value,
+                      "override": override})
+        gates[key] = entry
+        defaults[key] = default
+        globals_[key] = global_value
+        overrides[key] = override
     answer = {
         "ok": True,
         "project": project,
-        "gates": result["gates"],
+        "gates": gates,
+        "defaults": defaults,
+        "overrides": overrides,
+        "global": globals_,
         "lines": vibe_gates.describe(PATHS.state, folder),
     }
     if result["problems"]:
         answer["problems"] = result["problems"]
     return answer
+
+
+def _gates_batch_set(project, values):
+    """F34: alle Schranken einer Charge prüfen, dann erst schreiben.
+
+    Ein leerer Wert entfernt im Projektkontext den Override; global ist er
+    ungültig. Bei auch nur einem Fehler wird weder gates.json noch project.env
+    verändert.
+    """
+    if not isinstance(values, dict) or not values:
+        return {"ok": False, "message": "Keine Schrankenwerte übergeben"}
+    parsed = {}
+    for key, raw in values.items():
+        if key not in vibe_gates.DEFAULTS:
+            return {"ok": False, "message": "Unbekannte Schranke: " + str(key)}
+        value, problem = _gate_value(key, raw)
+        if problem:
+            return {"ok": False, "message": problem}
+        if value is None and not project:
+            return {"ok": False, "message": (
+                "Schranke '%s' darf global nicht leer sein" % key)}
+        parsed[key] = value
+    try:
+        if project:
+            known(project)
+            env_values = {
+                vibe_gates.PROJECT_ENV_KEYS[key]: (value if value is not None else None)
+                for key, value in parsed.items()
+            }
+            vibe.set_env_values(project, env_values, quote=False)
+        else:
+            for key, value in parsed.items():
+                vibe_gates.save(PATHS.state, key, value)
+    except (AssertionError, ValueError, OSError) as error:
+        return {"ok": False, "message": str(error)}
+    return _gates_view(project)
 
 
 def _gates_set(key, value, project=None):
@@ -888,6 +972,15 @@ def _gates_set(key, value, project=None):
 def _runs_view():
     """AP22: Registerzeilen, neueste zuerst (Rückgabe der Registry unverändert)."""
     return {"ok": True, "records": list(reversed(vibe.run_registry().all()))}
+
+
+def _runs_cleanup():
+    """F34: abgeschlossene Registereinträge entfernen, Live-Läufe behalten."""
+    result = vibe.run_registry().cleanup_completed()
+    removed, remaining = result["removed"], result["remaining"]
+    return {"ok": True, **result,
+            "message": f"{removed} abgeschlossene Läufe entfernt, "
+                       f"{remaining} bleiben im Register"}
 
 
 def _runs_prune():
@@ -929,14 +1022,15 @@ def _runs_prune():
             "unknown": unknown, "lines": lines}
 
 
-def _sessions_set(action, limit):
-    """AP22: Sitzungslimit setzen — Parität zur CLI ``vibe sessions limit N``.
+def _sessions_set(action, limit, project=None):
+    """AP22/F34: Sitzungslimit setzen — global oder für ein Projekt.
 
     Erst prüfen, dann schreiben: ein ungültiger Wert lässt sessions.json
-    unverändert. ``SessionRegistry.set_limit`` validiert selbst inklusiv
-    (1..SESSION_LIMIT_MAX); die Vorprüfung liefert nur eine deutsche Meldung,
-    statt einen ValueError in eine 400 zu übersetzen. Der 'continue'-Pfad
-    bleibt bewusst unangetastet im Generic-Handler weiter unten.
+    unverändert. ``SessionRegistry.set_limit``/``set_project_limit``
+    validieren selbst inklusiv (1..SESSION_LIMIT_MAX); die Vorprüfung liefert
+    nur eine deutsche Meldung, statt einen ValueError in eine 400 zu
+    übersetzen. Der 'continue'-Pfad bleibt bewusst unangetastet im
+    Generic-Handler weiter unten.
     """
     if action != "limit":
         return {"ok": False, "message": (
@@ -948,11 +1042,16 @@ def _sessions_set(action, limit):
             f"Session-Limit muss 1 bis {vibe_runs.SESSION_LIMIT_MAX} sein: "
             f"{limit!r}")}
     try:
-        value = vibe_runs.SessionRegistry(PATHS.runtime).set_limit(limit)
+        registry = vibe_runs.SessionRegistry(PATHS.runtime)
+        if project:
+            value = registry.set_project_limit(vibe.ppath(project), limit)
+        else:
+            value = registry.set_limit(limit)
     except (ValueError, OSError) as error:
         return {"ok": False, "message": str(error)}
-    return {"ok": True, "limit": int(value),
-            "message": f"Session-Limit auf {value} gesetzt"}
+    scope = f"für Projekt '{project}'" if project else "global"
+    return {"ok": True, "limit": int(value), "project": project,
+            "message": f"Session-Limit {scope} auf {value} gesetzt"}
 
 
 def _emu(action):
@@ -1191,6 +1290,9 @@ class H(BaseHTTPRequestHandler):
             if u.path == "/api/language":
                 # AP21 v2: globale Sprache (auth wie die uebrigen APIs).
                 return self._send(200, {"ok": True, **language_data()})
+            if u.path == "/api/ui_settings":
+                # F34: Anzeigewährung (auth wie die uebrigen APIs).
+                return self._send(200, _currency_view())
             if u.path == "/api/projects":
                 return self._send(200, [vibe_services.project_row(vibe, n) for n in vibe.projects()])
             if u.path == "/api/run-state":
@@ -1209,8 +1311,15 @@ class H(BaseHTTPRequestHandler):
                         parsed = None
                     if parsed is not None and parsed >= 1:
                         limit = min(parsed, vibe_runs.SESSION_LIMIT_MAX)
-                effective = (limit if limit is not None
-                             else vibe_runs.SessionRegistry(PATHS.runtime).limit())
+                if limit is not None:
+                    effective = limit
+                else:
+                    # F34: Ohne explizites Limit gilt das Projekt-Override;
+                    # sonst bleibt das globale Registerlimit wirksam.
+                    registry = vibe_runs.SessionRegistry(PATHS.runtime)
+                    override = registry.project_limit(vibe.ppath(n)) if n else None
+                    effective = (override if override is not None
+                                 else registry.limit())
                 entries = vibe_runs.session_overview(
                     PATHS.runtime, project=vibe.ppath(n), limit=limit,
                     text=q.get("text", [""])[0] or None)
@@ -1445,6 +1554,26 @@ class H(BaseHTTPRequestHandler):
             body = self._read_json()
         except RequestError as e:
             return self._error(e.status, e.code, e.message)
+        if u.path == "/api/ui_settings":
+            # F34: Währung und Kurs werden gemeinsam geprüft und atomar in
+            # ui.json gespeichert; ein ungültiger Wert verändert nichts.
+            try:
+                update = vibe_ui_config.validate({
+                    **UI_DATA,
+                    "currency": body.get("currency", vibe_ui_config.DEFAULT_CURRENCY),
+                    "usd_rate": body.get("usd_rate", vibe_ui_config.DEFAULT_USD_RATE),
+                })
+            except vibe_ui_config.ConfigError as error:
+                return self._error(400, "invalid_currency", str(error))
+            try:
+                vibe_ui_config.save(PATHS.state, update)
+            except (vibe_ui_config.ConfigError, OSError) as error:
+                return self._error(400, "invalid_currency", str(error))
+            if not reload_ui_data():
+                return self._error(
+                    500, "internal_error", "ui.json ist nach dem Speichern nicht lesbar")
+            return self._send(200, {**_currency_view(),
+                                    "message": "Währungseinstellungen gespeichert"})
         if u.path == "/api/language":
             # AP21 v2: globale Sprache in ui.json persistieren. Die Validierung
             # verhindert, dass eine ungueltige Wahl die Datei veraendert; danach
@@ -1468,9 +1597,11 @@ class H(BaseHTTPRequestHandler):
             # AP22: CLI-Parität zu `vibe sessions limit N`. 'continue' läuft
             # unverändert im Generic-Handler; alles andere (limit samt
             # Validierung, unbekannte Aktion) antwortet als 200 {"ok": …}.
-            known(body.get("name", ""))
+            session_name = str(body.get("name") or "").strip()
+            if session_name:
+                known(session_name)
             return self._send(200, _sessions_set(
-                body.get("action"), body.get("limit")))
+                body.get("action"), body.get("limit"), session_name or None))
         # AP22: neue schreibende Paritäts-Endpunkte. Fachfehler werden bewusst
         # als 200 {"ok": false, "message": …} geliefert (Vertrag der neuen UI),
         # ohne den Generic-Pfad darunter zu verändern (dort bedeutet ok:false
@@ -1479,11 +1610,21 @@ class H(BaseHTTPRequestHandler):
             if u.path == "/api/limits":
                 result = _limits_set(body.get("action"))
             elif u.path == "/api/gates":
-                result = _gates_set(
-                    body.get("key"), body.get("value"), body.get("project") or None)
+                if "values" in body:
+                    result = _gates_batch_set(
+                        body.get("project") or None, body.get("values"))
+                else:
+                    result = _gates_set(
+                        body.get("key"), body.get("value"),
+                        body.get("project") or None)
             elif u.path == "/api/runs":
-                result = ({"ok": False, "message": "Unbekannte Aktion"}
-                          if body.get("action") != "prune" else _runs_prune())
+                action = body.get("action")
+                if action == "prune":
+                    result = _runs_prune()
+                elif action == "cleanup":
+                    result = _runs_cleanup()
+                else:
+                    result = {"ok": False, "message": "Unbekannte Aktion"}
             elif u.path == "/api/package":
                 # AP4 (T-G1): PR-only-Paket abschließen. Fachfehler werden als
                 # 200 {"ok": false, "message": …} geliefert (Vertrag der neuen UI).
@@ -2393,6 +2534,8 @@ STATIC_FILES = {
     "/static/nova-agents.js": ("web/nova-agents.js", "application/javascript"),
     "/static/nova-activity.js": ("web/nova-activity.js", "application/javascript"),
     "/static/nova-settings.js": ("web/nova-settings.js", "application/javascript"),
+    # F34: Auswertungen (Kosten, Läufe, Umgebung); WP3 liefert den Inhalt.
+    "/static/nova-evals.js": ("web/nova-evals.js", "application/javascript"),
     # WP6: die Dateien liegen noch nicht in bin/web/ (eigene Arbeitspakete).
     # Ein fehlendes Ziel führt in static_asset zu None und damit zum normalen 404.
     "/static/vibe.svg": ("web/vibe.svg", "image/svg+xml"),

@@ -1,10 +1,12 @@
-/* AP22 — Aktivität (Meilenstein B): laufende Läufe, Sessions mit Limit und
- * Fortsetzen sowie offene Rückfragen mit Options- und Freitextantwort.
+/* F34 WP3 — Aktivität: Kacheln, zentrale Rückfragen und Läufe.
  *
- * Alle sichtbaren Zeichenketten laufen über tr()/bt(); Backend-Meldungen
- * bleiben unübersetzt, sondern werden über bt() nur für bekannte Dokumenttexte
- * umgeschaltet. DOM-only: Rückfrage- und Protokollinhalte werden ausschließlich
- * als Textknoten gesetzt, nie als innerHTML.
+ * Rückfragen kommen aus der gemeinsamen Quelle NV.questions und werden mit
+ * NV.questionCard gezeichnet; die Aktivität hält keine eigene Karte mehr.
+ * Die Sektion Sessions samt Session-Limit ist bewusst entfernt — Sitzungen
+ * werden im jeweiligen Projekt (Überblick) gepflegt.
+ *
+ * Alle sichtbaren Zeichenketten laufen über tr()/bt(); DOM nur mit el() und
+ * Textknoten, nie innerHTML mit dynamischen Inhalten.
  */
 'use strict';
 
@@ -12,63 +14,6 @@
    auch schon während des Ladens, damit die Karten nicht unfertig wirken. */
 function nvActivityEmpty(message) {
   return el('p', {class: 'nv-muted nv-empty'}, message);
-}
-
-function nvQuestionCard(question, token, reload) {
-  var id = String(question.id || '');
-
-  function submit(body) {
-    var payload = {action: 'answer', id: question.id};
-    Object.keys(body).forEach(function (key) { payload[key] = body[key]; });
-    api('/api/questions', payload).then(async function (result) {
-      if (NV.stale(token)) return;
-      toast(bt(result && result.message)
-        || (result && result.ok ? tr('Antwort gespeichert') : tr('Antwort abgelehnt')));
-      if (result && result.ok) {
-        var fresh = await api('/api/questions');
-        if (!NV.stale(token)) reload(fresh);
-      }
-      NV.refreshBell();
-    }).catch(function (error) {
-      toast(tr('Antwort nicht gesendet: ') + String(error && error.message || error));
-    });
-  }
-
-  var options = (question.options || []).map(function (text, index) {
-    var button = el('button', {class: 'nv-btn nv-primary', type: 'button',
-      'data-nv-answer': String(index + 1)}, String(text));
-    /* 1-basierter DOM-Hook, 0-basierter API-Index (wie in der klassischen UI). */
-    button.addEventListener('click', function () { submit({option: index}); });
-    return button;
-  });
-
-  var field = null;
-  var send = null;
-  if (question.free_text !== false) {
-    field = el('input', {type: 'text', 'data-nv-field': 'answer', maxlength: '4000',
-      placeholder: tr('Eigene Antwort …'),
-      'aria-label': tr('Eigene Antwort zu ') + id});
-    send = el('button', {class: 'nv-btn', type: 'button', 'data-nv-action': 'answer'},
-      tr('Antwort senden'));
-    var sendFree = function () {
-      var text = String(field.value || '').trim();
-      if (!text) { field.focus(); return; }
-      submit({text: text});
-    };
-    send.addEventListener('click', sendFree);
-    field.addEventListener('keydown', function (event) {
-      if (event.key === 'Enter') { event.preventDefault(); sendFree(); }
-    });
-  }
-
-  return el('article', {class: 'nv-card nv-question', 'data-nv-question': id},
-    el('div', {class: 'nv-question-head'},
-      el('span', {class: 'nv-pill'}, tr('Rückfrage')),
-      question.project ? el('span', {class: 'nv-muted'}, String(question.project)) : null,
-      question.agent ? el('span', {class: 'nv-muted'}, tr('Agent: ') + String(question.agent)) : null),
-    el('p', {class: 'nv-question-text'}, String(question.text || '')),
-    options.length ? el('div', {class: 'nv-question-options'}, options) : null,
-    field ? el('div', {class: 'nv-question-free'}, field, send) : null);
 }
 
 NV.views.activity = function activity(context, token) {
@@ -81,15 +26,12 @@ NV.views.activity = function activity(context, token) {
     nvActivityEmpty(tr('Keine offenen Fragen — nichts wartet auf deine Antwort.')));
   var runsBody = el('div', {class: 'nv-runs-body'},
     nvActivityEmpty(tr('Gerade läuft keine Arbeit.')));
-  var sessionsBody = el('div', {class: 'nv-sessions-body'},
-    nvActivityEmpty(tr('Projekt wählen, um seine Sitzungen zu sehen.')));
 
   /* Rückfragen: Das Projekt steht auf jeder Karte; der Filter wendet die
      Projektwahl auf die Liste an — „Alle Projekte“ zeigt die vollständige
-     Liste. Der letzte Stand liegt in questionsData, paintQuestions bekommt
-     ihn über diese Variable, wenn sich die Projektwahl ändert. */
+     Liste. Der letzte Stand liegt in questionsData. */
   var questionFilter = '';
-  var questionsData = null;
+  var questionsData = [];
   var questionsHint = el('p', {class: 'nv-muted', 'data-nv-questions-hint': ''},
     tr('Offene Rückfragen aller Projekte — das Projekt steht auf jeder Karte'));
   /* Versteckt bis die Projekte geladen sind: wait_for(visible) beim Test-
@@ -100,17 +42,12 @@ NV.views.activity = function activity(context, token) {
     hidden: ''});
   questionProjectSelect.addEventListener('change', function () {
     questionFilter = questionProjectSelect.value;
-    if (questionsData) paintQuestions(questionsData);
+    paintQuestions();
   });
 
-  var projectSelect = el('select', {'data-nv-sessions-project': '',
-    'aria-label': tr('Projekt auswählen')});
-  var limitInput = el('input', {type: 'number', min: '1', max: '100',
-    'data-nv-sessions-limit': '', value: '5', 'aria-label': tr('Session-Limit')});
-  var limitHint = el('small', {'data-nv-limit-hint': ''},
-    tr('Gilt für das oben ausgewählte Projekt und begrenzt die Anzahl gelisteter Sitzungen'));
-  var limitSave = el('button', {class: 'nv-btn', type: 'button',
-    'data-nv-action': 'sessions-limit-save'}, tr('Limit speichern'));
+  var sessionsHint = el('p', {class: 'nv-muted', 'data-nv-activity-sessions-hint': ''},
+    tr('Sitzungen findest du im jeweiligen Projekt (Überblick).'), ' ',
+    el('a', {href: '#/'}, tr('Zu den Projekten')));
 
   document.getElementById('nv-main').replaceChildren(
     el('h2', {class: 'nv-page-title'}, tr('Aktivität')),
@@ -119,10 +56,7 @@ NV.views.activity = function activity(context, token) {
       el('h3', {}, tr('Rückfragen')), questionProjectSelect, questionsHint, questionsBody),
     el('section', {class: 'nv-card', 'data-nv-runs': ''},
       el('h3', {}, tr('Läufe')), runsBody),
-    el('section', {class: 'nv-card', 'data-nv-sessions': ''},
-      el('h3', {}, tr('Sessions')), projectSelect, sessionsBody,
-      el('div', {class: 'nv-row nv-sessions-limit'},
-        el('label', {}, tr('Session-Limit')), limitInput, limitHint, limitSave)));
+    sessionsHint);
 
   /* ---------- Zusammenfassung und Läufe (eine gemeinsame Quelle) ---------- */
   NV.pulse().then(function (p) {
@@ -172,112 +106,67 @@ NV.views.activity = function activity(context, token) {
       el('p', {class: 'nv-muted'}, tr('Läufe konnten nicht geladen werden: ') + String(error && error.message || error)));
   });
 
-  /* ---------- Sessions ---------- */
-  function loadSessionsFor(name, limitField) {
-    if (!name) { sessionsBody.replaceChildren(nvActivityEmpty(tr('Projekt wählen, um seine Sitzungen zu sehen.'))); return; }
-    api('/api/sessions?name=' + encodeURIComponent(name)).then(function (data) {
-      if (NV.stale(token)) return;
-      var entries = (data && data.sessions) || [];
-      limitField.value = String((data && data.limit) || 5);
-      var list = el('div', {class: 'nv-session-list'});
-      /* Projekt ist gewählt: hier gehört die Leeraussage hin, nicht der
-         Hinweis „Projekt wählen“ (der gilt nur ohne Auswahl). */
-      if (!entries.length) list.append(nvActivityEmpty(tr('Für dieses Projekt sind keine Sitzungen aufgezeichnet.')));
-      var canResume = !!(data && data.resume_supported) && !(data && data.running);
-      entries.forEach(function (entry) {
-        var resume = null;
-        if (canResume) {
-          resume = el('button', {class: 'nv-btn', type: 'button',
-            'data-nv-action': 'session-resume',
-            'aria-label': tr('Session fortsetzen') + ' ' + String(entry.session)},
-            tr('Fortsetzen'));
-          resume.addEventListener('click', async function () {
-            try {
-              var result = await api('/api/sessions', {
-                name: name, session: String(entry.session), action: 'continue'});
-              toast(bt(result && result.message)
-                || (result && result.ok ? tr('Der Lauf wird fortgesetzt.') : tr('Fortsetzen abgelehnt.')));
-            } catch (error) {
-              toast(tr('Fortsetzen nicht gesendet: ') + String(error && error.message || error));
-            }
+  /* ---------- Rückfragen (gemeinsame Quelle + gemeinsame Karte) ---------- */
+  function paintQuestions() {
+    var list = questionsData.filter(function (question) {
+      return !questionFilter || String(question.project || '') === questionFilter;
+    }).map(function (question) {
+      return NV.questionCard(question, {
+        onAnswered: function (answered) {
+          questionsData = questionsData.filter(function (item) {
+            return String(item.id) !== String(answered && answered.id);
           });
+          paintQuestions();
         }
-        list.append(el('div', {class: 'nv-session-row'},
-          el('span', {class: 'nv-session-id'}, String(entry.session)),
-          el('span', {class: 'nv-muted'}, String(entry.agent || '')),
-          resume));
       });
-      if (entries.length && data && data.resume_supported === false) {
-        list.append(el('p', {class: 'nv-muted'},
-          tr('Fortsetzen ist bei Pi nicht möglich (--no-session): Pi läuft ohne fortsetzbare Session.')));
-      }
-      sessionsBody.replaceChildren(list);
-    }).catch(function (error) {
-      if (!NV.stale(token)) sessionsBody.replaceChildren(
-        el('p', {class: 'nv-muted'}, tr('Sessions konnten nicht geladen werden: ') + String(error && error.message || error)));
     });
+    if (!list.length) {
+      list.push(nvActivityEmpty(tr('Keine offenen Fragen — nichts wartet auf deine Antwort.')));
+    }
+    questionsBody.replaceChildren.apply(questionsBody, list);
   }
 
+  var lastSignature = null;
+  function loadQuestions() {
+    var source = NV.questions && typeof NV.questions.list === 'function'
+      ? NV.questions.list() : [];
+    var list = Array.isArray(source) ? source : [];
+    var signature = list.map(function (question) {
+      return [question.id, question.text, question.project, question.agent].join(':');
+    }).join('|');
+    if (signature === lastSignature) return;
+    lastSignature = signature;
+    questionsData = list.slice();
+    if (!NV.stale(token)) paintQuestions();
+  }
+
+  var refresh = NV.questions && typeof NV.questions.refresh === 'function'
+    ? NV.questions.refresh() : Promise.resolve();
+  Promise.resolve(refresh).then(loadQuestions).catch(function (error) {
+    if (!NV.stale(token)) questionsBody.replaceChildren(
+      el('p', {class: 'nv-muted'}, tr('Rückfragen konnten nicht geladen werden: ') + String(error && error.message || error)));
+  });
+  loadQuestions();
+
+  /* Die gemeinsame Quelle wird per Poll im Kern aktualisiert. Solange diese
+     Ansicht aktiv ist, übernehmen wir neue Stände lokal — ohne Voll-Neurender
+     und ohne eine zweite Kopie der Frage-Karte. */
+  var poll = setInterval(function () {
+    if (NV.stale(token)) { clearInterval(poll); return; }
+    loadQuestions();
+  }, 1000);
+
+  /* Die Projektauswahl benötigt die Projektnamen; bis sie da ist, bleibt sie
+     verborgen. Die Liste selbst stammt weiterhin aus NV.questions. */
   api('/api/projects').then(function (rows) {
     if (NV.stale(token)) return;
     var names = (rows || []).map(function (row) { return String(row.name); });
-    projectSelect.replaceChildren.apply(projectSelect, names.map(function (name) {
-      return el('option', {value: name}, name);
-    }));
     questionProjectSelect.replaceChildren.apply(questionProjectSelect,
       [el('option', {value: ''}, tr('Alle Projekte'))]
         .concat(names.map(function (name) { return el('option', {value: name}, name); })));
     questionFilter = '';
     questionProjectSelect.value = '';
     questionProjectSelect.hidden = false;
-    if (names.length) {
-      projectSelect.value = names[0];
-      loadSessionsFor(names[0], limitInput);
-    } else {
-      sessionsBody.replaceChildren(nvActivityEmpty(tr('Projekt wählen, um seine Sitzungen zu sehen.')));
-    }
-  }).catch(function (error) {
-    if (!NV.stale(token)) sessionsBody.replaceChildren(
-      el('p', {class: 'nv-muted'}, tr('Sessions konnten nicht geladen werden: ') + String(error && error.message || error)));
-  });
-
-  projectSelect.addEventListener('change', function () {
-    loadSessionsFor(projectSelect.value, limitInput);
-  });
-
-  limitSave.addEventListener('click', async function () {
-    var raw = String(limitInput.value || '').trim();
-    var value = Number(raw);
-    if (!Number.isInteger(value) || value < 1 || value > 100) {
-      toast(tr('Session-Limit ist ungültig.'));
-      return;
-    }
-    try {
-      var result = await api('/api/sessions', {
-        name: projectSelect.value, action: 'limit', limit: value});
-      toast(bt(result && result.message)
-        || (result && result.ok ? tr('Limit gespeichert')
-          : tr('Limit konnte nicht gespeichert werden: ') + String(result && result.message || '')));
-    } catch (error) {
-      toast(tr('Limit konnte nicht gespeichert werden: ') + String(error && error.message || error));
-    }
-  });
-
-  /* ---------- Rückfragen ---------- */
-  function paintQuestions(data) {
-    questionsData = data || {};
-    var list = (questionsData.questions || [])
-      .filter(function (question) {
-        return !questionFilter || String(question.project || '') === questionFilter;
-      })
-      .map(function (question) {
-        return nvQuestionCard(question, token, paintQuestions);
-      });
-    if (!list.length) list.push(nvActivityEmpty(tr('Keine offenen Fragen — nichts wartet auf deine Antwort.')));
-    questionsBody.replaceChildren.apply(questionsBody, list);
-  }
-  api('/api/questions').then(function (data) {
-    if (!NV.stale(token)) paintQuestions(data);
   }).catch(function (error) {
     if (!NV.stale(token)) questionsBody.replaceChildren(
       el('p', {class: 'nv-muted'}, tr('Rückfragen konnten nicht geladen werden: ') + String(error && error.message || error)));
@@ -285,3 +174,19 @@ NV.views.activity = function activity(context, token) {
 
   NV.refreshBell();
 };
+
+/* F34 WP3: neue Texte dieser Ansicht (Schlüssel = deutscher Quelltext). */
+if (window.VIBE_I18N && typeof VIBE_I18N.extend === 'function') {
+  VIBE_I18N.extend({
+    en: {
+      'Sitzungen findest du im jeweiligen Projekt (Überblick).':
+        'You will find sessions in each project (Overview).',
+      'Zu den Projekten': 'Go to projects'
+    },
+    de: {
+      'Sitzungen findest du im jeweiligen Projekt (Überblick).':
+        'Sitzungen findest du im jeweiligen Projekt (Überblick).',
+      'Zu den Projekten': 'Zu den Projekten'
+    }
+  });
+}

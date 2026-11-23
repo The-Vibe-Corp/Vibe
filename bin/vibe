@@ -804,9 +804,15 @@ def feedback_update(name, fid, title, description=""):
     _rewrite_entry(fp, text, expected, entry, item, title, description, "Feedback-Punkte")
 
 def feedback_delete(name, fid):
-    """Entfernt genau einen Feedback-Punkt; andere Einträge bleiben erhalten."""
-    fp, text, expected, entry, _ = _entry_target(
+    """Entfernt genau einen Feedback-Punkt; andere Einträge bleiben erhalten.
+
+    F34: Abgeschlossene Punkte sind Nachweise und dürfen nicht gelöscht werden.
+    """
+    fp, text, expected, entry, item = _entry_target(
         name, "FEEDBACK.md", fid, "Feedback-Punkt", True)
+    if item["state"] == "erledigt":
+        raise ValueError(
+            "Abgeschlossene Feedback-Punkte bleiben als Nachweis erhalten: " + fid)
     _delete_entry(fp, text, expected, entry)
 
 def ticket_update(name, fid, title, description=""):
@@ -817,9 +823,15 @@ def ticket_update(name, fid, title, description=""):
     _rewrite_entry(fp, text, expected, entry, item, title, description, "Arbeitspakete")
 
 def ticket_delete(name, fid):
-    """Entfernt genau ein Arbeitspaket; andere Einträge bleiben erhalten."""
-    fp, text, expected, entry, _ = _entry_target(
+    """Entfernt genau ein Arbeitspaket; andere Einträge bleiben erhalten.
+
+    F34: Abgeschlossene Pakete sind Nachweise und dürfen nicht gelöscht werden.
+    """
+    fp, text, expected, entry, item = _entry_target(
         name, "TICKETS.md", fid, "Arbeitspaket", False)
+    if item["state"] == "erledigt":
+        raise ValueError(
+            "Abgeschlossene Arbeitspakete bleiben als Nachweis erhalten: " + fid)
     _delete_entry(fp, text, expected, entry)
 
 def _entry_lines(ident, title, description, art=None):
@@ -2748,9 +2760,10 @@ def agents_file_view(name):
     außerhalb des Projekts liegen könnte.
     """
     path = os.path.join(ppath(name), "AGENTS.md")
+    backups = agents_file_backups(name)
     if os.path.islink(path) or not os.path.isfile(path):
         return {"exists": False, "digest": "", "before": "",
-                "managed": None, "after": ""}
+                "managed": None, "after": "", "backups": backups}
     digest = vibe_storage.file_digest(path)
     try:
         with open(path, encoding="utf-8") as handle:
@@ -2759,7 +2772,7 @@ def agents_file_view(name):
         raise ValueError("AGENTS.md ist nicht UTF-8 kodiert: " + str(error)) from error
     before, managed, after = _agents_file_split(text)
     return {"exists": True, "digest": digest, "before": before,
-            "managed": managed, "after": after}
+            "managed": managed, "after": after, "backups": backups}
 
 def agents_file_save(name, before, after, digest):
     """Schreibt die freien Teile der AGENTS.md und behält den Block byte-identisch.
@@ -2849,6 +2862,20 @@ def _test_agent_created(created):
 def agents_file_backup_dir(name):
     """Verzeichnis der AGENTS.md-Sicherungen: ``BACKUPS/<safe(name)>-agents-md``."""
     return os.path.join(BACKUPS, safe(name) + "-agents-md")
+
+
+def agents_file_backups(name):
+    """Vorhandene AGENTS.md-Sicherungen dieses Projekts, neueste zuerst.
+
+    Liefert nur die Dateinamen (die bereits einen Zeitstempel tragen) und
+    keinen Dateiinhalt, damit keine Geheimnisse aus einer Sicherung in die
+    Ansicht gelangen. Die Sortierung ist stabil (Änderungszeit, dann Name).
+    """
+    directory = agents_file_backup_dir(name)
+    items = vibe_storage.list_backups(directory)
+    items.sort(key=lambda item: (
+        os.path.getmtime(os.path.join(directory, item)), item), reverse=True)
+    return [{"name": item} for item in items]
 
 
 def agents_file_backup(name):
@@ -4977,6 +5004,42 @@ def _add_tokens(target, source):
         target[field] += source[field]
 
 
+def _month_key(epoch):
+    """Kalendermonat (YYYY-MM, UTC) einer Sitzung; unlesbare Zeit bleibt leer."""
+    try:
+        value = int(epoch)
+    except (TypeError, ValueError, OverflowError):
+        return ""
+    if value <= 0:
+        return ""
+    return time.strftime("%Y-%m", time.gmtime(value))
+
+
+def _month_bucket():
+    """Zähler für einen Monat: Tokens, Kosten, Sitzungen."""
+    return {"tokens": _zero_tokens(), "cost": 0.0, "sessions": 0}
+
+
+def _add_month(target, month, tokens, cost=0.0, sessions=0):
+    """Fügt einem Monatszähler Tokens, Kosten und Sitzungen hinzu."""
+    bucket = target.setdefault(month, _month_bucket())
+    _add_tokens(bucket["tokens"], tokens)
+    bucket["cost"] += cost
+    bucket["sessions"] += sessions
+
+
+def _month_rows(months):
+    """Monatsliste, neueste zuerst (additiv zu den bestehenden Feldern)."""
+    return [dict(month=month, **_month_view(months[month]))
+            for month in sorted(months, reverse=True)]
+
+
+def _month_view(bucket):
+    """Kopie eines Monatszählers ohne interne Referenzen."""
+    return {"tokens": dict(bucket["tokens"]), "cost": bucket["cost"],
+            "sessions": bucket["sessions"]}
+
+
 def _int_tokens(value):
     """Nichtnegative Ganzzahl; kaputte Werte zählen als 0."""
     try:
@@ -5571,7 +5634,12 @@ def _package_of(row, by_id, ids):
 
 
 def _project_stats(name, sessions, by_id, user_prices, system_prices, catalog):
-    """Paket- und Modellstatistik eines Projekts samt Euro-Kosten."""
+    """Paket- und Modellstatistik eines Projekts samt Euro-Kosten und Monaten.
+
+    F34 ergänzt je Paket ``month`` (Monat der jüngsten Sitzung), ``months``
+    (Monat -> Tokens/Kosten/Sitzungen) und ``monthly`` (neueste zuerst) sowie
+    die Projektmonate in ``monthly``. Alle bisherigen Felder bleiben unverändert.
+    """
     titles = package_catalog(name)
     packages = {}
     for row, usage in sessions:
@@ -5579,15 +5647,23 @@ def _project_stats(name, sessions, by_id, user_prices, system_prices, catalog):
         package = packages.setdefault(pid, {
             "id": pid,
             "title": titles.get(pid, "") or ("Ohne Arbeitspaket" if not pid else ""),
-            "sessions": 0, "models": {}, "tokens": _zero_tokens(), "cost": 0.0})
+            "sessions": 0, "models": {}, "tokens": _zero_tokens(), "cost": 0.0,
+            "_months": {}, "_month_sessions": {}})
         package["sessions"] += 1
+        month = _month_key(row.get("time_created"))
+        if month:
+            package["_month_sessions"][month] = (
+                package["_month_sessions"].get(month, 0) + 1)
         for (agent, model), tokens in usage.items():
             entry = package["models"].setdefault((agent, model), {
                 "agent": agent, "model": model,
-                "tokens": _zero_tokens(), "cost": 0.0})
+                "tokens": _zero_tokens(), "cost": 0.0, "_by_month": {}})
             _add_tokens(entry["tokens"], tokens)
+            if month:
+                _add_month(entry["_by_month"], month, tokens)
     total = {"tokens": _zero_tokens(), "cost": 0.0,
              "sessions": sum(p["sessions"] for p in packages.values())}
+    total_months = {}
     models = {}
     for package in packages.values():
         for key in sorted(package["models"]):
@@ -5596,6 +5672,11 @@ def _project_stats(name, sessions, by_id, user_prices, system_prices, catalog):
             entry["price"] = price
             entry["price_source"] = source
             entry["cost"] = _cost_of(entry["tokens"], price)
+            for month, bucket in entry.pop("_by_month", {}).items():
+                tokens = bucket["tokens"]
+                month_cost = _cost_of(tokens, price)
+                _add_month(package["_months"], month, tokens, month_cost)
+                _add_month(total_months, month, tokens, month_cost)
             _add_tokens(package["tokens"], entry["tokens"])
             package["cost"] += entry["cost"]
             aggregated = models.setdefault(entry["model"], {
@@ -5605,13 +5686,22 @@ def _project_stats(name, sessions, by_id, user_prices, system_prices, catalog):
                 aggregated["agents"].append(entry["agent"])
             _add_tokens(aggregated["tokens"], entry["tokens"])
             aggregated["cost"] += entry["cost"]
+        for month, count in package.pop("_month_sessions").items():
+            _add_month(package["_months"], month, _zero_tokens(), 0.0, count)
+            _add_month(total_months, month, _zero_tokens(), 0.0, count)
         _add_tokens(total["tokens"], package["tokens"])
         total["cost"] += package["cost"]
+        package["months"] = {month: _month_view(bucket)
+                             for month, bucket in package.pop("_months").items()}
+        monthly = _month_rows(package["months"])
+        package["monthly"] = monthly
+        package["month"] = monthly[0]["month"] if monthly else ""
         package["models"] = [package["models"][key] for key in sorted(package["models"])]
     ordered = [packages[pid] for pid in
                sorted(packages, key=lambda pid: (pid == "", _natural_key(pid)))]
     return {"packages": ordered, "total": total,
-            "models": [models[key] for key in sorted(models)]}
+            "models": [models[key] for key in sorted(models)],
+            "monthly": _month_rows(total_months)}
 
 
 def _natural_key(value):
@@ -5631,7 +5721,8 @@ def costs_project(name):
         "db": collected["db"], "currency": COSTS_CURRENCY, "unit": "1M",
         "project": name, "sessions": stats["total"]["sessions"],
         "packages": stats["packages"], "total": stats["total"],
-        "models": stats["models"], "user_prices": project_prices(name),
+        "models": stats["models"], "monthly": stats["monthly"],
+        "user_prices": project_prices(name),
         "global_prices": global_prices(),
     }
 
@@ -5645,20 +5736,25 @@ def costs_overview():
     catalog = models_info_map()
     rows = []
     total = {"tokens": _zero_tokens(), "cost": 0.0, "sessions": 0}
+    monthly = {}
     for name in sorted(projects):
         stats = _project_stats(name, collected["sessions"].get(name, []),
                                collected["by_id"], _global_user_prices(name),
                                system_prices, catalog)
         row = {"name": name, "packages": len(stats["packages"]),
                "sessions": stats["total"]["sessions"],
-               "tokens": stats["total"]["tokens"], "cost": stats["total"]["cost"]}
+               "tokens": stats["total"]["tokens"], "cost": stats["total"]["cost"],
+               "monthly": stats["monthly"]}
         rows.append(row)
+        for entry in stats["monthly"]:
+            _add_month(monthly, entry["month"], entry["tokens"],
+                       entry["cost"], entry["sessions"])
         _add_tokens(total["tokens"], row["tokens"])
         total["cost"] += row["cost"]
         total["sessions"] += row["sessions"]
     return {"available": collected["available"], "message": collected["message"],
             "db": collected["db"], "currency": COSTS_CURRENCY, "unit": "1M",
-            "projects": rows, "total": total,
+            "projects": rows, "total": total, "monthly": _month_rows(monthly),
             "global_prices": global_prices()}
 
 

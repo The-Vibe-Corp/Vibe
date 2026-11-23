@@ -119,6 +119,12 @@ function setAttrTx(node, name, key) {
   node.__i18nAttrs[name] = {key: key, vars: undefined};
 }
 
+function setAttrTxVars(node, name, key, vars) {
+  node.setAttribute(name, String(tr(key, vars)));
+  node.__i18nAttrs = node.__i18nAttrs || {};
+  node.__i18nAttrs[name] = {key: key, vars: vars};
+}
+
 /* F33/3d: Das Animations-Label trägt aria-label/title "Animationen: an/aus"
    (Zustand im Label); die Glyph/der Glyph-Text bleibt unberührt. */
 function setAnimLabel(animToggle) {
@@ -168,15 +174,109 @@ function bt(value) {
   return out;
 }
 
+/* F34: Genau eine Sammlung von Meldungen. Jeder Toast wird zusätzlich als
+   Glocken-Eintrag gespeichert (max. 100, neueste zuerst). */
+var NOTIFICATIONS_KEY = 'nv-notifications';
+var MAX_NOTIFICATIONS = 100;
 var toastBox = document.getElementById('nv-toasts');
-function toast(message) {
+
+function readJSON(key, fallback) {
+  try {
+    var raw = localStorage.getItem(key);
+    if (raw == null) return fallback;
+    var data = JSON.parse(raw);
+    return data == null ? fallback : data;
+  } catch (error) { return fallback; }
+}
+
+/* Ausblendungen und gesehene Fragen sind sitzungsbezogen (F34-Vertrag). */
+function readSessionJSON(key, fallback) {
+  try {
+    var raw = sessionStorage.getItem(key);
+    if (raw == null) return fallback;
+    var data = JSON.parse(raw);
+    return data == null ? fallback : data;
+  } catch (error) { return fallback; }
+}
+function saveSessionJSON(key, value) {
+  try { sessionStorage.setItem(key, JSON.stringify(value)); }
+  catch (error) { /* Sitzungsspeicher nicht verfügbar */ }
+}
+
+function readNotifications() {
+  var data = readJSON(NOTIFICATIONS_KEY, []);
+  if (!Array.isArray(data)) return [];
+  return data.filter(function (entry) {
+    return entry && typeof entry === 'object' && entry.text != null;
+  }).map(function (entry) {
+    return {
+      id: String(entry.id || ''),
+      text: String(entry.text),
+      kind: String(entry.kind || 'info'),
+      href: entry.href ? String(entry.href) : '',
+      ts: Number(entry.ts) || 0,
+      read: !!entry.read
+    };
+  });
+}
+
+function saveNotifications(entries) {
+  try {
+    localStorage.setItem(NOTIFICATIONS_KEY,
+      JSON.stringify(entries.slice(0, MAX_NOTIFICATIONS)));
+  } catch (error) { /* Speicher nicht verfügbar: Peek bleibt trotzdem sichtbar */ }
+}
+
+function persistNotification(text, opts) {
+  var settings = opts || {};
+  var entry = {
+    id: 'nv-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8),
+    text: String(text == null ? '' : text),
+    kind: String(settings.kind || 'info'),
+    href: settings.href ? String(settings.href) : '',
+    ts: Date.now(),
+    read: false
+  };
+  var all = readNotifications();
+  all.unshift(entry);
+  saveNotifications(all);
+  if (typeof refreshBell === 'function') refreshBell();
+  return entry;
+}
+
+function toast(message, opts) {
+  var text = String(message == null ? '' : message);
+  var settings = opts || {};
+  if (settings.store !== false) persistNotification(text, settings);
   if (!toastBox) return;
-  var card = el('div', {class: 'nv-toast', 'data-nv-toast-auto': ''}, el('span', {}, String(message)),
+  var card = el('div', {class: 'nv-toast', 'data-nv-toast-auto': ''}, el('span', {}, text),
     el('button', {class: 'nv-toast-close', type: 'button',
       'aria-label': tr('Meldung schließen'), on: {click: function () { card.remove(); }}}, '×'));
   startToastTimer(card);
   toastBox.append(card);
 }
+
+/* Öffentliche API für Ansichten: Meldung + Peek + Glocken-Eintrag. */
+NV.notify = function (text, opts) { return toast(text, opts); };
+NV.notifications = function () { return readNotifications(); };
+NV.dismissNotification = function (id) {
+  saveNotifications(readNotifications().filter(function (entry) {
+    return entry.id !== String(id);
+  }));
+  renderBell(lastPulse);
+};
+NV.clearNotifications = function () {
+  saveNotifications(readNotifications().map(function (entry) {
+    entry.read = true;
+    return entry;
+  }));
+  var dismissed = readDismissedLive();
+  liveRows(lastPulse).forEach(function (row) {
+    if (dismissed.indexOf(row.key) === -1) dismissed.push(row.key);
+  });
+  saveDismissedLive(dismissed);
+  renderBell(lastPulse);
+};
 
 /* F33/3c: Toasts sind kurzlebig — Karten mit data-nv-toast-auto werden
    nach ~6 s selbst entfernt; Hover/Fokus in der Karte pausiert den Timer,
@@ -299,6 +399,7 @@ function route() {
       return {view: 'agents', name: parts[1] ? decodeURIComponent(parts[1]) : null};
     }
     if (head === 'activity') return {view: 'activity'};
+    if (head === 'evaluations') return {view: 'evaluations'};
     if (head === 'settings') return {view: 'settings'};
   } catch (e) { /* defekter Hash fällt auf home zurück */ }
   return {view: 'home'};
@@ -324,7 +425,9 @@ function render() {
       }
     });
     var renderer = NV.views[context.view] || NV.views.home;
-    return Promise.resolve(renderer(context, token)).catch(function (error) {
+    return Promise.resolve(renderer(context, token)).then(function () {
+      if (token === RENDER_TOKEN) enhanceView(main);
+    }).catch(function (error) {
       if (token !== RENDER_TOKEN) return;
       toast(tr('Ansicht konnte nicht geladen werden: ') + String(error && error.message || error));
     });
@@ -334,32 +437,23 @@ NV.render = render;
 
 /* ---------- Kopfzeile, Anmeldung und Benachrichtigungen ---------- */
 
-var NAV_KEYS = {home: 'Start', agents: 'Agenten', activity: 'Aktivität', settings: 'Einstellungen'};
+var NAV_KEYS = {home: 'Start', agents: 'Agenten', activity: 'Aktivität',
+  evaluations: 'Auswertungen', settings: 'Einstellungen'};
 
-/* F33/2a/3b: Die Nav existiert einmal. Unter ≥1280px wird dasselbe Nav in
-   die Aside (Sidebar) verschoben, darunter in die Kopfzeile — Handler und
-   Labels bleiben denselben Buttons, der globale [data-nv-nav]-Zähler (AP22)
-   bleibt 1 pro View. CSS: body:has(aside [data-nv-nav]) .nv-top > .nv-nav
-   blendet bei ≥1280 den Platzhalter im Header aus. */
-function syncSidebarNav() {
-  var nav = document.querySelector('header .nv-nav, aside.nv-side .nv-nav');
-  var aside = document.querySelector('aside.nv-side');
-  if (!nav || !aside) return;
-  var wide = media('(min-width: 1280px)');
-  if (wide && wide.matches) {
-    if (nav.parentNode !== aside) aside.appendChild(nav);
-  } else {
-    var header = document.querySelector('header');
-    if (header && nav.parentNode !== header) header.appendChild(nav);
-  }
-}
+/* F34: Die fünf Navigationspunkte bleiben dauerhaft in der Kopfzeile. Die
+   leere aside.nv-side wird nicht mehr als Nav-Container verwendet. */
+
+/* Neutraler Leerzustand für die neue Route, bis WP3 die Ansicht liefert. */
+NV.views.evaluations = function (context, token) {
+  if (NV.stale(token)) return;
+  document.getElementById('nv-main').replaceChildren(
+    el('section', {class: 'nv-card'},
+      el('h2', {}, tr('Auswertungen')),
+      el('p', {class: 'nv-muted'},
+        tr('Auswertungen sind hier noch nicht verfügbar.'))));
+};
 
 function initChrome() {
-  syncSidebarNav();
-  var wideNav = media('(min-width: 1280px)');
-  if (wideNav && wideNav.addEventListener) {
-    wideNav.addEventListener('change', syncSidebarNav);
-  }
   var skip = document.querySelector('.nv-skip');
   if (skip) setTx(skip, tr('Zum Inhalt springen'));
   var toggle = document.querySelector('[data-nv-nav-toggle]');
@@ -397,6 +491,29 @@ function initChrome() {
     setChromeLabel(themeToggle, 'Darstellung wechseln', '◐');
     themeToggle.addEventListener('click', function () { NV.toggleTheme(); });
   }
+  var questionsButton = document.querySelector('[data-nv-questions-button]');
+  if (questionsButton) {
+    var label = questionsButton.querySelector('.nv-questions-label');
+    if (label) setTx(label, tr('Fragen'));
+    setChromeLabel(questionsButton, 'Fragen');
+    questionsButton.addEventListener('click', function () { NV.questions.openInbox(); });
+  }
+  var banner = document.querySelector('[data-nv-question-banner]');
+  if (banner) {
+    // Der Inhalt wird bei jedem Poll neu gezeichnet → Delegation.
+    banner.addEventListener('click', function (event) {
+      if (event.target.closest('[data-nv-question-banner-open]')) {
+        NV.questions.openInbox();
+      }
+    });
+  }
+  var contextClose = document.querySelector('[data-nv-context-close]');
+  if (contextClose) {
+    setChromeLabel(contextClose, 'Kontext schließen', '×');
+    contextClose.addEventListener('click', function () { NV.context.close(); });
+  }
+  var contextScrim = document.querySelector('[data-nv-context-scrim]');
+  if (contextScrim) contextScrim.addEventListener('click', function () { NV.context.close(); });
   var bell = document.querySelector('[data-nv-bell]');
   if (bell) {
     setChromeLabel(bell, 'Benachrichtigungen');
@@ -419,6 +536,9 @@ function initChrome() {
         if (event.target.closest('[data-nv-bell-close]')) {
           closeBellPanel();
           bell.focus();
+        } else if (event.target.closest('[data-nv-bell-clear]')) {
+          event.stopPropagation();
+          NV.clearNotifications();
         }
       });
     }
@@ -432,7 +552,9 @@ function initChrome() {
     closeBellPanel();
   });
   document.addEventListener('keydown', function (event) {
-    if (event.key === 'Escape') closeBellPanel();
+    if (event.key !== 'Escape') return;
+    closeBellPanel();
+    if (NV.context.isOpen()) NV.context.close();
   });
   window.addEventListener('hashchange', function () { render(); });
   window.addEventListener('vibe:langchange', function () {
@@ -450,6 +572,9 @@ function initChrome() {
     if (event && event.preventDefault) event.preventDefault();
     toast(tr('Aktion fehlgeschlagen: ') + String(event && event.reason && event.reason.message || event && event.reason || ''));
   });
+  // Die Schublade sofort mit Kopf, Erklärung und Aktion füllen; die Live-
+  // Quellen kommen anschließend asynchron über refreshBell().
+  renderBell();
 }
 
 function showLogin() {
@@ -543,62 +668,267 @@ NV.pulse = async function pulse() {
     running: running, failed: failed, blocked: blocked};
 };
 
-/* Glocke: die drei vertraglichen Quellen (Fragen, blockierte Pakete,
-   fehlgeschlagene Läufe) plus laufende Läufe — alle als verlinkte Einträge. */
+/* ---------- Glocke: gespeicherte Einträge + ausblendbare Live-Einträge ---------- */
+
+var LIVE_KEY = 'nv-dismissed-live';
+var lastPulse = {questions: [], blocked: [], failed: [], running: []};
+
+function readDismissedLive() {
+  var data = readSessionJSON(LIVE_KEY, []);
+  return Array.isArray(data) ? data.map(String) : [];
+}
+function saveDismissedLive(keys) { saveSessionJSON(LIVE_KEY, keys); }
+
+/* Live-Einträge tragen stabile Keys, damit das Ausblenden nur die Glocke
+   betrifft: Zähler in Kopfzeile und Banner bleiben bis zur Antwort stehen. */
+function liveRows(pulseData) {
+  var p = pulseData || lastPulse;
+  var rows = [];
+  ((p && p.questions) || []).forEach(function (question) {
+    var id = String((question && question.id) || '');
+    if (!id) return;
+    rows.push({key: 'question:' + id,
+      text: tr('Frage') + ': ' + String(question.text || ''),
+      sub: String(question.project || ''), question: question, href: ''});
+  });
+  ((p && p.blocked) || []).forEach(function (item) {
+    var id = String((item && (item.id || item.title)) || '');
+    rows.push({key: 'blocked:' + id,
+      text: tr('Blockiert') + ': ' + id, sub: String((item && item.project) || ''),
+      href: '#/project/' + encodeURIComponent(String((item && item.project) || '')) + '/work'});
+  });
+  ((p && p.failed) || []).forEach(function (item) {
+    var name = String((item && item.name) || '');
+    rows.push({key: 'failed:' + name,
+      text: tr('Lauf fehlgeschlagen') + ': ' + name,
+      sub: String(((item && item.run) || {}).run_id || ''),
+      href: '#/project/' + encodeURIComponent(name) + '/output'});
+  });
+  ((p && p.running) || []).forEach(function (item) {
+    var name = String((item && item.name) || '');
+    rows.push({key: 'running:' + name,
+      text: tr('Lauf läuft') + ': ' + name, sub: '',
+      href: '#/project/' + encodeURIComponent(name) + '/output'});
+  });
+  return rows;
+}
+
+function renderBell(pulseData) {
+  if (pulseData) lastPulse = pulseData;
+  var stored = readNotifications().filter(function (entry) { return !entry.read; });
+  var dismissed = readDismissedLive();
+  var live = liveRows().filter(function (row) {
+    return dismissed.indexOf(row.key) === -1;
+  });
+  var count = stored.length + live.length;
+  var badge = document.querySelector('[data-nv-bell-count]');
+  if (badge) {
+    badge.textContent = String(count);
+    if (count) badge.removeAttribute('hidden'); else badge.setAttribute('hidden', '');
+  }
+  var panel = document.querySelector('[data-nv-bell-panel]');
+  if (!panel) return;
+  var head = el('div', {class: 'nv-drawer-head'},
+    el('span', {class: 'nv-drawer-title'}, tr('Benachrichtigungen')),
+    el('button', {class: 'nv-btn nv-ghost nv-close', type: 'button',
+      'data-nv-bell-close': '', 'aria-label': tr('Benachrichtigungen schließen'),
+      title: tr('Benachrichtigungen schließen')}, '×'));
+  var explain = el('p', {class: 'nv-bell-explain', 'data-nv-bell-explain': ''},
+    tr('Glocke: dauerhafte Hinweise. Toasts: kurzes Feedback.'));
+  var clear = el('button', {class: 'nv-btn nv-ghost nv-bell-clear', type: 'button',
+    'data-nv-bell-clear': ''}, tr('Alle als gelesen'));
+  var list = el('div', {class: 'nv-bell-list'});
+  stored.forEach(function (entry) {
+    var main = el('div', {class: 'nv-bell-row-main'},
+      el('span', {class: 'nv-bell-text'}, entry.text));
+    if (entry.kind === 'question') {
+      main.append(el('button', {class: 'nv-bell-link', type: 'button',
+        'data-nv-notification-open': '', on: {click: function () {
+          NV.questions.openInbox();
+        }}}, tr('Öffnen')));
+    } else if (entry.href) {
+      main.append(el('a', {class: 'nv-bell-link', href: entry.href}, tr('Öffnen')));
+    }
+    list.append(el('div', {class: 'nv-bell-row', 'data-nv-notification': '',
+      'data-nv-notification-id': entry.id}, main,
+      el('button', {class: 'nv-bell-dismiss', type: 'button',
+        'data-nv-notification-dismiss': '', 'aria-label': tr('Eintrag schließen'),
+        title: tr('Eintrag schließen'), on: {click: function (event) {
+          event.stopPropagation();
+          NV.dismissNotification(entry.id);
+        }}}, '×')));
+  });
+  live.forEach(function (row) {
+    var main = el('div', {class: 'nv-bell-row-main'},
+      el('span', {class: 'nv-bell-text'}, String(row.text)));
+    if (row.sub) main.append(el('small', {class: 'nv-bell-sub'}, String(row.sub)));
+    if (row.question) {
+      main.append(el('button', {class: 'nv-btn nv-ghost nv-bell-answer', type: 'button',
+        'data-nv-live-question-open': '', on: {click: function () {
+          closeBellPanel();
+          NV.questions.openInbox();
+        }}}, tr('Antworten')));
+    } else if (row.href) {
+      main.append(el('a', {class: 'nv-bell-link', href: row.href}, tr('Öffnen')));
+    }
+    list.append(el('div', {class: 'nv-bell-row nv-bell-live',
+      'data-nv-live-item': '', 'data-nv-live-key': row.key}, main,
+      el('button', {class: 'nv-bell-dismiss', type: 'button',
+        'data-nv-live-dismiss': '',
+        'aria-label': tr('Eintrag schließen'), title: tr('Eintrag schließen'),
+        on: {click: function (event) {
+          event.stopPropagation();
+          var keys = readDismissedLive();
+          if (keys.indexOf(row.key) === -1) keys.push(row.key);
+          saveDismissedLive(keys);
+          renderBell();
+        }}}, '×')));
+  });
+  if (!stored.length && !live.length) {
+    list.append(el('p', {class: 'nv-muted nv-bell-empty'},
+      tr('Keine Benachrichtigungen gerade')));
+  }
+  panel.replaceChildren(head, explain, clear, list);
+}
+
+/* Glocke aus den vertraglichen Quellen auffüllen; ein fehlgeschlagener
+   Detailaufruf darf die gespeicherten Einträge nicht verdecken. */
 async function refreshBell() {
   try {
-    var p = await NV.pulse();
-    var count = p.questions.length + p.blocked.length + p.failed.length
-      + p.running.length;
-    var badge = document.querySelector('[data-nv-bell-count]');
-    var panel = document.querySelector('[data-nv-bell-panel]');
-    if (badge) {
-      badge.textContent = String(count);
-      if (count) badge.removeAttribute('hidden'); else badge.setAttribute('hidden', '');
-    }
-    if (panel) {
-      var rows = [];
-      p.questions.forEach(function (question) {
-        var project = String(question.project || '');
-        rows.push(el('a', {class: 'nv-bell-item', href: '#/project/' + encodeURIComponent(project)},
-          tr('Frage') + ': ' + String(question.text || '') + ' — ' + project));
-      });
-      p.blocked.forEach(function (item) {
-        rows.push(el('a', {class: 'nv-bell-item',
-          href: '#/project/' + encodeURIComponent(item.project) + '/work'},
-          tr('Blockiert') + ': ' + (item.id || item.title) + ' — ' + item.project));
-      });
-      p.failed.forEach(function (item) {
-        var runId = String((item.run && item.run.run_id) || '');
-        rows.push(el('a', {class: 'nv-bell-item',
-          href: '#/project/' + encodeURIComponent(String(item.name)) + '/output'},
-          tr('Lauf fehlgeschlagen') + ': ' + String(item.name)
-            + (runId ? ' · ' + runId : '')));
-      });
-      p.running.forEach(function (item) {
-        rows.push(el('a', {class: 'nv-bell-item',
-          href: '#/project/' + encodeURIComponent(String(item.name)) + '/output'},
-          tr('Lauf läuft') + ': ' + String(item.name)));
-      });
-      if (!rows.length) {
-        rows.push(el('p', {class: 'nv-muted nv-bell-empty'}, tr('Keine Benachrichtigungen gerade')));
-      }
-      var head = el('div', {class: 'nv-drawer-head'},
-        el('span', {class: 'nv-drawer-title'}, tr('Benachrichtigungen')),
-        el('p', {class: 'nv-muted', 'data-nv-bell-explain': ''},
-          tr('Die Glocke sammelt dauerhafte Sammlung (Fragen, blockierte Pakete, fehlgeschlagene Läufe). Toasts sind kurzlebiges Aktionsfeedback.')),
-        el('button', {class: 'nv-btn nv-ghost nv-close', type: 'button',
-          'data-nv-bell-close': '', 'aria-label': tr('Benachrichtigungen schließen'),
-          title: tr('Benachrichtigungen schließen')}, '×'));
-      // Wichtig: replaceChildren flacht Arrays nicht. Das frühere Übergeben des
-      // rows-Arrays erzeugte "[object HTMLDivElement]" im Panel.
-      panel.replaceChildren.apply(panel, [head].concat(rows));
-    }
+    renderBell(await NV.pulse());
   } catch (error) {
     if (error && error.status === 403) showLogin();
+    renderBell({questions: NV.questions.list(), blocked: [], failed: [], running: []});
   }
 }
 NV.refreshBell = refreshBell;
+
+/* ---------- F34: zentrale Rückfragen ---------- */
+
+var SEEN_KEY = 'nv-seen-questions';
+var questionsState = {list: [], loading: false, firstLoad: true};
+
+function readSeenQuestions() {
+  var data = readSessionJSON(SEEN_KEY, []);
+  return Array.isArray(data) ? data.map(String) : [];
+}
+function saveSeenQuestions(ids) {
+  saveSessionJSON(SEEN_KEY, ids.slice(-200));
+}
+
+function updateQuestionUI() {
+  var open = questionsState.list.length;
+  var button = document.querySelector('[data-nv-questions-button]');
+  if (button) {
+    var count = button.querySelector('[data-nv-questions-count]');
+    if (count) {
+      count.textContent = String(open);
+      if (open) count.removeAttribute('hidden'); else count.setAttribute('hidden', '');
+    }
+    button.classList.toggle('is-active', open > 0);
+    if (open) {
+      setAttrTxVars(button, 'aria-label', 'Offene Fragen: {{n}}', {n: open});
+    } else {
+      setAttrTx(button, 'aria-label', 'Fragen');
+    }
+  }
+  var banner = document.querySelector('[data-nv-question-banner]');
+  if (banner) {
+    if (!open) {
+      banner.hidden = true;
+      banner.replaceChildren();
+    } else {
+      var latest = questionsState.list[questionsState.list.length - 1] || {};
+      var text = String(latest.text || '');
+      if (text.length > 120) text = text.slice(0, 117) + '…';
+      banner.replaceChildren(
+        el('span', {class: 'nv-question-banner-count'},
+          tr('{{n}} offene Fragen', {n: open})),
+        el('span', {class: 'nv-question-banner-text'}, text),
+        el('span', {class: 'nv-question-banner-meta'},
+          [latest.project, latest.agent].filter(Boolean).map(String).join(' · ')),
+        el('button', {class: 'nv-btn nv-primary', type: 'button',
+          'data-nv-question-banner-open': ''}, tr('Antworten')));
+      banner.hidden = false;
+    }
+  }
+}
+
+async function loadQuestions() {
+  if (questionsState.loading || !authorized) return;
+  questionsState.loading = true;
+  try {
+    var data = await api('/api/questions');
+    if (!authorized) return;
+    var list = (data && Array.isArray(data.questions)) ? data.questions.filter(function (q) {
+      return q && q.id != null;
+    }) : [];
+    var seen = readSeenQuestions();
+    var first = questionsState.firstLoad;
+    var additions = [];
+    list.forEach(function (question) {
+      var id = String(question.id);
+      if (seen.indexOf(id) === -1) {
+        if (!first) additions.push(question);
+        seen.push(id);
+      }
+    });
+    questionsState.firstLoad = false;
+    saveSeenQuestions(seen);
+    questionsState.list = list;
+    updateQuestionUI();
+    renderBell({questions: list,
+      blocked: (lastPulse && lastPulse.blocked) || [],
+      failed: (lastPulse && lastPulse.failed) || [],
+      running: (lastPulse && lastPulse.running) || []});
+    additions.forEach(function (question) {
+      NV.notify(tr('Neue Rückfrage') + ': ' + String(question.text || ''),
+        {kind: 'question'});
+    });
+  } catch (error) {
+    if (error && error.status === 403) showLogin();
+  } finally {
+    questionsState.loading = false;
+  }
+}
+
+NV.questions = {
+  list: function () { return questionsState.list.slice(); },
+  count: function () { return questionsState.list.length; },
+  load: loadQuestions,
+  refresh: loadQuestions,
+  remove: function (id) {
+    var key = String(id);
+    questionsState.list = questionsState.list.filter(function (question) {
+      return String(question.id) !== key;
+    });
+    updateQuestionUI();
+    renderBell({questions: questionsState.list,
+      blocked: (lastPulse && lastPulse.blocked) || [],
+      failed: (lastPulse && lastPulse.failed) || [],
+      running: (lastPulse && lastPulse.running) || []});
+    loadQuestions();
+  },
+  openInbox: function () {
+    if (!NV.questionCard) return;
+    var section = el('section', {'data-nv-question-inbox': ''},
+      el('h3', {}, tr('Offene Fragen')));
+    if (!questionsState.list.length) {
+      section.append(el('p', {class: 'nv-empty'}, tr('Keine offenen Fragen.')));
+    } else {
+      questionsState.list.forEach(function (question) {
+        section.append(NV.questionCard(question, {
+          onAnswered: function () {
+            if (!questionsState.list.length) {
+              section.append(el('p', {class: 'nv-empty'}, tr('Keine offenen Fragen.')));
+            }
+          }
+        }));
+      });
+    }
+    NV.context.open({title: tr('Offene Fragen'), content: section});
+  }
+};
 
 /* Sprachwechsel: nur von tr() stammende Knoten/Attribute umschalten; Daten
    aus Protokollen und Nutzereingaben bleiben unberührt (wie in app.js). */
@@ -624,6 +954,102 @@ function retranslateDOM() {
   walk(document.body);
 }
 
+/* ---------- F34: Kontext-Panel, Suche und Filterleiste ---------- */
+
+/* Beliebige Inhalte (Text, Boxed-String, Knoten, Arrays) in einen Container
+   übernehmen — ohne innHTML und ohne Objekte als "[object …]" auszugeben. */
+function fillNode(target, value) {
+  if (!target) return;
+  var holder = el('div', {}, value);
+  target.replaceChildren.apply(target, Array.prototype.slice.call(holder.childNodes));
+}
+
+var contextPanel = document.querySelector('aside[data-nv-context]');
+var contextScrim = document.querySelector('[data-nv-context-scrim]');
+
+NV.context = {
+  open: function (options) {
+    if (!contextPanel) return;
+    var opts = options || {};
+    var title = contextPanel.querySelector('[data-nv-context-title]');
+    var body = contextPanel.querySelector('[data-nv-context-body]');
+    var foot = contextPanel.querySelector('[data-nv-context-foot]');
+    fillNode(title, opts.title == null ? '' : opts.title);
+    fillNode(body, opts.content == null ? '' : opts.content);
+    fillNode(foot, opts.footer == null ? '' : opts.footer);
+    contextPanel.hidden = false;
+    if (contextScrim) contextScrim.hidden = false;
+    document.body.setAttribute('data-nv-context-open', 'true');
+  },
+  close: function () {
+    if (contextPanel) contextPanel.hidden = true;
+    if (contextScrim) contextScrim.hidden = true;
+    document.body.removeAttribute('data-nv-context-open');
+  },
+  isOpen: function () { return !!contextPanel && !contextPanel.hidden; }
+};
+
+NV.search = function (options) {
+  var opts = options || {};
+  var input = opts.input;
+  if (!input) {
+    input = el('input', {type: 'search', 'data-nv-search-input': '',
+      placeholder: opts.placeholder || tr('Suchen'),
+      'aria-label': opts.placeholder || tr('Suchen')});
+  }
+  input.setAttribute('type', 'search');
+  input.setAttribute('data-nv-search-input', '');
+  var icon = el('span', {class: 'nv-search-icon', 'aria-hidden': 'true'}, '⌕');
+  var clearLabel = tr('Suche löschen');
+  var clear = el('button', {class: 'nv-search-clear', type: 'button',
+    'data-nv-search-clear': '', 'aria-label': clearLabel, title: clearLabel}, '×');
+  var wrap = el('div', {class: 'nv-search', 'data-nv-search': ''}, icon, input, clear);
+  function sync() {
+    var hasValue = !!(input.value && String(input.value).length);
+    clear.disabled = !hasValue;
+  }
+  input.addEventListener('input', function () {
+    sync();
+    if (typeof opts.oninput === 'function') opts.oninput(input.value);
+  });
+  clear.addEventListener('click', function () {
+    input.value = '';
+    sync();
+    input.dispatchEvent(new Event('input', {bubbles: true}));
+    input.focus();
+  });
+  sync();
+  return wrap;
+};
+
+NV.filterBar = function () {
+  var bar = el('div', {class: 'nv-filter-bar', 'data-nv-filter-bar': ''});
+  Array.prototype.slice.call(arguments).forEach(function (child) { bar.append(child); });
+  return bar;
+};
+
+/* Bestandsansichten (z. B. die Startseite) haben bereits Inputs. Wir hüllen
+   sie ein, statt sie zu ersetzen — ihre Listener bleiben damit erhalten. */
+function enhanceView(main) {
+  if (!main) return;
+  main.querySelectorAll('input[type="search"]').forEach(function (input) {
+    if (input.closest('[data-nv-search]')) return;
+    var parent = input.parentNode;
+    if (!parent) return;
+    var next = input.nextSibling;
+    // NV.search übernimmt das vorhandene Input (Listener bleiben erhalten).
+    var wrap = NV.search({input: input, placeholder: input.getAttribute('placeholder')});
+    parent.insertBefore(wrap, next);
+  });
+  var search = main.querySelector('[data-nv-search]');
+  if (!search || main.querySelector('[data-nv-filter-bar]')) return;
+  var row = search.parentNode;
+  if (!row || row === main || row.classList.contains('nv-card')) row = search;
+  var bar = NV.filterBar();
+  row.parentNode.insertBefore(bar, row);
+  bar.append(row);
+}
+
 /* ---------- Boot ---------- */
 
 async function boot() {
@@ -637,6 +1063,12 @@ async function boot() {
     authorized = true;
     await render();
     refreshBell();
+    loadQuestions();
+    // F34: Poll nur bei sichtbarem Tab; Antworten aktualisieren zusätzlich
+    // lokal über NV.questions.remove().
+    setInterval(function () {
+      if (document.visibilityState === 'visible') loadQuestions();
+    }, 5000);
   } catch (error) {
     showLogin();
   }

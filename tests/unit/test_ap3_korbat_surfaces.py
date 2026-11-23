@@ -22,9 +22,17 @@ Abgedeckt:
 * CLI ``vibe github <projekt> issues-sync`` / ``issues-state <id>
   in-progress|open``: gleiches Verhalten, ohne Opt-in klare Meldung und kein
   Netz.
-* Nova: Board/Pille fuer In-Progress, Sync-Button ``issues-sync``,
-  Kategorieauswahl ``category`` im Ticketformular sowie Issues-Felder in der
-  GitHub-Karte.
+* Nova: integrierte Liste ohne Board, Karten mit ``data-nv-kind``/
+  ``data-nv-state`` und Zustands-Pille (In Progress gelb, Entwurf grau,
+  Entwurf-Kachel mit ``title``-Erklärung), Kartenaktionen im Kontext-Panel,
+  Sync-Button ``issues-sync``, Kategorieauswahl ``category`` im Ticketformular
+  sowie Issues-Felder in der GitHub-Karte.
+
+F34-Anpassung: Das Kanban-Board ist entfernt (F34 Leitentscheidung 7). Die
+Nova-Fälle prüfen deshalb die integrierte Liste (``data-nv-ticket-list``), die
+Karten-Hooks, die Zustands-Pillen und die Aktionen im Kontext-Panel statt der
+alten ``nvpStateColumn``/``nvpBoardColumn``-Struktur. Board-Hooks dürfen nicht
+mehr existieren.
 
 Kein echtes Netz: REST nur gegen den Loopback-Fake aus
 ``test_ap3_korbat_issues_backend``. Der Webserver laeuft auf einem freien
@@ -53,6 +61,7 @@ from tests.unit.test_ap3_korbat_issues_backend import (
 REPO = Path(__file__).resolve().parents[2]
 CLI = REPO / "bin" / "vibe"
 NOVA = REPO / "bin" / "web" / "nova-project.js"
+WAITING_AP3 = "WARTET AUF MERGE"
 
 ISOLATED_ENV = (
     "VIBE", "VIBE_NO_CONTAINER", "HOME", "VIBE_PROFILE", "VIBE_INSTALL",
@@ -635,33 +644,48 @@ class NovaIssuesSurfaceTest(unittest.TestCase):
         cls.text = NOVA.read_text(encoding="utf-8")
 
     def test_state_helpers_know_in_progress(self):
-        """Vorbedingung: ``nova-project.js`` mit Zustandshelfern.
-        Aktion: ``nvpStateColumn``/``nvpStateLabel`` pruefen.
-        Erwartung: Ein In-Progress-Zustand wird auf eine eigene Spalte
-        abgebildet und mit „In Progress“ beschriftet.
+        """Vorbedingung: ``nova-project.js`` mit Zustandshelfer und Karte.
+        Aktion: ``nvpStateLabel`` und die Zustands-Pille der Karte pruefen.
+        Erwartung (F34): Ein In-Progress-Zustand wird mit „In Progress“
+        beschriftet und als gelbe Pille (``nv-warn``) an der Karte dargestellt;
+        die fruehere Board-Spaltenabbildung existiert nicht mehr.
         Fehlerfall: In Progress faellt auf „offen“ zurueck.
         """
-        column = js_region(self.text, "function nvpStateColumn(")
         label = js_region(self.text, "function nvpStateLabel(")
-        self.assertTrue(column, "nvpStateColumn nicht gefunden")
+        card = js_region(self.text, "function nvpTicketCard(")
         self.assertTrue(label, "nvpStateLabel nicht gefunden")
-        self.assertRegex(column, r"(?i)in[ _-]?progress")
+        self.assertTrue(card, "nvpTicketCard nicht gefunden")
         self.assertRegex(label, r"(?i)in[ _-]?progress")
+        self.assertIn("data-nv-state", card)
+        self.assertRegex(card, r"(?i)in[ _-]?progress")
+        self.assertRegex(card, r"nv-warn")
+        self.assertNotIn("nvpStateColumn", self.text,
+                         "Die entfernte Board-Spaltenabbildung existiert noch")
 
-    def test_board_and_tiles_include_the_progress_column(self):
-        """Vorbedingung: Board-Aufbau und Uebersichtskacheln.
-        Aktion: Spaltenliste und Kachel-Definitionen pruefen.
-        Erwartung: Das Board enthaelt zusaetzlich eine Progress-Spalte; die
-        Uebersicht zaehlt In-Progress-Pakete.
-        Fehlerfall: Zustand ist nur im Parser, nicht in der Oberflaeche.
+    def test_work_list_and_tiles_include_progress_without_board(self):
+        """Vorbedingung: Uebersichtskacheln und Arbeit-Reiter.
+        Aktion: Kacheldefinitionen, integrierte Liste und Board-Abwesenheit
+        pruefen.
+        Erwartung (F34): Die Uebersicht zaehlt In-Progress-Pakete; die Arbeit
+        ist eine Liste ``div.nv-ticket-list[data-nv-ticket-list]`` mit
+        ``nvpTicketCard``-Karten; ein Board (``.nv-board``/``nvpBoardColumn``)
+        existiert nicht.
+        Fehlerfall: Zustand ist nur im Parser, nicht in der Oberflaeche, oder
+        das entfernte Board ist noch vorhanden.
         """
-        board = js_region(self.text, "var board = el('div'")
-        self.assertTrue(board, "Board-Aufbau nicht gefunden")
-        self.assertRegex(board, r"(?i)in[ _-]?progress|'progress'")
         overview = js_region(self.text, "var tiles = el('div'")
+        work = js_region(self.text, "var ticketList = el('div'")
         self.assertTrue(overview, "Uebersichts-Kacheln nicht gefunden")
         self.assertIn("nvpCount(tickets", overview)
         self.assertRegex(overview, r"(?i)progress")
+        self.assertTrue(work, "Integrierte Arbeitsliste nicht gefunden")
+        self.assertIn("data-nv-ticket-list", work)
+        self.assertIn("nvpTicketCard", work)
+        self.assertIn("allItems.forEach", work)
+        self.assertNotIn(".nv-board", self.text,
+                         "Das entfernte Board existiert noch")
+        self.assertNotIn("nvpBoardColumn", self.text,
+                         "Die entfernte Board-Spalte existiert noch")
 
     def test_github_card_has_sync_button_and_issues_fields(self):
         """Vorbedingung: ``nvpGithubSection``.
@@ -683,35 +707,63 @@ class NovaIssuesSurfaceTest(unittest.TestCase):
         self.assertIn("issues_ready", region)
         self.assertIn("issues_assignee", region)
 
-    def test_nova_board_shows_draft_state_and_gray_pill(self):
+    def test_cards_show_draft_state_with_gray_pill_and_explanation(self):
         """Vorbedingung: ``nova-project.js``.
-        Aktion: Zustandshelfer, Board-Spalten und Pillen-Klasse pruefen.
-        Erwartung: Draft/Entwurf hat eine eigene Spalte, die Beschriftung
-        „Entwurf“ und eine graue Pillen-Klasse.
-        Fehlerfall: Entwurf erscheint als offen oder ohne eigene Kennzeichnung.
+        Aktion: Zustandshelfer, Karten-Pille und Entwurf-Kachel pruefen.
+        Erwartung (F34): Draft/Entwurf wird mit „Entwurf“ beschriftet, an der
+        Karte als graue Pille ``nv-muted`` dargestellt und in der Uebersicht
+        als Kachel mit ``title``-Erklaerung gefuehrt; ein Board gibt es nicht.
+        Fehlerfall: Entwurf erscheint als offen oder ohne Kennzeichnung.
         """
-        column = js_region(self.text, "function nvpStateColumn(")
         label = js_region(self.text, "function nvpStateLabel(")
-        board = js_region(self.text, "var board = el('div'")
-        self.assertRegex(column, r"(?i)draft|entwurf")
-        self.assertRegex(label, r"(?i)entwurf|draft")
-        self.assertRegex(board, r"(?i)draft|entwurf")
-        self.assertRegex(board, r"(?i)nv-[a-z-]*(draft|muted)")
+        card = js_region(self.text, "function nvpTicketCard(")
+        overview = js_region(self.text, "var tiles = el('div'")
+        self.assertTrue(label, "nvpStateLabel nicht gefunden")
+        self.assertTrue(card, "nvpTicketCard nicht gefunden")
+        self.assertTrue(overview, "Uebersichts-Kacheln nicht gefunden")
+        self.assertRegex(label, r"(?i)draft|entwurf")
+        self.assertRegex(card, r"(?i)draft|entwurf")
+        self.assertRegex(card, r"nv-muted")
+        self.assertIn("data-nv-state", card)
+        self.assertRegex(
+            overview,
+            r"\[\s*'draft'\s*,\s*nvpCount\(tickets\s*,\s*'Draft'\)")
+        self.assertIn("Noch nicht freigegebene Pakete", overview)
+        self.assertIn("title: tile[3]", overview,
+                      "Die Entwurf-Kachel traegt keine title-Erklaerung")
+        self.assertNotIn(".nv-board", self.text,
+                         "Das entfernte Board existiert noch")
 
-    def test_ticket_cards_have_issue_state_actions(self):
-        """Vorbedingung: ``nvpBoardColumn``.
-        Aktion: Kartenaktionen pruefen.
-        Erwartung: ``data-nv-action`` ``issues-state`` mit draft/ready/
-        in-progress, nur bei aktivem Sync und vorhandenem Issue-Bezug.
-        Fehlerfall: Der Zustand ist im Board nicht aenderbar.
+    def test_ticket_cards_are_generic_and_actions_live_in_the_detail_panel(self):
+        """Vorbedingung: ``nvpTicketCard``/``nvpOpenTicketDetail``.
+        Aktion: Karten-Hooks und Aktionen im Kontext-Panel pruefen.
+        Erwartung (F34): Eine Karte bedient alle Typen (``data-nv-kind``,
+        ``data-nv-state``, Paket- oder Feedback-Hook) und oeffnet das
+        Kontext-Panel; dort liegen Bearbeiten/Loeschen sowie „Paket
+        abschliessen“ fuer blockierte/wartende Pakete. Die frueheren
+        Board-Issueaktionen (``issues-state``) sind mit dem Board entfallen;
+        die Issue-Zustands-API bleibt in den Backend-Faellen geprueft.
+        Fehlerfall: Kartenaktionen sind nicht erreichbar oder der
+        Abschluss-Knopf erscheint fuer Feedback.
         """
-        board = js_region(self.text, "function nvpBoardColumn(")
-        self.assertTrue(board, "nvpBoardColumn nicht gefunden")
-        self.assertIn("issues-state", board)
-        for value in ("draft", "ready", "in-progress"):
-            self.assertIn(value, self.text)
-        self.assertIn("issues_enabled", self.text)
-        self.assertRegex(board, r"(?i)github|issue")
+        card = js_region(self.text, "function nvpTicketCard(")
+        detail = js_region(self.text, "function nvpOpenTicketDetail(")
+        self.assertTrue(card, "nvpTicketCard nicht gefunden")
+        self.assertTrue(detail, "nvpOpenTicketDetail nicht gefunden")
+        self.assertIn("data-nv-kind", card)
+        self.assertIn("data-nv-state", card)
+        self.assertIn("data-nv-ticket", card)
+        self.assertIn("data-nv-feedback-item", card)
+        self.assertIn("nvpOpenTicketDetail", card)
+        self.assertIn("ticket-edit", detail)
+        self.assertIn("ticket-delete", detail)
+        self.assertIn("package-close", detail)
+        self.assertRegex(detail, r"kind\s*===\s*'package'")
+        self.assertIn("BLOCKIERT", detail)
+        self.assertIn(WAITING_AP3, detail)
+        self.assertNotIn("issues-state", self.text,
+                         "Board-Issueaktionen gehoeren nicht mehr zur "
+                         "integrierten Liste")
 
     def test_ticket_form_has_draft_checkbox(self):
         """Vorbedingung: ``nvpOpenTicketForm``.
@@ -727,36 +779,45 @@ class NovaIssuesSurfaceTest(unittest.TestCase):
         self.assertRegex(form, r"data-nv-field[^\n]*draft|draft[^\n]*data-nv-field")
 
     def test_in_progress_pill_uses_warn_class_and_draft_stays_muted(self):
-        """Vorbedingung: ``nvpBoardColumn`` mit Status-Pille.
+        """Vorbedingung: ``nvpTicketCard`` mit Zustands-Pille.
         Aktion: Klassenzuweisung der Pille pruefen.
         Erwartung: ``In Progress`` erhaelt ``nv-warn`` (gelb) wie
         ``WARTET AUF MERGE``; ``Draft`` erhaelt weiterhin ``nv-muted``.
         Fehlerfall: In Progress faellt auf das neutrale Pillen-Grau zurueck.
         """
-        board = js_region(self.text, "function nvpBoardColumn(")
-        self.assertTrue(board, "nvpBoardColumn nicht gefunden")
-        warn_lines = [line for line in board.splitlines() if "nv-warn" in line]
-        self.assertTrue(warn_lines, board)
+        card = js_region(self.text, "function nvpTicketCard(")
+        self.assertTrue(card, "nvpTicketCard nicht gefunden")
+        warn_lines = [line for line in card.splitlines() if "nv-warn" in line]
+        self.assertTrue(warn_lines, card)
         self.assertTrue(any("In Progress" in line for line in warn_lines),
                         "In Progress erhaelt kein nv-warn: " + repr(warn_lines))
-        muted_lines = [line for line in board.splitlines()
+        muted_lines = [line for line in card.splitlines()
                        if "nv-muted" in line]
         self.assertTrue(any("Draft" in line for line in muted_lines),
                         "Draft erhaelt kein nv-muted: " + repr(muted_lines))
 
-    def test_cards_with_gh_id_without_reference_get_state_actions(self):
-        """Vorbedingung: Ticketkarte mit ID ``GH-<n>``, aber ohne
-        ``GitHub: #n``-Zeile (Legacy-Import).
-        Aktion: Gate der ``issues-state``-Aktionen pruefen.
-        Erwartung: Neben ``row.github != null`` gilt auch ``/^GH-\\d+$/.test(id)``
-        als Issue-Bezug; ``issues-state`` bleibt vorhanden.
-        Fehlerfall: Legacy-GH-Bloecke erhalten im Board keine Zustandsaktionen.
+    def test_legacy_gh_package_cards_keep_the_package_close_action(self):
+        """Vorbedingung: Paketkarte mit ID ``GH-<n>`` ohne
+        ``GitHub: #n``-Zeile (Legacy-Import) im Zustand BLOCKIERT/WARTET.
+        Aktion: Gate der Kartenaktionen im Kontext-Panel pruefen.
+        Erwartung (F34): Der Abschluss haengt nicht an einem GitHub-Verweis,
+        sondern an ``kind === 'package'`` und dem Zustand; Legacy-GH-Bloecke
+        erhalten „Paket abschliessen“ damit weiterhin. Board-Issueaktionen
+        entfallen mit dem Board.
+        Fehlerfall: Legacy-GH-Bloecke lassen sich nicht abschliessen, weil die
+        GitHub-Referenz fehlt.
         """
-        board = js_region(self.text, "function nvpBoardColumn(")
-        self.assertTrue(board, "nvpBoardColumn nicht gefunden")
-        self.assertIn("issues-state", board)
-        self.assertIn("github", board)
-        self.assertRegex(board, r"\^GH-\\d\+\$")
+        detail = js_region(self.text, "function nvpOpenTicketDetail(")
+        self.assertTrue(detail, "nvpOpenTicketDetail nicht gefunden")
+        self.assertIn("package-close", detail)
+        self.assertRegex(detail, r"kind\s*===\s*'package'")
+        self.assertRegex(detail, r"row\.state\s*===\s*'BLOCKIERT'")
+        self.assertIn(WAITING_AP3, detail)
+        self.assertNotIn("row.github", detail,
+                         "Die Paketaktion haengt noch an einer GitHub-Referenz")
+        self.assertNotIn("issues-state", self.text,
+                         "Board-Issueaktionen gehoeren nicht mehr zur "
+                         "integrierten Liste")
 
     def test_ticket_form_offers_bug_and_feature_categories(self):
         """Vorbedingung: ``nvpOpenTicketForm`` und der Arbeiten-Reiter.

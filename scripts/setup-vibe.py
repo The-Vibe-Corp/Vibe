@@ -71,6 +71,8 @@ WEB_FILES = (
     "classic.html", "nova.css", "nova-core.js", "nova-home.js",
     "nova-project.js", "nova-output.js", "nova-agents.js",
     "nova-activity.js", "nova-settings.js",
+    # F34: Auswertungen (WP3 ersetzt den Platzhalter inhaltlich).
+    "nova-evals.js",
     # F33: Combobox-Widget und Logo/Favicon (auch als /static/vibe.svg ausgeliefert).
     "nova-widgets.js", "vibe.svg",
 )

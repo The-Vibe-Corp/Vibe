@@ -77,7 +77,7 @@ NV.views.agents = async function agents(context, token) {
        sichtbar, bevor die API-Antwort eintrifft. Ohne diesen Rahmen greift
        ein Test (oder ein Nutzer) in einen noch leeren Views-Container. */
     main.replaceChildren(
-      el('section', {class: 'nv-row nv-agent-head'},
+      el('div', {class: 'nv-toolbar'},
         el('h2', {class: 'nv-page-title'}, tr('Agenten')),
         el('button', {class: 'nv-btn nv-primary', type: 'button',
           'data-nv-action': 'agent-new', on: {click: function () {
@@ -130,14 +130,21 @@ function nvAgentList(data, token, wanted) {
   var list = el('div', {class: 'nv-grid', 'data-nv-agent-list': ''});
   var pinnedSection = el('section', {class: 'nv-agent-pinned',
     'data-nv-pinned-agents': ''});
-  var header = el('section', {class: 'nv-row nv-agent-head'},
+  /* Die Suche bleibt über denselben Input erreichbar (data-nv-agent-search),
+     wird aber vom gemeinsamen NV.search-Widget gerendert. */
+  var searchInput = el('input', {'data-nv-agent-search': '',
+    'aria-label': tr('Agenten suchen'), placeholder: tr('Agenten suchen …')});
+  var searchBox = NV.search({input: searchInput,
+    placeholder: tr('Agenten suchen …'), oninput: function (value) {
+      searchQuery = String(value || '');
+      renderList();
+    }});
+  var toolbar = el('div', {class: 'nv-toolbar'},
     el('h2', {class: 'nv-page-title'}, tr('Agenten')),
+    el('div', {'data-nv-agent-search': ''}, searchBox),
     el('button', {class: 'nv-btn nv-primary', type: 'button',
       'data-nv-action': 'agent-new', on: {click: showWizard}}, tr('Neuer Agent')));
-  var listSection = el('section', {class: 'nv-section'},
-    el('input', {class: 'nv-agent-search', 'data-nv-agent-search': '',
-      type: 'text', 'aria-label': tr('Agenten suchen'),
-      placeholder: tr('Agenten suchen …')}), list);
+  var listSection = el('section', {class: 'nv-section'}, list);
   var wizard = null;
 
   /* Anpinn-Status: über localStorage['nv-pinned-agents'] ([{scope,name}]). */
@@ -226,11 +233,6 @@ function nvAgentList(data, token, wanted) {
     return true;
   }
 
-  listSection.querySelector('[data-nv-agent-search]')
-    .addEventListener('input', function () {
-      searchQuery = listSection.querySelector('[data-nv-agent-search]').value;
-      renderList();
-    });
   var tagFilters = el('div', {class: 'nv-agent-tag-filters',
     'data-nv-agent-tag-filters': ''},
     filterChips.map(function (chip) {
@@ -239,7 +241,7 @@ function nvAgentList(data, token, wanted) {
         'aria-pressed': isActiveFilter(chip.id) ? 'true' : 'false',
         on: {click: function () { toggleFilter(chip.id); }}}, chip.label);
     }));
-  listSection.append(tagFilters);
+  listSection.prepend(tagFilters);
 
   function nvAgentCard(row) {
     var name = String(row.name || '');
@@ -250,6 +252,7 @@ function nvAgentList(data, token, wanted) {
     if (row.role) tags.push(el('span', {class: 'nv-chip'}, String(row.role)));
     if (row.is_vibe) tags.push(el('span', {class: 'nv-chip'}, tr('Vibe-Agent')));
     if (row.valid === false) tags.push(el('span', {class: 'nv-chip'}, tr('ungültig')));
+    if (!tags.length) tags.push(el('span', {class: 'nv-chip'}, tr('keine Rolle')));
     var editRoute = scope === 'global'
       ? '#/agents/' + encodeURIComponent(name)
       : '#/agents/' + encodeURIComponent(scope) + '/' + encodeURIComponent(name);
@@ -267,16 +270,23 @@ function nvAgentList(data, token, wanted) {
             toast(tr('Löschen fehlgeschlagen: ') + String(error && error.message || error));
           }
         }}}, tr('Ja, löschen')));
+    var pinned = isPinned(row);
+    var pinLabel = pinned ? 'Lösen' : 'Anpinnen';
     var pin = el('button', {class: 'nv-btn nv-pin', type: 'button',
       'data-nv-action': 'agent-pin',
-      'aria-pressed': isPinned(row) ? 'true' : 'false',
-      on: {click: function () { nvAgentTogglePin(row); }}},
-      isPinned(row) ? tr('Loslösen') : tr('Anpinnen'));
+      'aria-pressed': pinned ? 'true' : 'false', style: 'flex: 0 0 auto',
+      on: {click: function () { nvAgentTogglePin(row); }}});
+    setAttrTx(pin, 'aria-label', pinLabel);
+    setAttrTx(pin, 'title', pinLabel);
+    setTx(pin, tr(pinned ? '★' : '☆'));
     return el('article', {class: 'nv-card nv-agent', 'data-nv-agent': name,
       'data-nv-agent-scope': scope},
-      el('div', {class: 'nv-row'},
+      el('div', {class: 'nv-row nv-agent-name-row'},
         el('h3', {class: 'nv-agent-name'}, name),
-        pin,
+        pin),
+      el('div', {class: 'nv-agent-meta',
+        style: 'display:flex; flex-wrap:wrap; align-items:center; min-width:0; '
+          + 'gap:var(--nv-space-2); margin-bottom:var(--nv-space-2)'},
         el('span', {class: 'nv-pill', 'data-nv-agent-scope-badge': ''},
           scope === 'global' ? tr('Global') : tr('Projekt') + ': ' + scope),
         el('span', {class: 'nv-pill', 'data-nv-role': ''}, String(row.role || tr('keine Rolle'))),
@@ -284,8 +294,9 @@ function nvAgentList(data, token, wanted) {
         row.valid === false
           ? el('span', {class: 'nv-pill nv-warn', title: tr('Datei ist kein gültiger Agent')},
             tr('ungültig'))
-          : null),
-      el('div', {class: 'nv-agent-tags', 'data-nv-agent-tags': ''}, tags),
+          : null,
+        el('div', {class: 'nv-agent-tags', 'data-nv-agent-tags': '',
+          style: 'flex: 1 1 100%'}, tags)),
       el('p', {class: 'nv-muted', title: description}, shown || tr('Keine Beschreibung')),
       el('div', {class: 'nv-row nv-muted'},
         el('span', {}, tr('Modell') + ': '),
@@ -318,16 +329,16 @@ function nvAgentList(data, token, wanted) {
       [el('h3', {class: 'nv-page-title'}, tr('Angeheftete Agenten'))]
         .concat(pinnedRows.map(nvAgentCard)));
     pinnedSection.hidden = !pinnedRows.length;
-    main.replaceChildren(header, pinnedSection, listSection, wizard);
+    main.replaceChildren(toolbar, pinnedSection, listSection, wizard);
   }
 
   function showList() {
     if (wizard) wizard.hidden = true;
     listSection.hidden = false;
-    header.hidden = false;
+    toolbar.hidden = false;
   }
   function showWizard() {
-    header.hidden = true;
+    toolbar.hidden = true;
     listSection.hidden = true;
     wizard.hidden = false;
     wizard.querySelector('[data-nv-field="name"]').focus();
@@ -903,4 +914,12 @@ async function nvAgentEditor(name, scope, data, token) {
     restoreConfirm, copyConfirm, deleteConfirm,
     errorBox);
   main.replaceChildren(editor);
+}
+
+/* F34 WP2: neue Texte der Ansicht (Schlüssel = deutscher Quelltext). */
+if (window.VIBE_I18N && typeof VIBE_I18N.extend === 'function') {
+  VIBE_I18N.extend({
+    en: {'Anpinnen': 'Pin', 'Lösen': 'Unpin'},
+    de: {'Anpinnen': 'Anpinnen', 'Lösen': 'Lösen'}
+  });
 }

@@ -472,7 +472,7 @@ img.nv-logo[data-nv-logo] {
 .nv-badge { position: absolute; top: 2px; right: 0; }
 
 /* ---------- Karten, Raster, Kacheln ---------- */
-.nv-main { max-width: 1200px; margin: 0 auto; padding: var(--nv-space-5); }
+.nv-main { max-width: 1600px; margin: 0 auto; padding: var(--nv-space-5); }
 /* F33: Sidebar existiert nur im Breitbild; darunter gilt die Kopf-Navigation
    mit dem unveränderten data-nv-nav-toggle / nv-nav-scrim-Menü. */
 .nv-side { display: none; }
@@ -716,7 +716,8 @@ html[data-animations="on"] .nv-skeleton {
 .nv-tab[aria-selected="true"] { color: var(--nv-primary); border-bottom-color: var(--nv-primary); font-weight: 600; }
 
 /* ---------- Toasts und Benachrichtigungs-Schublade ---------- */
-.nv-toasts { position: fixed; right: var(--nv-space-4); bottom: var(--nv-space-4); z-index: 60; display: flex; flex-direction: column; gap: var(--nv-space-2); max-width: min(380px, 90vw); }
+/* F34: genau eine kurzfristige Stelle — oben rechts direkt unter der Glocke. */
+.nv-toasts { position: fixed; right: var(--nv-space-4); top: calc(var(--nv-top-h) + var(--nv-space-2)); bottom: auto; z-index: 60; display: flex; flex-direction: column; gap: var(--nv-space-2); max-width: min(380px, 90vw); }
 .nv-toast {
   display: flex;
   align-items: flex-start;
@@ -734,9 +735,11 @@ html[data-animations="on"] .nv-skeleton {
   position: absolute;
   right: 0;
   top: calc(100% + var(--nv-space-2));
-  width: min(360px, 88vw);
-  max-height: 60vh;
-  overflow: auto;
+  width: min(380px, 92vw);
+  max-height: 70vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   padding: var(--nv-space-3);
   background: var(--nv-surface);
   border: 1px solid var(--nv-border);
@@ -747,7 +750,16 @@ html[data-animations="on"] .nv-skeleton {
 .nv-drawer-head { display: flex; align-items: center; justify-content: space-between; gap: var(--nv-space-2); margin-bottom: var(--nv-space-2); }
 .nv-drawer-title { font-weight: 700; font-size: 1rem; }
 .nv-drawer-head .nv-close { min-width: 44px; min-height: 44px; }
-.nv-bell-item { display: block; padding: var(--nv-space-2) 0; border-bottom: 1px solid var(--nv-border); text-decoration: none; color: var(--nv-text); }
+.nv-bell-explain { margin: 0 0 var(--nv-space-2); color: var(--nv-muted); font-size: 0.8125rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nv-bell-clear { align-self: flex-start; margin-bottom: var(--nv-space-2); }
+.nv-bell-list { min-height: 0; overflow-y: auto; }
+.nv-bell-row { display: flex; align-items: flex-start; gap: var(--nv-space-2); padding: var(--nv-space-2) 0; border-bottom: 1px solid var(--nv-border); }
+.nv-bell-row-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.nv-bell-text { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; word-break: break-word; }
+.nv-bell-sub { color: var(--nv-muted); font-size: 0.75rem; }
+.nv-bell-link { color: var(--nv-primary); }
+.nv-bell-dismiss { flex: 0 0 auto; min-width: 32px; min-height: 32px; border: 0; border-radius: var(--nv-radius-sm); background: transparent; color: var(--nv-muted); cursor: pointer; font-size: 1.1rem; }
+.nv-bell-answer { align-self: flex-start; padding: 0 var(--nv-space-2); }
 .nv-bell-empty { margin: var(--nv-space-2) 0; font-size: 0.875rem; }
 
 /* ---------- F33: mattes Frosted Glass ----------
@@ -807,55 +819,9 @@ html[data-animations="on"] .nv-drawer { animation: nv-fade-in var(--nv-speed) ea
 }
 
 /* ---------- Responsiv: Desktop / Tablet / Mobil ---------- */
-/* F33 Breitbild: Kopfzeile über voller Breite, darunter Sidebar + main.
-   Erwartetes DOM: aside.nv-side[data-nv-side] als Geschwister nach
-   header.nv-top und vor main.nv-main (beide direkt in body[data-nv-app]).
-   Reparatur: das Grid gilt NUR, wenn die Sidebar tatsächlich im DOM liegt.
-   Ohne diese Einschränkung bekommt jede Bestandsansicht am Breitbild eine
-   leere 220px-Spalte und einen geänderten Scroll-/Renderpfad — das hat die
-   Interaktion in den erweiterten Einstellungen (runs-prune, gates-save)
-   zusätzlich destabilisiert. Mit Sidebar bleibt das F33-Layout vollständig
-   erhalten. */
-@media (min-width: 1280px) {
-  body[data-nv-app]:has(aside.nv-side[data-nv-side]) {
-    display: grid;
-    grid-template-columns: 220px minmax(0, 1fr);
-    grid-template-rows: auto 1fr;
-    grid-template-areas: "top top" "side main";
-    min-height: 100vh;
-  }
-  body[data-nv-app]:has(aside.nv-side[data-nv-side]) .nv-top { grid-area: top; }
-  body[data-nv-app]:has(aside.nv-side[data-nv-side]) .nv-side {
-    grid-area: side;
-    display: block;
-    position: sticky;
-    top: var(--nv-top-h);
-    align-self: start;
-    height: calc(100vh - var(--nv-top-h));
-    overflow-y: auto;
-    padding: var(--nv-space-5) var(--nv-space-3);
-    border-right: 1px solid var(--nv-border);
-    background: var(--nv-surface);
-  }
-  body[data-nv-app]:has(aside.nv-side[data-nv-side]) .nv-side .nv-nav {
-    display: flex;
-    flex-direction: column;
-    align-items: stretch;
-    gap: var(--nv-space-1);
-  }
-  body[data-nv-app]:has(aside.nv-side[data-nv-side]) .nv-side .nv-nav button { min-height: 44px; text-align: left; justify-content: flex-start; }
-  body[data-nv-app]:has(aside.nv-side[data-nv-side]) .nv-side .nv-nav button[aria-current="page"] { border-left-color: var(--nv-primary); }
-  /* Kopf-Navigation nur ausblenden, wenn die Sidebar die Navigation
-     tatsächlich enthält (sonst greift weiterhin die bestehende Kopf-Navigation
-     — wichtig für die Zeit bis zum DOM-Update und für Bestandsansichten). */
-  body[data-nv-app]:has(aside.nv-side[data-nv-side] [data-nv-nav]) .nv-top > .nv-nav { display: none; }
-  body[data-nv-app]:has(aside.nv-side[data-nv-side]) .nv-main {
-    grid-area: main;
-    max-width: none;
-    width: 100%;
-    margin: 0;
-  }
-}
+/* F34: keine statische Sidebar und kein Grid mit Navigation in der Aside.
+   Die fünf Kopfzeilen-Punkte bleiben auf jeder Breite sichtbar; die leere
+   aside.nv-side dient nur noch Bestands-Hooks. */
 @media (max-width: 1023px) {
   .nv-top { padding: var(--nv-space-3) var(--nv-space-4); }
   .nv-main { max-width: 768px; padding: var(--nv-space-5) var(--nv-space-4); }
@@ -900,7 +866,7 @@ html[data-animations="on"] .nv-drawer { animation: nv-fade-in var(--nv-speed) ea
   .nv-main { padding: var(--nv-space-4) var(--nv-space-3); }
   .nv-card { padding: var(--nv-space-4); }
   .nv-grid, .nv-tiles, .nv-board { grid-template-columns: 1fr; }
-  .nv-toasts { right: var(--nv-space-2); bottom: var(--nv-space-2); }
+  .nv-toasts { right: var(--nv-space-2); top: calc(var(--nv-top-h) + var(--nv-space-2)); }
 }
 
 /* ===== F33 WP1 styles (Shell/Design/Home) — nur in diesem Block ergänzen ===== */
@@ -956,14 +922,18 @@ html[data-animations="on"] .nv-main { transition: padding var(--nv-speed) ease; 
 /* ===== F33 WP2 styles (Combobox/Agenten/Wizard/Editor) — nur in diesem Block ergänzen ===== */
 /* Combobox: Eingabe + Liste, offen/geschlossen über [hidden] (JS). */
 .nv-combobox { position: relative; display: block; max-width: 32rem; }
-.nv-combobox input[data-nv-combobox-input] { width: 100%; padding-right: var(--nv-space-6); }
+.nv-combobox-icon { position: absolute; left: var(--nv-space-3); top: 50%; transform: translateY(-50%); color: var(--nv-muted); pointer-events: none; }
+.nv-combobox input[data-nv-combobox-input] { width: 100%; padding: var(--nv-space-2) var(--nv-space-3) var(--nv-space-2) calc(var(--nv-space-5) + var(--nv-space-1)); }
 .nv-combobox ul[data-nv-combobox-list] {
   position: absolute;
   z-index: 30;
   top: calc(100% + 2px);
   left: 0;
-  right: 0;
-  max-height: 15rem;
+  right: auto;
+  min-width: calc(100% + var(--nv-space-3));
+  width: max-content;
+  max-width: min(44rem, 92vw);
+  max-height: 24rem;
   overflow-y: auto;
   margin: 0;
   padding: var(--nv-space-1);
@@ -974,9 +944,10 @@ html[data-animations="on"] .nv-main { transition: padding var(--nv-speed) ease; 
   box-shadow: var(--nv-shadow);
 }
 .nv-combobox li[data-nv-combobox-option] {
-  padding: var(--nv-space-2) var(--nv-space-3);
+  padding: var(--nv-space-3) var(--nv-space-4);
   border-radius: calc(var(--nv-radius-sm) - 2px);
   cursor: pointer;
+  white-space: nowrap;
 }
 .nv-combobox li[data-nv-combobox-option][aria-selected="true"],
 .nv-combobox li[data-nv-combobox-option]:hover,
@@ -1311,3 +1282,79 @@ small[data-nv-gate-help] {
   html[data-animations="on"] .nv-main { transition: none; }
 }
 /* Ende der F33-Blöcke. */
+
+/* ===== F34 WP1: Shell, Rückfragen, Kontext-Panel, Basis-Komponenten ===== */
+.nv-questions-button { position: relative; min-height: 44px; gap: var(--nv-space-2); padding: 0 var(--nv-space-3); }
+.nv-questions-button .nv-badge { position: static; }
+.nv-questions-button.is-active { background: var(--nv-info-bg); color: var(--nv-primary); font-weight: 600; }
+.nv-question-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--nv-space-3);
+  padding: var(--nv-space-2) var(--nv-space-5);
+  background: var(--nv-warn-bg);
+  color: var(--nv-warn-text);
+  border-bottom: 1px solid var(--nv-border);
+}
+.nv-question-banner-count { font-weight: 700; white-space: nowrap; }
+.nv-question-banner-text { flex: 1 1 20rem; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nv-question-banner-meta { color: var(--nv-muted); font-size: 0.8125rem; }
+.nv-question-banner .nv-btn { padding: var(--nv-space-1) var(--nv-space-3); }
+
+.nv-context-scrim { position: fixed; inset: 0; z-index: 64; background: rgba(12, 18, 28, 0.45); }
+.nv-context {
+  position: fixed;
+  z-index: 65;
+  top: var(--nv-top-h);
+  right: 0;
+  width: min(92vw, 420px);
+  max-height: calc(100vh - var(--nv-top-h));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: var(--nv-space-4);
+  background: var(--nv-surface);
+  border-left: 1px solid var(--nv-border);
+  box-shadow: var(--nv-shadow);
+}
+.nv-context-head { display: flex; align-items: center; justify-content: space-between; gap: var(--nv-space-3); margin-bottom: var(--nv-space-3); }
+.nv-context-head h2 { margin: 0; font-size: 1.125rem; }
+.nv-context-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding-right: var(--nv-space-1); }
+.nv-context-foot { flex: 0 0 auto; padding-top: var(--nv-space-3); }
+@media (min-width: 1600px) {
+  .nv-context-scrim { display: none !important; }
+  body[data-nv-context-open="true"] .nv-main { padding-right: calc(var(--nv-space-5) + 420px); }
+}
+
+/* Suche, Filterleiste und Standard-Komponenten. */
+.nv-search { position: relative; display: flex; align-items: center; gap: var(--nv-space-2); width: 100%; max-width: 32rem; }
+.nv-search-icon { position: absolute; left: var(--nv-space-3); color: var(--nv-muted); pointer-events: none; }
+.nv-search input[type="search"] { flex: 1 1 auto; width: 100%; min-width: 0; margin: 0; padding-left: calc(var(--nv-space-5) + var(--nv-space-1)); }
+.nv-search-clear { flex: 0 0 auto; min-width: 36px; min-height: 36px; border: 0; border-radius: var(--nv-radius-sm); background: transparent; color: var(--nv-muted); cursor: pointer; font-size: 1.1rem; }
+.nv-search-clear:disabled { opacity: 0.45; cursor: default; }
+.nv-filter-bar, .nv-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--nv-space-3); margin-bottom: var(--nv-space-4); }
+.nv-stack { display: flex; flex-direction: column; gap: var(--nv-space-3); }
+.nv-grid { gap: var(--nv-space-4); }
+.nv-table-wrap { width: 100%; overflow-x: auto; margin-bottom: var(--nv-space-4); }
+.nv-table { width: 100%; border-collapse: collapse; }
+.nv-table th, .nv-table td { padding: var(--nv-space-2) var(--nv-space-3); border-bottom: 1px solid var(--nv-border); text-align: left; vertical-align: top; }
+.nv-stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: var(--nv-space-3); margin-bottom: var(--nv-space-4); }
+.nv-stat { padding: var(--nv-space-4); border: 1px solid var(--nv-border); border-radius: var(--nv-radius); background: var(--nv-surface-2); }
+.nv-stat strong { display: block; font-size: 1.5rem; }
+.nv-kind-badge { display: inline-block; padding: 0.1rem 0.55rem; border-radius: 999px; background: var(--nv-surface-2); color: var(--nv-muted); font-size: 0.8125rem; font-weight: 600; }
+.nv-kind-badge[data-nv-kind="package"] { background: var(--nv-info-bg); color: var(--nv-primary); }
+.nv-kind-badge[data-nv-kind="bug"] { background: var(--nv-error-bg); color: var(--nv-error-text); }
+.nv-kind-badge[data-nv-kind="feedback"] { background: var(--nv-warn-bg); color: var(--nv-warn-text); }
+.nv-settings-layout { display: flex; flex-wrap: wrap; gap: var(--nv-space-5); align-items: flex-start; }
+.nv-settings-nav { display: flex; flex-wrap: wrap; gap: var(--nv-space-2); }
+.nv-settings-content { flex: 1 1 40rem; max-width: 980px; min-width: 0; }
+
+.nv-question-card { padding: var(--nv-space-4); border: 1px solid var(--nv-border); border-radius: var(--nv-radius); background: var(--nv-surface); margin-bottom: var(--nv-space-3); }
+.nv-question-meta { color: var(--nv-muted); font-size: 0.8125rem; margin-bottom: var(--nv-space-2); }
+.nv-question-text { white-space: pre-wrap; word-break: break-word; }
+.nv-question-options { display: flex; flex-wrap: wrap; gap: var(--nv-space-2); margin-bottom: var(--nv-space-3); }
+.nv-question-answer { display: flex; flex-wrap: wrap; gap: var(--nv-space-2); }
+.nv-question-answer input { flex: 1 1 16rem; min-width: 0; }
+.nv-question-card[aria-busy="true"] { opacity: 0.7; }
+

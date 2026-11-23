@@ -1,41 +1,50 @@
-"""Browserabnahme AP22, Meilenstein B: Aktivität (Läufe, Sessions, Fragen, Glocke).
+"""Browserabnahme AP22, Meilenstein B: Aktivität (Läufe, Fragen, Glocke).
 
 Die Fälle leiten sich aus ``docs/features/AP22.md`` („Aktivität“,
 „Shell → Glocke“) ab. Das echte Dashboard läuft isoliert auf freiem Port.
 Die offene Rückfrage liegt **vor dem Serverstart** als JSON im
 Laufzeitordner (Format aus ``tests/unit/test_questions.py`` /
-``tests/browser/test_questions_ui.py``); Sessions und Läufe werden über die
+``tests/browser/test_questions_ui.py``); Läufe werden über die
 echten Registerdateien nachgebildet. Chromium kommt aus dem Nur-Lese-Cache.
 
 Testfälle (Kurzfassung; Details in den Methoden)
 -----------------------------------------------
 ``ActivitySectionsTest.test_activity_sections_render``
-    Erwartung: ``[data-nv-runs]``, ``[data-nv-sessions]`` mit
-    ``select[data-nv-sessions-project]`` und ``[data-nv-questions]`` sind
-    sichtbar.
+    Erwartung: ``[data-nv-activity-tiles]`` → ``[data-nv-questions]`` →
+    ``[data-nv-runs]`` sichtbar, in dieser Reihenfolge;
+    ``p[data-nv-activity-sessions-hint]`` mit Link zu den Projekten,
+    ``select[data-nv-questions-project]`` und ``[data-nv-questions-hint]``.
 ``RunsTest.test_runs_lists_a_live_run_with_link``
     Vorbedingung: laufender Lauf im Register. Erwartung: Projektname und
     ein Link/Knopf zur Ausgabe.
 ``RunsTest.test_runs_empty_state_without_registry``
     Vorbedingung: kein Lauf. Erwartung: sichtbarer Leerzustand, kein
     Projektlink.
-``SessionsTest.test_sessions_load_and_limit_persists``
-    Vorbedingung: zwei Sessions im Register. Aktion: Projekt wählen, Limit
-    ``7`` speichern, neu laden. Erwartung: Sessions werden geladen;
-    ``/api/sessions`` und das Eingabefeld halten ``7``.
+``SessionsTest.test_session_limit_moved_to_project_settings``
+    Vorbedingung: Activity geladen. Aktion: ``nav[data-nv-navs]`` → Home,
+    Projektkarte ``a[data-nv-action='open-project']`` → Tab ``settings``,
+    Limit ``7`` speichern, neu laden. Erwartung: ``[data-nv-sessions]``/
+    ``[data-nv-sessions-limit]``/``[data-nv-limit-hint]``/
+    ``select[data-nv-sessions-project]`` nicht gerendert;
+    ``/api/sessions?name=proj`` liefert ``limit=7``; nach Reload steht ``7``
+    im Eingabefeld.
 ``QuestionsTest.test_question_option_answer``
     Aktion: Option 1 beantworten. Erwartung: Antwortdatei mit ``option=0``;
-    die Frage verschwindet oder ist als beantwortet markiert.
+    die Frage verschwindet.
 ``QuestionsTest.test_question_free_text_answer``
-    Aktion: Freitext senden. Erwartung: Antwortdatei mit ``text``.
+    Aktion: Freitext senden (``input[data-nv-answer-field]`` +
+    ``button[data-nv-answer-send]``). Erwartung: Antwortdatei mit ``text``;
+    die Frage verschwindet.
 ``QuestionsTest.test_second_answer_is_rejected_with_message``
-    Vorbedingung: Frage ist bereits durch einen anderen Client beantwortet.
-    Aktion: Option klicken. Erwartung: sichtbare Ablehnung „bereits
-    beantwortet“, die erste Antwort bleibt unverändert.
+    Vorbedingung: Frage ist bereits durch einen anderen Client beantwortet,
+    wird aber noch angezeigt. Aktion: Option klicken. Erwartung: Fehler liegt
+    INLINE in ``[data-nv-question-error]`` (F34: kein Toast); die Karte und
+    die Antwortdatei bleiben unverändert.
 ``BellTest.test_bell_counts_links_and_updates_after_answer``
     Vorbedingung: eine offene Frage und ein laufender Lauf. Erwartung:
-    Zähler sichtbar (≥ 1), Ausklapp nennt Frage und Lauf mit Links; nach
-    der Antwort sinkt der Zähler oder verschwindet.
+    Zähler sichtbar (≥ 1); eine Live-Zeile nennt die Fragetext/Projekt;
+    die Lauf-Zeile bietet ``a.nv-bell-link`` mit nichtleerem Ziel auf
+    ``output``; nach der Antwort sinkt der Zähler.
 
 Review-Fix AP22 (Runde 1)
 -------------------------
@@ -62,14 +71,47 @@ Vertragsunklarheiten (bewusst so geprüft und dokumentiert)
    Projekt-/Ausgabeansicht. Die Review-Fix-Runde bindet für die Laufzeile
    verbindlich ``[data-nv-run="<projekt>"]`` mit
    ``[data-nv-action="stop-run"]``.
-3. **Sessions-Limit.** Der Vertrag nennt nur Eingabe und Speichern-Knopf,
-   nicht die POST-Form. Der Test prüft die beobachtbare Persistenz über
-   ``GET /api/sessions`` und nach dem Reload.
-4. **Optionsnummer.** Der Hook ``[data-nv-answer="<nr>"]`` ist 1-basiert;
+3. **Optionsnummer.** Der Hook ``[data-nv-answer="<nr>"]`` ist 1-basiert;
    das Backend erwartet den 0-basierten Index. Geprüft wird, dass Klick auf
    ``1`` die Antwort ``option=0`` erzeugt.
-5. **Leerzustand Läufe.** Der Wortlaut ist nicht festgelegt; geprüft wird
+4. **Leerzustand Läufe.** Der Wortlaut ist nicht festgelegt; geprüft wird
    ein nichtleerer, sichtbarer Bereich ohne Projektlink.
+
+F34-Anpassungen
+---------------
+* ``ActivitySectionsTest.test_activity_sections_render``: Der F34-Vertrag
+  ändert die Aktivitäts-Reihenfolge zu Kacheln → Rückfragen → Läufe; die
+  Sessions-Sektion und das Session-Limit wurden entfernt. Stattdessen
+  bleibt ``p[data-nv-activity-sessions-hint]`` mit Link zu den Projekten
+  (Prüfung per ``compareDocumentPosition``). Prüftiefe gleich oder
+  strenger: die Absence-Hooks ``[data-nv-sessions]``,
+  ``[data-nv-sessions-limit]``, ``[data-nv-limit-hint]``,
+  ``select[data-nv-sessions-project]`` werden nicht gerendert.
+* ``SessionsTest.test_session_limit_moved_to_project_settings``: Der F33-
+  Fall prüfte Sessions in der Aktivität; das Limit fällt F34-gemäß auf die
+  Projekteinstellungen — echte Prüfung: Speichern über
+  ``[data-nv-session-limit]`` + ``[data-nv-action='session-limit-save']``,
+  ``GET /api/sessions?name=proj`` meldet ``limit=7``, nach Reload angezeigt.
+* ``QuestionsTest.test_question_free_text_answer``: Die alten Hooks
+  ``[data-nv-field='answer']``/``[data-nv-action='answer']`` entfallen; die
+  gemeinsame Karte ``NV.questionCard`` nutzt ``input[data-nv-answer-field]``
+  + ``button[data-nv-answer-send]`` (F34-Vertrag). Antwortdatei mit ``text``,
+  Karte verschwindet.
+* ``QuestionsTest.test_second_answer_is_rejected_with_message``: F34-Vertrag:
+  der Fehler liegt INLINE in ``[data-nv-question-error]`` und kein Toast
+  taucht auf; die Antwortdatei und die Karte bleiben unverändert.
+* ``BellTest.test_bell_counts_links_and_updates_after_answer``: Die Frage ist
+  F34 nicht mehr verlinkt — sie ist ein Live-Eintrag mit
+  ``button[data-nv-live-question-open]``; der Lauf-Link heißt
+  ``a.nv-bell-link``, die Zuordnung Frage/Lauf erfolgt über die Zeilentexte.
+  Nach der Antwort ist die Live-Zeile der Frage verschwunden (das Antwort-
+  Toast wird als gespeicherter Glocke-Eintrag ersetzt, der Zähler sinkt
+  nicht über die Frage).
+* ``ReviewActivityParityTest.test_bell_counts_questions_blocked_and_failed_with_links``:
+  Die Quellen werden im bellen Zeilentext benannt (nicht über den Linktext):
+  blockierte Pakete verlinken ``a.nv-bell-link`` → ``/work``, fehlgeschlagene
+  Läufe ``a.nv-bell-link`` → ``/output``; die Frage ist ein Live-Eintrag mit
+  ``button[data-nv-live-question-open]`` (kein ``a.nv-bell-link``).
 """
 import http.client
 import json
@@ -398,23 +440,61 @@ class AP22ActivityBrowserTest(unittest.TestCase):
 
 
 class ActivitySectionsTest(AP22ActivityBrowserTest):
-    def test_activity_sections_render(self):
-        """Vorbedingung: eine offene Frage, zwei Sessions im Register.
+    def _follows(self, first, second,
+                 root="main#nv-main[data-nv-view='activity']"):
+        """Prüft, ob ``first`` vor ``second`` in DOM-Reihenfolge steht."""
+        return self.page.evaluate("""([first, second, rootSel]) => {
+            const root = document.querySelector(rootSel);
+            const a = root && root.querySelector(first);
+            const b = root && root.querySelector(second);
+            return !!a && !!b && !!(a.compareDocumentPosition(b) & 4);
+        }""", [first, second, root])
 
-        Erwartung: ``[data-nv-runs]``, ``[data-nv-sessions]`` mit
-        ``select[data-nv-sessions-project]`` und ``[data-nv-questions]]``
-        sind sichtbar.
+    def test_activity_sections_render(self):
+        """Vorbedingung: eine offene Frage in der gemeinsamen Quelle.
+
+        Erwartung: ``[data-nv-activity-tiles]`` → ``[data-nv-questions]`` →
+        ``[data-nv-runs]`` sind sichtbar, in dieser Reihenfolge;
+        ``p[data-nv-activity-sessions-hint]`` mit Link zu den Projekten,
+        ``select[data-nv-questions-project]`` und ``[data-nv-questions-hint]``.
         """
         self.open_activity()
-        for selector in ("[data-nv-runs]", "[data-nv-sessions]",
-                         "[data-nv-questions]"):
+        activity = self.page.locator("main#nv-main[data-nv-view='activity']")
+        activity.wait_for(state="visible", timeout=25000)
+        self.page.locator(
+            "[data-nv-activity-tiles] [data-nv-tile]").first.wait_for(
+            state="visible", timeout=20000)
+        for selector in ("[data-nv-questions]", "[data-nv-runs]"):
             locator = self.page.locator(selector)
             self.assertEqual(1, locator.count(), f"Bereich {selector} fehlt")
             locator.first.wait_for(state="visible", timeout=20000)
+        # F34: Reihenfolge Kacheln → Rückfragen → Läufe.
+        self.assertTrue(
+            self._follows("[data-nv-activity-tiles]", "[data-nv-questions]"),
+            "Die Kacheln stehen nicht vor den Rückfragen")
+        self.assertTrue(
+            self._follows("[data-nv-questions]", "[data-nv-runs]"),
+            "Die Rückfragen stehen nicht vor den Läufen")
+        # F34: Sessions-Sektion und Session-Limit wurden entfernt.
+        for selector in ("[data-nv-sessions]", "[data-nv-sessions-limit]",
+                         "[data-nv-limit-hint]",
+                         "select[data-nv-sessions-project]"):
+            self.assertEqual(
+                0, activity.locator(selector).count(),
+                f"F34-Absence: {selector} existiert in der Aktivität")
+        # Der Projekthinweis bleibt, mit Link zu den Projekten.
+        hint = activity.locator("p[data-nv-activity-sessions-hint]").first
+        hint.wait_for(state="visible", timeout=20000)
+        self.assertEqual(1, hint.locator("a").count(),
+                         "Der Sitzungshinweis nennt die Projekte nicht")
+        # F34: Rückfragen zeigen den Projektfilter und den Hint.
+        questions = activity.locator("[data-nv-questions]")
         self.assertEqual(
-            1, self.page.locator(
-                "[data-nv-sessions] select[data-nv-sessions-project]").count(),
-            "Die Projektauswahl der Sessions fehlt")
+            1, questions.locator("select[data-nv-questions-project]").count(),
+            "Die Projektauswahl der Rückfragen fehlt")
+        self.assertEqual(
+            1, activity.locator("[data-nv-questions-hint]").count(),
+            "Der Rückfragen-Hint [data-nv-questions-hint] fehlt")
         self.assert_clean_page()
 
 
@@ -466,55 +546,74 @@ class RunsTest(AP22ActivityBrowserTest):
 
 
 class SessionsTest(AP22ActivityBrowserTest):
-    def test_sessions_load_and_limit_persists(self):
-        """Vorbedingung: zwei Sessions für ``proj`` im Register.
+    def test_session_limit_moved_to_project_settings(self):
+        """(a) F34-Absence: kein Sessions-Bereich in der Aktivität;
+        (b) F34-Vertragsprüfung: Limit speichern + Reload in den
+        Projekteinstellungen.
 
-        Aktion: Projekt wählen, Limit ``7`` speichern, Seite neu laden.
-        Erwartung: Die Sessions erscheinen; ``GET /api/sessions`` und das
-        Eingabefeld melden nach dem Reload ``7``.
+        Aktion: ``nav[data-nv-navs]`` → Home, Projektkarte
+        ``a[data-nv-action='open-project']`` → Tab ``settings``,
+        ``input[data-nv-session-limit]`` mit ``7`` speichern.
+        Erwartung: ``/api/sessions?name=proj`` liefert ``limit=7``; nach
+        Reload steht ``7`` im Eingabefeld.
         """
+        # (a) Aktivität: Sessions/Limit/Projektfilter sind entfallen.
         self.open_activity()
-        select = self.page.locator(
-            "[data-nv-sessions] select[data-nv-sessions-project]")
-        select.wait_for(state="visible", timeout=20000)
-        select.select_option(PROJECT)
-        sessions = self.page.locator("[data-nv-sessions]")
-        self.wait_until(
-            lambda: "ses_ap22_a" in sessions.inner_text(),
-            timeout=20,
-            message="Die Sessions des Projekts werden nicht geladen: "
-                    + repr(sessions.inner_text()))
+        activity = self.page.locator("main#nv-main[data-nv-view='activity']")
+        activity.wait_for(state="visible", timeout=25000)
+        for selector in ("[data-nv-sessions]", "[data-nv-sessions-limit]",
+                         "[data-nv-limit-hint]",
+                         "select[data-nv-sessions-project]"):
+            self.assertEqual(
+                0, activity.locator(selector).count(),
+                f"F34-Absence: {selector} existiert in der Aktivität")
+        self.assert_clean_page()
 
-        limit = self.page.locator("input[data-nv-sessions-limit]")
-        limit.wait_for(state="visible", timeout=20000)
-        self.assertEqual(
-            "5", limit.input_value(),
-            "Das gespeicherte Session-Limit wird nicht angezeigt")
-        limit.fill("7")
+        # (b) Echte Prüfung: Limit in den Projekteinstellungen.
         self.page.locator(
-            "[data-nv-action='sessions-limit-save']").first.click()
+            "nav[data-nv-navs] button[data-nv-nav='home']").first.click()
+        self.page.locator("main#nv-main[data-nv-view='home']").wait_for(
+            state="visible", timeout=25000)
+        self.page.locator(
+            f"article[data-nv-project='{PROJECT}']"
+            " a[data-nv-action='open-project']").first.wait_for(
+            state="visible", timeout=20000)
+        self.page.locator(
+            f"article[data-nv-project='{PROJECT}']"
+            " a[data-nv-action='open-project']").first.click()
+        self.page.locator("main#nv-main[data-nv-view='project']").wait_for(
+            state="visible", timeout=25000)
+        settings_tab = self.page.locator("button[data-nv-ptab='settings']")
+        settings_tab.wait_for(state="visible", timeout=20000)
+        settings_tab.first.click()
+        section = self.page.locator("[data-nv-psection='session-limit']").first
+        section.wait_for(state="visible", timeout=20000)
+        limit_input = section.locator("input[data-nv-session-limit]").first
+        limit_input.wait_for(state="visible", timeout=20000)
+        limit_input.fill("7")
+        section.locator("[data-nv-action='session-limit-save']").first.click()
         self.wait_until(
             lambda: self.api_json(
                 f"/api/sessions?name={PROJECT}").get("limit") == 7,
             timeout=20,
             message="Das Session-Limit wurde nicht gespeichert")
+        self.assert_clean_page()
 
+        # Reload: Wert wieder angezeigt.
         self.page.reload()
-        self.page.locator("main#nv-main[data-nv-view='activity']").wait_for(
+        self.page.locator("main#nv-main[data-nv-view='project']").wait_for(
             state="visible", timeout=25000)
-        select = self.page.locator(
-            "[data-nv-sessions] select[data-nv-sessions-project]")
-        select.wait_for(state="visible", timeout=20000)
-        select.select_option(PROJECT)
-        limit = self.page.locator("input[data-nv-sessions-limit]")
+        section = self.page.locator("[data-nv-psection='session-limit']").first
+        section.wait_for(state="visible", timeout=20000)
+        limit_input = section.locator("input[data-nv-session-limit]").first
+        limit_input.wait_for(state="visible", timeout=20000)
         self.wait_until(
-            lambda: limit.input_value() == "7",
+            lambda: (limit_input.input_value() or "").strip() == "7",
             timeout=20,
             message="Das Session-Limit ging beim Reload verloren: "
-                    + repr(limit.input_value()))
+                    + repr(limit_input.input_value()))
         self.assertEqual(
-            7, self.api_json(
-                f"/api/sessions?name={PROJECT}").get("limit"),
+            7, self.api_json(f"/api/sessions?name={PROJECT}").get("limit"),
             "Das Session-Limit ist serverseitig nicht mehr 7")
         self.assert_clean_page()
 
@@ -558,20 +657,23 @@ class QuestionsTest(AP22ActivityBrowserTest):
     def test_question_free_text_answer(self):
         """Vorbedingung: offene Frage ohne Optionen.
 
-        Aktion: ``[data-nv-field="answer"]`` füllen und ``answer`` klicken.
-        Erwartung: Antwortdatei mit dem Freitext.
+        Aktion: ``input[data-nv-answer-field]`` füllen,
+        ``button[data-nv-answer-send]`` klicken.
+        Erwartung: Antwortdatei mit ``text``; die Frage verschwindet
+        (``article[data-nv-question-id]`` == 0).
         """
         for path in self.questions.iterdir():
             path.unlink()
         self.write_question_file(
             FREE_QUESTION_ID, FREE_QUESTION_TEXT, [], free_text=True)
         self.open_activity()
-        field = self.page.locator(
-            "[data-nv-questions] [data-nv-field='answer']").first
+        card = self.page.locator(
+            f"[data-nv-questions] article[data-nv-question-id='{FREE_QUESTION_ID}']").first
+        card.wait_for(state="visible", timeout=20000)
+        field = card.locator("input[data-nv-answer-field]").first
         field.wait_for(state="visible", timeout=20000)
         field.fill("Herzlich willkommen")
-        self.page.locator(
-            "[data-nv-questions] [data-nv-action='answer']").first.click()
+        card.locator("button[data-nv-answer-send]").first.click()
         path = self.answer_file(FREE_QUESTION_ID)
         self.wait_until(
             lambda: path.is_file(),
@@ -580,6 +682,12 @@ class QuestionsTest(AP22ActivityBrowserTest):
         answer = json.loads(path.read_text(encoding="utf-8"))
         self.assertIsNone(answer.get("option"), answer)
         self.assertEqual("Herzlich willkommen", answer.get("text"), answer)
+        self.wait_until(
+            lambda: self.page.locator(
+                f"[data-nv-questions]"
+                f" article[data-nv-question-id='{FREE_QUESTION_ID}']").count() == 0,
+            timeout=20,
+            message="Die beantwortete Frage ist in der Aktivität noch sichtbar")
         self.assert_clean_page()
 
     def test_second_answer_is_rejected_with_message(self):
@@ -587,8 +695,8 @@ class QuestionsTest(AP22ActivityBrowserTest):
         beantwortet, wird aber noch angezeigt.
 
         Aktion: Eine Auswahl anklicken.
-        Erwartung: Eine sichtbare Ablehnung erscheint; die erste Antwort
-        bleibt unverändert.
+        Erwartung: Der Fehler liegt INLINE in ``[data-nv-question-error]``
+        (F34: kein Toast); die Antwortdatei und die Karte bleiben unverändert.
         """
         self.open_activity()
         self.page.locator("[data-nv-answer='1']").wait_for(
@@ -603,28 +711,57 @@ class QuestionsTest(AP22ActivityBrowserTest):
         self.answer_file().write_text(
             json.dumps(original, ensure_ascii=False, indent=1) + "\n",
             encoding="utf-8")
-
+        # F34: Klick, während die beantwortete Karte noch angezeigt wird.
         self.page.locator("[data-nv-answer='2']").click()
+        error = self.page.locator("[data-nv-question-error]").first
         self.wait_until(
-            lambda: re.search(
-                r"bereits beantwortet|already answered",
-                self.page.locator("#nv-toasts").inner_text(), re.I) is not None,
+            lambda: error.count() == 1 and error.first.is_visible()
+            and (error.first.inner_text() or "").strip(),
             timeout=20,
-            message="Die Ablehnung der zweiten Antwort erscheint nicht")
+            message="Der Inline-Fehler [data-nv-question-error] fehlt oder "
+                    "ist leer")
+        error_text = (error.first.inner_text() or "").strip()
+        self.assertNotIn(
+            error_text,
+            self.page.locator("#nv-toasts").inner_text() or "",
+            "Der Inline-Fehler [data-nv-question-error] soll kein Toast sein")
         self.assertEqual(
             original,
             json.loads(self.answer_file().read_text(encoding="utf-8")),
             "Die zweite Antwort hat die erste überschrieben")
+        self.assertEqual(
+            1, self.page.locator(
+                f"article[data-nv-question-id='{QUESTION_ID}']").count(),
+            "Die beantwortete Karte sollte bei Fehler angezeigt bleiben")
         self.assert_clean_page()
 
 
 class BellTest(AP22ActivityBrowserTest):
+    def run_row_info(self):
+        """Gibt ``(text, href)`` einer bellen Live-Zeile zurück, die einen
+        ``a[href*=output]``-Link und das Projekt im Zeilentext hat."""
+        return self.page.evaluate("""([project]) => {
+            const row = Array.from(document.querySelectorAll(
+                'div.nv-bell-row.nv-bell-live')).find(node => {
+                const link = node.querySelector('a[href*="output"]');
+                return link && (node.textContent || '').includes(project);
+            });
+            if (!row) return null;
+            const link = row.querySelector('a[href*="output"]');
+            return {text: row.textContent || '',
+                    href: link ? (link.getAttribute('href') || '') : ''};
+        }""", [PROJECT])
+
     def test_bell_counts_links_and_updates_after_answer(self):
         """Vorbedingung: eine offene Frage und ein laufender Lauf.
 
-        Erwartung: Der Glocken-Zähler ist sichtbar (≥ 1), der Ausklapp nennt
-        Frage und Lauf mit Links; nach der Antwort sinkt der Zähler oder
-        verschwindet.
+        Erwartung: Zähler sichtbar (≥ 1); eine Live-Zeile nennt die
+        Fragetext und das Projekt (F34: Frage ist kein Link mehr, sondern
+        ``button[data-nv-live-question-open]``); die Lauf-Zeile bietet
+        ``a.nv-bell-link`` mit nichtleerem Ziel auf ``output``; nach der
+        Antwort verlässt die Frage die Live-Zeilen (der Zähler darf durch das
+        gespeicherte Antwort-Toast nicht sinken: er bleibt vorhanden, sichtbar
+        und zeigt weiterhin ≥ 1).
         """
         self.start_run()
         self.open_activity()
@@ -647,22 +784,36 @@ class BellTest(AP22ActivityBrowserTest):
         self.page.locator("button[data-nv-bell]").click()
         panel = self.page.locator("[data-nv-bell-panel]")
         panel.wait_for(state="visible", timeout=20000)
-        text = panel.inner_text()
-        self.assertIn(QUESTION_TEXT, text,
-                      "Der Ausklapp nennt die offene Frage nicht")
-        self.assertIn(PROJECT, text,
-                      "Der Ausklapp nennt den laufenden Lauf nicht")
-        question_link = panel.locator("a").filter(
-            has_text=QUESTION_TEXT).first
-        self.assertEqual(1, question_link.count(),
-                         "Die Frage ist im Ausklapp nicht verlinkt")
-        self.assertTrue((question_link.get_attribute("href") or "").strip(),
-                        "Der Frage-Link hat kein Ziel")
-        run_link = panel.locator("a[href*='output']").first
-        self.assertEqual(1, run_link.count(),
-                         "Der laufende Lauf ist im Ausklapp nicht verlinkt")
-        self.assertIn(PROJECT, run_link.inner_text(),
-                      "Der Lauf-Link nennt das Projekt nicht")
+
+        # Die offene Frage: Zeile nennt Fragetext und Projekt, hat keinen Link
+        # (F34: Antwort via [data-nv-live-question-open] in der Live-Zeile).
+        question_row = panel.locator(
+            "div.nv-bell-row.nv-bell-live").filter(has_text=QUESTION_TEXT).first
+        self.assertEqual(1, question_row.count(),
+                         "Die offene Frage ist im Ausklapp nicht vorhanden")
+        self.assertIn(QUESTION_TEXT, question_row.inner_text(),
+                      "Die Frage-Zeile nennt die offene Frage nicht")
+        self.assertIn(PROJECT, question_row.inner_text(),
+                      "Die Frage-Zeile nennt das Projekt nicht")
+        self.assertEqual(
+            1, question_row.locator("[data-nv-live-question-open]").count(),
+            "Der Live-Eintrag der Frage bietet den Antworten-Knopf")
+        self.assertEqual(
+            0, question_row.locator("a.nv-bell-link").count(),
+            "Die Frage ist im Ausklapp (F34) nicht verlinkt, sondern ein "
+            "Antworten-Knopf")
+
+        # Der laufende Lauf: Zeile nennt das Projekt, Link hat nichtleeres
+        # Ziel auf die Ausgabe.
+        info = self.run_row_info()
+        self.assertIsNotNone(
+            info, "Der laufende Lauf ist im Ausklapp nicht verlinkt")
+        self.assertIn(PROJECT, info["text"],
+                      "Die Lauf-Zeile nennt das Projekt nicht")
+        self.assertIn("output", info["href"],
+                      "Der Link des Laufes zeigt nicht auf den Ausgab-Tab")
+        self.assertTrue(info["href"].strip(),
+                        "Der Lauf-Link hat kein Ziel")
 
         self.page.goto(self.base + "/#/activity")
         self.page.locator("main#nv-main[data-nv-view='activity']").wait_for(
@@ -678,16 +829,37 @@ class BellTest(AP22ActivityBrowserTest):
         self.page.locator("main#nv-main[data-nv-view='home']").wait_for(
             state="visible", timeout=25000)
 
-        def updated():
-            badge = self.page.locator("span[data-nv-bell-count]")
-            if badge.count() == 0 or not badge.first.is_visible():
-                return True
-            match = re.search(r"\d+", badge.first.inner_text() or "")
-            return match is not None and int(match.group(0)) < initial
+        def question_row_gone():
+            return panel.locator(
+                "div.nv-bell-row.nv-bell-live").filter(
+                    has_text=QUESTION_TEXT).count() == 0
 
         self.wait_until(
-            updated, timeout=25,
-            message="Der Glocken-Zähler sank nach der Antwort nicht")
+            question_row_gone, timeout=25,
+            message="Der Live-Eintrag der beantworteten Frage ist nicht "
+                    "verschwunden")
+        # F34: Das Antwort-Toast wird als gespeicherter Glocke-Eintrag
+        # erhalten — der Zähler sinkt nicht mehr über die Frage, die Live-
+        # Zeile ist die Verschwindens-Prüfung. Der Zähler muss aber vorhanden,
+        # sichtbar und mindestens 1 sein, solange der gespeicherte Antwort-
+        # Eintrag noch ungelesen ist (ein fehlender Zähler gälte sonst als
+        # „nicht gesunken“).
+        badge = self.page.locator("span[data-nv-bell-count]")
+        self.assertEqual(
+            1, badge.count(), "Der Glocken-Zähler fehlt nach der Antwort")
+        badge = badge.first
+        self.wait_until(
+            lambda: badge.is_visible(), timeout=20,
+            message="Der Glocken-Zähler bleibt nach der Antwort verborgen, "
+                    "obwohl der gespeicherte Antwort-Eintrag ungelesen ist")
+        match = re.search(r"\d+", badge.inner_text() or "")
+        self.assertIsNotNone(
+            match, "Der Glocken-Zähler zeigt keine Zahl: "
+                   + repr(badge.inner_text()))
+        self.assertGreaterEqual(
+            int(match.group(0)), 1,
+            "Der Glocken-Zähler zeigt nach der Antwort kleiner als 1, "
+            "obwohl der gespeicherte Antwort-Eintrag ungelesen ist")
         self.assert_clean_page()
 
 
@@ -776,9 +948,14 @@ class ReviewActivityParityTest(AP22ActivityBrowserTest):
         fehlgeschlagener Lauf im Register.
 
         Erwartung: Der Glocken-Zähler ist 3; der Ausklapp nennt alle drei
-        Quellen. Das blockierte Paket verlinkt auf ``/work``, der
-        fehlgeschlagene Lauf auf ``/output``, die Frage auf ihr Projekt. Nach
-        der Antwort sinkt der Zähler auf 2 (Blockiert + Fehlgeschlagen).
+        Quellen (F34: Live-Zeilen ``div.nv-bell-row.nv-bell-live``). Das
+        blockierte Paket: Zeile nennt ``Blocked: <id>`` und bietet
+        ``a.nv-bell-link`` → ``/work``; der fehlgeschlagene Lauf: Zeile
+        nennt das Projekt und ``a.nv-bell-link`` → ``/output``; die Frage:
+        Zeile nennt die Frage und bietet ``button[data-nv-live-question-open]``
+        (kein ``a.nv-bell-link``). Nach der Antwort verlässt die Frage die
+        Live-Zeilen (Zähler kann durch das gespeicherte Antwort-Toast nicht
+        sinken).
         """
         self.boot()
         self.wait_bell_count(3)
@@ -791,27 +968,47 @@ class ReviewActivityParityTest(AP22ActivityBrowserTest):
                 self.assertIn(needle, text,
                               f"Der Glocken-Ausklapp nennt {needle!r} nicht")
 
-        blocked_link = panel.locator("a").filter(has_text=BLOCKED_ID).first
+        blocked_row = panel.locator("div.nv-bell-row.nv-bell-live").filter(
+            has_text=BLOCKED_ID).first
+        self.assertEqual(
+            1, blocked_row.count(),
+            "Das blockierte Paket ist im Ausklapp nicht vorhanden")
+        blocked_link = blocked_row.locator("a.nv-bell-link").first
         self.assertEqual(
             1, blocked_link.count(),
-            "Das blockierte Paket ist im Ausklapp nicht verlinkt")
+            "Das blockierte Paket hat im Ausklapp keinen Live-Link")
         self.assertIn(
             "/work", blocked_link.get_attribute("href") or "",
             "Der Link des blockierten Pakets zeigt nicht auf den Arbeits-Tab")
 
-        failed_link = panel.locator("a[href*='output']").filter(
-            has_text=PROJECT).first
+        failed_row = panel.locator("div.nv-bell-row.nv-bell-live").filter(
+            has_text=self.failed_run_id).first
+        self.assertEqual(
+            1, failed_row.count(),
+            "Der fehlgeschlagene Lauf ist im Ausklapp nicht vorhanden")
+        self.assertIn(
+            PROJECT, failed_row.inner_text(),
+            "Die Lauf-Zeile nennt das Projekt nicht")
+        failed_link = failed_row.locator("a.nv-bell-link").first
         self.assertEqual(
             1, failed_link.count(),
-            "Der fehlgeschlagene Lauf ist im Ausklapp nicht auf die Ausgabe "
-            "verlinkt")
-        question_link = panel.locator("a").filter(
+            "Der fehlgeschlagene Lauf hat im Ausklapp keinen Live-Link")
+        self.assertIn(
+            "output", failed_link.get_attribute("href") or "",
+            "Der Link des fehlgeschlagenen Laufes zeigt nicht auf die Ausgabe")
+
+        question_row = panel.locator("div.nv-bell-row.nv-bell-live").filter(
             has_text=QUESTION_TEXT).first
         self.assertEqual(
-            1, question_link.count(),
-            "Die offene Frage ist im Ausklapp nicht verlinkt")
-        self.assertTrue((question_link.get_attribute("href") or "").strip(),
-                        "Der Frage-Link hat kein Ziel")
+            1, question_row.count(),
+            "Die offene Frage ist im Ausklapp nicht vorhanden")
+        self.assertEqual(
+            1, question_row.locator("[data-nv-live-question-open]").count(),
+            "Der Live-Eintrag der Frage bietet den Antworten-Knopf")
+        self.assertEqual(
+            0, question_row.locator("a.nv-bell-link").count(),
+            "Die Frage ist im Ausklapp (F34) nicht verlinkt, sondern ein "
+            "Antworten-Knopf")
 
         self.page.goto(self.base + "/#/activity")
         self.page.locator("main#nv-main[data-nv-view='activity']").wait_for(
@@ -824,7 +1021,17 @@ class ReviewActivityParityTest(AP22ActivityBrowserTest):
         self.page.goto(self.base + "/#/")
         self.page.locator("main#nv-main[data-nv-view='home']").wait_for(
             state="visible", timeout=25000)
-        self.wait_bell_count(2)
+        # F34: Die beantwortete Frage verlässt die Live-Einträge (Das Toast
+        # ersetzt sie als gespeicherter Glocke-Eintrag).
+        def question_row_gone():
+            return self.page.locator(
+                "div.nv-bell-row.nv-bell-live").filter(
+                    has_text=QUESTION_TEXT).count() == 0
+
+        self.wait_until(
+            question_row_gone, timeout=25,
+            message="Der Live-Eintrag der beantworteten Frage ist nicht "
+                    "verschwunden")
         self.assert_clean_page()
 
     def test_activity_summary_tiles_show_running_questions_and_blocked(self):
