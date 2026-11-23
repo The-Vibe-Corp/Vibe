@@ -40,8 +40,10 @@ Testfälle (Kurzfassung; Details in den Methoden)
     Erwartung: ``div[data-nv-feature-groups]`` umschließt die Feature-Schalter
     (mindestens ein ``input[data-nv-feature]``).
 ``SettingsStructureTest.test_every_visible_gate_has_a_help_text``
-    Erwartung: ``section[data-nv-ssection='gates']`` ist ohne
-    Feature-Schalter immer sichtbar; je Schranke eine Zeile
+    Erwartung: Die Sektion ``section[data-nv-ssection='gates']`` ist
+    immer sichtbar (vor dem Einschalten keine Tabelle); nach Einschalten
+    des Feature-Schalters ``input[data-nv-feature='gates']`` zeigt die
+    Tabelle ``table[data-nv-gates-table]`` je Schranke eine Zeile
     ``tr[data-nv-gate]`` mit nichtleerem ``small[data-nv-gate-help]``.
 ``EvaluationsGroupTest.test_evaluations_absent_from_settings`` (NEW)
     Erwartung: In den Einstellungen sind Kosten/Läufe/Umgebung entfallen:
@@ -108,14 +110,16 @@ werden durch Abwesenheitsprüfungen ergänzt.
    (Portfeld unsichtbar), öffnet per Klick, danach ist
    ``input[data-nv-field='port']`` sichtbar.
 6. ``SettingsStructureTest.test_every_visible_gate_has_a_help_text`` —
-   F34: Die Schranken-Sektion ``section[data-nv-ssection='gates']`` ist ohne
-   Feature-Schalter immer sichtbar (grün — die Sektion ist im DOM und in
-   der lokalen Navigation). Die tabellarische Tiefe
-   ``table[data-nv-gates-table]`` mit ``tr[data-nv-gate]`` und
-   nichtleerem ``small[data-nv-gate-help]`` ist der Vertrag; die
-   Implementierung füllt die Tabelle aber nur bei
-   ``NV.feature('gates')`` (bin/web/nova-settings.js:137) — dieser Fall
-   bleibt rot gemeldet, nicht abgeschwächt.
+   F34: Die Sektion ``section[data-nv-ssection='gates']`` ist immer
+   sichtbar (geprüft, auch vor dem Einschalten: Tabelle noch nicht
+   vorhanden). Der Inhalt — ``table[data-nv-gates-table]`` mit
+   ``tr[data-nv-gate]`` und nichtleerem ``small[data-nv-gate-help]`` —
+   kommt bei Einschalten des Feature-Schalters
+   ``input[data-nv-feature='gates']``; F34 lässt den Inhalt
+   feature-gated (``NV_SETTINGS_FEATURE_GROUPS``, nova-settings.js:137);
+   das Einschalten löst via ``nv:featureschange`` → ``render()`` auf die
+   Tabelle aus (nova-core.js:564). Die Zeilen-/Hilfetext-Prüfungen bleiben
+   unverändert vollständig.
 7. ``EvaluationsGroupTest.test_evaluations_absent_from_settings`` — NEW
    (F34 WP3/WP7): Abwesenheitsprüfungen der Feature-Schalter
    ``input[data-nv-feature='costs'|'runs'|'env']`` sowie der F33-Hooks
@@ -705,13 +709,25 @@ class SettingsStructureTest(F33SettingsBrowserTest):
     def test_every_visible_gate_has_a_help_text(self):
         """Vorbedingung: Schranken sind geliefert (GET /api/gates).
 
-        Erwartung: ``section[data-nv-ssection='gates']`` ist ohne
-        Feature-Schalter immer sichtbar; je Schranke eine Zeile
-        ``tr[data-nv-gate]`` mit nichtleerem ``small[data-nv-gate-help]``.
+        Erwartung: Die Sektion ``section[data-nv-ssection='gates']`` ist
+        immer sichtbar (vor dem Einschalten noch ohne Tabelle); nach
+        Einschalten des Feature-Schalters ``input[data-nv-feature='gates']``
+        zeigt die Tabelle ``table[data-nv-gates-table]`` je Schranke eine
+        Zeile ``tr[data-nv-gate]`` mit nichtleerem
+        ``small[data-nv-gate-help]``.
         """
         self.open_settings()
         section = self.page.locator("section[data-nv-ssection='gates']")
         section.wait_for(state="visible", timeout=20000)
+        # Vertrag: die Sektion ist immer vorhanden; die Tabelle kommt
+        # erst mit dem Funktionsschalter gates (nova-settings.js:137).
+        self.assertEqual(
+            0, section.locator("table[data-nv-gates-table]").count(),
+            "Vor dem Einschalten muss die Gates-Tabelle noch nicht liegen")
+        toggle = self.page.locator("input[data-nv-feature='gates']")
+        toggle.wait_for(state="visible", timeout=20000)
+        if not toggle.is_checked():
+            toggle.check()
         table = section.locator("table[data-nv-gates-table]")
         table.wait_for(state="visible", timeout=20000)
         gates_view = self.api_json("/api/gates")
