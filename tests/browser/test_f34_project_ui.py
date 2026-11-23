@@ -117,6 +117,16 @@ Testfälle (Name, Vorbedingung, Aktion, Erwartung)
     sichtbar im Strip, Toast, ``GET /api/priority`` bestätigt sie; KEIN
     Voll-Neurender (DOM-Sentinel am Strip bleibt, echter Render-Zähler des
     Testgerüsts unverändert).
+``test_card_rank_badges_follow_priority_action_without_rerender``
+    Vorbedingung: order „F5 F8 B7“ (nur diese Karten tragen ``P1``–``P3``;
+    F1 hat kein Badge).
+    Aktion: ↓-Knopf der Zeile F5 klicken (Speicherweg wie nach Drag & Drop).
+    Erwartung: Karten-Badges ``[data-nv-prio-badge]`` in
+    ``div[data-nv-ticket-list]`` tragen die NEUE Reihenfolge
+    (``P<index+1>`` gemäß Strip-Reihenfolge und persistierter
+    ``/api/priority``-Order); Karten ohne Rang tragen kein Badge; der Strip
+    zeigt dieselben Ränge; Toast bestätigt; KEIN Voll-Neurender (echter
+    Render-Zähler unverändert).
 ``test_priority_reset``
     Vorbedingung: order „F5 F8“ (Badges vorhanden).
     Aktion: ``button[data-nv-priority-reset]`` klicken.
@@ -1581,6 +1591,141 @@ class WorkTest(F34ProjectBrowserTest):
             render_before, self.nv_render_count(),
             "Der ↓-Knopf vollneu-rendered (NV.render wurde während des "
             "Speicherns aufgerufen)")
+        self.assert_clean_page()
+
+    def test_card_rank_badges_follow_priority_action_without_rerender(self):
+        """Vorbedingung: order „F5 F8 B7“: nur diese Karten tragen ``P1``–``P3``,
+        F1 trägt kein Badge.
+
+        Aktion: ↓-Knopf der Zeile F5 klicken (Speicherweg wie nach Drag & Drop).
+
+        Erwartung: die Karten-Badges ``span[data-nv-prio-badge]`` der
+        Arbeitskarten in ``div[data-nv-ticket-list]`` tragen die NEUE
+        Reihenfolge (``P<index+1>`` gemäß Strip-Reihenfolge und persistierter
+        ``/api/priority``-Order); Karten ohne Rang tragen kein Badge; der Strip
+        zeigt dieselben Ränge; Toast bestätigt das Speichern; KEIN
+        Voll-Neurender (echter Render-Zähler unverändert).
+        """
+        self.set_priority("F5 F8 B7")
+        self.open_work()
+        strip = self.page.locator("div[data-nv-priority-strip]")
+        strip.wait_for(state="visible", timeout=20000)
+        self.wait_until(
+            lambda: self.strip_ids()[:3] == ["F5", "F8", "B7"], timeout=20,
+            message="Vorbedingung: der Strip beginnt nicht mit F5, F8, B7: "
+                    + repr(self.strip_ids()))
+
+        def card_badges():
+            """Rang-Badge je Arbeitskarte (Kennung -> ``P<n>`` oder ``None``)."""
+            return self.page.evaluate(
+                """() => {
+                  const out = {};
+                  document.querySelectorAll(
+                    'div[data-nv-ticket-list] [data-nv-ticket], '
+                    + 'div[data-nv-ticket-list] [data-nv-feedback-item]'
+                  ).forEach(card => {
+                    const id = card.getAttribute('data-nv-ticket')
+                      || card.getAttribute('data-nv-feedback-item');
+                    const badge = card.querySelector(
+                      'span[data-nv-prio-badge]');
+                    out[id] = badge ? badge.textContent.trim() : null;
+                  });
+                  return out;
+                }""")
+
+        def strip_ranks():
+            """Rang-Präfix je Strip-Zeile (Kennung -> Text der Zeile)."""
+            return self.page.evaluate(
+                """() => {
+                  const out = {};
+                  document.querySelectorAll(
+                    'div[data-nv-priority-strip] [data-nv-priority-id]'
+                  ).forEach(row => {
+                    const id = row.getAttribute('data-nv-priority-id');
+                    const label = row.querySelector('.nv-priority-label');
+                    out[id] = label ? label.textContent.trim() : '';
+                  });
+                  return out;
+                }""")
+
+        before = card_badges()
+        self.assertEqual(
+            {"F5": "P1", "F8": "P2", "B7": "P3"},
+            {ident: before.get(ident) for ident in ("F5", "F8", "B7")},
+            "Vorbedingung: die priorisierten Karten tragen nicht P1–P3: "
+            + repr(before))
+        self.assertIsNone(
+            before.get("F1"),
+            "Vorbedingung: F1 hat ohne Rang ein Badge: " + repr(before))
+
+        render_before = self.nv_render_count()
+        down = self.page.locator(
+            "div[data-nv-priority-strip] [data-nv-priority-id='F5'] "
+            "button[data-nv-action='priority-down']")
+        self.assertEqual(1, down.count(), "↓-Knopf für F5 fehlt")
+        down.click()
+        self.wait_until(
+            lambda: any(payload.get("action") == "set"
+                        for payload in self.posts_to("/api/priority")),
+            timeout=20,
+            message="Der ↓-Knopf speichert nicht über POST /api/priority "
+                    "{action:'set'}: " + repr(self.posts_to("/api/priority")))
+        posted = [payload for payload in self.posts_to("/api/priority")
+                  if payload.get("action") == "set"][-1]
+        posted_order = [part for part in str(posted.get("order") or "").split()
+                        if part]
+        self.assertEqual(
+            ["F8", "F5", "B7"], posted_order[:3],
+            "Der ↓-Knopf speichert die neue Reihenfolge nicht: "
+            + repr(posted_order))
+        self.wait_api(
+            f"/api/priority?name={PROJECT}",
+            lambda data: [str(entry.get("id"))
+                          for entry in (data.get("order") or [])] == posted_order,
+            message="Die per ↓ gespeicherte Reihenfolge ist nicht persistiert: "
+                    + repr(posted_order))
+        self.wait_until(
+            lambda: self.strip_ids() == posted_order, timeout=15,
+            message="Der Strip zeichnet die neue Reihenfolge nicht sofort: "
+                    + repr(self.strip_ids()))
+
+        expected_badges = {ident: "P" + str(index + 1)
+                           for index, ident in enumerate(posted_order)}
+        observed = card_badges()
+        deadline = time.time() + 15
+        while time.time() < deadline:
+            observed = card_badges()
+            if all(observed.get(ident) == badge
+                   for ident, badge in expected_badges.items()):
+                break
+            self.page.wait_for_timeout(100)
+        self.assertEqual(
+            expected_badges,
+            {ident: observed.get(ident) for ident in expected_badges},
+            "Die Karten-Badges folgen der neuen Reihenfolge nicht "
+            "(erwartet ``P<index+1>`` gemäß Strip und persistierter Order): "
+            + repr(observed))
+        unbewertet = {ident: badge for ident, badge in observed.items()
+                      if ident not in expected_badges and badge}
+        self.assertEqual(
+            {}, unbewertet,
+            "Karten ohne Rang tragen ein Badge: " + repr(unbewertet))
+        ranks = strip_ranks()
+        for index, ident in enumerate(posted_order):
+            self.assertTrue(
+                str(ranks.get(ident) or "").startswith("P" + str(index + 1) + " "),
+                "Der Strip zeigt für " + ident + " nicht P" + str(index + 1)
+                + ": " + repr(ranks.get(ident)))
+        self.wait_until(
+            lambda: re.search(
+                r"priority saved|priorisierung gespeichert",
+                self.toast_text(), re.I) is not None, timeout=20,
+            message="Der ↓-Knopf bestätigt das Speichern nicht: "
+                    + repr(self.toast_text()))
+        self.assertEqual(
+            render_before, self.nv_render_count(),
+            "Die Rang-Aktualisierung vollneu-rendered (NV.render wurde "
+            "während des Speicherns aufgerufen)")
         self.assert_clean_page()
 
     def test_priority_reset(self):

@@ -381,7 +381,7 @@ class F34ActivityEvalsBrowserTest(unittest.TestCase):
 
 class ActivityTest(F34ActivityEvalsBrowserTest):
     def test_activity_render_order_without_sessions_hooks(self):
-        """Name: Aktivitätssuche sowie API-Aufrufe; erwarte dies.
+        """Name: Aktivität — Bereichsreihenfolge ohne Sitzungs-Hooks.
         Vorbedingung: eine offene Rückfrage, kein Lauf im Register.
         Aktion: Aktivitätsansicht laden.
         Erwartung: ``[data-nv-activity-tiles]``, ``[data-nv-questions]`` und

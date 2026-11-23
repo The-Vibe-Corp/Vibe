@@ -102,12 +102,16 @@ Testfälle (Name, Vorbedingung, Aktion, Erwartung)
 
 ``McpSectionTest.test_mcp_cards_show_state_toggle_and_no_entry_button``
     Vorbedingung: Feature ``mcp`` an.
-    Aktion: MCP-Bereich lesen.
+    Aktion: MCP-Bereich lesen; Umschalter einer Server-Karte klicken; danach
+    Bearbeitungsformular öffnen.
     Erwartung: ``article[data-nv-mcp-server]`` mit Status-Pille
     ``[data-nv-mcp-state]`` ("Aktiv"/"Inaktiv") und Umschalter
     ``[data-nv-action="mcp-toggle"]`` ("Aktivieren"/"Deaktivieren");
     kein "Eintrag anzeigen"-Knopf; Scope wählbar ``[data-nv-mcp-scope]``;
-    Filter ``[data-nv-mcp-search]``.
+    Filter ``[data-nv-mcp-search]``. Der Klick auf den Umschalter wechselt nur
+    die Karte (Statuspille + Knopftext), zeigt einen Toast und lässt den
+    echten Render-Zähler unverändert; der Zustand ist als ``enabled`` in der
+    MCP-Konfiguration persistiert.
 
 Vertragsunklaritäten (bewusst so geprüft und dokumentiert)
 --------------------------------------------------------
@@ -1343,6 +1347,75 @@ class McpSectionTest(F34SettingsBrowserTest):
         self.assertEqual(
             0, entry_buttons.count(),
             "Der MCP-Bereich darf keinen 'Eintrag anzeigen'-Knopf haben")
+        # Umschalten wirkt nur auf die Karte (Status + Knopftext) und den
+        # Speicher — kein Voll-Neurender. Der echte Render-Zähler des
+        # Testgerüsts bleibt deshalb unverändert.
+        card = cards.first
+        server_name = card.get_attribute("data-nv-mcp-server")
+        card_state = card.locator("span[data-nv-mcp-state]")
+        card_toggle = card.locator("button[data-nv-action='mcp-toggle']")
+        state_before = (card_state.inner_text() or "").strip()
+        label_before = (card_toggle.inner_text() or "").strip()
+        self.assertIn(state_before, ("Active", "Aktiv"),
+                      "Statuspille der MCP-Karte ist weder 'Active' noch "
+                      "'Aktiv': " + repr(state_before))
+        self.assertIn(label_before, ("Deaktivieren", "Deactivate", "Disable"),
+                      "Der aktive Server bietet keinen Deaktivieren-Knopf: "
+                      + repr(label_before))
+        was_enabled = state_before in ("Active", "Aktiv")
+        render_before = self.nv_render_count()
+        card_toggle.click()
+        self.wait_for_post(
+            "/api/mcp",
+            lambda payload: payload.get("action") == "toggle"
+            and payload.get("name") == server_name,
+            message="Der Umschalter sendet kein POST /api/mcp {action:'toggle'}: "
+                    + repr(self.posts_to("/api/mcp")))
+        expected_states = ("Inaktiv", "Inactive") if was_enabled \
+            else ("Aktiv", "Active")
+        expected_labels = ("Aktivieren", "Activate", "Enable") if was_enabled \
+            else ("Deaktivieren", "Deactivate", "Disable")
+        self.wait_until(
+            lambda: (card_state.inner_text() or "").strip() in expected_states,
+            timeout=15,
+            message="Die Statuspille wechselt nicht (beobachtet: "
+                    + repr((card_state.inner_text() or "").strip()) + ")")
+        self.assertIn(
+            (card_toggle.inner_text() or "").strip(), expected_labels,
+            "Der Knopftext wechselt nicht: "
+            + repr((card_toggle.inner_text() or "").strip()))
+        self.wait_until(
+            lambda: re.search(r"mcp|geändert|changed|aktiviert|deaktiviert",
+                              self.toast_text(), re.I) is not None,
+            timeout=15,
+            message="Der Umschalter bestätigt nicht per Toast: "
+                    + repr(self.toast_text()))
+        self.assertEqual(
+            render_before, self.nv_render_count(),
+            "Der MCP-Umschalter vollneu-rendered (NV.render wurde während "
+            "des Umschaltens aufgerufen)")
+
+        def mcp_enabled():
+            data = self.api_json("/api/mcp")
+            for server in data.get("servers") or []:
+                if server.get("name") == server_name:
+                    return server.get("enabled")
+            self.fail("Der MCP-Server %r fehlt in GET /api/mcp"
+                      % (server_name,))
+
+        self.wait_until(
+            lambda: mcp_enabled() is (not was_enabled), timeout=15,
+            message="Der Umschaltzustand ist nicht über GET /api/mcp "
+                    "persistiert: " + repr(mcp_enabled()))
+        config = json.loads(
+            (self.root / "home" / ".config" / "opencode" / "opencode.json")
+            .read_text(encoding="utf-8"))
+        self.assertIs(
+            not was_enabled,
+            (config.get("mcp") or {}).get("servers", {}).get(
+                server_name, {}).get("enabled"),
+            "Der Umschaltzustand ist nicht in der MCP-Konfiguration "
+            "persistiert: " + repr(config.get("mcp")))
         # Der Scope wird im Bearbeitungsformular (Kontext-Panel) gewählt.
         edit = cards.first.locator("button[data-nv-action='mcp-edit']")
         edit.wait_for(state="visible", timeout=20000)

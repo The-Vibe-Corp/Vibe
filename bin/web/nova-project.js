@@ -410,11 +410,48 @@ function nvpCurrentName() {
   try { return decodeURIComponent(match[1]); } catch (e) { return match[1]; }
 }
 
+/* Rangkarte aus einer Priorisierungsreihenfolge (Objekte mit id oder reine
+   ID-Strings): einzige Quelle für Strip, Speichern und Karten-Badges. */
+function nvpRankMap(order) {
+  var ranks = {};
+  (order || []).forEach(function (entry, index) {
+    var id = typeof entry === 'string' ? entry : String(entry && entry.id || '');
+    if (id) ranks[id] = index + 1;
+  });
+  return ranks;
+}
+
+/* Badges der Karten lokal nachziehen (ohne NV.render): vorhandenen Text
+   aktualisieren, fehlende Badges ergänzen, nicht mehr priorisierte entfernen. */
+function nvpUpdateCardBadges(list, ranks) {
+  if (!list) return;
+  Array.prototype.slice.call(list.querySelectorAll('.nv-ticket')).forEach(function (card) {
+    var id = card.getAttribute('data-nv-ticket')
+      || card.getAttribute('data-nv-feedback-item') || '';
+    var rank = ranks[id];
+    var badge = card.querySelector('[data-nv-prio-badge]');
+    if (rank) {
+      if (!badge) {
+        badge = el('span', {'data-nv-prio-badge': ''});
+        var idNode = card.querySelector('.nv-ticket-id');
+        if (idNode && idNode.parentNode) idNode.parentNode.insertBefore(badge, idNode.nextSibling);
+        else {
+          var head = card.querySelector('.nv-ticket-head');
+          if (head) head.append(badge);
+        }
+      }
+      badge.textContent = 'P' + String(rank);
+    } else if (badge) {
+      badge.remove();
+    }
+  });
+}
+
 /* Die Priorisierungsleiste steht zwischen Filtern und Liste. Manuell
    priorisierte Einträge stehen zuerst, danach die Standardreihenfolge;
    erledigte Einträge erscheinen nie. Drag & Drop zeigt eine Live-Vorschau
    (Zeiger-Geist + Einfügemarke), ↑/↓ bleiben die Tastaturalternative. */
-function nvpPriorityStrip(name, token, view, items) {
+function nvpPriorityStrip(name, token, view, items, cards) {
   var strip = el('div', {class: 'nv-priority-strip', 'data-nv-priority-strip': ''});
   var priority = (view && view.priority) || {};
   var configured = priority.order || [];
@@ -437,11 +474,7 @@ function nvpPriorityStrip(name, token, view, items) {
   configured.forEach(add);
   standard.forEach(add);
   (items || []).forEach(add);
-  var ranks = {};
-  configured.forEach(function (entry, index) {
-    var id = String(entry && entry.id || '');
-    if (open[id]) ranks[id] = index + 1;
-  });
+  var ranks = nvpRankMap(configured);
   var count = el('div', {class: 'nv-muted', 'data-nv-prio-count': ''},
     String(configured.length) + ' ' + tr('priorisiert'));
   var rowsBox = el('div', {class: 'nv-priority-rows'});
@@ -460,11 +493,11 @@ function nvpPriorityStrip(name, token, view, items) {
       if (result && result.ok === false) { toast(bt(result.message)); return; }
       toast(tr('Priorisierung gespeichert'));
       /* Nach dem Speichern ist die ganze Liste die konfigurierte Reihenfolge:
-         Ränge und Zähler lokal nachziehen statt Voll-Neurender. */
-      ranks = {};
-      order.forEach(function (id, index) { ranks[id] = index + 1; });
+         Ränge, Zähler und Karten-Badges lokal nachziehen statt Voll-Neurender. */
+      ranks = nvpRankMap(order);
       setTx(count, String(order.length) + ' ' + tr('priorisiert'));
       draw();
+      nvpUpdateCardBadges(cards, ranks);
     } catch (e) {
       toast(tr('Speichern fehlgeschlagen: ') + String(e && e.message || e));
     }
@@ -1774,12 +1807,7 @@ NV.views.project = async function project(context, token) {
     NV.search({input: searchInput, placeholder: tr('Arbeitspakete suchen')}),
     chips, hideDoneButton));
 
-  panels.work.append(nvpPriorityStrip(name, token, view, allItems));
-
-  var ranks = {};
-  (priorityView.order || []).forEach(function (entry, index) {
-    ranks[String(entry && entry.id || '')] = index + 1;
-  });
+  var ranks = nvpRankMap(priorityView.order);
   var ticketList = el('div', {class: 'nv-ticket-list', 'data-nv-ticket-list': ''});
   if (!allItems.length) {
     ticketList.append(el('p', {class: 'nv-muted'}, tr('Keine Einträge')));
@@ -1788,6 +1816,7 @@ NV.views.project = async function project(context, token) {
     ticketList.append(nvpTicketCard(name, token, row,
       ranks[String(row.id || '')]));
   });
+  panels.work.append(nvpPriorityStrip(name, token, view, allItems, ticketList));
   panels.work.append(ticketList);
 
   var backToTop = el('button', {class: 'nv-btn nv-back-to-top', type: 'button',
