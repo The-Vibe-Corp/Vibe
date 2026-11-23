@@ -14,6 +14,15 @@ F34-Anpassung: Die statische Sidebar entfällt; die Sidebar-Klicks
 („home“ und „settings“) sind auf die permanenten Kopf-Navigationsknöpfe
 (``nav[data-nv-navs]``) umgestellt.
 
+F34-Anpassung (Bestandstests, je Fall mit Begründung): Die nachfolgenden
+Bestandstests wurden am F34-Vertrag des Projektdetails ausgerichtet —
+``OverviewTest`` (Kacheln „Feedback“/„Ohne Nachweis“ entfallen, Badge
+``[data-nv-proof]``), ``AssistantTest`` (Leitfadenüberschrift vollständig
+über ``tr()`` übersetzt), ``BasicsTest`` (Projektvorbereiten nur bei
+unvorbereitetem Projekt), ``SettingsSectionsTest`` (Prüfungen und
+Sessions-Liste entfallen, Session-Limit bleibt sichtbar) sowie
+``GithubParityTest`` (Push-Quelle/Ziel als Selects, Token-Status als Pille).
+
 Testfälle (Kurzfassung; Details in den Methoden)
 -----------------------------------------------
 ``ProjectHeroTest.test_open_project_from_home_shows_hero``
@@ -28,7 +37,9 @@ Testfälle (Kurzfassung; Details in den Methoden)
 ``OverviewTest.test_overview_tiles_show_fixture_counts``
     Vorbedingung: zwei offene Pakete, ein blockiertes, ein erledigtes, zwei
     Feedback-Einträge ohne Nachweis. Erwartung: Kacheln ``open=2``,
-    ``blocked=1``, ``proof=2``, ``done=1``, ``feedback=2``.
+    ``blocked=1``, ``done=1``; die Kacheln „Feedback“/„Ohne Nachweis“ sind
+    entfallen (F34) und werden per Abwesenheitsprüfung erwartet; die beiden
+    Feedback-Einträge tragen stattdessen ``[data-nv-proof]``.
 ``ChecksTest.test_checks_buttons_and_quick_verify_started``
     Vorbedingung: ``VERIFY_QUICK="true"``. Aktion: Quick-Knopf klicken.
     Erwartung: ``[data-nv-action="verify"]`` und ``[data-nv-verify="full"]``
@@ -38,9 +49,11 @@ Testfälle (Kurzfassung; Details in den Methoden)
     Erwartung: Pause-Datei angelegt, Projektkarte zeigt
     ``[data-nv-pause-badge]``.
 ``SettingsSectionsTest.test_project_settings_sections_and_hidden_features``
-    Erwartung: ``team/basics/checks/pause/sessions`` vorhanden; die
-    Feature-Bereiche ``github/writeaccess/sandbox/agentsfile`` fehlen ohne
-    eingeschaltete Schalter vollständig im DOM.
+    Erwartung: ``team/basics/session-limit`` vorhanden; „Prüfungen“
+    (``checks``) und die Sessions-Liste sind entfallen (F34); die eigenen
+    Pause-Sektion und die Feature-Bereiche
+    ``github/writeaccess/sandbox/agentsfile`` fehlen ohne eingeschaltete
+    Schalter vollständig im DOM.
 ``TeamTest.test_team_toggles_agent_and_saves_model_override``
     Vorbedingung: globale Agenten ``vibe-agent``, ``tester``, ``helper``.
     Aktion: Tester aktivieren, Modellüberschreibung wählen, neu laden.
@@ -48,12 +61,13 @@ Testfälle (Kurzfassung; Details in den Methoden)
     ``override=opencode/helper-modell``; nach Reload sind Schalter und
     Auswahl unverändert.
 ``BasicsTest.test_basics_has_init_button``
-    Erwartung: ``[data-nv-action="init"]`` ist vorhanden (ohne Klick).
+    Erwartung: ``[data-nv-action="init"]`` ist vorhanden, sofern das
+    Projekt unvorbereitet ist (F34: „Projekt vorbereiten“ nur dann).
 ``AssistantTest.test_assistant_guide_and_autonomous_toggle``
     Vorbedingung: Projekt ohne ``SPEC.md``. Aktion: Autonom-Schalter klicken,
     neu laden. Erwartung: ``[data-nv-assistant]`` zeigt die Leitfaden-Schritte
     aus ``/api/guide``; ``/api/autonomous`` meldet ``enabled=true``, der
-    Schalter bleibt nach dem Reload an.
+    Schalter bleibt nach dem Reload an. F34: Tab-Label ist „Beschreibung“.
 
 Review-Fix AP22 (Runde 1)
 -------------------------
@@ -199,15 +213,19 @@ exit 2
 TILE_EXPECTED = {
     "open": 2,
     "blocked": 1,
-    "proof": 2,
     "done": 1,
-    "feedback": 2,
 }
+# F34: Kacheln „Feedback“ und „Ohne Nachweis“ entfallen; der Zustand „ohne
+# Nachweis“ erscheint als Badge ``[data-nv-proof]`` an den Einträgen.
+REMOVED_TILES = ("proof", "feedback")
 
 HIDDEN_SECTIONS = ("github", "writeaccess", "sandbox", "agentsfile")
 # F33 WP3/2r: die eigene Pause-Sektion ist entfallen (Status als Pille im
 # Überblick), daher nicht mehr in den erwarteten Sektionen.
-VISIBLE_SECTIONS = ("team", "basics", "checks", "sessions")
+# F34: „Prüfungen“ (checks) und die Sessions-Liste entfallen; das
+# Session-Limit ist projektspezifisch und ohne Feature-Schalter sichtbar.
+VISIBLE_SECTIONS = ("team", "basics", "session-limit")
+REMOVED_SECTIONS = ("checks", "sessions")
 
 # Review-Fix AP22: lokaler GitHub-REST-Ersatz und lokales Git-Remote.
 # Es gibt keinen Netzzugriff außerhalb von Loopback; die API-Basis steht in
@@ -717,8 +735,11 @@ class OverviewTest(AP22ProjectBrowserTest):
         """Vorbedingung: Board mit zwei offenen, einem blockierten und einem
         erledigten Paket sowie zwei Feedback-Einträgen ohne Nachweis.
 
-        Erwartung: Die Kacheln zeigen ``open=2``, ``blocked=1``, ``proof=2``,
-        ``done=1`` und ``feedback=2``.
+        Erwartung: Die Kacheln zeigen ``open=2``, ``blocked=1`` und ``done=1``.
+        F34: Die Kacheln „Feedback“ und „Ohne Nachweis“ entfallen; der Zustand
+        „ohne Nachweis“ erscheint als Badge ``[data-nv-proof]`` an den
+        betroffenen Einträgen der Arbeitsliste. Beides wird geprüft: die
+        Kacheln per Abwesenheitsprüfung, das Badge an ``BUG-7`` und ``FB-1``.
         """
         self.open_project()
         self.open_tab("overview")
@@ -727,6 +748,24 @@ class OverviewTest(AP22ProjectBrowserTest):
                 self.assertEqual(
                     expected, self.tile_value(name),
                     f"Kachel {name!r} zeigt nicht die erwartete Anzahl")
+        for tile in REMOVED_TILES:
+            with self.subTest(tile=tile):
+                self.assertEqual(
+                    0, self.page.locator(f"[data-nv-tile='{tile}']").count(),
+                    f"Die entfallene Kachel {tile!r} existiert entgegen dem F34-Vertrag")
+        # Ersatz für die entfallene Kachel: Der Zustand „ohne Nachweis“ ist
+        # jetzt ein Badge am betroffenen Eintrag. Beide Feedback-Einträge der
+        # Fixture sind abgehakt, ihr Nachweis-Commit existiert nicht — also
+        # müssen genau diese beiden Karten das Badge tragen.
+        self.open_tab("work")
+        self.page.locator("[data-nv-work-hide-done]").click()
+        for entry in ("BUG-7", "FB-1"):
+            card = self.page.locator(f"article[data-nv-feedback-item='{entry}']")
+            card.wait_for(state="visible", timeout=20000)
+            self.assertEqual(
+                1, card.locator("[data-nv-proof]").count(),
+                f"Der Eintrag {entry!r} trägt kein Badge [data-nv-proof], "
+                "obwohl sein Nachweis fehlt")
         self.assert_clean_page()
 
 
@@ -795,10 +834,10 @@ class SettingsSectionsTest(AP22ProjectBrowserTest):
         """Vorbedingung: frischer Browserkontext, alle Feature-Schalter aus.
 
         Aktion: Projekt-Einstellungen öffnen.
-        Erwartung: ``team/basics/checks/sessions`` existieren; die eigene
-        Pause-Sektion ist entfallen (Status als Pille im Überblick); die
-        Bereiche ``github/writeaccess/sandbox/agentsfile`` fehlen vollständig
-        im DOM (nicht nur versteckt).
+        Erwartung: ``team/basics/session-limit`` existieren; die Pause-Sektion,
+        „Prüfungen“ (``checks``) und die Sessions-Liste sind entfallen (F34);
+        die Feature-Bereiche ``github/writeaccess/sandbox/agentsfile`` fehlen
+        vollständig im DOM (nicht nur versteckt).
         """
         self.open_project()
         self.open_tab("settings")
@@ -807,6 +846,12 @@ class SettingsSectionsTest(AP22ProjectBrowserTest):
                 self.assertEqual(
                     1, self.page.locator(f"[data-nv-psection='{section}']").count(),
                     f"Projekteinstellung {section!r} fehlt")
+        # F34: „Prüfungen“ (checks) und die Sessions-Liste entfallen.
+        for section in REMOVED_SECTIONS:
+            with self.subTest(section=section):
+                self.assertEqual(
+                    0, self.page.locator(f"[data-nv-psection='{section}']").count(),
+                    f"Entfernter Bereich {section!r} existiert entgegen dem F34-Vertrag")
         # F33 WP3/2r: die Pause-Sektion darf nicht mehr existieren.
         self.assertEqual(
             0, self.page.locator("[data-nv-psection='pause']").count(),
@@ -970,15 +1015,28 @@ class OpencodeTeamTest(AP22ProjectBrowserTest):
 
 class BasicsTest(AP22ProjectBrowserTest):
     def test_basics_has_init_button(self):
-        """Vorbedingung: Projekt geöffnet. Aktion: Einstellungen, Bereich
-        ``basics`` prüfen (ohne Klick).
-        Erwartung: ``[data-nv-action="init"]`` ist vorhanden.
+        """Vorbedingung: unvorbereitetes Projekt (keine ``.vibe/project.env``).
+
+        Aktion: Einstellungen, Bereich ``basics`` öffnen (ohne Klick).
+        Erwartung: ``[data-nv-action="init"]`` ist vorhanden — F34: der Knopf
+        „Projekt vorbereiten“ erscheint nur bei unvorbereitetem Projekt; nach
+        dem Anlegen der ``project.env`` entfällt er wieder.
         """
+        (self.project / ".vibe" / "project.env").unlink(missing_ok=True)
         self.open_project()
         self.open_tab("settings")
         self.assertEqual(
             1, self.page.locator("[data-nv-action='init']").count(),
             "Der Knopf „Projekt vorbereiten“ fehlt")
+        self.write_project_env()
+        self.page.reload()
+        self.page.locator("main#nv-main[data-nv-view='project']").wait_for(
+            state="visible", timeout=25000)
+        self.open_tab("settings")
+        self.assertEqual(
+            0, self.page.locator("[data-nv-action='init']").count(),
+            "Der Knopf „Projekt vorbereiten“ darf bei vorbereitetem Projekt "
+            "nicht angezeigt werden")
         self.assert_clean_page()
 
 
@@ -991,7 +1049,9 @@ class AssistantTest(AP22ProjectBrowserTest):
         ``/api/guide``; ``/api/autonomous`` meldet ``enabled=true`` und der
         Schalter bleibt nach dem Reload an. Die Autonom-Zeile liegt dabei
         vertragsgemäß im Überblick (``div[data-nv-autonomous-row]``), nicht
-        mehr im Beschreibungs-Tab.
+        mehr im Beschreibungs-Tab. F34: Die Leitfadenüberschrift ist die über
+        ``tr()`` vollständig übersetzte Form (Backend-„Produktziel“ erscheint als
+        „Projektziel“/„Project goal“).
         """
         # Erst booten: Relativer API-Zugriff aus ``about:blank`` wäre sonst
         # ein Harness-Fehler, kein Aussagesatz über die Oberfläche.
@@ -999,6 +1059,10 @@ class AssistantTest(AP22ProjectBrowserTest):
         guide = self.api_json(f"/api/guide?name={PROJECT}")
         self.assertTrue(guide.get("steps"), "Der Leitfaden liefert keine Schritte")
         first_title = str(guide["steps"][0].get("title") or "")
+        # F34: Schrittüberschriften sind vollständig über ``tr()`` übersetzt;
+        # der Backend-Titel „Produktziel“ erscheint als „Projektziel“ (de) bzw.
+        # „Project goal“ (en) — die UI zeigt die übersetzte Form.
+        first_heading = "Project goal" if first_title == "Produktziel" else first_title
 
         self.page.locator("[data-nv-action='open-project']").first.click()
         self.page.locator("main#nv-main[data-nv-view='project']").wait_for(
@@ -1007,10 +1071,10 @@ class AssistantTest(AP22ProjectBrowserTest):
         assistant = self.page.locator("[data-nv-assistant]")
         assistant.wait_for(state="visible", timeout=20000)
         self.wait_until(
-            lambda: first_title in assistant.inner_text(),
+            lambda: first_heading in assistant.inner_text(),
             timeout=20,
             message="Der Assistent zeigt den ersten Leitfaden-Schritt nicht: "
-                    + repr(first_title))
+                    + repr(first_heading))
 
         # F33 WP3/2q: die Autonom-Zeile steht im Überblick; die Leitfragen
         # bleiben im Tab und wurden oben geprüft (keine Abschwächung).
@@ -1068,8 +1132,8 @@ class GithubParityTest(AP22ProjectBrowserTest):
         [data-nv-github-connection][data-nv-ok]      strukturiertes Ergebnis
         [data-nv-github-branch="<branch>"]           Branch-Zeile
         [data-nv-action="github-checkout"]           Branch auschecken
-        input[data-nv-field="github-push-branch"]    Push: Quelle
-        input[data-nv-field="github-push-target"]    Push: Ziel
+        select[data-nv-github-push-branch]           Push: Quelle
+        select[data-nv-github-push-target]           Push: Ziel
         [data-nv-action="github-push"]               Push ausführen
         [data-nv-action="github-pull"]               Pull (--ff-only)
         [data-nv-action="github-issues"]             Issues laden
@@ -1158,8 +1222,8 @@ class GithubParityTest(AP22ProjectBrowserTest):
             "[data-nv-action='github-token-save']",
             "[data-nv-action='github-token-clear']",
             "[data-nv-action='github-connection']",
-            "input[data-nv-field='github-push-branch']",
-            "input[data-nv-field='github-push-target']",
+            "select[data-nv-github-push-branch]",
+            "select[data-nv-github-push-target]",
             "[data-nv-action='github-push']",
             "[data-nv-action='github-pull']",
             "[data-nv-action='github-issues']",
@@ -1225,18 +1289,23 @@ class GithubParityTest(AP22ProjectBrowserTest):
 
         Aktion: Token über die Oberfläche speichern, danach löschen.
         Erwartung: Die Projekt-API meldet ``auth.set=true`` mit Quelle
-        ``projekt``; die Statuszeile ``[data-nv-github-auth]`` enthält den
-        Token nicht. Nach dem Löschen ist ``auth.set=false``.
+        ``projekt``; die Statuspille ``[data-nv-github-token-state]`` enthält
+        den Token nicht und meldet nach dem Speichern den gesetzten Zustand
+        („Token hinterlegt“); nach dem Löschen ist ``auth.set=false`` und die
+        Pille meldet den leeren Zustand.
         """
         self.activate_github()
         section = self.save_token()
-        auth_line = section.locator("[data-nv-github-auth]")
-        auth_line.wait_for(state="visible", timeout=20000)
+        token_state = section.locator("span[data-nv-github-token-state]")
+        token_state.wait_for(state="visible", timeout=20000)
         self.assertNotIn(GITHUB_TOKEN, section.inner_text(),
                          "Der Token steht unmaskiert im DOM")
-        self.assertRegex(
-            auth_line.inner_text(), r"(?i)gespeichert|projekt|verschlüsselt",
-            "Die Statuszeile nennt die gespeicherte Projektablage nicht")
+        self.wait_until(
+            lambda: re.search(r"(?i)token (hinterlegt|stored)",
+                              token_state.inner_text() or ""),
+            timeout=20,
+            message="Die Token-Statuspille meldet nicht den gesetzten Zustand: "
+                    + repr(token_state.inner_text()))
         self.assertTrue(
             self.api_json(f"/api/project?name={PROJECT}")["github"]["auth"]["set"],
             "Der Token ist serverseitig nicht gesetzt")
@@ -1250,6 +1319,13 @@ class GithubParityTest(AP22ProjectBrowserTest):
             f"/api/project?name={PROJECT}",
             lambda data: data.get("github", {}).get("auth", {}).get("set") is False,
             message="Der Token wurde nicht entfernt")
+        token_state = section.locator("span[data-nv-github-token-state]")
+        self.wait_until(
+            lambda: re.search(r"(?i)(kein token|no token)",
+                              token_state.inner_text() or ""),
+            timeout=20,
+            message="Die Token-Statuspille zeigt nach dem Löschen nicht den "
+                    "leeren Zustand: " + repr(token_state.inner_text()))
         self.assertNotIn(GITHUB_TOKEN, section.inner_text(),
                          "Der gelöschte Token steht weiterhin im DOM")
         self.assert_clean_page()
@@ -1331,8 +1407,10 @@ class GithubParityTest(AP22ProjectBrowserTest):
         """Vorbedingung: lokaler Branch ``feature/arbeit`` mit einem Commit,
         der auf origin noch fehlt.
 
-        Aktion: Quelle ``feature/arbeit`` und Ziel ``review-target`` in die
-        Push-Felder eintragen, ``[data-nv-action="github-push"]`` klicken.
+        Aktion: Quelle ``feature/arbeit`` und Ziel ``review-target`` über die
+        Selects ``select[data-nv-github-push-branch]`` bzw.
+        ``select[data-nv-github-push-target]`` eintragen, danach
+        ``[data-nv-action="github-push"]`` klicken.
         Erwartung: ``origin/review-target`` zeigt auf die lokale Spitze.
         """
         self.activate_github()
@@ -1344,12 +1422,19 @@ class GithubParityTest(AP22ProjectBrowserTest):
         git(self.project, "add", "push-probe.txt")
         git(self.project, "commit", "-q", "-m", "Review-Fix Push-Probe")
         head = git_out(self.project, "rev-parse", "HEAD")
-
-        section = self.reload_github_section()
-        section.locator(
-            "input[data-nv-field='github-push-branch']").fill("feature/arbeit")
-        section.locator(
-            "input[data-nv-field='github-push-target']").fill("review-target")
+        # F34: Die Ziel-Auswahl bietet die lokalen Branches als Vorschläge an.
+        # Der Branch wird hier außerhalb der Oberfläche angelegt; ein ``goto``
+        # auf dieselbe Adresse mit anderem Fragment lädt die Seite nicht neu,
+        # deshalb wird vor dem Prüfen wirklich neu geladen.
+        git(self.project, "branch", "review-target", "main")
+        self.page.reload()
+        self.page.locator("main#nv-main[data-nv-view='project']").wait_for(
+            state="visible", timeout=25000)
+        section = self.page.locator("[data-nv-psection='github']")
+        section.wait_for(state="visible", timeout=25000)
+        # F34: Quelle und Ziel sind Selects mit Vorschlägen, nicht Freitextfelder.
+        section.locator("select[data-nv-github-push-branch]").select_option("feature/arbeit")
+        section.locator("select[data-nv-github-push-target]").select_option("review-target")
         section.locator("[data-nv-action='github-push']").first.click()
         self.wait_until(
             lambda: self.remote_tip("review-target") == head,
