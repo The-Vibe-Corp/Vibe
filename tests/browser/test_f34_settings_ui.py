@@ -63,11 +63,19 @@ Testfälle (Name, Vorbedingung, Aktion, Erwartung)
 
 ``GatesTest.test_gates_project_select_table_and_override``
     Vorbedingung: Feature ``gates`` an.
-    Aktion: Gates-Bereich lesen, Projektauswahl prüfen.
+    Aktion: Gates-Bereich lesen; im Projektkontext einen vom globalen Wert
+    abweichenden Projektwert speichern, danach in den Global-Kontext wechseln
+    und die Abweichung wieder entfernen.
     Erwartung: ``select[data-nv-gates-project]`` (Global + Projekte, kein
     Freitextfeld); ``table[data-nv-gates-table]`` mit ``tr[data-nv-gate]``,
     je Zeile ``small[data-nv-gate-help]``, ``[data-nv-gate-value]``,
-    ``[data-nv-gate-origin]``; Projektkontext mit Override-Feld.
+    ``[data-nv-gate-origin]``; Projektkontext mit Override-Feld. Genau die
+    Zeile mit Abweichung trägt ``span[data-nv-gate-override-badge]`` mit
+    nichtleerem, die Abweichung benennendem Text; Zeilen ohne Abweichung
+    tragen kein Badge. Im Global-Kontext fehlen Override-Feld und Badge, die
+    fünfte Zelle (Projektwert) zeigt „—“ ohne Eingabefeld. Nach dem Leeren
+    des Projektwerts verschwindet das Badge und der Server liefert keinen
+    Override mehr.
 
 ``GatesTest.test_gates_save_sends_all_values_one_post_without_rerender``
     Vorbedingung: Feature ``gates`` an, Gates offen.
@@ -404,6 +412,28 @@ class F34SettingsBrowserTest(unittest.TestCase):
         return self.page.evaluate(
             "() => (typeof window.__nvRenderCount === 'number' "
             "? window.__nvRenderCount : 0)")
+
+    def gate_value_differing_from(self, field):
+        """Liefert einen gültigen Schrankenwert, der vom Feldwert abweicht.
+
+        Zählschranken werden um eins erhöht; Auswahl-Schranken (``override``)
+        wechseln auf die jeweils andere Option. Der Wert bleibt damit
+        gültig für ``POST /api/gates`` (bin/vibe_gates.py ``validate``).
+        """
+        current = (field.input_value() or "").strip()
+        if field.evaluate("node => node.tagName.toLowerCase()") == "select":
+            options = field.evaluate(
+                "node => Array.from(node.options).map(o => o.value)")
+            for option in options:
+                if option != current:
+                    return option
+            self.fail(
+                "Die Wert-Auswahl %r bietet keinen abweichenden Wert"
+                % current)
+        try:
+            return str(int(current) + 1)
+        except ValueError:
+            return "1"
 
     def visible_error_text(self):
         parts = []
@@ -878,10 +908,126 @@ class GatesTest(F34SettingsBrowserTest):
         self.assertTrue(
             override.first.is_visible(), "Im Projektkontext fehlt das "
                                          "Override-Feld data-nv-gate-override")
-        badge = self.page.locator("span[data-nv-gate-override-badge]")
+
+        # Projektabweichung: einen vom globalen Wert abweichenden Projektwert
+        # speichern. Der Vertrag (WP4/Gates) verlangt danach an genau dieser
+        # Zeile ``span[data-nv-gate-override-badge]`` mit Text; Zeilen ohne
+        # Abweichung tragen kein Badge (bin/web/nova-settings.js draw():
+        # deviation = override nicht leer und != global).
+        rows = table.locator("tr[data-nv-gate]")
+        first = rows.first
+        if project_select.input_value() != PROJECT:
+            project_select.select_option(PROJECT)
         self.wait_until(
-            lambda: badge.count() >= 0, timeout=20000,
-            message="Abweichungs-Badge fehlt")
+            lambda: first.locator("input[data-nv-gate-override]").count() == 1,
+            timeout=20,
+            message="Im Projektkontext fehlt das Override-Feld an der "
+                    "ersten Gates-Zeile")
+        gate_key = first.get_attribute("data-nv-gate")
+        deviation = self.gate_value_differing_from(
+            first.locator("[data-nv-gate-value]"))
+        badge = "span[data-nv-gate-override-badge]"
+        self.wait_until(
+            lambda: (first.locator(
+                "input[data-nv-gate-override]").input_value() or "") == "",
+            timeout=20,
+            message="Der Projektkontext startet mit einem gesetzten "
+                    "Override; die Abwesenheitsprüfung wäre nicht eindeutig")
+        first.locator("input[data-nv-gate-override]").fill(deviation)
+        self.wait_until(
+            lambda: first.locator(
+                "input[data-nv-gate-override]").input_value() == deviation,
+            timeout=20,
+            message="Das Override-Feld übernimmt den eingegebenen Wert nicht")
+        self.page.locator("button[data-nv-action='gates-save']").click()
+        self.wait_until(
+            lambda: first.locator(badge).count() == 1, timeout=20,
+            message=(
+                "Nach dem Speichern des abweichenden Projektwerts %r für %r "
+                "fehlt das Abweichungs-Badge %s an genau dieser Zeile "
+                "(Erwartung laut docs/features/F34.md WP4/Gates; "
+                "Implementierung bin/web/nova-settings.js draw())"
+                % (deviation, gate_key, badge)))
+        badge_text = (first.locator(badge).first.inner_text() or "").strip()
+        self.assertTrue(
+            badge_text, "Das Abweichungs-Badge ist leer")
+        self.assertRegex(
+            badge_text, re.compile(r"(?i)weicht ab|differs"),
+            "Das Abweichungs-Badge benennt die Abweichung nicht: "
+            + repr(badge_text))
+        without_deviation = 0
+        for index in range(rows.count()):
+            row = rows.nth(index)
+            if row.get_attribute("data-nv-gate") == gate_key:
+                continue
+            with self.subTest(gate=row.get_attribute("data-nv-gate")):
+                self.assertEqual(
+                    0, row.locator(badge).count(),
+                    "Eine Gates-Zeile ohne Projektabweichung trägt ein "
+                    "Abweichungs-Badge")
+                without_deviation += 1
+        self.assertGreater(
+            without_deviation, 0,
+            "Die Abwesenheitsprüfung des Badges hatte keine zweite "
+            "Gates-Zeile ohne Abweichung")
+
+        # Global-Kontext: kein Override-Feld, kein Badge, Projektwert-Zelle „—“
+        # (bin/web/nova-settings.js draw(): projectSelect.value === 'global'
+        # → Zelle mit nv-muted „—“ statt overrideCell).
+        project_select.select_option("global")
+        self.wait_until(
+            lambda: self.page.locator("input[data-nv-gate-override]").count() == 0,
+            timeout=20,
+            message="Im Global-Kontext erscheint weiterhin ein "
+                    "Override-Feld data-nv-gate-override")
+        self.assertEqual(
+            0, self.page.locator(badge).count(),
+            "Im Global-Kontext erscheint ein Abweichungs-Badge")
+        self.wait_until(
+            lambda: rows.count() >= 1, timeout=20,
+            message="Die Gates-Tabelle hat im Global-Kontext keine Zeilen")
+        for index in range(rows.count()):
+            row = rows.nth(index)
+            with self.subTest(gate=row.get_attribute("data-nv-gate")):
+                cells = row.locator("td")
+                self.assertEqual(
+                    5, cells.count(),
+                    "Eine Gates-Zeile im Global-Kontext hat nicht fünf "
+                    "Zellen (Name, Wirkung, Wert, Herkunft, Projektwert)")
+                project_cell = cells.nth(4)
+                self.assertEqual(
+                    0, project_cell.locator("input, select").count(),
+                    "Die Projektwert-Zelle im Global-Kontext enthält ein "
+                    "Eingabefeld")
+                self.assertEqual(
+                    "—", (project_cell.inner_text() or "").strip(),
+                    "Die Projektwert-Zelle zeigt im Global-Kontext nicht „—“")
+
+        # Ausgangszustand wiederherstellen und dabei prüfen, dass das Badge
+        # nach dem Entfernen der Abweichung verschwindet.
+        project_select.select_option(PROJECT)
+        rows = table.locator("tr[data-nv-gate]")
+        first = rows.first
+        self.wait_until(
+            lambda: first.locator("input[data-nv-gate-override]").count() == 1,
+            timeout=20,
+            message="Nach der Rückkehr in den Projektkontext fehlt das "
+                    "Override-Feld")
+        self.assertNotEqual(
+            "", (first.locator("input[data-nv-gate-override]").input_value()
+                 or "").strip(),
+            "Der gespeicherte Projektwert wird im Projektkontext nicht "
+            "angezeigt")
+        first.locator("input[data-nv-gate-override]").fill("")
+        self.page.locator("button[data-nv-action='gates-save']").click()
+        self.wait_until(
+            lambda: first.locator(badge).count() == 0, timeout=20,
+            message="Nach dem Leeren des Projektwerts bleibt das "
+                    "Abweichungs-Badge stehen")
+        view = self.api_json("/api/gates?name=" + PROJECT)
+        self.assertIn(
+            view["gates"][gate_key].get("override"), ("", None),
+            "Der geleerte Projektwert ist serverseitig nicht entfernt")
 
     def test_gates_save_sends_all_values_one_post_without_rerender(self):
         """Vorbedingung: Feature ``gates`` an, Gates offen.

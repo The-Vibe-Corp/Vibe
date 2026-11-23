@@ -55,8 +55,10 @@ Bereich / Hook                   Bedeutung
   ``details[data-nv-models][open]``       Modelltabelle
   ``[data-nv-model="<id>"]``              Modellzeile der Übersicht
   ``[data-nv-model-detail="<id>"]``       Detailzeile (nach Klick auf die Zeile)
-  ``[data-nv-model-facts]``               Faktenblock der Detailzeile
-  ``[data-nv-model-assessments]``         Einschätzungsblock der Detailzeile
+  ``[data-nv-model-detail] td > div``     Fakten- und Einschätzungsblock der
+      Detailzeile, unterschieden über die Etiketten „Fakten“ und
+      „Einschätzungen“ (Hooks ``data-nv-model-facts``/``data-nv-model-
+      assessments`` existieren nicht und werden nicht geprüft)
 ``profiles``
   ``section[data-nv-ssection="profiles"]`` Sektion (Vertrag)
   ``article[data-nv-profile="<name>"]``   Profilkarte; Klick →
@@ -591,6 +593,19 @@ class AP22AdvancedBrowserTest(unittest.TestCase):
             self.page.wait_for_timeout(100)
         self.fail(message)
 
+    def await_highlight(self, button, message):
+        """Wartet auf die lokale Neuzeichnung nach einer Modusänderung.
+
+        ``GET /api/limits`` kann den neuen Modus bereits bestätigen, während
+        die Oberfläche die Karte noch nicht neu gezeichnet hat. Geprüft wird
+        unverändert dieselbe Hervorhebung (``aria-pressed`` oder
+        ``nv-primary``); nur der Zeitpunkt wird deterministisch.
+        """
+        self.wait_until(
+            lambda: button.get_attribute("aria-pressed") == "true"
+            or "nv-primary" in (button.get_attribute("class") or ""),
+            timeout=20, message=message)
+
     def set_language(self, lang):
         status, body = self.api_post("/api/language", {"language": lang})
         self.assertEqual(200, status, body)
@@ -699,10 +714,12 @@ class ModelsTest(AP22AdvancedBrowserTest):
         ist standardmäßig zugeklappt (Contract/Task-Text prüfen „zu“) und
         wird über ``summary`` aufgeklappt; die Modellzeile
         ``[data-nv-model='opencode/vibe-modell']`` öffnet die Detailzeile
-        ``[data-nv-model-detail]`` mit den getrennten Fakten
-        (``[data-nv-model-facts]``, Wert 200.000 Token, Quelle ``models.dev
-        API``) und Einschätzungen (``[data-nv-model-assessments]``, ``schnell``,
-        Quelle ``Altkatalog``). Kein JS-Fehler.
+        ``[data-nv-model-detail]`` mit den getrennten Fakten (Block
+        ``td > div`` mit Etikett „Fakten“: Wert 200.000 Token, Quelle
+        ``models.dev API``) und Einschätzungen (Block ``td > div`` mit Etikett
+        „Einschätzungen“: ``schnell``, Quelle ``Altkatalog``). Die Hooks
+        ``data-nv-model-facts``/``data-nv-model-assessments`` existieren nicht.
+        Kein JS-Fehler.
         """
         self.boot()
         self.enable_features("models")
@@ -990,9 +1007,8 @@ class LimitsTest(AP22AdvancedBrowserTest):
             timeout=30,
             message="Der Modus continue wird nicht bestätigt: "
                     + repr(self.api_json("/api/limits")))
-        self.assertTrue(
-            continue_button.get_attribute("aria-pressed") == "true"
-            or "nv-primary" in (continue_button.get_attribute("class") or ""),
+        self.await_highlight(
+            continue_button,
             "Der Modus continue ist nicht hervorgehoben")
 
         stop_button = limits.locator("[data-nv-action='limits-stop']")
@@ -1104,12 +1120,13 @@ class GatesTest(AP22AdvancedBrowserTest):
             "projekt", project_view["gates"]["repair_rounds"].get("origin"),
             "Der Projektwert hat nicht die Herkunft projekt")
 
-        # Projektwert leeren: Rückfall auf Standard 2. (Warten, dass das
-        # leere Override-Feld gesetzt ist, bevor gespeichert wird.)
+        # Projektwert leeren: Rückfall auf Standard 2. (Das Leeren wird
+        # wiederholt, bis es steht: die Neuzeichnung nach dem Speichern kann
+        # das Feld noch ersetzen.)
         override_field.wait_for(state="visible", timeout=20000)
-        override_field.fill("")
         self.wait_until(
-            lambda: override_field.input_value() == "",
+            lambda: (override_field.fill(""),
+                     override_field.input_value() == "")[1],
             timeout=20,
             message="Das leere Override-Feld ist nicht stabil")
         gates.locator("[data-nv-action='gates-save']").click()
@@ -1198,6 +1215,13 @@ class ParityTest(AP22AdvancedBrowserTest):
         self.open_settings()
         for feature in FEATURE_IDS:
             with self.subTest(feature=feature):
+                # Die Schalterliste wird asynchron geladen; erst danach
+                # zählen (die Erwartung „genau einer“ bleibt unverändert).
+                self.wait_until(
+                    lambda: self.page.locator(
+                        f"input[data-nv-feature='{feature}']").count() >= 1,
+                    timeout=20,
+                    message=f"Feature-Schalter {feature!r} fehlt")
                 self.assertEqual(
                     1,
                     self.page.locator(

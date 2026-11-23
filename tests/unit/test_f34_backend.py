@@ -445,10 +445,10 @@ class DeleteProtectionTest(unittest.TestCase):
         before = self.feedback_text()
 
         with self.assertRaises(ValueError, msg="Löschen eines abgeschlossenen "
-                         "Feedback-Punkts darf nicht mit ValueError abgelehnt "
-                         "werden"):  # deliberately wrong-ish guard replaced below
+                         "Feedback-Punkts wird mit ValueError abgelehnt"):
             self.cli.feedback_delete("proj", "F1")
-        self.assertEqual(self.feedback_text(), before)
+        self.assertEqual(self.feedback_text(), before, "Der abgelehnte "
+                         "Löschversuch hat die Datei verändert")
 
     def test_ticket_delete_rejects_a_closed_entry_and_keeps_the_file(self):
         """Vorbedingung: TICKETS.md mit geschlossenem Arbeitspaket.
