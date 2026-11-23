@@ -166,6 +166,10 @@ Paket-Abbruch ohne Reparaturrunde. Best effort wie der Transport selbst:
 fehlende Startdatei hat keinen Wächter. `final_verify`/`run_package_tests`/
 `verify_run` bleiben funktional unverändert.
 
+Mit GH-46 entfällt der Wächter-Anteil für `.vibe/verify-baseline`: Der
+Transport dieser Datei entfällt, Arbeitskopien nutzen die committete Baseline
+aus dem Branch; der Wächter gilt weiterhin für `.vibe/project.env`.
+
 ## Befüllungs-Workflow
 
 1. `bash scripts/verify.sh full --env <label> --write-baseline` erzeugt den
@@ -174,6 +178,9 @@ fehlende Startdatei hat keinen Wächter. `final_verify`/`run_package_tests`/
    kanonische `tests/verify-baseline.json` über einen geprüften Merge-Request
    übernommen. Die committete Baseline wird vom Engine nie automatisch
    erweitert.
+3. Nach Übernahme der Einträge per Merge-Request wird der lokale Vorschlag
+   `.vibe/verify-baseline` gelöscht (ephemeraler Vorschlag, kein Dauerzustand;
+   B5/GH-46).
 
 ## Grenzen
 

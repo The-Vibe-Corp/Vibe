@@ -17,10 +17,11 @@ Projekt mit echter ``git worktree``-Arbeitskopie:
   Worktree-Kopie bleibt liegen.
 * Die CLI-Ausgabe enthält eine eigene OK-Zeile mit „project.env“.
 
-AP7-Korbat erweitert denselben Einweg-Transport um ``.vibe/verify-baseline``
-(falls vorhanden): 1:1-Kopie, best effort 0444, idempotenter
-Git-Exclude-Eintrag, niemals zurücktransportieren; ohne die Datei geschieht
-nichts und der ``project.env``-Transport bleibt unverändert.
+GH-46 entfernt den Transport der lokalen Baseline: ``.vibe/verify-baseline``
+wird nicht mehr in die Arbeitskopie kopiert und nicht ausgeschlossen. Ein
+Projekt mit beiden Dateien transportiert nur ``.vibe/project.env``;
+Agenten arbeiten in der Arbeitskopie mit der committeten
+``tests/verify-baseline.json`` aus dem Branch.
 
 Es werden keine Modellaufrufe, Netzverbindungen oder produktiven Pfade
 verwendet.
@@ -291,22 +292,23 @@ class ProjectEnvTransportTest(unittest.TestCase):
         self.assertEqual(copied.read_text(encoding="utf-8"), local,
                          "Die Worktree-Kopie muss liegen bleiben")
 
-    # ------------------------------------------- AP7: verify-baseline-Transport
+    # ---------------------------------- GH-46: kein verify-baseline-Transport
     def write_project_baseline(self, text=BASELINE_TEXT):
         path = self.project / ".vibe" / "verify-baseline"
         path.write_text(text, encoding="utf-8")
         return path
 
-    def test_verify_baseline_is_transported_read_only_and_excluded(self):
+    def test_verify_baseline_is_not_transported_and_not_excluded(self):
         """Vorbedingung: Projekt mit ``.vibe/project.env`` und
         ``.vibe/verify-baseline``; Arbeitskopie ohne ``.vibe``.
         Aktion: ``copy-notes`` ausführen.
-        Erwartung: Exit 0; die Baseline liegt byte-gleich in der Arbeitskopie,
-        die Schreibbits sind best effort nicht gesetzt, und die Git-Exclude
-        enthält ``.vibe/verify-baseline`` genau einmal (neben
-        ``.vibe/project.env``).
-        Fehlerfall: Die Baseline fehlt, ist beschreibbar oder kollidiert mit
-        dem project.env-Eintrag.
+        Erwartung: Exit 0; nur ``.vibe/project.env`` liegt in der Arbeitskopie,
+        ``.vibe/verify-baseline`` fehlt dort vollständig; die Git-Exclude
+        enthält ``.vibe/project.env`` genau einmal und keinen
+        ``.vibe/verify-baseline``-Eintrag (die Baseline wird nicht
+        transportiert, Agenten nutzen die committete Kopie aus dem Branch).
+        Fehlerfall: Die lokale Baseline wird in die Arbeitskopie kopiert oder
+        ausgeschlossen und überdeckt dort die committete Baseline.
         """
         exclude = self.exclude_path()
         exclude.unlink(missing_ok=True)
@@ -315,43 +317,33 @@ class ProjectEnvTransportTest(unittest.TestCase):
         result = self.copy_notes()
 
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        copied = self.worktree / ".vibe" / "verify-baseline"
-        self.assertTrue(copied.is_file(),
-                        "verify-baseline wurde nicht transportiert")
-        self.assertEqual(copied.read_text(encoding="utf-8"), BASELINE_TEXT)
-        if self.chmod_effective():
-            mode = stat.S_IMODE(copied.stat().st_mode)
-            self.assertEqual(0, mode & 0o222,
-                             "Die Baseline-Kopie ist beschreibbar (Modus %o)"
-                             % mode)
+        target = self.worktree / ".vibe"
+        self.assertTrue((target / "project.env").is_file(),
+                        "project.env muss weiterhin transportiert werden")
+        self.assertEqual(
+            (target / "project.env").read_text(encoding="utf-8"), ENV_TEXT
+        )
+        self.assertFalse(
+            (target / "verify-baseline").exists(),
+            "Die lokale Baseline darf die committete Baseline nicht überdecken",
+        )
         lines = self.exclude_lines()
-        self.assertEqual(lines.count(".vibe/verify-baseline"), 1, lines)
         self.assertEqual(lines.count(".vibe/project.env"), 1, lines)
+        self.assertNotIn(".vibe/verify-baseline", lines,
+                         "Kein Exclude-Eintrag für die nicht transportierte "
+                         "Baseline: %r" % (lines,))
 
-    def test_missing_verify_baseline_creates_no_entry_or_file(self):
-        """Vorbedingung: Projekt ohne ``.vibe/verify-baseline``.
-        Aktion: ``copy-notes`` ausführen.
-        Erwartung: Exit 0; im Worktree entsteht keine Baseline und die
-        Git-Exclude bekommt keinen Baseline-Eintrag; der project.env-Transport
-        bleibt unverändert.
-        Fehlerfall: Eine leere Baseline oder ein überflüssiger Exclude-Eintrag
-        entsteht (Baseline-Datei ist ein optionaler Nachweis).
-        """
-        result = self.copy_notes()
-
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertTrue((self.worktree / ".vibe" / "project.env").is_file())
-        self.assertFalse((self.worktree / ".vibe" / "verify-baseline").exists())
-        self.assertNotIn(".vibe/verify-baseline", self.exclude_lines())
-
-    def test_verify_baseline_transport_is_idempotent(self):
-        """Vorbedingung: ``copy-notes`` lief bereits einmal; die
-        Projekt-Baseline wird danach geändert.
+    def test_repeated_copy_keeps_the_baseline_out_of_the_worktree(self):
+        """Vorbedingung: ``copy-notes`` lief bereits einmal; Projekt und
+        Baseline existieren weiter, die Projekt-Baseline wurde geändert.
         Aktion: ``copy-notes`` erneut ausführen.
-        Erwartung: Die Worktree-Kopie enthält den neuen Stand; der
-        Exclude-Eintrag bleibt genau einmal vorhanden.
-        Fehlerfall: Alter Inhalt oder doppelter Exclude-Eintrag.
+        Erwartung: Exit 0; die Arbeitskopie enthält weiterhin keine
+        ``.vibe/verify-baseline``; der Exclude-Eintrag für ``project.env``
+        bleibt genau einmal vorhanden und es entsteht kein Baseline-Eintrag.
+        Fehlerfall: Ein zweiter Lauf schleust die Baseline doch ein oder
+        dupliziert Exclude-Einträge.
         """
+        self.write_project_baseline()
         first = self.copy_notes()
         self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
         updated = (
@@ -365,64 +357,15 @@ class ProjectEnvTransportTest(unittest.TestCase):
 
         second = self.copy_notes()
 
-        self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
-        copied = self.worktree / ".vibe" / "verify-baseline"
-        self.assertTrue(copied.is_file(),
-                        "verify-baseline wurde nicht transportiert")
-        self.assertEqual(copied.read_text(encoding="utf-8"), updated)
-        self.assertEqual(
-            self.exclude_lines().count(".vibe/verify-baseline"), 1,
-            self.exclude_lines(),
+        self.assertEqual(second.returncode, 0,
+                         second.stdout + second.stderr)
+        self.assertFalse(
+            (self.worktree / ".vibe" / "verify-baseline").exists(),
+            "Ein zweiter Lauf darf die Baseline nicht transportieren",
         )
-
-    def test_sync_proof_never_writes_the_verify_baseline_back(self):
-        """Vorbedingung: Die Baseline wurde transportiert; die Worktree-Kopie
-        wurde lokal geändert. Der Projektstand ist autoritativ.
-        Aktion: ``sync-proof --project … --worktree … --id T1`` ausführen.
-        Erwartung: Exit 0; die Projekt-Baseline bleibt byte-gleich; die
-        Worktree-Kopie bleibt mit ihrem lokalen Inhalt liegen.
-        Fehlerfall: Rückschreiben in das Projekt oder Löschen der Kopie.
-        """
-        self.write_project_baseline()
-        first = self.copy_notes()
-        self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
-        local = (
-            "{\n"
-            '  "version": 1,\n'
-            '  "min_tests": 9,\n'
-            '  "envs": {}\n'
-            "}\n"
-        )
-        copied = self.worktree / ".vibe" / "verify-baseline"
-        self.assertTrue(copied.is_file(),
-                        "verify-baseline wurde nicht transportiert")
-        os.chmod(copied, 0o644)
-        copied.write_text(local, encoding="utf-8")
-        revision = support.git(
-            self.project, "rev-parse", "--short", "HEAD"
-        ).stdout.strip()
-        (self.worktree / "TICKETS.md").write_text(
-            "# TICKETS\n\n- [x] T1 Paket\n"
-            "  Commit: %s; Test: test_t1\n" % revision,
-            encoding="utf-8",
-        )
-        project_before = (
-            self.project / ".vibe" / "verify-baseline"
-        ).read_bytes()
-
-        result = self.run_cli(
-            "sync-proof", "--project", str(self.project),
-            "--worktree", str(self.worktree), "--id", "T1",
-        )
-
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual(
-            (self.project / ".vibe" / "verify-baseline").read_bytes(),
-            project_before,
-            "sync-proof darf die Baseline nie zurückschreiben",
-        )
-        self.assertEqual(copied.read_text(encoding="utf-8"), local,
-                         "Die Worktree-Kopie muss liegen bleiben")
+        lines = self.exclude_lines()
+        self.assertEqual(lines.count(".vibe/project.env"), 1, lines)
+        self.assertNotIn(".vibe/verify-baseline", lines, lines)
 
 
 if __name__ == "__main__":
