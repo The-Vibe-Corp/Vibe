@@ -707,15 +707,25 @@ function nvpGuideTitle(step) {
 
 function nvpAssistantPanel(name, token, guide) {
   var steps = (guide && guide.steps) || [];
-  var filledCount = steps.filter(function (step) {
-    return String(step && step.status || '') === 'gefüllt';
-  }).length;
+  var statusById = {};
+  steps.forEach(function (step) {
+    statusById[String(step.id || '')] = String(step && step.status || '');
+  });
+  function filledCount() {
+    return steps.filter(function (step) {
+      return statusById[String(step.id || '')] === 'gefüllt';
+    }).length;
+  }
+  function progressText(count) {
+    return String(count) + ' ' + tr('von') + ' ' + String(steps.length)
+      + ' ' + tr('ausgefüllt');
+  }
+  var progress = el('div', {class: 'nv-muted', 'data-nv-guide-progress': ''},
+    progressText(filledCount()));
   var holder = el('div', {class: 'nv-card nv-assistant', 'data-nv-assistant': ''},
     el('div', {class: 'nv-row', style: 'justify-content:space-between;flex-wrap:wrap;'},
       el('h3', {}, tr('Projektleitfaden')),
-      el('div', {class: 'nv-muted', 'data-nv-guide-progress': ''},
-        String(filledCount) + ' ' + tr('von') + ' ' + String(steps.length)
-          + ' ' + tr('ausgefüllt'))));
+      progress));
   var nav = el('nav', {'data-nv-guide-nav': '', 'aria-label': tr('Schrittübersicht'),
     style: 'display:flex;flex-wrap:wrap;gap:var(--nv-space-2, 8px);'});
   var content = el('div', {class: 'nv-guide-grid'});
@@ -762,6 +772,8 @@ function nvpAssistantPanel(name, token, guide) {
           if (NV.stale(token)) return;
           if (result && result.ok === false) { toast(bt(result.message)); return; }
           toast(tr('Antwort gespeichert'));
+          statusById[id] = answers[id].trim() ? 'gefüllt' : 'offen';
+          setTx(progress, progressText(filledCount()));
         } catch (e) {
           toast(tr('Speichern fehlgeschlagen: ') + String(e && e.message || e));
         }
