@@ -102,7 +102,11 @@ WORK_COPY_FILES = WORK_NOTE_FILES + (PROJECT_RULES_FILE,)
 # AP5: .vibe/project.env ist Laufzeitstand wie die Arbeitsnotizen, wird aber
 # nur read-only einwegig in die Arbeitskopie transportiert. Die Datei des
 # Hauptprojekts bleibt autoritativ; .vibe/_secrets.env wird nie transportiert.
+# AP7: .vibe/verify-baseline (falls vorhanden) wird nach demselben Muster
+# transportiert (1:1, best effort 0444, idempotenter Git-Exclude-Eintrag).
 PROJECT_ENV_REL = os.path.join(".vibe", "project.env")
+VERIFY_BASELINE_REL = os.path.join(".vibe", "verify-baseline")
+TRANSPORTED_PATHS = (PROJECT_ENV_REL, VERIFY_BASELINE_REL)
 PROOF_KEYS = ("Commit", "Test", "Datei", "Review", "Doku")
 PROOF_LINE = re.compile(r"^\s*(?:" + "|".join(PROOF_KEYS) + r")\s*:")
 
@@ -217,10 +221,11 @@ def copy_work_notes(project, worktree):
     return copied, skipped
 
 
-def _exclude_project_env(worktree):
-    """Trägt ``.vibe/project.env`` idempotent in die Git-Exclude des Worktrees
-    ein (AP5). Liefert ``False`` bei einem Git- oder Schreibfehler, ohne zu
-    werfen; die transportierte Datei bleibt davon unberührt.
+def _exclude_rel_paths(worktree, rel_paths):
+    """Trägt die Relativpfade idempotent in die Git-Exclude des Worktrees ein.
+
+    Liefert ``False`` bei einem Git- oder Schreibfehler, ohne zu werfen; die
+    transportierten Dateien bleiben davon unberührt.
     """
     result = run_git(worktree, "rev-parse", "--git-path", "info/exclude")
     if result.returncode != 0:
@@ -231,42 +236,49 @@ def _exclude_project_env(worktree):
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         lines = path.read_text(encoding="utf-8").splitlines() if path.is_file() else []
-        if any(line.strip() == PROJECT_ENV_REL for line in lines):
+        stripped = {line.strip() for line in lines}
+        additions = [rel for rel in rel_paths if rel not in stripped]
+        if not additions:
             return True
         with open(path, "a", encoding="utf-8") as handle:
             if lines and lines[-1].strip():
                 handle.write("\n")
-            handle.write(PROJECT_ENV_REL + "\n")
+            handle.write("\n".join(additions) + "\n")
         return True
     except OSError:
         return False
 
 
 def transport_project_env(project, worktree):
-    """Transportiert ``.vibe/project.env`` read-only einwegig in die
-    Arbeitskopie (AP5).
+    """Transportiert ``.vibe/project.env`` und ``.vibe/verify-baseline``
+    read-only einwegig in die Arbeitskopie (AP5/AP7).
 
-    Existiert ``<project>/.vibe/project.env``, wird ``<worktree>/.vibe/``
-    angelegt, der Inhalt 1:1 kopiert und best effort schreibgeschützt (0444).
-    Danach wird ``.vibe/project.env`` idempotent in die Git-Exclude des
-    Worktrees eingetragen. Ohne ``project.env`` geschieht nichts — insbesondere
-    entsteht kein ``.vibe/``-Ordner. Transportiert wird ausschließlich
-    ``project.env``; ``_secrets.env`` und andere ``.vibe/``-Dateien bleiben
-    zurück. Liefert ``(transported, exclude_ok)``.
+    Für jede vorhandene Quelldatei wird ``<worktree>/.vibe/`` angelegt, der
+    Inhalt 1:1 kopiert und best effort schreibgeschützt (0444). Danach werden
+    die transportierten Pfade idempotent in die Git-Exclude des Worktrees
+    eingetragen. Ohne Quelldatei geschieht nichts — insbesondere entsteht kein
+    ``.vibe/``-Ordner. Transportiert wird ausschließlich diese feste Liste;
+    ``_secrets.env`` und andere ``.vibe/``-Dateien bleiben zurück. Liefert
+    ``(transported_paths, exclude_ok)``.
     """
     project, worktree = Path(project), Path(worktree)
-    source = project / PROJECT_ENV_REL
-    if not source.is_file():
-        return False, True
-    target = worktree / PROJECT_ENV_REL
-    write_text_atomic(target, read_text(source))
-    # Best effort Schreibschutz: auf FUSE/NTFS können Unix-Rechte wirkungslos
-    # sein; ein OSError ist dort kein Transportfehler (SPEC-Konvention).
-    try:
-        os.chmod(target, 0o444)
-    except OSError:
-        pass
-    return True, _exclude_project_env(worktree)
+    transported = []
+    for rel in TRANSPORTED_PATHS:
+        source = project / rel
+        if not source.is_file():
+            continue
+        target = worktree / rel
+        write_text_atomic(target, read_text(source))
+        # Best effort Schreibschutz: auf FUSE/NTFS können Unix-Rechte wirkungslos
+        # sein; ein OSError ist dort kein Transportfehler (SPEC-Konvention).
+        try:
+            os.chmod(target, 0o444)
+        except OSError:
+            pass
+        transported.append(rel)
+    if not transported:
+        return transported, True
+    return transported, _exclude_rel_paths(worktree, transported)
 
 
 def block_span(lines, pid):
@@ -1681,14 +1693,16 @@ def command_copy_notes(args):
     for name in skipped:
         print("HINWEIS: " + name + " hat nicht committete Änderungen; "
               "sie wurden nicht in die Arbeitskopie übernommen.")
-    # AP5: read-only Einweg-Transport von .vibe/project.env (nie zurück).
+    # AP5/AP7: read-only Einweg-Transport von .vibe/project.env und
+    # .vibe/verify-baseline (nie zurück).
     transported, exclude_ok = transport_project_env(args.project, args.worktree)
     if transported:
+        names = " und ".join(transported)
         if exclude_ok:
-            print("OK: .vibe/project.env read-only in die Arbeitskopie "
+            print("OK: " + names + " read-only in die Arbeitskopie "
                   "übernommen.")
         else:
-            print("WARNUNG: .vibe/project.env wurde kopiert, aber der "
+            print("WARNUNG: " + names + " wurde kopiert, aber der "
                   "Git-Exclude-Eintrag ist fehlgeschlagen.")
     return EXIT_OK
 

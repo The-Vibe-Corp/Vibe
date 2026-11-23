@@ -13,7 +13,7 @@ Aufrufbeispiele:
     python3 scripts/run-tests-parallel.py --dir tests/unit --jobs 4
     python3 scripts/run-tests-parallel.py --dir tests/unit --timeout 600
 
-Berichtsformat (Vertrag von verify.py und der Oberfläche):
+Berichtsformat (Vertrag von verify_engine.py und der Oberfläche):
 * Je Modul ein Block mit Kopfzeile ``--- <modul> ---``; die Modulausgabe
   wird unverändert durchgereicht, insbesondere alle ``Ran N tests``-Zeilen
   bleiben im Gesamtausdruck erhalten.
@@ -42,6 +42,7 @@ ineinanderlaufen und sortiert bleiben).
 """
 import argparse
 import concurrent.futures
+import json
 import os
 import re
 import subprocess
@@ -55,6 +56,12 @@ RAN_RE = re.compile(r"Ran (\d+) tests?")
 # _FailedTest; deren "Ran 1 test" ist kein ausgeführtes Test.
 LOADER_FAILURE_RE = re.compile(
     r"unittest\.loader\._FailedTest|Failed to import test module"
+)
+# Erste Fehlerzeile des Tracebacks: Fehlerklasse + Meldung. Sie liefert dem
+# Bericht (AP7-Korbat, ``--report``) ``error_class``/``error_message``.
+EXCEPTION_RE = re.compile(
+    r"^(?P<class>[A-Za-z_][A-Za-z0-9_.]*(?:Error|Exception|Failure)):\s*(?P<message>.*)$",
+    re.MULTILINE,
 )
 EXIT_USAGE = 2
 EXIT_FAILURE = 1
@@ -146,6 +153,14 @@ def run_module(module, timeout=None):
     }
 
 
+def error_details(output):
+    """Fehlerklasse und Meldung der ersten Traceback-Ausnahme, sonst ``(None, None)``."""
+    match = EXCEPTION_RE.search(output)
+    if match:
+        return match.group("class"), match.group("message").strip()
+    return None, None
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(
         description="Testmodule parallel ausführen (F31); Bericht wie unittest."
@@ -161,6 +176,11 @@ def main(argv=None):
     parser.add_argument(
         "--timeout", type=int, default=900, metavar="SEK",
         help="Zeitlimit je Modul in Sekunden (Standard: 900; 0 = kein Limit)",
+    )
+    parser.add_argument(
+        "--report", metavar="PFAD",
+        help="JSON-Bericht nach Abschluss schreiben (AP7-Korbat); ohne die "
+        "Option wird nichts geschrieben",
     )
     args = parser.parse_args(argv)
     if args.jobs < 1:
@@ -185,12 +205,36 @@ def main(argv=None):
     total = sum(result["tests"] for result in results)
     passed = sum(1 for result in results if result["passed"])
     failed = len(results) - passed
+    if args.report:
+        write_report(args.report, results, total)
     print(SUMMARY.format(tests=total, passed=passed, modules=len(results), failed=failed))
     if failed:
         names = ", ".join(result["module"] for result in results if not result["passed"])
         print(f"Fehlgeschlagene Module: {names}")
         return EXIT_FAILURE
     return 0
+
+
+def write_report(path, results, total):
+    """Schreibt den strukturierten Bericht (``--report``), ohne die Textausgabe
+    oder die Exitcodes zu verändern."""
+    modules = []
+    for result in results:
+        error_class, error_message = (None, None)
+        if not result["passed"]:
+            error_class, error_message = error_details(result["output"])
+        modules.append(
+            {
+                "module": result["module"],
+                "tests": result["tests"],
+                "passed": result["passed"],
+                "returncode": result["returncode"],
+                "error_class": error_class,
+                "error_message": error_message,
+            }
+        )
+    report = {"modules": modules, "total_tests": total}
+    Path(path).write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
 
 
 if __name__ == "__main__":
