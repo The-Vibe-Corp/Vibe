@@ -442,11 +442,16 @@ class TemplateRulesTest(ProjectFixture):
     # Verbindliche Mindestmerkmale der gestuften Prüfpraxis (F31). Die Tests
     # legen damit die erwartete Fachlichkeit wörtlich fest; die Umsetzung muss
     # diese Aussagen in den allgemeinen Regeln und allen Vorlagen führen.
+    # AP7-Korbat (T-V19/AGENTS): Die Sektion nennt nicht mehr die
+    # Befehlsvariablen VERIFY_PACKAGE/VERIFY_FULL, sondern verify.sh als
+    # einzige Prüfschnittstelle mit den Modi quick|package|full. Die übrigen
+    # Merkmale (Stufung, genau einmal, Nachweisumfang) bleiben unverändert.
     VERIFY_EFFICIENCY_RULE = (
         "Effizienz der Prüfungen (verbindlich)",
         "betroffene Testmodule",
-        "VERIFY_PACKAGE",
-        "VERIFY_FULL",
+        "verify.sh",
+        "quick|package|full",
+        "Prüfschnittstelle",
         "genau einmal",
         "vor der Abnahme",
         "Änderungen",

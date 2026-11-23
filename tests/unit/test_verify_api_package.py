@@ -2,10 +2,12 @@
 
 Die Tests starten das echte Dashboard mit einem Fixture-Projekt und sprechen
 ``POST /api/verify`` über HTTP an. Der Modus ``package`` muss an die gemeinsame
-Fachlogik durchgereicht werden und dort ``VERIFY_PACKAGE`` ausführen, nicht
-still ``quick`` oder ``full``. Die Prüfungsausgabe erscheint im verify-Stream
-(derselbe Protokollstrom, den die Oberfläche zeigt), damit ein Klick auf
-„Prüfung package“ denselben Nachweis liefert wie die anderen Stufen.
+Fachlogik durchgereicht werden und dort ``VERIFY_QUICK`` ausführen (AP7-Korbat,
+T-V16: verify.sh ist die einzige Prüfschnittstelle; ``VERIFY_PACKAGE`` und
+``VERIFY_FULL`` sind keine Befehlsvariablen der Engine mehr), nicht still
+``full``. Die Prüfungsausgabe erscheint im verify-Stream (derselbe
+Protokollstrom, den die Oberfläche zeigt), damit ein Klick auf „Prüfung
+package“ denselben Nachweis liefert wie die anderen Stufen.
 
 Alle Laufzeitpfade (VIBE, HOME, Ports) liegen in einem temporären Verzeichnis;
 es werden keine echten Modell-, Router- oder MCP-Aufrufe ausgeführt.
@@ -44,11 +46,17 @@ class VerifyApiPackageTest(unittest.TestCase):
         cls.root = Path(cls.tmp.name)
         cls.project = cls.root / "proj"
         (cls.project / ".vibe").mkdir(parents=True)
+        # Dokumentierte Nutzer-Verdrahtung (AP7-Design, T-V20): Das Dashboard
+        # führt VERIFY_PACKAGE unverändert aus. Der autoritative Wert ruft
+        # deshalb den verify.sh-Wrapper auf; die Engine führt dann VERIFY_QUICK
+        # aus (einzige Prüfschnittstelle).
+        wrapper = "bash %s package --project %s" % (
+            REPO / "scripts" / "verify.sh", cls.project)
         (cls.project / ".vibe" / "project.env").write_text(
             "TYPE=generic\n"
             f'VERIFY_QUICK="echo {VERIFY_QUICK_MARKER}"\n'
             f'VERIFY_FULL="echo {VERIFY_FULL_MARKER}"\n'
-            f'VERIFY_PACKAGE="echo {VERIFY_PACKAGE_MARKER}"\n',
+            f'VERIFY_PACKAGE="{wrapper}"\n',
             encoding="utf-8",
         )
         (cls.root / "home" / ".config" / "opencode" / "agents").mkdir(parents=True)
@@ -174,7 +182,17 @@ class VerifyApiPackageTest(unittest.TestCase):
             f"{marker!r} erschien nicht im verify-Stream:\n" + "".join(chunks)
         )
 
-    def test_api_verify_accepts_package_and_runs_verify_package(self):
+    def test_api_verify_accepts_package_and_runs_the_check_interface(self):
+        """Vorbedingung: Fixture-Projekt mit unterscheidbaren Markern für
+        ``VERIFY_QUICK``, ``VERIFY_PACKAGE`` und ``VERIFY_FULL``.
+        Aktion: ``POST /api/verify`` mit ``mode=package``.
+        Erwartung: HTTP 200 und ``ok``; das Prüfprotokoll nennt den
+        ``VERIFY_QUICK``-Befehl (die einzige Prüfschnittstelle), nicht
+        ``VERIFY_PACKAGE`` oder ``VERIFY_FULL``. Die Ausgabe erscheint auch im
+        verify-Stream.
+        Fehlerfall: Das Dashboard führt weiterhin ``VERIFY_PACKAGE`` aus oder
+        fällt still auf ``full`` zurück.
+        """
         status, body = self.request(
             "POST", "/api/verify", {"name": "proj", "mode": "package"}
         )
@@ -185,22 +203,22 @@ class VerifyApiPackageTest(unittest.TestCase):
         self.assertIn("Prüfung gestartet", data["message"])
 
         log_path = self.runtime / "proj.verify.log"
-        log_text = self.wait_for_file_content(log_path, VERIFY_PACKAGE_MARKER)
+        log_text = self.wait_for_file_content(log_path, VERIFY_QUICK_MARKER)
         self.assertIn(
-            "echo " + VERIFY_PACKAGE_MARKER,
+            "echo " + VERIFY_QUICK_MARKER,
             log_text,
-            "Das Prüfprotokoll nennt nicht den VERIFY_PACKAGE-Befehl",
+            "Das Prüfprotokoll nennt nicht den VERIFY_QUICK-Befehl",
         )
-        self.assertNotIn(VERIFY_QUICK_MARKER, log_text)
+        self.assertNotIn(VERIFY_PACKAGE_MARKER, log_text)
         self.assertNotIn(VERIFY_FULL_MARKER, log_text)
 
         # Die Ausgabe muss auch über den Stream ankommen, den die Oberfläche liest.
         connection, response = self.open_verify_stream()
         try:
-            stream_text = self.read_stream_until(response, VERIFY_PACKAGE_MARKER)
+            stream_text = self.read_stream_until(response, VERIFY_QUICK_MARKER)
         finally:
             connection.close()
-        self.assertIn(VERIFY_PACKAGE_MARKER, stream_text)
+        self.assertIn(VERIFY_QUICK_MARKER, stream_text)
 
     def wait_for_stable_file(self, path, timeout=5.0):
         """Wartet, bis eine Datei nicht mehr wächst (asynchrone Prüfausgabe)."""
@@ -259,11 +277,24 @@ class VerifyApiPackageTest(unittest.TestCase):
             after,
             "Unbekannter Prüfmodus hat einen Prüflauf gestartet:\n" + (after or ""),
         )
-        self.assertNotIn(
+        # Das Prüfprotokoll ist innerhalb der Klasse geteilt: Der reguläre
+        # package-Fall hat dort bereits legitim den quick-Marker hinterlassen.
+        # Ein stiller quick-Fallback würde seinen Marker deshalb nur NEU
+        # anhängen; nachweisbar ist der Zuwachs seit dem Schnappschuss `before`
+        # (bei unverändertem Protokoll leer). Eine Negativprobe über das ganze
+        # Protokoll wäre an dieser Stelle unerfüllbar.
+        appended = (after or "") if before is None else after[len(before):]
+        for marker in (
             VERIFY_QUICK_MARKER,
-            after or "",
-            "Unbekannter Modus fiel still auf quick zurück",
-        )
+            VERIFY_FULL_MARKER,
+            VERIFY_PACKAGE_MARKER,
+        ):
+            self.assertNotIn(
+                marker,
+                appended,
+                f"Unbekannter Modus startete einen Prüflauf: {marker!r} neu im "
+                "Protokoll",
+            )
 
         connection, response = self.open_verify_stream()
         try:

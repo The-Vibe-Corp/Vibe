@@ -124,9 +124,32 @@ GENERAL_RULES = """<!-- vibe:general-rules -->
 
 ## Effizienz der Prüfungen (verbindlich)
 
-- Für betroffene Testmodule gilt während der Bearbeitung: gezielter unittest-Aufruf und die Paketprüfung VERIFY_PACKAGE, nicht die gesamte Suite.
-- Die vollständige Prüfung (VERIFY_FULL) läuft pro Arbeitspaket genau einmal vor der Abnahme; erneut nur nach echten Änderungen an Code oder Tests seit dem letzten Lauf.
-- Der Nachweisumfang der Abnahme wird nicht abgeschwächt: Die Stufen sparen Wiederholungen unveränderter Volläufe, nicht den Nachweis selbst.
+- Die Projektprüfung läuft ausschließlich über das verify.sh des Projekts
+  (`bash scripts/verify.sh quick|package|full`): Agenten und Läufer nutzen
+  dieselbe Prüfschnittstelle; Prüfinhalte werden nie selbst zusammengesetzt
+  oder doppelt ausgeführt.
+- Für betroffene Testmodule gilt während der Bearbeitung: gezielter
+  unittest-Aufruf und die Paketprüfung, nicht die gesamte Suite.
+- Die vollständige Prüfung läuft pro Arbeitspaket genau einmal vor der Abnahme;
+  erneut nur nach echten Änderungen an Code oder Tests seit dem letzten Lauf.
+- Der Nachweisumfang der Abnahme wird nicht abgeschwächt: Die Stufen sparen
+  Wiederholungen unveränderter Volläufe, nicht den Nachweis selbst.
+
+## Baseline-Disziplin (verbindlich)
+
+- Exit 7 heißt neue Regressionen gegenüber der Baseline; Exit 6 fehlenden
+  Testnachweis. Beides ist am Code zu beheben, nie über die Baseline.
+- Die Baseline-Dateien und VERIFY_MIN_TESTS sind monoton: Schwellen nur
+  erhöhen, Einträge nur entfernen, wenn das Modul danach grün ist.
+  Absenkungen oder neue Baseline-Einträge ausschließlich per Review im
+  Merge-Request, nie im Alleingang.
+- --write-baseline erzeugt nur einen lokalen, ignorierten Vorschlag;
+  kanonisch wird die Baseline ausschließlich über einen geprüften
+  Merge-Request.
+- Umgebungsangaben (IP-Adressen, Hostnamen, Geheimnisse, absolute Pfade)
+  gehören nie in eine Baseline-Datei; das Repository ist öffentlich.
+- VERIFY_QUICK/VERIFY_PACKAGE/VERIFY_FULL nie so setzen, dass sie die
+  Prüfung selbst aufrufen (Rekursionsschutz greift: Exit 3).
 
 ## Leitlinien für Coding-Agenten (verbindlich)
 

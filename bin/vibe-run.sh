@@ -678,6 +678,38 @@ run_agent_in() {
 run_agent() {
   run_agent_in "$WT" "$PROMPT" "$NAME $ID"
 }
+# AP7 (T-V21): Hash-Wächter für transportierte .vibe-Dateien. Nach dem
+# Transport (Paketstart) wird der Inhalt erfasst und vor jeder Paketprüfung
+# erneut geprüft. Eine Abweichung ist Manipulation der autoritativen
+# Projektwerte und kein gewöhnlicher Defekt: blockieren ohne Reparaturrunde.
+# Best effort wie der Transport selbst (fehlende Startdatei = kein Wächter).
+package_file_hash() {
+  local path="$1"
+  [ -f "$path" ] || return 1
+  sha256sum "$path" | awk '{print $1}'
+}
+# AP7 (T-V21): Prüft, ob eine beim Paketstart vorhandene transportierte
+# .vibe-Datei seither verändert oder entfernt wurde. Rückgabe 0 = unverändert
+# (bzw. kein Wächter), 1 = Manipulation; TAMPERED_FILE nennt die Datei. Eine
+# beim Start fehlende Datei hat keinen Wächter (best effort wie der Transport).
+guard_transported_files() {
+  TAMPERED_FILE=""
+  if [ -n "$PKG_HASH_PROJECT_ENV" ]; then
+    if [ ! -f "$WT/.vibe/project.env" ]; then
+      TAMPERED_FILE=".vibe/project.env"
+    elif [ "$PKG_HASH_PROJECT_ENV" != "$(package_file_hash "$WT/.vibe/project.env")" ]; then
+      TAMPERED_FILE=".vibe/project.env"
+    fi
+  fi
+  if [ -z "$TAMPERED_FILE" ] && [ -n "$PKG_HASH_BASELINE" ]; then
+    if [ ! -f "$WT/.vibe/verify-baseline" ]; then
+      TAMPERED_FILE=".vibe/verify-baseline"
+    elif [ "$PKG_HASH_BASELINE" != "$(package_file_hash "$WT/.vibe/verify-baseline")" ]; then
+      TAMPERED_FILE=".vibe/verify-baseline"
+    fi
+  fi
+  [ -z "$TAMPERED_FILE" ]
+}
 run_package_tests() {
   local cmd="${VERIFY_PACKAGE:-${VERIFY_FULL:-}}"
   echo "=== Paketprüfung für $ID ===" | tee -a "$LOG"
@@ -1577,6 +1609,16 @@ STREAM_FILTER=(python3 "$RUNS_PY" stream --state "$LOG.state.json" --attempt --s
     echo "BLOCKIERT: $BLOCK_REASON" | tee -a "$LOG"
     STOP=1; break
   fi
+  # AP7 (T-V21): Hash der transportierten Dateien am Paketstart erfassen.
+  # Eine beim Start fehlende Datei hat keinen Wächter (best effort).
+  PKG_HASH_PROJECT_ENV=""
+  PKG_HASH_BASELINE=""
+  if [ -f "$WT/.vibe/project.env" ]; then
+    PKG_HASH_PROJECT_ENV="$(package_file_hash "$WT/.vibe/project.env")"
+  fi
+  if [ -f "$WT/.vibe/verify-baseline" ]; then
+    PKG_HASH_BASELINE="$(package_file_hash "$WT/.vibe/verify-baseline")"
+  fi
   PROMPT="Arbeitspaket $ID. Der Punkt steht in $SOURCE des Projektordners. Wortlaut:
 $BLOCK
 Bearbeite NUR dieses Arbeitspaket gemäß deinem Workflow. Du arbeitest in der isolierten Arbeitskopie $WT auf dem Branch $BRANCH; der Integrationsstand $P bleibt unberührt. Committe dort mit dem Präfix '$ID:'.
@@ -1625,6 +1667,17 @@ $QUESTION_HINT"
       PACKAGE_OK=0
       REPAIR_RC=0
       while :; do
+        # AP7 (T-V21): Vor jeder Paketprüfung die transportierten Dateien
+        # erneut hashen — auch nach einer Reparaturrunde. Eine Abweichung
+        # (Veränderung oder Löschung) ist Manipulation der autoritativen
+        # Projektwerte: blockieren ohne Reparaturrunde.
+        if ! guard_transported_files; then
+          BLOCK_REASON="Transportierte Konfiguration wurde verändert oder entfernt: $TAMPERED_FILE"
+          record_block "$ID" "$BLOCK_REASON"
+          echo "BLOCKIERT: $BLOCK_REASON" | tee -a "$LOG"
+          STOP=1
+          break
+        fi
         if ! run_package_tests; then
           REPAIR_FINDING="Pakettests für $ID sind nicht grün."
           REPAIR_DETAILS="$PACKAGE_TEST_OUT"
@@ -1639,6 +1692,9 @@ $QUESTION_HINT"
         REPAIR_RC=$?
         [ "$REPAIR_RC" != 0 ] && break
       done
+      if [ "$STOP" = 1 ]; then
+        break
+      fi
       if [ "$REPAIR_RC" = 2 ]; then
         # AP10: Bewusstes Fortsetzen — das Paket wird auf Nutzer- oder
         # autonome Entscheidung übersprungen. Der Blockievermerk verhindert

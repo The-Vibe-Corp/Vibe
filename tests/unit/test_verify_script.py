@@ -9,6 +9,17 @@ gesetztem ``VERIFY_PACKAGE_TESTS``; ``VERIFY_TESTS`` steuert ausschließlich
 ``full``. T-V2 verkürzt den temporären Präfix auf ``vv-`` und erlaubt über
 ``VIBE_VERIFY_TMP`` einen eigenen Elternordner. Die produktive Konfiguration
 des Aufrufers wird dabei nur gelesen.
+
+AP7-Korbat (T-V16) macht ``scripts/verify.sh quick|package|full`` zur
+einzigen Prüfschnittstelle: ``VERIFY_QUICK`` ist der einzige ausgeführte
+Konfigurationsbefehl. ``package`` führt ``VERIFY_QUICK`` aus (plus optionalen
+Testnachweis bei ``VERIFY_PACKAGE_TESTS``), ``full`` baut den Testlauf selbst
+über ``run-tests-parallel.py`` aus ``VERIFY_TESTS``/``--tests``.
+``VERIFY_PACKAGE`` und ``VERIFY_FULL`` sind keine Befehlsvariablen der Engine
+mehr; ``VERIFY_TEST_PATTERN`` entfällt, weil die Zählung aus dem
+strukturierten Läuferbericht kommt. Die betroffenen Fälle prüfen dieselbe
+Fachlichkeit (Nachweiszwang, Zählung, Ausführung) gegen die neue Semantik;
+alle übrigen Zusicherungen bleiben unverändert.
 """
 import hashlib
 import json
@@ -336,6 +347,14 @@ class VerifyMissingToolsTest(unittest.TestCase):
 
 
 class VerifyFullTest(unittest.TestCase):
+    """Vollmodus: Der Läufer baut den Testlauf selbst (AP7-Korbat, T-V16).
+
+    ``full`` führt ``VERIFY_FULL`` nicht mehr aus, sondern startet
+    ``run-tests-parallel.py`` mit den Specs aus ``VERIFY_TESTS``. Die Zählung
+    stammt aus dem Läuferbericht; ``VERIFY_TEST_PATTERN`` wird nicht mehr
+    ausgewertet.
+    """
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.base = Path(self.tmp.name)
@@ -351,6 +370,8 @@ class VerifyFullTest(unittest.TestCase):
         return project
 
     def test_full_without_test_structure_is_rejected(self):
+        # Ein gesetztes VERIFY_FULL ist kein Testnachweis mehr: ohne
+        # VERIFY_TESTS-Spezifikation fehlt der Nachweis (Exit 6).
         project = make_project(
             self.base,
             ["TYPE=generic", 'VERIFY_FULL="true"'],
@@ -360,19 +381,18 @@ class VerifyFullTest(unittest.TestCase):
         self.assertIn("VERIFY_TESTS", result.stdout + result.stderr)
 
     def test_full_rejects_a_run_without_executed_tests(self):
+        """Ein Lauf ohne ausgeführte Tests ist kein bestandener Nachweis.
+
+        Vorbedingung: ``VERIFY_TESTS="tests"``; das einzige Testmodul enthält
+        keinen Testfall (``Ran 0 tests``).
+        Aktion: ``full`` ausführen.
+        Erwartung: Exit 6; die Meldung nennt 0 Tests.
+        Fehlerfall: Ein leerer Lauf gilt als Vollnachweis.
+        """
         project = self.make_test_project(
-            [
-                "TYPE=generic",
-                'VERIFY_FULL="python3 leerlauf.py"',
-                'VERIFY_TESTS="tests"',
-                'VERIFY_TEST_PATTERN="Ran ([0-9]+) tests?"',
-            ],
-            "import unittest\n\n"
-            "class BeispielTest(unittest.TestCase):\n"
-            "    def test_summe(self):\n"
-            "        self.assertEqual(1 + 1, 2)\n",
+            ["TYPE=generic", 'VERIFY_TESTS="tests"'],
+            "import unittest\n\n# Dieses Modul enthält keinen Testfall.\n",
         )
-        write_script(project, "leerlauf.py", "print('Ran 0 tests in 0.001s')\n")
         result = run_verify("full", project=project)
         self.assertEqual(result.returncode, 6, result.stdout + result.stderr)
         self.assertIn("0", result.stdout + result.stderr)
@@ -380,12 +400,7 @@ class VerifyFullTest(unittest.TestCase):
 
     def test_full_passes_with_real_tests_and_reports_the_count(self):
         project = self.make_test_project(
-            [
-                "TYPE=generic",
-                'VERIFY_FULL="python3 -m unittest discover -s tests -v"',
-                'VERIFY_TESTS="tests"',
-                'VERIFY_TEST_PATTERN="Ran ([0-9]+) tests?"',
-            ],
+            ["TYPE=generic", 'VERIFY_TESTS="tests"'],
             "import unittest\n\n"
             "class BeispielTest(unittest.TestCase):\n"
             "    def test_summe(self):\n"
@@ -393,18 +408,14 @@ class VerifyFullTest(unittest.TestCase):
         )
         result = run_verify("full", project=project)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("Tests erkannt: 1", result.stdout)
+        # Die Testanzahl steht in der maschinenlesbaren Abschlusszeile
+        # (AP7-Korbat: ``VERIFY_RESULT: mode=full tests=N …``).
+        self.assertRegex(result.stdout, r"(?m)^VERIFY_RESULT: .*\btests=1\b")
         self.assertIn("OK: Prüfung 'full'", result.stdout)
 
     def test_full_rejects_fewer_tests_than_configured(self):
         project = self.make_test_project(
-            [
-                "TYPE=generic",
-                'VERIFY_FULL="python3 -m unittest discover -s tests -v"',
-                'VERIFY_TESTS="tests"',
-                'VERIFY_TEST_PATTERN="Ran ([0-9]+) tests?"',
-                "VERIFY_MIN_TESTS=2",
-            ],
+            ["TYPE=generic", 'VERIFY_TESTS="tests"', "VERIFY_MIN_TESTS=2"],
             "import unittest\n\n"
             "class BeispielTest(unittest.TestCase):\n"
             "    def test_summe(self):\n"
@@ -419,12 +430,14 @@ class VerifyPackageTest(unittest.TestCase):
     """Mittelmodus ``package``: Paketprüfung mit optionalem Testnachweis.
 
     F31: Die Agenten brauchen zwischen ``quick`` und ``full`` einen schnellen,
-    belegbaren Modus. ``package`` führt ausschließlich ``VERIFY_PACKAGE`` aus.
-    AP5-Korbat (T-V1) entkoppelt den Nachweis vom Vollmodus: Nur ein gesetztes
-    ``VERIFY_PACKAGE_TESTS`` verlangt Testdateien, eine Mindestanzahl und Exit
-    6 bei Verstoß. ``VERIFY_TESTS`` gilt ausschließlich für ``full``; ein
-    gesetztes ``VERIFY_TESTS`` macht ``package`` nicht mehr nachweispflichtig.
-    Ohne ``VERIFY_PACKAGE_TESTS`` besteht kein Nachweiszwang wie in ``quick``.
+    belegbaren Modus. AP7-Korbat (T-V16) vereinheitlicht die
+    Prüfschnittstelle: ``package`` führt ``VERIFY_QUICK`` aus; ``VERIFY_PACKAGE``
+    ist keine Befehlsvariable der Engine mehr. AP5-Korbat (T-V1) entkoppelt den
+    Nachweis vom Vollmodus: Nur ein gesetztes ``VERIFY_PACKAGE_TESTS`` verlangt
+    Testdateien, eine Mindestanzahl und Exit 6 bei Verstoß. ``VERIFY_TESTS``
+    gilt ausschließlich für ``full``; ein gesetztes ``VERIFY_TESTS`` macht
+    ``package`` nicht nachweispflichtig. Ohne ``VERIFY_PACKAGE_TESTS`` besteht
+    kein Nachweiszwang wie in ``quick``.
     """
 
     BEISPIELTEST = (
@@ -452,7 +465,15 @@ class VerifyPackageTest(unittest.TestCase):
             )
         return project
 
-    def test_package_runs_verify_package_instead_of_quick_or_full(self):
+    def test_package_runs_verify_quick_instead_of_package_or_full(self):
+        """Vorbedingung: ``VERIFY_QUICK``, ``VERIFY_FULL`` und
+        ``VERIFY_PACKAGE`` sind unterscheidbare Marker-Befehle.
+        Aktion: ``package`` ausführen.
+        Erwartung: Exit 0; der ``VERIFY_QUICK``-Marker erscheint, die Marker
+        von ``VERIFY_PACKAGE`` und ``VERIFY_FULL`` nicht.
+        Fehlerfall: ``package`` führt weiterhin ``VERIFY_PACKAGE`` aus oder
+        fällt still auf eine andere Stufe zurück.
+        """
         project = make_project(
             self.base,
             [
@@ -467,18 +488,25 @@ class VerifyPackageTest(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("OK: Prüfung 'package'", result.stdout)
-        self.assertIn("paket-pruefung", result.stdout)
+        self.assertIn("quick-pruefung", result.stdout)
         # Kein stiller Rückfall auf die anderen Stufen.
-        self.assertNotIn("quick-pruefung", result.stdout)
+        self.assertNotIn("paket-pruefung", result.stdout)
         self.assertNotIn("full-pruefung", result.stdout)
 
-    def test_package_requires_verify_package_without_falling_back(self):
+    def test_package_requires_verify_quick_without_falling_back(self):
+        """Vorbedingung: ``VERIFY_QUICK`` fehlt; ``VERIFY_PACKAGE`` und
+        ``VERIFY_FULL`` würden eine Markerdatei anlegen.
+        Aktion: ``package`` ausführen.
+        Erwartung: Exit 3; die Meldung nennt ``VERIFY_QUICK``; keine der
+        Markerdateien entsteht.
+        Fehlerfall: ``package`` akzeptiert die alten Befehlsvariablen.
+        """
         marker = self.base / "quick-oder-full-lief"
         project = make_project(
             self.base,
             [
                 "TYPE=generic",
-                f'VERIFY_QUICK="touch {marker}"',
+                f'VERIFY_PACKAGE="touch {marker}"',
                 f'VERIFY_FULL="touch {marker}"',
             ],
         )
@@ -486,22 +514,22 @@ class VerifyPackageTest(unittest.TestCase):
         result = run_verify("package", project=project)
 
         self.assertEqual(result.returncode, 3, result.stdout + result.stderr)
-        self.assertIn("VERIFY_PACKAGE", result.stdout + result.stderr)
+        self.assertIn("VERIFY_QUICK", result.stdout + result.stderr)
         self.assertFalse(
             marker.exists(),
-            "package darf ohne VERIFY_PACKAGE nicht quick oder full ausführen",
+            "package darf ohne VERIFY_QUICK nicht package oder full ausführen",
         )
 
     def test_package_rejects_a_todo_placeholder(self):
         project = make_project(
             self.base,
-            ["TYPE=generic", 'VERIFY_PACKAGE="echo TODO"'],
+            ["TYPE=generic", 'VERIFY_QUICK="echo TODO"'],
         )
 
         result = run_verify("package", project=project)
 
         self.assertEqual(result.returncode, 3, result.stdout + result.stderr)
-        self.assertIn("VERIFY_PACKAGE", result.stdout + result.stderr)
+        self.assertIn("VERIFY_QUICK", result.stdout + result.stderr)
         self.assertIn("TODO", result.stdout + result.stderr)
 
     def test_package_requires_test_files_when_package_tests_is_set(self):
@@ -515,7 +543,7 @@ class VerifyPackageTest(unittest.TestCase):
             self.base,
             [
                 "TYPE=generic",
-                'VERIFY_PACKAGE="true"',
+                'VERIFY_QUICK="true"',
                 'VERIFY_PACKAGE_TESTS="tests"',
             ],
         )
@@ -525,21 +553,17 @@ class VerifyPackageTest(unittest.TestCase):
         self.assertEqual(result.returncode, 6, result.stdout + result.stderr)
 
     def test_package_rejects_a_run_without_executed_tests(self):
-        """Vorbedingung: ``VERIFY_PACKAGE_TESTS="tests"``; der Prüfbefehl gibt
-        „Ran 0 tests“ aus.
+        """Vorbedingung: ``VERIFY_PACKAGE_TESTS="tests"``; das einzige
+        Testmodul enthält keinen Testfall („Ran 0 tests“).
         Aktion: ``package`` ausführen.
         Erwartung: Exit 6; die Meldung nennt 0 Tests.
         Fehlerfall: ein Lauf ohne ausgeführte Tests gilt als Nachweis.
         """
         project = self.make_test_project(
-            [
-                "TYPE=generic",
-                'VERIFY_PACKAGE="python3 leerlauf.py"',
-                'VERIFY_PACKAGE_TESTS="tests"',
-                'VERIFY_TEST_PATTERN="Ran ([0-9]+) tests?"',
-            ]
+            ["TYPE=generic", 'VERIFY_QUICK="true"', 'VERIFY_PACKAGE_TESTS="tests"'],
+            test_source="import unittest\n\n# Dieses Modul enthält keinen "
+                        "Testfall.\n",
         )
-        write_script(project, "leerlauf.py", "print('Ran 0 tests in 0.001s')\n")
 
         result = run_verify("package", project=project)
 
@@ -549,18 +573,13 @@ class VerifyPackageTest(unittest.TestCase):
 
     def test_package_passes_with_real_tests_and_reports_the_count(self):
         """Vorbedingung: ``VERIFY_PACKAGE_TESTS="tests"`` und echte Tests, die
-        der Paketbefehl ausführt.
+        der eingebaute Testläufer ausführt.
         Aktion: ``package`` ausführen.
         Erwartung: Exit 0; „Tests erkannt: 1“.
         Fehlerfall: Nachweis wird nicht gezählt.
         """
         project = self.make_test_project(
-            [
-                "TYPE=generic",
-                'VERIFY_PACKAGE="python3 -m unittest discover -s tests -v"',
-                'VERIFY_PACKAGE_TESTS="tests"',
-                'VERIFY_TEST_PATTERN="Ran ([0-9]+) tests?"',
-            ]
+            ["TYPE=generic", 'VERIFY_QUICK="true"', 'VERIFY_PACKAGE_TESTS="tests"']
         )
 
         result = run_verify("package", project=project)
@@ -579,9 +598,8 @@ class VerifyPackageTest(unittest.TestCase):
         project = self.make_test_project(
             [
                 "TYPE=generic",
-                'VERIFY_PACKAGE="python3 -m unittest discover -s tests -v"',
+                'VERIFY_QUICK="true"',
                 'VERIFY_PACKAGE_TESTS="tests"',
-                'VERIFY_TEST_PATTERN="Ran ([0-9]+) tests?"',
                 "VERIFY_MIN_TESTS=2",
             ]
         )
@@ -592,15 +610,15 @@ class VerifyPackageTest(unittest.TestCase):
         self.assertIn("Minimum 2", result.stdout + result.stderr)
 
     def test_package_without_package_tests_requires_no_test_proof(self):
-        """Vorbedingung: kein ``VERIFY_PACKAGE_TESTS``; nur ein statischer
-        ``VERIFY_PACKAGE``-Befehl.
+        """Vorbedingung: kein ``VERIFY_PACKAGE_TESTS``; nur der statische
+        ``VERIFY_QUICK``-Befehl.
         Aktion: ``package`` ausführen.
         Erwartung: Exit 0; der Befehl läuft, kein Testnachweis wird verlangt.
         Fehlerfall: statische Paketprüfung wird ohne Teststruktur abgelehnt.
         """
         project = make_project(
             self.base,
-            ["TYPE=generic", 'VERIFY_PACKAGE="echo ohne-testnachweis"'],
+            ["TYPE=generic", 'VERIFY_QUICK="echo ohne-testnachweis"'],
         )
 
         result = run_verify("package", project=project)
@@ -613,7 +631,7 @@ class VerifyPackageTest(unittest.TestCase):
         """Vorbedingung: ``VERIFY_TESTS="tests"`` ist gesetzt (Vollmodus-
         Einstellung), ``VERIFY_PACKAGE_TESTS`` fehlt; kein Testordner.
         Aktion: ``package`` ausführen.
-        Erwartung: Exit 0; der statische ``VERIFY_PACKAGE``-Befehl genügt. Die
+        Erwartung: Exit 0; der statische ``VERIFY_QUICK``-Befehl genügt. Die
         Vollmodus-Einstellung darf den Paketmodus nicht nachweispflichtig
         machen (Entkopplung T-V1).
         Fehlerfall: ``package`` verlangt wegen ``VERIFY_TESTS`` Testdateien.
@@ -622,7 +640,7 @@ class VerifyPackageTest(unittest.TestCase):
             self.base,
             [
                 "TYPE=generic",
-                'VERIFY_PACKAGE="echo paket-statisch"',
+                'VERIFY_QUICK="echo paket-statisch"',
                 'VERIFY_TESTS="tests"',
             ],
         )
@@ -638,7 +656,8 @@ class VerifyPackageTest(unittest.TestCase):
         gesetzt, ``VERIFY_TESTS`` fehlt.
         Aktion: ``full`` ausführen.
         Erwartung: Exit 6; die Meldung verlangt ``VERIFY_TESTS``. Die
-        Paket-Einstellung ersetzt den Vollnachweis nicht.
+        Paket-Einstellung und ein gesetztes VERIFY_FULL ersetzen den
+        Vollnachweis nicht.
         Fehlerfall: ``full`` akzeptiert die Paket-Einstellung als Nachweis.
         """
         project = self.make_test_project(
@@ -680,7 +699,7 @@ class VerifyPackageTest(unittest.TestCase):
         fake.chmod(0o755)
         project = make_project(
             self.base,
-            ["TYPE=generic", 'VERIFY_PACKAGE="echo paket-ohne-dienst"'],
+            ["TYPE=generic", 'VERIFY_QUICK="echo paket-ohne-dienst"'],
         )
 
         result = run_verify(

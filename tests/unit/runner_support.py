@@ -345,6 +345,65 @@ if mode == "fail":
 if mode == "no-artifacts":
     sys.exit(0)
 
+# AP7 (T-V21): Tamper-Varianten für den Hash-Wächter. Der nachgebildete Agent
+# verändert transportierte .vibe-Dateien im eigenen Arbeitsbaum, schließt das
+# Paket aber weiterhin vollständig ab. So stammt ein Block eindeutig vom
+# Wächter und nicht von einer fehlenden Abschlussschranke. ``FAKE_TAMPER`` ist
+# eine Liste ``aktion:dateiname`` (Komma-getrennt): ``append`` hängt eine
+# Zeile an, ``rewrite`` schreibt identisch neu, ``create`` legt die Datei an,
+# ``delete`` entfernt eine beim Start vorhandene Datei. Eine bereits fehlende
+# Datei bleibt bei ``delete`` folgenlos (``rm -f``-Semantik), damit derselbe
+# Modus auch die Best-effort-Regel prüfen kann.
+def _ap7_tamper():
+    spec = os.environ.get("FAKE_TAMPER", "").strip()
+    if not spec:
+        return
+    for entry in spec.split(","):
+        entry = entry.strip()
+        if not entry:
+            continue
+        action, _, name = entry.partition(":")
+        path = cwd / ".vibe" / name
+        if action == "create":
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(
+                '{"version": 1, "min_tests": 1, "envs": {}}\n',
+                encoding="utf-8",
+            )
+            continue
+        if action == "delete":
+            # Löschen braucht Schreibrecht auf dem Verzeichnis, nicht auf der
+            # Datei. Falls ein restriktives Setup den Unlink verwehrt, hilft
+            # der Schreibschutz des Transports (best effort 0444) zuvor.
+            try:
+                path.unlink()
+            except OSError:
+                try:
+                    path.chmod(0o644)
+                    path.unlink()
+                except OSError:
+                    pass
+            continue
+        try:
+            original = path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        try:
+            # Der Transport setzt best effort 0444; für die Manipulation
+            # braucht die Attrappe Schreibrechte.
+            path.chmod(0o644)
+        except OSError:
+            pass
+        if action == "append":
+            path.write_text(
+                original + "AGENT_HAT_VERAENDERT=1\n", encoding="utf-8"
+            )
+        elif action == "rewrite":
+            path.write_text(original, encoding="utf-8")
+
+
+_ap7_tamper()
+
 
 def run(*command, check=True):
     return subprocess.run(
