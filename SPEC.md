@@ -36,27 +36,103 @@ vibe läuft unter Linux, Windows und macOS in einer Python-Umgebung. Agenten kö
 
 Quellcode, Installation und Laufzeitdaten werden strikt getrennt. Sie dürfen weder verwechselt noch beim Aktualisieren gegenseitig überschrieben werden.
 
-## Leistungsumfang
+## Projekte und Entwicklungsordner
 
-- Projekte und Entwicklungsordner verwalten, inklusive Projektvorlagen für verschiedene Projekttypen.
-- Arbeitspakete (Tickets) und Feedback als versionierbare Arbeitsgrundlage führen.
-- Globale und projektspezifische Agenten verwalten.
-- Modelle und Anbieter übersichtlich darstellen und vergleichen.
-- Modellprofile mit frei konfigurierbaren Rollen (mindestens Coder und Reviewer) anlegen und anwenden.
-- MCP-Server verwalten und testen.
-- Agentenläufe starten, beobachten und stoppen; Prüfungen ausführen.
-- Dashboard und opencode getrennt beenden.
-- Benutzerbezogener Startmenüeintrag zum bequemen Starten.
-- Diagnose der Anwendungsvoraussetzungen mit konkreten Lösungsvorschlägen.
+vibe verwaltet lokale Entwicklungsordner und erkennt darin Projekte anhand von Git-Metadaten oder einer vibe-Projektkonfiguration. Projekte bleiben auch dann erhalten, wenn ein Entwicklungsordner aus der Verwaltung entfernt wird.
 
-## Leitprinzipien
+Die Projektübersicht zeigt den aktuellen Zustand der Projekte. Das Projektdetail bietet Zugriff auf Pfad, Feedback, Tickets, Logs und verfügbare Aktionen.
 
-- Sicherheit und Datenintegrität haben Vorrang vor Komfortfunktionen.
-- vibe ist ein lokales System. Der Webserver ist standardmäßig nur lokal erreichbar und schreibende Zugriffe sind authentisiert.
-- Geheimnisse, Laufzeitdaten und persönliche Konfigurationen gehören nicht ins Repository und werden nie durch Defaults ersetzt.
-- Es entstehen keine Kosten oder Seiteneffekte ohne vorherigen Hinweis und Zustimmung.
-- Ungeprüfte Informationen gelten als unbekannt. Keine Funktion gilt als erledigt, bevor sie geprüft wurde.
-- Benutzerdaten gehen bei Änderungen nicht still verloren. Änderungen sind nachvollziehbar und umkehrbar.
+## Projektvorlagen
+
+vibe unterstützt bestehende Projekttypen und ermöglicht die Ergänzung weiterer Typen über Vorlagen. Vorhandene Projekte können vorbereitet werden, ohne dass vorhandene Dateien still überschrieben werden.
+
+Projekttypen können eigene Prüfadapter besitzen. Android-spezifische Prüfungen sind keine Voraussetzung für andere Projekttypen.
+
+## Arbeitspakete und Feedback
+
+TICKETS.md und FEEDBACK.md dienen als versionierbare Arbeitsgrundlage. vibe unterscheidet offene, blockierte und erledigte Einträge.
+
+Arbeitspakete und Feedback können über die Oberfläche angelegt, bearbeitet und gelöscht werden. Bugs werden als Feedback mit der Art „Bug“ erfasst.
+
+Erledigt bedeutet, dass Akzeptanzkriterien erfüllt sind und Nachweise vorliegen. Ein Commit allein belegt keine fachliche Erfüllung.
+
+## Agenten
+
+vibe verwaltet globale und projektspezifische Agenten. Agenten können angelegt, gelesen, bearbeitet, kopiert und gelöscht werden.
+
+Für jeden Agenten lassen sich Beschreibung, Modus, Modell, Temperatur, Schritte, Rechte und Prompt festlegen. Die Eingabe erfolgt wahlweise strukturiert oder als Rohtext.
+
+Änderungen werden vor dem Speichern validiert. Vorhandene Agentendateien werden durch Sicherungen geschützt und können wiederhergestellt werden.
+
+## Modelle und Anbieter
+
+vibe zeigt Modelle verfügbarer Anbieter an und ermöglicht deren Auswahl im Agenteneditor. Kostenlose und kostenpflichtige Modelle werden unterstützt.
+
+Die Modellübersicht enthält relevante Eigenschaften wie Verfügbarkeit, Kontext, Bildfähigkeit, Stärken, Schwächen, Tempo, Aufwand, Datenbedingungen und Preis. Unbekannte Werte sind ausdrücklich zulässig.
+
+Fakten, Messungen, Nutzerberichte und Einschätzungen werden getrennt ausgewiesen. Jede Bewertung nennt Quelle, Datum und gegebenenfalls Testmethodik.
+
+## Modellprofile
+
+Modellprofile ordnen Modellen Rollen zu. Rollen sind frei konfigurierbar; mindestens Coder und Reviewer werden unterstützt.
+
+Profile können angelegt, bearbeitet, kopiert, gelöscht und angewendet werden. Vor der Anwendung zeigt vibe eine genaue Änderungsvorschau und validiert alle betroffenen Agenten und Modelle.
+
+Die Anwendung ist transaktional oder bei Teilfehlern vollständig rückrollbar. Kostenpflichtige Profile werden deutlich markiert; ein automatischer Wechsel von kostenlos auf kostenpflichtig findet nicht statt.
+
+## MCP-Verwaltung
+
+vibe verwaltet globale und projektbezogene MCP-Server. Server können angelegt, bearbeitet, gelöscht, aktiviert und deaktiviert werden.
+
+Lokale Server werden über Programm, Argumente und Umgebungsvariablen konfiguriert. Remote-Server verwenden URL, Header und unterstützte Authentifizierung.
+
+Geheimnisse werden maskiert und beim Speichern unverändert erhalten. Sie erscheinen weder in Antworten, Fehlermeldungen, Befehlsanzeigen noch in Logs.
+
+## MCP-Tests
+
+vibe kann MCP-Server vor der Verwendung testen. Dabei werden die Serveridentität und die verfügbare Werkzeugliste geprüft.
+
+Vor einem Test wird darauf hingewiesen, dass Programme gestartet oder Netzverbindungen hergestellt werden können. Fachliche Werkzeuge werden nicht automatisch aufgerufen.
+
+Fehler werden nach Ursache getrennt dargestellt, etwa fehlendes Programm, Timeout, Netzwerk, Authentifizierung, Protokoll oder ungültige Konfiguration.
+
+## Agentenläufe und Prüfungen
+
+vibe startet, beobachtet, hängt sich an laufende Prozesse an und stoppt Agentenläufe gezielt. Gleichzeitige Läufe verschiedener Projekte werden unterstützt.
+
+Jeder Lauf besitzt eine eindeutige ID sowie sichtbare Informationen zu Projekt, Agent und Startzeit. Live-Logs und separate Prüfprotokolle werden bereitgestellt.
+
+Prüfungen liefern echte Ergebnisse. Eine fehlende Prüfkonfiguration ist ein Fehler und kein erfolgreicher Test.
+
+## App und opencode beenden
+
+Das Beenden des Dashboards betrifft ausschließlich vibe. Bestehende Agentenläufe bleiben standardmäßig aktiv.
+
+Das Stoppen von opencode ist eine getrennte Aktion. Nur eindeutig von vibe verwaltete Prozesse werden beendet.
+
+Das Schließen eines Browser-Tabs beendet keine Hintergrundprozesse. Die Oberfläche erläutert diese Unterschiede.
+
+## Startmenü
+
+vibe bietet einen benutzerbezogenen Startmenüeintrag. Dieser startet bei Bedarf erforderliche Container, wartet auf die Bereitschaft und öffnet die Weboberfläche im Standardbrowser.
+
+Läuft vibe bereits, wird nur die Weboberfläche geöffnet. Mehrfachklicks erzeugen keine zusätzlichen Dashboard-Prozesse.
+
+Im Normalbetrieb ist kein Terminalfenster erforderlich. Fehler werden verständlich gemeldet und in einem bereinigten Log dokumentiert.
+
+## Diagnose
+
+vibe prüft Anwendungsvoraussetzungen getrennt von optionalen Projektwerkzeugen. Es zeigt die tatsächliche opencode-Version und unterstützte Funktionen an.
+
+Die Diagnose erkennt Host- und Container-Verwechslungen sowie Probleme mit Schreibrechten, Ports oder benötigten Programmen. Sie bietet konkrete, kopierbare Lösungsvorschläge.
+
+## Sicherheit und Datenintegrität
+
+Der Webserver ist standardmäßig nur lokal erreichbar. Schreibende API-Aufrufe erfordern eine gültige Authentifizierung.
+
+Geheimnisse, Tokens und persönliche Konfigurationen werden nicht ins Repository übernommen. Eingaben und Requestgrößen werden begrenzt; Pfad-Traversal und unerlaubte Symlink-Ziele werden verhindert.
+
+Dateien werden atomar geschrieben. Konkurrierende Änderungen werden erkannt, Sicherungen sind kollisionsfrei und können sensible Daten enthalten.
 
 ## Architekturziel
 
@@ -74,12 +150,19 @@ bin/, src/vibe/, web/, data/, templates/, scripts/, tests/, docs/, .vibe/
 
 ## Betrieb und Weiterentwicklung
 
-- Die Installation erfolgt aus dem Repository. Aktualisierung und Rollback erhalten persönliche Einstellungen.
-- Vor einer Migration gibt es Vorschau und Sicherung.
-- Ein Uninstall entfernt keine Projekte und standardmäßig keine Nutzerdaten.
-- Änderungen an vibe selbst werden zunächst separat getestet. Die produktive Instanz wird nicht während eines Agentenlaufs überschrieben.
-- Der Runner verantwortet Worktrees, Branches, Push, PR und Merge. Agenten arbeiten nur im zugewiesenen Worktree.
-- Ein Ticket gilt erst nach Tests, Dokumentation und unabhängigem Review als abgeschlossen.
+Die Installation erfolgt aus dem Repository. Aktualisierung und Rollback erhalten persönliche Einstellungen.
+
+Vor einer Migration gibt es Vorschau und Sicherung. Ein Uninstall entfernt keine Projekte und standardmäßig keine Nutzerdaten.
+
+Änderungen an vibe selbst werden zunächst separat getestet. Die produktive Instanz wird nicht während eines Agentenlaufs überschrieben.
+
+## Qualität und Abnahme
+
+Jede Funktion wird durch Unit-, Integrations- und Browsertests geprüft. Attrappen ersetzen keine echte Browser- oder Systemabnahme.
+
+Tests verwenden temporäre Verzeichnisse und eigene Ports. Sie laufen nicht gegen persönliche Projekte oder produktive Konfigurationen.
+
+Ein Ticket gilt erst nach Tests, fachlicher und technischer Dokumentation sowie unabhängigem Review als abgeschlossen.
 
 ## Nicht im Umfang
 
