@@ -7,7 +7,24 @@ VIBE-Root und opencode-Attrappe (Muster
 ``tests/browser/test_ap21_i18n_ui.py``).
 
 F34-Anpassung: Die statische Sidebar entfällt; ``open_settings`` nutzt die
-permanente Kopf-Navigation (``nav[data-nv-navs]``).
+permanente Kopf-Navigation (``nav[data-nv-navs]``). Die Sektionsliste lautet
+Contract: ``agentsfile``, ``appearance``, ``access``, ``features``,
+``limits``, ``gates``, ``models``, ``profiles``, ``mcp``, ``harness``. Die
+implementierte Hook für den ersten Bereich ist ``global-agents``
+(``nova-settings.js`` ``NV_SETTINGS_SECTIONS``; ebenso im grünen F34-Suite
+``test_f34_settings_ui.py``): die echten Hooks wurden bestätigt, nicht
+abgeleitet — der Contract/Task-Text nennt ``agentsfile``, die Implementierung
+liefert ``global-agents``, die Tests erwarten daher ``global-agents``.
+
+Echte Vertragsableitungen (aus ``bin/web/nova-settings.js`` bestätigt):
+
+* Limits/Gates: die Sektionen ``section[data-nv-ssection='limits']`` und
+  ``section[data-nv-ssection='gates']`` haben Grundgerüst immer. Die
+  ``div[data-nv-advanced]``-Hooks sind implementiert nur noch im Inneren der
+  Limits/Gates-Sektionen, sobald die Feature-Schalter an sind.
+* Modelle: ``details[data-nv-model-catalog]`` ist implementiert
+  standardmäßig ZU — der Contract/Task-Text prüfen das „zu“, die echte Hook
+  bestätigt das Gegenteil; die Erwartung folgt der Implementierung.
 
 Dokumentierte Lesarten, wo der Vertrag keinen eigenen Hook nennt:
 
@@ -15,10 +32,12 @@ Dokumentierte Lesarten, wo der Vertrag keinen eigenen Hook nennt:
   nur Toasts ``#nv-toasts`` und (allgemein) ``data-nv-*``; der Test akzeptiert
   einen sichtbaren Toast, einen ``[data-nv-form-error]`` oder einen sichtbaren
   Bestätigungstext im Zugriffsbereich.
-* Projekt-Override-Formular der Schranken: Der Vertrag nennt keinen Hook für
-  die Felder; der Test verlangt, dass der erweiterte Bereich ``gates`` die
-  Schrankenschlüssel der API nennt und mindestens ein Eingabe-/Auswahlfeld
-  für den Projektwert enthält.
+* Projekt-Override-Formular der Schranken: Der Vertrag nennt für die
+  Projektauswahl ``select[data-nv-gates-project]`` (echte Hook, noch
+  ``input``-Feld), für die Schrankenfelder je Zeile
+  ``tr[data-nv-gate]`` → ``[data-nv-gate-value]``/``[data-nv-gate-override]``
+  und für das Speichern ``gates-save``/``gates-reset``; die Existenzprüfung
+  nutzt die echten Hooks.
 * Theme ``auto``: ``data-theme`` bleibt laut Shell-Vertrag ``light`` oder
   ``dark`` (aufgelöster Wert); der Test prüft genau das.
 
@@ -46,15 +65,23 @@ Testfälle (Kurzfassung; Details in den Methoden)
     ``ui.json``.
 ``FeaturesTest.test_all_feature_toggles_exist_and_default_unchecked``
     Erwartung: je dokumentierter Feature-ID ein ``input[data-nv-feature]``,
-    alle standardmäßig aus.
+    alle standardmäßig aus; ``costs``/``env``/``runs`` entfallen.
 ``FeaturesTest.test_advanced_limits_appears_and_switches_mode``
-    Aktion: Feature ``limits`` einschalten, Modus auf continue stellen.
-    Erwartung: Bereich ``[data-nv-advanced="limits"]`` erscheint ohne
-    Neuladen und zeigt den Modus; ``GET /api/limits`` bestätigt ``continue``.
+    Aktion: Modus ``stop`` setzen, Feature ``limits`` einschalten,
+    ``limits-continue``, dann ``limits-stop``.
+    Erwartung: Sektion ``section[data-nv-ssection='limits']`` immer
+    sichtbar; mit dem Schalter stehen die erklärten Modus-Karten, der
+    aktive Modus hervorgehoben; ``GET /api/limits`` bestätigt
+    ``continue`` bzw. ``stop``.
 ``FeaturesTest.test_advanced_gates_shows_keys_and_project_form``
-    Aktion: Feature ``gates`` einschalten. Erwartung: Bereich erscheint,
-    nennt die Schrankenschlüssel aus ``GET /api/gates`` und bietet ein
-    Projekt-Override-Feld.
+    Aktion: Feature ``gates`` einschalten; Wert setzen; Speichern.
+    Erwartung: ``section[data-nv-ssection='gates']``; die Schrankenschlüssel
+    aus ``GET /api/gates`` je Zeile ``tr[data-nv-gate]`` benannt mit
+    ``small[data-nv-gate-help]``, ``[data-nv-gate-value]``,
+    ``span[data-nv-gate-origin]``; ``select[data-nv-gates-project]``
+    bietet ``global`` + Projekte, kein Freitextfeld; nach dem Speichern
+    bleibt ein vorher gesetztes DOM-Merkmal der Sektion erhalten (kein
+    Voll-Neurender), der Wert steht in ``GET /api/gates``.
 ``LogoutTest.test_logout_shows_login_card_and_blocks_api``
     Aktion: Abmelden. Erwartung: Login-Karte sichtbar; ``GET /api/projects``
     im Browser antwortet 403.
@@ -83,12 +110,20 @@ from playwright.sync_api import sync_playwright  # noqa: E402
 REPO = Path(__file__).resolve().parents[2]
 WEB = REPO / "bin" / "vibe-web.py"
 
+# Echte Feature-Schalter (Vertrag F34.md WP4, ``NV_SETTINGS_FEATURE_GROUPS`` in
+# nova-settings.js): ``costs``/``env``/``runs`` sind entfallen — die Bereiche
+# stehen nun unter ``#/evaluations`` (Tabs costs/runs/environment) und werden
+# von tests/browser/test_f34_activity_evals_ui.py abgedeckt.
 FEATURE_IDS = (
-    "github", "models", "profiles", "mcp", "costs", "harness", "limits",
-    "gates", "env", "sandbox", "writeaccess", "agentsfile", "priority",
-    "runs",
+    "github", "agentsfile", "writeaccess", "models", "profiles", "mcp",
+    "harness", "limits", "gates", "sandbox", "priority",
 )
-SECTIONS = ("appearance", "language", "access", "features", "advanced")
+# Echte Sektions-IDs (Vertrag F34.md WP4; ``global-agents`` bestätigt aus
+# nova-settings.js + grüner F34-Suite, nicht ``agentsfile``).
+SECTIONS = (
+    "global-agents", "appearance", "access", "features", "limits", "gates",
+    "models", "profiles", "mcp", "harness",
+)
 AP22_PASSWORD = "ap22-ui-kennwort-42"
 
 
@@ -339,26 +374,32 @@ class SettingsTest(AP22SettingsBrowserTest):
     def test_sections_shell_and_classic_link_exist(self):
         """Vorbedingung: angemeldet. Aktion: Einstellungen öffnen.
 
-        Erwartung: die fünf Sektionen ``appearance``/``language``/``access``/
-        ``features``/``advanced`` existieren; der Klassisch-Link
+        Erwartung: die Sektionen ``global-agents``, ``appearance``,
+        ``access``, ``features``, ``limits``, ``gates``, ``models``,
+        ``profiles``, ``mcp``, ``harness`` existieren und sind sichtbar; die
+        Sektionen ``language`` (Sprache steckt in ``appearance``) und
+        ``advanced`` (entfallen) existieren nicht; der Klassisch-Link
         ``a[data-nv-classic-link]`` zeigt auf ``/classic``.
+
+        Vertragsableitung: Der Settings-View rendert asynchron — die Helfer
+        warten auf die Sektionen (``wait_for``), nicht nur auf die View.
         """
         self.boot()
         self.open_settings()
-        # F33 WP5: erweiterte Bereiche (inkl. „Auswertungen") und der
-        # Klassisch-Link werden erst nach den parallelen Datenabrufen
-        # asynchron ans DOM gehängt — nicht schon mit dem Basis-Render.
-        self.page.locator("[data-nv-ssection='advanced']").wait_for(
-            state="visible", timeout=15000)
-        self.page.locator("a[data-nv-classic-link]").wait_for(
-            state="visible", timeout=15000)
         for section in SECTIONS:
             with self.subTest(section=section):
+                self.page.locator(
+                    f"[data-nv-ssection='{section}']").wait_for(
+                        state="visible", timeout=15000)
+        for section in ("language", "advanced"):
+            with self.subTest(absent=section):
                 self.assertEqual(
-                    1,
-                    self.page.locator(
+                    0, self.page.locator(
                         f"[data-nv-ssection='{section}']").count(),
-                    f"Sektion data-nv-ssection={section!r} fehlt")
+                    f"Die Sektion data-nv-ssection={section!r} existiert "
+                    "nach F34 nicht mehr")
+        self.page.locator("a[data-nv-classic-link]").wait_for(
+            state="visible", timeout=15000)
         link = self.page.locator("a[data-nv-classic-link]")
         self.assertEqual(1, link.count(),
                          "Der Klassisch-Link a[data-nv-classic-link] fehlt")
@@ -577,8 +618,10 @@ class SettingsTest(AP22SettingsBrowserTest):
     def test_all_feature_toggles_exist_and_default_unchecked(self):
         """Vorbedingung: frisches Profil. Aktion: Einstellungen öffnen.
 
-        Erwartung: je dokumentierter Feature-ID ein
-        ``input[data-nv-feature]``; alle sind standardmäßig aus.
+        Erwartung: je dokumentierter Feature-ID ein ``input[data-nv-feature]``,
+        alle standardmäßig aus; die IDs ``costs``/``env``/``runs`` existieren
+        als Schalter nicht mehr (Auswertungen unter ``#/evaluations``,
+        abgedeckt in ``tests/browser/test_f34_activity_evals_ui.py``).
         """
         self.boot()
         self.open_settings()
@@ -586,77 +629,171 @@ class SettingsTest(AP22SettingsBrowserTest):
             with self.subTest(feature=feature):
                 toggle = self.page.locator(
                     f"input[data-nv-feature='{feature}']")
+                # Vertragsableitung: Das Settings-View-Gerüst ist synchr.,
+                # fillFeatures läuft asynchron nach — auf das Erscheinen
+                # warten, nicht auf die View.
+                toggle.wait_for(state="visible", timeout=20000)
                 self.assertEqual(
                     1, toggle.count(),
                     f"Feature-Schalter data-nv-feature={feature!r} fehlt")
                 self.assertFalse(
                     toggle.is_checked(),
                     f"Feature {feature!r} ist standardmäßig eingeschaltet")
+        for feature in ("costs", "env", "runs"):
+            with self.subTest(absent=feature):
+                self.assertEqual(
+                    0, self.page.locator(
+                        f"input[data-nv-feature='{feature}']").count(),
+                    f"Der Feature-Schalter {feature!r} existiert nach F34 "
+                    "nicht mehr")
 
     def test_advanced_limits_appears_and_switches_mode(self):
-        """Vorbedingung: Feature ``limits`` aus, Modus ``stop``. Aktion:
-        Schalter an, dann ``limits-continue``.
+        """Vorbedingung: Modus ``stop``. Aktion: Feature ``limits`` einschalten,
+        ``limits-continue``, danach ``limits-stop``.
 
-        Erwartung: ``[data-nv-advanced="limits"]`` ist zunächst unsichtbar,
-        erscheint nach dem Einschalten ohne Neuladen und nennt den Modus;
-        der Knopf stellt auf ``continue`` um, was ``GET /api/limits``
-        bestätigt.
+        Erwartung: Sektion ``section[data-nv-ssection='limits']`` ist
+        immer sichtbar; mit dem Schalter stehen die erklärten Modus-Karten;
+        aktiver Modus ist hervorgehoben; die Knöpfe ``limits-continue`` /
+        ``limits-stop`` wechseln den Modus — ``GET /api/limits`` bestätigt
+        ``continue`` bzw. ``stop``.
         """
         self.api_post("/api/limits", {"action": "stop"})
         self.boot()
         self.open_settings()
-        advanced = self.page.locator("[data-nv-advanced='limits']")
-        self.assertFalse(
-            advanced.is_visible() if advanced.count() else False,
-            "Der Bereich limits ist ohne Feature-Schalter sichtbar")
-
+        limits = self.page.locator("[data-nv-ssection='limits']")
+        limits.wait_for(state="visible", timeout=15000)
+        self.page.locator("input[data-nv-feature='limits']").wait_for(
+            state="visible", timeout=15000)
         self.page.locator("input[data-nv-feature='limits']").check()
-        advanced.wait_for(state="visible", timeout=20000)
-        self.wait_until(
-            lambda: "stop" in (advanced.inner_text() or "").lower(),
-            timeout=20000,
-            message="Der Bereich limits nennt den aktuellen Modus nicht: "
-                    + repr(advanced.inner_text() if advanced.count() else ""))
+        continue_button = self.page.locator(
+            "[data-nv-action='limits-continue']")
+        continue_button.wait_for(state="visible", timeout=20000)
+        stop_button = self.page.locator("[data-nv-action='limits-stop']")
+        stop_button.wait_for(state="visible", timeout=20000)
 
-        self.page.locator("[data-nv-action='limits-continue']").click()
+        # Erklärungen der beiden Modus-Karten (Wirkung + Hinweis):
+        self.assertRegex(
+            (limits.inner_text() or ""), r"(?i)new run|neue läuf",
+            "Die Limits-Optionen enthalten keine Erklärung der Wirkung: "
+            + repr(limits.inner_text() if limits.count() else ""))
+        # Aktiver Modus ist hervorgehoben (aria-pressed / nv-primary):
         self.wait_until(
-            lambda: "continue" in (advanced.inner_text() or "").lower(),
-            timeout=20000,
-            message="Der Moduswechsel auf continue wird nicht angezeigt")
-        data = self.api_json("/api/limits")
-        self.assertEqual("continue", data.get("mode"),
-                         "GET /api/limits bestätigt den Moduswechsel nicht: "
-                         + repr(data))
+            lambda: stop_button.get_attribute("aria-pressed") == "true"
+            or "nv-primary" in (stop_button.get_attribute("class") or ""),
+            timeout=30,
+            message="Der Modus stop ist nicht hervorgehoben")
+
+        continue_button.click()
+        self.wait_until(
+            lambda: self.api_json("/api/limits").get("mode") == "continue",
+            timeout=30,
+            message="Der Moduswechsel auf continue wird nicht bestätigt: "
+                    + repr(self.api_json("/api/limits")))
+        self.assertTrue(
+            continue_button.get_attribute("aria-pressed") == "true"
+            or "nv-primary" in (continue_button.get_attribute("class") or ""),
+            "Der Modus continue ist nicht hervorgehoben")
+
+        stop_button.click()
+        self.wait_until(
+            lambda: self.api_json("/api/limits").get("mode") == "stop",
+            timeout=30,
+            message="Der Moduswechsel auf stop wird nicht bestätigt: "
+                    + repr(self.api_json("/api/limits")))
         self.assert_no_page_errors()
 
     def test_advanced_gates_shows_keys_and_project_form(self):
-        """Vorbedingung: Feature ``gates`` aus. Aktion: Schalter an.
+        """Vorbedingung: Feature ``gates`` aus. Aktion: Schalter an; Wert
+        setzen; Speichern.
 
-        Erwartung: ``[data-nv-advanced="gates"]`` erscheint, nennt die
-        Schrankenschlüssel aus ``GET /api/gates`` und enthält mindestens ein
-        Feld für den Projekt-Override.
+        Erwartung: Sektion ``section[data-nv-ssection='gates']``; die
+        Schrankenschlüssel aus ``GET /api/gates`` je Zeile
+        ``tr[data-nv-gate]`` benannt mit ``small[data-nv-gate-help]``,
+        ``[data-nv-gate-value]`` und ``span[data-nv-gate-origin]``;
+        ``select[data-nv-gates-project]`` bietet ``global`` + Projekte,
+        bietet kein Freitextfeld (``input[data-nv-gates-project]`` == 0);
+        ``button[data-nv-action='gates-reset']`` vorhanden; nach dem
+        Speichern bleibt ein vorher gesetztes DOM-Merkmal der Sektion
+        erhalten (kein Voll-Neurender) und der Wert steht in
+        ``GET /api/gates``.
         """
         self.boot()
         self.open_settings()
         gates_view = self.api_json("/api/gates")
         self.assertTrue(gates_view.get("ok"), gates_view)
 
-        advanced = self.page.locator("[data-nv-advanced='gates']")
-        self.assertFalse(
-            advanced.is_visible() if advanced.count() else False,
-            "Der Bereich gates ist ohne Feature-Schalter sichtbar")
-
+        section = self.page.locator("[data-nv-ssection='gates']")
+        section.wait_for(state="visible", timeout=15000)
+        self.page.locator("input[data-nv-feature='gates']").wait_for(
+            state="visible", timeout=15000)
         self.page.locator("input[data-nv-feature='gates']").check()
-        advanced.wait_for(state="visible", timeout=20000)
-        text = advanced.inner_text()
+
+        table = section.locator("[data-nv-gates-table]")
+        table.wait_for(state="visible", timeout=20000)
         for key in gates_view["gates"]:
             with self.subTest(gate=key):
-                self.assertIn(key, text,
-                              "Der Bereich gates nennt die Schranke "
-                              f"{key!r} nicht")
+                row = table.locator(f"tr[data-nv-gate='{key}']")
+                self.assertEqual(
+                    1, row.count(),
+                    f"Die Zeile tr[data-nv-gate={key!r}] fehlt")
+                help_text = row.locator(
+                    "small[data-nv-gate-help]").inner_text()
+                self.assertTrue(
+                    (help_text or "").strip(),
+                    f"Die Schranke {key!r} hat keine Erklärung")
+                self.assertEqual(
+                    1, row.locator("[data-nv-gate-value]").count(),
+                    f"Die Schranke {key!r} hat kein Wert-Feld")
+                self.assertEqual(
+                    1, row.locator("span[data-nv-gate-origin]").count(),
+                    f"Die Schranke {key!r} hat kein Herkunfts-Badge")
+
+        project_select = section.locator("select[data-nv-gates-project]")
+        self.assertEqual(
+            1, project_select.count(),
+            "Die Projektauswahl data-nv-gates-project fehlt")
+        options = project_select.evaluate(
+            "node => Array.from(node.options).map(o => o.value)")
+        self.assertIn("global", options,
+                      "Der Gates-Filter bietet 'global' nicht an")
         self.assertGreaterEqual(
-            advanced.locator("input, select, textarea").count(), 1,
-            "Der Bereich gates bietet kein Feld für den Projekt-Override")
+            len(options), 1, "Der Gates-Filter hat keine Projektauswahl")
+        self.assertEqual(
+            0, section.locator("input[data-nv-gates-project]").count(),
+            "Der Gates-Projektfilter darf kein Freitextfeld sein")
+        self.page.locator("[data-nv-action='gates-reset']").wait_for(
+            state="visible", timeout=20000)
+
+        # Global: Auf „global" schalten und auf das abgeschlossene Redraw
+        # warten (der Wert im Eingabefeld entspricht dem globalen API-Wert).
+        project_select.select_option("global")
+        retries_row = section.locator("tr[data-nv-gate='retries']")
+        retries_input = retries_row.locator("[data-nv-gate-value]")
+        retries_input.wait_for(state="visible", timeout=20000)
+        self.wait_until(
+            lambda: retries_input.input_value()
+            == str(self.api_json("/api/gates")["gates"]["retries"]["value"]),
+            timeout=20,
+            message="Das Gates-Redraw auf den globalen Kontext ist nicht abgeschlossen")
+
+        # Speichern: Wert setzen, ein DOM-Merkmal setzen, Speichern,
+        # API bestätigt — das Merkmal überlebt (kein Voll-Neurender).
+        retries_input.fill("4")
+        section.evaluate(
+            "node => node.setAttribute('data-nv-ap22-no-rerender', '1')")
+        save = section.locator("[data-nv-action='gates-save']")
+        save.wait_for(state="visible", timeout=20000)
+        save.click()
+        self.wait_until(
+            lambda: self.api_json("/api/gates")["gates"]["retries"]
+            ["value"] == 4,
+            timeout=30,
+            message="Der globale Wert der Schranke retries wurde nicht "
+                    "gespeichert: " + repr(self.api_json("/api/gates")))
+        self.assertEqual(
+            "1", section.get_attribute("data-nv-ap22-no-rerender"),
+            "Nach gates-save wurde ein Voll-Neurender erwartet "
+            "(das gesetzte DOM-Merkmal ist weg)")
         self.assert_no_page_errors()
 
 

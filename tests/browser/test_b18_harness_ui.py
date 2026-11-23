@@ -1,7 +1,10 @@
 """Browserabnahme B18 — Harness nur auswählbar, wenn installiert.
 
 F34-Anpassung: Die statische Sidebar entfällt; ``open_settings`` nutzt die
-permanente Kopf-Navigation (``nav[data-nv-navs]``).
+permanente Kopf-Navigation (``nav[data-nv-navs]``). Die Harness-Sektion ist
+laut Vertrag ``section[data-nv-ssection='harness']`` (echte Hook,
+``nova-settings.js`` ``NV_SETTINGS_SECTIONS``; bestätigt, nicht
+abgeleitet). ``test_04b`` (Classic) bleibt unberührt.
 
 Fachlicher Rahmen
 -----------------
@@ -415,7 +418,8 @@ class HarnessUiTest(unittest.TestCase):
                          "Feature-Schalter data-nv-feature='harness' fehlt")
         if not box.is_checked():
             box.check()
-        section = self.page.locator("[data-nv-advanced='harness']")
+        box.wait_for(state="visible", timeout=20000)
+        section = self.page.locator("[data-nv-ssection='harness']")
         section.wait_for(state="visible", timeout=25000)
         return section
 
@@ -433,7 +437,11 @@ class HarnessUiTest(unittest.TestCase):
             value)
 
     def nova_rows(self, section):
-        rows = section.locator("[data-nv-harness-status] .nv-row")
+        # Echte Hooks: Statuszeilen der Nova sind ``div.nv-card`` direkt in
+        # ``[data-nv-harness-status]`` (implementiert, siehe nova-settings.js
+        # ``fillHarness``/``draw``); ``.nv-row`` ist Bestand von wegen und
+        # existiert nicht mehr.
+        rows = section.locator("[data-nv-harness-status] > .nv-card")
         return [rows.nth(index).inner_text()
                 for index in range(rows.count())]
 
@@ -707,10 +715,14 @@ class HarnessUiTest(unittest.TestCase):
         self.page.locator("main#nv-main").wait_for(
             state="visible", timeout=25000)
         self.open_settings()
+        # Vertragsableitung: Settings-View-Gerüst ist synchr., fillFeatures
+        # läuft nach asynchron — auf das Erscheinen warten, nicht nur auf
+        # die View (same as open_nova_harness).
         box = self.page.locator("input[data-nv-feature='harness']")
-        if box.count() and not box.is_checked():
+        box.wait_for(state="visible", timeout=25000)
+        if not box.is_checked():
             box.check()
-        section = self.page.locator("[data-nv-advanced='harness']")
+        section = self.page.locator("[data-nv-ssection='harness']")
         section.wait_for(state="visible", timeout=25000)
         self.assertEqual(
             "pi",
