@@ -1,33 +1,43 @@
-"""Browserabnahme AP22, Meilenstein B: Arbeit (Board), Feedback, Priorisierung.
+"""Browserabnahme AP22, Meilenstein B: Arbeit (Liste, Feedback, Priorisierung).
 
-Die Fälle leiten sich aus ``docs/features/AP22.md`` („Projektansicht → Arbeit
-(Board)“) ab. Das echte Dashboard läuft isoliert auf freiem Port; Chromium
-kommt aus dem Nur-Lese-Cache. Getestet wird ausschließlich über die
-``data-nv-*``-Hooks des Vertrags.
+Die Fälle leiten sich aus ``docs/features/AP22.md`` („Projektansicht → Arbeit“)
+ab. Das echte Dashboard läuft isoliert auf freiem Port; Chromium kommt aus
+dem Nur-Lese-Cache. Getestet wird ausschließlich über die ``data-nv-*``-Hooks
+des Vertrags.
 
 Testfälle (Kurzfassung; Details in den Methoden)
 -----------------------------------------------
 ``BoardTest.test_columns_and_tickets_follow_the_fixture_states``
     Vorbedingung: zwei offene, ein blockiertes, ein erledigtes Paket sowie
-    zwei Feedback-Einträge ohne Nachweis. Erwartung: vier beschriftete
-    Spalten ``open|blocked|proof|done``; die Karten liegen mit Titel und
-    Rohstatus in der richtigen Spalte.
+    zwei Feedback-Einträge ohne Nachweis. Erwartung: F34 — kein Board;
+    Reihenfolge Aktionsleiste → Filterleiste → Priorisierung → Liste;
+    ``AP-OPEN``/``AP-OPEN2`` (offen), ``AP-BLOCK`` (BLOCKIERT),
+    ``BUG-7``/``FB-1`` (ohne Nachweis), ``AP-DONE`` (erledigt) in der
+    ``div[data-nv-ticket-list]`` mit ``data-nv-kind``, ``data-nv-state``-Pille
+    und Kennung im Text.
 ``FeedbackListTest.test_feedback_list_shows_kind_badges``
-    Erwartung: ``[data-nv-feedback]`` listet beide Einträge, der Bug trägt
-    ein Bug-Badge, das gewöhnliche Feedback ein Feedback-Badge.
+    Erwartung: F34 — Feedback ist in der gemeinsamen Liste (keine
+    ``details[data-nv-feedback-box]``); die ``article[data-nv-feedback-item]``
+    tragen ``data-nv-kind`` und ``span.nv-kind-badge`` (Bug/Feedback).
 ``CreateTest.test_create_package_and_cancel_the_form``
     Aktion: ``new-package``, Titel/Beschreibung speichern; danach erneut
-    öffnen und abbrechen. Erwartung: neue Karte in ``open``, Datei
-    geschrieben; Abbrechen blendet das Formular ohne Eintrag aus.
+    öffnen und abbrechen. Erwartung: neue Karte in ``div[data-nv-ticket-list]``,
+    Datei geschrieben; Abbrechen blendet das Formular ohne Eintrag aus.
 ``EditTest.test_edit_prefills_and_saves_only_the_chosen_ticket``
-    Aktion: ``ticket-edit`` an ``AP-OPEN``. Erwartung: Formular ist
-    vorbefüllt; die Änderung erscheint, ``AP-OPEN2`` bleibt unverändert.
+    Aktion: Klick auf ``article[data-nv-ticket='AP-OPEN']`` →
+    ``button[data-nv-action='ticket-edit']`` im Kontext-Panel
+    (``[data-nv-ticket-detail='AP-OPEN']``); Titel ändern, speichern.
+    Erwartung: Formular ist vorbefüllt; die Änderung erscheint,
+    ``AP-OPEN2`` bleibt unverändert.
 ``DeleteTest.test_delete_removes_the_card``
-    Aktion: ``ticket-delete`` (Bestätigung wird akzeptiert). Erwartung:
-    Karte und Eintrag sind verschwunden, die übrigen bleiben.
+    Aktion: Klick auf ``article[data-nv-ticket='AP-OPEN']`` →
+    ``button[data-nv-action='ticket-delete']`` im Kontext-Panel
+    (Bestätigung wird akzeptiert). Erwartung: Karte und Eintrag sind
+    verschwunden, die übrigen bleiben.
 ``FeedbackCreateTest.test_create_bug_and_feedback_entries``
     Aktion: ``new-bug`` und ``new-feedback`` ausfüllen und speichern.
-    Erwartung: beide erscheinen mit dem richtigen Art-Badge.
+    Erwartung: beide erscheinen in der ``div[data-nv-ticket-list]`` mit
+    ``data-nv-kind`` (Bug/Feedback-Badge).
 ``PriorityTest.test_priority_card_appears_with_feature_and_persists``
     Vorbedingung: Feature ``priority`` aus. Aktion: Schalter in den
     Einstellungen aktivieren, Arbeit öffnen, ein Paket hochschieben und
@@ -39,22 +49,40 @@ Testfälle (Kurzfassung; Details in den Methoden)
 
 Vertragsunklarheiten (bewusst so geprüft und dokumentiert)
 ----------------------------------------------------------
-1. **Nachweis-Spalte.** ``ohne Nachweis`` entsteht laut Backend nur bei
-   ``FEEDBACK.md``-Einträgen (bei ``TICKETS.md`` genügt die Checkbox). Die
-   Fixtures legen deshalb Feedback-Einträge mit ungültigem Commit an und
-   erwarten sie als Board-Karten in ``proof``.
-2. **Art-Badge.** Der Vertrag nennt nur „Art-Badge (bug|feedback)“, keinen
-   eigenen Hook. Geprüft wird der sichtbare Text ``Bug`` bzw. ``Feedback``
-   im jeweiligen ``article[data-nv-feedback-item]``.
-3. **Spaltenbeschriftung.** Der Vertrag legt keinen Wortlaut fest. Geprüft
-   werden die vier Hooks, ``<html lang="en">`` und eine nichtleere
-   Beschriftung je Spalte.
-4. **Priorisierungszeilen.** Für die Zeilen nennt der Vertrag keinen Hook.
-   Die Zeile wird über den Pakettext und den enthaltenen
-   ``priority-up``-Knopf gefunden.
-5. **Löschbestätigung.** Der Vertrag nennt kein Bestätigungsformat. Ein
+1. **Nachweis-Badge.** ``ohne Nachweis`` ist kein Zustand mehr, sondern ein
+   Badge (``span[data-nv-proof]``) am Eintrag (Backend liefert
+   ``ohne Nachweis`` für unbeglichene Feedback ohne Nachweis).
+2. **Art-Badge.** Der Vertrag nennt „Badge ``span.nv-kind-badge``
+   (bug|feedback) + linke Farbkante“; ``data-nv-kind`` wird auf der Karte
+   getragen.
+3. **Löschbestätigung.** Der Vertrag nennt kein Bestätigungsformat. Ein
    nativer Dialog wird akzeptiert; erscheint eine eingebettete Bestätigung,
    wird der sichtbare Bestätigungsknopf geklickt.
+
+F34-Anpassungen
+---------------
+* ``BoardTest.test_columns_and_tickets_follow_the_fixture_states``: Der F34-
+  Vertrag entfernt das Board komplett (Absence: ``.nv-board``,
+  ``[data-nv-col]``). Drum herum gehört die Reihenfolge Aktionsleiste →
+  Filterleiste → Priorisierung → Liste (per ``compareDocumentPosition``), die
+  Karten liegen in ``div[data-nv-ticket-list]``; ``data-nv-kind``
+  (package|bug|feedback) und ``data-nv-state`` (offen, BLOCKIERT,
+  ohne Nachweis, erledigt) trägt der Eintrag.
+* ``FeedbackListTest.test_feedback_list_shows_kind_badges``: F34: Feedback ist
+  in der gemeinsamen Liste — Absence ``details[data-nv-feedback-box]``; die Art
+  wird per ``data-nv-kind`` geprüft.
+* ``CreateTest.test_create_package_and_cancel_the_form``: F34: Die neue Karte
+  erscheint in ``div[data-nv-ticket-list]`` (keine Spalte mehr).
+* ``EditTest.test_edit_prefills_and_saves_only_the_chosen_ticket``: F34: Klick
+  auf die Karte öffnet das Kontext-Panel (``[data-nv-ticket-detail='<id>']``);
+  ``ticket-edit`` (nv-secondary) steht im Panel — die Card selbst bietet keinen
+  Edit-Knopf (Absence auf ``article[data-nv-ticket]``).
+* ``DeleteTest.test_delete_removes_the_card``: F34: ``ticket-delete`` (nv-danger)
+  steht im Kontext-Panel — die Card selbst bietet keinen Lösch-Knopf (Absence).
+  Löschen mit Bestätigung: Karte und Datei verschwinden, übrige bleiben.
+* ``FeedbackCreateTest.test_create_bug_and_feedback_entries``: F34: Bug/Feedback
+  sind dieselben Listeneinträge (``article[data-nv-feedback-item]``), die Art
+  über ``data-nv-kind`` auszeichnet; keine eigene Feedback-Sektion mehr.
 """
 import http.client
 import json
@@ -282,14 +310,6 @@ class AP22WorkBrowserTest(unittest.TestCase):
             state="visible", timeout=20000)
         return self.page.locator("section[data-nv-ppanel='work']")
 
-    def open_feedback_box(self):
-        """F33 WP3/2o: Feedback-Karten im zusammengeklappten details öffnen."""
-        box = self.page.locator("details[data-nv-feedback-box]")
-        box.wait_for(state="visible", timeout=20000)
-        if not box.evaluate("node => node.open"):
-            box.locator("summary").first.click()
-        return box
-
     def ticket_text(self):
         return (self.project / "TICKETS.md").read_text(encoding="utf-8")
 
@@ -299,6 +319,20 @@ class AP22WorkBrowserTest(unittest.TestCase):
     def card(self, ticket_id):
         return self.page.locator(
             f"article[data-nv-ticket='{ticket_id}']").first
+
+    def feedback_card(self, ticket_id):
+        return self.page.locator(
+            f"article[data-nv-feedback-item='{ticket_id}']").first
+
+    def _follows(self, first, second,
+                 root="main#nv-main[data-nv-view='project']"):
+        """Prüft, ob ``first`` vor ``second`` in DOM-Reihenfolge steht."""
+        return self.page.evaluate("""([first, second, rootSel]) => {
+            const root = document.querySelector(rootSel);
+            const a = root && root.querySelector(first);
+            const b = root && root.querySelector(second);
+            return !!a && !!b && !!(a.compareDocumentPosition(b) & 4);
+        }""", [first, second, root])
 
     def open_form(self, action):
         self.page.locator(f"[data-nv-action='{action}']").first.click()
@@ -336,44 +370,81 @@ class AP22WorkBrowserTest(unittest.TestCase):
 
 class BoardTest(AP22WorkBrowserTest):
     def test_columns_and_tickets_follow_the_fixture_states(self):
-        """Vorbedingung: Fixtures in allen vier Zuständen.
+        """Vorbedingung: Fixtures in allen Zuständen.
 
-        Erwartung: Vier beschriftete Spalten; ``AP-OPEN``/``AP-OPEN2`` in
-        ``open``, ``AP-BLOCK`` in ``blocked``, ``BUG-7``/``FB-1`` in
-        ``proof``, ``AP-DONE`` in ``done``. Die Karten tragen Titel und
-        ``data-nv-state`` mit dem Rohstatus des Backends.
+        Erwartung: F34 — kein Board (``.nv-board``/``[data-nv-col]``
+        entfallen); die Reihenfolge Aktionsleiste → Filterleiste →
+        Priorisierung → Liste; die Karten liegen in ``div[data-nv-ticket-list]``
+        mit ``data-nv-kind``, ``data-nv-state`` (Rohstatus des Backends) und
+        Zustands-Pille.
         """
         self.open_work()
         self.assertEqual(
             "en", self.page.evaluate("() => document.documentElement.lang"),
             "Die Standardsprache der Oberfläche ist nicht Englisch")
-        for column in ("open", "blocked", "proof", "done"):
-            locator = self.page.locator(f"[data-nv-col='{column}']")
-            self.assertEqual(1, locator.count(), f"Board-Spalte {column!r} fehlt")
-            self.assertTrue(locator.first.is_visible(),
-                            f"Board-Spalte {column!r} ist nicht sichtbar")
-            self.assertTrue((locator.first.inner_text() or "").strip(),
-                            f"Board-Spalte {column!r} ist unbeschriftet")
+        # Absence: F34 entfernt das Board komplett.
+        self.assertEqual(0, self.page.locator(".nv-board").count(),
+                         "F34-Absence: ein Board ('.nv-board') existiert")
+        self.assertEqual(0, self.page.locator("[data-nv-col]").count(),
+                         "F34-Absence: [data-nv-col] existiert")
+        # Ordnung: Aktionsleiste → Filterleiste → Priorisierung → Liste.
+        self.assertTrue(
+            self._follows("[data-nv-action='new-package']", "[data-nv-filter-bar]"),
+            "Die Aktionsleiste steht nicht vor der Filterleiste")
+        self.assertTrue(
+            self._follows("[data-nv-filter-bar]", "[data-nv-priority-strip]"),
+            "Die Filterleiste steht nicht vor der Priorisierung")
+        self.assertTrue(
+            self._follows("[data-nv-priority-strip]", "div[data-nv-ticket-list]"),
+            "Die Priorisierung steht nicht vor der Liste")
+        filter_bar = self.page.locator("[data-nv-filter-bar]").first
+        filter_bar.wait_for(state="visible", timeout=20000)
+        self.assertEqual(
+            1, filter_bar.locator("input[data-nv-work-search]").count(),
+            "Die Suchleiste [data-nv-work-search] fehlt in der Filterleiste")
+        for kind in ("all", "package", "bug", "feedback"):
+            self.assertEqual(
+                1, filter_bar.locator(
+                    f"button[data-nv-work-kind='{kind}']").count(),
+                f"Der Chip data-nv-work-kind='{kind}' fehlt in der Filterleiste")
+        self.assertEqual(
+            1, filter_bar.locator("[data-nv-work-hide-done]").count(),
+            "Der Knopf [data-nv-work-hide-done] fehlt in der Filterleiste")
+
+        ticket_list = self.page.locator("div[data-nv-ticket-list]").first
+        ticket_list.wait_for(state="visible", timeout=20000)
+        # Erledigte einblenden (hideDone startet true), damit AP-DONE sitzt.
+        self.page.locator("[data-nv-work-hide-done]").first.click()
+        ticket_list.wait_for(state="visible", timeout=20000)
+
+        def card_of(ticket_id):
+            if ticket_id in ("BUG-7", "FB-1"):
+                return self.feedback_card(ticket_id)
+            return self.card(ticket_id)
 
         expected = {
-            "AP-OPEN": ("open", "offen"),
-            "AP-OPEN2": ("open", "offen"),
-            "AP-BLOCK": ("blocked", "BLOCKIERT"),
-            "BUG-7": ("proof", "ohne Nachweis"),
-            "FB-1": ("proof", "ohne Nachweis"),
-            "AP-DONE": ("done", "erledigt"),
+            "AP-OPEN": ("package", "offen"),
+            "AP-OPEN2": ("package", "offen"),
+            "AP-BLOCK": ("package", "BLOCKIERT"),
+            "BUG-7": ("bug", "ohne Nachweis"),
+            "FB-1": ("feedback", "ohne Nachweis"),
+            "AP-DONE": ("package", "erledigt"),
         }
-        for ticket_id, (column, state) in expected.items():
+        for ticket_id, (kind, state) in expected.items():
             with self.subTest(ticket=ticket_id):
-                column_locator = self.page.locator(
-                    f"[data-nv-col='{column}'] article[data-nv-ticket='{ticket_id}']")
+                article = card_of(ticket_id).first
+                self.assertEqual(1, article.count(),
+                                 f"{ticket_id} fehlt in der Liste")
+                article.wait_for(state="visible", timeout=20000)
                 self.assertEqual(
-                    1, column_locator.count(),
-                    f"{ticket_id} liegt nicht in Spalte {column!r}")
-                article = column_locator.first
+                    kind, article.get_attribute("data-nv-kind"),
+                    f"{ticket_id} trägt nicht das Art-Badge-Feld {kind!r}")
                 self.assertEqual(
                     state, article.get_attribute("data-nv-state"),
                     f"{ticket_id} trägt nicht den Rohstatus {state!r}")
+                self.assertEqual(
+                    1, article.locator("span.nv-state").count(),
+                    f"{ticket_id} hat keine Zustands-Pille")
                 self.assertIn(
                     ticket_id, article.inner_text(),
                     f"Die Karte {ticket_id} zeigt ihre Kennung nicht")
@@ -384,21 +455,29 @@ class FeedbackListTest(AP22WorkBrowserTest):
     def test_feedback_list_shows_kind_badges(self):
         """Vorbedingung: ein Bug und ein gewöhnlicher Feedback-Eintrag.
 
-        Erwartung: ``details[data-nv-feedback-box]`` enthält nach dem
-        Aufklappen beide ``article[data-nv-feedback-item]``; der Bug trägt ein
-        Bug-Badge, der andere Eintrag ein Feedback-Badge.
+        Erwartung: F34 — Feedback ist in der gemeinsamen Liste (keine
+        ``details[data-nv-feedback-box]`` mehr); die
+        ``article[data-nv-feedback-item]`` tragen ``data-nv-kind`` und das
+        ``span.nv-kind-badge``-Badge (Bug/Feedback).
         """
         self.open_work()
-        # F33 WP3/2o: die Feedback-Box ist standardmäßig zusammengeklappt.
-        list_box = self.open_feedback_box()
-        bug = self.page.locator("[data-nv-feedback-item='BUG-7']")
-        feedback = self.page.locator("[data-nv-feedback-item='FB-1']")
+        # F34: Feedback ist integral in der Liste, keine details-Box mehr.
+        self.assertEqual(
+            0, self.page.locator("details[data-nv-feedback-box]").count(),
+            "F34-Absence: details[data-nv-feedback-box] existiert noch")
+        bug = self.feedback_card("BUG-7")
+        feedback = self.feedback_card("FB-1")
         self.assertEqual(1, bug.count(), "Der Bug fehlt in der Feedback-Liste")
         self.assertEqual(1, feedback.count(),
                          "Das Feedback fehlt in der Feedback-Liste")
-        self.assertRegex(bug.inner_text(), r"bug", "Dem Bug fehlt das Art-Badge")
-        self.assertRegex(feedback.inner_text(), r"feedback",
-                         "Dem Eintrag fehlt das Feedback-Badge")
+        self.assertEqual("bug", bug.get_attribute("data-nv-kind"),
+                         "Dem Bug fehlt das Art-Badge-Feld (F34)")
+        self.assertEqual("feedback", feedback.get_attribute("data-nv-kind"),
+                         "Dem Feedback fehlt das Art-Badge-Feld (F34)")
+        self.assertRegex(bug.locator("span.nv-kind-badge").first.inner_text(),
+                         r"bug", "Dem Bug fehlt das Art-Badge")
+        self.assertRegex(feedback.locator("span.nv-kind-badge").first.inner_text(),
+                         r"feedback", "Dem Eintrag fehlt das Feedback-Badge")
         self.assertNotRegex(
             feedback.inner_text(), r"\bbug\b",
             "Der gewöhnliche Feedback-Eintrag trägt fälschlich ein Bug-Badge")
@@ -407,10 +486,11 @@ class FeedbackListTest(AP22WorkBrowserTest):
 
 class CreateTest(AP22WorkBrowserTest):
     def test_create_package_and_cancel_the_form(self):
-        """Vorbedingung: Board geöffnet. Aktion: Paket anlegen, danach ein
+        """Vorbedingung: Arbeit geöffnet. Aktion: Paket anlegen, danach ein
         zweites Formular abbrechen.
-        Erwartung: Das neue Paket erscheint in ``open`` und in der Datei;
-        Abbrechen schließt das Formular, ohne etwas anzulegen.
+        Erwartung: F34: Die neue Karte erscheint in ``div[data-nv-ticket-list]``
+        und in der Datei; Abbrechen schließt das Formular, ohne etwas
+        anzulegen.
         """
         self.open_work()
         form = self.open_form("new-package")
@@ -421,7 +501,7 @@ class CreateTest(AP22WorkBrowserTest):
             timeout=20,
             message="Das neue Arbeitspaket wurde nicht gespeichert")
         card = self.page.locator(
-            "[data-nv-col='open'] article[data-nv-ticket]").filter(
+            "div[data-nv-ticket-list] article[data-nv-ticket]").filter(
                 has_text="NEU-AP22 Anlegen").first
         card.wait_for(state="visible", timeout=20000)
         self.assertTrue((card.get_attribute("data-nv-ticket") or "").strip(),
@@ -438,7 +518,7 @@ class CreateTest(AP22WorkBrowserTest):
             "Abbrechen hat die Ticketdatei verändert")
         self.assertEqual(
             0, self.page.locator(
-                "article[data-nv-ticket]").filter(
+                "div[data-nv-ticket-list] article[data-nv-ticket]").filter(
                     has_text="VERWORFEN-AP22").count(),
             "Abbrechen hat trotzdem eine Karte angelegt")
         self.assert_clean_page()
@@ -448,13 +528,22 @@ class EditTest(AP22WorkBrowserTest):
     def test_edit_prefills_and_saves_only_the_chosen_ticket(self):
         """Vorbedingung: ``AP-OPEN`` und ``AP-OPEN2`` vorhanden.
 
-        Aktion: ``ticket-edit`` an ``AP-OPEN``, Titel ändern, speichern.
+        Aktion: Klick auf ``article[data-nv-ticket='AP-OPEN']``, dann
+        ``button[data-nv-action='ticket-edit']`` im Kontext-Panel
+        (``[data-nv-ticket-detail='AP-OPEN']``); Titel ändern, speichern.
         Erwartung: Formular ist vorbefüllt; nur ``AP-OPEN`` ändert sich,
         ``AP-OPEN2`` bleibt unverändert.
         """
         self.open_work()
-        self.card("AP-OPEN").locator(
-            "[data-nv-action='ticket-edit']").first.click()
+        self.card("AP-OPEN").click()
+        detail = self.page.locator("[data-nv-ticket-detail='AP-OPEN']").first
+        detail.wait_for(state="visible", timeout=20000)
+        # F34: Die Card selbst bietet keinen Bearbeiten-Knopf mehr.
+        self.assertEqual(
+            0, self.card("AP-OPEN").locator(
+                "[data-nv-action='ticket-edit']").count(),
+            "F34: Die Karte selbst bietet keinen Bearbeiten-Knopf mehr")
+        detail.locator("[data-nv-action='ticket-edit']").first.click()
         form = self.page.locator("[data-nv-ticket-form]")
         form.wait_for(state="visible", timeout=20000)
         title = form.locator("input[data-nv-field='title']")
@@ -482,12 +571,21 @@ class DeleteTest(AP22WorkBrowserTest):
     def test_delete_removes_the_card(self):
         """Vorbedingung: ``AP-OPEN`` vorhanden.
 
-        Aktion: ``ticket-delete`` (Bestätigung wird akzeptiert).
-        Erwartung: Karte und Dateieintrag verschwinden, die übrigen bleiben.
+        Aktion: Klick auf ``article[data-nv-ticket='AP-OPEN']``, dann
+        ``button[data-nv-action='ticket-delete']`` im Kontext-Panel
+        (Bestätigung wird akzeptiert). Erwartung: Karte und Dateieintrag
+        verschwinden, die übrigen bleiben.
         """
         self.open_work()
-        self.card("AP-OPEN").locator(
-            "[data-nv-action='ticket-delete']").first.click()
+        self.card("AP-OPEN").click()
+        detail = self.page.locator("[data-nv-ticket-detail='AP-OPEN']").first
+        detail.wait_for(state="visible", timeout=20000)
+        # F34: Die Card selbst bietet keinen Löschen-Knopf mehr.
+        self.assertEqual(
+            0, self.card("AP-OPEN").locator(
+                "[data-nv-action='ticket-delete']").count(),
+            "F34: Die Karte selbst bietet keinen Löschen-Knopf mehr")
+        detail.locator("[data-nv-action='ticket-delete']").first.click()
         self.confirm_if_visible()
         self.wait_until(
             lambda: self.page.locator(
@@ -508,11 +606,12 @@ class DeleteTest(AP22WorkBrowserTest):
 
 class FeedbackCreateTest(AP22WorkBrowserTest):
     def test_create_bug_and_feedback_entries(self):
-        """Vorbedingung: Board geöffnet.
+        """Vorbedingung: Arbeit geöffnet.
 
         Aktion: ``new-bug`` und ``new-feedback`` ausfüllen und speichern.
-        Erwartung: Beide erscheinen in ``details[data-nv-feedback-box]``
-        (nach dem Aufklappen) mit dem richtigen Art-Badge.
+        Erwartung: Beide erscheinen in der ``div[data-nv-ticket-list]``
+        (F34: keine ``details[data-nv-feedback-box]`` mehr) mit dem richtigen
+        ``data-nv-kind``-Art-Badge.
         """
         self.open_work()
         form = self.open_form("new-bug")
@@ -522,11 +621,11 @@ class FeedbackCreateTest(AP22WorkBrowserTest):
             lambda: "NEUER-BUG-AP22" in self.feedback_text(),
             timeout=20,
             message="Der neue Bug wurde nicht gespeichert")
-        # F33 WP3/2o: das Rendering nach dem Speichern klappt die Box wieder zu.
-        self.open_feedback_box()
-        bug = self.page.locator("[data-nv-feedback-item]").filter(
+        bug = self.page.locator("div[data-nv-ticket-list] article[data-nv-feedback-item]").filter(
             has_text="NEUER-BUG-AP22").first
         bug.wait_for(state="visible", timeout=20000)
+        self.assertEqual("bug", bug.get_attribute("data-nv-kind"),
+                         "Der neue Bug trägt kein Art-Badge-Feld (F34)")
         self.assertRegex(bug.inner_text(), r"bug",
                          "Der neue Bug trägt kein Bug-Badge")
 
@@ -537,11 +636,11 @@ class FeedbackCreateTest(AP22WorkBrowserTest):
             lambda: "NEUES-FEEDBACK-AP22" in self.feedback_text(),
             timeout=20,
             message="Das neue Feedback wurde nicht gespeichert")
-        # F33 WP3/2o: das Rendering nach dem Speichern klappt die Box wieder zu.
-        self.open_feedback_box()
-        feedback = self.page.locator("[data-nv-feedback-item]").filter(
+        feedback = self.page.locator("div[data-nv-ticket-list] article[data-nv-feedback-item]").filter(
             has_text="NEUES-FEEDBACK-AP22").first
         feedback.wait_for(state="visible", timeout=20000)
+        self.assertEqual("feedback", feedback.get_attribute("data-nv-kind"),
+                         "Das neue Feedback trägt kein Art-Badge-Feld (F34)")
         self.assertRegex(feedback.inner_text(), r"feedback",
                          "Das neue Feedback trägt kein Feedback-Badge")
         self.assertNotRegex(feedback.inner_text(), r"\bbug\b",
