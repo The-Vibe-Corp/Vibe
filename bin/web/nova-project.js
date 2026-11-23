@@ -203,6 +203,7 @@ function nvpTicketCard(name, token, row, rank) {
   }
   var card = el('article', {
     class: 'nv-card nv-ticket',
+    'data-nv-kind': kind,
     'data-nv-state': String(row.state || ''),
     style: 'border-left: 4px solid ' + nvpKindColor(kind) + '; cursor: pointer;'
   });
@@ -1359,16 +1360,20 @@ function nvpAgentsFileSection(name, token, view) {
     }
     return String(entry || tr('Sicherung'));
   }
-  var backups = file.backups || [];
   var backupSelect = el('select', {'data-nv-agents-backup': '',
     'aria-label': tr('Sicherung auswählen')});
-  if (!backups.length) {
-    backupSelect.append(el('option', {value: ''}, tr('Keine Sicherungen vorhanden')));
+  function renderBackupOptions(entries) {
+    backupSelect.replaceChildren();
+    if (!entries || !entries.length) {
+      backupSelect.append(el('option', {value: ''}, tr('Keine Sicherungen vorhanden')));
+      return;
+    }
+    entries.forEach(function (entry) {
+      var label = backupLabel(entry);
+      backupSelect.append(el('option', {value: label}, label));
+    });
   }
-  backups.forEach(function (entry) {
-    var label = backupLabel(entry);
-    backupSelect.append(el('option', {value: label}, label));
-  });
+  renderBackupOptions(file.backups);
   function selectedBackup() {
     return String(backupSelect.value || '');
   }
@@ -1389,6 +1394,9 @@ function nvpAgentsFileSection(name, token, view) {
         if (result && result.ok === false) { nvpShowError(error, bt(result.message)); return; }
         restoreConfirm.setAttribute('hidden', '');
         adoptFile(result && result.agents_file);
+        if (result && result.agents_file) {
+          renderBackupOptions(result.agents_file.backups);
+        }
         toast(bt(result && result.message) || tr('Wiederhergestellt'));
       } catch (e) { nvpShowError(error, String(e && e.message || e)); }
     }, 'nv-primary'),
@@ -1422,7 +1430,12 @@ function nvpAgentsFileSection(name, token, view) {
   });
   var backup = nvpButton(tr('Sicherung anlegen'), 'agents-file-backup', function () {
     nvpPost(name, '/api/agents_file', {action: 'backup'}, 'Gesichert', token)
-      .then(function () { if (!NV.stale(token)) NV.render(); });
+      .then(function (result) {
+        if (NV.stale(token)) return;
+        if (result && result.agents_file) {
+          renderBackupOptions(result.agents_file.backups);
+        }
+      });
   });
   var restore = nvpButton(tr('Wiederherstellen'), 'agents-file-restore', function () {
     setTx(restoreText, tr('Sicherung „{{name}}“ wiederherstellen? '
@@ -1772,14 +1785,14 @@ NV.views.project = async function project(context, token) {
     if (depth >= 600) backToTop.removeAttribute('hidden');
     else backToTop.setAttribute('hidden', '');
   }
-  window.addEventListener('scroll', nvpSyncBackToTop, {passive: true});
-  nvpSyncBackToTop();
   backToTop.addEventListener('click', function () {
     var top = ticketList.getBoundingClientRect().top
       + (window.scrollY || 0) - 16;
     window.scrollTo({top: Math.max(0, top), behavior: 'smooth'});
   });
   panels.work.append(backToTop);
+  window.addEventListener('scroll', nvpSyncBackToTop, {passive: true});
+  nvpSyncBackToTop();
   nvpWireWorkFilters(panels.work, hideDoneButton, nvpCount(tickets, 'erledigt'));
 
   /* ---- Output: nur Container, Inhalt kommt aus B2 ---- */

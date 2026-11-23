@@ -2737,9 +2737,10 @@ def agents_file_view(name):
     außerhalb des Projekts liegen könnte.
     """
     path = os.path.join(ppath(name), "AGENTS.md")
+    backups = agents_file_backups(name)
     if os.path.islink(path) or not os.path.isfile(path):
         return {"exists": False, "digest": "", "before": "",
-                "managed": None, "after": ""}
+                "managed": None, "after": "", "backups": backups}
     digest = vibe_storage.file_digest(path)
     try:
         with open(path, encoding="utf-8") as handle:
@@ -2748,7 +2749,7 @@ def agents_file_view(name):
         raise ValueError("AGENTS.md ist nicht UTF-8 kodiert: " + str(error)) from error
     before, managed, after = _agents_file_split(text)
     return {"exists": True, "digest": digest, "before": before,
-            "managed": managed, "after": after}
+            "managed": managed, "after": after, "backups": backups}
 
 def agents_file_save(name, before, after, digest):
     """Schreibt die freien Teile der AGENTS.md und behält den Block byte-identisch.
@@ -2838,6 +2839,20 @@ def _test_agent_created(created):
 def agents_file_backup_dir(name):
     """Verzeichnis der AGENTS.md-Sicherungen: ``BACKUPS/<safe(name)>-agents-md``."""
     return os.path.join(BACKUPS, safe(name) + "-agents-md")
+
+
+def agents_file_backups(name):
+    """Vorhandene AGENTS.md-Sicherungen dieses Projekts, neueste zuerst.
+
+    Liefert nur die Dateinamen (die bereits einen Zeitstempel tragen) und
+    keinen Dateiinhalt, damit keine Geheimnisse aus einer Sicherung in die
+    Ansicht gelangen. Die Sortierung ist stabil (Änderungszeit, dann Name).
+    """
+    directory = agents_file_backup_dir(name)
+    items = vibe_storage.list_backups(directory)
+    items.sort(key=lambda item: (
+        os.path.getmtime(os.path.join(directory, item)), item), reverse=True)
+    return [{"name": item} for item in items]
 
 
 def agents_file_backup(name):

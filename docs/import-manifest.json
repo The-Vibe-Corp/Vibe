@@ -1356,8 +1356,8 @@
     },
     {
       "path": "bin/vibe",
-      "bytes": 309967,
-      "sha256": "c4aa0dc09c2ad0312a01bdd0326813ed6b79094e560ef325e854d9965390267b"
+      "bytes": 310640,
+      "sha256": "4f04cf412661b1e6c25e27284caf926f98556aaf1f0fd689caf0a2eafb952632"
     },
     {
       "bytes": 83973,
@@ -1515,9 +1515,9 @@
       "sha256": "cbca5b169f3c5052e50da0910560d7fbcd1b6c42380fe6b925a4f98021f753ab"
     },
     {
-      "bytes": 92010,
+      "bytes": 92399,
       "path": "bin/web/nova-project.js",
-      "sha256": "bf6dff356ef40cdfa925c9bf518a1a79559e46c141ab2d6b063472c2bac30f4e"
+      "sha256": "0887c03e261717c7a89c490793abf17e1e4624e210676cdbcda71f87e21caf8a"
     },
     {
       "bytes": 60416,
