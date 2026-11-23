@@ -2,13 +2,14 @@
 
 Status: Verbindliche Zielbeschreibung  
 Ausgangsbasis: installierter vibe-v5-Stand plus vorhandener Desktop-Starter  
-Sprache der Web-Oberfläche: Englisch (Standard; Deutsch auswählbar, weitere Sprachen über Wörterbücher ergänzbar — AP21); die Wahl ist global in `ui.json` gespeichert (AP21 v2). Sprache der Dokumentation: Deutsch.
+Sprache der Web-Oberfläche: Englisch
+Sprache der Dokumentation: Deutsch
 
 ## Produktziel
 
 vibe ist eine lokale Entwicklungszentrale für KI-gestützte Softwareprojekte. Es verbindet Projektverwaltung, Agenten, Modelle, MCP-Server, Agentenläufe, Prüfungen und Diagnose in einer Weboberfläche und einer CLI.
 
-vibe ist nicht opencode. opencode ist eine austauschbar gekapselte externe Ausführungs- und Konfigurationsschnittstelle.
+vibe ist nicht kein AI Harness. Vibe kann mit verschiedenen Harnessen wie z.b. opencode zusammenarbeiten. Diese sind austauschbare gekapselte externe Ausführungs- und Konfigurationsschnittstellen.
 
 Die funktionierende Installation wird übernommen und schrittweise verbessert. Ein vollständiger Rewrite ist nur mit einem ausdrücklich beschlossenen Migrationsticket zulässig.
 
@@ -36,7 +37,6 @@ Die konkrete Unterstützung von Betriebssystemen, Containern, Python-Versionen u
 - **Modellprofil:** Zuordnung von Modellen zu Rollen.
 - **Agentenlauf:** Ausführung eines Arbeitspakets über opencode.
 - **Dashboard:** vibe-Webanwendung.
-- **opencode-Server:** eigener externer Prozess.
 - **Runner:** von vibe gesteuerter Prozess, der Arbeitspakete, Git-Arbeitsbereiche, Prüfungen und Abschlussaktionen koordiniert.
 
 Quellcode, Installation und Laufzeitdaten dürfen nicht miteinander verwechselt oder beim Aktualisieren gegenseitig überschrieben werden.
@@ -46,16 +46,6 @@ Quellcode, Installation und Laufzeitdaten dürfen nicht miteinander verwechselt 
 Vorhandene Programmdateien werden unverändert importiert und durch ein SHA-256-Manifest dokumentiert.
 
 Die bisherige Nutzerbestätigung belegt grundsätzliche Nutzbarkeit, nicht vollständige Konformität aller Funktionen.
-
-Jede Funktion erhält nach der Bestandsaufnahme einen Status:
-
-- vorhanden und automatisiert geprüft
-- vorhanden und manuell geprüft
-- vorhanden, noch nicht geprüft
-- teilweise vorhanden
-- fehlt
-
-Alte Modellbewertungen, Preise, API-Annahmen und Versionsaussagen sind ungeprüfte Altdaten, bis eine aktuelle Quelle oder ein reproduzierbarer Test vorliegt.
 
 ## Funktionsumfang
 
@@ -72,21 +62,19 @@ Alte Modellbewertungen, Preise, API-Annahmen und Versionsaussagen sind ungeprüf
 
 ### Projektvorlagen
 
-- Bestehende Typen erhalten: `generic`, `web`, `android`, `docker` und `openwrt`, soweit im importierten Stand vorhanden.
+- Vibe enthält vordefinierte Projektvorlagen für gängige Softareprojekte (z.B. generic, Android, Web, etc.)
 - Neue Typen sind über Vorlagen ergänzbar.
 - Vorhandene Projekte können vorbereitet werden.
 - Vorhandene Dateien werden dabei nicht still überschrieben.
 - Projekterzeugung und Git-Initialisierung liefern verständliche Fehler.
 - Projekttypen besitzen eigene Prüfadapter.
-- Android-spezifische Prüfungen sind keine globale Voraussetzung.
 
 ### Arbeitspakete und Feedback
 
-- `TICKETS.md` und `FEEDBACK.md` sind versionierbare Arbeitsgrundlagen.
+- Arbeitspakete liegen in einer lokalen, nicht versionierten Datei vor.
 - Offene, blockierte und erledigte Einträge werden unterschieden.
 - Feedback kann über die Oberfläche ergänzt werden.
 - Arbeitspakete können über die Oberfläche definiert, bearbeitet und gelöscht werden; bei neuen Arbeitspaketen wird die ID automatisch vergeben, eine eigene ID bleibt möglich.
-- Bugs können über die Oberfläche als Feedback mit `Art: Bug` gemeldet werden.
 - IDs sind eindeutig; parallele Schreibvorgänge erzeugen keine Doppelungen.
 - Erledigt bedeutet: Akzeptanzkriterien erfüllt und Nachweise vorhanden.
 - Ein Commit allein beweist keine fachliche Erfüllung.
@@ -97,12 +85,10 @@ Alte Modellbewertungen, Preise, API-Annahmen und Versionsaussagen sind ungeprüf
 
 - Globale und projektspezifische Agenten anzeigen und filtern.
 - Agenten anlegen, lesen, bearbeiten, kopieren und löschen.
-- Beschreibung, Modus, Modell, Temperatur, Schritte, Rechte und Prompt bearbeiten.
+- Beschreibung, Modus, Modell, Rechte und Prompt bearbeiten.
 - Strukturierte Eingabe und Rohtextbearbeitung anbieten.
-- Validierung muss zur unterstützten opencode-Version passen.
 - Ungültige Eingaben verändern die bestehende Datei nicht.
 - Namenskonflikte und Überschattungen sichtbar machen.
-- Prioritätsregeln anhand der unterstützten Version prüfen und dokumentieren.
 - Unbekannte Felder möglichst verlustfrei erhalten.
 - Vor Änderungen Sicherungen erzeugen und Wiederherstellung ermöglichen.
 - Keine fest eingebauten Agentennamen für die Produktlogik.
@@ -114,15 +100,13 @@ Alte Modellbewertungen, Preise, API-Annahmen und Versionsaussagen sind ungeprüf
 - Modellwahl im Agenteneditor ermöglichen.
 - Kostenlose und kostenpflichtige Modelle unterstützen.
 - Zugangsdaten gehören nicht in Agentendateien oder dieses Repository.
-- Anbieteranmeldung bleibt über die unterstützten opencode-Verfahren möglich.
 - Modellliste und tatsächliche Nutzungsberechtigung sind getrennte Zustände.
 - Keine kostenpflichtige Testanfrage ohne vorherigen Hinweis und Zustimmung.
 - Keine erfundenen Modell-IDs oder Fähigkeiten.
 
 ### Modelltabelle
 
-- Die gesamte Modellübersicht ist ein- und ausklappbar.
-- Jede Modellzeile zeigt bei Bedarf weitere Details.
+- Vibe bietet ein Modelltabelle um dem Nutzer ein Übersicht und Einschätzung der verfügbaren Modelle zu geben.
 - Felder: Modell-ID, Anbieter, Verfügbarkeit, Kontext, Bildfähigkeit, Stärken, Schwächen, Tempo, Aufwand, Datenbedingungen und Preis.
 - Unbekannt ist ein zulässiger und sichtbarer Wert.
 - Fakten, Messungen, Nutzerberichte und Einschätzungen klar unterscheiden.
@@ -152,7 +136,6 @@ Alte Modellbewertungen, Preise, API-Annahmen und Versionsaussagen sind ungeprüf
 - Remote: URL, Header und unterstützte Authentisierung verwalten.
 - Weitere Felder nur anbieten, wenn die installierte Version sie unterstützt.
 - Tatsächliche Konfigurationsdateien und deren Prioritäten dokumentieren.
-- JSON und JSONC sicher lesen.
 - Unbekannte Einstellungen und Kommentare soweit möglich erhalten.
 - Bei nicht verlustfrei unterstützten Dateien abbrechen oder eine konkrete Änderungsvorschau verlangen; niemals still Daten verwerfen.
 - Geheimnisse maskieren und beim Speichern unverändert erhalten.
@@ -175,25 +158,20 @@ Alte Modellbewertungen, Preise, API-Annahmen und Versionsaussagen sind ungeprüf
 ### Agentenläufe und Prüfungen
 
 - Lauf starten, beobachten, anhängen und gezielt stoppen.
-- Projekt, Agent, Startzeit und eindeutige Lauf-ID anzeigen.
+- Projekt, Agent, Startzeit, Session anzeigen und zu dem jeweils aktuellen Arbeitspaket in Bezug setzen.
 - Gleichzeitige Läufe verschiedener Projekte unterstützen.
 - Gleiche Namen oder gleich normalisierte Namen dürfen keine Kollision erzeugen.
 - Live-Logs und separate Prüfprotokolle bereitstellen.
-- `quick` und `full` liefern echte Exitcodes.
 - Eine fehlende Prüfkonfiguration ist ein Fehler, kein erfolgreicher Test.
-- Nicht-Android-Projekte funktionieren ohne Android-Prüfinfrastruktur.
 - Wiederholungs- und Durchgangslimits konfigurierbar machen.
 - Das Durchgangslimit ist kein Geldbudget und muss so beschriftet werden.
-- Keine automatische Router-Neuverbindung oder Umgehung von Dienstlimits. Vorhandene entsprechende Altintegration nur nach ausdrücklicher Entscheidung weiterverwenden; standardmäßig deaktivieren.
-- Jeder Agentenlauf nutzt einen eigenen tmux-Server; Socket- und Sitzungsname sind der Laufsitzungsname. Dashboard und opencode-Server bleiben auf dem Standard-Server. Ein fremdes `tmux kill-server` auf dem Standard-Server beendet damit weder Dashboard noch laufende Läufe.
 - Ein äußeres Signal (HUP, TERM, INT) beendet einen Lauf nicht spurlos: Signal, Protokollzeile und Registerzustand werden festgehalten. Eine Startprüfung kennzeichnet verwaiste `running`-Einträge des eigenen Projekts als extern beendet; fremde Projekte, laufende und nicht prüfbare Sitzungen bleiben unverändert, und es wird nie eine fremde Sitzung beendet.
 - Quota- und Anmeldefehler halten einen Lauf standardmäßig sofort an. Das Verhalten ist eine ausdrückliche, globale Einstellung (`vibe limits stop|continue`, `<Zustand>/limits.json`) für alle Projekte, nicht je Projekt. `continue` behandelt den Fehler im Rahmen der vorhandenen Wiederholungslimits und protokolliert einen Hinweis. Eine fehlende oder defekte Einstellung gilt als `stop` und wird gemeldet, nie still als `continue`. Quota- und Anmeldefehler lösen weder eine Router-Neuverbindung noch eine manuelle IP-Abfrage aus.
 
-### App und opencode beenden
+### App beenden
 
-- Das Beenden des Dashboards beendet ausschließlich vibe.
-- Bestehende Agentenläufe bleiben standardmäßig aktiv.
-- Das Stoppen von opencode ist eine getrennte Aktion.
+- Das Beenden des Dashboards beendet sowohl vibe als auch alle bestehenden Agentenläufe.
+- Das Stoppendes Harness ist eine getrennte Aktion.
 - Nur eindeutig von vibe verwaltete Prozesse stoppen.
 - Das Schließen eines Browser-Tabs beendet keine Hintergrundprozesse.
 - Die Oberfläche erläutert diese Unterschiede.
@@ -217,7 +195,6 @@ Alte Modellbewertungen, Preise, API-Annahmen und Versionsaussagen sind ungeprüf
 ### Diagnose
 
 - Anwendungsvoraussetzungen getrennt von optionalen Projektwerkzeugen prüfen.
-- Tatsächliche opencode-Version und unterstützte Funktionen anzeigen.
 - Keine pauschale Ableitung eines Konfigurationsschemas allein aus einer angenommenen Hauptversionsnummer.
 - Host- und Container-Verwechslungen erkennen.
 - Schreibbarkeit, Portbelegung und benötigte Programme prüfen.
@@ -246,7 +223,6 @@ Schrittweise Entkopplung:
 
 - CLI und Web-API als dünne Zugriffsschichten.
 - Gemeinsame fachliche Dienste für Projekte, Agenten, Profile und MCP.
-- Adapter für opencode, Distrobox, tmux und Projektprüfungen.
 - Dateizugriffe über testbare Repository- und Storage-Funktionen.
 - Geschäftslogik liefert strukturierte Ergebnisse statt stdout umzuleiten.
 - Statische Frontend-Dateien von Python trennen.
@@ -271,7 +247,6 @@ docs/
 ## Konfiguration und Migration
 
 - `$VIBE` bleibt der Arbeitsbereich und ist nicht der Quellcodepfad.
-- Der Standardcontainer ist `android-dev`; er ist vollständig überschreibbar.
 - Bestehende `_toolchain`- und `_logs`-Daten bleiben bei der Übernahme unverändert.
 - Persönliche Konfiguration wird niemals durch mitgelieferte Defaults ersetzt.
 - Vor einer Migration: Vorschau und Sicherung.
@@ -296,7 +271,6 @@ docs/
 - Eigener Modellhost oder eigene Zahlungsabwicklung.
 - Öffentlicher Remotezugriff auf das Dashboard.
 - Mehrbenutzerbetrieb oder Cloud-Synchronisation.
-- Vollständiger Ersatz für ein Coding Harness.
 - Automatische Veröffentlichung, Push, Merge oder Release ohne Freigabe oder ohne gesetztes `GITHUB_AUTO_MERGE`.
 - Vollständiger Frameworkwechsel als Voraussetzung für weitere Entwicklung.
 
