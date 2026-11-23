@@ -3729,15 +3729,49 @@ def agent_render_fields(scope, text, values):
             raise ValueError("Der Prompt darf nicht leer sein.")
         clean["prompt"] = prompt
     permission_lines = None
+    subagent_policy = None
     permission = values.get("permission")
     if permission:
         if permission not in PERMS:
             raise ValueError("Unbekannte Rechte-Vorlage: " + str(permission))
         dirs = None if scope == "global" else write_dirs(scope)
         permission_lines = permission_block(permission, dirs).splitlines()
+        # Subagenten-Policy der EINGABE vorab erfassen: Jede Vorlage enthält als
+        # Standard "subagent * deny" und würde sonst die Freigabe der
+        # Bestandsdatei stillschweigend zurücksetzen (B7).
+        subagent_policy = agent_task_policy(text)
     new_text = _apply_agent_fields(text, clean, permission_lines)
+    if permission_lines is not None and subagent_policy["mode"] != "none":
+        # Rechte-Vorlage und Subagenten-Rechte sind unabhängige Dimensionen:
+        # Nur die Nicht-subagent-Regeln kommen aus der Vorlage, die
+        # Subagenten-Regeln geben die Policy der Eingabedatei wieder. Ohne
+        # vorhandene Freigabe (mode "none") bleibt der Vorlagen-Standard
+        # "subagent * deny" unangetastet, damit der Block weiterhin als reine
+        # Vorlage erkennbar bleibt.
+        new_text = _subagent_policy_to_v2(new_text, subagent_policy)
     agent_validate(new_text)
     return new_text
+
+def _subagent_policy_to_v2(text, policy):
+    """Ersetzt in einem v2-``permissions``-Block nur die ``subagent``-Regeln.
+
+    Nach dem Anwenden einer Rechte-Vorlage liegt immer ein v2-Block vor; dessen
+    ``subagent``-Regeln werden durch den Freigabestand aus ``policy`` ersetzt,
+    sodass die Subagenten-Policy der Eingabedatei erhalten bleibt. Gibt es
+    wider Erwarten keinen v2-Block, bleibt der Text unverändert.
+    """
+    m, fm, _body, lines = _frontmatter_parts(text)
+    sep = "\r\n" if "\r\n" in fm else "\n"
+    v2 = next(
+        (section for section in _front_sections(lines) if section["key"] == "permissions"),
+        None,
+    )
+    if v2 is None or v2["inline"]:
+        return text
+    rules = [rule for rule in (_v2_rules(lines) or []) if rule.get("action") != "subagent"]
+    rules += _subagent_rules(policy["allowed"], allow_all=policy["mode"] == "all")
+    lines[v2["start"]:v2["end"]] = ["permissions:"] + _rules_lines(rules)
+    return text[:m.start(1)] + sep.join(lines) + text[m.end(1):]
 
 def _subagent_policy(rules):
     """Wertet geordnete v2-``subagent``-Regeln aus; die letzte passende Regel gewinnt."""

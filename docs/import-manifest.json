@@ -1352,6 +1352,15 @@
       ],
       "datum": "2026-11-23",
       "grund": "verify.sh wird zur einzigen Prüfschnittstelle (Single Source of Truth): dünnes Frontend scripts/verify.sh, neuer Kern scripts/verify_engine.py (Isolation unverändert, Modi quick/package/full, Selbstreferenz-/Tiefenwächter, Baseline-Dreizustands-Auswertung mit Exit 0/3/5/6/7) und scripts/verify.py als Compat-Shim. run-tests-parallel.py liefert einen strukturierten --report-Bericht; tests/verify-baseline.json ist die kanonische Baseline (Schema v1, min_tests=2000, envs leer). vibe-run.sh erhält einen Hash-/Diff-Wächter für die transportierten .vibe-Dateien, vibe_packages.py transportiert zusätzlich .vibe/verify-baseline. GENERAL_RULES und alle fünf templates/*/AGENTS.md tragen die angepasste Effizienz-Sektion und die neue Baseline-Disziplin."
+    },
+    {
+      "arbeitspaket": "B7",
+      "dateien": [
+        "bin/vibe",
+        "docs/import-manifest.json"
+      ],
+      "datum": "2026-11-23",
+      "grund": "Subagenten-Policy-Erhalt beim Vorlagen-Rendering (Bug B7): agent_render_fields liest vor dem Anwenden einer Rechte-Vorlage die Subagenten-Policy der Eingabedatei (agent_task_policy) und stellt sie nach dem Preset-Rendering im v2-permissions-Block wieder her; ohne vorhandene Freigabe bleibt der Vorlagen-Standard 'subagent * deny' unangetastet, damit der Block weiterhin als reine Vorlage erkennbar ist. Explizite Auswahl (task_all/task_allowed) gewinnt unverändert. Größe und SHA-256 des files-Eintrags von bin/vibe aktualisiert und dadurch begründet."
     }
   ],
   "files": [
@@ -1366,9 +1375,9 @@
       "sha256": "e5ae3183efcb76dace1e0bcbde9993be7afe82d93d7877da9ee39846cf45330a"
     },
     {
-      "bytes": 307661,
+      "bytes": 309523,
       "path": "bin/vibe",
-      "sha256": "920c77a02d5beb584cb0d291098cbfbd59589bda099672501c70983e38b0d57e"
+      "sha256": "bc085a9aa9674e57f188357d7cba4e366d5a135ac0336dffc07a80891972aa4e"
     },
     {
       "bytes": 86493,
