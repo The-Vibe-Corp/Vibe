@@ -1307,6 +1307,18 @@
       "grund": "Test-Hygiene und Vorlagen-Fix (Audit AP10): VIBE_CLEAN_ENV entfernt zusaetzlich VIBE_UI_BIND, VIBE_UI_PORT und GITHUB_AUTO_MERGE (HOME bleibt bewusst fuer git/opencode, Home-Isolation in den Test-Harnesses); vibe_sandbox.py setzt VIBE_SANDBOX_ACTIVE=1 per --setenv in jeden Sandbox-Start, damit die Endpruefung verschachtelte bwrap-Laeufe erkennt; die Vorlagen web und docker fuehren wieder ihre dokumentierten Standardwerkzeuge (web: git node npm, docker: git docker) statt der Merge-Artefakte aus generic. Groesse und SHA-256 der geaenderten Manifest-Dateien aktualisiert. Nachtrag: merge_package verwirft vor dem ff-Merge nur die lokal geaenderten Dateien der Merge-Differenz HEAD..Branch (AGENTS.md eingeschlossen) und protokolliert den Verwurf; dirty Notizen, die der Branch nicht anfasst, bleiben unangetastet. Root-Cause F27: copy_work_notes ueberspringt eine uncommittet geaenderte AGENTS.md (weder Paketbranch noch Abschluss-Merge), command_copy_notes meldet das als HINWEIS."
     },
     {
+      "arbeitspaket": "AP23",
+      "dateien": [
+        "bin/vibe_keys.py",
+        "bin/vibe",
+        "bin/vibe-run.sh",
+        "docs/features/AP23.md",
+        "docs/import-manifest.json"
+      ],
+      "datum": "2026-11-22",
+      "grund": "Key Management umgesetzt: bin/vibe_keys.py (neu) enthaelt reines Python-AES-GCM, den 0600-Vault keys.json mit AAD-Bindung, add/select/list/remove sowie den atomaren opencode-auth-sync mit Reset; bin/vibe bietet vibe keys add/select/list/remove mit getpass-Eingabe; bin/vibe-run.sh synchronisiert vor dem Agentenstart und entfernt die Harness-Zugangsdaten nach wait wieder. Groesse und SHA-256 von bin/vibe und bin/vibe-run.sh aktualisiert, neuen files-Eintrag fuer bin/vibe_keys.py aufgenommen."
+    },
+    {
       "arbeitspaket": "B6",
       "dateien": [
         "bin/vibe_packages.py",
@@ -1341,6 +1353,39 @@
       ],
       "datum": "2026-11-22",
       "grund": "F34 WP7: Löschschutz für abgeschlossene Einträge, Sitzungslimit je Projekt und gesammelte Schranken per API, Monatswerte in den Kosten, Währung in ui.json samt /api/ui_settings, Bereinigung abgeschlossener Läufe sowie Registrierung des Platzhalters bin/web/nova-evals.js für die Auswertungen."
+    },
+    {
+      "arbeitspaket": "AP7-Korbat",
+      "dateien": [
+        "bin/vibe",
+        "bin/vibe-run.sh",
+        "bin/vibe_packages.py",
+        "scripts/verify.sh",
+        "scripts/verify.py",
+        "scripts/verify_engine.py",
+        "scripts/run-tests-parallel.py",
+        "tests/verify-baseline.json",
+        "templates/android/AGENTS.md",
+        "templates/docker/AGENTS.md",
+        "templates/generic/AGENTS.md",
+        "templates/rebuild/AGENTS.md",
+        "templates/web/AGENTS.md",
+        "docs/features/AP7-Korbat.md",
+        "docs/betrieb.md",
+        "docs/checkliste.md",
+        "docs/import-manifest.json"
+      ],
+      "datum": "2026-11-23",
+      "grund": "verify.sh wird zur einzigen Prüfschnittstelle (Single Source of Truth): dünnes Frontend scripts/verify.sh, neuer Kern scripts/verify_engine.py (Isolation unverändert, Modi quick/package/full, Selbstreferenz-/Tiefenwächter, Baseline-Dreizustands-Auswertung mit Exit 0/3/5/6/7) und scripts/verify.py als Compat-Shim. run-tests-parallel.py liefert einen strukturierten --report-Bericht; tests/verify-baseline.json ist die kanonische Baseline (Schema v1, min_tests=2000, envs leer). vibe-run.sh erhält einen Hash-/Diff-Wächter für die transportierten .vibe-Dateien, vibe_packages.py transportiert zusätzlich .vibe/verify-baseline. GENERAL_RULES und alle fünf templates/*/AGENTS.md tragen die angepasste Effizienz-Sektion und die neue Baseline-Disziplin."
+    },
+    {
+      "arbeitspaket": "B7",
+      "dateien": [
+        "bin/vibe",
+        "docs/import-manifest.json"
+      ],
+      "datum": "2026-11-23",
+      "grund": "Subagenten-Policy-Erhalt beim Vorlagen-Rendering (Bug B7): agent_render_fields liest vor dem Anwenden einer Rechte-Vorlage die Subagenten-Policy der Eingabedatei (agent_task_policy) und stellt sie nach dem Preset-Rendering im v2-permissions-Block wieder her; ohne vorhandene Freigabe bleibt der Vorlagen-Standard 'subagent * deny' unangetastet, damit der Block weiterhin als reine Vorlage erkennbar ist. Explizite Auswahl (task_all/task_allowed) gewinnt unverändert. Größe und SHA-256 des files-Eintrags von bin/vibe aktualisiert und dadurch begründet."
     }
   ],
   "files": [
@@ -1356,13 +1401,13 @@
     },
     {
       "path": "bin/vibe",
-      "bytes": 310640,
-      "sha256": "4f04cf412661b1e6c25e27284caf926f98556aaf1f0fd689caf0a2eafb952632"
+      "bytes": 313606,
+      "sha256": "8a82a4f270b69a5ff92334f989f731d1b6f131d0747507df0e22711711a42a94"
     },
     {
-      "bytes": 83973,
+      "bytes": 86493,
       "path": "bin/vibe-run.sh",
-      "sha256": "4cae141ab3514404db9b678862c832163d36dd7c08b5539c5c17225bd213f57b"
+      "sha256": "23c8e14dc72de993c055d9db9456e40dbad157475e1e55a6b2ca1651fc682789"
     },
     {
       "bytes": 131073,
@@ -1425,9 +1470,9 @@
       "sha256": "ac3b26da4208a087a09c67c389238c82802d7c1bd50b10d9bcd9492a07050462"
     },
     {
-      "bytes": 81843,
+      "bytes": 82477,
       "path": "bin/vibe_packages.py",
-      "sha256": "b1d0c86acdeb3a8af54f5eb4129345188e9f8c9b2ceace5ac7686d19529e861c"
+      "sha256": "9395bc10865d8be11fe409bd4b29b41e93d021d1aa2e5a556f0e00d8f6a3fbb3"
     },
     {
       "bytes": 20789,
@@ -1570,9 +1615,9 @@
       "sha256": "b45ed5e95c842e67dbecf165bb6096ec9c513cc431ede7442cd4bbad9ed0e806"
     },
     {
-      "bytes": 5479,
+      "bytes": 6583,
       "path": "templates/android/AGENTS.md",
-      "sha256": "75764793381308e956481ecb60fccfd5fa7b29ce5f6d5ec2a6e01a2ef773df99"
+      "sha256": "24ca15cda217f788029ddc194f92a94d15fceb94218ab7c4ff026c5ef984d7de"
     },
     {
       "bytes": 522,
@@ -1610,9 +1655,9 @@
       "sha256": "da366d196e69282f922723f0a0755f9cfe167d1dd210737668df0d8b76b71b8a"
     },
     {
-      "bytes": 5093,
+      "bytes": 6197,
       "path": "templates/docker/AGENTS.md",
-      "sha256": "33859eb43f9b1fa56af9cd88a6b35d8616c6532a675f4c0bdc91c3efa0d25788"
+      "sha256": "941586399ab5d6d8d8f2f0e3cad4e14c4a1bc3cd163c88cc0f2bf3d31c11005b"
     },
     {
       "bytes": 354,
@@ -1620,9 +1665,9 @@
       "sha256": "63c0ebab49aa870ae5e5f731890cce3f0ce2859364152c00b64cb89e3e6d9ae5"
     },
     {
-      "bytes": 4778,
+      "bytes": 5882,
       "path": "templates/generic/AGENTS.md",
-      "sha256": "51966902fc1accced89ffc09546e4f9f54179ccf431e3833e38bf318ad78300e"
+      "sha256": "72574045e07ba9c53970fbb6d2d7df27db9633c4f6f65018cabce699dd813323"
     },
     {
       "bytes": 670,
@@ -1675,9 +1720,9 @@
       "sha256": "db8026a75dd2f358a771be9e2fc2fd4ba88c6180f026078552c3259e5156360f"
     },
     {
-      "bytes": 8423,
+      "bytes": 9527,
       "path": "templates/rebuild/AGENTS.md",
-      "sha256": "18e98713efa530519fa663f7b0b5832efd9bc0eb69580d56ecbc2f5fd7ad1e6e"
+      "sha256": "6b7e6edc63d11763652750c36fae25fb462fa46df41225b35a7f297f6f6ef177"
     },
     {
       "bytes": 1675,
@@ -1700,9 +1745,9 @@
       "sha256": "84b60ea398f9969f924239023adf52eaa48410db66b3c7bcf9c6cc75fe624af4"
     },
     {
-      "bytes": 5143,
+      "bytes": 6247,
       "path": "templates/web/AGENTS.md",
-      "sha256": "1521d6b6403f686839836194b666e65ebfe5402d71124637abb64938e6343628"
+      "sha256": "38d08b1a19baf2f22a853fe28aa3db6b1dd16a469188b1fd35bfc905d4927459"
     }
   ],
   "hinweis": "SHA-256 der übernommenen Programmdateien. Beabsichtigte Änderungen an diesen Dateien sind nur zulässig, wenn dieser Eintrag im selben Arbeitspaket aktualisiert und begründet wird. Laufzeitdaten, Sicherungen und Geheimnisse sind nicht Bestandteil des Imports.",

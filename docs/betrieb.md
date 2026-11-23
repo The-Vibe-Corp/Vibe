@@ -160,7 +160,7 @@ Reihenfolge bei Problemen:
 | `ModuleNotFoundError` nach Update | unvollständige Installation | `python3 scripts/setup-vibe.py --yes --update …`; V-021 prüft die Modulliste |
 | Agentenlauf startet nicht | `tmux`/`flock` fehlt oder opencode nicht erreichbar | `vibe doctor`, `vibe server status` |
 | opencode „nicht geprüft“ | installierte Version weicht von 2.1.4 ab | `docs/compatibility.md` befolgen; keine erzwungenen Schreibvorgänge |
-| Prüfung meldet fehlenden Befehl | `.vibe/project.env` ohne `VERIFY_QUICK`/`VERIFY_FULL` | Projekt vorbereiten oder Werte ergänzen |
+| Prüfung meldet fehlenden Befehl | `.vibe/project.env` ohne `VERIFY_QUICK` (quick/package) bzw. ohne `VERIFY_TESTS` (full) | Projekt vorbereiten oder Werte ergänzen |
 | Schreibfehler auf FUSE/NTFS | Unix-Rechte und Atomarität nicht zusicherbar | lokale Platte für Laufzeitdaten verwenden; Grenzen beachten |
 | Dashboard beendet, Lauf läuft weiter | beabsichtigtes Verhalten | Lauf separat mit `vibe stop` beenden |
 | Update meldet laufende Agenten, obwohl keiner läuft | verwaister Registereintrag ohne tmux-Sitzung oder laufendes Dashboard | `vibe runs` prüfen, `vibe runs prune`, bei Bedarf `vibe ui stop`, dann Update erneut |
@@ -232,15 +232,31 @@ aus dieser Umgebung. Ohne Angabe bleibt die Prozessumgebung maßgeblich.
 
 ```
 bash scripts/verify.sh quick
+bash scripts/verify.sh package
 bash scripts/verify.sh full
 ```
 
-`quick` prüft Manifest, Syntax und Geheimnisse. `full` führt zusätzlich die
-Unit- und Browsertests aus und verlangt eine tatsächliche Testanzahl. Die
-Prüfumgebung verwendet temporäre HOME-/VIBE-Verzeichnisse und eigene Ports.
-In Umgebungen mit geerbtem `SANDBOX`/`VIBE_*` sowie schreibgeschütztem `/tmp`
-muss der Lauf in einem Mount-Namespace erfolgen; das konkrete Verfahren und
-die Ergebnisse stehen in `docs/checkliste.md`.
+`quick` prüft Manifest, Syntax und Geheimnisse. `package` führt dieselbe
+statische Prüfung aus und verlangt zusätzlich einen Testnachweis, wenn
+`VERIFY_PACKAGE_TESTS` gesetzt ist. `full` baut den Testlauf selbst aus
+`VERIFY_TESTS` und wertet zusätzlich die Baseline aus (drei Zustände: grün,
+Baseline-OK, Regression). Die Prüfumgebung verwendet temporäre
+HOME-/VIBE-Verzeichnisse und eigene Ports. In Umgebungen mit geerbtem
+`SANDBOX`/`VIBE_*` sowie schreibgeschütztem `/tmp` muss der Lauf in einem
+Mount-Namespace erfolgen; das konkrete Verfahren und die Ergebnisse stehen in
+`docs/checkliste.md`.
+
+Die Engine liest `VERIFY_PACKAGE`/`VERIFY_FULL` nicht mehr als Befehl; der
+Läufer führt sie weiterhin verbatim aus. Die autoritative `.vibe/project.env`
+trägt dafür die Wrapper-Verdrahtung (Nutzerschritt):
+
+```
+VERIFY_PACKAGE="bash scripts/verify.sh package"
+VERIFY_FULL="bash scripts/verify.sh full"
+VERIFY_ENV="<kurzes Label>"
+```
+
+Details (Exitcodes, Baseline-Schema, Befüllungs-Workflow): `docs/features/AP7-Korbat.md`.
 
 ## Verwandte Dokumente
 

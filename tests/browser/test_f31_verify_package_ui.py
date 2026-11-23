@@ -1,11 +1,14 @@
 """Browserabnahme für den Prüfbutton ``Prüfung package`` (F31).
 
 Die Projektdetail-Ansicht bietet neben ``Prüfung quick`` und ``Prüfung full``
-einen dritten, schnellen Mittelweg. Der Test startet das echte Dashboard mit
-einem Fixture-Projekt, dessen ``VERIFY_PACKAGE`` einen eindeutigen Marker
-ausgibt, klickt den Button und erwartet den Marker im Ausgabebereich
-(verify-Stream). Der Screenshot ``F31-paketpruefung.png`` entsteht in diesem
-Test und zeigt die tatsächliche Oberfläche.
+einen dritten, schnellen Mittelweg. AP7-Korbat (T-V16) macht ``verify.sh`` zur
+einzigen Prüfschnittstelle: Der Paketmodus führt ``VERIFY_QUICK`` aus;
+``VERIFY_PACKAGE`` und ``VERIFY_FULL`` sind keine Befehlsvariablen der Engine
+mehr. Der Test startet das echte Dashboard mit einem Fixture-Projekt, dessen
+``VERIFY_QUICK`` einen eindeutigen Marker ausgibt, klickt den Button und
+erwartet den Marker im Ausgabebereich (verify-Stream). Der Screenshot
+``F31-paketpruefung.png`` entsteht in diesem Test und zeigt die tatsächliche
+Oberfläche.
 """
 import os
 import socket
@@ -61,11 +64,17 @@ class VerifyPackageUiTest(unittest.TestCase):
         cls.root = Path(cls.tmp.name)
         cls.project = cls.root / "proj"
         (cls.project / ".vibe").mkdir(parents=True)
+        # Dokumentierte Nutzer-Verdrahtung (AP7-Design, T-V20): Das Dashboard
+        # führt VERIFY_PACKAGE unverändert aus. Der autoritative Wert ruft
+        # deshalb den verify.sh-Wrapper auf; die Engine führt dann VERIFY_QUICK
+        # aus (einzige Prüfschnittstelle).
+        wrapper = "bash %s package --project %s" % (
+            REPO / "scripts" / "verify.sh", cls.project)
         (cls.project / ".vibe" / "project.env").write_text(
             "TYPE=generic\n"
-            'VERIFY_QUICK="echo quick-pruefung-marker"\n'
+            f'VERIFY_QUICK="echo {PACKAGE_MARKER}"\n'
             'VERIFY_FULL="echo full-pruefung-marker"\n'
-            f'VERIFY_PACKAGE="echo {PACKAGE_MARKER}"\n',
+            f'VERIFY_PACKAGE="{wrapper}"\n',
             encoding="utf-8",
         )
         (cls.root / "home" / ".config" / "opencode" / "agents").mkdir(parents=True)
@@ -173,10 +182,11 @@ class VerifyPackageUiTest(unittest.TestCase):
         )
         self.wait_until(
             lambda: PACKAGE_MARKER in self.page.locator("#log").inner_text(),
-            message="Ausgabe von VERIFY_PACKAGE erschien nicht im Ausgabebereich",
+            message="Ausgabe von VERIFY_QUICK erschien nicht im Ausgabebereich",
         )
         log = self.page.locator("#log").inner_text()
-        self.assertNotIn("quick-pruefung-marker", log)
+        self.assertIn("verify.sh", log,
+                      "Der Paketknopf lief nicht über den verify.sh-Wrapper")
         self.assertNotIn("full-pruefung-marker", log)
 
         SHOTS.mkdir(parents=True, exist_ok=True)

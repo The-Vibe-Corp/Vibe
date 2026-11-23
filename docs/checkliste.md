@@ -36,6 +36,12 @@ bash scripts/verify.sh full
 
 `quick` prüft Importmanifest, Syntax und Geheimnisse. `full` führt zusätzlich
 alle Unit- und Browsertests aus und verlangt eine tatsächliche Testanzahl.
+`package` ist die Paketprüfung (`VERIFY_QUICK` plus optionaler Testnachweis bei
+`VERIFY_PACKAGE_TESTS`). Die Engine liest `VERIFY_PACKAGE`/`VERIFY_FULL` nicht
+mehr als Befehl; die autoritative `.vibe/project.env` trägt dafür die
+Wrapperverschaltung (`VERIFY_PACKAGE="bash scripts/verify.sh package"`,
+`VERIFY_FULL="bash scripts/verify.sh full"`, `VERIFY_ENV=<Label>`). Details in
+`docs/features/AP7-Korbat.md`.
 
 In der Agentenumgebung sind `SANDBOX`, `SANDBOX_TOOLS` und `VIBE_*` gesetzt und
 `/tmp` ist ein eingeschränkter, nicht frei beschreibbarer Bereich. Die
