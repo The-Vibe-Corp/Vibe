@@ -16,10 +16,16 @@ Geprüft wird:
   und die API gibt den Wert zurück.
 * (b) Nova-GitHub-Karte hat die Aktionen „Mit GitHub verknüpfen“ (link),
   „Verknüpfung lösen“ (unlink) und „Abrufen (fetch)“.
-* (c) Session-Zeilen zeigen den Paket-/Worktree-Anhang
-  (``worktree_path``/``package_id``); die API liefert die Felder.
+* (c) Session-Zeilen zeigen den Paket-Anhang (``package_id`` samt Titel) und
+  die technische Sitzungs-ID; die API liefert zusätzlich
+  ``worktree_path``/``package_id``/``branch``.
 * (d) Nova-Arbeiten-Reiter hat „Paket abschließen“ über ``/api/package``
-  (action close) für blockierte Tickets.
+  (action close) für blockierte und wartende Pakete.
+
+F34-Anpassung: Das Nova-Board ist entfernt. Die Sitzungszeilen der
+integrierten Projektansicht zeigen den Paketbezug über ``package_id`` (Titel
+aus der Ticketliste) und die gekürzte Sitzungs-ID; der Worktree-Pfad bleibt
+Datenfeld der API, wird aber nicht mehr in der Nova-Zeile ausgegeben.
 
 Nicht abgedeckt: (e) Nova-Feature-Defaults (AP22) — Rückfrage offen.
 
@@ -106,7 +112,7 @@ class NovaSurfaceTest(unittest.TestCase):
     def setUp(self):
         self.text = NOVA.read_text(encoding="utf-8")
         self.github = js_region(self.text, "function nvpGithubSection(")
-        self.sessions = js_region(self.text, "function nvpSessionsSection(")
+        self.sessions = js_region(self.text, "var sessionBox = el('section'")
 
     def test_nova_github_section_has_auto_merge_checkbox(self):
         """Vorbedingung: ``nvpGithubSection`` in ``nova-project.js``.
@@ -146,14 +152,23 @@ class NovaSurfaceTest(unittest.TestCase):
         self.assertRegex(self.github, r"(?i)abrufen")
 
     def test_nova_session_rows_show_worktree_and_package_attachment(self):
-        """Vorbedingung: ``nvpSessionsSection`` in ``nova-project.js``.
+        """Vorbedingung: Sitzungsabschnitt der Nova-Projektansicht.
         Aktion: Felder in der Sitzungsdarstellung suchen.
-        Erwartung: ``worktree_path`` und ``package_id`` werden angezeigt.
-        Fehlerfall: Anhang fehlt in Nova.
+        Erwartung (F34): Die Zeile zeigt den Paketbezug über ``package_id``
+        samt Titel aus der Ticketliste sowie die gekürzte technische
+        Sitzungs-ID (``code.nv-session-id``); der Worktree-Pfad bleibt
+        API-Datenfeld, nicht Anzeige der Nova-Zeile.
+        Fehlerfall: Der Paketbezug fehlt in Nova.
         """
-        self.assertTrue(self.sessions, "nvpSessionsSection nicht gefunden")
-        self.assertIn("worktree_path", self.sessions)
-        self.assertIn("package_id", self.sessions)
+        sessions = js_region(self.text, "var sessionBox = el('section'")
+        self.assertTrue(sessions, "Sitzungsabschnitt nicht gefunden")
+        self.assertIn("package_id", sessions)
+        self.assertIn("data-nv-session-attach", sessions)
+        self.assertIn("packageText", sessions)
+        self.assertIn("related.title", sessions)
+        self.assertIn("nv-session-id", sessions)
+        self.assertNotIn("worktree_path", sessions,
+                         "F34 zeigt den Worktree-Pfad nicht in der Nova-Zeile")
 
     def test_nova_work_tab_has_a_package_close_action(self):
         """Vorbedingung: Arbeiten-Reiter in ``nova-project.js``.
@@ -167,6 +182,8 @@ class NovaSurfaceTest(unittest.TestCase):
         self.assertIn("/api/package", self.text)
         self.assertRegex(self.text, r"action:\s*['\"]close['\"]")
         self.assertRegex(self.text, r"(?i)blockiert")
+        self.assertIn("WARTET AUF MERGE", self.text,
+                      "Wartende Pakete lassen sich nicht abschließen")
 
 
 class WebBackendTextTest(unittest.TestCase):
