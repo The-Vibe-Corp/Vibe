@@ -90,7 +90,10 @@ if not _BROWSERS:
     if _DEFAULT.is_dir():
         os.environ["PLAYWRIGHT_BROWSERS_PATH"] = str(_DEFAULT)
 
-from playwright.sync_api import sync_playwright  # noqa: E402
+from playwright.sync_api import (  # noqa: E402
+    Error as PlaywrightError,
+    sync_playwright,
+)
 
 REPO = Path(__file__).resolve().parents[2]
 WEB = REPO / "bin" / "vibe-web.py"
@@ -294,25 +297,69 @@ class F34ShellTest(unittest.TestCase):
             state="visible", timeout=25000)
 
     def open_bell(self):
+        return self.ensure_bell_open()
+
+    def _bell_panel_is_open(self):
+        panel = self.page.locator("[data-nv-bell-panel]")
+        if panel.count() == 0:
+            return False
+        return panel.is_visible() and panel.get_attribute("hidden") is None
+
+    def ensure_bell_open(self, deadline_seconds=20):
+        """Glocke vor jedem Zugriff öffnen und offen halten.
+
+        ``render()`` ruft ``closeBellPanel()``; ein später Render kann das
+        Panel daher zwischen zwei Messungen wieder schließen. Deshalb wird der
+        Zustand vor jedem Zugriff geprüft und bei Bedarf erneut geklickt.
+        """
         bell = self.page.locator("[data-nv-bell]")
-        bell.wait_for(state="visible", timeout=10000)
-        bell.first.click()
         panel = self.page.locator("[data-nv-bell-panel]")
-        panel.wait_for(state="visible", timeout=10000)
-        return panel
+        deadline = time.time() + deadline_seconds
+        while time.time() < deadline:
+            if self._bell_panel_is_open():
+                return panel
+            try:
+                bell.wait_for(state="visible", timeout=10000)
+                bell.first.click()
+                panel.wait_for(state="visible", timeout=3000)
+            except PlaywrightError:
+                continue
+        self.fail("Die Glocke ließ sich nicht zuverlässig öffnen")
 
-    def ensure_bell_open(self):
-        """Glocke für Messungen offen halten (ein später Render schließt sie)."""
-        panel = self.page.locator("[data-nv-bell-panel]")
-        if panel.count() and panel.get_attribute("hidden") is None:
-            return panel
-        return self.open_bell()
-
-    def bell_explain_text(self):
-        self.ensure_bell_open()
+    def bell_explain_text(self, deadline_seconds=20):
         explain = self.page.locator("p[data-nv-bell-explain]")
-        explain.wait_for(state="visible", timeout=10000)
-        return (explain.inner_text() or "").strip()
+        deadline = time.time() + deadline_seconds
+        while time.time() < deadline:
+            self.ensure_bell_open()
+            try:
+                explain.wait_for(state="visible", timeout=3000)
+                return (explain.inner_text() or "").strip()
+            except PlaywrightError:
+                continue
+        self.fail(
+            "Die Glocke-Erklärung p[data-nv-bell-explain] wurde nicht sichtbar")
+
+    def bell_explain_box(self, deadline_seconds=20):
+        """Bounding-Box und Zeilenhöhe der Erklärung bei offener Glocke lesen."""
+        explain = self.page.locator("p[data-nv-bell-explain]")
+        deadline = time.time() + deadline_seconds
+        while time.time() < deadline:
+            self.ensure_bell_open()
+            try:
+                explain.wait_for(state="visible", timeout=3000)
+                box = explain.bounding_box()
+                # Selektor im JS statt eines (nach einem Poll u. U.
+                # abgehängten) Element-Handles: die Glocke wird bei jedem
+                # Poll neu gezeichnet.
+                line_height = float(self.page.evaluate(
+                    "() => { var el = document.querySelector('p[data-nv-bell-explain]'); "
+                    "var s = getComputedStyle(el); return parseFloat(s.lineHeight) "
+                    "|| parseFloat(s.fontSize) * 1.2; }"))
+            except (PlaywrightError, TypeError, ValueError):
+                continue
+            if box is not None:
+                return box, line_height
+        self.fail("Die Glocke-Erklärung ließ sich nicht messen")
 
     def bell_counter_text(self):
         counter = self.page.locator("span[data-nv-bell-count]")
@@ -445,18 +492,8 @@ class F34BellTest(F34ShellTest):
 
         self.page.set_viewport_size(
             {"width": VIEWPORT_NARROW, "height": VIEWPORT_H_NARROW})
-        panel = self.ensure_bell_open()
-        panel.wait_for(state="visible", timeout=10000)
-        explain = self.page.locator("p[data-nv-bell-explain]")
-        explain.wait_for(state="visible", timeout=10000)
-        box = explain.bounding_box()
+        box, line_height = self.bell_explain_box()
         self.assertIsNotNone(box, "Die Erklärung hat keine Bounding-Box")
-        # Selektor im JS statt eines (nach einem Poll u. U. abgehängten)
-        # Element-Handles: die Glocke wird bei jedem Poll neu gezeichnet.
-        line_height = float(self.page.evaluate(
-            "() => { var el = document.querySelector('p[data-nv-bell-explain]'); "
-            "var s = getComputedStyle(el); return parseFloat(s.lineHeight) "
-            "|| parseFloat(s.fontSize) * 1.2; }"))
         self.assertTrue(
             math.isfinite(line_height) and line_height > 0,
             "Die Zeilenhöhe der Glocke-Erklärung ist nicht bestimmbar: "

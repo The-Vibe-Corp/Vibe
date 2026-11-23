@@ -16,12 +16,22 @@ statische ``aside[data-nv-side]`` ist bewusst leer. Alle Selektoren auf
 Navigation und ``open_settings``-Absprünge sind auf ``nav[data-nv-navs]``
 umgestellt (Semantik Klick → Ansicht und ``aria-current`` unverändert).
 
-Sprachlabels: Der Vertrag legt die vier Navigationsbeschriftungen fest —
-englisch exakt ``Home``/``Agents``/``Activity``/``Settings``, deutsch exakt
-``Start``/``Agenten``/``Aktivität``/``Einstellungen``. Die Quellschlüssel sind
-deutsch (``Start`` …); ``bin/web/i18n.js`` wird in der Implementierung um
-diese Schlüssel ergänzt. Die Tests prüfen die vier Werte exakt, weil die
-Navigationsbegriffe Teil des abgestimmten UI-Vertrags sind.
+Sprachlabels: Der Vertrag legt die fünf Navigationsbeschriftungen fest —
+englisch exakt ``Home``/``Agents``/``Activity``/``Evaluations``/``Settings``,
+deutsch exakt
+``Start``/``Agenten``/``Aktivität``/``Auswertungen``/``Einstellungen``. Die
+Quellschlüssel sind deutsch (``Start`` …); ``bin/web/i18n.js`` wird in der
+Implementierung um diese Schlüssel ergänzt. Die Tests prüfen die fünf Werte
+exakt, weil die Navigationsbegriffe Teil des abgestimmten UI-Vertrags sind.
+
+F34-Anpassung: Fünfter Hauptpunkt ``evaluations`` (fachlich: Auswertungen).
+``bin/web/nova-core.js`` führt ``NAV_KEYS`` mit fünf Einträgen, darunter
+``evaluations: 'Auswertungen'``; ``bin/web/i18n.js`` übersetzt
+``Auswertungen`` nach ``Evaluations``. AP22 kannte nur vier Punkte, deshalb
+werden ``NAV_LABELS_EN``/``NAV_LABELS_DE`` und die Erwartungen in
+``NavigationTest``/``LanguageTest`` auf alle fünf Punkte erweitert — ohne
+Ausnahme, damit auch der neue Punkt in beiden Sprachen exakt geprüft bleibt.
+``nav[data-nv-navs] [data-nv-nav='evaluations']`` ist der verbindliche Hook.
 
 Testfälle (Kurzfassung; Details in den Methoden)
 ------------------------------------------------
@@ -53,8 +63,10 @@ Testfälle (Kurzfassung; Details in den Methoden)
     Erwartung: ``data-animations="off"`` ohne localStorage-Eintrag.
 ``LanguageTest.test_default_english_and_switch_to_german_persists``
     Aktion: Labels lesen, ``de`` wählen, neu laden.
-    Erwartung: englisch ``Home``/``Agents``/``Activity``/``Settings``;
-    ``lang="de"`` und ``Start``/``Agenten``/``Aktivität``/``Einstellungen``;
+    Erwartung: englisch
+    ``Home``/``Agents``/``Activity``/``Evaluations``/``Settings``;
+    ``lang="de"`` und
+    ``Start``/``Agenten``/``Aktivität``/``Auswertungen``/``Einstellungen``;
     Reload hält Deutsch (serverseitig über ``/api/language``).
 ``ResponsiveTest.test_mobile_nav_toggle_and_desktop_layout``
     Aktion: Viewport 390×844, Toggle klicken, dann 1280×800.
@@ -98,12 +110,14 @@ NAV_LABELS_EN = {
     "home": "Home",
     "agents": "Agents",
     "activity": "Activity",
+    "evaluations": "Evaluations",
     "settings": "Settings",
 }
 NAV_LABELS_DE = {
     "home": "Start",
     "agents": "Agenten",
     "activity": "Aktivität",
+    "evaluations": "Auswertungen",
     "settings": "Einstellungen",
 }
 
@@ -404,7 +418,7 @@ class NavigationTest(AP22BrowserTest):
     def test_nav_buttons_switch_views_and_set_aria_current(self):
         """Vorbedingung: angemeldet. Aktion: Agents, dann Home klicken.
 
-        Erwartung: Die vier Vertragsknöpfe existieren; ``aria-current``
+        Erwartung: Die fünf Vertragsknöpfe existieren; ``aria-current``
         markiert den aktiven Knopf; ``main[data-nv-view]`` folgt
         (agents → agents, home → home).
         """
@@ -531,8 +545,9 @@ class LanguageTest(AP22BrowserTest):
     def test_default_english_and_switch_to_german_persists(self):
         """Vorbedingung: frisches Profil. Aktion: Labels lesen, ``de`` wählen.
 
-        Erwartung: ``lang="en"`` und die vier englischen Vertragslabels; nach
-        der Wahl ``lang="de"`` und ``Start``/``Agenten``/``Aktivität``/
+        Erwartung: ``lang="en"`` und die fünf englischen Vertragslabels; nach
+        der Wahl ``lang="de"`` und
+        ``Start``/``Agenten``/``Aktivität``/``Auswertungen``/
         ``Einstellungen``; ein Reload hält Deutsch (serverseitig, AP21).
         """
         self.boot()
