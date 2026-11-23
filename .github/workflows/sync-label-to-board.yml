@@ -1,0 +1,44 @@
+name: Sync Label to Project Board
+
+on:
+  issues:
+    types: [labeled]
+
+env:
+  ORG_NAME: "The-Vibe-Corp"      # Name eurer GitHub-Organisation
+  PROJECT_NUMBER: 1              # Nummer aus der URL: github.com
+  COL_READY: "Ready"             # Exakter Spaltenname im GitHub-Board
+  COL_IN_PROGRESS: "In progress" # Exakter Spaltenname im GitHub-Board
+
+jobs:
+  update-board:
+    # Nur ausführen, wenn eines der beiden relevanten Labels vergeben wurde
+    if: github.event.label.name == 'ready' || github.event.label.name == 'in-progress'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Update Project Status
+        env:
+          GH_TOKEN: ${{ secrets.PROJECT_SYNC_TOKEN }}
+          ISSUE_URL: ${{ github.event.issue.html_url }}
+          LABEL_NAME: ${{ github.event.label.name }}
+        run: |
+          # Ziel-Spalte bestimmen
+          if [ "$LABEL_NAME" == "ready" ]; then
+            TARGET_STATUS="$COL_READY"
+          else
+            TARGET_STATUS="$COL_IN_PROGRESS"
+          fi
+
+          # Issue zum Projekt hinzufügen (falls noch nicht drin) & Item-ID holen
+          ITEM_ID=$(gh project item-add $PROJECT_NUMBER --owner "$ORG_NAME" --url "$ISSUE_URL" --format json | jq -r '.id')
+
+          # Projekt-ID, Status-Feld-ID und Option-IDs auslesen
+          PROJECT_DATA=$(gh project view $PROJECT_NUMBER --owner "$ORG_NAME" --format json)
+          PROJECT_ID=$(echo "$PROJECT_DATA" | jq -r '.id')
+
+          FIELD_DATA=$(gh project field-list $PROJECT_NUMBER --owner "$ORG_NAME" --format json)
+          STATUS_FIELD_ID=$(echo "$FIELD_DATA" | jq -r '.fields[] | select(.name=="Status") | .id')
+          OPTION_ID=$(echo "$FIELD_DATA" | jq -r --arg status "$TARGET_STATUS" '.fields[] | select(.name=="Status") | .options[] | select(.name==$status) | .id')
+
+          # Status im Board setzen
+          gh project item-edit --project-id "$PROJECT_ID" --id "$ITEM_ID" --field-id "$STATUS_FIELD_ID" --single-select-option-id "$OPTION_ID"
