@@ -80,3 +80,4 @@ Zuordnung der Projekt-Dokumentation zu den Notizen in Trilium (Stand 2026-11-24)
 | vibe | Features | GH-60 Code Janitor Runde (Inventur, verhaltensneutrale Altlasten, Fundkatalog) | `Tks38FPz2aUY` |
 | vibe | Features | GH-56 UI-Anpassung der Projektansicht „Work" | `0g9uBbxl6wRd` |
 | vibe | Features | GH-67 UI Work Package 3 | `hcGQnSYsyO8V` |
+| vibe | Features | GH-68 Code Janitor Run: Gesamtanalyse (83 Funde, priorisiert, Komplexität) | `JNV0ehwK2ga6` |
