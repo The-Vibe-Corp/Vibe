@@ -1830,19 +1830,17 @@ class H(BaseHTTPRequestHandler):
                 act = body.get("action") or "add"
                 try:
                     if act == "add":
-                        # AP3: Im verbundenen Projekt wird zuerst das Issue
-                        # angelegt (Kategorie -> Label, draft -> ohne
+                        # B1: Der eine Tickettyp ``type`` bestimmt zugleich
+                        # das GitHub-Label (nur bug/feature/feedback; task
+                        # ohne Typ-Label) und den Speichertyp; ``category``/
+                        # ``kind`` haben keinen Einfluss mehr. Im verbundenen
+                        # Projekt wird zuerst das Issue angelegt (draft -> ohne
                         # Ready-Label); ein Fehlschlag lässt keinen halben
                         # lokalen Eintrag zurück. Ohne Opt-in bleibt die
-                        # lokale AP-ID-Vergabe unverändert. GH-48: Der frühere
-                        # draft-Schalter wird auf den Speicherzustand
-                        # abgebildet (draft -> ohne Ready-Label). GH-67:
-                        # ``type`` ist der Tickettyp (task/bug/feature/
-                        # feedback) und von der Kategorie getrennt; die
-                        # Kategorie bestimmt weiterhin das GitHub-Label.
+                        # lokale Auto-ID-Vergabe unverändert.
                         state = web_ticket_state(body.get("state"))
                         raw_type = body.get("type")
-                        ttype = str(raw_type or "task").strip().lower()
+                        ttype = str(raw_type or "feature").strip().lower()
                         if ttype not in vibe.vibe_tickets.TYPES:
                             raise ValueError(
                                 "Unbekannter Tickettyp: '" + ttype + "' "
@@ -1850,12 +1848,10 @@ class H(BaseHTTPRequestHandler):
                                 + ", ".join(vibe.vibe_tickets.TYPES) + ").")
                         config = vibe_github.read_config(vibe.github_env_path(name))
                         if config["issues_enabled"]:
-                            category = str(body.get("category") or body.get("kind") or "").strip().lower()
                             draft = (state == "draft")
                             tid = vibe_issues.add_ticket_connected(
                                 vibe.ppath(name), config, body.get("title"),
-                                body.get("description", ""), category, draft,
-                                type=(ttype if raw_type else None))
+                                body.get("description", ""), ttype, draft)
                         else:
                             tid = vibe.add_ticket(
                                 name, (body.get("id") or "").strip(),

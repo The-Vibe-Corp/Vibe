@@ -211,7 +211,9 @@ class PullWiringTest(AP9WiringFixture):
         Der fehlgeschlagene ``github-pull`` bleibt ein HINWEIS (AP9). Der
         anschließende GitHub-Abschluss ist dagegen eine echte Schranke: Weil
         origin nicht erreichbar ist, darf das Paket nicht lokal gemergt
-        werden, das Ticket bleibt offen und die Arbeitskopie bleibt liegen.
+        werden. B1/Anforderung 4: Der Läufer markiert den Bearbeitungsbeginn
+        bereits mit ``mark-start``, das Ticket steht daher auf ``in-progress``
+        und bleibt ungeschlossen; die Arbeitskopie bleibt liegen.
         """
         project = self.make_project(
             env_extra=('GITHUB_ENABLED="1"\nGITHUB_REPO="owner/name"\n'
@@ -249,11 +251,12 @@ class PullWiringTest(AP9WiringFixture):
             0, git(project, "cat-file", "-e", "HEAD:impl-F1.txt").returncode,
             "Das Paket wurde trotz fehlgeschlagener GitHub-Schranke "
             "gemergt:\n" + log)
-        # Das Ticket bleibt offen:
+        # Das Ticket bleibt in Bearbeitung und ungeschlossen (B1: der Läufer
+        # markiert den Start mit mark-start → in-progress):
         document = json.loads(
             (project / ".vibe" / "tickets.json").read_text(encoding="utf-8"))
         record = {item["id"]: item for item in document["tickets"]}["F1"]
-        self.assertEqual("open", record["state"], record)
+        self.assertEqual("in-progress", record["state"], record)
         report = (self.runtime / (project.name + ".report.txt")).read_text(
             encoding="utf-8")
         self.assertIn("Blockiert: F1", report)

@@ -953,23 +953,68 @@ class DescriptionAndStateTest(GithubCase):
 
     def test_add_ticket_connected_keeps_metadata_text_inert(self):
         """Vor: ``add_ticket_connected`` mit Metazeilen im Text, ready+draft.
-        Aktion: zwei Aufrufe. Erwartet: GH-Tickets mit echtem Zustand; der
+        Aktion: zwei Aufrufe mit dem einen Typ-Parameter (B1-Signatur).
+        Erwartet: GH-Tickets mit echtem Zustand und dem übergebenen Typ; der
         Text bleibt in description."""
         project = self.make_project(env_text=self.issues_env(self.server))
         module = issues_module()
         config = self.config_for(project)
 
         ready_id = module.add_ticket_connected(
-            str(project), config, "Injected ready", INJECTION_BODY, "", False)
+            str(project), config, "Injected ready", INJECTION_BODY,
+            "feature", False)
         draft_id = module.add_ticket_connected(
-            str(project), config, "Injected draft", INJECTION_BODY, "", True)
+            str(project), config, "Injected draft", INJECTION_BODY,
+            "feature", True)
 
         records = self.records(project)
         self.assertEqual("open", records[ready_id]["state"])
         self.assertEqual("draft", records[draft_id]["state"])
+        self.assertEqual("feature", records[ready_id]["type"])
+        self.assertEqual("feature", records[draft_id]["type"])
         self.assertIn("BLOCKIERT: injiziert",
                       records[ready_id]["description"])
         self.assertNotEqual("blocked", records[ready_id]["state"])
+
+    def test_add_ticket_connected_uses_one_type_for_label_and_store(self):
+        """Vor: Issues-Sync aktiv, Loopback-Fake. Aktion: verbundene Anlage je
+        Typ (bug/feature/feedback/task), draft und ein offenes Feature.
+
+        Erwartung (B1/B+E): Typ-Label nur für bug/feature/feedback
+        (``task`` ohne Typ-Label); bei draft fehlt das Ready-Label, bei open
+        ist es gesetzt; der Speichertyp entspricht genau dem Typ-Parameter.
+        """
+        project = self.make_project(env_text=self.issues_env(self.server))
+        module = issues_module()
+        config = self.config_for(project)
+
+        cases = (("bug", True), ("feature", True), ("feedback", True),
+                 ("task", True), ("feature", False))
+        for index, (ttype, draft) in enumerate(cases):
+            with self.subTest(ttype=ttype, draft=draft):
+                self.server.requests.clear()
+                self.server.httpd.next_number = 300 + index
+                ticket_id = module.add_ticket_connected(
+                    str(project), config, "Ticket %s %s" % (ttype, index),
+                    "Text", ttype, draft)
+                posts = [call for call in self.server.calls("POST")
+                         if call["path"].rstrip("/").endswith("/issues")]
+                self.assertEqual(1, len(posts), posts)
+                labels = posts[0]["body"].get("labels") or []
+                if ttype == "task":
+                    self.assertNotIn("bug", labels, posts[0])
+                    self.assertNotIn("feature", labels, posts[0])
+                    self.assertNotIn("feedback", labels, posts[0])
+                else:
+                    self.assertIn(ttype, labels, posts[0])
+                ready = config["issues_ready_label"]
+                if draft:
+                    self.assertNotIn(ready, labels, posts[0])
+                else:
+                    self.assertIn(ready, labels, posts[0])
+                record = self.records(project)[ticket_id]
+                self.assertEqual(ttype, record["type"])
+                self.assertEqual("draft" if draft else "open", record["state"])
 
 
 class DraftSelectionTest(GithubCase):

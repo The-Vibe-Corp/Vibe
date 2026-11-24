@@ -1588,6 +1588,9 @@ while [ "$PACKAGES" -lt "$MAXP" ] && [ "$STOP" = 0 ]; do
       --id "$ID" --branch "$BRANCH" --path "$WT" --base-commit "$PACKAGE_BASE" \
       >>"$LOG" 2>&1 || true
   fi
+  # B1: Der Läufer vermerkt den Bearbeitungsbeginn (open → in-progress,
+  # idempotent, nicht blockierend). Ein Fehlschlag stoppt das Paket nicht.
+  python3 "$PACKAGES_PY" mark-start --project "$P" --id "$ID" >>"$LOG" 2>&1 || true
   # AP4 (T-W1): Ab jetzt trägt der Erfassungsfilter den Worktree-Anhang des
   # Pakets; vor dem ersten Paket (Preflight) bleibt er ohne diese Angaben.
   if [ -f "$RUNS_PY" ]; then

@@ -765,8 +765,7 @@ class GH56WorkBrowserTest(unittest.TestCase):
         Vorbedingung: offenes Ticket AP1. Aktion: close anklicken, Dialog
         abbrechen, erneut anklicken und bestätigen. Erwartung: Dialog mit
         klarer Rückfrage; nach Abbruch bleibt der Zustand unverändert (open,
-        oder in-progress falls der Close nur im Editor erreichbar ist —
-        GH-67 setzt beim Öffnen des Editors auf in-progress); nach Bestätigung
+        B1: der Editor ändert den Zustand nicht mehr); nach Bestätigung
         state=done und die Karte ist standardmäßig verborgen.
         """
         self.write_store([ticket("AP1", "Abschlusskandidat GH56")])
@@ -783,12 +782,10 @@ class GH56WorkBrowserTest(unittest.TestCase):
                 "button[data-nv-action='ticket-close'], "
                 "button[data-nv-action='package-close']").first
 
-        editor_opened = False
         if close_button().count() == 0:
             self.page.locator(
                 "[data-nv-ticket-detail='AP1'] "
                 "button[data-nv-action='ticket-edit']").first.click()
-            editor_opened = True
         close = close_button()
         close.wait_for(state="visible", timeout=5000)
         close.click()
@@ -796,9 +793,9 @@ class GH56WorkBrowserTest(unittest.TestCase):
                          "Schließen fragt nicht per Bestätigungsdialog nach")
         self.assertTrue(self.dialogs[0].strip(),
                         "Der Bestätigungsdialog enthält keine Rückfrage")
-        self.assertEqual("in-progress" if editor_opened else "open",
-                         self.read_store()["AP1"]["state"],
-                         "Abbrechen der Rückfrage hat trotzdem geschlossen")
+        self.assertEqual("open", self.read_store()["AP1"]["state"],
+                         "Abbrechen der Rückfrage hat trotzdem geschlossen "
+                         "oder der Editor hat den Zustand verändert")
 
         close_button().click()
         self.assertEqual(2, len(self.dialogs),
