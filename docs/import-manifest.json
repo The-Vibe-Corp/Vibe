@@ -1475,6 +1475,19 @@
       ],
       "datum": "2026-11-24",
       "grund": "Autonomer Modus wird ignoriert (GH-58): zentraler Waechter in vibe_questions.create verhindert Rueckfragen im autonomen Modus (AutonomousActiveError, es entsteht keine Datei); cmd_ask loest das Projekt aus Arbeitskopien ueber die Worktree-Registry, behandelt ein leeres --project wie nicht angegeben (keine Waechter-Umgehung) und lehnt die Frage mit direkter Rueckmeldung ab (Exit 0); vibe autonomous liest --runtime; Preflight-/Schranken-Assistenz entscheidet im Wettlauf autonom statt abzubrechen; Laufhinweis und Dashboard (best-effort Steer, Zustellgrund im Laufprotokoll) informieren den Agenten ueber Moduswechsel; Erklaer- und Tooltip-Texte der Autonomiekarte (nova und classic) und des Autonom-entscheiden-Knopfs auf die neue Semantik umgestellt, i18n je Schluessel mit EN-Uebersetzung und de-Identitaetspaar."
+    },
+    {
+      "arbeitspaket": "GH-56",
+      "dateien": [
+        "bin/vibe-web.py",
+        "bin/vibe_tickets.py",
+        "bin/web/nova-core.js",
+        "bin/web/nova-project.js",
+        "bin/web/nova-widgets.js",
+        "bin/web/nova.css"
+      ],
+      "datum": "2026-11-24",
+      "grund": "Projektansicht Work: Kanban-Board (Draft/Ready/Running) mit Karten-Badges, Details/Resume, Drag-and-Drop mit Geist/Einfuegemarke/Rollback und persistenter Vertikalreihenfolge; mobil Liste statt Board und Priorisierung ausschliesslich fuer Ready; Zustands- und Typfilter samt Suche; vollhoeher Ticket-Editor mit sessionweiter Breite und mobil Vollbild; manuelles Schliessen mit Bestaetigungsdialog (eigene API-Aktion close, Done-Invariante bleibt fuer den Laeufer erhalten)."
     }
   ],
   "files": [
@@ -1499,9 +1512,9 @@
       "sha256": "969016d30026a07808606c2d790d225774d4c19b8cdbc293fa27391d361ddee0"
     },
     {
-      "bytes": 142027,
+      "bytes": 143868,
       "path": "bin/vibe-web.py",
-      "sha256": "38cf73638655d7a7ea32b538da773664382eccdbca93fcfb948a789e6ed1d653"
+      "sha256": "d9a66792afe22249f536e3180bba312819af69a00b9a99ec5570fdefb2568e13"
     },
     {
       "bytes": 5189,
@@ -1594,9 +1607,9 @@
       "sha256": "7b6aa4118259dc3440b37eaeec5eaa96eac7d928e6e704b2310946490bd25fbb"
     },
     {
-      "bytes": 14390,
+      "bytes": 16005,
       "path": "bin/vibe_tickets.py",
-      "sha256": "92983725ab3d2cde3cc97fe70d8c4171063fc7333f719f2922539e1513a7f1d3"
+      "sha256": "29237e18a75d3fd223635c8bed72fb56b37125511908bc4bd8a01b18c5883489"
     },
     {
       "bytes": 12460,
@@ -1634,9 +1647,9 @@
       "sha256": "1692d57fff1cb15413b839e8a3ac8e6a3caf234db6556a100e0983b982c0cec5"
     },
     {
-      "bytes": 41550,
+      "bytes": 41756,
       "path": "bin/web/nova-core.js",
-      "sha256": "0217ff958295c77e83430b2c003ad39a16ed0cabf440baa6f4afbe5ec3d8f47f"
+      "sha256": "66646115a03b55eda33c24722e0661d4353f7c1f54346e48e4a9324c9dcb3a29"
     },
     {
       "path": "bin/web/nova-evals.js",
@@ -1654,9 +1667,9 @@
       "sha256": "cbca5b169f3c5052e50da0910560d7fbcd1b6c42380fe6b925a4f98021f753ab"
     },
     {
-      "bytes": 94576,
+      "bytes": 116732,
       "path": "bin/web/nova-project.js",
-      "sha256": "3ed937801b6f932996d953063821b4e1347df92ac85d1876f383a3eb57c770c5"
+      "sha256": "915afd740e86d27edd16cde0ff54055b8b7d67ee4343231bf3cf4f711c4190b9"
     },
     {
       "bytes": 90883,
@@ -1664,14 +1677,14 @@
       "sha256": "f2ab2bb02b97e94c22067e63b687552e339b371ac5ce51c844be85b936811874"
     },
     {
-      "bytes": 15346,
+      "bytes": 16119,
       "path": "bin/web/nova-widgets.js",
-      "sha256": "9bf731e7dc2992ce62ab76ccdbf3540d8599114a5fc3deee005180988b8fd5a0"
+      "sha256": "2484bc283206bcec3c986f1d5cb0d77e20662ffce28cd0aaba0d4b517c371fbf"
     },
     {
-      "bytes": 62702,
+      "bytes": 66198,
       "path": "bin/web/nova.css",
-      "sha256": "7cb30fb292d4c2221fd13577639e528df1d3aefe919cebfd7adacae36673aab7"
+      "sha256": "0d2d9755b7bf308f8373d406a5bcc7711b228e6093a2fe0f50611fed0140102c"
     },
     {
       "bytes": 12751,

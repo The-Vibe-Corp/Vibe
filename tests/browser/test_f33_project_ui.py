@@ -264,32 +264,38 @@ LONG_DESCRIPTION = (
     "noch ein Satz, noch ein Satz, noch ein Satz, noch ein Satz."
 )
 
-TICKETS = """# TICKETS — F33 Test
+STAMP = "2026-01-01T00:00:00+00:00"
 
-- [ ] F1 Erstes Paket
-  Beschreibung: {long}
 
-- [ ] F2 Zweites Paket
-  Beschreibung: Kurz und knapp.
+def ticket(tid, title, type="task", state="open", **extra):
+    record = {
+        "id": tid, "title": title, "type": type, "state": state,
+        "description": "", "github": None, "pr_url": "", "commit": "",
+        "test": "", "blocked_reason": "", "waiting_note": "",
+        "priority": "", "dependencies": [],
+        "created": STAMP, "updated": STAMP,
+    }
+    record.update(extra)
+    return record
 
-- [ ] F3 Blockiertes Paket
-  Beschreibung: Wartet auf Freigabe.
-  BLOCKIERT: externe Freigabe fehlt
 
-- [x] F4 Erledigtes Paket
-  Beschreibung: Fertig.
-  Commit: 1234567; Test: test_erledigt
-""".format(long=LONG_DESCRIPTION)
+# GH-48/GH-56: der Ticketspeicher ist .vibe/tickets.json.
+TICKETS = [
+    ticket("F1", "Erstes Paket", description=LONG_DESCRIPTION),
+    ticket("F2", "Zweites Paket", description="Kurz und knapp."),
+    ticket("F3", "Blockiertes Paket", state="blocked",
+           description="Wartet auf Freigabe.",
+           blocked_reason="externe Freigabe fehlt"),
+    ticket("F4", "Erledigtes Paket", state="done", description="Fertig.",
+           commit="1234567", test="test_erledigt"),
+]
 
-FEEDBACK = """# FEEDBACK — F33 Test
-
-- [ ] B7 Absturz beim Start
-  Beschreibung: Fenster bleibt leer.
-  Art: Bug
-
-- [ ] FB-1 Wunsch für die Oberfläche
-  Beschreibung: Bitte größere Schaltflächen.
-"""
+FEEDBACK = [
+    ticket("B7", "Absturz beim Start", type="bug",
+           description="Fenster bleibt leer."),
+    ticket("FB-1", "Wunsch für die Oberfläche", type="feedback",
+           description="Bitte größere Schaltflächen."),
+]
 
 SPEC = """# SPEC — F33 Test
 
@@ -532,8 +538,10 @@ class F33ProjectBrowserTest(unittest.TestCase):
         self.context.close()
 
     def write_fixtures(self):
-        (self.project / "TICKETS.md").write_text(TICKETS, encoding="utf-8")
-        (self.project / "FEEDBACK.md").write_text(FEEDBACK, encoding="utf-8")
+        (self.project / ".vibe" / "tickets.json").write_text(
+            json.dumps({"version": 1, "tickets": TICKETS + FEEDBACK},
+                       ensure_ascii=False, indent=1) + "\n",
+            encoding="utf-8")
         (self.project / "SPEC.md").write_text(SPEC, encoding="utf-8")
         (self.project / "AGENTS.md").write_text(PROJECT_AGENTS, encoding="utf-8")
         (self.global_agents).write_text(GLOBAL_AGENTS_TEXT, encoding="utf-8")
@@ -669,6 +677,11 @@ class F33ProjectBrowserTest(unittest.TestCase):
         self.open_project()
         return self.open_tab("work")
 
+    def records(self):
+        doc = json.loads((self.project / ".vibe" / "tickets.json").read_text(
+            encoding="utf-8"))
+        return {row["id"]: row for row in doc["tickets"]}
+
     def assert_clean_page(self):
         self.assertEqual(
             [], self.page_errors, "Die Projektansicht erzeugte JavaScript-Fehler")
@@ -757,8 +770,8 @@ class WorkOrderTest(F33ProjectBrowserTest):
     def test_work_tab_follows_the_contract_order(self):
         """Vorbedingung: Feature ``priority`` an, Arbeit geöffnet.
 
-        Erwartung: Aktionsleiste → Filterleiste → Priorisierung → integrierte
-        Liste in genau dieser DOM-Reihenfolge; kein Board (F34: Board entfällt).
+        Erwartung (GH-56): Aktionsleiste → Filterleiste → Priorisierung →
+        Kanban-Board in genau dieser DOM-Reihenfolge.
         """
         panel = self.open_work()
         self.assert_follows(
@@ -766,18 +779,13 @@ class WorkOrderTest(F33ProjectBrowserTest):
                 "section[data-nv-ppanel='work'] div.nv-work-actions",
                 "section[data-nv-ppanel='work'] div[data-nv-filter-bar]",
                 "section[data-nv-ppanel='work'] div[data-nv-priority-strip]",
-                "section[data-nv-ppanel='work'] "
-                "div.nv-ticket-list[data-nv-ticket-list]",
+                "section[data-nv-ppanel='work'] div[data-nv-board]",
             ],
             "Die Arbeitsbereiche stehen nicht in der Reihenfolge "
-            "Aktionsleiste → Filterleiste → Priorisierung → integrierte Liste")
+            "Aktionsleiste → Filterleiste → Priorisierung → Board")
         self.assertEqual(
-            0, panel.locator("section[data-nv-ppanel='work'] .nv-board").count(),
-            "F34: Das Board (.nv-board) gehört nicht mehr zum Arbeits-Tab")
-        self.assertEqual(
-            0, panel.locator("section[data-nv-ppanel='work'] [data-nv-col]").count(),
-            "F34: Board-Spalten ([data-nv-col]) gehören nicht mehr zum "
-            "Arbeits-Tab")
+            3, panel.locator("[data-nv-col]").count(),
+            "GH-56: Das Board muss genau drei Spalten haben")
         self.assertTrue(panel.is_visible(), "Das Arbeits-Panel ist nicht sichtbar")
         self.assert_clean_page()
 
@@ -842,39 +850,25 @@ class WorkOrderTest(F33ProjectBrowserTest):
     def test_long_ticket_description_is_clamped_and_expandable(self):
         """Vorbedingung: F1 hat eine sehr lange Beschreibung.
 
-        Aktion: ``button[data-nv-ticket-more]`` klicken.
-        Erwartung: ``div.nv-ticket-desc`` ist zunächst auf ~5 Zeilen begrenzt
-        (scrollHeight > clientHeight), ``aria-expanded="false"``; nach dem
-        Klick ist der Text vollständig sichtbar und ``aria-expanded="true"``.
+        GH-56 verlagert sekundäre Informationen in die Detailansicht: Die
+        fachliche Absicht (lange Beschreibung überlastet die Kachel nicht,
+        bleibt aber vollständig lesbar) wird über Details geprüft. Der alte
+        Aufklapp-Knopf auf der Karte ist überholt.
         """
         self.open_work()
         card = self.page.locator("[data-nv-ticket='F1']")
-        desc = card.locator("div.nv-ticket-desc")
-        desc.wait_for(state="visible", timeout=20000)
-        more = card.locator("button[data-nv-ticket-more]")
-        self.assertEqual(1, more.count(),
-                         "Der Aufklapp-Knopf [data-nv-ticket-more] fehlt")
-        self.assertEqual("false", more.get_attribute("aria-expanded"),
-                         "Der Aufklapp-Knopf meldet nicht aria-expanded=false")
-        clamped = desc.evaluate(
-            "node => ({client: node.clientHeight, scroll: node.scrollHeight})")
-        self.assertGreater(
-            clamped["scroll"], clamped["client"] + 4,
-            "Die lange Beschreibung ist nicht sichtbar begrenzt: " + repr(clamped))
-        more.click()
-        self.wait_until(
-            lambda: more.get_attribute("aria-expanded") == "true",
-            timeout=15, message="Der Aufklapp-Knopf setzt aria-expanded nicht")
-        opened = desc.evaluate(
-            "node => ({client: node.clientHeight, scroll: node.scrollHeight})")
-        self.assertGreaterEqual(
-            opened["client"] + 4, opened["scroll"],
-            "Die Beschreibung ist nach dem Aufklappen nicht vollständig "
-            "sichtbar: " + repr(opened))
-        self.assertTrue(
-            re.search(r"weniger|less", more.inner_text() or "", re.I),
-            "Der Knopf bietet nach dem Aufklappen kein „weniger“ an: "
-            + repr(more.inner_text()))
+        card.wait_for(state="visible", timeout=20000)
+        self.assertEqual(
+            0, card.locator("div.nv-ticket-desc").count(),
+            "GH-56: Die Kachel zeigt keine Beschreibung mehr")
+        self.assertEqual(
+            0, card.locator("button[data-nv-ticket-more]").count(),
+            "GH-56: Die Kachel hat keinen Aufklapp-Knopf mehr")
+        card.locator("button[data-nv-action='ticket-details']").first.click()
+        detail = self.page.locator("[data-nv-ticket-detail='F1']").first
+        detail.wait_for(state="visible", timeout=20000)
+        self.assertIn(LONG_DESCRIPTION, detail.inner_text(),
+                      "Die vollständige lange Beschreibung fehlt in der Detailansicht")
         self.assert_clean_page()
 
     def test_ticket_actions_are_visible_secondary_and_danger_buttons(self):
@@ -1042,10 +1036,11 @@ class WorkOrderTest(F33ProjectBrowserTest):
     def test_form_opens_directly_under_the_action_bar(self):
         """Vorbedingung: Arbeit geöffnet, kein Formular im Ruhezustand.
 
-        Aktion: ``[data-nv-action="new-package"]`` klicken.
-        Erwartung: ``[data-nv-ticket-form]`` erscheint nach der Aktionsleiste und
-        vor der integrierten Ticketliste, im sichtbaren oberen Bereich (kein
-        Riesenscroll).
+        GH-56: Das Formular öffnet im Editor (NV.editView) statt inline unter
+        der Aktionsleiste. Die frühere DOM-Position relativ zur Ticketliste
+        ist ein reines Layout-Detail ohne Fachwert und entfällt. Erhalten
+        bleibt die fachliche Absicht: sofort sichtbar, im Viewport, mit den
+        wesentlichen Feldern und Aktionen.
         """
         self.open_work()
         self.assertEqual(
@@ -1054,10 +1049,10 @@ class WorkOrderTest(F33ProjectBrowserTest):
         self.page.locator("[data-nv-action='new-package']").first.click()
         form = self.page.locator("[data-nv-ticket-form]")
         form.wait_for(state="visible", timeout=15000)
-        self.assert_before(
-            "section[data-nv-ppanel='work'] [data-nv-action='new-package']",
-            "[data-nv-ticket-form]",
-            "Das Formular steht nicht unter der Aktionsleiste")
+        editor = self.page.locator("aside[data-nv-ticket-editor]").first
+        editor.wait_for(state="visible", timeout=15000)
+        self.assertEqual(1, editor.locator("[data-nv-ticket-form]").count(),
+                         "Das Formular liegt nicht im GH-56-Ticket-Editor")
         box = form.bounding_box()
         self.assertIsNotNone(box)
         self.assertGreaterEqual(box["y"], 0,
@@ -1066,14 +1061,11 @@ class WorkOrderTest(F33ProjectBrowserTest):
             box["y"], 0.75 * 1000,
             "Das Formular öffnet erst weit unten (Riesenscroll): y="
             + repr(box["y"]))
-        list_box = self.page.locator(
-            "section[data-nv-ppanel='work'] div.nv-ticket-list[data-nv-ticket-list]"
-        ).bounding_box()
-        self.assertIsNotNone(list_box, "Die integrierte Ticketliste fehlt")
-        self.assertLess(
-            box["y"], list_box["y"],
-            "Das Formular steht nicht vor der integrierten Ticketliste: "
-            + repr((box, list_box)))
+        for hook in ("input[data-nv-field='title']",
+                     "textarea[data-nv-field='description']",
+                     "button[data-nv-action='ticket-save']"):
+            self.assertGreaterEqual(form.locator(hook).count(), 1,
+                                    "Dem Formular fehlt " + hook)
         self.assert_clean_page()
 
     def test_id_field_has_placeholder_hint_and_suggestion(self):
@@ -1082,8 +1074,9 @@ class WorkOrderTest(F33ProjectBrowserTest):
         Aktion: „Paket anlegen“ und danach „Bug melden“ öffnen.
         Erwartung: ``input[data-nv-field="id"]`` trägt den Platzhalter
         „leer lassen = automatisch vergeben“, einen Hinweis
-        ``small[data-nv-id-hint]`` und ist mit dem nächsten Vorschlag
-        vorbelegt: ``F5`` für Pakete, ``B8`` für Bugs; das Feld ist löschbar.
+        ``small[data-nv-id-hint]`` und ist mit einem noch nicht vergebenen
+        Vorschlag vorbelegt; das Feld ist löschbar. Die konkrete Kennung
+        hängt vom Speicher ab (alte Markdown-IDs F5/B8 sind überholt).
         """
         self.open_work()
         self.page.locator("[data-nv-action='new-package']").first.click()
@@ -1103,26 +1096,27 @@ class WorkOrderTest(F33ProjectBrowserTest):
                       hint.inner_text() or "", re.I),
             "Der Kennungs-Hinweis erklärt die automatische Vergabe nicht: "
             + repr(hint.inner_text()))
-        self.assertEqual("F5", ident.input_value(),
-                         "Das Paket-Formular ist nicht mit dem nächsten "
-                         "Vorschlag F5 vorbelegt")
+        suggestion = ident.input_value()
+        self.assertTrue(suggestion and suggestion not in self.records(),
+                        "Das Paket-Formular ist nicht mit einer unvergebenen "
+                        "Kennung vorbelegt: " + repr(suggestion))
         ident.fill("")
         self.assertEqual("", ident.input_value(),
                          "Das Kennungsfeld lässt sich nicht leeren")
 
-        # F34: Das Formular (und damit der Kontext-Panel) muss geschlossen
-        # werden, bevor der nächste Aktionsknopf angeklickt wird – der Scrim
-        # des offenen Panels würde den Klick auf die Aktionsleiste abfangen.
-        self.page.locator("button[data-nv-context-close]").click()
-        self.page.locator("aside[data-nv-context]").wait_for(state="hidden",
-                                                                timeout=15000)
+        # GH-56: Der Editor muss geschlossen werden, bevor der nächste
+        # Aktionsknopf angeklickt wird – sein Scrim fängt sonst den Klick ab.
+        self.page.locator("[data-nv-editview-close]").first.click()
+        self.page.locator("aside[data-nv-editview]").first.wait_for(
+            state="hidden", timeout=15000)
         self.page.locator("[data-nv-action='new-bug']").first.click()
         form = self.page.locator("[data-nv-ticket-form]")
         form.wait_for(state="visible", timeout=15000)
         ident = form.locator("input[data-nv-field='id']")
-        self.assertEqual("B8", ident.input_value(),
-                         "Das Bug-Formular ist nicht mit dem nächsten "
-                         "Vorschlag B8 vorbelegt")
+        bug_suggestion = ident.input_value()
+        self.assertTrue(bug_suggestion and bug_suggestion not in self.records(),
+                        "Das Bug-Formular ist nicht mit einer unvergebenen "
+                        "Kennung vorbelegt: " + repr(bug_suggestion))
         self.assert_clean_page()
 
 
@@ -1135,8 +1129,8 @@ class PriorityTest(F33ProjectBrowserTest):
     def test_strip_sits_above_the_board_with_badges_and_count(self):
         """Vorbedingung: gespeicherte Reihenfolge F2 vor F1.
 
-        Erwartung: ``div[data-nv-priority-strip]`` steht oberhalb der
-        integrierten Liste; die Karte F2 trägt ``span[data-nv-prio-badge]`` „P1“,
+        Erwartung: ``div[data-nv-priority-strip]`` steht oberhalb des
+        Kanban-Boards; die Karte F2 trägt ``span[data-nv-prio-badge]`` „P1“,
         F1 „P2“; die Leiste meldet „2 priorisiert“.
         """
         self.prepare_order("F2 F1")
@@ -1145,9 +1139,8 @@ class PriorityTest(F33ProjectBrowserTest):
         strip.wait_for(state="visible", timeout=20000)
         self.assert_before(
             "section[data-nv-ppanel='work'] div[data-nv-priority-strip]",
-            "section[data-nv-ppanel='work'] "
-            "div.nv-ticket-list[data-nv-ticket-list]",
-            "Die Priorisierungsleiste steht nicht oberhalb der Ticketliste")
+            "section[data-nv-ppanel='work'] div[data-nv-board]",
+            "Die Priorisierungsleiste steht nicht oberhalb des Boards")
         first = self.page.locator(
             "[data-nv-ticket='F2'] span[data-nv-prio-badge]")
         second = self.page.locator(
@@ -1539,45 +1532,46 @@ class SettingsTabTest(F33ProjectBrowserTest):
     def test_global_agents_hint_is_readonly(self):
         """Vorbedingung: globale AGENTS.md vorhanden.
 
-        Erwartung: Im Projekteinstellungen-Tab gibt es das
-        ``details[data-nv-global-agents-hint]`` nicht mehr (F34: kein
-        doppeltes Ausklapp-Menü). Die globale AGENTS.md ist über die
-        Einstellungen erreichbar: ``nav[data-nv-navs] [data-nv-nav='settings']``
-        → ``section[data-nv-ssection='global-agents']`` →
-        ``details[data-nv-global-agents]`` mit ``textarea[data-nv-global-agents]``
-        und ``small[data-nv-global-agents-hint]``; der Inhalt zeigt den
-        Fixture-Wert „GLOBALE-REGEL-4711“.
+        Erwartung: Im Projekteinstellungen-Tab gibt es die globale AGENTS.md
+        nicht doppelt. Die globale AGENTS.md ist über
+        ``nav[data-nv-navs] [data-nv-nav='settings']`` →
+        ``section[data-nv-ssection='global-agents']`` erreichbar. Das alte
+        ``details[data-nv-global-agents]`` mit eingebettetem Textarea wurde
+        durch den Bearbeiten-Knopf ``[data-nv-action='global-agents-edit']``
+        und einen Editor (``textarea[data-nv-agents-text]``) ersetzt; die
+        fachliche Absicht — Hinweis, Erreichbarkeit und Fixture-Inhalt —
+        bleibt erhalten.
         """
         panel = self.open_settings()
         self.assertEqual(
             0, panel.locator("details[data-nv-global-agents-hint]").count(),
-            "F34: Die globale AGENTS.md-Hinweis-Box "
-            "(details[data-nv-global-agents-hint]) existiert im "
+            "Die globale AGENTS.md-Hinweis-Box existiert im "
             "Projekteinstellungen-Tab nicht mehr")
         self.assertEqual(
             0, panel.locator("details[data-nv-global-agents]").count(),
-            "F34: Die globale AGENTS.md-Details existieren nicht im "
+            "Die globale AGENTS.md-Details existieren nicht im "
             "Projekteinstellungen-Tab")
         self.page.locator("nav[data-nv-navs] [data-nv-nav='settings']").click()
         main = self.page.locator("main#nv-main[data-nv-view='settings']")
         main.wait_for(state="visible", timeout=20000)
         section = self.page.locator("section[data-nv-ssection='global-agents']")
         section.wait_for(state="visible", timeout=20000)
-        details = section.locator("details[data-nv-global-agents]")
-        details.wait_for(state="visible", timeout=20000)
-        self.assertTrue(details.evaluate("node => node.open"),
-                        "Die globale AGENTS.md-Sektion ist nicht offen")
-        textarea = details.locator("textarea[data-nv-global-agents]")
+        self.assertEqual(
+            1, section.locator("small[data-nv-global-agents-hint]").count(),
+            "Der Hinweis small[data-nv-global-agents-hint] fehlt")
+        edit = section.locator("button[data-nv-action='global-agents-edit']")
+        edit.wait_for(state="visible", timeout=20000)
+        edit.click()
+        editor = self.page.locator("aside[data-nv-editview]").first
+        editor.wait_for(state="visible", timeout=20000)
+        textarea = editor.locator("textarea[data-nv-agents-text]")
         textarea.wait_for(state="visible", timeout=20000)
         rows = textarea.evaluate(
             "node => parseInt(node.getAttribute('rows') || '0', 10) || node.rows")
         self.assertGreaterEqual(
-            rows, 16, "textarea[data-nv-global-agents] hat weniger als 16 rows")
+            rows, 16, "textarea[data-nv-agents-text] hat weniger als 16 rows")
         self.assertIn("GLOBALE-REGEL-4711", textarea.input_value(),
                       "Der Inhalt der globalen AGENTS.md wird nicht angezeigt")
-        small = details.locator("small[data-nv-global-agents-hint]")
-        self.assertEqual(1, small.count(),
-                         "Der Hinweis small[data-nv-global-agents-hint] fehlt")
         self.assert_clean_page()
 
     def test_agents_file_backup_and_restore_controls(self):

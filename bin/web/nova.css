@@ -1459,3 +1459,129 @@ label.nv-field input, label.nv-field select, label.nv-field textarea { max-width
   .nv-editview { inset: 0; width: 100vw !important; height: 100vh; max-width: none; min-width: 0; border-left: 0; }
   .nv-editview-resize { display: none; }
 }
+
+/* ===== GH-56: Projektansicht „Work" — Board, Liste und Ticket-Editor =====
+   Alle Abstände kommen aus dem bestehenden 4px-Raster (--nv-space-1..3),
+   damit Board, Filter, Karten und Editor dasselbe Grundraster teilen. */
+.nv-work-actions { margin-bottom: var(--nv-space-3); }
+.nv-work-states { gap: var(--nv-space-1); }
+.nv-work-states .nv-btn[aria-pressed="true"] {
+  background: var(--nv-accent-soft-bg);
+  color: var(--nv-accent-soft-fg);
+  font-weight: 600;
+}
+
+/* Kanban: drei gleichwertige Spalten, Karten als kompakte Kacheln. */
+[data-nv-board] {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--nv-space-3);
+  align-items: start;
+  margin-bottom: var(--nv-space-4);
+}
+.nv-board-col {
+  margin: 0;
+  padding: var(--nv-space-3);
+  background: var(--nv-surface-2);
+  border: 1px solid var(--nv-border);
+  border-radius: var(--nv-radius);
+  min-height: 12rem;
+}
+[data-nv-col-head] {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--nv-space-2);
+  margin-bottom: var(--nv-space-3);
+}
+.nv-col-title { margin: 0; font-size: 0.9375rem; line-height: 1.25; }
+[data-nv-col-cards] {
+  display: flex;
+  flex-direction: column;
+  gap: var(--nv-space-2);
+  min-height: var(--nv-space-6);
+}
+[data-nv-col-cards] > article[data-nv-ticket] {
+  margin: 0;
+  padding: var(--nv-space-3);
+  box-shadow: none;
+}
+[data-nv-col] .nv-empty { margin: 0; padding: var(--nv-space-2); }
+
+/* Karten: Titel zuerst, Badges danach, Aktionen zuletzt. */
+.nv-ticket-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.nv-ticket-actions {
+  margin: var(--nv-space-1) 0 0;
+  gap: var(--nv-space-1);
+}
+.nv-ticket-actions .nv-btn { min-height: 32px; }
+.nv-ticket-actions .nv-ghost { padding: 0 var(--nv-space-1); }
+
+/* Drag-Feedback: Zielspalte hervorheben, Platzhalter zeigen, Quelle dimmen. */
+[data-nv-col].nv-drop-target {
+  outline: 2px dashed var(--nv-primary);
+  outline-offset: 2px;
+  background: var(--nv-info-bg);
+}
+article[data-nv-ticket].nv-dragging { opacity: 0.4; }
+[data-nv-drop-marker] {
+  height: 4px;
+  margin: 0;
+  border-radius: 2px;
+  background: var(--nv-primary);
+}
+[data-nv-board-ghost] {
+  font-weight: 600;
+  color: var(--nv-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Mobile: Karten als Liste mit ausreichend großen Touch-Zielen. */
+[data-nv-work-list] {
+  display: flex;
+  flex-direction: column;
+  gap: var(--nv-space-2);
+  margin-bottom: var(--nv-space-4);
+}
+[data-nv-work-list] > article[data-nv-ticket] {
+  margin: 0;
+  padding: var(--nv-space-3);
+}
+[data-nv-work-list] .nv-ticket-title { white-space: normal; }
+
+/* GH-56: Der Ticket-Editor ist breiter und beginnt oben (volle Höhe); die
+   übrigen Bearbeitungsansichten behalten ihre bisherige Position. */
+aside[data-nv-ticket-editor] {
+  top: 0;
+  bottom: 0;
+  height: 100vh;
+  min-width: 30rem;
+  max-width: 70vw;
+  padding: var(--nv-space-4);
+}
+aside[data-nv-ticket-editor] .nv-editview-body { padding-right: var(--nv-space-1); }
+
+@media (max-width: 1023px) {
+  [data-nv-board] { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 768px) {
+  [data-nv-board] { grid-template-columns: 1fr; }
+  [data-nv-work-list] .nv-btn,
+  [data-nv-work-list] .nv-ticket-actions .nv-btn { min-height: 44px; }
+  aside[data-nv-ticket-editor] {
+    inset: 0;
+    width: 100vw !important;
+    min-width: 0;
+    max-width: none;
+    height: 100vh;
+    border-left: 0;
+  }
+}

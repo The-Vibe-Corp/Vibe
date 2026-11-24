@@ -1843,8 +1843,37 @@ class H(BaseHTTPRequestHandler):
                         tid = (body.get("id") or "").strip()
                         assert tid, "ID fehlt"
                         state = web_ticket_state(body.get("state"))
+                        # GH-56: Geschlossene Tickets sind gesperrt. Die
+                        # Oberfläche wertet ok=false als fachliche Ablehnung
+                        # mit Klartext; der Status bleibt 200, damit sie den
+                        # Hinweis ohne technischen Fehlerpfad anzeigt.
+                        record = vibe.vibe_tickets.find(
+                            vibe.vibe_tickets.load(vibe.ppath(name)), tid)
+                        if record is not None and record.get("state") == "done":
+                            message = redact(
+                                "Erledigte Tickets sind nicht bearbeitbar: "
+                                + tid)
+                            self._send(200, {
+                                "ok": False, "message": message,
+                                "error": {"code": "rejected",
+                                          "message": message}})
+                            return None
                         ticket_set_state(name, tid, state)
                         ok, msg = True, f"{tid} auf {state} gesetzt"
+                    elif act == "close":
+                        # GH-56: Schließen verlangt eine ausdrückliche
+                        # Bestätigung im Request (doppelte Absicherung neben
+                        # dem Dialog der Oberfläche). ``done`` bleibt weiterhin
+                        # dem Close-Pfad vorbehalten; action="state" mit
+                        # state="done" wird unverändert abgelehnt.
+                        tid = (body.get("id") or "").strip()
+                        assert tid, "ID fehlt"
+                        if body.get("confirm") is not True:
+                            raise ValueError(
+                                "Ticket schließen erfordert die Bestätigung "
+                                "confirm: true.")
+                        vibe.vibe_tickets.close(vibe.ppath(name), tid)
+                        ok, msg = True, f"{tid} geschlossen"
                     elif act == "update":
                         tid = (body.get("id") or "").strip()
                         assert tid, "ID fehlt"

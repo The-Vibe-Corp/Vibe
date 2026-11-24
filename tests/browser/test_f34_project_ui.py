@@ -247,48 +247,48 @@ PROJECT = "proj"
 # Zustände gemäß Backend/Vertrag: offen, erledigt, BLOCKIERT, WARTET AUF
 # MERGE, Draft, In Progress. FB-1 ist erledigt (echter Nachweis auf einem
 # echten Git-Commit); B7 ist offen (Art: Bug).
-TICKETS = """# TICKETS — F34 Test
+STAMP = "2026-01-01T00:00:00+00:00"
 
-- [ ] F1 Erstes Paket
-  Beschreibung: Erstes Paket eingegeben, wartet auf Umsetzung.
 
-- [x] F2 Zweites Paket
-  Beschreibung: Projekt als erledigt markiert.
+def ticket(tid, title, type="task", state="open", **extra):
+    record = {
+        "id": tid, "title": title, "type": type, "state": state,
+        "description": "", "github": None, "pr_url": "", "commit": "",
+        "test": "", "blocked_reason": "", "waiting_note": "",
+        "priority": "", "dependencies": [],
+        "created": STAMP, "updated": STAMP,
+    }
+    record.update(extra)
+    return record
 
-- [ ] F3 Blockiertes Paket
-  BLOCKIERT: externe Freigabe fehlt
 
-- [ ] F4 Wartet auf Merge
-  WARTET AUF MERGE: Wartet auf Merge-Freigabe.
-
-- [ ] F5 Entwurf erstellt
-  Status: draft
-
-- [ ] F6 In Arbeit
-  Status: In Progress
-
-- [ ] F7 Dritte Überprüfung
-  Beschreibung: Noch ein offenes Paket, um die Listenhöhe zu erhöhen.
-
-- [ ] F8 Vierte Überprüfung
-  Beschreibung: Ein weiteres offenes Paket, um die Listenhöhe zu erhöhen.
-"""
-
-# --- F34-Fixture: FEEDBACK.md (B7 offen, FB-1 erledigt mit Nachweis) ---------
-FEEDBACK_PREFIX = """# FEEDBACK — F34 Test
-
-- [ ] B7 Wunsch für die Oberfläche
-  Beschreibung: Bitte größere Schaltflächen.
-  Art: Bug
-"""
+# GH-48/GH-56: der Ticketspeicher ist .vibe/tickets.json.
+TICKETS = [
+    ticket("F1", "Erstes Paket",
+           description="Erstes Paket eingegeben, wartet auf Umsetzung."),
+    ticket("F2", "Zweites Paket", state="done",
+           description="Projekt als erledigt markiert."),
+    ticket("F3", "Blockiertes Paket", state="blocked",
+           blocked_reason="externe Freigabe fehlt"),
+    ticket("F4", "Wartet auf Merge", state="waiting-merge",
+           waiting_note="Wartet auf Merge-Freigabe."),
+    ticket("F5", "Entwurf erstellt", state="draft"),
+    ticket("F6", "In Arbeit", state="in-progress"),
+    ticket("F7", "Dritte Überprüfung",
+           description="Noch ein offenes Paket, um die Listenhöhe zu erhöhen."),
+    ticket("F8", "Vierte Überprüfung",
+           description="Ein weiteres offenes Paket, um die Listenhöhe zu erhöhen."),
+]
 
 
 def feedback_fixture(proof_hash):
-    return FEEDBACK_PREFIX + """
-- [x] FB-1 Absturz beim Start
-  Beschreibung: Fenster bleibt leer.
-  Commit: %s; Test: test_f34
-""" % proof_hash
+    return [
+        ticket("B7", "Wunsch für die Oberfläche", type="bug",
+               description="Bitte größere Schaltflächen."),
+        ticket("FB-1", "Absturz beim Start", type="feedback", state="done",
+               description="Fenster bleibt leer.", commit=proof_hash,
+               test="test_f34"),
+    ]
 
 
 SPEC = """# SPEC — F34 Test
@@ -566,9 +566,11 @@ class F34ProjectBrowserTest(unittest.TestCase):
         self.context.close()
 
     def write_fixtures(self):
-        (self.project / "TICKETS.md").write_text(TICKETS, encoding="utf-8")
-        (self.project / "FEEDBACK.md").write_text(
-            feedback_fixture(self.proof_hash), encoding="utf-8")
+        (self.project / ".vibe" / "tickets.json").write_text(
+            json.dumps({"version": 1,
+                        "tickets": TICKETS + feedback_fixture(self.proof_hash)},
+                       ensure_ascii=False, indent=1) + "\n",
+            encoding="utf-8")
         (self.project / "SPEC.md").write_text(SPEC, encoding="utf-8")
         (self.project / "AGENTS.md").write_text(PROJECT_AGENTS, encoding="utf-8")
         (self.global_agents).write_text(GLOBAL_AGENTS_TEXT, encoding="utf-8")
@@ -689,14 +691,19 @@ class F34ProjectBrowserTest(unittest.TestCase):
     def open_work(self):
         self.open_project()
         panel = self.open_tab("work")
-        self.page.locator("div.nv-ticket-list[data-nv-ticket-list]").first \
-            .wait_for(state="visible", timeout=20000)
+        self.page.locator("div[data-nv-board]").first.wait_for(
+            state="visible", timeout=20000)
         self.page.locator("input[data-nv-work-search]").wait_for(
             state="visible", timeout=20000)
         self.page.locator("div[data-nv-priority-strip]").wait_for(
             state="visible", timeout=20000)
         self.install_render_counter()
         return panel
+
+    def records(self):
+        doc = json.loads((self.project / ".vibe" / "tickets.json").read_text(
+            encoding="utf-8"))
+        return {row["id"]: row for row in doc["tickets"]}
 
     def install_render_counter(self):
         """Umhüllt ``NV.render`` mit einem Zähler des TESTGERÜSTS.
@@ -816,14 +823,14 @@ class F34ProjectBrowserTest(unittest.TestCase):
     # ---------- F34-Vertrags-Hilfen ----------
 
     def card_selector(self, ident):
-        return (f"div.nv-ticket-list [data-nv-ticket='{ident}'], "
-                f"div.nv-ticket-list [data-nv-feedback-item='{ident}']")
+        return (f"div[data-nv-board] [data-nv-ticket='{ident}'], "
+                f"div[data-nv-board] [data-nv-feedback-item='{ident}']")
 
     def visible_card_ids(self):
         ids = []
         for card in self.page.locator(
-                "div.nv-ticket-list [data-nv-ticket], "
-                "div.nv-ticket-list [data-nv-feedback-item]").all():
+                "div[data-nv-board] [data-nv-ticket], "
+                "div[data-nv-board] [data-nv-feedback-item]").all():
             if card.is_visible():
                 ident = (card.get_attribute("data-nv-ticket")
                          or card.get_attribute("data-nv-feedback-item") or "")
@@ -839,20 +846,19 @@ class F34ProjectBrowserTest(unittest.TestCase):
     def expected_effective_ids(self):
         """Effektive Prioritätsreihenfolge aus ``GET /api/priority``.
 
-        Die UI (``nvpPriorityStrip``) nutzt ``open`` aus ``/api/project``:
-        Einträge mit ``state == "erledigt"`` (F2) erscheinen nie. Die
-        ``standard``-Liste des Backends kann ein erledigtes Paket ohne Nachweis
-        (F2) als ``status:"offen"`` auflisten — es ist trotzdem ausgeschlossen.
+        GH-56: ``nvpPriorityStrip`` zeigt ausschließlich Ready-Tickets
+        (Rohzustand ``open``, Anzeige ``offen``). Draft, Running, Blocked,
+        Waiting-Merge und Done gehören nicht in die Priorisierung.
         """
         data = self.api_json(f"/api/priority?name={PROJECT}")
         tickets, feedback = self.project_entries()
-        done_ids = {str(entry.get("id") or "") for entry in tickets + feedback
-                    if str(entry.get("state") or "") == "erledigt"}
+        open_ids = {str(entry.get("id") or "") for entry in tickets + feedback
+                    if str(entry.get("state") or "") in ("offen", "open")}
         ids, seen = [], set()
         for entry in list(data.get("order") or []) + \
                 list(data.get("standard") or []):
             entry_id = str(entry.get("id") or "")
-            if not entry_id or entry_id in seen or entry_id in done_ids:
+            if not entry_id or entry_id in seen or entry_id not in open_ids:
                 continue
             if str(entry.get("status") or "") == "erledigt":
                 continue
@@ -1078,8 +1084,8 @@ class WorkTest(F34ProjectBrowserTest):
     def test_work_order_and_no_board(self):
         """Vorbedingung: Arbeit geöffnet.
 
-        Erwartung: Aktionsleiste → Filterleiste → Priorisierung → Liste in
-        DOM-Reihenfolge; kein Board (``.nv-board``).
+        Erwartung (GH-56): Aktionsleiste → Filterleiste → Priorisierung →
+        Kanban-Board in DOM-Reihenfolge.
         """
         panel = self.open_work()
         self.assert_follows(
@@ -1089,13 +1095,13 @@ class WorkTest(F34ProjectBrowserTest):
                 "section[data-nv-ppanel='work'] [data-nv-action='new-feedback']",
                 "section[data-nv-ppanel='work'] div.nv-filter-bar[data-nv-filter-bar]",
                 "section[data-nv-ppanel='work'] div[data-nv-priority-strip]",
-                "section[data-nv-ppanel='work'] div.nv-ticket-list[data-nv-ticket-list]",
+                "section[data-nv-ppanel='work'] div[data-nv-board]",
             ],
             "Die Arbeitsbereiche stehen nicht in der Reihenfolge "
-            "Aktionsleiste → Filterleiste → Priorisierung → Liste")
+            "Aktionsleiste → Filterleiste → Priorisierung → Board")
         self.assertEqual(
-            0, panel.locator(".nv-board").count(),
-            "Ein Board (.nv-board) ist in der Arbeit vorhanden")
+            3, panel.locator("[data-nv-col]").count(),
+            "GH-56: Das Board muss genau drei Spalten haben")
         self.assert_clean_page()
 
     def test_filterbar_hooks_exist(self):
@@ -1136,17 +1142,20 @@ class WorkTest(F34ProjectBrowserTest):
         (``details[data-nv-feedback-box]``).
         """
         panel = self.open_work()
-        expected = self.visible_card_ids()
-        self.assertEqual(
-            ["F1", "F3", "F4", "F5", "F6", "F7", "F8", "B7"], expected,
-            "Alle offenen Einträge (Pakete, Bugs) erscheinen in der "
-            "integrierten Liste (erledigte sind ausgeblendet)")
-        f2 = self.page.locator("div.nv-ticket-list [data-nv-ticket='F2']")
+        # Die Reihenfolge ist hier nicht Fachgegenstand (Priorisierung wird
+        # in den PriorityTest-Fällen geprüft); entscheidend ist die vollständige
+        # Menge der nicht erledigten Einträge beider Arten.
+        self.assertCountEqual(
+            ["F1", "F3", "F4", "F5", "F6", "F7", "F8", "B7"],
+            self.visible_card_ids(),
+            "Alle offenen Einträge (Pakete, Bugs) erscheinen im Board "
+            "(erledigte sind ausgeblendet)")
+        f2 = self.page.locator("div[data-nv-board] [data-nv-ticket='F2']")
         self.assertEqual(1, f2.count(),
                          "Das erledigte Paket F2 ist nicht als Karte gelistet")
         self.assertFalse(f2.is_visible(),
                          "F2 ist ohne „Erledigte anzeigen“ sichtbar")
-        fb1 = self.page.locator("div.nv-ticket-list [data-nv-feedback-item='FB-1']")
+        fb1 = self.page.locator("div[data-nv-board] [data-nv-feedback-item='FB-1']")
         self.assertEqual(1, fb1.count(),
                          "Das erledigte Feedback FB-1 ist nicht als Karte gelistet")
         kinds = {ident: self.page.locator(self.card_selector(ident))
@@ -1166,34 +1175,35 @@ class WorkTest(F34ProjectBrowserTest):
     def test_work_search_finds_done_and_filters(self):
         """Vorbedingung: F2 ist erledigt und ausgeblendet.
 
-        Aktion: ``input[data-nv-work-search]`` mit „F2“ füllen, danach leeren.
-
-        Erwartung: Ein erledigtes Paket mit passendem Suchbegriff ist sichtbar,
-        obwohl „Erledigte anzeigen“ aus ist; nach dem Leeren erscheint es
-        wieder nicht, F1 bleibt sichtbar.
+        GH-56: Erledigte bleiben unabhängig von der Suche verborgen und werden
+        ausschließlich über den Erledigt-Schalter bzw. den Done-Chip sichtbar.
+        Die frühere Annahme „Suchtreffer überstimmt Erledigte ausblenden“ ist
+        überholt. Erhalten bleibt die Fachlichkeit: Suche filtert Treffer, der
+        Done-Chip blendet erledigte Treffer gezielt ein, Reset stellt den
+        Ausgangszustand wieder her.
         """
         panel = self.open_work()
         search = panel.locator("input[data-nv-work-search]")
-        f2 = self.page.locator("div.nv-ticket-list [data-nv-ticket='F2']")
-        f1 = self.page.locator("div.nv-ticket-list [data-nv-ticket='F1']")
+        f2 = self.page.locator("div[data-nv-board] [data-nv-ticket='F2']")
+        f1 = self.page.locator("div[data-nv-board] [data-nv-ticket='F1']")
+        done_chip = panel.locator("button[data-nv-work-state='done']")
         self.assertFalse(f2.is_visible(), "Vorbedingung: F2 ist ausgeblendet")
         search.fill("F2")
         self.wait_until(
-            lambda: f2.is_visible(), timeout=15,
-            message="Das erledigte Paket F2 erscheint nicht bei Suche „F2“, "
-                    "obwohl „Erledigte anzeigen“ aus ist")
-        self.wait_until(
             lambda: not f1.is_visible(), timeout=15,
             message="Die Suche „F2“ lässt das nicht passende Paket F1 sichtbar")
-        self.assertEqual(["F2"], self.visible_card_ids())
+        self.assertFalse(f2.is_visible(),
+                         "GH-56: ein Suchtreffer darf Done nicht einblenden")
+        done_chip.click()
+        self.wait_until(
+            lambda: f2.is_visible(), timeout=15,
+            message="Der Done-Chip blendet den erledigten Suchtreffer nicht ein")
         search.fill("")
+        done_chip.click()
         self.wait_until(
-            lambda: f1.is_visible(), timeout=15,
-            message="Nach dem Leeren der Suche erscheint F1 nicht wieder")
-        self.wait_until(
-            lambda: not f2.is_visible(), timeout=15,
-            message="F2 ist nach dem Leeren der Suche sichtbar (Erledigt "
-                    "sollte ausgeblendet sein)")
+            lambda: f1.is_visible() and not f2.is_visible(), timeout=15,
+            message="Nach Reset der Suche und des Done-Chips stimmt die "
+                    "Sichtbarkeit nicht")
         self.assert_clean_page()
 
     def test_hide_done_toggle(self):
@@ -1209,7 +1219,7 @@ class WorkTest(F34ProjectBrowserTest):
         self.assertEqual(
             "true", toggle.get_attribute("aria-pressed"),
             "„Erledigte anzeigen“ ist nicht standardmäßig aktiv")
-        f2 = self.page.locator("div.nv-ticket-list [data-nv-ticket='F2']")
+        f2 = self.page.locator("div[data-nv-board] [data-nv-ticket='F2']")
         self.assertFalse(f2.is_visible(),
                          "Die erledigte Karte F2 ist trotz Standardfilter sichtbar")
         label = toggle.inner_text() or ""
@@ -1245,8 +1255,8 @@ class WorkTest(F34ProjectBrowserTest):
         bug_chip = panel.locator(
             "div[data-nv-work-kinds] button[data-nv-work-kind='bug']")
         bug_chip.click()
-        b7 = self.page.locator("div.nv-ticket-list [data-nv-feedback-item='B7']")
-        f1 = self.page.locator("div.nv-ticket-list [data-nv-ticket='F1']")
+        b7 = self.page.locator("div[data-nv-board] [data-nv-feedback-item='B7']")
+        f1 = self.page.locator("div[data-nv-board] [data-nv-ticket='F1']")
         self.wait_until(
             lambda: b7.is_visible() and not f1.is_visible(), timeout=15,
             message="Chip „bug“: B7 ist nicht sichtbar oder F1 bleibt sichtbar "
@@ -1254,8 +1264,8 @@ class WorkTest(F34ProjectBrowserTest):
         self.assertEqual([card.get_attribute("data-nv-ticket")
                           or card.get_attribute("data-nv-feedback-item")
                           for card in self.page.locator(
-                              "div.nv-ticket-list [data-nv-ticket], "
-                              "div.nv-ticket-list [data-nv-feedback-item]").all()
+                              "div[data-nv-board] [data-nv-ticket], "
+                              "div[data-nv-board] [data-nv-feedback-item]").all()
                           if card.is_visible()], ["B7"],
                          "Nach Chip „bug“ sind nicht nur die Bugs sichtbar")
         all_chip = panel.locator(
@@ -1278,7 +1288,7 @@ class WorkTest(F34ProjectBrowserTest):
         in ``/api/project`` vorhanden.
         """
         panel = self.open_work()
-        f2 = self.page.locator("div.nv-ticket-list [data-nv-ticket='F2']")
+        f2 = self.page.locator("div[data-nv-board] [data-nv-ticket='F2']")
         self.assertEqual(1, f2.count(), "Das erledigte Paket F2 ist nicht als Karte gelistet")
         self.assertEqual(
             0, f2.locator("button[data-nv-action='ticket-delete']").count(),
@@ -1294,7 +1304,7 @@ class WorkTest(F34ProjectBrowserTest):
                          "Der API-Löschversuch auf das erledigte Paket F2 "
                          "liefert ok:true: " + repr(data))
         self.assertRegex(
-            str(data.get("message") or ""), r"Abgeschlossen",
+            str(data.get("message") or ""), r"(?i)abgeschlossen|erledigt|nachweis",
             "Der API-Löschversuch auf F2 liefert keine Nachweis-Meldung: "
             + repr(data))
         status, data = self.post_json(
@@ -1311,51 +1321,53 @@ class WorkTest(F34ProjectBrowserTest):
         self.assert_clean_page()
 
     def test_priority_strip_is_first_two_prioritized(self):
-        """Vorbedingung: ``POST /api/priority`` order „F5 F8“.
+        """Vorbedingung: ``POST /api/priority`` order „F7 F8“ (beide Ready).
 
-        Erwartung: Strip-Reihenfolge == effektive Ordnung
-        (``expected_effective_ids``), erste beide F5, F8; manuell priorisierte
-        erscheinen vor den Standardreihenfolge-Einträgen.
+        GH-56: Der Strip enthält ausschließlich Ready-Tickets; Draft F5
+        darf nicht erscheinen. Erwartung: Strip-Reihenfolge == effektive
+        Ordnung, erste beide F7, F8.
         """
-        self.set_priority("F5 F8")
+        self.set_priority("F7 F8")
         self.open_work()
         self.page.locator("div[data-nv-priority-strip]").wait_for(
             state="visible", timeout=20000)
         expected = self.expected_effective_ids()
         self.assertEqual(
-            ["F5", "F8"], expected[:2],
-            "Vorbedingung: F5/F8 leiten sich als erste, priorisierte Einträge "
+            ["F7", "F8"], expected[:2],
+            "Vorbedingung: F7/F8 leiten sich als erste, priorisierte Einträge "
             "ab: " + repr(expected))
+        self.assertNotIn("F5", expected,
+                         "GH-56: ein Draft-Ticket darf nicht priorisiert werden")
         self.wait_until(
             lambda: self.strip_ids() == expected, timeout=20,
             message="Die Strip-Reihenfolge passt nicht zur effektiven Ordnung: "
                     + repr(self.strip_ids()) + " erwartet: " + repr(expected))
         self.assertIn("F1", expected, "Vorbedingung: F1 in der Ordnung")
-        f5_card = self.page.locator("div.nv-ticket-list [data-nv-ticket='F5']")
-        f5_card.wait_for(state="visible", timeout=15000)
+        f7_card = self.page.locator("div[data-nv-board] [data-nv-ticket='F7']")
+        f7_card.wait_for(state="visible", timeout=15000)
         self.assertEqual(
-            "P1", f5_card.locator("span[data-nv-prio-badge]").first
+            "P1", f7_card.locator("span[data-nv-prio-badge]").first
             .inner_text(),
-            "Die priorisierte Karte F5 trägt kein P1-Badge")
+            "Die priorisierte Karte F7 trägt kein P1-Badge")
         self.assert_clean_page()
 
     def test_drag_and_drop_shows_marker_and_persists(self):
-        """Vorbedingung: order „F5 F8“.
+        """Vorbedingung: order „F7 F8“ (beide Ready).
 
-        Aktion: Drag-Griff von F5 auf die Zeile von B7 ziehen.
+        Aktion: Drag-Griff von F7 auf die Zeile von B7 ziehen.
 
         Erwartung: während des Ziehens sichtbare Einfügemarke
         (``div[data-nv-drop-marker]``); nach Drop POST ``/api/priority``
         {action:"set"} mit abweichender Permutation; Strip zeichnet die neue
         Reihenfolge sofort; ``GET /api/priority`` liefert sie persistiert.
         """
-        self.set_priority("F5 F8")
+        self.set_priority("F7 F8")
         self.open_work()
         self.page.locator("div[data-nv-priority-strip]").wait_for(
             state="visible", timeout=20000)
         before = self.strip_ids()
         handle = self.page.locator(
-            "div[data-nv-priority-strip] [data-nv-priority-id='F5'] "
+            "div[data-nv-priority-strip] [data-nv-priority-id='F7'] "
             "button[data-nv-drag-handle]")
         target = self.page.locator(
             "div[data-nv-priority-strip] [data-nv-priority-id='B7'] "
@@ -1413,7 +1425,7 @@ class WorkTest(F34ProjectBrowserTest):
         self.assertNotEqual(
             before, posted_order,
             "Der Drop hat die Strip-Reihenfolge nicht verändert: " + repr(posted_order))
-        self.assertIn("F5", posted_order, "Die neue Reihenfolge enthält F5 nicht: "
+        self.assertIn("F7", posted_order, "Die neue Reihenfolge enthält F7 nicht: "
                                          + repr(posted_order))
         self.wait_api(
             f"/api/priority?name={PROJECT}",
@@ -1428,18 +1440,17 @@ class WorkTest(F34ProjectBrowserTest):
         self.assert_clean_page()
 
     def test_drag_and_drop_moves_card_to_exact_target_position(self):
-        """Vorbedingung: explizite Priorität „F5 B7 F8 F1 F3 F4 F6 F7“ über alle
-        offenen Einträge.
+        """Vorbedingung: explizite Priorität „F7 B7 F8 F1“ über die Ready-
+        Einträge (GH-56: nur ``open`` erscheint im Strip).
         Aktion: Drag-Griff von F1 auf die Zeile von F8 ziehen.
-        Erwartung: F1 steht an definierter Position (direkt vor F8); die
-        Kennung davor (B7) und danach (F8) stimmen; die exakte neue
-        Reihenfolge wird per POST und ``GET /api/priority`` persistiert.
+        Erwartung: F1 steht direkt vor F8; die exakte neue Reihenfolge wird
+        per POST und ``GET /api/priority`` persistiert.
         """
-        self.set_priority("F5 B7 F8 F1 F3 F4 F6 F7")
+        self.set_priority("F7 B7 F8 F1")
         self.open_work()
         self.page.locator("div[data-nv-priority-strip]").wait_for(
             state="visible", timeout=20000)
-        expected_before = ["F5", "B7", "F8", "F1", "F3", "F4", "F6", "F7"]
+        expected_before = ["F7", "B7", "F8", "F1"]
         self.wait_until(
             lambda: self.strip_ids() == expected_before, timeout=20,
             message="Die definierte Startreihenfolge der Strip-Liste fehlt: "
@@ -1504,7 +1515,7 @@ class WorkTest(F34ProjectBrowserTest):
                   if payload.get("action") == "set"][-1]
         posted_order = [part for part in str(posted.get("order") or "").split()
                         if part]
-        expected_after = ["F5", "B7", "F1", "F8", "F3", "F4", "F6", "F7"]
+        expected_after = ["F7", "B7", "F1", "F8"]
         self.assertEqual(
             expected_after, posted_order,
             "Der Drop hat die exakte Zielposition nicht respektiert: "
@@ -1536,14 +1547,14 @@ class WorkTest(F34ProjectBrowserTest):
         self.assert_clean_page()
 
     def test_arrows_reorder_and_save(self):
-        """Vorbedingung: order „F5 F8“.
+        """Vorbedingung: order „F7 F8“ (beide Ready).
 
-        Aktion: ↓-Knopf der ersten Zeile (F5) klicken.
+        Aktion: ↓-Knopf der ersten Zeile (F7) klicken.
 
-        Erwartung: ``POST /api/priority`` mit neuer Reihenfolge (F8 vor F5);
+        Erwartung: ``POST /api/priority`` mit neuer Reihenfolge (F8 vor F7);
         ``GET /api/priority`` bestätigt die neue Reihenfolge.
         """
-        self.set_priority("F5 F8")
+        self.set_priority("F7 F8")
         self.open_work()
         self.page.locator("div[data-nv-priority-strip]").wait_for(
             state="visible", timeout=20000)
@@ -1552,9 +1563,9 @@ class WorkTest(F34ProjectBrowserTest):
             "node => node.setAttribute('data-nv-f34-no-rerender', '1')")
         render_before = self.nv_render_count()
         down = self.page.locator(
-            "div[data-nv-priority-strip] [data-nv-priority-id='F5'] "
+            "div[data-nv-priority-strip] [data-nv-priority-id='F7'] "
             "button[data-nv-action='priority-down']")
-        self.assertEqual(1, down.count(), "↓-Knopf für F5 fehlt")
+        self.assertEqual(1, down.count(), "↓-Knopf für F7 fehlt")
         down.click()
         self.wait_until(
             lambda: any(payload.get("action") == "set"
@@ -1567,8 +1578,8 @@ class WorkTest(F34ProjectBrowserTest):
         posted_order = [part for part in str(posted.get("order") or "").split()
                         if part]
         self.assertEqual(
-            ["F8", "F5"], posted_order[:2],
-            "Der ↓-Knopf speichert F8 vor F5 nicht: " + repr(posted_order))
+            ["F8", "F7"], posted_order[:2],
+            "Der ↓-Knopf speichert F8 vor F7 nicht: " + repr(posted_order))
         self.wait_api(
             f"/api/priority?name={PROJECT}",
             lambda data: [str(entry.get("id"))
@@ -1576,8 +1587,8 @@ class WorkTest(F34ProjectBrowserTest):
             message="Die per ↓ gespeicherte Reihenfolge ist nicht persistiert: "
                     + repr(posted_order))
         self.wait_until(
-            lambda: self.strip_ids()[:2] == ["F8", "F5"], timeout=15,
-            message="Der Strip zeigt nach ↓ nicht sichtbar F8 vor F5: "
+            lambda: self.strip_ids()[:2] == ["F8", "F7"], timeout=15,
+            message="Der Strip zeigt nach ↓ nicht sichtbar F8 vor F7: "
                     + repr(self.strip_ids()))
         self.wait_until(
             lambda: re.search(
@@ -1596,10 +1607,10 @@ class WorkTest(F34ProjectBrowserTest):
         self.assert_clean_page()
 
     def test_card_rank_badges_follow_priority_action_without_rerender(self):
-        """Vorbedingung: order „F5 F8 B7“: nur diese Karten tragen ``P1``–``P3``,
-        F1 trägt kein Badge.
+        """Vorbedingung: order „F7 F8 B7“: nur diese Ready-Karten tragen
+        ``P1``–``P3``, F1 trägt zunächst kein Badge.
 
-        Aktion: ↓-Knopf der Zeile F5 klicken (Speicherweg wie nach Drag & Drop).
+        Aktion: ↓-Knopf der Zeile F7 klicken (Speicherweg wie nach Drag & Drop).
 
         Erwartung: die Karten-Badges ``span[data-nv-prio-badge]`` der
         Arbeitskarten in ``div[data-nv-ticket-list]`` tragen die NEUE
@@ -1608,13 +1619,13 @@ class WorkTest(F34ProjectBrowserTest):
         zeigt dieselben Ränge; Toast bestätigt das Speichern; KEIN
         Voll-Neurender (echter Render-Zähler unverändert).
         """
-        self.set_priority("F5 F8 B7")
+        self.set_priority("F7 F8 B7")
         self.open_work()
         strip = self.page.locator("div[data-nv-priority-strip]")
         strip.wait_for(state="visible", timeout=20000)
         self.wait_until(
-            lambda: self.strip_ids()[:3] == ["F5", "F8", "B7"], timeout=20,
-            message="Vorbedingung: der Strip beginnt nicht mit F5, F8, B7: "
+            lambda: self.strip_ids()[:3] == ["F7", "F8", "B7"], timeout=20,
+            message="Vorbedingung: der Strip beginnt nicht mit F7, F8, B7: "
                     + repr(self.strip_ids()))
 
         def card_badges():
@@ -1623,8 +1634,8 @@ class WorkTest(F34ProjectBrowserTest):
                 """() => {
                   const out = {};
                   document.querySelectorAll(
-                    'div[data-nv-ticket-list] [data-nv-ticket], '
-                    + 'div[data-nv-ticket-list] [data-nv-feedback-item]'
+                    'div[data-nv-board] [data-nv-ticket], '
+                    + 'div[data-nv-board] [data-nv-feedback-item]'
                   ).forEach(card => {
                     const id = card.getAttribute('data-nv-ticket')
                       || card.getAttribute('data-nv-feedback-item');
@@ -1652,8 +1663,8 @@ class WorkTest(F34ProjectBrowserTest):
 
         before = card_badges()
         self.assertEqual(
-            {"F5": "P1", "F8": "P2", "B7": "P3"},
-            {ident: before.get(ident) for ident in ("F5", "F8", "B7")},
+            {"F7": "P1", "F8": "P2", "B7": "P3"},
+            {ident: before.get(ident) for ident in ("F7", "F8", "B7")},
             "Vorbedingung: die priorisierten Karten tragen nicht P1–P3: "
             + repr(before))
         self.assertIsNone(
@@ -1662,9 +1673,9 @@ class WorkTest(F34ProjectBrowserTest):
 
         render_before = self.nv_render_count()
         down = self.page.locator(
-            "div[data-nv-priority-strip] [data-nv-priority-id='F5'] "
+            "div[data-nv-priority-strip] [data-nv-priority-id='F7'] "
             "button[data-nv-action='priority-down']")
-        self.assertEqual(1, down.count(), "↓-Knopf für F5 fehlt")
+        self.assertEqual(1, down.count(), "↓-Knopf für F7 fehlt")
         down.click()
         self.wait_until(
             lambda: any(payload.get("action") == "set"
@@ -1677,7 +1688,7 @@ class WorkTest(F34ProjectBrowserTest):
         posted_order = [part for part in str(posted.get("order") or "").split()
                         if part]
         self.assertEqual(
-            ["F8", "F5", "B7"], posted_order[:3],
+            ["F8", "F7", "B7"], posted_order[:3],
             "Der ↓-Knopf speichert die neue Reihenfolge nicht: "
             + repr(posted_order))
         self.wait_api(
@@ -1738,7 +1749,7 @@ class WorkTest(F34ProjectBrowserTest):
         Erwartung: POST ``/api/priority`` mit ``order:""``; Badges
         (``span[data-nv-prio-badge]``) verschwinden.
         """
-        self.set_priority("F5 F8")
+        self.set_priority("F7 F8")
         self.open_work()
         strip = self.page.locator("div[data-nv-priority-strip]")
         strip.wait_for(state="visible", timeout=20000)

@@ -11,8 +11,8 @@ Testfälle (Kurzfassung; Details in den Methoden)
     Vorbedingung: zwei offene, ein blockiertes, ein erledigtes Paket sowie
     zwei Feedback-Einträge ohne Nachweis. Erwartung: F34 — kein Board;
     Reihenfolge Aktionsleiste → Filterleiste → Priorisierung → Liste;
-    ``AP-OPEN``/``AP-OPEN2`` (offen), ``AP-BLOCK`` (BLOCKIERT),
-    ``BUG-7``/``FB-1`` (ohne Nachweis), ``AP-DONE`` (erledigt) in der
+    ``AP-101``/``AP-102`` (offen), ``AP-103`` (BLOCKIERT),
+    ``BUG-7``/``FB-1`` (ohne Nachweis), ``AP-104`` (erledigt) in der
     ``div[data-nv-ticket-list]`` mit ``data-nv-kind``, ``data-nv-state``-Pille
     und Kennung im Text.
 ``FeedbackListTest.test_feedback_list_shows_kind_badges``
@@ -24,13 +24,13 @@ Testfälle (Kurzfassung; Details in den Methoden)
     öffnen und abbrechen. Erwartung: neue Karte in ``div[data-nv-ticket-list]``,
     Datei geschrieben; Abbrechen blendet das Formular ohne Eintrag aus.
 ``EditTest.test_edit_prefills_and_saves_only_the_chosen_ticket``
-    Aktion: Klick auf ``article[data-nv-ticket='AP-OPEN']`` →
+    Aktion: Klick auf ``article[data-nv-ticket='AP-101']`` →
     ``button[data-nv-action='ticket-edit']`` im Kontext-Panel
-    (``[data-nv-ticket-detail='AP-OPEN']``); Titel ändern, speichern.
+    (``[data-nv-ticket-detail='AP-101']``); Titel ändern, speichern.
     Erwartung: Formular ist vorbefüllt; die Änderung erscheint,
-    ``AP-OPEN2`` bleibt unverändert.
+    ``AP-102`` bleibt unverändert.
 ``DeleteTest.test_delete_removes_the_card``
-    Aktion: Klick auf ``article[data-nv-ticket='AP-OPEN']`` →
+    Aktion: Klick auf ``article[data-nv-ticket='AP-101']`` →
     ``button[data-nv-action='ticket-delete']`` im Kontext-Panel
     (Bestätigung wird akzeptiert). Erwartung: Karte und Eintrag sind
     verschwunden, die übrigen bleiben.
@@ -108,33 +108,40 @@ REPO = Path(__file__).resolve().parents[2]
 WEB = REPO / "bin" / "vibe-web.py"
 PROJECT = "proj"
 
-TICKETS = """# TICKETS — AP22 Test
+STAMP = "2026-01-01T00:00:00+00:00"
 
-- [ ] AP-OPEN Offenes Paket
-  Beschreibung: Noch offen.
 
-- [ ] AP-OPEN2 Zweites offenes Paket
-  Beschreibung: Ebenfalls offen.
+def ticket(tid, title, type="task", state="open", **extra):
+    record = {
+        "id": tid, "title": title, "type": type, "state": state,
+        "description": "", "github": None, "pr_url": "", "commit": "",
+        "test": "", "blocked_reason": "", "waiting_note": "",
+        "priority": "", "dependencies": [],
+        "created": STAMP, "updated": STAMP,
+    }
+    record.update(extra)
+    return record
 
-- [ ] AP-BLOCK Blockiertes Paket
-  Beschreibung: Wartet auf Freigabe.
-  BLOCKIERT: externe Freigabe fehlt
 
-- [x] AP-DONE Erledigtes Paket
-  Beschreibung: Fertig.
-"""
+# GH-48/GH-56: Tickets liegen maschinenlesbar in .vibe/tickets.json.
+TICKETS = [
+    ticket("AP-101", "Offenes Paket", description="Noch offen."),
+    ticket("AP-102", "Zweites offenes Paket", description="Ebenfalls offen."),
+    ticket("AP-103", "Blockiertes Paket", state="blocked",
+           description="Wartet auf Freigabe.",
+           blocked_reason="externe Freigabe fehlt"),
+    ticket("AP-104", "Erledigtes Paket", state="done",
+           description="Fertig.", commit="abcdef1", test="test_ap_done"),
+]
 
-FEEDBACK = """# FEEDBACK — AP22 Test
-
-- [x] BUG-7 Absturz beim Start
-  Beschreibung: Fenster bleibt leer.
-  Art: Bug
-  Commit: 1234567; Test: test_start
-
-- [x] FB-1 Wunsch für die Oberfläche
-  Beschreibung: Bitte größere Schaltflächen.
-  Commit: 7654321; Test: test_ui
-"""
+FEEDBACK = [
+    ticket("BUG-7", "Absturz beim Start", type="bug",
+           description="Fenster bleibt leer.", commit="1234567",
+           test="test_start"),
+    ticket("FB-1", "Wunsch für die Oberfläche", type="feedback",
+           description="Bitte größere Schaltflächen.", commit="7654321",
+           test="test_ui"),
+]
 
 
 def free_port():
@@ -230,8 +237,7 @@ class AP22WorkBrowserTest(unittest.TestCase):
             cls.tmp.cleanup()
 
     def setUp(self):
-        (self.project / "TICKETS.md").write_text(TICKETS, encoding="utf-8")
-        (self.project / "FEEDBACK.md").write_text(FEEDBACK, encoding="utf-8")
+        self.write_store(TICKETS + FEEDBACK)
         (self.project / ".vibe" / "agents.json").unlink(missing_ok=True)
         self.post_language("en")
         self.page_errors = []
@@ -310,11 +316,23 @@ class AP22WorkBrowserTest(unittest.TestCase):
             state="visible", timeout=20000)
         return self.page.locator("section[data-nv-ppanel='work']")
 
+    def write_store(self, rows):
+        (self.project / ".vibe" / "tickets.json").write_text(
+            json.dumps({"version": 1, "tickets": rows},
+                       ensure_ascii=False, indent=1) + "\n",
+            encoding="utf-8")
+
+    def records(self):
+        doc = json.loads((self.project / ".vibe" / "tickets.json").read_text(
+            encoding="utf-8"))
+        return {row["id"]: row for row in doc["tickets"]}
+
     def ticket_text(self):
-        return (self.project / "TICKETS.md").read_text(encoding="utf-8")
+        return (self.project / ".vibe" / "tickets.json").read_text(
+            encoding="utf-8")
 
     def feedback_text(self):
-        return (self.project / "FEEDBACK.md").read_text(encoding="utf-8")
+        return self.ticket_text()
 
     def card(self, ticket_id):
         return self.page.locator(
@@ -370,24 +388,24 @@ class AP22WorkBrowserTest(unittest.TestCase):
 
 class BoardTest(AP22WorkBrowserTest):
     def test_columns_and_tickets_follow_the_fixture_states(self):
-        """Vorbedingung: Fixtures in allen Zuständen.
+        """Vorbedingung: Fixtures in allen Zuständen (GH-48-Ticketspeicher).
 
-        Erwartung: F34 — kein Board (``.nv-board``/``[data-nv-col]``
-        entfallen); die Reihenfolge Aktionsleiste → Filterleiste →
-        Priorisierung → Liste; die Karten liegen in ``div[data-nv-ticket-list]``
-        mit ``data-nv-kind``, ``data-nv-state`` (Rohstatus des Backends) und
-        Zustands-Pille.
+        GH-56: Die fachliche Absicht — Art, Rohzustand und Kennung jeder
+        Karte sowie Filterleiste und Priorisierung — bleibt erhalten; die
+        alte F34-Absence des Boards und die alte Liste sind überholt. Neu
+        zu prüfen: Board mit drei Spalten und Rohzustand am Kartenattribut.
         """
         self.open_work()
         self.assertEqual(
             "en", self.page.evaluate("() => document.documentElement.lang"),
             "Die Standardsprache der Oberfläche ist nicht Englisch")
-        # Absence: F34 entfernt das Board komplett.
-        self.assertEqual(0, self.page.locator(".nv-board").count(),
-                         "F34-Absence: ein Board ('.nv-board') existiert")
-        self.assertEqual(0, self.page.locator("[data-nv-col]").count(),
-                         "F34-Absence: [data-nv-col] existiert")
-        # Ordnung: Aktionsleiste → Filterleiste → Priorisierung → Liste.
+        board = self.page.locator("div[data-nv-board]").first
+        board.wait_for(state="visible", timeout=20000)
+        for column in ("draft", "ready", "running"):
+            self.assertEqual(
+                1, board.locator(f"article[data-nv-col='{column}']").count(),
+                f"Die Board-Spalte {column} fehlt")
+        # Ordnung: Aktionsleiste → Filterleiste → Priorisierung → Board.
         self.assertTrue(
             self._follows("[data-nv-action='new-package']", "[data-nv-filter-bar]"),
             "Die Aktionsleiste steht nicht vor der Filterleiste")
@@ -395,8 +413,8 @@ class BoardTest(AP22WorkBrowserTest):
             self._follows("[data-nv-filter-bar]", "[data-nv-priority-strip]"),
             "Die Filterleiste steht nicht vor der Priorisierung")
         self.assertTrue(
-            self._follows("[data-nv-priority-strip]", "div[data-nv-ticket-list]"),
-            "Die Priorisierung steht nicht vor der Liste")
+            self._follows("[data-nv-priority-strip]", "div[data-nv-board]"),
+            "Die Priorisierung steht nicht vor dem Board")
         filter_bar = self.page.locator("[data-nv-filter-bar]").first
         filter_bar.wait_for(state="visible", timeout=20000)
         self.assertEqual(
@@ -410,32 +428,32 @@ class BoardTest(AP22WorkBrowserTest):
         self.assertEqual(
             1, filter_bar.locator("[data-nv-work-hide-done]").count(),
             "Der Knopf [data-nv-work-hide-done] fehlt in der Filterleiste")
+        for state in ("draft", "ready", "running", "done"):
+            self.assertEqual(
+                1, filter_bar.locator(
+                    f"button[data-nv-work-state='{state}']").count(),
+                f"Der Status-Chip {state} fehlt in der Filterleiste")
 
-        ticket_list = self.page.locator("div[data-nv-ticket-list]").first
-        ticket_list.wait_for(state="visible", timeout=20000)
-        # Erledigte einblenden (hideDone startet true), damit AP-DONE sitzt.
+        # Erledigte einblenden (hideDone startet true), damit AP-104 sitzt.
         self.page.locator("[data-nv-work-hide-done]").first.click()
-        ticket_list.wait_for(state="visible", timeout=20000)
-
-        def card_of(ticket_id):
-            if ticket_id in ("BUG-7", "FB-1"):
-                return self.feedback_card(ticket_id)
-            return self.card(ticket_id)
 
         expected = {
-            "AP-OPEN": ("package", "offen"),
-            "AP-OPEN2": ("package", "offen"),
-            "AP-BLOCK": ("package", "BLOCKIERT"),
-            "BUG-7": ("bug", "ohne Nachweis"),
-            "FB-1": ("feedback", "ohne Nachweis"),
-            "AP-DONE": ("package", "erledigt"),
+            "AP-101": ("package", "open", "ready"),
+            "AP-102": ("package", "open", "ready"),
+            "AP-103": ("package", "blocked", "ready"),
+            "BUG-7": ("bug", "open", "ready"),
+            "FB-1": ("feedback", "open", "ready"),
+            "AP-104": ("package", "done", "ready"),
         }
-        for ticket_id, (kind, state) in expected.items():
+        for ticket_id, (kind, state, column) in expected.items():
             with self.subTest(ticket=ticket_id):
-                article = card_of(ticket_id).first
+                article = board.locator(
+                    f"article[data-nv-ticket='{ticket_id}']").first
                 self.assertEqual(1, article.count(),
-                                 f"{ticket_id} fehlt in der Liste")
-                article.wait_for(state="visible", timeout=20000)
+                                 f"{ticket_id} fehlt im Board")
+                self.wait_until(
+                    lambda: article.is_visible(),
+                    message=f"{ticket_id} ist nach dem Einblenden nicht sichtbar")
                 self.assertEqual(
                     kind, article.get_attribute("data-nv-kind"),
                     f"{ticket_id} trägt nicht das Art-Badge-Feld {kind!r}")
@@ -443,8 +461,10 @@ class BoardTest(AP22WorkBrowserTest):
                     state, article.get_attribute("data-nv-state"),
                     f"{ticket_id} trägt nicht den Rohstatus {state!r}")
                 self.assertEqual(
-                    1, article.locator("span.nv-state").count(),
-                    f"{ticket_id} hat keine Zustands-Pille")
+                    1, board.locator(
+                        f"article[data-nv-col='{column}'] "
+                        f"article[data-nv-ticket='{ticket_id}']").count(),
+                    f"{ticket_id} liegt nicht in Spalte {column}")
                 self.assertIn(
                     ticket_id, article.inner_text(),
                     f"Die Karte {ticket_id} zeigt ihre Kennung nicht")
@@ -488,9 +508,9 @@ class CreateTest(AP22WorkBrowserTest):
     def test_create_package_and_cancel_the_form(self):
         """Vorbedingung: Arbeit geöffnet. Aktion: Paket anlegen, danach ein
         zweites Formular abbrechen.
-        Erwartung: F34: Die neue Karte erscheint in ``div[data-nv-ticket-list]``
-        und in der Datei; Abbrechen schließt das Formular, ohne etwas
-        anzulegen.
+        Erwartung (GH-56): Die neue Karte erscheint in der Draft-Spalte des
+        Boards und im Ticketspeicher; Abbrechen schließt das Formular, ohne
+        etwas anzulegen.
         """
         self.open_work()
         form = self.open_form("new-package")
@@ -501,11 +521,13 @@ class CreateTest(AP22WorkBrowserTest):
             timeout=20,
             message="Das neue Arbeitspaket wurde nicht gespeichert")
         card = self.page.locator(
-            "div[data-nv-ticket-list] article[data-nv-ticket]").filter(
+            "article[data-nv-col='draft'] article[data-nv-ticket]").filter(
                 has_text="NEU-AP22 Anlegen").first
         card.wait_for(state="visible", timeout=20000)
-        self.assertTrue((card.get_attribute("data-nv-ticket") or "").strip(),
-                        "Die neue Karte trägt keine Paketkennung")
+        tid = (card.get_attribute("data-nv-ticket") or "").strip()
+        self.assertTrue(tid, "Die neue Karte trägt keine Paketkennung")
+        self.assertEqual("draft", self.records()[tid]["state"],
+                         "Ein neues Ticket startet nicht im Status Draft")
         self.assertIn("Zeile eins", self.ticket_text())
 
         before = self.ticket_text()
@@ -518,7 +540,7 @@ class CreateTest(AP22WorkBrowserTest):
             "Abbrechen hat die Ticketdatei verändert")
         self.assertEqual(
             0, self.page.locator(
-                "div[data-nv-ticket-list] article[data-nv-ticket]").filter(
+                "div[data-nv-board] article[data-nv-ticket]").filter(
                     has_text="VERWORFEN-AP22").count(),
             "Abbrechen hat trotzdem eine Karte angelegt")
         self.assert_clean_page()
@@ -526,21 +548,21 @@ class CreateTest(AP22WorkBrowserTest):
 
 class EditTest(AP22WorkBrowserTest):
     def test_edit_prefills_and_saves_only_the_chosen_ticket(self):
-        """Vorbedingung: ``AP-OPEN`` und ``AP-OPEN2`` vorhanden.
+        """Vorbedingung: ``AP-101`` und ``AP-102`` vorhanden.
 
-        Aktion: Klick auf ``article[data-nv-ticket='AP-OPEN']``, dann
+        Aktion: Klick auf ``article[data-nv-ticket='AP-101']``, dann
         ``button[data-nv-action='ticket-edit']`` im Kontext-Panel
-        (``[data-nv-ticket-detail='AP-OPEN']``); Titel ändern, speichern.
-        Erwartung: Formular ist vorbefüllt; nur ``AP-OPEN`` ändert sich,
-        ``AP-OPEN2`` bleibt unverändert.
+        (``[data-nv-ticket-detail='AP-101']``); Titel ändern, speichern.
+        Erwartung: Formular ist vorbefüllt; nur ``AP-101`` ändert sich,
+        ``AP-102`` bleibt unverändert.
         """
         self.open_work()
-        self.card("AP-OPEN").click()
-        detail = self.page.locator("[data-nv-ticket-detail='AP-OPEN']").first
+        self.card("AP-101").click()
+        detail = self.page.locator("[data-nv-ticket-detail='AP-101']").first
         detail.wait_for(state="visible", timeout=20000)
         # F34: Die Card selbst bietet keinen Bearbeiten-Knopf mehr.
         self.assertEqual(
-            0, self.card("AP-OPEN").locator(
+            0, self.card("AP-101").locator(
                 "[data-nv-action='ticket-edit']").count(),
             "F34: Die Karte selbst bietet keinen Bearbeiten-Knopf mehr")
         detail.locator("[data-nv-action='ticket-edit']").first.click()
@@ -551,56 +573,59 @@ class EditTest(AP22WorkBrowserTest):
             "Offenes Paket", title.input_value(),
             "Das Bearbeitungsformular ist nicht mit dem Titel vorbefüllt")
 
-        title.fill("AP-OPEN Geändertes Paket")
+        title.fill("AP-101 Geändertes Paket")
         form.locator("textarea[data-nv-field='description']").fill(
             "Neue Beschreibung")
         self.save_form(form)
         self.wait_until(
-            lambda: "AP-OPEN Geändertes Paket" in self.ticket_text(),
+            lambda: "Geändertes Paket" in self.ticket_text(),
             timeout=20,
-            message="Die Bearbeitung wurde nicht gespeichert")
-        text = self.ticket_text()
-        self.assertIn("- [ ] AP-OPEN Geändertes Paket", text)
-        self.assertIn("  Beschreibung: Neue Beschreibung", text)
-        self.assertIn("- [ ] AP-OPEN2 Zweites offenes Paket", text)
-        self.assertIn("- [ ] AP-BLOCK Blockiertes Paket", text)
+            message="Die Bearbeitung wurde nicht gespeichert: "
+                    + repr(self.records()))
+        rows = self.records()
+        # Der Editor entfernt einen redundanten ID-Prefix vor dem Speichern;
+        # fachlich entscheidend ist der geänderte Titel und dass nur diese
+        # Kennung betroffen ist.
+        self.assertEqual("Geändertes Paket", rows["AP-101"]["title"])
+        self.assertEqual("Neue Beschreibung", rows["AP-101"]["description"])
+        self.assertEqual("Zweites offenes Paket", rows["AP-102"]["title"])
+        self.assertEqual("Blockiertes Paket", rows["AP-103"]["title"])
         self.assert_clean_page()
 
 
 class DeleteTest(AP22WorkBrowserTest):
     def test_delete_removes_the_card(self):
-        """Vorbedingung: ``AP-OPEN`` vorhanden.
+        """Vorbedingung: ``AP-101`` vorhanden.
 
-        Aktion: Klick auf ``article[data-nv-ticket='AP-OPEN']``, dann
+        Aktion: Klick auf ``article[data-nv-ticket='AP-101']``, dann
         ``button[data-nv-action='ticket-delete']`` im Kontext-Panel
         (Bestätigung wird akzeptiert). Erwartung: Karte und Dateieintrag
         verschwinden, die übrigen bleiben.
         """
         self.open_work()
-        self.card("AP-OPEN").click()
-        detail = self.page.locator("[data-nv-ticket-detail='AP-OPEN']").first
+        self.card("AP-101").click()
+        detail = self.page.locator("[data-nv-ticket-detail='AP-101']").first
         detail.wait_for(state="visible", timeout=20000)
         # F34: Die Card selbst bietet keinen Löschen-Knopf mehr.
         self.assertEqual(
-            0, self.card("AP-OPEN").locator(
+            0, self.card("AP-101").locator(
                 "[data-nv-action='ticket-delete']").count(),
             "F34: Die Karte selbst bietet keinen Löschen-Knopf mehr")
         detail.locator("[data-nv-action='ticket-delete']").first.click()
         self.confirm_if_visible()
         self.wait_until(
             lambda: self.page.locator(
-                "article[data-nv-ticket='AP-OPEN']").count() == 0,
+                "article[data-nv-ticket='AP-101']").count() == 0,
             timeout=20,
             message="Die Karte wurde nicht gelöscht")
         self.wait_until(
-            lambda: "AP-OPEN " not in self.ticket_text()
-            and "AP-OPEN\n" not in self.ticket_text(),
+            lambda: "AP-101" not in self.records(),
             timeout=20,
-            message="Der Eintrag wurde nicht aus TICKETS.md entfernt")
-        text = self.ticket_text()
-        self.assertIn("AP-OPEN2 Zweites offenes Paket", text)
-        self.assertIn("AP-BLOCK Blockiertes Paket", text)
-        self.assertIn("AP-DONE Erledigtes Paket", text)
+            message="Der Eintrag wurde nicht aus dem Ticketspeicher entfernt")
+        rows = self.records()
+        self.assertEqual("Zweites offenes Paket", rows["AP-102"]["title"])
+        self.assertEqual("Blockiertes Paket", rows["AP-103"]["title"])
+        self.assertEqual("Erledigtes Paket", rows["AP-104"]["title"])
         self.assert_clean_page()
 
 
@@ -621,7 +646,12 @@ class FeedbackCreateTest(AP22WorkBrowserTest):
             lambda: "NEUER-BUG-AP22" in self.feedback_text(),
             timeout=20,
             message="Der neue Bug wurde nicht gespeichert")
-        bug = self.page.locator("div[data-nv-ticket-list] article[data-nv-feedback-item]").filter(
+        bug_rows = [r for r in self.records().values()
+                    if r["title"] == "NEUER-BUG-AP22"]
+        self.assertEqual(1, len(bug_rows), "Der neue Bug ist nicht eindeutig")
+        self.assertEqual("bug", bug_rows[0]["type"],
+                         "Der neue Bug hat im Speicher nicht den Typ bug")
+        bug = self.page.locator("div[data-nv-board] article[data-nv-feedback-item]").filter(
             has_text="NEUER-BUG-AP22").first
         bug.wait_for(state="visible", timeout=20000)
         self.assertEqual("bug", bug.get_attribute("data-nv-kind"),
@@ -636,7 +666,13 @@ class FeedbackCreateTest(AP22WorkBrowserTest):
             lambda: "NEUES-FEEDBACK-AP22" in self.feedback_text(),
             timeout=20,
             message="Das neue Feedback wurde nicht gespeichert")
-        feedback = self.page.locator("div[data-nv-ticket-list] article[data-nv-feedback-item]").filter(
+        feedback_rows = [r for r in self.records().values()
+                         if r["title"] == "NEUES-FEEDBACK-AP22"]
+        self.assertEqual(1, len(feedback_rows),
+                         "Das neue Feedback ist nicht eindeutig")
+        self.assertEqual("feedback", feedback_rows[0]["type"],
+                         "Das neue Feedback hat im Speicher nicht den Typ feedback")
+        feedback = self.page.locator("div[data-nv-board] article[data-nv-feedback-item]").filter(
             has_text="NEUES-FEEDBACK-AP22").first
         feedback.wait_for(state="visible", timeout=20000)
         self.assertEqual("feedback", feedback.get_attribute("data-nv-kind"),
@@ -653,7 +689,7 @@ class PriorityTest(AP22WorkBrowserTest):
         """Vorbedingung: Feature ``priority`` aus.
 
         Aktion: Schalter in ``#/settings`` aktivieren, Arbeit öffnen,
-        ``AP-OPEN2`` hochschieben, neu laden.
+        ``AP-102`` hochschieben, neu laden.
         Erwartung: ``div[data-nv-priority-strip]`` steht mit Drag-Griff,
         ``priority-up|down`` und Zurücksetzen oberhalb des Boards; die neue
         Reihenfolge wird sofort gespeichert und bleibt über den Reload
@@ -700,14 +736,14 @@ class PriorityTest(AP22WorkBrowserTest):
                 strip.querySelectorAll("[data-nv-action='priority-up']"));
               const target = buttons.find(button => {
                 const row = button.closest('[data-nv-priority-id]');
-                return row && (row.textContent || '').includes('AP-OPEN2');
+                return row && (row.textContent || '').includes('AP-102');
               });
               if (!target || target.disabled) return false;
               target.click();
               return true;
             }""")
         self.assertTrue(clicked,
-                        "Keine Priorisierungszeile für AP-OPEN2 gefunden")
+                        "Keine Priorisierungszeile für AP-102 gefunden")
 
         def order_ids(view):
             # Der Backend-Vertrag von /api/priority liefert ``order`` als
@@ -723,7 +759,7 @@ class PriorityTest(AP22WorkBrowserTest):
 
         data = self.wait_api(
             f"/api/priority?name={PROJECT}",
-            lambda view: ordered_before(view, "AP-OPEN2", "AP-OPEN"),
+            lambda view: ordered_before(view, "AP-102", "AP-101"),
             message="Die Priorisierung wurde nicht in der erwarteten "
                     "Reihenfolge gespeichert")
         order = order_ids(data)
@@ -736,10 +772,10 @@ class PriorityTest(AP22WorkBrowserTest):
             """() => {
               const strip = document.querySelector('[data-nv-priority-strip]');
               const text = strip ? strip.innerText : '';
-              return [text.search(/\\bAP-OPEN2\\b/), text.search(/\\bAP-OPEN\\b/)];
+              return [text.search(/\\bAP-102\\b/), text.search(/\\bAP-101\\b/)];
             }""")
         self.assertGreaterEqual(positions[0], 0,
-                                "AP-OPEN2 fehlt nach dem Reload")
+                                "AP-102 fehlt nach dem Reload")
         self.assertLess(
             positions[0], positions[1],
             "Die Reihenfolge ging beim Reload verloren: " + repr(positions))

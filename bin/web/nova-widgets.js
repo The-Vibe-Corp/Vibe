@@ -272,13 +272,30 @@ var NV_EDITVIEW_WIDTH_KEY = 'nv-editview-width';
 var editView = document.querySelector('aside[data-nv-editview]');
 var editScrim = document.querySelector('[data-nv-editview-scrim]');
 var editViewReturnFocus = null;
+var editViewMarker = null;
+
+function nvEditViewMarked() {
+  return !!(editView && editView.hasAttribute('data-nv-ticket-editor'));
+}
 
 function nvEditViewWidth() {
+  var ticket = nvEditViewMarked();
+  var minimum = ticket ? 480 : 352;
   var stored = sessionStorage.getItem(NV_EDITVIEW_WIDTH_KEY);
   var pixels = parseFloat(stored);
-  return isFinite(pixels) && pixels >= 352
+  return isFinite(pixels) && pixels >= minimum
     ? Math.min(pixels, window.innerWidth * 0.7) + 'px'
-    : 'max(30vw, 22rem)';
+    : ticket ? 'max(38vw, 30rem)' : 'max(30vw, 22rem)';
+}
+
+/* GH-56: Der Ticket-Editor markiert das geteilte Aside, damit CSS und
+   Breitenlogik ihn von den übrigen Bearbeitungsansichten unterscheiden. */
+function nvSetEditViewMarker(attribute) {
+  if (editViewMarker && editViewMarker !== attribute) {
+    editView.removeAttribute(editViewMarker);
+  }
+  editViewMarker = attribute || null;
+  if (editViewMarker) editView.setAttribute(editViewMarker, '');
 }
 
 NV.editView = {
@@ -287,6 +304,7 @@ NV.editView = {
     var opts = options || {};
     var trigger = document.activeElement;
     if (trigger && trigger !== document.body) editViewReturnFocus = trigger;
+    nvSetEditViewMarker(opts.marker || null);
     nvWidgetFill(editView.querySelector('[data-nv-editview-title]'), opts.title);
     nvWidgetFill(editView.querySelector('[data-nv-editview-body]'), opts.content);
     nvWidgetFill(editView.querySelector('[data-nv-editview-foot]'), opts.footer);
@@ -301,6 +319,7 @@ NV.editView = {
     editView.hidden = true;
     if (editScrim) editScrim.hidden = true;
     document.body.removeAttribute('data-nv-editview-open');
+    nvSetEditViewMarker(null);
     if (editViewReturnFocus && document.contains(editViewReturnFocus)) {
       editViewReturnFocus.focus();
     }
@@ -326,9 +345,10 @@ if (editView) {
       event.preventDefault();
       var startX = event.clientX;
       var startWidth = editView.getBoundingClientRect().width;
+      var minimum = nvEditViewMarked() ? 480 : 352;
       var limit = window.innerWidth * 0.7;
       function move(moveEvent) {
-        var next = Math.min(limit, Math.max(352,
+        var next = Math.min(limit, Math.max(minimum,
           startWidth + startX - moveEvent.clientX));
         editView.style.width = Math.round(next) + 'px';
       }
