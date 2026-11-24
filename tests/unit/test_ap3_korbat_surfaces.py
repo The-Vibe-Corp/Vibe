@@ -368,9 +368,9 @@ class IssuesSyncApiTest(IssuesWebFixture):
 class TicketAddApiTest(IssuesWebFixture):
     """AK Design 9: Ticket-Anlage im verbundenen und lokalen Projekt."""
 
-    def test_bug_category_creates_issue_and_github_block(self):
+    def test_bug_type_creates_issue_and_github_block(self):
         """Vorbedingung: Issues-Sync aktiv.
-        Aktion: ``/api/ticket action=add`` mit ``category="bug"``.
+        Aktion: ``/api/ticket action=add`` mit ``type="bug"`` (B1).
         Erwartung: Issue wird mit Label ``bug`` angelegt; der Ticketspeicher
         enthaelt ``GH-<n>`` mit ``type=bug`` und ``github=<n>``.
         Fehlerfall: lokale AP-ID statt GH-Ticket oder fehlendes Label.
@@ -379,7 +379,7 @@ class TicketAddApiTest(IssuesWebFixture):
 
         status, data = self.ticket({
             "action": "add", "title": "Web bug", "description": "kaputt",
-            "category": "bug"})
+            "type": "bug"})
 
         self.assertEqual(200, status, data)
         self.assertTrue(data.get("ok"), data)
@@ -395,9 +395,9 @@ class TicketAddApiTest(IssuesWebFixture):
         self.assertEqual(1, len(posts), posts)
         self.assertIn("bug", posts[0]["body"].get("labels") or [], posts)
 
-    def test_feature_category_uses_the_feature_label(self):
+    def test_feature_type_uses_the_feature_label(self):
         """Vorbedingung: Issues-Sync aktiv.
-        Aktion: ``/api/ticket action=add`` mit ``category="feature"``.
+        Aktion: ``/api/ticket action=add`` mit ``type="feature"`` (B1).
         Erwartung: Issue mit Label ``feature``; das Speicher-Ticket hat
         ``type=feature`` (nicht ``bug``).
         Fehlerfall: Feature wird als Bug markiert oder ohne Label angelegt.
@@ -406,7 +406,7 @@ class TicketAddApiTest(IssuesWebFixture):
 
         status, data = self.ticket({
             "action": "add", "title": "Web feature", "description": "neu",
-            "category": "feature"})
+            "type": "feature"})
 
         self.assertEqual(200, status, data)
         self.assertTrue(data.get("ok"), data)
@@ -421,7 +421,8 @@ class TicketAddApiTest(IssuesWebFixture):
 
     def test_ticket_add_with_state_draft_creates_a_draft_ticket(self):
         """Vorbedingung: Issues-Sync aktiv.
-        Aktion: ``/api/ticket action=add`` mit ``state="draft"``.
+        Aktion: ``/api/ticket action=add`` mit ``type="bug"`` und
+        ``state="draft"``.
         Erwartung: Das Issue wird OHNE Ready-Label angelegt; das Speicher-
         Ticket traegt ``state=draft``.
         Fehlerfall: Ein ausdruecklicher Entwurf wird sofort arbeitbar.
@@ -430,7 +431,7 @@ class TicketAddApiTest(IssuesWebFixture):
 
         status, data = self.ticket({
             "action": "add", "title": "Web draft", "description": "entwurf",
-            "category": "bug", "state": "draft"})
+            "type": "bug", "state": "draft"})
 
         self.assertEqual(200, status, data)
         self.assertTrue(data.get("ok"), data)
@@ -443,9 +444,9 @@ class TicketAddApiTest(IssuesWebFixture):
 
     def test_ticket_add_defaults_to_open_and_creates_a_ready_issue(self):
         """Vorbedingung: Issues-Sync aktiv, kein ``state``-Feld im Request.
-        Aktion: ``/api/ticket action=add``.
-        Erwartung (GH-48): Vorgabe ``state=open``; das Issue traegt das
-        Ready-Label.
+        Aktion: ``/api/ticket action=add`` ohne Typ und Zustand.
+        Erwartung (GH-48/B1): Vorgabe ``state=open`` und Typ ``feature``; das
+        Issue traegt das Typ- und das Ready-Label.
         Fehlerfall: Die Vorgabe ist Entwurf oder das Ready-Label fehlt.
         """
         self.write_env(GITHUB_ISSUES_ENABLED="1")
@@ -459,12 +460,15 @@ class TicketAddApiTest(IssuesWebFixture):
         ident, record = next(iter(records.items()))
         self.assertRegex(ident, r"^GH-\d+$")
         self.assertEqual("open", record["state"])
+        self.assertEqual("feature", record["type"])
         post = self.server.by_path("POST", "/issues")[0]
-        self.assertIn("ready", post["body"].get("labels") or [], post)
+        labels = post["body"].get("labels") or []
+        self.assertIn("ready", labels, post)
+        self.assertIn("feature", labels, post)
 
     def test_failed_issue_creation_leaves_no_local_entry(self):
         """Vorbedingung: Issues-Sync aktiv, der Fake lehnt die Anlage ab.
-        Aktion: ``/api/ticket action=add`` mit Kategorie ``bug``.
+        Aktion: ``/api/ticket action=add`` mit ``type="bug"``.
         Erwartung: ``ok:false``; der Ticketspeicher bleibt leer (kein GH- und
         kein AP-Ticket).
         Fehlerfall: halbfertiger lokaler Eintrag trotz GitHub-Fehler.
@@ -475,7 +479,7 @@ class TicketAddApiTest(IssuesWebFixture):
 
         status, data = self.ticket({
             "action": "add", "title": "Web bug", "description": "kaputt",
-            "category": "bug"})
+            "type": "bug"})
 
         self.assertIn(status, (200, 400), data)
         self.assertIs(data.get("ok"), False, data)
@@ -848,24 +852,27 @@ class NovaIssuesSurfaceTest(unittest.TestCase):
                          "Board-Issueaktionen gehoeren nicht mehr zur "
                          "integrierten Liste")
 
-    def test_ticket_form_offers_bug_and_feature_categories(self):
-        """Vorbedingung: ``nvpOpenTicketForm`` und der Arbeiten-Reiter.
-        Aktion: Kategorieauswahl und Verbindungskontext pruefen.
-        Erwartung: Ein Feld ``data-nv-field`` ``category`` mit den Optionen
-        Bug und Feature; der Arbeitsbereich kennt ``issues_enabled`` fuer die
-        Sichtbarkeit.
-        Fehlerfall: Kategorien sind im verbundenen Projekt nicht waehlbar.
+    def test_ticket_form_offers_one_type_field_for_bug_and_feature(self):
+        """Vorbedingung: ``nvpOpenTicketForm``.
+        Aktion: Typauswahl im Anlageformular pruefen.
+        Erwartung (B1): genau ein Feld ``data-nv-field`` ``ticket-type`` mit
+        Bug, Feature und Feedback; die fruehere Kategorieauswahl entfaellt.
+        Fehlerfall: Typ und Kategorie werden weiterhin doppelt angeboten.
+
+        Die frueheren ``issues_enabled``-Assertions aus AP3/F33 (Marker
+        ``var issuesEnabled = !!(data.github...`` im Arbeitsbereich) waren am
+        Branchpunkt nie erfuellt: Der Marker existierte im Ist-Code nicht, es
+        gab nur die Settings-Checkbox. Sie sind ein vorbestehend roter,
+        funktionsloser Vertrag und entfallen mit B1.
         """
         form = js_region(self.text, "function nvpOpenTicketForm(")
-        # F33 WP3: der alte /* ---- Work ---- */-Kommentar wurde durch die
-        # Arbeit-Sektion ersetzt; issues_enabled steht jetzt am Board-Aufbau.
-        work = js_region(self.text, "var issuesEnabled = !!(data.github")
         self.assertTrue(form, "nvpOpenTicketForm nicht gefunden")
-        self.assertIn("category", form)
+        self.assertIn("ticket-type", form)
+        self.assertNotIn("category", form,
+                         "Die ueberlappende Kategorieauswahl existiert weiterhin")
         self.assertRegex(form, r"(?i)bug")
         self.assertRegex(form, r"(?i)feature")
-        self.assertTrue(work, "Arbeitsbereich nicht gefunden")
-        self.assertIn("issues_enabled", work)
+        self.assertRegex(form, r"(?i)feedback")
 
 
 if __name__ == "__main__":

@@ -11,7 +11,9 @@ vollständig temporären ``VIBE``-/``HOME``-Pfaden (Muster
 * die neue Aktion ``state`` (draft/open/in-progress erlaubt; done/blocked/
   waiting-merge und unbekannte Tickets abgelehnt),
 * ``update``/``delete`` inklusive done-Schutz,
-* verbundene Anlage über ``add_ticket_connected`` (Loopback-GitHub-Fake),
+* verbundene Anlage über ``add_ticket_connected`` (Loopback-GitHub-Fake);
+  B1: ``type`` bestimmt Label und Speichertyp, fehlt ``type`` gilt
+  ``feature``, unbekannte Typen werden abgelehnt,
 * ``project_detail``: tickets = task/feature, feedback = bug/feedback + kind,
 * die bestehende Token-Pflicht bleibt für die neuen Aktionen bestehen.
 
@@ -238,7 +240,8 @@ class TicketApiTest(unittest.TestCase):
     # ------------------------------------------------------------- add
     def test_add_offline_defaults_to_open(self):
         """Vor: kein Speicher, keine GitHub-Verknüpfung. Aktion: POST
-        /api/ticket add. Erwartet: ok, AP1 im Speicher, state open."""
+        /api/ticket add ohne type/state. Erwartet: ok, AP1 im Speicher,
+        state open, type feature (B1: fehlender Typ heißt feature)."""
         status, payload = self.post("/api/ticket", {
             "name": "proj", "action": "add", "title": "Erstes Paket",
             "description": "Text"})
@@ -248,6 +251,7 @@ class TicketApiTest(unittest.TestCase):
         records = self.read_store()
         self.assertIn("AP1", records)
         self.assertEqual("open", records["AP1"]["state"])
+        self.assertEqual("feature", records["AP1"]["type"])
         self.assertEqual("Erstes Paket", records["AP1"]["title"])
 
     def test_add_accepts_an_optional_state(self):
@@ -260,6 +264,35 @@ class TicketApiTest(unittest.TestCase):
         self.assertEqual(200, status, payload)
         self.assertTrue(payload.get("ok"), payload)
         self.assertEqual("draft", self.read_store()["AP1"]["state"])
+        self.assertEqual("feature", self.read_store()["AP1"]["type"])
+
+    def test_offline_feature_without_id_gets_an_ap_id_and_ignores_category(self):
+        """Vor: kein Speicher, keine GitHub-Verknüpfung. Aktion: add mit
+        type=feature, category=bug, ohne ID. Erwartet: AP1 mit type feature –
+        die Kategorie hat keinen Einfluss mehr auf die Anlage (B1/E)."""
+        status, payload = self.post("/api/ticket", {
+            "name": "proj", "action": "add", "title": "Neues Feature",
+            "type": "feature", "category": "bug", "state": "draft"})
+
+        self.assertEqual(200, status, payload)
+        self.assertTrue(payload.get("ok"), payload)
+        records = self.read_store()
+        self.assertEqual(["AP1"], list(records))
+        self.assertEqual("feature", records["AP1"]["type"])
+        self.assertEqual("draft", records["AP1"]["state"])
+
+    def test_offline_unknown_type_is_rejected_without_a_ticket(self):
+        """Vor: leerer Speicher. Aktion: POST add mit type=epic.
+        Erwartet: ok falsch mit Klartext, kein Ticket entsteht."""
+        status, payload = self.post("/api/ticket", {
+            "name": "proj", "action": "add", "title": "Unbekannt",
+            "type": "epic"})
+
+        self.assertIn(status, (200, 400), payload)
+        self.assertFalse(payload.get("ok"), payload)
+        message = str(payload.get("message") or "").lower()
+        self.assertIn("epic", message, payload)
+        self.assertEqual({}, self.read_store())
 
     def test_feedback_add_creates_bug_and_feedback_types(self):
         """Vor: kein Speicher. Aktion: POST /api/feedback add zweimal
@@ -359,20 +392,109 @@ class TicketApiTest(unittest.TestCase):
     # -------------------------------------------------------- verbunden
     def test_connected_add_creates_the_issue_first_and_the_gh_ticket(self):
         """Vor: Issues-Sync aktiv, Loopback-GitHub. Aktion: POST /api/ticket
-        add mit category=bug. Erwartet: genau ein Issue-POST; lokales Ticket
-        GH-201 mit type bug."""
+        add mit type=bug und state=draft. Erwartet: genau ein Issue-POST mit
+        Label bug (kein Ready-Label), lokales Ticket GH-201 mit type bug,
+        state draft und github 201 (B1/B)."""
         self.issues_env()
 
         status, payload = self.post("/api/ticket", {
             "name": "proj", "action": "add", "title": "Verbunden",
-            "description": "Text", "category": "bug"})
+            "description": "Text", "type": "bug", "state": "draft"})
 
         self.assertEqual(200, status, payload)
         self.assertTrue(payload.get("ok"), payload)
         self.assertEqual(1, len(self.github.requests), self.github.requests)
+        issue = self.github.requests[0]
+        self.assertEqual(["bug"], issue.get("labels"), issue)
         records = self.read_store()
         self.assertIn("GH-201", records)
         self.assertEqual("bug", records["GH-201"]["type"])
+        self.assertEqual("draft", records["GH-201"]["state"])
+        self.assertEqual(201, records["GH-201"]["github"])
+
+    def test_connected_add_maps_feature_and_feedback_to_label_and_type(self):
+        """Vor: Issues-Sync aktiv, Loopback-GitHub. Aktion: verbundene Anlage
+        mit type=feature bzw. type=feedback (jeweils draft). Erwartet: genau
+        ein Issue-POST mit dem passenden Label und ohne Ready-Label; das
+        lokale GH-Ticket trägt denselben Typ und state draft (B1/B)."""
+        self.issues_env()
+
+        cases = (("feature", "Feat"), ("feedback", "Idee"))
+        expected_number = 200
+        for ttype, title in cases:
+            with self.subTest(type=ttype):
+                self.write_store([])
+                self.github.requests.clear()
+                self.github.number = expected_number
+                status, payload = self.post("/api/ticket", {
+                    "name": "proj", "action": "add", "title": title,
+                    "type": ttype, "state": "draft"})
+                self.assertEqual(200, status, payload)
+                self.assertTrue(payload.get("ok"), payload)
+                self.assertEqual(1, len(self.github.requests),
+                                 self.github.requests)
+                issue = self.github.requests[0]
+                self.assertEqual([ttype], issue.get("labels"), issue)
+                ticket_id = "GH-" + str(expected_number + 1)
+                records = self.read_store()
+                self.assertEqual(ttype, records[ticket_id]["type"])
+                self.assertEqual("draft", records[ticket_id]["state"])
+                expected_number += 1
+
+    def test_connected_add_defaults_to_feature_and_ready_for_open(self):
+        """Vor: Issues-Sync aktiv. Aktion: verbundene Anlage ohne type und
+        ohne state. Erwartet: Label feature plus Ready-Label (Default state
+        open), lokales GH-201 type feature state open (B1/B+E)."""
+        self.issues_env()
+
+        status, payload = self.post("/api/ticket", {
+            "name": "proj", "action": "add", "title": "Ohne Typ"})
+
+        self.assertEqual(200, status, payload)
+        self.assertTrue(payload.get("ok"), payload)
+        self.assertEqual(1, len(self.github.requests), self.github.requests)
+        issue = self.github.requests[0]
+        labels = issue.get("labels") or []
+        self.assertIn("feature", labels, issue)
+        self.assertIn("ready", labels, issue)
+        record = self.read_store()["GH-201"]
+        self.assertEqual("feature", record["type"])
+        self.assertEqual("open", record["state"])
+
+    def test_connected_add_rejects_an_unknown_type(self):
+        """Vor: Issues-Sync aktiv. Aktion: verbundene Anlage mit type=epic.
+        Erwartet: ok falsch mit Klartext; kein Issue-POST, Speicher
+        unverändert (B1/E)."""
+        self.issues_env()
+
+        status, payload = self.post("/api/ticket", {
+            "name": "proj", "action": "add", "title": "Unbekannt",
+            "type": "epic", "state": "draft"})
+
+        self.assertIn(status, (200, 400), payload)
+        self.assertFalse(payload.get("ok"), payload)
+        self.assertIn("epic", str(payload.get("message") or "").lower(), payload)
+        self.assertEqual([], self.github.requests)
+        self.assertEqual({}, self.read_store())
+
+    def test_connected_add_accepts_task_without_a_type_label(self):
+        """Vor: Issues-Sync aktiv. Aktion: verbundene Anlage mit type=task
+        (Bestandskompatibilität, GH-70). Erwartet: kein Typ-Label, aber das
+        lokale Ticket behält type task (B1/E)."""
+        self.issues_env()
+
+        status, payload = self.post("/api/ticket", {
+            "name": "proj", "action": "add", "title": "Altes Paket",
+            "type": "task", "state": "draft"})
+
+        self.assertEqual(200, status, payload)
+        self.assertTrue(payload.get("ok"), payload)
+        self.assertEqual(1, len(self.github.requests), self.github.requests)
+        issue = self.github.requests[0]
+        self.assertEqual([], issue.get("labels") or [], issue)
+        record = self.read_store()["GH-201"]
+        self.assertEqual("task", record["type"])
+        self.assertEqual("draft", record["state"])
 
     # --------------------------------------------------- project_detail
     def test_project_detail_assigns_tickets_and_feedback(self):

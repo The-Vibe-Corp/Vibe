@@ -307,21 +307,26 @@ class AddUpdateDeleteTest(StoreCase):
 
     def test_auto_ids_follow_the_type_prefix(self):
         """Vor: leerer Speicher. Aktion: add task/bug/feedback/feature.
-        Erwartet: AP1, B1, F1; ein feature-Ticket mit eigener ID bleibt
-        erhalten. Die IDs sind eindeutig."""
+        Erwartet: AP1, B1, F1; ein feature-Ticket ohne eigene ID erhält AP2
+        (B1: feature nutzt den AP-Zähler gemeinsam mit task); ein
+        feature-Ticket mit eigener ID bleibt erhalten. Die IDs sind
+        eindeutig."""
         self.assertEqual("AP1", self.add(type="task")["id"])
         self.assertEqual("B1", self.add(type="bug", title="Bug")["id"])
         self.assertEqual("F1", self.add(type="feedback", title="Idee")["id"])
+        self.assertEqual("AP2", self.add(type="feature", title="Feature")["id"])
         self.assertEqual("FEAT-1", self.add(type="feature", tid="FEAT-1",
-                                            title="Feature")["id"])
-        self.assertEqual(["AP1", "B1", "F1", "FEAT-1"],
+                                            title="Feature benannt")["id"])
+        self.assertEqual(["AP1", "B1", "F1", "AP2", "FEAT-1"],
                          [item["id"] for item in self.module.load(self.project)])
 
     def test_auto_ids_continue_after_the_highest_number(self):
-        """Vor: AP9 existiert. Aktion: add ohne ID. Erwartet: AP10 (nächste
-        freie Nummer, bestehende Lücke füllt nicht)."""
+        """Vor: AP9 existiert. Aktion: add ohne ID (task), danach feature.
+        Erwartet: AP10, danach AP11 (nächste freie Nummer über den
+        gemeinsamen AP-Zähler; bestehende Lücke füllt nicht)."""
         self.add(tid="AP9", title="Neun")
         self.assertEqual("AP10", self.add(title="Zehn")["id"])
+        self.assertEqual("AP11", self.add(type="feature", title="Elf")["id"])
 
     def test_an_explicit_id_is_validated_and_must_be_unique(self):
         """Vor: Ticket AP1. Aktion: add mit AP1 erneut, add mit ungültiger ID.

@@ -27,7 +27,7 @@ import vibe_storage
 # ---------- Konstanten ----------
 STATES = ("draft", "open", "in-progress", "blocked", "waiting-merge", "done")
 TYPES = ("task", "bug", "feature", "feedback")
-TYPE_PREFIXES = {"task": "AP", "bug": "B", "feedback": "F"}
+TYPE_PREFIXES = {"task": "AP", "feature": "AP", "bug": "B", "feedback": "F"}
 STORE_REL = os.path.join(".vibe", "tickets.json")     # ".vibe/tickets.json"
 TICKET_FILE_TEMPLATE = "TICKET-{id}.json"             # Arbeitskopie, sichtbar
 
