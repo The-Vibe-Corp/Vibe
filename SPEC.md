@@ -1,307 +1,262 @@
-# vibe — Produktspezifikation
+# Vibe — Product Specification
 
-Status: Verbindliche Zielbeschreibung  
-Ausgangsbasis: installierter vibe-v5-Stand plus vorhandener Desktop-Starter  
-Sprache der Web-Oberfläche: Englisch
-Sprache der Dokumentation: Deutsch
+Status: Binding product specification  
+Starting point: Installed Vibe v5 system and existing desktop launcher  
+Web interface: English, German supported  
+Project documentation and review reports: German
 
-## Produktziel
+## Product goal
 
-vibe ist eine lokale Entwicklungszentrale für KI-gestützte Softwareprojekte. Es verbindet Projektverwaltung, Agenten, Modelle, MCP-Server, Agentenläufe, Prüfungen und Diagnose in einer Weboberfläche und einer CLI.
+Vibe is a local development hub for AI-assisted software projects. Its web interface and CLI bring together projects, agents, models, MCP servers, agent runs, verification, and diagnostics.
 
-vibe ist nicht kein AI Harness. Vibe kann mit verschiedenen Harnessen wie z.b. opencode zusammenarbeiten. Diese sind austauschbare gekapselte externe Ausführungs- und Konfigurationsschnittstellen.
+Vibe is not an AI harness. It works with external, interchangeable harnesses through isolated execution and configuration interfaces. OpenCode is a supported harness.
 
-Die funktionierende Installation wird übernommen und schrittweise verbessert. Ein vollständiger Rewrite ist nur mit einem ausdrücklich beschlossenen Migrationsticket zulässig.
+The existing installation is the starting point for incremental improvements. A complete rewrite requires an explicitly approved migration ticket.
 
-### Produktversprechen
+### Product commitments
 
-- Fachliche Nutzer können Projekte anlegen, Arbeitspakete beschreiben, Feedback geben und Ergebnisse nachvollziehen.
-- Entwicklungsteams können Agenten, Modelle, Prüfungen und MCP-Server zentral konfigurieren.
-- Alle sicherheitsrelevanten Aktionen sind transparent, begrenzbar und nachvollziehbar protokolliert.
-- Lokale Daten, Zugangsdaten und Projektquellcode bleiben unter Kontrolle der Nutzerin oder des Nutzers.
+- Non-technical users can create projects, describe work packages, provide feedback, and understand the results.
+- Development teams can centrally configure agents, models, checks, and MCP servers.
+- Security-sensitive actions are visible, subject to limits, and recorded in auditable logs.
+- Users retain control of their local data, credentials, and project source code.
 
-## Zielumgebung
+## Target environment
 
-vibe ist auf Linux, Windows und macOS in einer Python-Umgebung lauffähig. Die Anwendung startet Agenten optional in einer Sandbox, um den Zugriff auf das Hostsystem zu begrenzen.
+Vibe runs in a Python environment on Linux, Windows, and macOS. Agents can optionally run in a sandbox to limit access to the host.
 
-Die konkrete Unterstützung von Betriebssystemen, Containern, Python-Versionen und optionalen Werkzeugen wird durch die Diagnose geprüft. Fehlende optionale Komponenten dürfen Kernfunktionen nicht still beschädigen.
+Diagnostics determine support for the actual operating system, containers, Python version, and optional tools. Missing optional components must not silently break core functionality.
 
-## Begriffe und Trennung
+## Terms and boundaries
 
-- **Projektquellcode:** dieses Git-Repository.
-- **Installation:** ausführbarer, bereitgestellter Programmstand.
-- **Laufzeitdaten:** Einstellungen, Logs, Tokens, Sicherungen und Status.
-- **Globaler Agent:** in allen Projekten verfügbar.
-- **Projektagent:** nur im jeweiligen Projekt verfügbar.
-- **MCP-Server:** liefert zusätzliche Werkzeuge über MCP.
-- **Modellprofil:** Zuordnung von Modellen zu Rollen.
-- **Agentenlauf:** Ausführung eines Arbeitspakets über opencode.
-- **Dashboard:** vibe-Webanwendung.
-- **Runner:** von vibe gesteuerter Prozess, der Arbeitspakete, Git-Arbeitsbereiche, Prüfungen und Abschlussaktionen koordiniert.
+- **Project source:** The source code in this Git repository.
+- **Installation:** The deployed, executable application.
+- **Runtime data:** Settings, logs, tokens, backups, and status records.
+- **Global agent:** An agent available to all projects.
+- **Project agent:** An agent available only within one project.
+- **MCP server:** A service that provides tools through MCP.
+- **Model profile:** A mapping of models to roles.
+- **Agent run:** Execution of a work package through a harness supported by Vibe.
+- **Dashboard:** The Vibe web application.
+- **Runner:** The Vibe-managed process that coordinates work packages, Git workspaces, verification, and closing actions.
 
-Quellcode, Installation und Laufzeitdaten dürfen nicht miteinander verwechselt oder beim Aktualisieren gegenseitig überschrieben werden.
+Source code, installation files, and runtime data are distinct. Updating one must not overwrite the others.
 
-## Ausgangsstand und Nachweisstatus
+## Starting point and evidence
 
-Vorhandene Programmdateien werden unverändert importiert und durch ein SHA-256-Manifest dokumentiert.
+The initial application files are imported unchanged and recorded in a SHA-256 manifest.
 
-Die bisherige Nutzerbestätigung belegt grundsätzliche Nutzbarkeit, nicht vollständige Konformität aller Funktionen.
+Previous user confirmation establishes basic usability, not full conformity with this specification.
 
-## Funktionsumfang
+## Functional scope
 
-### Projekte und Entwicklungsordner
+### Projects and development directories
 
-- Entwicklungsordner anzeigen, hinzufügen, entfernen und erneut einlesen.
-- Projekte mit Git-Metadaten oder vibe-Projektkonfiguration erkennen.
-- Gleichnamige Projekte in unterschiedlichen Ordnern eindeutig identifizieren.
-- Das Entfernen eines Entwicklungsordners löscht keine Projektdateien.
-- Ungeeignete, allgemeine oder unzulässige Pfade verständlich ablehnen.
-- Die Projektliste zeigt Name, Typ, Branch, Änderungen, offene Arbeitspakete, Laufstatus und letzten Commit.
-- Das Projektdetail zeigt Pfad, Feedback, Tickets, Logs und verfügbare Aktionen.
-- Das Einlesen führt keine Builds, Installationen oder Projektbefehle aus.
+- List, add, remove, and rescan development directories.
+- Recognize projects by Git metadata or Vibe project configuration.
+- Distinguish projects with the same name in different directories.
+- Removing a development directory from Vibe does not delete project files.
+- Reject unsuitable, overly broad, or disallowed paths with a clear explanation.
+- The project list shows name, type, branch, changes, open work packages, run status, and latest commit.
+- The project detail view shows the path, feedback, tickets, logs, and available actions.
+- Scanning a directory does not run builds, installations, or project commands.
 
-### Projektvorlagen
+### Project templates
 
-- Vibe enthält vordefinierte Projektvorlagen für gängige Softareprojekte (z.B. generic, Android, Web, etc.)
-- Neue Typen sind über Vorlagen ergänzbar.
-- Vorhandene Projekte können vorbereitet werden.
-- Vorhandene Dateien werden dabei nicht still überschrieben.
-- Projekterzeugung und Git-Initialisierung liefern verständliche Fehler.
-- Projekttypen besitzen eigene Prüfadapter.
+- Provide templates for common project types, such as generic, Android, and web projects.
+- Allow additional project types through templates.
+- Support preparing existing projects without silently overwriting files.
+- Report project creation and Git initialization errors clearly.
+- Project types can provide their own verification adapters.
 
-### Arbeitspakete und Feedback
+### Work packages and feedback
 
-- Tickets (Arbeitspakete, Bugs und Feedback) liegen einheitlich in einer lokalen, nicht versionierten, maschinenlesbaren Datei (`.vibe/tickets.json`) vor.
-- Entwürfe, offene, in Arbeit befindliche, blockierte, auf Merge wartende und erledigte Tickets werden unterschieden; die Zustände gelten auch ohne GitHub-Verbindung.
-- Feedback kann über die Oberfläche ergänzt werden.
-- Arbeitspakete können über die Oberfläche definiert, bearbeitet und gelöscht werden; bei neuen Arbeitspaketen wird die ID automatisch vergeben, eine eigene ID bleibt möglich.
-- IDs sind eindeutig; parallele Schreibvorgänge erzeugen keine Doppelungen.
-- Erledigt bedeutet: Akzeptanzkriterien erfüllt und Nachweise vorhanden.
-- Ein Commit allein beweist keine fachliche Erfüllung.
-- Blockierte Einträge werden nicht automatisch als erledigt interpretiert.
+- Tickets, including work packages, bugs, and feedback, share a local, unversioned, machine-readable store: `.vibe/tickets.json`.
+- Distinguish draft, open, in-progress, blocked, awaiting-merge, and completed tickets, including when GitHub is not connected.
+- Users can add feedback and create, edit, or delete work packages through the UI.
+- Assign IDs automatically unless the user supplies one. IDs must be unique, including during concurrent writes.
+- Completion requires satisfied acceptance criteria and supporting evidence. A commit alone does not prove acceptance. A blocked ticket is not complete.
+- Package handoff and closure are distinct. The runner validates evidence from the ticket working copy and updates the ticket store. An agent finishing its work does not mean the package has been integrated.
+- In local mode, the runner merges an accepted package into the local integration branch and cleans up the package worktree and branch.
+- In GitHub mode, the runner fetches the current integration state and merges it into the feature branch before pushing. Conflicts are resolved in the package worktree.
+- Without auto-merge, the runner opens a PR and waits for manual merge and closure confirmation. The worktree remains registered in the meantime.
+- With auto-merge enabled, the runner may squash-merge the approved PR after all gates pass. Final synchronization and cleanup follow confirmed merge.
 
-### Agenten
+### Agents
 
-- Globale und projektspezifische Agenten anzeigen und filtern.
-- Agenten anlegen, lesen, bearbeiten, kopieren und löschen.
-- Beschreibung, Modus, Modell, Rechte und Prompt bearbeiten.
-- Strukturierte Eingabe und Rohtextbearbeitung anbieten.
-- Ungültige Eingaben verändern die bestehende Datei nicht.
-- Namenskonflikte und Überschattungen sichtbar machen.
-- Unbekannte Felder möglichst verlustfrei erhalten.
-- Vor Änderungen Sicherungen erzeugen und Wiederherstellung ermöglichen.
-- Keine fest eingebauten Agentennamen für die Produktlogik.
-- Coder und Reviewer werden über konfigurierbare Rollen zugeordnet.
+- List and filter global and project agents.
+- Create, view, edit, copy, and delete agents.
+- Edit the description, mode, model, permissions, and prompt through structured fields or raw text.
+- Invalid input leaves the existing file unchanged.
+- Make naming conflicts and agent shadowing visible.
+- Preserve unknown fields wherever possible.
+- Back up configurations before changes and support restoration.
+- Product logic must not depend on hard-coded agent names. Assign coders and reviewers through configurable roles.
 
-### Modelle und Anbieter
+### Models and providers
 
-- Modelle verfügbarer Anbieter anzeigen, nicht nur `opencode/*`.
-- Modellwahl im Agenteneditor ermöglichen.
-- Kostenlose und kostenpflichtige Modelle unterstützen.
-- Zugangsdaten gehören nicht in Agentendateien oder dieses Repository.
-- Modellliste und tatsächliche Nutzungsberechtigung sind getrennte Zustände.
-- Keine kostenpflichtige Testanfrage ohne vorherigen Hinweis und Zustimmung.
-- Keine erfundenen Modell-IDs oder Fähigkeiten.
+- List models from available providers, not only `opencode/*`.
+- Support model selection in the agent editor and both free and paid models.
+- Credentials do not belong in agent files or this repository.
+- Distinguish a listed model from one the user is authorized to use.
+- A paid test request requires prior notice and consent.
+- Do not invent model IDs or capabilities.
 
-### Modelltabelle
+### Model table
 
-- Vibe bietet ein Modelltabelle um dem Nutzer ein Übersicht und Einschätzung der verfügbaren Modelle zu geben.
-- Felder: Modell-ID, Anbieter, Verfügbarkeit, Kontext, Bildfähigkeit, Stärken, Schwächen, Tempo, Aufwand, Datenbedingungen und Preis.
-- Unbekannt ist ein zulässiger und sichtbarer Wert.
-- Fakten, Messungen, Nutzerberichte und Einschätzungen klar unterscheiden.
-- Jede Bewertung nennt Quelle, Datum und gegebenenfalls Testmethodik.
-- Preise enthalten Währung, Einheit, Eingabe- und Ausgabetarif sowie Gültigkeitsdatum.
-- Cachepreise, Staffelungen und Zusatzgebühren getrennt ausweisen.
-- Veraltete Daten markieren; keine ungeprüfte Übernahme früherer Tabellen.
+- Provide an overview and assessment of available models.
+- Include model ID, provider, availability, context size, image support, strengths, weaknesses, speed, effort, data terms, and price.
+- Display unknown values explicitly.
+- Distinguish facts, measurements, user reports, and assessments. Give the source, date, and test method where applicable.
+- Prices specify currency, unit, input and output rates, and effective date. Show cache pricing, tiers, and surcharges separately.
+- Mark stale information. Do not copy old assessments or prices without verification.
 
-### Modellprofile
+### Model profiles
 
-- Profile anlegen, bearbeiten, kopieren, löschen und anwenden.
-- Rollen frei konfigurierbar, mindestens Coder und Reviewer.
-- Rollen können globalen oder projektspezifischen Agenten zugeordnet werden.
-- Vor Anwendung eine genaue Änderungsvorschau anzeigen.
-- Alle Zielagenten und Modelle vor dem ersten Schreibvorgang validieren.
-- Die Anwendung ist transaktional oder bei Teilfehlern vollständig rückrollbar.
-- Leere Profile gelten nicht als erfolgreich angewendet.
-- Der Profilstatus zeigt Abweichungen durch spätere manuelle Agentenänderungen.
-- Kostenpflichtige Profile werden deutlich markiert.
-- Kein automatischer Wechsel von kostenlos auf kostenpflichtig.
+- Create, edit, copy, delete, and apply profiles.
+- Support configurable roles, including at least coder and reviewer, mapped to global or project agents.
+- Preview the exact changes before applying a profile.
+- Validate all target agents and models before the first write. Applying a profile must be transactional or fully reversible after partial failure.
+- An empty profile must not report successful application.
+- Show when later manual edits cause agents to differ from the profile.
+- Clearly identify paid profiles. Never switch automatically from a free model to a paid model.
 
-### MCP-Verwaltung
+### MCP management
 
-- Globale und projektbezogene Server anzeigen, anlegen, bearbeiten und löschen.
-- Server aktivieren und deaktivieren.
-- Lokal: Programm und Argumente als Liste sowie Umgebungsvariablen verwalten.
-- Remote: URL, Header und unterstützte Authentisierung verwalten.
-- Weitere Felder nur anbieten, wenn die installierte Version sie unterstützt.
-- Tatsächliche Konfigurationsdateien und deren Prioritäten dokumentieren.
-- Unbekannte Einstellungen und Kommentare soweit möglich erhalten.
-- Bei nicht verlustfrei unterstützten Dateien abbrechen oder eine konkrete Änderungsvorschau verlangen; niemals still Daten verwerfen.
-- Geheimnisse maskieren und beim Speichern unverändert erhalten.
-- Keine Geheimnisse in Antworten, Fehlermeldungen, Befehlsanzeigen oder Logs.
+- List, create, edit, delete, enable, and disable global and project MCP servers.
+- For local servers, manage the executable, argument list, and environment variables.
+- For remote servers, manage the URL, headers, and supported authentication.
+- Offer additional fields only when the installed version supports them.
+- Document the actual configuration files and their precedence.
+- Preserve unknown settings and comments where possible. If an edit cannot preserve a file faithfully, stop or request approval for a concrete change preview. Never silently discard data.
+- Mask secrets and preserve their values when saving. Do not expose them in responses, errors, command displays, or logs.
 
-### MCP-Tests
+### MCP connection checks
 
-- Vor dem Test erklären, dass Programme gestartet oder Netzverbindungen hergestellt werden; ein Verbindungscheck ist nicht garantiert nebenwirkungsfrei.
-- `initialize` und `tools/list` prüfen.
-- Serveridentität und Werkzeugliste anzeigen.
-- Keine fachlichen Werkzeuge automatisch aufrufen.
-- Fehler trennen: fehlendes Programm, Timeout, DNS/TLS, HTTP, Authentisierung, Protokoll und ungültige Konfiguration.
-- Unterstützte Transportarten explizit ausweisen.
-- Nicht unterstützte Transporte nicht als defekten Server darstellen.
-- Tests besitzen Zeit-, Ausgabe- und Ressourcenlimits.
-- Testprozesse einschließlich gestarteter Kindprozesse zuverlässig beenden.
-- Testresultate sind keine Garantie, dass ein Agent alle Werkzeuge nutzen darf.
-- Werkzeugfreigaben pro Agent müssen sichtbar oder nachvollziehbar sein.
+- Explain before a check that it may start programs or open network connections. A connectivity check is not guaranteed to be side-effect free.
+- Check `initialize` and `tools/list`; display server identity and available tools. Do not automatically invoke functional tools.
+- Distinguish missing executables, timeouts, DNS/TLS errors, HTTP errors, authentication failures, protocol failures, and invalid configuration.
+- Show supported transports explicitly. An unsupported transport does not mean the server is defective.
+- Limit execution time, output, and resource use. Reliably stop test processes and their children.
+- A successful connection check does not establish that an agent may use every listed tool. Agent-specific permissions must be visible or traceable.
 
-### Agentenläufe und Prüfungen
+### Agent runs and verification
 
-- Lauf starten, beobachten, anhängen und gezielt stoppen.
-- Projekt, Agent, Startzeit, Session anzeigen und zu dem jeweils aktuellen Arbeitspaket in Bezug setzen.
-- Gleichzeitige Läufe verschiedener Projekte unterstützen.
-- Gleiche Namen oder gleich normalisierte Namen dürfen keine Kollision erzeugen.
-- Live-Logs und separate Prüfprotokolle bereitstellen.
-- Eine fehlende Prüfkonfiguration ist ein Fehler, kein erfolgreicher Test.
-- Wiederholungs- und Durchgangslimits konfigurierbar machen.
-- Das Durchgangslimit ist kein Geldbudget und muss so beschriftet werden.
-- Ein äußeres Signal (HUP, TERM, INT) beendet einen Lauf nicht spurlos: Signal, Protokollzeile und Registerzustand werden festgehalten. Eine Startprüfung kennzeichnet verwaiste `running`-Einträge des eigenen Projekts als extern beendet; fremde Projekte, laufende und nicht prüfbare Sitzungen bleiben unverändert, und es wird nie eine fremde Sitzung beendet.
-- Quota- und Anmeldefehler halten einen Lauf standardmäßig sofort an. Das Verhalten ist eine ausdrückliche, globale Einstellung (`vibe limits stop|continue`, `<Zustand>/limits.json`) für alle Projekte, nicht je Projekt. `continue` behandelt den Fehler im Rahmen der vorhandenen Wiederholungslimits und protokolliert einen Hinweis. Eine fehlende oder defekte Einstellung gilt als `stop` und wird gemeldet, nie still als `continue`. Quota- und Anmeldefehler lösen weder eine Router-Neuverbindung noch eine manuelle IP-Abfrage aus.
+- Start, observe, attach to, and selectively stop runs.
+- Show project, agent, start time, session, and current work package.
+- Support concurrent runs for different projects without collisions between identical or normalized names.
+- Provide live logs and separate verification logs.
+- Missing verification configuration is an error, not a successful check.
+- Package verification and full verification of the integration state are separate runner gates. Checks are configured per project; agents cannot replace the configured gate commands during a run.
+- Retry and iteration limits are configurable. An iteration limit is not a spending budget and must not be labeled as one.
+- An external signal (`HUP`, `TERM`, or `INT`) must not end a run without a trace. Record the signal, a log entry, and the run registry state.
+- On startup, mark orphaned `running` entries for the current project as externally terminated. Leave other projects, active sessions, and sessions whose state cannot be determined unchanged. Never terminate another project's session.
+- By default, quota and login failures stop a run immediately. The explicit global setting `vibe limits stop|continue`, stored in `<state>/limits.json`, applies to all projects.
+- With `continue`, handle the failure within the existing retry limits and log a notice. A missing or invalid setting means `stop` and must be reported. Quota and login failures never trigger a router reconnection or manual IP lookup.
 
-### App beenden
+### Closing the application
 
-- Das Beenden des Dashboards beendet sowohl vibe als auch alle bestehenden Agentenläufe.
-- Das Stoppendes Harness ist eine getrennte Aktion.
-- Nur eindeutig von vibe verwaltete Prozesse stoppen.
-- Das Schließen eines Browser-Tabs beendet keine Hintergrundprozesse.
-- Die Oberfläche erläutert diese Unterschiede.
-- Tests prüfen ausdrücklich, dass kein unbeabsichtigtes Stoppen erfolgt.
+- Closing a browser tab does not stop Vibe or any agent run. Reopening the dashboard shows the sessions that are still running.
+- Explicitly quitting from the dashboard stops Vibe and its managed agent runs. Stopping the harness is a separate action.
+- Stop only processes that can be identified as Vibe-managed.
+- Explain the effects of each action in the UI. Tests must check that unrelated processes are not stopped.
 
-### Startmenü
+### Start menu
 
-- Einen benutzerbezogenen Menüeintrag installieren und entfernen.
-- Läuft vibe nicht: benötigte Container starten, vibe starten, Bereitschaft abwarten und Standardbrowser öffnen.
-- Läuft vibe: nur die Weboberfläche öffnen.
-- Mehrfachklicks erzeugen keine mehrfachen Dashboard-Prozesse.
-- Eine fremde Anwendung auf dem Port gilt nicht als laufendes vibe.
-- Die Instanzprüfung erfolgt über einen eindeutigen Health-Endpunkt.
-- Token wird nicht protokolliert.
-- Pfade mit Leerzeichen und Sonderzeichen funktionieren.
-- Kein Terminalfenster im Normalbetrieb erforderlich.
-- Fehler werden verständlich gemeldet und mit bereinigtem Log dokumentiert.
-- Benutzerdefinierte Pfade, Ports und Container gelten konsistent.
-- Die Startmenüaktion zum Beenden betrifft nur vibe.
+- Install and remove a per-user menu entry.
+- If Vibe is not running, start the required containers and Vibe, wait for readiness, and open the default browser.
+- If Vibe is already running, open only the web interface. Repeated clicks must not start duplicate dashboard processes.
+- Identify Vibe through its dedicated health endpoint. An unrelated application on the same port is not a running Vibe instance.
+- Do not log the token. Support paths containing spaces and special characters.
+- Normal operation must not require a visible terminal. Explain failures and provide a sanitized log.
+- Honor custom paths, ports, and container settings consistently.
+- The start-menu stop action affects only Vibe.
 
-### Diagnose
+### Diagnostics
 
-- Anwendungsvoraussetzungen getrennt von optionalen Projektwerkzeugen prüfen.
-- Keine pauschale Ableitung eines Konfigurationsschemas allein aus einer angenommenen Hauptversionsnummer.
-- Host- und Container-Verwechslungen erkennen.
-- Schreibbarkeit, Portbelegung und benötigte Programme prüfen.
-- Konkrete, kopierbare Lösungsvorschläge anbieten.
+- Distinguish application prerequisites from optional project tools.
+- Do not infer an entire configuration schema from an assumed major version.
+- Detect host/container mismatches.
+- Check writability, port availability, and required programs.
+- Provide concrete, copyable remediation steps.
 
-## Sicherheit und Datenintegrität
+## Security and data integrity
 
-- Der Webserver bindet standardmäßig nur an Loopback. Eine ausdrückliche Netz-Bindung erfolgt nur als IP-Adressliteral; DNS-Hostnamen werden abgelehnt, um DNS-Rebinding zu verhindern.
-- Eine IP-Allowlist kann Clients je IP/CIDR einschränken; Loopback bleibt immer zugelassen.
-- Die Anmeldung erfolgt per Token oder Kennwort mit Session-Cookie statt dauerhaftem Token im Browser.
-- Schreibende API-Aufrufe verlangen gültige Authentisierung.
-- Host-/Origin-Prüfung und CSRF-Schutz sind erforderlich.
-- Keine Tokens in Zugriffslogs oder Fehlermeldungen.
-- Eingaben und Requestgrößen begrenzen.
-- Pfad-Traversal und unerlaubte Symlink-Ziele verhindern.
-- Externe Befehle mit Argumentlisten statt Shellverkettung aufrufen, soweit keine explizit konfigurierte Shellausführung erforderlich ist.
-- Projektprüfbefehle und MCP-Programme als vertrauensbedürftige Ausführung behandeln.
-- Dateien atomar schreiben und konkurrierende Änderungen erkennen.
-- Sicherungen sind kollisionsfrei und können sensible Daten enthalten.
-- Sensible Laufzeitdaten gehören auf ein geeignet geschütztes Dateisystem. Bei FUSE/NTFS dürfen nicht fälschlich wirksame Unix-Dateirechte behauptet werden.
-- Keine API-Schlüssel, Tokens, globalen Konfigurationen oder persönlichen Agenten automatisch in Git übernehmen.
+- The web server binds to loopback by default. An explicitly configured network bind address must be an IP literal; reject DNS hostnames to prevent DNS rebinding.
+- An IP/CIDR allowlist may restrict clients. Loopback remains allowed by that list.
+- Authentication uses a token or password with a session cookie rather than leaving a permanent token in the browser.
+- Mutating API requests require valid authentication. Enforce Host and Origin checks and CSRF protection.
+- Never include tokens in access logs or error messages.
+- Limit input and request sizes. Prevent path traversal and unauthorized symlink targets.
+- Invoke external commands using argument lists rather than shell concatenation unless explicitly configured shell execution is required.
+- Treat project check commands and MCP programs as trusted-code execution, not passive configuration.
+- Write files atomically and detect concurrent changes.
+- Backups must not collide and may contain sensitive data.
+- Store sensitive runtime data on a suitably protected filesystem. Do not claim Unix permissions are effective on FUSE or NTFS without evidence.
+- Never automatically add API keys, tokens, global configurations, or personal agents to Git.
 
-## Architekturziel
+## Architecture goals
 
-Schrittweise Entkopplung:
+Decouple the application incrementally:
 
-- CLI und Web-API als dünne Zugriffsschichten.
-- Gemeinsame fachliche Dienste für Projekte, Agenten, Profile und MCP.
-- Dateizugriffe über testbare Repository- und Storage-Funktionen.
-- Geschäftslogik liefert strukturierte Ergebnisse statt stdout umzuleiten.
-- Statische Frontend-Dateien von Python trennen.
-- Der Import von Modulen startet weder Server, Container noch Programme.
+- Keep the CLI and web API thin.
+- Share domain services for projects, agents, profiles, and MCP.
+- Put file access behind testable repository and storage functions.
+- Return structured results from business logic rather than capturing stdout.
+- Keep static frontend files separate from Python code.
+- Importing modules must not start servers, containers, or programs.
 
-Zielstruktur, nicht Voraussetzung für den unveränderten Erstimport:
+Target layout, not a prerequisite for the initial unchanged import:
 
-```text
-bin/
-src/vibe/
-web/
-data/
-templates/
-scripts/
-tests/unit/
-tests/integration/
-tests/browser/
-docs/
-.vibe/
-```
+    bin/
+    src/vibe/
+    web/
+    data/
+    templates/
+    scripts/
+    tests/unit/
+    tests/integration/
+    tests/browser/
+    docs/
+    .vibe/
 
-## Konfiguration und Migration
+## Configuration and migration
 
-- `$VIBE` bleibt der Arbeitsbereich und ist nicht der Quellcodepfad.
-- Bestehende `_toolchain`- und `_logs`-Daten bleiben bei der Übernahme unverändert.
-- Persönliche Konfiguration wird niemals durch mitgelieferte Defaults ersetzt.
-- Vor einer Migration: Vorschau und Sicherung.
-- Installation aus dem Repository, ohne manuelles Kopieren einzelner Dateien.
-- Aktualisierung und Rollback ohne Verlust persönlicher Einstellungen.
-- Deinstallation entfernt keine Projekte und standardmäßig keine Nutzerdaten.
-- Self-Development: Änderungen an vibe zunächst separat testen; die laufende produktive Instanz nicht während eines Agentenlaufs überschreiben.
+- `$VIBE` identifies the workspace, not the source repository.
+- Preserve existing `_toolchain` and `_logs` data during adoption. Never replace personal configuration with shipped defaults.
+- Provide a preview and backup before migration.
+- Support installation from the repository without manually copying individual files.
+- Updates and rollbacks must preserve personal settings.
+- Uninstallation must not remove projects or, by default, user data.
+- Test changes to Vibe separately before updating the running installation. Do not overwrite the production instance during an agent run.
 
-## Qualität und Abnahme
+## Quality and acceptance
 
-- Unit-Tests für fachliche Logik und Validierung.
-- Integrationstests für API, Storage und Prozessadapter.
-- Browsertests für zentrale Workflows.
-- Attrappen allein ersetzen keine Browser- oder Systemabnahme.
-- Tests verwenden temporäre Verzeichnisse und eigene Ports.
-- Keine Tests gegen persönliche Projekte oder produktive Konfigurationen.
-- Testprotokolle nennen Befehl, Ergebnis und Grenzen des Nachweises.
-- Jedes Ticket benötigt Tests, fachliche und technische Dokumentation sowie einen unabhängigen Review vor dem Abschluss.
+- Use unit tests for domain logic and validation, integration tests for API, storage, and process adapters, and browser tests for core workflows.
+- Mocks alone do not replace browser or system acceptance checks.
+- Tests use temporary directories and dedicated ports, not personal projects or production configuration.
+- Verification records state the command, result, and limits of the evidence.
+- Every ticket requires functional and technical evidence and an independent review. Changed testable behavior must be demonstrated by suitable tests. Existing tests are sufficient if they were run and demonstrate the criterion. For changes without meaningful runtime behavior, document an appropriate alternative check.
 
-## Nicht im Umfang
+## Out of scope
 
-- Eigener Modellhost oder eigene Zahlungsabwicklung.
-- Öffentlicher Remotezugriff auf das Dashboard.
-- Mehrbenutzerbetrieb oder Cloud-Synchronisation.
-- Automatische Veröffentlichung, Push, Merge oder Release ohne Freigabe oder ohne gesetztes `GITHUB_AUTO_MERGE`.
-- Vollständiger Frameworkwechsel als Voraussetzung für weitere Entwicklung.
+- Hosting models or operating a payment service.
+- Public remote access to the dashboard.
+- Multi-user operation or cloud synchronization.
+- Automatic publication, push, merge, or release without authorization. Automatic GitHub merge requires the configured opt-in.
+- A complete framework change as a prerequisite for continued development.
 
-## Decisions Locked
+## Locked decisions
 
-- Bestehenden Quellcode importieren, nicht neu generieren.
-- Keine Funktion als erledigt markieren, bevor sie geprüft wurde.
-- Lokale Webanwendung plus CLI beibehalten.
-- Funktionen inkrementell entkoppeln.
-- Laufzeitdaten und Geheimnisse nicht ins Repository aufnehmen.
-- Ungeprüfte Modellinformationen als unbekannt behandeln.
-- Sicherheits- und Datenintegritätsfehler vor neuen Komfortfunktionen beheben.
+- Import the existing source; do not regenerate it.
+- Do not mark functionality complete before it has been verified.
+- Retain the local web application and CLI.
+- Decouple features incrementally.
+- Keep runtime data and secrets out of the repository.
+- Mark unverified model information as unknown.
+- Address security and data-integrity defects before convenience features.
 
-## Git & work-package closing (runner-owned)
+## Audience and use
 
-- Der Runner besitzt Worktrees, Branches, Mergebarkeit, Push, PR, Merge und Cleanup. Agenten erstellen, wechseln, mergen, pushen, force-pushen, rebasen oder löschen keine Branches.
-- Agenten arbeiten ausschließlich im in der Aufgabe angegebenen Worktree-Pfad (`$WT`) und berühren niemals das Integrationsverzeichnis (`$P`).
-- Vor dem Abschluss macht der Runner den PR mergebar, indem er `origin/<base>` abruft und in den Feature-Branch mergt (`git merge origin/<base>`; Merge, niemals Rebase).
-- Bei einem Konflikt lässt der Runner den Worktree im Konfliktzustand und startet den Agenten erneut, um den Konflikt zu lösen (`git add` + `git merge --continue`). Der Runner prüft einen sauberen Merge vor dem einzelnen Push in `github-complete`.
-- Im Worktree mit dem Paketpräfix committen (`<ID>:`). Nur eigene Dateien stagen; vor dem Commit `git status` und Diff prüfen.
-- Das aktuelle Ticket in der Arbeitskopie (`TICKET-<ID>.json`) auf `state: done` setzen und die Nachweisfelder `commit: <hash>` und `test: <Methode oder Datei>` ausfüllen; der Runner validiert und übernimmt den Abschluss in den Ticketspeicher (`.vibe/tickets.json`).
-- `docs/features/<ID>.md` erstellen und einen unabhängigen Review als `docs/reviews/<ID>-review-*.md` mit `Verdict: PASS` erhalten.
-- Den Worktree sauber hinterlassen. Nicht mergen, pushen oder Branches löschen.
-- Der projektbezogene Abschlussmodus wird durch `GITHUB_AUTO_MERGE` in `.vibe/project.env` gesteuert:
-  - Nicht gesetzt oder `""`: PR-only — der Runner pusht, öffnet den PR und stoppt. Der Worktree bleibt registriert, bis die Eigentümerin oder der Eigentümer merged und `vibe package close <id>` ausführt.
-  - `"1"`: Auto-Merge — der Runner merged den genehmigten PR (Squash), nachdem alle Gates und `ensure-mergeable` erfolgreich sind, synchronisiert Notizen und entfernt Worktree und Branch.
-- Im lokalen Modus (`GITHUB_ENABLED` leer oder ohne Origin) merged der Runner den Feature-Branch lokal in den Integrations-Branch und räumt anschließend auf.
-- Verifikations-Gates (`VERIFY_PACKAGE`, `VERIFY_FULL`) werden vom Runner ausgeführt; die volle Suite wird nicht erneut ausgeführt, sofern nicht ausdrücklich verlangt.
-- Bei einem Merge-Konflikt in einer Reparaturrunde im Worktree lösen und erneut committen; den Merge nicht abbrechen und nicht pauschal `--ours`/`--theirs` verwenden.
+Vibe is intended for consultants, product owners, project managers, and others who want to build reliable software without needing deep development expertise.
 
-## Zielgruppe und Nutzung
-
-Die Zielgruppe von vibe sind Berater, Product Owner und Projektmanager — alle Personen, die schnell eine solide Software erstellen möchten, aber keine tiefen Entwicklungskenntnisse besitzen.
-
-vibe dient im Unternehmen dazu, interne, solide Anwendungen schnell und einfach durch fachliche Steuerung zu entwickeln. Fachliche Nutzer beschreiben Ziele, Anforderungen und Feedback; technische Konfiguration, Agentenläufe und Prüfungen bleiben transparent steuerbar.
+Users describe goals, requirements, and feedback. Technical configuration, agent runs, and verification remain visible and controllable while Vibe coordinates the development workflow.
