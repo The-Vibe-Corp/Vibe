@@ -25,6 +25,14 @@ Signaturen werden nicht hartcodiert: Der Test erzeugt sie über den
 dokumentierten ``--write-baseline``-Weg und verwendet sie danach als
 committed Baseline. So bleibt der Test unabhängig von der Hash-Formel.
 
+GH-46 (Signaturstabilität): ``normalize_message`` entfernt absolute Pfade
+auch dann, wenn ein Anführungszeichen vor dem führenden ``/`` steht
+(JSON-Strings wie ``"/tmp/…"``, Python-Repräsentationen wie
+``'/var/…'``). Nur so bleibt ``failure_signature`` über wechselnde
+Temp- und Checkout-Wurzeln hinweg laufstabil und die committed Baseline
+matcht in jedem Checkout. Pfade nach Whitespace werden weiterhin ersetzt;
+Fehlerinhalte außerhalb der Pfade bleiben signaturwirksam.
+
 Alle Läufe verwenden temporäre Fixture-Projekte mit eigenem HOME/VIBE; es
 werden keine echten Modell- oder MCP-Aufrufe und keine produktiven Pfade
 verwendet.
@@ -33,6 +41,8 @@ Run:
 
     python3 -m unittest tests.unit.test_ap7_korbat_baseline -v
 """
+import importlib.machinery
+import importlib.util
 import json
 import sys
 import unittest
@@ -636,6 +646,166 @@ class RatchetTest(BaselineFixture):
         self.assertEqual(3, data["min_tests"],
                          "min_tests wurde nicht auf das effektive Minimum "
                          "angehoben")
+
+
+def load_engine():
+    """Lädt ``scripts/verify_engine.py`` als Modul (nur Definitionen)."""
+    loader = importlib.machinery.SourceFileLoader(
+        "verify_engine_ap7_signature_under_test", str(support.ENGINE)
+    )
+    spec = importlib.util.spec_from_loader(loader.name, loader)
+    module = importlib.util.module_from_spec(spec)
+    loader.exec_module(module)
+    return module
+
+
+class SignatureNormalizationTest(unittest.TestCase):
+    """GH-46: Signaturstabilität über Temp- und Checkout-Wurzeln.
+
+    Die committed Baseline (``tests/verify-baseline.json``) speichert
+    ``failure_signature`` = sha256 über Modul, Fehlerklasse und
+    ``normalize_message``-Ausgabe. Gelangt eine laufspezifische Temp- oder
+    Checkout-Wurzel in die normalisierte Meldung, matcht der Eintrag nie
+    wieder bzw. nur in einer einzigen Arbeitskopie — jeder Volllauf meldet
+    dann eine falsche neue Regression. Absolute Pfade müssen deshalb
+    unabhängig von der Quoting-Umgebung (JSON-String, Python-Repräsentation)
+    entfernt werden.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.engine = load_engine()
+
+    def test_double_quoted_absolute_path_is_replaced(self):
+        """Vorbedingung: JSON-artige Meldung mit doppelt gequotetem
+        Temp-Pfad (Muster des belegten ``test_sandbox``-Fehlers).
+        Aktion: ``normalize_message`` ausführen.
+        Erwartung: Die laufspezifische Wurzel ist verschwunden und durch
+        ``<pfad>`` ersetzt.
+        Fehlerfall: Der Pfad bleibt roh in der Meldung und damit in der
+        Signatur; die Baseline matcht bei jedem Volllauf anders.
+        """
+        message = (
+            'AssertionError: Zustand "/tmp/vv-4711/vv-ab12cd/state.json" '
+            "ist nicht lesbar"
+        )
+
+        normalized = self.engine.normalize_message(message)
+
+        self.assertNotIn("/tmp/vv-4711", normalized, normalized)
+        self.assertIn("<pfad>", normalized)
+
+    def test_single_quoted_absolute_path_is_replaced(self):
+        """Vorbedingung: FileNotFoundError-Meldung mit einfach gequotetem
+        Checkout-Pfad (Muster des belegten ``test_project_management``-
+        Fehlers).
+        Aktion: ``normalize_message`` ausführen.
+        Erwartung: Der Checkout-Pfad ist durch ``<pfad>`` ersetzt.
+        Fehlerfall: Die Signatur funktioniert nur in genau dieser
+        Arbeitskopie; am Integrationsstand gilt der bekannte Fehler als neu.
+        """
+        message = (
+            "FileNotFoundError: [Errno 2] No such file or directory: "
+            "'/var/log/vibe-wt/templates/common/.opencode/agents/test-agent.md'"
+        )
+
+        normalized = self.engine.normalize_message(message)
+
+        self.assertNotIn("/var/log/vibe-wt", normalized, normalized)
+        self.assertIn("<pfad>", normalized)
+
+    def test_whitespace_prefixed_absolute_path_stays_normalized(self):
+        """Vorbedingung: Meldung mit absolutem Pfad nach Whitespace.
+        Aktion: ``normalize_message`` ausführen.
+        Erwartung: Exakt das Bestandsverhalten: `` <pfad>``; die übrigen
+        Normalisierungen (``line <n>``) bleiben erhalten.
+        Fehlerfall: Der Fix für gequotete Pfade verdrängt das bisherige
+        Verhalten und Baseline-Einträge mit whitespace-getrennten Pfaden
+        brechen.
+        """
+        message = "Error at /tmp/vv-4711/data.json line 12"
+
+        self.assertEqual(
+            "Error at <pfad> line <n>",
+            self.engine.normalize_message(message),
+        )
+
+    def test_signature_is_stable_for_different_temp_roots_in_json(self):
+        """Vorbedingung: Zwei Meldungen unterscheiden sich nur in der
+        doppelt gequoteten Temp-Wurzel (``vv-aaaa``/``vv-bbbb``).
+        Aktion: ``failure_signature`` für beide bilden.
+        Erwartung: Identische Signatur — der bekannte ``test_sandbox``-Fehler
+        bleibt über Vollläufe hinweg BASELINE-OK.
+        Fehlerfall: Jeder Lauf erzeugt eine neue Signatur und damit eine
+        falsche „Neue Regression".
+        """
+        first = (
+            'AssertionError: Zustand "/tmp/vv-4711/vv-aaaa/state.json" '
+            "ist nicht lesbar"
+        )
+        second = (
+            'AssertionError: Zustand "/tmp/vv-4711/vv-bbbb/state.json" '
+            "ist nicht lesbar"
+        )
+
+        self.assertEqual(
+            self.engine.failure_signature(
+                "tests.unit.test_sandbox", "AssertionError", first
+            ),
+            self.engine.failure_signature(
+                "tests.unit.test_sandbox", "AssertionError", second
+            ),
+        )
+
+    def test_signature_is_stable_for_different_quoted_checkout_roots(self):
+        """Vorbedingung: Zwei FileNotFoundError-Meldungen unterscheiden sich
+        nur in der einfach gequoteten Checkout-Wurzel.
+        Aktion: ``failure_signature`` für beide bilden.
+        Erwartung: Identische Signatur — der bekannte Eintrag gilt in jeder
+        Arbeitskopie und am Integrationsstand.
+        Fehlerfall: Die Baseline matcht nur im Ursprungs-Checkout; der
+        Abnahme-Volllauf meldet eine falsche Regression.
+        """
+        first = (
+            "FileNotFoundError: [Errno 2] No such file or directory: "
+            "'/var/log/vibe-wt/vibe-GH-46-nrO7K6/templates/common/"
+            ".opencode/agents/test-agent.md'"
+        )
+        second = (
+            "FileNotFoundError: [Errno 2] No such file or directory: "
+            "'/var/log/vibe-wt/vibe-integration/templates/common/"
+            ".opencode/agents/test-agent.md'"
+        )
+
+        self.assertEqual(
+            self.engine.failure_signature(
+                "tests.unit.test_project_management", "FileNotFoundError", first
+            ),
+            self.engine.failure_signature(
+                "tests.unit.test_project_management", "FileNotFoundError", second
+            ),
+        )
+
+    def test_signature_differs_when_the_error_content_differs(self):
+        """Vorbedingung: Zwei Meldungen haben dieselbe Pfadstruktur, aber
+        unterschiedlichen Fehlerinhalt (``erhalten 2``/``erhalten 3``).
+        Aktion: ``failure_signature`` für beide bilden.
+        Erwartung: Unterschiedliche Signaturen — die Normalisierung darf nur
+        Pfade und Zeitangaben, nicht den Fehlerinhalt einebnen.
+        Fehlerfall: Ein echter neuer Fehler würde als bekannter Fehler
+        maskiert (Über-Normalisierung).
+        """
+        first = 'AssertionError: erwartet 1, erhalten 2 bei "/tmp/vv-4711/a.json"'
+        second = 'AssertionError: erwartet 1, erhalten 3 bei "/tmp/vv-4711/a.json"'
+
+        self.assertNotEqual(
+            self.engine.failure_signature(
+                "tests.unit.test_sandbox", "AssertionError", first
+            ),
+            self.engine.failure_signature(
+                "tests.unit.test_sandbox", "AssertionError", second
+            ),
+        )
 
 
 if __name__ == "__main__":

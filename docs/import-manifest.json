@@ -1388,6 +1388,22 @@
       "grund": "Subagenten-Policy-Erhalt beim Vorlagen-Rendering (Bug B7): agent_render_fields liest vor dem Anwenden einer Rechte-Vorlage die Subagenten-Policy der Eingabedatei (agent_task_policy) und stellt sie nach dem Preset-Rendering im v2-permissions-Block wieder her; ohne vorhandene Freigabe bleibt der Vorlagen-Standard 'subagent * deny' unangetastet, damit der Block weiterhin als reine Vorlage erkennbar ist. Explizite Auswahl (task_all/task_allowed) gewinnt unverändert. Größe und SHA-256 des files-Eintrags von bin/vibe aktualisiert und dadurch begründet."
     },
     {
+      "arbeitspaket": "GH-46",
+      "dateien": [
+        "bin/vibe",
+        "bin/vibe-run.sh",
+        "bin/vibe_packages.py",
+        "templates/generic/AGENTS.md",
+        "templates/docker/AGENTS.md",
+        "templates/web/AGENTS.md",
+        "templates/rebuild/AGENTS.md",
+        "templates/android/AGENTS.md",
+        "docs/import-manifest.json"
+      ],
+      "datum": "2026-11-23",
+      "grund": "generische GENERAL_RULES von projektspezifischen Test-Implementierungen befreit (verify.sh-Vertrag, Baseline-Disziplin) und auf die Prüfbefehle in .vibe/project.env zurückgeführt; Baseline-Transport und -Hashwächter für Arbeitskopien entfernt; erste committete Baseline für pi-aarch64-py3.14-namespaces"
+    },
+    {
       "arbeitspaket": "GH-57",
       "dateien": [
         "bin/vibe",
@@ -1418,13 +1434,13 @@
     },
     {
       "path": "bin/vibe",
-      "bytes": 317366,
-      "sha256": "c03873eabd261fd56dbb3a639f064e95c7abdf6f6b0b50597fda4f51274a8d5f"
+      "bytes": 316545,
+      "sha256": "eaa750b057785f7d7d48c3726425db47064c5d2cbdfb8c42bf12bd152621e78a"
     },
     {
-      "bytes": 86493,
+      "bytes": 86330,
       "path": "bin/vibe-run.sh",
-      "sha256": "23c8e14dc72de993c055d9db9456e40dbad157475e1e55a6b2ca1651fc682789"
+      "sha256": "cd544f364a5fb84437baf30bb95edb09b050eb533483fd662ca3010ea8da5d18"
     },
     {
       "bytes": 138247,
@@ -1487,9 +1503,9 @@
       "sha256": "ac3b26da4208a087a09c67c389238c82802d7c1bd50b10d9bcd9492a07050462"
     },
     {
-      "bytes": 82477,
+      "bytes": 82406,
       "path": "bin/vibe_packages.py",
-      "sha256": "9395bc10865d8be11fe409bd4b29b41e93d021d1aa2e5a556f0e00d8f6a3fbb3"
+      "sha256": "4a8477009e4e2443d4e0ed9cad383c70a9e2f697fb761a531bdae968ee948979"
     },
     {
       "bytes": 20789,
@@ -1632,9 +1648,9 @@
       "sha256": "b45ed5e95c842e67dbecf165bb6096ec9c513cc431ede7442cd4bbad9ed0e806"
     },
     {
-      "bytes": 6583,
+      "bytes": 5762,
       "path": "templates/android/AGENTS.md",
-      "sha256": "24ca15cda217f788029ddc194f92a94d15fceb94218ab7c4ff026c5ef984d7de"
+      "sha256": "40bd66ca4cdd4cd0db699c6f53740749cb3b5d2ca7c96ccb18a75fb1ec641ea5"
     },
     {
       "bytes": 522,
@@ -1672,9 +1688,9 @@
       "sha256": "da366d196e69282f922723f0a0755f9cfe167d1dd210737668df0d8b76b71b8a"
     },
     {
-      "bytes": 6197,
+      "bytes": 5376,
       "path": "templates/docker/AGENTS.md",
-      "sha256": "941586399ab5d6d8d8f2f0e3cad4e14c4a1bc3cd163c88cc0f2bf3d31c11005b"
+      "sha256": "0e6e7e70e76568bc61b76e3b85c2f3667e82bf73ed2223d2ea07e3bb8d38b7bf"
     },
     {
       "bytes": 354,
@@ -1682,9 +1698,9 @@
       "sha256": "63c0ebab49aa870ae5e5f731890cce3f0ce2859364152c00b64cb89e3e6d9ae5"
     },
     {
-      "bytes": 5882,
+      "bytes": 5061,
       "path": "templates/generic/AGENTS.md",
-      "sha256": "72574045e07ba9c53970fbb6d2d7df27db9633c4f6f65018cabce699dd813323"
+      "sha256": "c5c6fab02e2a5b0c8a8ee6c5eb4382abcaaa51b4855fdfe9b1a50ce0597596f4"
     },
     {
       "bytes": 670,
@@ -1737,9 +1753,9 @@
       "sha256": "db8026a75dd2f358a771be9e2fc2fd4ba88c6180f026078552c3259e5156360f"
     },
     {
-      "bytes": 9527,
+      "bytes": 8706,
       "path": "templates/rebuild/AGENTS.md",
-      "sha256": "6b7e6edc63d11763652750c36fae25fb462fa46df41225b35a7f297f6f6ef177"
+      "sha256": "1d060bf97639d3ebeb0476010fab0410a5104c3bc5d6064665376c1363860a56"
     },
     {
       "bytes": 1675,
@@ -1762,9 +1778,9 @@
       "sha256": "84b60ea398f9969f924239023adf52eaa48410db66b3c7bcf9c6cc75fe624af4"
     },
     {
-      "bytes": 6247,
+      "bytes": 5426,
       "path": "templates/web/AGENTS.md",
-      "sha256": "38d08b1a19baf2f22a853fe28aa3db6b1dd16a469188b1fd35bfc905d4927459"
+      "sha256": "6ebf5d41c58b80921e7d7ef46a1d222ba72ee56aaa0b91acf431c2cc9e60cf7a"
     }
   ],
   "hinweis": "SHA-256 der übernommenen Programmdateien. Beabsichtigte Änderungen an diesen Dateien sind nur zulässig, wenn dieser Eintrag im selben Arbeitspaket aktualisiert und begründet wird. Laufzeitdaten, Sicherungen und Geheimnisse sind nicht Bestandteil des Imports.",

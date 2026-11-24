@@ -102,11 +102,11 @@ WORK_COPY_FILES = WORK_NOTE_FILES + (PROJECT_RULES_FILE,)
 # AP5: .vibe/project.env ist Laufzeitstand wie die Arbeitsnotizen, wird aber
 # nur read-only einwegig in die Arbeitskopie transportiert. Die Datei des
 # Hauptprojekts bleibt autoritativ; .vibe/_secrets.env wird nie transportiert.
-# AP7: .vibe/verify-baseline (falls vorhanden) wird nach demselben Muster
-# transportiert (1:1, best effort 0444, idempotenter Git-Exclude-Eintrag).
+# GH-46: Der AP7-Baseline-Transport ist entfallen; Arbeitskopien beziehen die
+# Baseline aus der committeten tests/verify-baseline.json des Branchs (der
+# lokale Bootstrap-Vorschlag ist ephemeral und wird nicht dauerhaft transportiert).
 PROJECT_ENV_REL = os.path.join(".vibe", "project.env")
-VERIFY_BASELINE_REL = os.path.join(".vibe", "verify-baseline")
-TRANSPORTED_PATHS = (PROJECT_ENV_REL, VERIFY_BASELINE_REL)
+TRANSPORTED_PATHS = (PROJECT_ENV_REL,)
 PROOF_KEYS = ("Commit", "Test", "Datei", "Review", "Doku")
 PROOF_LINE = re.compile(r"^\s*(?:" + "|".join(PROOF_KEYS) + r")\s*:")
 
@@ -250,14 +250,14 @@ def _exclude_rel_paths(worktree, rel_paths):
 
 
 def transport_project_env(project, worktree):
-    """Transportiert ``.vibe/project.env`` und ``.vibe/verify-baseline``
-    read-only einwegig in die Arbeitskopie (AP5/AP7).
+    """Transportiert ``.vibe/project.env`` read-only einwegig in die
+    Arbeitskopie (AP5).
 
-    Für jede vorhandene Quelldatei wird ``<worktree>/.vibe/`` angelegt, der
-    Inhalt 1:1 kopiert und best effort schreibgeschützt (0444). Danach werden
-    die transportierten Pfade idempotent in die Git-Exclude des Worktrees
+    Für die vorhandene Quelldatei wird ``<worktree>/.vibe/`` angelegt, der
+    Inhalt 1:1 kopiert und best effort schreibgeschützt (0444). Danach wird der
+    transportierte Pfad idempotent in die Git-Exclude des Worktrees
     eingetragen. Ohne Quelldatei geschieht nichts — insbesondere entsteht kein
-    ``.vibe/``-Ordner. Transportiert wird ausschließlich diese feste Liste;
+    ``.vibe/``-Ordner. Transportiert wird ausschließlich diese eine Datei;
     ``_secrets.env`` und andere ``.vibe/``-Dateien bleiben zurück. Liefert
     ``(transported_paths, exclude_ok)``.
     """
@@ -1693,8 +1693,7 @@ def command_copy_notes(args):
     for name in skipped:
         print("HINWEIS: " + name + " hat nicht committete Änderungen; "
               "sie wurden nicht in die Arbeitskopie übernommen.")
-    # AP5/AP7: read-only Einweg-Transport von .vibe/project.env und
-    # .vibe/verify-baseline (nie zurück).
+    # AP5: read-only Einweg-Transport von .vibe/project.env (nie zurück).
     transported, exclude_ok = transport_project_env(args.project, args.worktree)
     if transported:
         names = " und ".join(transported)
