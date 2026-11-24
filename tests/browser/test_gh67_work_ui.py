@@ -1,12 +1,19 @@
 """GH-67: Browserabnahme „Projekt/Work“ (unabhängig aus Ticket + SPEC).
 
 Quelle der Fälle: ``TICKET-GH-67.json`` (Abschnitte 1–7: gemeinsame Sidebar,
-Priorisierungsansicht/Zähler, Lokalisierung, Kategorie vs. Tickettyp,
-Filterleiste, Statuszuordnung/-wechsel, Dialogaktionen) und ``SPEC.md``
-(Arbeitspakete in ``.vibe/tickets.json``, Oberflächensprache Englisch,
-Trennung von Anzeigetext und gespeicherten Statuswerten) sowie der Nachforderung
-„Bearbeiten setzt ein Ticket automatisch auf in-progress“. Die Fälle werden
-nicht aus einem Implementierungsdiff abgeleitet.
+Priorisierungsansicht/Zähler, Lokalisierung, Tickettyp, Filterleiste,
+Statuszuordnung/-wechsel, Dialogaktionen) und ``SPEC.md`` (Arbeitspakete in
+``.vibe/tickets.json``, Oberflächensprache Englisch, Trennung von Anzeigetext
+und gespeicherten Statuswerten). Die Fälle werden nicht aus einem
+Implementierungsdiff abgeleitet.
+
+B1-Anpassung (Ticket B1, Zielvertrag A/D): GH-67 führte Kategorie und
+Tickettyp als getrennte Felder ein und setzte beim Öffnen des Editors
+automatisch ``in-progress``. B1 ersetzt beides: Es gibt genau ein Typfeld
+``select[data-nv-field='ticket-type']`` mit feature/bug/feedback (kein
+``task``/„Paket“ und keine Kategorie), und der Editor ändert den Zustand nie.
+Die Fälle für ausdrückliche Zustandswechsel (Board-Buttons, Detail-Auswahl,
+Drag&Drop) bleiben unverändert Bestandteil des Vertrags.
 
 Der Live-Server läuft isoliert auf einem freien Port mit bereinigter
 VIBE_*-/SANDBOX_-Umgebung und eigenen Temp-Pfaden; der Browser nutzt den
@@ -22,14 +29,14 @@ Erwartete Hooks (Vertrag für die Umsetzung):
     ``input[data-nv-work-search]``, ``div[data-nv-search]``,
       ``div[data-nv-work-kinds]``, ``button[data-nv-work-hide-done]``
       außerhalb von ``div[data-nv-filter-bar]``, Chips draft/ready/running
-    Editor: ``aside[data-nv-ticket-editor]``, ``[data-nv-field]`` mit
-      ``category`` (feature/bug/feedback) und ``ticket-type``
-      (task/bug/feature/feedback), ``button[data-nv-action=...]``
+    Editor: ``aside[data-nv-ticket-editor]``, ``[data-nv-field='ticket-type']``
+      (feature/bug/feedback), ``button[data-nv-action=...]``
 
-Hinweis zum Tickettyp-Feld: erwartet wird ``data-nv-field='ticket-type'``
-innerhalb des Editors. ``data-nv-field='type'`` ist im Projekt bereits für
-den Projekttyp (generic/android/…) vergeben und wird nur als Fallback
-akzeptiert (siehe ``ticket_type_select``).
+Hinweis zum Tickettyp-Feld: erwartet wird genau ein
+``data-nv-field='ticket-type'`` innerhalb des Editors. Eine
+Kategorie-Auswahl (``data-nv-field='category'``) existiert nach B1 nicht
+mehr; ``data-nv-field='type'`` ist im Projekt für den Projekttyp
+(generic/android/…) vergeben.
 
 Run (Rot-Phase, vor der Implementierung):
 
@@ -312,19 +319,17 @@ class GH67WorkBrowserTest(unittest.TestCase):
         return editor
 
     def ticket_type_select(self, editor):
-        """Tickettyp-Auswahl im Editor.
+        """Tickettyp-Auswahl im Editor (nach B1 das einzige Typfeld).
 
-        Vertragserwartung: ``data-nv-field='ticket-type'``. Das Attribut
-        ``data-nv-field='type'`` ist im Projekt bereits für den Projekttyp
-        reserviert und wird hier nur als akzeptierter Fallback geprüft.
+        Vertrag A: genau ein ``data-nv-field='ticket-type'`` mit den Optionen
+        feature/bug/feedback. ``data-nv-field='type'`` ist im Projekt für den
+        Projekttyp reserviert und wird nicht mehr als Fallback akzeptiert.
         """
         selected = editor.locator("[data-nv-field='ticket-type']")
-        if selected.count() == 0:
-            selected = editor.locator("[data-nv-field='type']")
-        self.assertGreaterEqual(
-            selected.count(), 1,
-            "Dem Anlageformular fehlt die Tickettyp-Auswahl "
-            "(data-nv-field='ticket-type', Fallback 'type')")
+        self.assertEqual(
+            1, selected.count(),
+            "Dem Anlageformular fehlt die eindeutige Tickettyp-Auswahl "
+            "(data-nv-field='ticket-type')")
         return selected.first
 
     def open_ticket_editor(self, tid):
@@ -947,38 +952,44 @@ class GH67WorkBrowserTest(unittest.TestCase):
         self.assertEqual("true", chip.get_attribute("aria-pressed"),
                          "Die Filtereinstellung ging beim Detail-Save verloren")
 
-    # ===================================== 5. Kategorie vs. Ticket Type
-    def test_21_category_select_options_and_default(self):
-        """AP4: Kategorie hat genau feature/bug/feedback, Default feature.
+    # ========================================== 5. Einheitlicher Tickettyp
+    def test_21_single_ticket_type_field_replaces_category(self):
+        """B1/A: genau ein Typfeld feature/bug/feedback, keine Kategorie.
 
         Vorbedingung: leerer Store. Aktion: „Paket anlegen“ öffnen.
-        Erwartung: select[data-nv-field=category] mit genau diesen Optionen
-        (lokalisierte Anzeige), Vorauswahl feature.
+        Erwartung: genau ein ``select[data-nv-field='ticket-type']`` mit genau
+        diesen Optionen (lokalisierte Anzeige), keine Option task/„Paket“,
+        kein ``[data-nv-field='category']``, Vorauswahl feature.
         """
         self.write_store([])
         self.goto_work()
         editor = self.open_new("package")
-        select = editor.locator("[data-nv-field='category']")
-        self.assertGreaterEqual(select.count(), 1,
-                                "Das Anlageformular hat keine Kategorie-Auswahl")
-        options = select.first.locator("option").evaluate_all(
+        select = self.ticket_type_select(editor)
+        options = select.locator("option").evaluate_all(
             "els => els.map(e => ({value: e.value, text: e.textContent.trim()}))")
         self.assertEqual({"feature", "bug", "feedback"},
                          {row["value"] for row in options},
-                         "Die Kategorie-Optionen sind falsch: " + repr(options))
-        self.assertEqual("feature", select.first.input_value(),
-                         "Die Kategorie-Vorauswahl ist nicht feature")
+                         "Die Typ-Optionen sind falsch: " + repr(options))
+        self.assertNotIn("task", {row["value"] for row in options},
+                         "Die interne Option task wird weiterhin angeboten")
+        labels = " ".join(row["text"].lower() for row in options)
+        self.assertNotIn("paket", labels,
+                         "Die Option „Paket“ ist weiterhin im Typfeld")
+        self.assertEqual(0, editor.locator("[data-nv-field='category']").count(),
+                         "Das überlappende Kategorie-Feld existiert weiterhin")
+        self.assertEqual("feature", select.input_value(),
+                         "Die Typ-Vorauswahl von „Paket anlegen“ ist nicht feature")
 
     def test_22_ticket_type_options_and_button_defaults(self):
-        """AP4: Tickettyp task/bug/feature/feedback je Button vorbelegt.
+        """B1/A: Typoptionen feature/bug/feedback, Vorauswahl je Button.
 
         Vorbedingung: drei Öffnungsbuttons. Aktion: Paket/Bug/Feedback öffnen.
-        Erwartung: Optionen task/bug/feature/feedback, aria-label vorhanden,
-        Default task / bug / feedback.
+        Erwartung: Optionen feature/bug/feedback, aria-label vorhanden,
+        Default feature / bug / feedback.
         """
         self.write_store([])
         self.goto_work()
-        expected = {"package": "task", "bug": "bug", "feedback": "feedback"}
+        expected = {"package": "feature", "bug": "bug", "feedback": "feedback"}
         for mode, default in expected.items():
             with self.subTest(mode=mode):
                 editor = self.open_new(mode)
@@ -986,7 +997,7 @@ class GH67WorkBrowserTest(unittest.TestCase):
                     select = self.ticket_type_select(editor)
                     options = select.locator("option").evaluate_all(
                         "els => els.map(e => e.value)")
-                    self.assertEqual({"task", "bug", "feature", "feedback"},
+                    self.assertEqual({"feature", "bug", "feedback"},
                                      set(options),
                                      "Die Tickettyp-Optionen sind falsch: " + repr(options))
                     self.assertTrue(select.get_attribute("aria-label"),
@@ -998,23 +1009,28 @@ class GH67WorkBrowserTest(unittest.TestCase):
                     self.wait_until(lambda: not self.editor().is_visible(),
                                     message="Editor lässt sich nicht schließen")
 
-    def test_23_type_preselect_does_not_override_category(self):
-        """AP4: „Bug melden“ lässt die Kategorie auf feature.
+    def test_23_ticket_type_stays_changeable_before_save(self):
+        """B1/A: der Typ bleibt bis zum Speichern änderbar.
 
-        Vorbedingung: Bug-Button. Erwartung: type=bug, category=feature –
-        die Vorauswahl im Tickettyp überschreibt die Kategorie nicht.
+        Vorbedingung: „Paket anlegen“ (Vorauswahl feature). Aktion: Typ auf
+        bug und danach auf feedback stellen. Erwartung: die Auswahl folgt
+        jeweils; das Feld bleibt das einzige Typfeld (keine Kategorie).
         """
         self.write_store([])
         self.goto_work()
-        editor = self.open_new("bug")
-        self.assertEqual("bug", self.ticket_type_select(editor).input_value())
-        category = editor.locator("[data-nv-field='category']").first
-        self.assertGreaterEqual(category.count(), 1, "Keine Kategorie-Auswahl")
-        self.assertEqual("feature", category.input_value(),
-                         "Die Tickettyp-Vorauswahl hat die Kategorie überschrieben")
+        editor = self.open_new("package")
+        select = self.ticket_type_select(editor)
+        self.assertEqual("feature", select.input_value())
+        for value in ("bug", "feedback"):
+            with self.subTest(value=value):
+                select.select_option(value)
+                self.assertEqual(value, select.input_value(),
+                                 "Der Typ lässt sich nicht auf %s ändern" % value)
+        self.assertEqual(0, editor.locator("[data-nv-field='category']").count(),
+                         "Das Kategorie-Feld besteht weiterhin")
 
     def test_24_changed_ticket_type_is_saved(self):
-        """AP4: geänderter Tickettyp wird gespeichert, nicht die Vorauswahl.
+        """B1/B+C: geänderter Tickettyp wird gespeichert, nicht die Vorauswahl.
 
         Vorbedingung: Bug-Button, dann auf feedback ändern; und Paket-Button,
         dann auf bug ändern. Aktion: Titel füllen und speichern. Erwartung:
@@ -1177,29 +1193,30 @@ class GH67WorkBrowserTest(unittest.TestCase):
 
     # =============================================== 7. Lokalisierung
     def test_30_english_work_texts_are_translated(self):
-        """AP3: englische Standardtexte vollständig, keine Rohschlüssel.
+        """AP3/B1: englische Standardtexte vollständig, keine Rohschlüssel.
 
         Vorbedingung: leerer Store, Englisch aktiv. Aktion: Formular öffnen,
-        Priorisierung (mobile) und Work-Text lesen. Erwartung: Kategorie/
-        Tickettyp beschriftet, Zähler englisch, keine „undefined“/„[object“.
+        Priorisierung (mobile) und Work-Text lesen. Erwartung: Tickettyp
+        beschriftet, keine Kategorie mehr, keine „undefined“/„[object“.
         """
         self.write_store([ticket("AP1", "Ready")])
         self.goto_work()
         editor = self.open_new("package")
         editor_text = editor.inner_text()
-        self.assertIn("Category", editor_text,
-                      "Die Kategorie ist im englischen UI nicht übersetzt")
         self.assertIn("Ticket", editor_text,
                       "Der Tickettyp ist im englischen UI nicht beschriftet")
+        self.assertNotIn("Category", editor_text,
+                         "Die entfernte Kategorie wird weiterhin angezeigt")
         self.assertNotRegex(editor_text, r"undefined|\[object",
                             "Das Formular enthält technische Platzhalter")
 
     def test_31_german_work_texts_are_translated(self):
-        """AP3: deutsche Texte für Kategorie, Tickettyp und Zähler.
+        """AP3/B1: deutsche Texte für Tickettyp und Zähler.
 
         Vorbedingung: Ready-Ticket, I18N.set('de'). Aktion: Formular öffnen,
-        mobile Priorisierung lesen. Erwartung: deutsche Beschriftungen,
-        deutscher Zähler mit korrekter Zahl, keine Rohschlüssel.
+        mobile Priorisierung lesen. Erwartung: deutsche Beschriftung des
+        Tickettyps, keine Kategorie, deutscher Zähler mit korrekter Zahl,
+        keine Rohschlüssel.
         """
         self.write_store([ticket("AP1", "Ready"), ticket("AP2", "Ready2")])
         self.set_priority(["AP1", "AP2"])
@@ -1209,10 +1226,10 @@ class GH67WorkBrowserTest(unittest.TestCase):
             "() => (window.VIBE_I18N || window.I18N).current()"))
         editor = self.open_new("package")
         editor_text = editor.inner_text()
-        self.assertIn("Kategorie", editor_text,
-                      "Die Kategorie ist auf Deutsch nicht übersetzt")
         self.assertRegex(editor_text, r"Ticket ?typ|Ticketart|Tickettyp",
                          "Der Tickettyp ist auf Deutsch nicht übersetzt")
+        self.assertNotIn("Kategorie", editor_text,
+                         "Die entfernte Kategorie wird weiterhin angezeigt")
         self.assertNotRegex(editor_text, r"undefined|\[object",
                             "Das Formular enthält technische Platzhalter")
         self.page.keyboard.press("Escape")
@@ -1227,11 +1244,11 @@ class GH67WorkBrowserTest(unittest.TestCase):
         self.assertNotIn("priotized", text.lower())
 
     def test_32_internal_ids_and_states_stable_across_languages(self):
-        """AP3: interne IDs/Statuswerte bleiben in beiden Sprachen unverändert.
+        """AP3/B1: interne IDs/Statuswerte bleiben in beiden Sprachen unverändert.
 
-        Vorbedingung: Englisch. Aktion: Kategorie-/Tickettyp-Optionen und
-        data-nv-state lesen, auf Deutsch umstellen, erneut lesen. Erwartung:
-        options values feature/bug/feedback/task und Rohzustände identisch.
+        Vorbedingung: Englisch. Aktion: Tickettyp-Optionen und data-nv-state
+        lesen, auf Deutsch umstellen, erneut lesen. Erwartung: options values
+        feature/bug/feedback und Rohzustände identisch.
         """
         self.write_store([
             ticket("AP3", "Draft", state="draft"),
@@ -1244,16 +1261,10 @@ class GH67WorkBrowserTest(unittest.TestCase):
                 self.set_lang(lang)
                 editor = self.open_new("package")
                 try:
-                    category = editor.locator("[data-nv-field='category']").first
-                    values = category.locator("option").evaluate_all(
-                        "els => els.map(e => e.value)")
-                    self.assertEqual(expected, set(values),
-                                     "Interne Kategorie-IDs ändern sich mit der Sprache")
-                    types = self.ticket_type_select(editor).locator(
+                    values = self.ticket_type_select(editor).locator(
                         "option").evaluate_all("els => els.map(e => e.value)")
-                    self.assertEqual({"task", "bug", "feature", "feedback"},
-                                     set(types),
-                                     "Interne Tickettyp-IDs ändern sich mit der Sprache")
+                    self.assertEqual(expected, set(values),
+                                     "Interne Typ-IDs ändern sich mit der Sprache")
                 finally:
                     self.page.keyboard.press("Escape")
                     self.wait_until(lambda: not self.editor().is_visible(),
@@ -1263,11 +1274,12 @@ class GH67WorkBrowserTest(unittest.TestCase):
 
     # ============================================ 8. Dialogaktionen
     def test_33_cancel_discards_changes(self):
-        """AP7: „Cancel“ speichert nichts – mit und ohne Änderungen.
+        """AP7/B1: „Cancel“ speichert nichts und lässt den Zustand in Ruhe.
 
-        Vorbedingung: Ticket „Original“. Aktion: (a) Editor ohne Änderung
-        abbrechen, (b) Titel ändern und abbrechen. Erwartung: Editor schließt,
-        Store-Titel bleibt in beiden Fällen unverändert.
+        Vorbedingung: Ticket „Original“ im Zustand draft. Aktion: (a) Editor
+        ohne Änderung abbrechen, (b) Titel ändern und abbrechen. Erwartung:
+        Editor schließt, Store-Titel bleibt in beiden Fällen unverändert und
+        der Zustand bleibt draft (kein automatischer in-progress-Wechsel).
         """
         self.write_store([ticket("AP1", "Original", state="draft")])
         self.goto_work()
@@ -1282,19 +1294,19 @@ class GH67WorkBrowserTest(unittest.TestCase):
                                 message="Cancel schließt den Editor nicht")
                 self.assertEqual("Original", self.read_store()["AP1"]["title"],
                                  "Cancel hat Änderungen gespeichert")
-                # GH-67 Zusatz: der Statuswechsel passiert bereits beim Öffnen
-                # und bleibt auch nach dem Abbruch erhalten.
                 self.assertEqual(
-                    "in-progress", self.read_store()["AP1"]["state"],
-                    "Cancel hat den automatischen Statuswechsel zurückgenommen")
+                    "draft", self.read_store()["AP1"]["state"],
+                    "Cancel hat den Zustand verändert (B1: der Editor darf "
+                    "keinen automatischen Wechsel auslösen)")
 
     def test_34_close_button_naming_and_confirmation(self):
-        """AP7: destruktiver Close eindeutig benannt, confirm, Abbruch.
+        """AP7/B1: destruktiver Close eindeutig benannt, confirm, Abbruch.
 
         Vorbedingung: offenes Ticket. Aktion: Label prüfen; Close mit
         abgelehntem und danach bestätigtem Dialog klicken. Erwartung: Label
-        weist auf dauerhaftes Schließen hin; Abbruch ändert nichts; Bestätigung
-        speichert state=done.
+        weist auf dauerhaftes Schließen hin; Abbruch ändert nichts (Zustand
+        bleibt open, der Editor löst keinen Wechsel aus); Bestätigung speichert
+        state=done.
         """
         self.write_store([ticket("AP1", "Abschluss GH67")])
         self.goto_work()
@@ -1313,73 +1325,81 @@ class GH67WorkBrowserTest(unittest.TestCase):
         close.click()
         self.wait_until(lambda: len(self.dialogs) == 1,
                         message="Close fragt nicht per confirm nach")
-        self.assertEqual("in-progress", self.read_store()["AP1"]["state"],
+        self.assertEqual("open", self.read_store()["AP1"]["state"],
                          "Der abgebrochene Dialog hat trotzdem geschlossen "
-                         "(Öffnen des Editors setzt in-progress)")
+                         "oder der Editor hat den Zustand verändert")
         self.dialog_policy = [True]
         editor = self.open_ticket_editor("AP1") if not self.editor().is_visible() else self.editor()
         editor.locator("button[data-nv-action='ticket-close']").first.click()
         self.wait_until(lambda: self.read_store()["AP1"]["state"] == "done",
                         message="Bestätigtes Close speichert nicht state=done")
 
-    # ============================ 9. Auto-Statuswechsel beim Bearbeiten
-    def test_35_open_editor_from_draft_sets_in_progress(self):
-        """Vorbedingung: Ticket im Zustand draft. Aktion: Details → Bearbeiten.
+    # ============================ 9. Editor ändert den Zustand nie (B1/D)
+    def test_35_open_editor_from_draft_keeps_draft(self):
+        """B1/D: das Öffnen des Editors setzt kein in-progress mehr.
 
-        Erwartung: das Öffnen des Editors setzt Store state=in-progress und
-        verschiebt die Karte lokal in article[data-nv-col='running'] mit
-        data-nv-state='in-progress' und Badge „In Progress“. Nicht erst das
-        Speichern löst den Wechsel aus.
+        Vorbedingung: Ticket im Zustand draft. Aktion: Details → Bearbeiten,
+        kurz warten. Erwartung: Store bleibt draft, die Karte bleibt in
+        ``article[data-nv-col='draft']`` mit data-nv-state='draft'; kein
+        Voll-Neuladen. Zustandswechsel gibt es nur noch ausdrücklich über
+        Board, Detail-Auswahl und Drag&Drop.
         """
         self.write_store([ticket("AP3", "Draft in Bearbeitung", state="draft")])
         self.goto_work()
         self.board().wait_for(state="visible", timeout=5000)
         self.set_marker()
         self.open_ticket_editor("AP3")
-        self.wait_until(
-            lambda: self.read_store()["AP3"]["state"] == "in-progress",
-            message="Das Öffnen des Editors speichert nicht state=in-progress")
-        self.assert_marker_alive()
-        self.wait_until(
-            lambda: self.col("running").locator(
-                "article[data-nv-ticket='AP3']").count() == 1,
-            message="Die Karte ist nicht in die Spalte running gewechselt")
+        self.page.wait_for_timeout(500)
         self.assertEqual(
-            "in-progress", self.card("AP3").get_attribute("data-nv-state"),
-            "Die Karte trägt nicht den Rohzustand in-progress")
-        self.assertIn("in progress", self.card_state_text("AP3").lower(),
-                      "Die Karte zeigt kein Badge „In Progress“")
+            "draft", self.read_store()["AP3"]["state"],
+            "Das Öffnen des Editors hat den Zustand automatisch geändert")
+        self.assert_marker_alive()
+        self.assertEqual(
+            1, self.col("draft").locator(
+                "article[data-nv-ticket='AP3']").count(),
+            "Die Draft-Karte wurde automatisch in eine andere Spalte bewegt")
+        self.assertEqual(
+            "draft", self.card("AP3").get_attribute("data-nv-state"),
+            "Die Karte trägt einen anderen Rohzustand")
+        self.assertNotIn("in progress", self.card_state_text("AP3").lower(),
+                         "Die Karte zeigt ein automatisches In-Progress-Badge")
+        self.page.keyboard.press("Escape")
+        self.wait_until(lambda: not self.editor().is_visible(),
+                        message="Der Editor lässt sich nicht schließen")
+        self.assertEqual("draft", self.read_store()["AP3"]["state"],
+                         "Escape/Abbrechen hat den Zustand verändert")
 
-    def test_36_open_editor_from_open_sets_in_progress(self):
-        """Gleiche Regel für ein Ticket im Zustand open.
+    def test_36_open_editor_from_open_keeps_open(self):
+        """B1/D: gleiche Regel für ein Ticket im Zustand open.
 
-        Vorbedingung: Ticket state=open. Aktion: Editor öffnen. Erwartung:
-        Store und UI wechseln auf in-progress/running; kein Voll-Neuladen.
+        Vorbedingung: Ticket state=open. Aktion: Editor öffnen und abbrechen.
+        Erwartung: Store und Karte bleiben open/ready; kein Voll-Neuladen.
         """
         self.write_store([ticket("AP1", "Ready in Bearbeitung")])
         self.goto_work()
         self.board().wait_for(state="visible", timeout=5000)
         self.set_marker()
-        self.open_ticket_editor("AP1")
-        self.wait_until(
-            lambda: self.read_store()["AP1"]["state"] == "in-progress",
-            message="Ein offenes Ticket wechselt beim Öffnen nicht auf "
-                    "state=in-progress")
+        editor = self.open_ticket_editor("AP1")
+        self.page.wait_for_timeout(500)
+        self.assertEqual(
+            "open", self.read_store()["AP1"]["state"],
+            "Ein offenes Ticket wechselt beim Öffnen des Editors den Zustand")
+        self.assertNotIn("in progress", self.card_state_text("AP1").lower(),
+                         "Die Karte zeigt ein automatisches In-Progress-Badge")
+        editor.locator("button[data-nv-action='ticket-cancel']").first.click()
+        self.wait_until(lambda: not self.editor().is_visible(),
+                        message="Cancel schließt den Editor nicht")
         self.assert_marker_alive()
-        self.wait_until(
-            lambda: self.col("running").locator(
-                "article[data-nv-ticket='AP1']").count() == 1,
-            message="Das offene Ticket ist nicht in die Spalte running gewechselt")
-        self.assertIn("in progress", self.card_state_text("AP1").lower(),
-                      "Die Karte zeigt kein Badge „In Progress“")
+        self.assertEqual("open", self.read_store()["AP1"]["state"],
+                         "Cancel hat den Zustand verändert")
 
-    def test_37_auto_state_change_keeps_search_and_filters(self):
-        """Der automatische Wechsel darf Suche und Filter nicht zurücksetzen.
+    def test_37_editor_does_not_reset_search_or_filters(self):
+        """B1/D: Öffnen/Abbrechen erhält DOM, Suche und Schnellfilter.
 
         Vorbedingung: zwei Tickets, Suchbegriff und Typ-Chip aktiv, Marker.
-        Aktion: Editor des passenden Tickets öffnen. Erwartung: Store
-        in-progress, Karte in running, Suche/aria-pressed unverändert,
-        DOM-Marker erhalten.
+        Aktion: Editor des passenden Tickets öffnen und abbrechen. Erwartung:
+        Store bleibt draft, Suche/aria-pressed unverändert, DOM-Marker
+        erhalten.
         """
         self.write_store([
             ticket("AP3", "Alpha in Arbeit", state="draft"),
@@ -1393,51 +1413,44 @@ class GH67WorkBrowserTest(unittest.TestCase):
         self.wait_until(lambda: chip.get_attribute("aria-pressed") == "true",
                         message="Der Filter ist nicht aktiv")
         self.set_marker()
-        self.open_ticket_editor("AP3")
-        self.wait_until(
-            lambda: self.read_store()["AP3"]["state"] == "in-progress",
-            message="Der automatische Statuswechsel wurde nicht gespeichert")
+        editor = self.open_ticket_editor("AP3")
+        self.page.wait_for_timeout(400)
+        self.assertEqual("draft", self.read_store()["AP3"]["state"],
+                         "Der Editor hat den Zustand automatisch geändert")
         self.assert_marker_alive()
         self.assertEqual("Alpha", search.input_value(),
                          "Der Suchbegriff ging beim Öffnen des Editors verloren")
         self.assertEqual("true", chip.get_attribute("aria-pressed"),
                          "Die Filtereinstellung ging beim Öffnen verloren")
-        self.wait_until(
-            lambda: self.col("running").locator(
-                "article[data-nv-ticket='AP3']").count() == 1,
-            message="Die Karte ist nicht in der Spalte running")
+        editor.locator("button[data-nv-action='ticket-cancel']").first.click()
+        self.wait_until(lambda: not self.editor().is_visible(),
+                        message="Cancel schließt den Editor nicht")
 
-    def test_38_auto_state_change_applies_even_on_cancel(self):
-        """Der Wechsel passiert beim Öffnen – auch bei anschließendem Cancel.
+    def test_38_editor_does_not_change_state_applies_even_on_cancel(self):
+        """B1/D: Abbrechen lässt Zustand und Titel unverändert.
 
         Vorbedingung: Draft-Ticket „Original“. Aktion: Editor öffnen, Titel
-        ändern, ticket-cancel klicken. Erwartung: state bleibt in-progress;
-        Titel bleibt „Original“; Karte bleibt in running.
+        ändern, ticket-cancel klicken. Erwartung: state bleibt draft; Titel
+        bleibt „Original“; Karte bleibt in der Draft-Spalte.
         """
         self.write_store([ticket("AP3", "Original", state="draft")])
         self.goto_work()
         self.board().wait_for(state="visible", timeout=5000)
         editor = self.open_ticket_editor("AP3")
-        self.wait_until(
-            lambda: self.read_store()["AP3"]["state"] == "in-progress",
-            message="Beim Öffnen wurde kein state=in-progress gespeichert")
-        if not self.editor().is_visible():
-            # Fällt eine Umsetzung den Editor nach dem Wechsel neu auf, wird
-            # er erneut geöffnet (in-progress löst keinen zweiten Wechsel aus).
-            editor = self.open_ticket_editor("AP3")
         editor.locator("input[data-nv-field='title']").first.fill(
             "Nur lokal geändert")
         editor.locator("button[data-nv-action='ticket-cancel']").first.click()
         self.wait_until(lambda: not self.editor().is_visible(),
                         message="Cancel schließt den Editor nicht")
-        self.assertEqual("in-progress", self.read_store()["AP3"]["state"],
-                         "Cancel hat den automatischen Wechsel rückgängig gemacht")
+        self.assertEqual("draft", self.read_store()["AP3"]["state"],
+                         "Cancel hat den Zustand verändert")
         self.assertEqual("Original", self.read_store()["AP3"]["title"],
                          "Cancel hat die Titeländerung gespeichert")
-        self.wait_until(
-            lambda: self.col("running").locator(
-                "article[data-nv-ticket='AP3']").count() == 1,
-            message="Die Karte ist nach Cancel nicht mehr in running")
+        self.assertEqual(
+            1, self.col("draft").locator(
+                "article[data-nv-ticket='AP3']").count(),
+            "Die Karte ist nach Cancel nicht mehr in der Draft-Spalte")
+
 
     def test_39_new_ticket_editor_does_not_auto_change_state(self):
         """Neue Tickets werden beim Öffnen nicht auf in-progress gesetzt.

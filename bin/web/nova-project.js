@@ -870,34 +870,12 @@ function nvpResumeTicket(name, token, session) {
     });
 }
 
-/* GH-67: Das Bearbeiten eines noch nicht begonnenen Tickets startet die
-   Umsetzung. Nur der Status wird gesetzt; Formularfelder bleiben unberührt,
-   und die Karte wird lokal nachgezogen (kein NV.render). */
-function nvpStartTicketProgress(name, token, id) {
-  return api('/api/ticket', {name: name, action: 'state', id: id,
-    state: 'in-progress'}).then(function (result) {
-    if (NV.stale(token)) return;
-    if (!result || result.ok === false) {
-      toast(bt(result && result.message) || tr('Statuswechsel fehlgeschlagen'));
-      return;
-    }
-    var card = nvpFindCard(id);
-    if (card) nvpSyncCardState(name, token, card, 'in-progress');
-  }).catch(function (error) {
-    if (!NV.stale(token)) {
-      toast(tr('Statuswechsel fehlgeschlagen: ')
-        + String(error && error.message || error));
-    }
-  });
-}
-
 /* Der Ticket-Editor nutzt die geteilte Bearbeitungsansicht (GH-57), erhält
    aber die breitere Vollhöhen-Variante und den Marker data-nv-ticket-editor. */
 function nvpOpenTicketForm(name, token, options) {
   var opts = options || {};
   var mode = opts.mode || 'package';
   var editing = !!opts.id;
-  var editState = editing ? nvpRawState({state: opts.state}) : '';
   var titleInput = el('input', {'data-nv-field': 'title', type: 'text',
     value: opts.title || '', 'aria-label': tr('Titel')});
   var descInput = el('textarea', {'data-nv-field': 'description', rows: '4',
@@ -912,25 +890,17 @@ function nvpOpenTicketForm(name, token, options) {
     idInput.value = nvpSuggestId(opts.rows,
       mode === 'bug' ? 'B' : mode === 'feedback' ? 'F' : 'AP');
   }
-  /* GH-67: Kategorie (GitHub-Label) und Tickettyp sind getrennte Felder.
-     Die Kategorie bleibt bei der Vorauswahl des Typs unverändert feature. */
-  var categorySelect = null;
+  /* B1: Genau ein Typfeld (feature/bug/feedback); die frühere Kategorie ist
+     entfallen. Der interne Typ task bleibt Speicher-kompatibel, wird aber
+     nicht mehr angeboten. */
   var typeSelect = null;
   if (!editing) {
-    categorySelect = el('select', {'data-nv-field': 'category',
-      'aria-label': tr('Kategorie')});
-    categorySelect.append(el('option', {value: 'feature'}, tr('Feature')));
-    categorySelect.append(el('option', {value: 'bug'}, tr('Bug')));
-    categorySelect.append(el('option', {value: 'feedback'}, tr('Feedback')));
-    categorySelect.value = 'feature';
-
     var defaultType = opts.type
-      || (mode === 'bug' ? 'bug' : mode === 'feedback' ? 'feedback' : 'task');
+      || (mode === 'bug' ? 'bug' : mode === 'feedback' ? 'feedback' : 'feature');
     typeSelect = el('select', {'data-nv-field': 'ticket-type',
       'aria-label': tr('Ticket Type')});
-    typeSelect.append(el('option', {value: 'task'}, tr('Paket')));
-    typeSelect.append(el('option', {value: 'bug'}, tr('Bug')));
     typeSelect.append(el('option', {value: 'feature'}, tr('Feature')));
+    typeSelect.append(el('option', {value: 'bug'}, tr('Bug')));
     typeSelect.append(el('option', {value: 'feedback'}, tr('Feedback')));
     typeSelect.value = defaultType;
   }
@@ -954,7 +924,6 @@ function nvpOpenTicketForm(name, token, options) {
     idHint,
     nvpLabel(tr('Titel'), titleInput),
     nvpLabel(tr('Beschreibung'), descInput),
-    categorySelect ? nvpLabel(tr('Kategorie'), categorySelect) : null,
     typeSelect ? nvpLabel(tr('Tickettyp'), typeSelect) : null,
     stateSelect ? nvpLabel(tr('Zustand'), stateSelect) : null,
     el('div', {class: 'nv-row'},
@@ -975,11 +944,9 @@ function nvpOpenTicketForm(name, token, options) {
             title: cleanTitle,
             description: String(descInput.value || '')
           };
-          var selectedType = typeSelect ? String(typeSelect.value || 'task') : '';
+          var selectedType = typeSelect ? String(typeSelect.value || 'feature') : '';
           var path = '/api/ticket';
-          if (editing) {
-            if (mode === 'bug' || mode === 'feedback') path = '/api/feedback';
-          } else if (selectedType === 'bug' || selectedType === 'feedback') {
+          if (editing && (mode === 'bug' || mode === 'feedback')) {
             path = '/api/feedback';
           }
           if (editing) {
@@ -988,13 +955,8 @@ function nvpOpenTicketForm(name, token, options) {
           } else {
             body.action = 'add';
             body.type = selectedType;
-            if (selectedType === 'bug' || selectedType === 'feedback') {
-              body.kind = selectedType;
-            } else {
-              body.id = String(idInput.value || '');
-            }
-            if (categorySelect) body.category = String(categorySelect.value || '');
-            /* GH-56: Neue Tickets sind immer Entwürfe. */
+            body.id = String(idInput.value || '');
+            /* GH-56/B1: Neue Tickets sind immer Entwürfe. */
             body.state = 'draft';
           }
           try {
@@ -1031,9 +993,6 @@ function nvpOpenTicketForm(name, token, options) {
     marker: 'data-nv-ticket-editor',
     content: el('div', {'data-nv-ticket-form-wrap': ''}, form)
   });
-  if (editing && (editState === 'draft' || editState === 'open')) {
-    nvpStartTicketProgress(name, token, String(idInput.value || ''));
-  }
   titleInput.focus();
 }
 
@@ -2435,7 +2394,7 @@ NV.views.project = async function project(context, token) {
   /* ---- Arbeit: Aktionsleiste → Filter → Priorisierung → Board/Liste ---- */
   var newRow = el('div', {class: 'nv-row nv-work-actions'},
     nvpButton(tr('Paket anlegen'), 'new-package', function () {
-      nvpOpenTicketForm(name, token, {mode: 'package', type: 'task',
+      nvpOpenTicketForm(name, token, {mode: 'package', type: 'feature',
         rows: tickets});
     }, 'nv-primary'),
     nvpButton(tr('Bug melden'), 'new-bug', function () {

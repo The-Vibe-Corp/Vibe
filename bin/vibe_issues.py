@@ -457,24 +457,25 @@ def delete_ticket_connected(project, config, ticket_id):
             + " geschlossen.")
 
 
-def add_ticket_connected(project_path, config, title, description, category,
-                         draft, type=None):
+def add_ticket_connected(project_path, config, title, description, ttype,
+                         draft):
     """Legt im verbundenen Projekt zuerst das Issue an, dann das Speicher-Ticket.
 
-    ``category`` ist ``bug``/``feature``/``feedback`` und bestimmt das
-    GitHub-Label. ``draft`` (Standard True) lässt das Ready-Label weg und legt
-    das Ticket als ``state=draft`` an. ``type`` ist optional und überschreibt
-    den aus der Kategorie abgeleiteten Tickettyp, sofern er ein bekannter
-    Tickettyp ist (GH-67: Kategorie und Tickettyp sind getrennt). Schlägt die
+    ``ttype`` ist der eine Tickettyp (``bug``/``feature``/``feedback``/``task``)
+    und bestimmt zugleich das GitHub-Typ-Label (nur bug/feature/feedback; task
+    erhält kein Typ-Label) und den Speichertyp. ``draft`` (Standard True) lässt
+    das Ready-Label weg und legt das Ticket als ``state=draft`` an. Schlägt die
     Issue-Anlage fehl, bleibt der Ticketspeicher unverändert (wirft).
     """
     project = str(project_path)
     title = " ".join(str(title or "").split())
     if not title:
         raise ValueError("Titel fehlt")
+    if ttype not in vibe_tickets.TYPES:
+        raise ValueError("Unbekannter Tickettyp: " + str(ttype))
     labels = []
-    if category in ("bug", "feature", "feedback"):
-        labels.append(category)
+    if ttype in ("bug", "feature", "feedback"):
+        labels.append(ttype)
     if not draft:
         labels.append(config["issues_ready_label"])
     assignee = str(config.get("issues_assignee") or "").strip()
@@ -485,12 +486,7 @@ def add_ticket_connected(project_path, config, title, description, category,
     if not number:
         raise vibe_github.GitHubError("Issue-Anlage lieferte keine Nummer.")
 
-    typ = "bug" if category == "bug" else (
-        "feature" if category == "feature" else (
-            "feedback" if category == "feedback" else "task"))
-    if type in vibe_tickets.TYPES:
-        typ = type
     state = "draft" if draft else "open"
     vibe_tickets._insert(project, _gh_ticket(
-        number, title, description, typ, state))
+        number, title, description, ttype, state))
     return "GH-" + str(number)

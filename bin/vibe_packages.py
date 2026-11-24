@@ -48,6 +48,21 @@ def _github_module():
             "Installation (" + str(error) + ")") from error
     return vibe_github
 
+
+def _issues_module():
+    """Lädt den Issues-Sync träge (B1).
+
+    Wie :func:`_github_module`: In Teilinstallationen darf ``vibe_issues.py``
+    fehlen; die übrigen Subkommandos (gate, copy-notes, select) dürfen davon
+    nicht beeinträchtigt werden."""
+    try:
+        import vibe_issues  # pylint: disable=import-outside-toplevel
+    except ImportError as error:
+        raise SystemExit(
+            "Issues-Sync nicht verfügbar: vibe_issues.py fehlt in der "
+            "Installation (" + str(error) + ")") from error
+    return vibe_issues
+
 # F22: Ein blockierter Preflight darf den Nutzer über F16 nach einer
 # Entscheidung fragen. Die Assistenz ist nur im Produktpfad ``vibe run``
 # aktiv; ein direkter Läuferaufruf und Tests ohne die Variable bleiben beim
@@ -1099,6 +1114,44 @@ def mark_waiting_merge(project, pid, note, pr_url=""):
     return True, "Ticket " + pid + " wartet auf den Merge."
 
 
+def mark_start(project, pid):
+    """Setzt ``state=in-progress`` am offenen Ticket (idempotent).
+
+    ``mark_start`` ist der einzige automatische Übergang ``open`` →
+    ``in-progress`` (B1): Der Läufer markiert den Bearbeitungsbeginn, die
+    Oberfläche ändert weiterhin nie einen Zustand. Bei aktivem Issues-Sync und
+    GitHub-Bezug wird zusätzlich das In-Progress-Label am Issue gesetzt
+    (GH-47); ein REST-Fehlschlag lässt den lokalen Zustand trotzdem wechseln
+    (best effort, der Sync gleicht das Label später ab). Liefert
+    ``(changed, message)``.
+    """
+    project = Path(project)
+    record = vibe_tickets.find(vibe_tickets.load(project), pid)
+    if record is None:
+        return False, "Ticket " + pid + " fehlt im Ticketspeicher."
+    if record.get("state") == "in-progress":
+        return False, "Ticket " + pid + " ist bereits in Bearbeitung."
+    if record.get("state") != "open":
+        return False, ("Ticket " + pid + " wird nicht gestartet "
+                       "(nur offene Tickets beginnen die Bearbeitung).")
+
+    github = _github_module()
+    config = github.read_config(project / ".vibe" / "project.env")
+    number = record.get("github")
+    if config.get("issues_enabled") and number is not None:
+        try:
+            _issues_module().set_issue_state(project, config, pid, "in-progress")
+        except github.GitHubError:
+            vibe_tickets.update(project, pid, state="in-progress")
+            return True, ("Ticket " + pid + " lokal in Bearbeitung gesetzt; "
+                          "das GitHub-Label konnte nicht gesetzt werden "
+                          "(best effort, der Sync gleicht später ab).")
+        return True, "Ticket " + pid + " in Bearbeitung."
+
+    vibe_tickets.update(project, pid, state="in-progress")
+    return True, "Ticket " + pid + " in Bearbeitung."
+
+
 def review_order(path):
     """Sortierschlüssel für ``<ID>-review-N.md``; höhere Nummer ist neuer."""
     match = re.search(r"-review-?(\d+)", path.name)
@@ -1500,6 +1553,17 @@ def command_mark_waiting(args):
     return EXIT_OK if changed else EXIT_NONE
 
 
+def command_mark_start(args):
+    """Befehl ``mark-start``: vermerkt den Bearbeitungsbeginn eines Pakets (B1).
+
+    Nur ``open`` → ``in-progress``; idempotent und nicht blockierend. Der
+    Läufer ruft ihn nach der Worktree-Registrierung auf.
+    """
+    changed, message = mark_start(args.project, args.id)
+    print(("OK: " if changed else "HINWEIS: ") + message)
+    return EXIT_OK if changed else EXIT_NONE
+
+
 def command_classify(args):
     """Befehl ``classify``: ordnet einen Agentenfehler einer Kategorie zu."""
     text = ""
@@ -1727,6 +1791,14 @@ def build_parser():
     mark_waiting_parser.add_argument("--note", required=True)
     mark_waiting_parser.add_argument("--pr-url", default="")
     mark_waiting_parser.set_defaults(handler=command_mark_waiting)
+
+    mark_start_parser = subparsers.add_parser(
+        "mark-start",
+        help="Bearbeitungsbeginn eines Pakets vermerken (open → in-progress)",
+    )
+    mark_start_parser.add_argument("--project", required=True)
+    mark_start_parser.add_argument("--id", required=True)
+    mark_start_parser.set_defaults(handler=command_mark_start)
 
     status = subparsers.add_parser("status", help="Paketstand ausgeben")
     status.add_argument("--project", required=True)

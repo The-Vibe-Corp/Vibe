@@ -1020,7 +1020,6 @@
         /* AP3-Korbat: GitHub-Issues-Sync (Zustände, Karte, Formular). */
         "In Progress": "In Progress",
         "Entwurf": "Draft",
-        "Kategorie": "Category",
         "Feature": "Feature",
         "In-Progress-Label": "In-progress label",
         "Ready-Label": "Ready label",
@@ -2143,7 +2142,6 @@
         /* AP3-Korbat: GitHub-Issues-Sync (Zustände, Karte, Formular). */
         "In Progress": "In Bearbeitung",
         "Entwurf": "Entwurf",
-        "Kategorie": "Kategorie",
         "Feature": "Feature",
         "In-Progress-Label": "In-Progress-Label",
         "Ready-Label": "Ready-Label",

@@ -11,7 +11,7 @@ GH-48 (§4 ``bin/vibe_packages.py``). Geprüft werden:
   Sauberkeitsprüfungen.
 * ``sync_ticket``: Übernahme von state/commit/test/pr_url, Räumung der
   Blockier-/Wartefelder, ``require_commit=False``.
-* ``mark_blocked``/``mark_waiting_merge``/``status_report``.
+* ``mark_blocked``/``mark_waiting_merge``/``mark_start``/``status_report``.
 * ``priority_view``/``normalize_order``.
 * ``copy_work_notes`` (nur AGENTS.md), ``transport_ticket``,
   ``copy-notes --id``, ``is_work_note_path`` und ``ensure_project_exclude``.
@@ -30,7 +30,10 @@ import os
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
+import urllib.parse
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -73,6 +76,64 @@ def ticket(tid, title, type="task", state="open", **extra):
     }
     record.update(extra)
     return record
+
+
+class _IssueHandler(BaseHTTPRequestHandler):
+    """Loopback-Fake für ``set_issue_state`` (GET Issue, PATCH Labels)."""
+
+    def log_message(self, *args):
+        return
+
+    def _record(self, body=b""):
+        self.server.requests.append({
+            "method": self.command,
+            "path": self.path,
+            "body": json.loads(body.decode("utf-8")) if body else None,
+        })
+
+    def _respond(self, status, payload):
+        raw = json.dumps(payload).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(raw)))
+        self.end_headers()
+        self.wfile.write(raw)
+
+    def _number(self):
+        return int(urllib.parse.urlparse(self.path).path.rsplit("/", 1)[1])
+
+    def do_GET(self):
+        self._record()
+        number = self._number()
+        issue = self.server.issues.get(number)
+        if issue is None:
+            self._respond(404, {"message": "Not Found"})
+            return
+        self._respond(200, issue)
+
+    def do_PATCH(self):
+        length = int(self.headers.get("Content-Length") or 0)
+        raw = self.rfile.read(length) if length else b""
+        self._record(raw)
+        if self.server.fail_patch:
+            self._respond(500, {"message": "simulierter GitHub-Fehler"})
+            return
+        number = self._number()
+        issue = self.server.issues.get(number)
+        if issue is None:
+            self._respond(404, {"message": "Not Found"})
+            return
+        payload = json.loads(raw.decode("utf-8")) if raw else {}
+        if "labels" in payload:
+            issue["labels"] = [{"name": name}
+                               for name in payload.get("labels") or []]
+        self._respond(200, issue)
+
+    def do_POST(self):
+        length = int(self.headers.get("Content-Length") or 0)
+        raw = self.rfile.read(length) if length else b""
+        self._record(raw)
+        self._respond(201, {"number": 999, "title": "unerwartet"})
 
 
 class RunnerCase(unittest.TestCase):
@@ -532,6 +593,260 @@ class MarkAndReportTest(RunnerCase):
         self.assertEqual(["AP4"], report["waiting"])
         self.assertEqual(["AP3"], report["blocked"])
         self.assertEqual(["AP5"], report["done"])
+
+
+class MarkStartedTest(RunnerCase):
+    """B1/Anforderung 4: der Läufer markiert den Bearbeitungsbeginn.
+
+    ``mark_start(project, pid)`` ist der einzige automatische Übergang
+    open → in-progress. Er gehört zum Läufer-Lebenszyklus, nicht zum Editor:
+    die UI ändert weiterhin nie einen Zustand. Der Loopback-Fake ersetzt
+    GitHub; es gibt keine echten Netzzugriffe.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), _IssueHandler)
+        self.httpd.requests = []
+        self.httpd.issues = {
+            501: {"number": 501, "title": "Remote", "state": "open",
+                  "labels": [{"name": "ready"}]},
+        }
+        self.httpd.fail_patch = False
+        self.thread = threading.Thread(target=self.httpd.serve_forever,
+                                       daemon=True)
+        self.thread.start()
+        self.addCleanup(self._stop_github)
+        self.github_base = ("http://127.0.0.1:%d"
+                            % self.httpd.server_address[1])
+
+    def _stop_github(self):
+        self.httpd.shutdown()
+        self.httpd.server_close()
+        self.thread.join(timeout=5)
+
+    # ------------------------------------------------------------- Helfer
+    def write_issues_env(self):
+        self.env_path.write_text(
+            "TYPE=generic\n"
+            'GITHUB_ENABLED="1"\n'
+            'GITHUB_REPO="owner/name"\n'
+            'GITHUB_API="%s"\n'
+            'GITHUB_ISSUES_ENABLED="1"\n' % self.github_base,
+            encoding="utf-8")
+
+    def run_cli(self, *args):
+        env = {key: value for key, value in os.environ.items()
+               if not key.startswith("VIBE")
+               and key not in ("GITHUB_TOKEN", "GH_TOKEN")}
+        (self.root / "home").mkdir(exist_ok=True)
+        env.update({
+            "HOME": str(self.root / "home"),
+            "VIBE": str(self.root),
+            "VIBE_STORAGE_LOCK_DIR": str(self.root / "locks"),
+            "VIBE_NO_CONTAINER": "1",
+        })
+        return subprocess.run(
+            [sys.executable, str(MODULE), *args],
+            cwd=str(self.root), env=env, stdin=subprocess.DEVNULL,
+            capture_output=True, text=True, timeout=60)
+
+    def store_bytes(self):
+        return (self.project / ".vibe" / "tickets.json").read_bytes()
+
+    def patches(self):
+        return [call for call in self.httpd.requests
+                if call["method"] == "PATCH"]
+
+    # -------------------------------------------------------------- Fälle
+    def test_open_becomes_in_progress_and_cli_reports_ok(self):
+        """Vor: AP1 und AP2 offen, nicht verbunden. Aktion: mark_start (AP1)
+        und CLI ``mark-start`` (AP2). Erwartet: beide in-progress,
+        changed=True bzw. Exit 0 mit OK-Zeile."""
+        self.store(ticket("AP1", "Eins"), ticket("AP2", "Zwei"))
+
+        changed, message = requires(self.module, "mark_start")(
+            self.project, "AP1")
+        self.assertTrue(changed, message)
+        self.assertEqual("in-progress", self.records()["AP1"]["state"])
+
+        result = self.run_cli("mark-start", "--project", str(self.project),
+                              "--id", "AP2")
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertIn("OK:", result.stdout)
+        self.assertEqual("in-progress", self.records()["AP2"]["state"])
+
+    def test_already_in_progress_is_idempotent_and_cli_reports_hint(self):
+        """Vor: AP1/AP2 bereits in-progress. Aktion: mark_start und CLI.
+        Erwartet: Speicher bytegleich, changed=False, CLI-Exit 1 mit
+        HINWEIS-Zeile."""
+        self.store(ticket("AP1", "Eins", state="in-progress"),
+                   ticket("AP2", "Zwei", state="in-progress"))
+        before = self.store_bytes()
+
+        changed, message = requires(self.module, "mark_start")(
+            self.project, "AP1")
+        self.assertFalse(changed, message)
+        self.assertIn("bereits", message.lower())
+        self.assertEqual(before, self.store_bytes())
+
+        result = self.run_cli("mark-start", "--project", str(self.project),
+                              "--id", "AP2")
+        self.assertEqual(1, result.returncode, result.stdout + result.stderr)
+        self.assertIn("HINWEIS:", result.stdout)
+        self.assertEqual(before, self.store_bytes())
+
+    def test_draft_is_not_started(self):
+        """Vor: AP1 draft. Aktion: mark_start. Erwartet: unverändert,
+        changed=False (nur open darf starten)."""
+        self.store(ticket("AP1", "Entwurf", state="draft"))
+        before = self.store_bytes()
+
+        changed, message = requires(self.module, "mark_start")(
+            self.project, "AP1")
+
+        self.assertFalse(changed, message)
+        self.assertEqual("draft", self.records()["AP1"]["state"])
+        self.assertEqual(before, self.store_bytes())
+
+    def test_done_blocked_and_waiting_merge_are_not_started(self):
+        """Vor: AP2 done, AP3 blocked, AP4 waiting-merge. Aktion: mark_start.
+        Erwartet: alle unverändert, changed=False."""
+        self.store(
+            ticket("AP2", "Fertig", state="done", commit="abcdef1",
+                   test="test_ap2"),
+            ticket("AP3", "Blockiert", state="blocked",
+                   blocked_reason="Grund"),
+            ticket("AP4", "Wartet", state="waiting-merge",
+                   waiting_note="PR"),
+        )
+        before = self.store_bytes()
+
+        for tid in ("AP2", "AP3", "AP4"):
+            with self.subTest(ticket=tid):
+                changed, message = requires(self.module, "mark_start")(
+                    self.project, tid)
+                self.assertFalse(changed, message)
+                self.assertEqual(before, self.store_bytes())
+
+    def test_missing_ticket_reports_the_store_gap(self):
+        """Vor: kein Ticket X9. Aktion: mark_start. Erwartet: changed=False,
+        Meldung „fehlt im Ticketspeicher“, Speicher unverändert."""
+        self.store(ticket("AP1", "Eins"))
+        before = self.store_bytes()
+
+        changed, message = requires(self.module, "mark_start")(
+            self.project, "X9")
+
+        self.assertFalse(changed, message)
+        self.assertIn("fehlt im Ticketspeicher", message)
+        self.assertEqual(before, self.store_bytes())
+
+    def test_connected_open_updates_the_in_progress_label(self):
+        """Vor: Issues-Sync aktiv, GH-Ticket mit github=501 und Ready-Label.
+        Aktion: mark_start. Erwartet: genau ein Label-PATCH mit
+        in-progress (Ready-Label bleibt), lokaler Zustand in-progress."""
+        self.write_issues_env()
+        self.store(ticket("GH-501", "Verbunden", github=501))
+
+        changed, message = requires(self.module, "mark_start")(
+            self.project, "GH-501")
+
+        self.assertTrue(changed, message)
+        self.assertEqual("in-progress", self.records()["GH-501"]["state"])
+        patches = self.patches()
+        self.assertEqual(1, len(patches), patches)
+        self.assertTrue(patches[0]["path"].rstrip("/").endswith("/issues/501"),
+                        patches)
+        labels = set(patches[0]["body"].get("labels") or [])
+        self.assertIn("in-progress", labels)
+        self.assertIn("ready", labels)
+
+    def test_connected_patch_failure_still_sets_the_local_state(self):
+        """Vor: Issues-Sync aktiv, github=501, PATCH antwortet 500. Aktion:
+        mark_start. Erwartet: lokaler Zustand in-progress, changed=True und
+        eine Meldung mit Best-effort-Hinweis (Sync gleicht später ab)."""
+        self.write_issues_env()
+        self.httpd.fail_patch = True
+        self.store(ticket("GH-501", "Verbunden", github=501))
+
+        changed, message = requires(self.module, "mark_start")(
+            self.project, "GH-501")
+
+        self.assertTrue(changed, message)
+        self.assertEqual("in-progress", self.records()["GH-501"]["state"])
+        text = message.lower()
+        self.assertTrue(any(term in text for term in
+                            ("best effort", "best-effort", "lokal", "github")),
+                        message)
+
+    def test_connected_ticket_without_github_reference_has_no_rest_call(self):
+        """Vor: Issues-Sync aktiv, AP1 ohne github-Bezug. Aktion: mark_start.
+        Erwartet: rein lokale Änderung in-progress, kein REST-Aufruf."""
+        self.write_issues_env()
+        self.store(ticket("AP1", "Lokal"))
+
+        changed, message = requires(self.module, "mark_start")(
+            self.project, "AP1")
+
+        self.assertTrue(changed, message)
+        self.assertEqual("in-progress", self.records()["AP1"]["state"])
+        self.assertEqual([], self.httpd.requests)
+
+    def test_transport_after_mark_start_carries_in_progress(self):
+        """Vor: AP1 offen, Arbeitskopie vorhanden. Aktion: mark_start, dann
+        transport_ticket. Erwartet: TICKET-AP1.json zeigt state in-progress –
+        die Reihenfolge mark-start vor copy-notes ist damit belegt."""
+        self.store(ticket("AP1", "Transport"))
+        worktree = self.add_worktree()
+
+        changed, message = requires(self.module, "mark_start")(
+            self.project, "AP1")
+        self.assertTrue(changed, message)
+        ok, _ = requires(self.module, "transport_ticket")(
+            self.project, worktree, "AP1")
+        self.assertTrue(ok)
+        carried = json.loads(
+            (worktree / "TICKET-AP1.json").read_text(encoding="utf-8"))
+        self.assertEqual("in-progress", carried["state"])
+
+    def test_two_calls_are_idempotent(self):
+        """Vor: AP1 offen. Aktion: mark_start zweimal. Erwartet: erster
+        changed=True, zweiter changed=False; Speicher nach dem zweiten
+        bytegleich zum Stand nach dem ersten."""
+        self.store(ticket("AP1", "Eins"))
+
+        first, first_message = requires(self.module, "mark_start")(
+            self.project, "AP1")
+        self.assertTrue(first, first_message)
+        after_first = self.store_bytes()
+
+        second, second_message = requires(self.module, "mark_start")(
+            self.project, "AP1")
+        self.assertFalse(second, second_message)
+        self.assertIn("bereits", second_message.lower())
+        self.assertEqual(after_first, self.store_bytes())
+
+    def test_runner_invokes_mark_start_between_register_and_copy_notes(self):
+        """Vor: Quelltext ``bin/vibe-run.sh``. Aktion: Positionen prüfen.
+        Erwartet: ``mark-start`` steht nach ``worktree-register`` und vor
+        ``copy-notes``; der Aufruf ist nicht blockierend (``|| true``).
+        Fehlerfall: kein Aufruf, falsche Reihenfolge oder blockierender
+        Fehlschlag."""
+        text = (REPO / "bin" / "vibe-run.sh").read_text(encoding="utf-8")
+        start = text.find("mark-start --project")
+        self.assertGreaterEqual(
+            start, 0, "vibe-run.sh ruft kein mark-start --project auf")
+        copy_notes = text.find("copy-notes")
+        self.assertGreater(copy_notes, start,
+                           "mark-start steht nicht vor copy-notes")
+        register = text.find("worktree-register")
+        self.assertGreaterEqual(register, 0)
+        self.assertLess(register, start,
+                        "mark-start steht vor worktree-register")
+        region = text[start:start + 220]
+        self.assertIn("|| true", region,
+                      "mark-start ist blockierend (kein '|| true'): " + region)
 
 
 class PriorityViewTest(RunnerCase):
