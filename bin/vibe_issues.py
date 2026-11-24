@@ -458,11 +458,14 @@ def delete_ticket_connected(project, config, ticket_id):
 
 
 def add_ticket_connected(project_path, config, title, description, category,
-                         draft):
+                         draft, type=None):
     """Legt im verbundenen Projekt zuerst das Issue an, dann das Speicher-Ticket.
 
-    ``category`` ist ``bug``/``feature``; ``draft`` (Standard True) lässt das
-    Ready-Label weg und legt das Ticket als ``state=draft`` an. Schlägt die
+    ``category`` ist ``bug``/``feature``/``feedback`` und bestimmt das
+    GitHub-Label. ``draft`` (Standard True) lässt das Ready-Label weg und legt
+    das Ticket als ``state=draft`` an. ``type`` ist optional und überschreibt
+    den aus der Kategorie abgeleiteten Tickettyp, sofern er ein bekannter
+    Tickettyp ist (GH-67: Kategorie und Tickettyp sind getrennt). Schlägt die
     Issue-Anlage fehl, bleibt der Ticketspeicher unverändert (wirft).
     """
     project = str(project_path)
@@ -470,7 +473,7 @@ def add_ticket_connected(project_path, config, title, description, category,
     if not title:
         raise ValueError("Titel fehlt")
     labels = []
-    if category in ("bug", "feature"):
+    if category in ("bug", "feature", "feedback"):
         labels.append(category)
     if not draft:
         labels.append(config["issues_ready_label"])
@@ -483,7 +486,10 @@ def add_ticket_connected(project_path, config, title, description, category,
         raise vibe_github.GitHubError("Issue-Anlage lieferte keine Nummer.")
 
     typ = "bug" if category == "bug" else (
-        "feature" if category == "feature" else "task")
+        "feature" if category == "feature" else (
+            "feedback" if category == "feedback" else "task"))
+    if type in vibe_tickets.TYPES:
+        typ = type
     state = "draft" if draft else "open"
     vibe_tickets._insert(project, _gh_ticket(
         number, title, description, typ, state))

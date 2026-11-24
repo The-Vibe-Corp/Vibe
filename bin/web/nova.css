@@ -1470,6 +1470,37 @@ label.nv-field input, label.nv-field select, label.nv-field textarea { max-width
   color: var(--nv-accent-soft-fg);
   font-weight: 600;
 }
+/* GH-67: Suche und Schnellfilter teilen eine Zeile, brechen sauber um und
+   überlaufen auch auf schmalen Viewports nicht horizontal. */
+.nv-filter-bar > [data-nv-search],
+.nv-filter-bar > .nv-row {
+  margin-bottom: 0;
+  min-width: 0;
+  max-width: 100%;
+}
+.nv-filter-bar > [data-nv-search] { flex: 1 1 18rem; }
+.nv-filter-bar [data-nv-search] input[type="search"] {
+  padding: var(--nv-space-1) var(--nv-space-3) var(--nv-space-1)
+    calc(var(--nv-space-5) + var(--nv-space-1));
+  border: 1px solid var(--nv-border);
+  border-radius: var(--nv-radius-sm);
+  background: var(--nv-surface);
+  color: var(--nv-text);
+  font: inherit;
+}
+.nv-work-show-done {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--nv-space-2);
+  margin-bottom: var(--nv-space-3);
+}
+.nv-priority-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 /* Kanban: drei gleichwertige Spalten, Karten als kompakte Kacheln. */
 [data-nv-board] {
@@ -1574,6 +1605,7 @@ aside[data-nv-ticket-editor] .nv-editview-body { padding-right: var(--nv-space-1
 
 @media (max-width: 768px) {
   [data-nv-board] { grid-template-columns: 1fr; }
+  .nv-filter-bar > [data-nv-search] { flex-basis: 100%; }
   [data-nv-work-list] .nv-btn,
   [data-nv-work-list] .nv-ticket-actions .nv-btn { min-height: 44px; }
   aside[data-nv-ticket-editor] {
