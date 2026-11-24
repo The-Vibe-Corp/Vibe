@@ -68,6 +68,12 @@ def install_runner(install):
         "vibe_github.py",
     ):
         shutil.copy(BIN / name, bin_dir / name)
+    # GH-48: Der Läufer transportiert und synchronisiert Tickets über den
+    # projektlokalen Speicher. Vor der GH-48-Implementierung fehlt das Modul
+    # noch; die Kopie bleibt dann aus, damit ältere Stände lauffähig sind.
+    tickets = BIN / "vibe_tickets.py"
+    if tickets.is_file():
+        shutil.copy(tickets, bin_dir / tickets.name)
     # V-027: Das Limitverhalten kann als eigenes Modul vorliegen. Ältere
     # Stände ohne dieses Modul bleiben unverändert lauffähig.
     for source in sorted(BIN.glob("vibe_limits*.py")):
@@ -89,16 +95,67 @@ def write_agents(agents_dir, *names):
         )
 
 
-def write_project(project, env_text, feedback="", tickets=""):
-    """Schreibt Projektdateien, die der Läufer und die Auswahl benötigen."""
+STAMP = "2026-01-01T00:00:00+00:00"
+
+
+def ticket_record(tid, title, type="task", state="open", **extra):
+    """Ticketdatensatz mit allen GH-48-Vertragsfeldern."""
+    record = {
+        "id": tid, "title": title, "type": type, "state": state,
+        "description": "", "github": None, "pr_url": "", "commit": "",
+        "test": "", "blocked_reason": "", "waiting_note": "",
+        "priority": "", "dependencies": [],
+        "created": STAMP, "updated": STAMP,
+    }
+    record.update(extra)
+    return record
+
+
+def write_project(project, env_text, feedback=None, tickets=None):
+    """Schreibt Projektkonfiguration und optional den GH-48-Ticketspeicher.
+
+    ``feedback``/``tickets`` sind Listen von Ticketdatensätzen
+    (``ticket_record``). Die früheren Markdown-Ledger TICKETS.md/FEEDBACK.md
+    entstehen bewusst nicht mehr; Markdown-Zeichenketten werden abgelehnt,
+    damit alte Fixtures nicht stillschweigend wirkungslos weiterlaufen.
+    """
     (project / ".vibe").mkdir(parents=True, exist_ok=True)
     (project / ".vibe" / "project.env").write_text(env_text, encoding="utf-8")
-    (project / "FEEDBACK.md").write_text(
-        "# FEEDBACK\n\n" + feedback, encoding="utf-8"
+    # GH-48: .vibe ist Laufzeitstand und wird nie versioniert; sonst würde
+    # jede Zustandsänderung (z. B. mark_blocked) den Integrationsstand
+    # beschmutzen.
+    gitignore = project / ".gitignore"
+    if not gitignore.exists():
+        gitignore.write_text(".vibe/\n", encoding="utf-8")
+    records = []
+    for source in (tickets, feedback):
+        if source is None:
+            continue
+        if isinstance(source, str):
+            raise ValueError(
+                "write_project erwartet Ticketdatensätze, keine "
+                "Markdown-Ledger (GH-48).")
+        records.extend(source)
+    if records:
+        write_ticket_store(project, records)
+
+
+def write_ticket_store(project, tickets):
+    """Schreibt den GH-48-Ticketspeicher ``.vibe/tickets.json`` roh.
+
+    Bewusst ohne ``bin/vibe_tickets.py``: Tests, die den Speicher nur als
+    Eingabe brauchen, bleiben unabhängig vom Speichermodul.
+    """
+    import json
+
+    path = Path(project) / ".vibe" / "tickets.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps({"version": 1, "tickets": tickets},
+                   ensure_ascii=False, indent=1) + "\n",
+        encoding="utf-8",
     )
-    (project / "TICKETS.md").write_text(
-        "# TICKETS\n\n" + tickets, encoding="utf-8"
-    )
+    return path
 
 
 # F25: Markierung des Datensatzendes je opencode-Aufruf in FAKE_ARGS_PATH.
@@ -411,39 +468,23 @@ def run(*command, check=True):
     )
 
 
-def mark_done(path, commit):
-    if not path.is_file():
-        return
-    lines = path.read_text(encoding="utf-8").splitlines()
-    out = []
-    index = 0
-    pattern = re.compile(r"^- \[ \] " + re.escape(pid) + r"\b")
-    while index < len(lines):
-        line = lines[index]
-        if not pattern.match(line):
-            out.append(line)
-            index += 1
-            continue
-        out.append(line.replace("- [ ]", "- [x]", 1))
-        index += 1
-        continuation = []
-        while index < len(lines):
-            candidate = lines[index]
-            if candidate.startswith((" ", "\t")):
-                continuation.append(candidate)
-                index += 1
-            elif not candidate.strip():
-                index += 1
-            else:
-                break
-        continuation = [
-            item
-            for item in continuation
-            if not re.match(r"\s*(Commit|Test|Datei):", item)
-        ]
-        out.extend(continuation)
-        out.append("  Commit: " + commit + "; Test: test_" + pid.lower().replace("-", "_"))
-    path.write_text("\n".join(out) + "\n", encoding="utf-8")
+def complete_ticket(commit):
+    """Schließt das aktuelle Ticket als sichtbare Laufzeitdatei ab (GH-48)."""
+    path = cwd / ("TICKET-" + pid + ".json")
+    try:
+        record = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        record = {"id": pid, "title": pid, "type": "task",
+                  "description": ""}
+    record.setdefault("type", "task")
+    record.update({
+        "id": pid,
+        "state": "done",
+        "commit": commit,
+        "test": "test_" + pid.lower().replace("-", "_"),
+    })
+    path.write_text(json.dumps(record, ensure_ascii=False, indent=1) + "\n",
+                    encoding="utf-8")
 
 
 (cwd / ("impl-" + pid + ".txt")).write_text(pid + "\n", encoding="utf-8")
@@ -451,8 +492,7 @@ run("git", "add", "-A")
 run("git", "commit", "-q", "-m", pid + ": Umsetzung")
 short = run("git", "rev-parse", "--short", "HEAD").stdout.strip()
 
-for name in ("TICKETS.md", "FEEDBACK.md"):
-    mark_done(cwd / name, short)
+complete_ticket(short)
 
 (cwd / "docs" / "features").mkdir(parents=True, exist_ok=True)
 (cwd / "docs" / "features" / (pid + ".md")).write_text(

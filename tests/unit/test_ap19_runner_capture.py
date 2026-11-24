@@ -445,7 +445,8 @@ class RunnerCaptureFixture(unittest.TestCase):
         support.init_repo(self.project)
         support.write_project(
             self.project, PROJECT_ENV,
-            feedback="- [ ] AP19 Sessionerfassung\n  Beschreibung: Test\n",
+            feedback=[support.ticket_record(
+                "AP19", "Sessionerfassung", description="Test")],
         )
         support.commit_all(self.project, "Ausgangsstand")
         self.calls = self.root / "calls.log"

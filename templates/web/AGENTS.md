@@ -23,7 +23,23 @@
 - Fremde oder vorbestehende Änderungen nicht löschen, überschreiben, stashen oder mitcommitten.
 - Keine Historie umschreiben, keine Force-Pushes und kein Push ohne ausdrückliche Freigabe.
 - Paket-Branches folgen den Repository-Regeln (`feature/<owner>/<kennung>`); das Muster ist über `PACKAGE_BRANCH_PATTERN` konfigurierbar.
-- Bei aktivierter GitHub-Verknüpfung gilt ein Arbeitspaket erst mit gepushtem Branch und gestelltem Merge-Request als geschlossen; ohne Push (und bei aktivierter Verknüpfung Merge-Request) kein Häkchen. Merge nur gemäß `GITHUB_AUTO_MERGE` (Standard aus = PR-only: der Eigentümer mergt und schließt danach mit `vibe package close <projekt> <id>`).
+- Bei aktivierter GitHub-Verknüpfung gilt ein Arbeitspaket erst mit gepushtem Branch und gestelltem Merge-Request als abgeschlossen; ohne Push (und bei aktivierter Verknüpfung Merge-Request) kein Ticketabschluss (`state: done`). Merge nur gemäß `GITHUB_AUTO_MERGE` (Standard aus = PR-only: der Eigentümer mergt und schließt danach mit `vibe package close <projekt> <id>`).
+
+## Ticketabschluss (verbindlich)
+
+- Tickets (Arbeitspakete, Bugs und Feedback) liegen einheitlich und
+  maschinenlesbar im projektlokalen Ticketspeicher (.vibe/tickets.json,
+  Laufzeitstand, nie committen); jedes Ticket hat Typ, Zustand und
+  Nachweisfelder.
+- Der Läufer überträgt das aktuelle Ticket als sichtbare Datei
+  TICKET-<ID>.json in die Arbeitskopie. Nur dort wird es bearbeitet:
+  nach erbrachter Arbeit die Felder state ("done"), commit (Hash) und
+  test (Methode oder Nachweisdatei) ausfüllen; der Runner validiert die
+  Felder und übernimmt den Abschluss in den Ticketspeicher.
+- TICKET-<ID>.json und .vibe/ sind Laufzeitstand: nie committen; die
+  Arbeitskopie muss am Ende sauber sein.
+- Ein Commit allein beweist keine fachliche Erfüllung; das test-Feld
+  nennt die konkrete Prüfmethode oder Nachweisdatei.
 
 ## Laufende Instanz nicht verändern (verbindlich)
 

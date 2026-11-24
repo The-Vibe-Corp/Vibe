@@ -986,12 +986,12 @@ class PrOnlyRunnerTest(RunnerFixtureMixin, unittest.TestCase):
             0, real_git(bare, "rev-parse", "--verify",
                         "refs/heads/feature/test/f1", check=False).returncode,
             "Der Paketbranch muss gepusht sein")
-        feedback = (project / "FEEDBACK.md").read_text(encoding="utf-8")
-        self.assertIn("- [ ] F1", feedback, feedback)
-        self.assertIn("WARTET AUF MERGE", feedback.upper(), feedback)
-        self.assertNotIn("BLOCKIERT", feedback.upper(),
-                         "PR-only schreibt den neuen Wartezustand, keine "
-                         "BLOCKIERT-Marke:\n" + feedback)
+        document = json.loads(
+            (project / ".vibe" / "tickets.json").read_text(encoding="utf-8"))
+        record = {item["id"]: item for item in document["tickets"]}["F1"]
+        self.assertEqual("waiting-merge", record["state"], record)
+        self.assertTrue(record.get("waiting_note"), record)
+        self.assertNotEqual("blocked", record["state"], record)
         self.assertTrue(self.fixture.worktrees(self), "Arbeitskopie fehlt")
         entries = self.worktree_registry().all()
         self.assertTrue(
@@ -1045,8 +1045,11 @@ class AutoMergeRunnerTest(RunnerFixtureMixin, unittest.TestCase):
             0, real_git(project, "cat-file", "-e", "HEAD:impl-F1.txt",
                         check=False).returncode,
             "Die Paketänderung fehlt im Integrationsstand")
-        self.assertIn("- [x] F1",
-                      (project / "FEEDBACK.md").read_text(encoding="utf-8"))
+        document = json.loads(
+            (project / ".vibe" / "tickets.json").read_text(encoding="utf-8"))
+        self.assertEqual(
+            "done",
+            {item["id"]: item for item in document["tickets"]}["F1"]["state"])
         report = self.report(project)
         self.assertIn("Geschlossen: F1 — Branch feature/test/f1", report)
         self.assertIn("Merge-Request http://127.0.0.1:", report)

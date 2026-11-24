@@ -81,36 +81,38 @@ class FeedbackFixture(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def feedback_text(self):
-        return (self.project / "FEEDBACK.md").read_text(encoding="utf-8")
+    def records(self):
+        path = self.project / ".vibe" / "tickets.json"
+        if not path.is_file():
+            return {}
+        document = json.loads(path.read_text(encoding="utf-8"))
+        return {item["id"]: item for item in document["tickets"]}
 
 
-class FeedbackMarkdownTest(FeedbackFixture):
-    def test_writes_only_title_and_description(self):
-        number = self.cli.add_feedback("proj", "Neuer Punkt", "Nur diese Beschreibung.")
+class FeedbackStoreTest(FeedbackFixture):
+    """GH-48: Feedback landet als Ticketdatensatz im Speicher."""
 
-        self.assertEqual(number, 1)
-        self.assertEqual(
-            non_empty_lines(self.feedback_text()),
-            ["- [ ] F1 Neuer Punkt", "  Beschreibung: Nur diese Beschreibung."],
-        )
+    def test_writes_title_description_and_type(self):
+        number = self.cli.add_feedback("proj", "Neuer Punkt",
+                                       "Nur diese Beschreibung.")
+
+        self.assertEqual(number, "F1")
+        record = self.records()["F1"]
+        self.assertEqual("Neuer Punkt", record["title"])
+        self.assertEqual("Nur diese Beschreibung.", record["description"])
+        self.assertEqual("feedback", record["type"])
+        self.assertEqual("open", record["state"])
         for field in REMOVED_FIELDS:
-            self.assertNotIn(field, self.feedback_text())
+            self.assertNotIn(field, record)
 
-    def test_second_entry_keeps_numbering_and_format(self):
+    def test_second_entry_keeps_numbering(self):
         self.cli.add_feedback("proj", "Erster", "Beschreibung A")
         number = self.cli.add_feedback("proj", "Zweiter", "Beschreibung B")
 
-        self.assertEqual(number, 2)
-        self.assertEqual(
-            non_empty_lines(self.feedback_text()),
-            [
-                "- [ ] F1 Erster",
-                "  Beschreibung: Beschreibung A",
-                "- [ ] F2 Zweiter",
-                "  Beschreibung: Beschreibung B",
-            ],
-        )
+        self.assertEqual(number, "F2")
+        records = self.records()
+        self.assertEqual(["F1", "F2"], list(records))
+        self.assertEqual("Beschreibung B", records["F2"]["description"])
 
 
 class FeedbackPromptTest(FeedbackFixture):
@@ -128,19 +130,15 @@ class FeedbackPromptTest(FeedbackFixture):
             self.cli.cmd_feedback("proj")
 
         self.assertEqual(prompts, ["Titel: ", "Beschreibung: "])
-        self.assertEqual(
-            non_empty_lines(self.feedback_text()),
-            [
-                "- [ ] F1 Titel aus der CLI",
-                "  Beschreibung: Beschreibung aus der CLI",
-            ],
-        )
+        record = self.records()["F1"]
+        self.assertEqual("Titel aus der CLI", record["title"])
+        self.assertEqual("Beschreibung aus der CLI", record["description"])
 
     def test_empty_title_creates_no_entry(self):
         with mock.patch("builtins.input", lambda prompt="": ""):
             self.cli.cmd_feedback("proj")
 
-        self.assertFalse((self.project / "FEEDBACK.md").exists())
+        self.assertEqual({}, self.records())
 
 
 class FeedbackApiTest(unittest.TestCase):
@@ -203,9 +201,16 @@ class FeedbackApiTest(unittest.TestCase):
         cls.tmp.cleanup()
 
     def setUp(self):
-        feedback = self.project / "FEEDBACK.md"
-        if feedback.exists():
-            feedback.unlink()
+        store = self.project / ".vibe" / "tickets.json"
+        if store.exists():
+            store.unlink()
+
+    def records(self):
+        store = self.project / ".vibe" / "tickets.json"
+        if not store.is_file():
+            return {}
+        document = json.loads(store.read_text(encoding="utf-8"))
+        return {item["id"]: item for item in document["tickets"]}
 
     def request(self, path, payload=None, token=True):
         data = json.dumps(payload).encode("utf-8") if payload is not None else None
@@ -239,13 +244,13 @@ class FeedbackApiTest(unittest.TestCase):
         )
 
         self.assertEqual(status, 200, body)
-        self.assertIn("F1 eingetragen", body)
-        self.assertEqual(
-            non_empty_lines(
-                (self.project / "FEEDBACK.md").read_text(encoding="utf-8")
-            ),
-            ["- [ ] F1 API-Titel", "  Beschreibung: API-Beschreibung"],
-        )
+        # Exakte Meldung: ein Doppelprefix (FF1) muss auffallen.
+        self.assertEqual("F1 eingetragen", json.loads(body).get("message"),
+                         body)
+        record = self.records()["F1"]
+        self.assertEqual("API-Titel", record["title"])
+        self.assertEqual("API-Beschreibung", record["description"])
+        self.assertEqual("feedback", record["type"])
 
     def test_api_ignores_removed_fields(self):
         status, body = self.request(
@@ -260,9 +265,9 @@ class FeedbackApiTest(unittest.TestCase):
         )
 
         self.assertEqual(status, 200, body)
-        text = (self.project / "FEEDBACK.md").read_text(encoding="utf-8")
+        record = self.records()["F1"]
         for field in REMOVED_FIELDS:
-            self.assertNotIn(field, text)
+            self.assertNotIn(field, record)
 
     def test_api_rejects_missing_title(self):
         status, body = self.request(
@@ -271,7 +276,7 @@ class FeedbackApiTest(unittest.TestCase):
 
         self.assertEqual(status, 400, body)
         self.assertIn("Titel fehlt", body)
-        self.assertFalse((self.project / "FEEDBACK.md").exists())
+        self.assertEqual({}, self.records())
 
     def test_detail_page_offers_only_title_and_description(self):
         html = served_page(self.request)
@@ -285,8 +290,10 @@ class FeedbackApiTest(unittest.TestCase):
         labels = re.findall(
             r"el\('label',\{\},(?:tr\()?'([^']+)'", card
         )
-        self.assertEqual(labels, ["Titel", "Beschreibung"])
+        # GH-48: Das Formular bietet zusätzlich die Zustandswahl an.
+        self.assertEqual(labels, ["Titel", "Beschreibung", "Zustand"])
         self.assertIn("description:f.", card)
+        self.assertIn("state", card)
         for removed in ("steps", "expected", "ist:"):
             self.assertNotIn(removed, card)
 

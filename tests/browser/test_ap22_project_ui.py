@@ -130,35 +130,39 @@ WEB = REPO / "bin" / "vibe-web.py"
 
 PROJECT = "proj"
 
-TICKETS = """# TICKETS — AP22 Test
+STAMP = "2026-01-01T00:00:00+00:00"
 
-- [ ] AP-OPEN Offenes Paket
-  Beschreibung: Noch offen.
 
-- [ ] AP-OPEN2 Zweites offenes Paket
-  Beschreibung: Ebenfalls offen.
+def ticket_record(tid, title, type="task", state="open", **extra):
+    record = {
+        "id": tid, "title": title, "type": type, "state": state,
+        "description": "", "github": None, "pr_url": "", "commit": "",
+        "test": "", "blocked_reason": "", "waiting_note": "",
+        "priority": "", "dependencies": [],
+        "created": STAMP, "updated": STAMP,
+    }
+    record.update(extra)
+    return record
 
-- [ ] AP-BLOCK Blockiertes Paket
-  Beschreibung: Wartet auf Freigabe.
-  BLOCKIERT: externe Freigabe fehlt
 
-- [x] AP-DONE Erledigtes Paket
-  Beschreibung: Fertig.
-"""
+# GH-48: Ticketzustände kommen aus dem Speicher. Zwei offene Pakete, ein
+# blockiertes, ein erledigtes sowie zwei Feedback-Einträge.
+TICKETS = [
+    ticket_record("AP-1", "Offenes Paket", description="Noch offen."),
+    ticket_record("AP-2", "Zweites offenes Paket",
+                  description="Ebenfalls offen."),
+    ticket_record("AP-3", "Blockiertes Paket", state="blocked",
+                  description="Wartet auf Freigabe.",
+                  blocked_reason="externe Freigabe fehlt"),
+    ticket_record("AP-4", "Erledigtes Paket", state="done",
+                  description="Fertig.", commit="1234567",
+                  test="test_done"),
+    ticket_record("BUG-7", "Absturz beim Start", type="bug",
+                  description="Fenster bleibt leer."),
+    ticket_record("FB-1", "Wunsch für die Oberfläche", type="feedback",
+                  description="Bitte größere Schaltflächen."),
+]
 
-# Beide Feedback-Einträge sind abgehakt, der Commit existiert nicht: Damit
-# klassifiziert das Backend sie als "ohne Nachweis" (Nachweis-Spalte).
-FEEDBACK = """# FEEDBACK — AP22 Test
-
-- [x] BUG-7 Absturz beim Start
-  Beschreibung: Fenster bleibt leer.
-  Art: Bug
-  Commit: 1234567; Test: test_start
-
-- [x] FB-1 Wunsch für die Oberfläche
-  Beschreibung: Bitte größere Schaltflächen.
-  Commit: 7654321; Test: test_ui
-"""
 
 VIBE_AGENT = """---
 description: Vibe-Standardagent
@@ -518,8 +522,10 @@ class AP22ProjectBrowserTest(unittest.TestCase):
     def setUp(self):
         # Alle veränderlichen Fixtures zurücksetzen, damit die Fälle
         # unabhängig von der Reihenfolge bleiben.
-        (self.project / "TICKETS.md").write_text(TICKETS, encoding="utf-8")
-        (self.project / "FEEDBACK.md").write_text(FEEDBACK, encoding="utf-8")
+        (self.project / ".vibe" / "tickets.json").write_text(
+            json.dumps({"version": 1, "tickets": TICKETS},
+                       ensure_ascii=False, indent=1) + "\n",
+            encoding="utf-8")
         for path in (
             self.project / ".vibe" / "agents.json",
             self.log_dir / f"{PROJECT}.pause-after",
@@ -753,19 +759,21 @@ class OverviewTest(AP22ProjectBrowserTest):
                 self.assertEqual(
                     0, self.page.locator(f"[data-nv-tile='{tile}']").count(),
                     f"Die entfallene Kachel {tile!r} existiert entgegen dem F34-Vertrag")
-        # Ersatz für die entfallene Kachel: Der Zustand „ohne Nachweis“ ist
-        # jetzt ein Badge am betroffenen Eintrag. Beide Feedback-Einträge der
-        # Fixture sind abgehakt, ihr Nachweis-Commit existiert nicht — also
-        # müssen genau diese beiden Karten das Badge tragen.
+        # GH-48: Der Zustand „ohne Nachweis" existiert nicht mehr. Die
+        # Arbeitsliste zeigt die Speicherzustände: das erledigte Paket mit
+        # „erledigt", die beiden Feedback-Einträge offen.
         self.open_tab("work")
+        done = self.page.locator("article[data-nv-ticket='AP-4']")
+        done.wait_for(state="attached", timeout=20000)
+        self.assertFalse(done.is_visible(),
+                         "erledigtes Paket ist im Standard sichtbar")
         self.page.locator("[data-nv-work-hide-done]").click()
+        done.wait_for(state="visible", timeout=20000)
+        self.assertRegex(done.inner_text(), r"(?i)erledigt|done")
         for entry in ("BUG-7", "FB-1"):
             card = self.page.locator(f"article[data-nv-feedback-item='{entry}']")
             card.wait_for(state="visible", timeout=20000)
-            self.assertEqual(
-                1, card.locator("[data-nv-proof]").count(),
-                f"Der Eintrag {entry!r} trägt kein Badge [data-nv-proof], "
-                "obwohl sein Nachweis fehlt")
+            self.assertRegex(card.inner_text(), r"(?i)offen|open")
         self.assert_clean_page()
 
 
@@ -1468,25 +1476,33 @@ class GithubParityTest(AP22ProjectBrowserTest):
             + repr(result.inner_text()))
         self.assert_clean_page()
 
-    def test_github_import_adds_only_matching_issues_to_tickets(self):
+    def test_github_import_creates_tickets_for_open_issues(self):
         """Vorbedingung: lokale GitHub-Attrappe liefert GH-7 (Label vibe) und
         GH-8 (Label bug).
 
         Aktion: ``[data-nv-action="github-import"]`` klicken.
-        Erwartung: TICKETS.md enthält ``- [ ] GH-7``, aber nicht GH-8.
+        Erwartung (GH-48): Beide offenen Issues werden als GH-Tickets in den
+        Speicher übernommen; GH-8 erhält type=bug. Der Import folgt damit
+        demselben ungefilterten Pfad wie der Sync (der UI-Label-Filter wirkt
+        nicht mehr auf den Import).
         """
         self.activate_github()
         section = self.reload_github_section()
         section.locator("[data-nv-action='github-import']").first.click()
-        tickets = self.project / "TICKETS.md"
+        store = self.project / ".vibe" / "tickets.json"
+
+        def records():
+            return {item["id"]: item for item in json.loads(
+                store.read_text(encoding="utf-8"))["tickets"]}
+
         self.wait_until(
-            lambda: "- [ ] GH-7" in tickets.read_text(encoding="utf-8"),
+            lambda: {"GH-7", "GH-8"} <= set(records()),
             timeout=25,
-            message="GH-7 wurde nicht importiert")
-        text = tickets.read_text(encoding="utf-8")
-        self.assertNotIn("GH-8", text,
-                         "Das Issue mit fremdem Label wurde importiert")
-        self.assertIn("Sandbox für Import einschränken", text)
+            message="Offene Issues wurden nicht importiert")
+        self.assertEqual("task", records()["GH-7"]["type"])
+        self.assertEqual("bug", records()["GH-8"]["type"])
+        self.assertEqual("Sandbox für Import einschränken",
+                         records()["GH-7"]["title"])
         self.assert_clean_page()
 
     def test_github_merge_request_requires_confirmation_then_attempts(self):

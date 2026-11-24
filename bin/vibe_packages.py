@@ -10,9 +10,10 @@ nach den Repository-Regeln. Ausnahme seit AP9: Die Unterbefehle ``github-pull``
 ``github-complete`` (Push und Merge-Request nach dem Abschluss) nutzen die
 GitHub-Ebene aus ``vibe_github`` — nur wenn das Projekt dies ausdrücklich
 konfiguriert hat (``GITHUB_ENABLED``), sonst überspringen sie bewusst.
-Sie schreibt nur den projektlokalen Auswahlstand unter ``.vibe/tmp/`` und den
-Paketnachweis in die Laufzeitnotiz ``FEEDBACK.md`` bzw. ``TICKETS.md``; die
-Arbeitskopie erhält eine Kopie dieser Notizen.
+Sie schreibt nur den projektlokalen Auswahlstand unter ``.vibe/tmp/``; der
+Paketabschluss wird seit GH-48 in den Ticketspeicher ``.vibe/tickets.json``
+übernommen. Die Arbeitskopie erhält das aktuelle Ticket als sichtbare Datei
+``TICKET-<ID>.json`` und eine Kopie der Arbeitsnotiz ``AGENTS.md``.
 """
 import argparse
 import json
@@ -25,6 +26,7 @@ from pathlib import Path
 
 if os.path.dirname(os.path.realpath(__file__)) not in sys.path:
     sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
+import vibe_tickets  # pylint: disable=wrong-import-position
 EXIT_OK = 0
 EXIT_NONE = 1
 EXIT_USAGE = 2
@@ -71,16 +73,10 @@ BARRIER_SKIP_OPTION = 0
 BARRIER_ABORT_OPTION = 1
 BARRIER_AGENT_OPTION = 2
 
-CHECKBOX_DONE = re.compile(r"^- \[[xX]\]")
-BLOCK_MARKER = "BLOCKIERT:"
-# AP5 (4a): PR-only-Pakete warten auf den Merge des Eigentümers statt als
-# blockiert zu erscheinen. Eigene Marke, damit Bestandstickets mit alten
-# BLOCKIERT-Vermerken unverändert blockiert bleiben.
-WAITING_MARKER = "WARTET AUF MERGE:"
+# GH-48: Keine Markdown-Marker mehr — Zustand, Priorität und Abhängigkeiten
+# sind Felder im Ticketspeicher (.vibe/tickets.json). Die Kennungsform bleibt
+# für Branch-Namen und Platzhalter relevant.
 ID_PATTERN = re.compile(r"[A-Za-z][A-Za-z0-9_-]*\d+")
-PROOF_PATTERN = re.compile(r"(?:Test|Datei)\s*:\s*\S+")
-DEPENDENCY_PATTERN = re.compile(r"Abhängigkeiten\s*:\s*(.+)")
-PRIORITY_PATTERN = re.compile(r"Priorität\s*:\s*(P\d)")
 # Agentennamen werden wie im Läufer und in der Agentenverwaltung geprüft.
 # profiles.json ist Nutzerzustand; ein Name mit Pfadanteilen darf nie in eine
 # Dateiprüfung außerhalb der Agentenordner führen.
@@ -89,15 +85,17 @@ VERDICT_PATTERN = re.compile(
     r"(?im)^\s*(?:[-*]\s*)?verdict\s*:\s*\**\s*PASS\b"
 )
 
-# Arbeitsnotizen sind Laufzeitstand (Datei oder UI), kein versionierter
-# Produktinhalt. Ihre Änderungen dürfen weder den Start noch die
-# Abschlussschranke blockieren. Die Arbeitskopie erhält eine Kopie; nach dem
-# Merge wird der Paketnachweis gezielt in den Projektordner zurückgeschrieben.
-WORK_NOTE_FILES = ("TICKETS.md", "FEEDBACK.md")
+# Arbeitsnotizen sind Laufzeitstand, kein versionierter Produktinhalt. Seit
+# GH-48 ist AGENTS.md die einzige Arbeitsnotiz; die getrennten Ledger
+# TICKETS.md/FEEDBACK.md sind entfallen. Die sichtbare Einzeldatei
+# TICKET-<ID>.json am Projektstamm zählt ebenso als Laufzeitstand.
+WORK_NOTE_FILES = ("AGENTS.md",)
 # Projekt-spezifische Regeldatei: Sie ist nicht immer versioniert, soll aber
 # wie die Arbeitsnotizen in die Paket-Arbeitskopie übernommen werden (B2).
 PROJECT_RULES_FILE = "AGENTS.md"
-WORK_COPY_FILES = WORK_NOTE_FILES + (PROJECT_RULES_FILE,)
+WORK_COPY_FILES = WORK_NOTE_FILES
+# GH-48: Sichtbare Ticketdatei am Projektstamm (Laufzeitstand, nie committet).
+TICKET_FILE_RE = re.compile(r"^TICKET-[A-Za-z0-9_.-]+\.json$")
 # AP5: .vibe/project.env ist Laufzeitstand wie die Arbeitsnotizen, wird aber
 # nur read-only einwegig in die Arbeitskopie transportiert. Die Datei des
 # Hauptprojekts bleibt autoritativ; .vibe/_secrets.env wird nie transportiert.
@@ -106,8 +104,6 @@ WORK_COPY_FILES = WORK_NOTE_FILES + (PROJECT_RULES_FILE,)
 # lokale Bootstrap-Vorschlag ist ephemeral und wird nicht dauerhaft transportiert).
 PROJECT_ENV_REL = os.path.join(".vibe", "project.env")
 TRANSPORTED_PATHS = (PROJECT_ENV_REL,)
-PROOF_KEYS = ("Commit", "Test", "Datei", "Review", "Doku")
-PROOF_LINE = re.compile(r"^\s*(?:" + "|".join(PROOF_KEYS) + r")\s*:")
 
 QUOTA_PATTERNS = (
     r"\bquota\b",
@@ -168,12 +164,12 @@ def is_work_note_path(path):
     value = path.strip().strip('"').replace("\\", "/")
     if " -> " in value:
         value = value.split(" -> ", 1)[1].strip().strip('"')
-    # Nur die Dateien am Projektstamm; gleichnamige Dateien in Unterordnern
-    # sind normale Projektdateien und zählen weiterhin als Änderung.
-    # Die projekt-spezifische Regeldatei AGENTS.md gehört wie die
-    # Arbeitsnotizen zu dieser Gruppe (B2): sie ist nicht immer versioniert
-    # und darf Preflight/Abschlussschranke nicht blockieren.
-    return value in WORK_COPY_FILES
+    # Nur Dateien am Projektstamm; gleichnamige Dateien in Unterordnern sind
+    # normale Projektdateien. AGENTS.md ist Arbeitsnotiz (B2); die sichtbare
+    # Ticketdatei TICKET-<ID>.json ist Laufzeitstand (GH-48).
+    if value in WORK_COPY_FILES:
+        return True
+    return "/" not in value and bool(TICKET_FILE_RE.match(value))
 
 
 def dirty_report(project):
@@ -280,100 +276,52 @@ def transport_project_env(project, worktree):
     return transported, _exclude_rel_paths(worktree, transported)
 
 
-def block_span(lines, pid):
-    """Zeilenbereich ``[start, end)`` des Ticketblocks mit dieser ID."""
-    for index, line in enumerate(lines):
-        if line.startswith("- ") and block_id(line) == pid:
-            end = index + 1
-            while end < len(lines) and (
-                lines[end].startswith((" ", "\t")) or not lines[end].strip()
-            ):
-                end += 1
-            return index, end
-    return None
+def transport_ticket(project, worktree, pid):
+    """Schreibt das aktuelle Ticket als ``TICKET-<ID>.json`` in die Arbeitskopie.
 
-
-def _apply_proof(text, span, worktree_block):
-    """Hakt den Block ab und ersetzt seine Nachweiszeilen.
-
-    Nur die Checkbox und die Nachweiszeilen ändern sich; Beschreibungen,
-    Nachbemerkungen und andere Blöcke bleiben unverändert.
-    """
-    lines = text.splitlines()
-    start, end = span
-    block = lines[start:end]
-    block[0] = re.sub(r"^(- )\[ \]", r"\1[x]", block[0], count=1)
-    reduced, insert_at = [block[0]], None
-    for line in block[1:]:
-        if PROOF_LINE.match(line):
-            if insert_at is None:
-                insert_at = len(reduced)
-            continue
-        if BLOCK_MARKER in line.upper() or WAITING_MARKER in line.upper():
-            # AP4 (T-G1/package close) und AP5 (4a): Der Worktree-Block ist
-            # kanonisch; ein BLOCKIERT- bzw. WARTET-AUF-MERGE-Vermerk des
-            # PR-only-Abschlusses entfällt beim Zurückschreiben des Nachweises.
-            continue
-        reduced.append(line)
-    if insert_at is None:
-        insert_at = len(reduced)
-        while insert_at > 1 and not reduced[insert_at - 1].strip():
-            insert_at -= 1
-    proof = [
-        line.rstrip()
-        for line in worktree_block.splitlines()
-        if PROOF_LINE.match(line)
-    ]
-    reduced[insert_at:insert_at] = proof
-    lines[start:end] = reduced
-    result = "\n".join(lines)
-    return result + "\n" if text.endswith("\n") else result
-
-
-def sync_proof(project, worktree, pid, require_commit=True):
-    """Übernimmt ``[x]`` und Nachweiszeilen eines Pakets in den Projektordner.
-
-    Quelle ist die Arbeitskopie; Ziel ist derselbe Dateiname im Projekt. Der
-    Nachweis wird nur übernommen, wenn er vollständig ist. Liefert
-    ``(changed, message)``; bei ``changed=False`` bleibt die Zieldatei
-    unverändert. Mit ``require_commit=False`` (AP4 ``package close``) entfällt
-    die Prüfung auf vorhandene Nachweis-Commits: Nach einem verifizierten
-    Squash-Merge existiert der ursprüngliche Branch-Commit nicht mehr.
+    Die Datei liegt sichtbar in der Wurzel und wird idempotent in die
+    Git-Exclude des Worktrees eingetragen (best effort). Fehlt das Ticket im
+    Projekt-Speicher, liefert ``(False, True)`` und legt nichts an.
     """
     project, worktree = Path(project), Path(worktree)
-    source_name, worktree_block = "", ""
-    for name in WORK_NOTE_FILES:
-        note = worktree / name
-        if not note.is_file():
-            continue
-        for block in read_blocks(note):
-            if block_id(block) == pid:
-                source_name, worktree_block = name, block
-                break
-        if worktree_block:
-            break
-    if not worktree_block:
-        return False, "Block " + pid + " fehlt in der Arbeitskopie."
-    if not is_done(worktree_block):
-        return False, "Block " + pid + " ist in der Arbeitskopie nicht abgehakt."
-    revisions = proof_commits(worktree_block)
-    if require_commit and (not revisions or not any(
-        commit_exists(project, revision) for revision in revisions
-    )):
+    record = vibe_tickets.find(vibe_tickets.load(project), pid)
+    if record is None:
+        return False, True
+    name = vibe_tickets.ticket_file_name(pid)
+    vibe_tickets.write_ticket_file(worktree / name, record)
+    exclude_ok = _exclude_rel_paths(worktree, [name])
+    return True, exclude_ok
+
+
+def sync_ticket(project, worktree, pid, require_commit=True):
+    """Übernimmt den Abschluss (state/commit/test/pr_url) in den Ticketspeicher.
+
+    Quelle ist ``<worktree>/TICKET-<ID>.json``; Ziel ist der Projekt-Speicher.
+    Der Nachweis wird nur übernommen, wenn er vollständig ist. Liefert
+    ``(changed, message)``; bei ``changed=False`` bleibt der Speicher
+    unverändert. Mit ``require_commit=False`` (``package close``) entfällt die
+    Prüfung auf einen im Projekt vorhandenen Nachweis-Commit.
+    """
+    project, worktree = Path(project), Path(worktree)
+    source = worktree / vibe_tickets.ticket_file_name(pid)
+    if not source.is_file():
+        return False, "Ticket-Datei " + str(source) + " fehlt in der Arbeitskopie."
+    try:
+        record = vibe_tickets.read_ticket_file(source)
+    except ValueError as error:
+        return False, "Ticket-Datei ist nicht lesbar: " + str(error)
+    if record.get("state") != "done":
+        return False, "Ticket " + pid + " ist in der Arbeitskopie nicht erledigt."
+    commit = record.get("commit") or ""
+    if require_commit and not commit_exists(project, commit):
         return False, "Nachweis-Commit für " + pid + " fehlt oder ist nicht vorhanden."
-    if not PROOF_PATTERN.search(worktree_block):
-        return False, "Nachweis 'Test:' oder 'Datei:' für " + pid + " fehlt."
-    target = project / source_name
-    if not target.is_file():
-        return False, source_name + " fehlt im Projektordner."
-    text = read_text(target)
-    span = block_span(text.splitlines(), pid)
-    if span is None:
-        return False, "Block " + pid + " fehlt in " + source_name + "."
-    updated = _apply_proof(text, span, worktree_block)
-    if updated != text:
-        write_text_atomic(target, updated)
-    return True, pid + " in " + source_name + " abgehakt."
+    if vibe_tickets.find(vibe_tickets.load(project), pid) is None:
+        return False, "Ticket " + pid + " fehlt im Ticketspeicher."
+    vibe_tickets.update(project, pid, state="done", commit=commit,
+                        test=record.get("test") or "",
+                        pr_url=record.get("pr_url") or "",
+                        blocked_reason="", waiting_note="")
+    return True, pid + " in den Ticketspeicher übernommen."
 
 
 def read_env(path):
@@ -393,160 +341,6 @@ def read_env(path):
             value = value[1:-1]
         values[key.strip()] = value
     return values
-
-
-def read_blocks(path):
-    """Zerlegt eine Markdown-Arbeitsdatei in Blöcke ab ``- ``."""
-    text = re.sub(r"<!--.*?-->", "", read_text(path), flags=re.S)
-    blocks, current = [], None
-    for line in text.splitlines():
-        if line.startswith("- "):
-            if current is not None:
-                blocks.append(current)
-            current = line
-        elif current is not None and line.startswith((" ", "\t")):
-            current += "\n" + line
-        elif current is not None and not line.strip():
-            current += "\n"
-        else:
-            if current is not None:
-                blocks.append(current)
-                current = None
-    if current is not None:
-        blocks.append(current)
-    return [block.strip("\n") for block in blocks]
-
-
-def block_id(block):
-    """Kennung aus der Kopfzeile eines Blocks; ohne Passform leer."""
-    match = re.match(r"- (?:\[[ xX]\]\s*)?(\S+)", block)
-    return match.group(1) if match else ""
-
-
-def is_done(block):
-    """True, wenn der Block mit der abgehakten Checkbox beginnt."""
-    return bool(CHECKBOX_DONE.match(block))
-
-
-def block_marker_state(block):
-    """Zustandsmarke an einer Statusposition (B6).
-
-    Eine ``BLOCKIERT:``-/``WARTET AUF MERGE:``-Marke zählt genau dann, wenn
-    sie an einer Statusposition steht:
-    (a) als letzte nichtleere Blockzeile, oder
-    (b) im Kopffeld, d. h. vor der ersten ``Beschreibung:``-/``Erwartet:``-
-    Zeile (nur wenn eine solche Zeile existiert).
-    Die späteste Position gewinnt; im Kopffeld schlägt ``BLOCKIERT`` stets
-    ``WARTET AUF MERGE``. Freitext (auch zeilenanfangend, beliebige
-    Groß-/Kleinschreibung) zählt nicht. Groß-/Kleinschreibung wird ignoriert.
-    Rückgabe: ``"BLOCKIERT"``, ``"WARTET AUF MERGE"`` oder ``""``.
-    """
-    lines = str(block or "").splitlines()
-    # Beschreibungsstart: erste Zeile nach der Titelzeile, die mit
-    # Beschreibung:/Erwartet: beginnt (case-insensitiv).
-    desc_start = None
-    for index in range(1, len(lines)):
-        if re.match(r"\s*(Beschreibung|Erwartet)\s*:", lines[index],
-                    re.IGNORECASE):
-            desc_start = index
-            break
-
-    # Letzte nichtleere Zeile (Position (a)).
-    last_nonempty = None
-    for index in range(len(lines) - 1, -1, -1):
-        if lines[index].strip():
-            last_nonempty = index
-            break
-
-    def marker_of(line):
-        value = line.strip().upper()
-        if value.startswith(BLOCK_MARKER):
-            return "BLOCKIERT"
-        if value.startswith(WAITING_MARKER):
-            return "WARTET AUF MERGE"
-        return ""
-
-    end_marker = ""
-    if last_nonempty is not None:
-        end_marker = marker_of(lines[last_nonempty])
-
-    # Kopffeld-Marker (Position (b)): nur wenn eine Beschreibungszeile
-    # existiert. Mehrere Kopffeld-Marker: BLOCKIERT schlägt WARTET.
-    head_has_blocked = False
-    head_has_waiting = False
-    if desc_start is not None:
-        for index in range(1, desc_start):
-            value = marker_of(lines[index])
-            if value == "BLOCKIERT":
-                head_has_blocked = True
-            elif value == "WARTET AUF MERGE":
-                head_has_waiting = True
-
-    # Späteste Position gewinnt: Endzeile steht nach dem Kopffeld.
-    if end_marker:
-        return end_marker
-    if head_has_blocked:
-        return "BLOCKIERT"
-    if head_has_waiting:
-        return "WARTET AUF MERGE"
-    return ""
-
-
-def is_blocked(block):
-    """True, wenn der Block eine echte BLOCKIERT:-Marke an einer
-    Statusposition trägt (letzte nichtleere Zeile oder Kopffeld vor der
-    ersten Beschreibung:/Erwartet:-Zeile) (B6)."""
-    return block_marker_state(block) == "BLOCKIERT"
-
-
-def is_waiting_merge(block):
-    """True, wenn der Block eine echte WARTET AUF MERGE:-Marke an einer
-    Statusposition trägt (letzte nichtleere Zeile oder Kopffeld vor der
-    ersten Beschreibung:/Erwartet:-Zeile) (B6/AP5 4a)."""
-    return block_marker_state(block) == "WARTET AUF MERGE"
-
-
-# AP3: Entwurfs-Marke. Nur die exakte, zeilenankerierte Statuszeile gilt als
-# Entwurf; das Wort „draft“ im Beschreibungstext ist ausdrücklich keiner.
-DRAFT_MARKER_RE = re.compile(r"(?m)^\s*Status:\s*(draft|entwurf)\s*$", re.IGNORECASE)
-
-
-def is_draft(block):
-    """True, wenn der Block die exakte ``Status: draft``-Zeile trägt (AP3)."""
-    return bool(DRAFT_MARKER_RE.search(block or ""))
-
-
-def proof_commits(block):
-    """Alle Commits einer Nachweiszeile, auch über umbrochene Zeilen.
-
-    Das Nachweisfeld beginnt mit ``Commit:`` und darf auf Folgezeilen
-    fortgesetzt werden, solange diese eingerückt sind und kein neues
-    Nachweisfeld beginnen. Dadurch zählt ein Paket als belegt, sobald einer
-    der genannten Commits zum Paketbranch gehört.
-    """
-    revisions = []
-    collecting = False
-    for line in (block or "").splitlines():
-        stripped = line.strip()
-        if re.match(r"(?i)^Commit\s*:", stripped):
-            collecting = True
-            payload = stripped.split(":", 1)[1]
-        elif collecting and line[:1] in (" ", "\t") and not PROOF_LINE.match(line):
-            payload = stripped
-        elif collecting:
-            break
-        else:
-            continue
-        for revision in re.findall(r"\b[0-9a-fA-F]{7,40}\b", payload):
-            if revision not in revisions:
-                revisions.append(revision)
-    return revisions
-
-
-def proof_commit(block):
-    """Erster genannter Commit; bleibt für Aufrufer mit Einzelnachweis gültig."""
-    revisions = proof_commits(block)
-    return revisions[0] if revisions else ""
 
 
 def commit_exists(project, revision):
@@ -574,34 +368,11 @@ def commit_is_ancestor(project, revision, base):
     )
 
 
-def proof_ok(project, block):
-    """Prüft Commit- und Test/Datei-Nachweis; liefert ``(ok, Grund)``."""
-    revisions = proof_commits(block)
-    if not revisions or not any(
-        commit_exists(project, revision) for revision in revisions
-    ):
-        return False, "Commit fehlt oder ist nicht vorhanden"
-    if not PROOF_PATTERN.search(block):
-        return False, "Test: oder Datei: fehlt"
-    return True, ""
-
-
-def dependencies(block):
-    """Gültige Abhängigkeitskennungen des Blocks in genannter Reihenfolge."""
-    match = DEPENDENCY_PATTERN.search(block)
-    if not match:
-        return []
-    return [
-        token
-        for token in re.split(r"[,;\s]+", match.group(1))
-        if ID_PATTERN.fullmatch(token)
-    ]
-
-
-def priority(block):
-    """Priorität als Zahl; ohne Angabe 9 (hinter allen genannten)."""
-    match = PRIORITY_PATTERN.search(block)
-    return int(match.group(1)[1]) if match else 9
+def priority(record):
+    """Priorität als Zahl (0-8); ohne Angabe 9 (hinter allen genannten)."""
+    value = (record.get("priority") or "").strip()
+    match = re.fullmatch(r"P(\d)", value)
+    return int(match.group(1)) if match else 9
 
 
 ORDER_KEY = "PACKAGE_ORDER"
@@ -635,34 +406,15 @@ def package_order(project):
     return order
 
 
-def block_title(block):
-    """Titelzeile eines Blocks ohne Checkbox und Kennung."""
-    head = block.splitlines()[0] if block else ""
-    match = re.match(r"- (?:\[[ xX]\]\s*)?\S+\s*(.*)$", head)
-    return match.group(1).strip() if match else ""
-
-
-def collect_blocks(project):
-    """Liest TICKETS.md und FEEDBACK.md als Paare aus Quelle und Blöcken."""
-    project = Path(project)
-    return [
-        ("TICKETS.md", read_blocks(project / "TICKETS.md")),
-        ("FEEDBACK.md", read_blocks(project / "FEEDBACK.md")),
-    ]
-
-
 def _kebab(value):
     """Kleinbuchstaben; jeder Lauf von Nicht-[a-z0-9] wird ein Bindestrich."""
     return re.sub(r"[^a-z0-9]+", "-", str(value or "").lower()).strip("-")
 
 
 def _package_title(project, pid):
-    """Tickettitel des Blocks mit der Kennung pid; leerer Wert wenn unbekannt."""
-    for _, blocks in collect_blocks(project):
-        for block in blocks:
-            if block_id(block) == pid:
-                return block_title(block)
-    return ""
+    """Tickettitel aus dem Ticketspeicher; leerer Wert, wenn unbekannt."""
+    record = vibe_tickets.find(vibe_tickets.load(project), pid)
+    return (record.get("title") or "") if record else ""
 
 
 def _validate_branch_name(name):
@@ -752,30 +504,18 @@ def package_branch_name(project, pid, pattern=None):
         + str(MAX_BRANCH_COLLISIONS) + " Versuchen gefunden.")
 
 
-def done_ids(project):
-    """Alle Kennungen, die abgehakt sind und einen Nachweis besitzen."""
-    done = set()
-    for _, blocks in collect_blocks(project):
-        for block in blocks:
-            pid = block_id(block)
-            if pid and is_done(block) and proof_ok(project, block)[0]:
-                done.add(pid)
-    return done
-
-
 def select_package(project, skip=None, state_path=None, prefer=""):
     """Liefert das nächste offene Paket oder ``None``.
 
     Steht in ``.vibe/project.env`` eine Priorisierung (``PACKAGE_ORDER``),
     wählt der Läufer zuerst den ersten Eintrag dieser Liste, der offen, nicht
-    gesperrt, nicht übersprungen und bereit ist; er ist damit verbindlich
-    vor Quellen- und Prioritätsordnung. Erledigte, gesperrte, abhängigkeits-
-    geblockte oder unbekannte Einträge werden der Priorisierung entnommen,
-    ohne die Wahl aufzuhalten. Ohne geeigneten Eintrag gilt weiter die
-    Standardordnung: TICKETS vor FEEDBACK; innerhalb der TICKETS nach
-    Priorität (P0, P1, P2, ohne Angabe) und sonst nach Dateireihenfolge.
-    Ein Paket wird nur gewählt, wenn alle bekannten Abhängigkeiten
-    nachweislich erledigt sind.
+    übersprungen und bereit ist; er ist damit verbindlich vor der
+    Standardordnung. Erledigte, blockierte, wartende, abhängigkeitsgeblockte
+    oder unbekannte Einträge werden der Priorisierung entnommen, ohne die Wahl
+    aufzuhalten. Ohne geeigneten Eintrag gilt die Standardordnung: Kandidaten
+    sind ``open`` und ``in-progress``; sortiert wird nach Priorität (P0..P8,
+    ohne Angabe hinten) und dann nach der Position im Ticketspeicher. Ein
+    Paket wird nur gewählt, wenn alle bekannten Abhängigkeiten erledigt sind.
 
     ``prefer`` (AP4/T-W1) nennt ein ausdrücklich bevorzugtes Paket (Reattach):
     Ist es im Kandidatenbestand und noch nicht erledigt, wird es vorrangig
@@ -787,31 +527,28 @@ def select_package(project, skip=None, state_path=None, prefer=""):
         skip = {item for item in skip.split(",") if item}
     else:
         skip = set(skip or [])
-    done = done_ids(project)
-    known = set()
+    tickets = vibe_tickets.load(project)
     located = {}
-    for source, blocks in collect_blocks(project):
-        for block in blocks:
-            pid = block_id(block)
-            if not pid:
-                continue
-            known.add(pid)
-            if pid not in located:
-                located[pid] = (source, block)
+    for record in tickets:
+        pid = record.get("id")
+        if pid and pid not in located:
+            located[pid] = record
+    done = {pid for pid, record in located.items()
+            if record.get("state") == "done"}
 
     def _ready(pid):
-        _, block = located[pid]
-        if is_blocked(block) or is_waiting_merge(block) or is_draft(block) \
-                or pid in done:
+        record = located[pid]
+        if record.get("state") not in ("open", "in-progress"):
             return False
         return not any(
-            dep in known and dep not in done for dep in dependencies(block)
+            dep in located and dep not in done
+            for dep in (record.get("dependencies") or [])
         )
 
     chosen = None
     preferred = str(prefer or "").strip()
-    if (preferred and preferred in located and preferred not in done
-            and preferred not in skip):
+    if (preferred and preferred in located
+            and preferred not in done and preferred not in skip):
         chosen = (preferred, False)
     if chosen is None:
         for pid in package_order(project):
@@ -820,31 +557,28 @@ def select_package(project, skip=None, state_path=None, prefer=""):
             chosen = (pid, True)
             break
     if chosen is None:
-        for source, blocks in collect_blocks(project):
-            candidates = []
-            for index, block in enumerate(blocks):
-                pid = block_id(block)
-                if not pid or pid in skip:
-                    continue
-                if not _ready(pid):
-                    continue
-                order = (priority(block), index) if source == "TICKETS.md" else (0, index)
-                candidates.append((order, pid))
-            if not candidates:
+        candidates = []
+        for index, record in enumerate(tickets):
+            pid = record.get("id")
+            if not pid or pid in skip or not _ready(pid):
                 continue
+            key = (priority(record), index)
+            candidates.append((key, pid))
+        if candidates:
             candidates.sort(key=lambda item: item[0])
             chosen = (candidates[0][1], False)
-            break
     if chosen is None:
         return None
     pid, ordered = chosen
-    source, block = located[pid]
+    record = located[pid]
     selected = {
         "id": pid,
-        "block": block,
-        "source": source,
-        "priority": f"P{priority(block)}" if priority(block) < 9 else "",
+        "type": record.get("type"),
+        "title": record.get("title"),
+        "description": record.get("description") or "",
+        "priority": record.get("priority") or "",
         "ordered": ordered,
+        "github": record.get("github"),
     }
     target = Path(state_path) if state_path else project / ".vibe" / "tmp" / "next-package.json"
     write_text_atomic(target, json.dumps(selected, ensure_ascii=False, indent=1) + "\n")
@@ -875,7 +609,7 @@ def ensure_project_exclude(project):
     exclude.parent.mkdir(parents=True, exist_ok=True)
     lines = read_text(exclude).splitlines()
     missing = [
-        entry for entry in (".vibe/tmp/",) + WORK_COPY_FILES
+        entry for entry in (".vibe/tmp/", ".vibe/") + WORK_NOTE_FILES
         if entry not in lines
     ]
     if missing:
@@ -1333,70 +1067,36 @@ def assist_barrier(project, package_id, reason="", runtime=None,
 
 
 def mark_blocked(project, pid, note):
-    """Vermerkt ``BLOCKIERT:`` am Arbeitspaket in den Arbeitsnotizen (AP10).
+    """Setzt ``state=blocked`` und ``blocked_reason=note`` am Ticket (idempotent).
 
-    Die Zeile wird eingerückt an den Block in TICKETS.md/FEEDBACK.md des
-    Projektordners angehängt, damit die Auswahl das blockierte Paket nicht
-    erneut wählt (``is_blocked``) und der Grund im Projektordner sichtbar
-    bleibt. Bereits vorhandene Blockierungsmarken bleiben unverändert
+    Liefert ``(changed, message)``; ein bereits blockiertes Ticket wird nicht
+    erneut geändert.
+    """
+    project = Path(project)
+    record = vibe_tickets.find(vibe_tickets.load(project), pid)
+    if record is None:
+        return False, "Ticket " + pid + " fehlt im Ticketspeicher."
+    if record.get("state") == "blocked":
+        return False, "Ticket " + pid + " ist bereits als blockiert vermerkt."
+    vibe_tickets.update(project, pid, state="blocked", blocked_reason=note)
+    return True, "Ticket " + pid + " als blockiert vermerkt."
+
+
+def mark_waiting_merge(project, pid, note, pr_url=""):
+    """Setzt ``state=waiting-merge``, ``waiting_note`` und ggf. ``pr_url``
     (idempotent). Liefert ``(changed, message)``.
     """
     project = Path(project)
-    for name in WORK_NOTE_FILES:
-        target = project / name
-        if not target.is_file():
-            continue
-        text = read_text(target)
-        lines = text.splitlines()
-        span = block_span(lines, pid)
-        if span is None:
-            continue
-        start, end = span
-        block_text = "\n".join(lines[start:end])
-        if is_blocked(block_text):
-            return False, "Block " + pid + " ist bereits als blockiert vermerkt."
-        insert = end
-        while insert > start and not lines[insert - 1].strip():
-            insert -= 1
-        lines.insert(insert, "  " + BLOCK_MARKER + " " + note)
-        updated = "\n".join(lines) + ("\n" if text.endswith("\n") else "")
-        write_text_atomic(target, updated)
-        return True, "Block " + pid + " in " + name + " als blockiert vermerkt."
-    return False, "Block " + pid + " fehlt in TICKETS.md/FEEDBACK.md."
-
-
-def mark_waiting_merge(project, pid, note):
-    """Vermerkt ``WARTET AUF MERGE:`` am Arbeitspaket in den Arbeitsnotizen
-    (AP5 4a).
-
-    Analog zu ``mark_blocked``: Die Zeile wird eingerückt an den Block in
-    TICKETS.md/FEEDBACK.md des Projektordners angehängt, damit die Auswahl das
-    wartende Paket nicht erneut wählt (``is_waiting_merge``) und der Grund
-    sichtbar bleibt. Bereits vorhandene Wartemarken bleiben unverändert
-    (idempotent). Liefert ``(changed, message)``.
-    """
-    project = Path(project)
-    for name in WORK_NOTE_FILES:
-        target = project / name
-        if not target.is_file():
-            continue
-        text = read_text(target)
-        lines = text.splitlines()
-        span = block_span(lines, pid)
-        if span is None:
-            continue
-        start, end = span
-        block_text = "\n".join(lines[start:end])
-        if is_waiting_merge(block_text):
-            return False, "Block " + pid + " ist bereits als wartend vermerkt."
-        insert = end
-        while insert > start and not lines[insert - 1].strip():
-            insert -= 1
-        lines.insert(insert, "  " + WAITING_MARKER + " " + note)
-        updated = "\n".join(lines) + ("\n" if text.endswith("\n") else "")
-        write_text_atomic(target, updated)
-        return True, "Block " + pid + " in " + name + " als wartend vermerkt."
-    return False, "Block " + pid + " fehlt in TICKETS.md/FEEDBACK.md."
+    record = vibe_tickets.find(vibe_tickets.load(project), pid)
+    if record is None:
+        return False, "Ticket " + pid + " fehlt im Ticketspeicher."
+    if record.get("state") == "waiting-merge":
+        return False, "Ticket " + pid + " wartet bereits auf den Merge."
+    fields = {"state": "waiting-merge", "waiting_note": note}
+    if pr_url:
+        fields["pr_url"] = pr_url
+    vibe_tickets.update(project, pid, **fields)
+    return True, "Ticket " + pid + " wartet auf den Merge."
 
 
 def review_order(path):
@@ -1406,7 +1106,14 @@ def review_order(path):
 
 
 def gate_errors(project, pid, base):
-    """Prüft die Abschlussschranke eines Pakets und liefert alle Befunde."""
+    """Prüft die Abschlussschranke eines Pakets und liefert alle Befunde.
+
+    Statt der alten Markdown-Blöcke liest die Schranke die sichtbare Datei
+    ``TICKET-<ID>.json`` in der Arbeitskopie: vorhanden, lesbar, ``state``
+    ``done``, ``commit`` im Repository (oder Already-Integrated) und ``test``
+    nicht leer. Die übrigen Prüfungen (Commit-Präfix, Feature-Doku, jüngstes
+    Review PASS, saubere Arbeitskopie) bleiben unverändert.
+    """
     project = Path(project)
     errors = []
     head = run_git(project, "rev-parse", "HEAD")
@@ -1418,56 +1125,44 @@ def gate_errors(project, pid, base):
         for line in log.stdout.splitlines():
             if "\t" in line:
                 commits.append(tuple(line.split("\t", 1)))
-    block = None
-    for _, blocks in collect_blocks(project):
-        for candidate in blocks:
-            if block_id(candidate) == pid:
-                block = candidate
-                break
-        if block is not None:
-            break
 
-    revisions = proof_commits(block)
-    # Ein Paket kann bereits in den Integrationsstand gemergt sein, während
-    # sein Nachweis nur in der unversionierten Arbeitsnotiz steht. Dann gibt es
-    # keine neuen Commits; der Nachweis liegt vielmehr als Vorfahre der Basis
-    # vor. Dieser Fall ist kein fehlender Paketabschluss. Bei mehreren
-    # gelisteten Commits genügt einer, der Vorfahre der Basis ist und das
-    # Paketpräfix trägt.
+    ticket_name = vibe_tickets.ticket_file_name(pid)
+    record = None
+    if not (project / ticket_name).is_file():
+        errors.append("Ticket-Datei " + ticket_name + " fehlt in der Arbeitskopie.")
+    else:
+        try:
+            record = vibe_tickets.read_ticket_file(project / ticket_name)
+        except ValueError as error:
+            errors.append("Ticket-Datei " + ticket_name + " ist nicht lesbar: "
+                          + str(error))
+
+    commit = ""
+    if record is not None:
+        if record.get("state") != "done":
+            errors.append("Ticket " + pid + " ist nicht erledigt "
+                          "(state muss 'done' sein).")
+        commit = record.get("commit") or ""
+        if not record.get("test"):
+            errors.append("Nachweis für " + pid + " fehlt: das test-Feld ist leer.")
+
+    # Ein Paket kann bereits in den Integrationsstand gemergt sein; dann gibt
+    # es keine neuen Commits, aber der Nachweis-Commit liegt als Vorfahre der
+    # Basis vor. Dieser Fall ist kein fehlender Paketabschluss.
     already_integrated = (
         not commits
-        and any(
-            commit_subject(project, revision).startswith(pid + ":")
-            and commit_is_ancestor(project, revision, base)
-            for revision in revisions
-        )
+        and bool(commit)
+        and commit_subject(project, commit).startswith(pid + ":")
+        and commit_is_ancestor(project, commit, base)
     )
     if not already_integrated:
         if not commits:
             errors.append("Kein Commit seit dem Integrationsstand.")
         if not any(subject.startswith(pid + ":") for _, subject in commits):
             errors.append("Commit mit Präfix '" + pid + ":' fehlt.")
-
-    if block is None:
-        errors.append("Ticket " + pid + " fehlt in TICKETS.md/FEEDBACK.md.")
-    else:
-        if not is_done(block):
-            errors.append("Ticket " + pid + " ist nicht abgehakt ([x] fehlt).")
-        proof, reason = proof_ok(project, block)
-        if not proof:
-            errors.append("Nachweis für " + pid + " fehlt: " + reason + ".")
-        elif not already_integrated and not any(
-            revision
-            for revision in revisions
-            if any(
-                commit.startswith(revision) and subject.startswith(pid + ":")
-                for commit, subject in commits
-            )
-        ):
-            errors.append(
-                "Nachweis-Commit(s) " + ", ".join(revisions)
-                + " gehören nicht zu diesem Paketbranch."
-            )
+    if record is not None and commit and not commit_exists(project, commit) \
+            and not already_integrated:
+        errors.append("Nachweis-Commit " + commit + " ist im Repository nicht vorhanden.")
 
     feature = project / "docs" / "features" / (pid + ".md")
     if not feature.is_file() or not read_text(feature).strip():
@@ -1513,60 +1208,58 @@ def classify_output(exit_code, text):
 def status_report(project):
     """Liefert offene, wartende, blockierte und erledigte Pakete."""
     report = {"open": [], "waiting": [], "blocked": [], "done": []}
-    seen = set()
-    for _, blocks in collect_blocks(project):
-        for block in blocks:
-            pid = block_id(block)
-            if not pid or pid in seen:
-                continue
-            seen.add(pid)
-            if is_done(block) and proof_ok(project, block)[0]:
-                report["done"].append(pid)
-            elif is_blocked(block):
-                report["blocked"].append(pid)
-            elif is_waiting_merge(block):
-                report["waiting"].append(pid)
-            else:
-                report["open"].append(pid)
+    for record in vibe_tickets.load(project):
+        pid = record.get("id")
+        if not pid:
+            continue
+        state = record.get("state")
+        if state == "done":
+            report["done"].append(pid)
+        elif state == "blocked":
+            report["blocked"].append(pid)
+        elif state == "waiting-merge":
+            report["waiting"].append(pid)
+        else:
+            report["open"].append(pid)
     return report
 
 
 def priority_view(project):
     """Priorisierung je Projekt: konfigurierte Einträge und wirksame Ordnung.
 
-    Liefert ``order`` mit Status je konfiguriertem Eintrag (offen, erledigt,
-    gesperrt oder fehlt), ``queue`` mit der effektiven Abarbeitungsreihenfolge
-    aller bereiten offenen Pakete und ``standard`` mit der Läufer-
-    Standardordnung (TICKETS vor FEEDBACK, innerhalb der TICKETS nach
-    Priorität) über alle nicht erledigten Pakete — inklusive gesperrter und
-    abhängigkeitsgeblockter, weil auch für sie die spätere Abarbeitungs-
-    position gilt. Die Ansicht ändert nichts; sie nutzt dieselbe Auswahllogik
-    wie der Läufer.
+    Liefert ``order`` mit Status je konfiguriertem Eintrag (erledigt, gesperrt,
+    wartet auf Merge, offen oder fehlt), ``queue`` mit der effektiven
+    Abarbeitungsreihenfolge aller bereiten offenen Pakete und ``standard`` mit
+    der Standardordnung über alle nicht erledigten Pakete. Die Ansicht ändert
+    nichts; sie nutzt dieselbe Auswahllogik wie der Läufer.
     """
     project = Path(project)
+    tickets = vibe_tickets.load(project)
     located = {}
-    for source, blocks in collect_blocks(project):
-        for block in blocks:
-            pid = block_id(block)
-            if pid and pid not in located:
-                located[pid] = (source, block)
+    for record in tickets:
+        pid = record.get("id")
+        if pid and pid not in located:
+            located[pid] = record
+
+    def _status(record):
+        state = record.get("state")
+        if state == "done":
+            return "erledigt"
+        if state == "blocked":
+            return "gesperrt"
+        if state == "waiting-merge":
+            return "wartet auf Merge"
+        return "offen"
+
     entries = []
     for pid in package_order(project):
         entry = {"id": pid}
-        if pid not in located:
+        record = located.get(pid)
+        if record is None:
             entry["status"] = "fehlt"
         else:
-            source, block = located[pid]
-            entry["source"] = source
-            entry["title"] = block_title(block)
-            if is_done(block) and proof_ok(project, block)[0]:
-                entry["status"] = "erledigt"
-            elif is_blocked(block):
-                entry["status"] = "gesperrt"
-            elif is_waiting_merge(block):
-                entry["status"] = "wartet auf Merge"
-            else:
-                entry["status"] = "offen"
+            entry["title"] = record.get("title")
+            entry["status"] = _status(record)
         entries.append(entry)
     skip = set()
     queue = []
@@ -1579,33 +1272,26 @@ def priority_view(project):
             queue.append({
                 "id": selected["id"],
                 "ordered": selected["ordered"],
-                "source": selected["source"],
-                "title": block_title(selected["block"]),
+                "title": selected["title"],
             })
             skip.add(selected["id"])
-    # Standardordnung wie im Fallback von select_package: TICKETS.md vor
-    # FEEDBACK.md, innerhalb der TICKETS nach (Priorität, Blockindex) — ohne
-    # Ready-Prüfung, weil gesperrte/geblockte Pakete ihre Position behalten.
+    # Standardordnung wie im Fallback von select_package, ohne Ready-Prüfung,
+    # damit gesperrte/geblockte Pakete ihre spätere Position behalten.
     standard = []
-    for source, blocks in collect_blocks(project):
-        candidates = []
-        for index, block in enumerate(blocks):
-            key = (priority(block), index) if source == "TICKETS.md" \
-                else (0, index)
-            candidates.append((key, block))
-        candidates.sort(key=lambda item: item[0])
-        for _, block in candidates:
-            pid = block_id(block)
-            if not pid or (is_done(block) and proof_ok(project, block)[0]):
-                continue
-            standard.append({
-                "id": pid,
-                "source": source,
-                "title": block_title(block),
-                "status": ("gesperrt" if is_blocked(block)
-                           else "wartet auf Merge" if is_waiting_merge(block)
-                           else "offen"),
-            })
+    candidates = []
+    for index, record in enumerate(tickets):
+        if not record.get("id"):
+            continue
+        candidates.append(((priority(record), index), record))
+    candidates.sort(key=lambda item: item[0])
+    for _, record in candidates:
+        if record.get("state") == "done":
+            continue
+        standard.append({
+            "id": record["id"],
+            "title": record.get("title"),
+            "status": _status(record),
+        })
     return {"key": ORDER_KEY, "order": entries, "queue": queue,
             "standard": standard}
 
@@ -1614,16 +1300,12 @@ def normalize_order(project, text):
     """Erzwingt eine gültige Priorisierung; Dubletten entfallen.
 
     ``text`` ist eine Liste von Kennungen mit denselben Trennern wie
-    ``PACKAGE_ORDER``. Jede Kennung muss in TICKETS.md oder FEEDBACK.md
-    existieren; die Reihenfolge bleibt erhalten. Liefert die bereinigte
-    Liste oder wirft ``ValueError`` mit den unbekannten Kennungen.
+    ``PACKAGE_ORDER``. Jede Kennung muss im Ticketspeicher existieren; die
+    Reihenfolge bleibt erhalten. Liefert die bereinigte Liste oder wirft
+    ``ValueError`` mit den unbekannten Kennungen.
     """
-    located = set()
-    for _, blocks in collect_blocks(project):
-        for block in blocks:
-            pid = block_id(block)
-            if pid:
-                located.add(pid)
+    located = {record.get("id") for record in vibe_tickets.load(project)
+               if record.get("id")}
     order, seen, unknown = [], set(), []
     for token in ORDER_SPLIT.split(text or ""):
         if not token:
@@ -1635,7 +1317,7 @@ def normalize_order(project, text):
             order.append(token)
     if unknown:
         raise ValueError(
-            "Unbekannte Kennungen (in TICKETS.md/FEEDBACK.md nicht vorhanden): "
+            "Unbekannte Kennungen (nicht im Ticketspeicher): "
             + ", ".join(unknown))
     return order
 
@@ -1691,7 +1373,21 @@ def command_preflight(args):
 
 
 def command_copy_notes(args):
-    """Befehl ``copy-notes``: übernimmt Arbeitsnotizen in die Arbeitskopie."""
+    """Befehl ``copy-notes``: übernimmt Arbeitsnotizen und ggf. das Ticket.
+
+    Mit ``--id <pid>`` wird zusätzlich das aktuelle Ticket als sichtbare Datei
+    ``TICKET-<ID>.json`` in die Arbeitskopie transportiert; ein fehlendes
+    Ticket ist ein Fehler (``FEHLT:``, Exit 1). Ohne ``--id`` bleibt der
+    Transport von AGENTS.md/.vibe/project.env wie bisher.
+    """
+    pid = (getattr(args, "id", None) or "").strip()
+    if pid:
+        ok, _exclude = transport_ticket(args.project, args.worktree, pid)
+        if not ok:
+            print("FEHLT: Ticket " + pid + " fehlt im Ticketspeicher.")
+            return EXIT_NONE
+        print("OK: " + vibe_tickets.ticket_file_name(pid)
+              + " in die Arbeitskopie übernommen.")
     copied, skipped = copy_work_notes(args.project, args.worktree)
     for name in copied:
         print("OK: " + name + " in die Arbeitskopie übernommen.")
@@ -1711,9 +1407,9 @@ def command_copy_notes(args):
     return EXIT_OK
 
 
-def command_sync_proof(args):
-    """Befehl ``sync-proof``: schreibt den Paketnachweis zurück."""
-    changed, message = sync_proof(args.project, args.worktree, args.id)
+def command_sync_ticket(args):
+    """Befehl ``sync-ticket``: übernimmt den Abschluss in den Ticketspeicher."""
+    changed, message = sync_ticket(args.project, args.worktree, args.id)
     if not changed:
         print("FEHLT: " + message)
         return EXIT_NONE
@@ -1793,7 +1489,8 @@ def command_mark_waiting(args):
     erneute Auswahl, lässt den Eigentümer das Paket aber nach dem Merge über
     ``vibe package close`` abschließen.
     """
-    changed, message = mark_waiting_merge(args.project, args.id, args.note)
+    changed, message = mark_waiting_merge(args.project, args.id, args.note,
+                                          pr_url=args.pr_url)
     print(("OK: " if changed else "HINWEIS: ") + message)
     return EXIT_OK if changed else EXIT_NONE
 
@@ -1977,15 +1674,17 @@ def build_parser():
     )
     copy_notes.add_argument("--project", required=True)
     copy_notes.add_argument("--worktree", required=True)
+    copy_notes.add_argument("--id", default="",
+                            help="zusätzlich das Ticket TICKET-<id>.json transportieren")
     copy_notes.set_defaults(handler=command_copy_notes)
 
-    sync_proof_parser = subparsers.add_parser(
-        "sync-proof", help="Paketnachweis in den Projektordner zurückschreiben"
+    sync_ticket_parser = subparsers.add_parser(
+        "sync-ticket", help="Paketabschluss in den Ticketspeicher übernehmen"
     )
-    sync_proof_parser.add_argument("--project", required=True)
-    sync_proof_parser.add_argument("--worktree", required=True)
-    sync_proof_parser.add_argument("--id", required=True)
-    sync_proof_parser.set_defaults(handler=command_sync_proof)
+    sync_ticket_parser.add_argument("--project", required=True)
+    sync_ticket_parser.add_argument("--worktree", required=True)
+    sync_ticket_parser.add_argument("--id", required=True)
+    sync_ticket_parser.set_defaults(handler=command_sync_ticket)
 
     classify = subparsers.add_parser("classify", help="Agentenfehler einordnen")
     classify.add_argument("--exit-code", type=int, required=True)
@@ -2021,6 +1720,7 @@ def build_parser():
     mark_waiting_parser.add_argument("--project", required=True)
     mark_waiting_parser.add_argument("--id", required=True)
     mark_waiting_parser.add_argument("--note", required=True)
+    mark_waiting_parser.add_argument("--pr-url", default="")
     mark_waiting_parser.set_defaults(handler=command_mark_waiting)
 
     status = subparsers.add_parser("status", help="Paketstand ausgeben")

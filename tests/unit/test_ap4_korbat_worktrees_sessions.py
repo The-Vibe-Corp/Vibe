@@ -46,7 +46,6 @@ import json
 import os
 import re
 import shlex
-import shutil
 import socket
 import subprocess
 import sys
@@ -660,8 +659,6 @@ class ReconnectTest(RunnerFixtureMixin, unittest.TestCase):
         path.parent.mkdir(parents=True, exist_ok=True)
         real_git(project, "worktree", "add", "-q", "-b", "feature/test/f1",
                  str(path), "HEAD")
-        shutil.copy(project / "FEEDBACK.md", path / "FEEDBACK.md")
-        shutil.copy(project / "TICKETS.md", path / "TICKETS.md")
         self.register_worktree(project, path)
 
         result = self.run_runner(project)
@@ -978,10 +975,21 @@ class PackageCloseCliTest(unittest.TestCase):
         real_git(self.root, "init", "-q", "-b", "main", "proj")
         (self.project / ".vibe").mkdir(exist_ok=True)
         self.write_github_env(api="", enabled=True)
-        (self.project / "FEEDBACK.md").write_text(
-            "# FEEDBACK\n\n- [ ] F1 Testpaket\n  Beschreibung: Test\n",
+        # GH-48: Der Abschluss lebt im Ticketspeicher; der Worktree traegt nur
+        # die sichtbare Einzeldatei TICKET-F1.json. Der Speicher ist
+        # Laufzeitstand und bleibt deshalb unversioniert.
+        (self.project / ".gitignore").write_text(".vibe/\n", encoding="utf-8")
+        (self.project / ".vibe" / "tickets.json").write_text(
+            json.dumps({"version": 1, "tickets": [{
+                "id": "F1", "title": "Testpaket", "type": "feedback",
+                "state": "waiting-merge", "description": "Test",
+                "github": None, "pr_url": "", "commit": "", "test": "",
+                "blocked_reason": "", "waiting_note": "PR offen",
+                "priority": "", "dependencies": [],
+                "created": "2026-01-01T00:00:00+00:00",
+                "updated": "2026-01-01T00:00:00+00:00",
+            }]}, ensure_ascii=False, indent=1) + "\n",
             encoding="utf-8")
-        (self.project / "TICKETS.md").write_text("# TICKETS\n", encoding="utf-8")
         real_git(self.project, "add", "-A")
         real_git(self.project, "commit", "-q", "-m", "Ausgangsstand")
         real_git(self.root, "init", "-q", "--bare", "origin.git")
@@ -994,10 +1002,6 @@ class PackageCloseCliTest(unittest.TestCase):
         path.parent.mkdir(parents=True, exist_ok=True)
         real_git(self.project, "worktree", "add", "-q", "-b", "feature/test/f1",
                  str(path), "HEAD")
-        (path / "FEEDBACK.md").write_text(
-            "# FEEDBACK\n\n- [x] F1 Testpaket\n  Beschreibung: Test\n"
-            "  Commit: abc1234; Test: test_ap4\n",
-            encoding="utf-8")
         (path / "docs" / "features").mkdir(parents=True)
         (path / "docs" / "features" / "F1.md").write_text(
             "# F1\n", encoding="utf-8")
@@ -1006,6 +1010,19 @@ class PackageCloseCliTest(unittest.TestCase):
             "# Review\n\nVerdict: PASS\n", encoding="utf-8")
         real_git(path, "add", "-A")
         real_git(path, "commit", "-q", "-m", "F1: Nachweis")
+        # GH-48: Der Abschluss steht in der Laufzeitdatei; sie wird nie
+        # committet (deshalb erst nach dem Commit geschrieben).
+        (path / "TICKET-F1.json").write_text(
+            json.dumps({
+                "id": "F1", "title": "Testpaket", "type": "feedback",
+                "state": "done", "description": "Test",
+                "github": None, "pr_url": "", "commit": "abc1234",
+                "test": "test_ap4", "blocked_reason": "",
+                "waiting_note": "", "priority": "", "dependencies": [],
+                "created": "2026-01-01T00:00:00+00:00",
+                "updated": "2026-01-01T00:00:00+00:00",
+            }, ensure_ascii=False, indent=1) + "\n",
+            encoding="utf-8")
         return path
 
     def _simulate_squash_merge(self):
@@ -1048,8 +1065,9 @@ class PackageCloseCliTest(unittest.TestCase):
         Squash-Commit.
         Aktion: ``vibe package close proj F1``.
         Erwartung: Exit 0; lokaler Integrationsstand erreicht die Fernspitze
-        samt Paketänderung; Nachweis ``[x]`` steht im Projekt; Worktree,
-        Branch, Registry-Eintrag und Session sind entfernt.
+        samt Paketänderung; das Ticket steht im Projekt-Speicher auf
+        ``state=done`` mit Commit und Test; Worktree, Branch, Registry-Eintrag
+        und Session sind entfernt.
         Fehlerfall: nichts wird aufgeräumt oder der Nachweis fehlt.
         """
         server = PullFakeServer(merged=True).start()
@@ -1079,8 +1097,13 @@ class PackageCloseCliTest(unittest.TestCase):
             0, real_git(self.project, "cat-file", "-e", "HEAD:impl-F1.txt",
                         check=False).returncode,
             "Der Squash-Commit wurde nicht in den Integrationsstand geholt")
-        self.assertIn("- [x] F1",
-                      (self.project / "FEEDBACK.md").read_text(encoding="utf-8"))
+        document = json.loads(
+            (self.project / ".vibe" / "tickets.json").read_text(
+                encoding="utf-8"))
+        ticket = {item["id"]: item for item in document["tickets"]}["F1"]
+        self.assertEqual("done", ticket["state"], ticket)
+        self.assertEqual("abc1234", ticket["commit"], ticket)
+        self.assertEqual("test_ap4", ticket["test"], ticket)
 
     def test_unmerged_pr_fails_without_any_change(self):
         """Vorbedingung: wie oben, aber REST meldet ``merged=false``.

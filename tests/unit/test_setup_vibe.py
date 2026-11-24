@@ -53,6 +53,9 @@ PROGRAM_FILES = (
     "vibe_services.py",
     "vibe_github.py",
     "vibe_issues.py",
+    # GH-48: Der Ticketspeicher ist ein eigenes Programmodul und gehört in
+    # den Installationssatz (bin/vibe importiert es beim Start).
+    "vibe_tickets.py",
     "fritz-reconnect.py",
 )
 WEB_FILES = (

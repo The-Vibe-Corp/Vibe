@@ -333,9 +333,7 @@ class RunnerSessionContinueFixture(unittest.TestCase):
         self.runtime = self.root / "_logs"
         self.project = self.root / "proj"
         support.init_repo(self.project)
-        self.write_project(
-            feedback="- [ ] F25 Sessionfortsetzung\n  Beschreibung: Test\n"
-        )
+        self.write_project()
         self.calls = self.root / "calls.log"
         self.counter = self.root / "counter"
         self.args = self.root / "opencode.args"
@@ -354,11 +352,14 @@ class RunnerSessionContinueFixture(unittest.TestCase):
         )
         support.write_project(
             self.project, env_text,
-            feedback=feedback if feedback is not None else (
-                "- [ ] F25 Sessionfortsetzung\n  Beschreibung: Test\n"
-            ),
+            feedback=feedback if feedback is not None else [
+                support.ticket_record("F25", "Sessionfortsetzung",
+                                      type="feedback", description="Test")
+            ],
         )
-        support.commit_all(self.project, "Ausgangsstand")
+        support.git(self.project, "add", "-A")
+        if support.git(self.project, "diff", "--cached", "--quiet").returncode:
+            support.commit_all(self.project, "Ausgangsstand")
 
     def env(self, **extra):
         env = os.environ.copy()

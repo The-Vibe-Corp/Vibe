@@ -756,7 +756,8 @@ class RunnerCase(unittest.TestCase):
             'VERIFY_PACKAGE="true"\n'
             'VERIFY_FULL="true"\n'
             f"MAX_RETRIES={max_retries}\n",
-            feedback="- [ ] F1 Erstes Paket\n  Beschreibung: Test\n",
+            feedback=[support.ticket_record(
+                "F1", "Erstes Paket", type="feedback", description="Test")],
         )
         support.commit_all(self.project, "Ausgangsstand")
 

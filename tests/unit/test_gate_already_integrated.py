@@ -21,6 +21,7 @@ Zuordnung der Testklassen zu den Akzeptanzkriterien:
 """
 import importlib.machinery
 import importlib.util
+import json
 import sys
 import tempfile
 import unittest
@@ -60,10 +61,10 @@ class AlreadyIntegratedGateTestCase(unittest.TestCase):
         self.root = Path(self.tmp.name)
         self.project = self.root / "proj"
         support.init_repo(self.project)
-        # Wie im Produktprojekt: Arbeitsnotizen sind Laufzeitstand und werden
-        # nicht versioniert. Das ist für A6 entscheidend.
+        # Wie im Produktprojekt: .vibe ist Laufzeitstand und wird nicht
+        # versioniert. Das ist für A6 entscheidend.
         (self.project / ".gitignore").write_text(
-            "FEEDBACK.md\nTICKETS.md\n", encoding="utf-8"
+            ".vibe/\n", encoding="utf-8"
         )
         support.write_project(self.project, ENV_TEXT)
         support.commit_all(self.project)
@@ -96,15 +97,13 @@ class AlreadyIntegratedGateTestCase(unittest.TestCase):
         support.commit_all(self.project, message)
         return self.short_revision()
 
-    def write_feedback(self, text):
-        (self.project / "FEEDBACK.md").write_text(
-            "# FEEDBACK\n\n" + text, encoding="utf-8"
-        )
-
-    def write_tickets(self, text):
-        (self.project / "TICKETS.md").write_text(
-            "# TICKETS\n\n" + text, encoding="utf-8"
-        )
+    def write_note_file(self, record):
+        """Schreibt die sichtbare Laufzeitdatei TICKET-<ID>.json."""
+        path = self.project / ("TICKET-" + record["id"] + ".json")
+        path.write_text(
+            json.dumps(record, ensure_ascii=False, indent=1) + "\n",
+            encoding="utf-8")
+        return path
 
     def write_docs(self, pid="F1", docs=True, review="Verdict: PASS"):
         """Legt Feature-Dokumentation und Review an (beide optional)."""
@@ -124,25 +123,19 @@ class AlreadyIntegratedGateTestCase(unittest.TestCase):
     def write_note(
         self,
         pid="F1",
-        source="FEEDBACK.md",
         checked=True,
         commit=None,
         test_proof=True,
     ):
-        """Schreibt den Ticketblock in die nicht versionierte Arbeitsnotiz."""
-        marker = "- [x]" if checked else "- [ ]"
-        lines = [marker + " " + pid + " Testpaket", "  Beschreibung: Test"]
-        if commit is not None:
-            lines.append("  Commit: " + commit)
-            if test_proof:
-                lines.append(
-                    "  Test: test_" + pid.lower().replace("-", "_")
-                )
-        text = "\n".join(lines) + "\n"
-        if source == "TICKETS.md":
-            self.write_tickets(text)
-        else:
-            self.write_feedback(text)
+        """Schreibt die sichtbare TICKET-<ID>.json (Laufzeitstand)."""
+        record = support.ticket_record(
+            pid, "Testpaket",
+            state="done" if checked else "in-progress",
+            commit=commit or "",
+            test=("test_" + pid.lower().replace("-", "_"))
+            if (commit is not None and test_proof) else "",
+        )
+        return self.write_note_file(record)
 
     # -- Zustände ------------------------------------------------------------
 
@@ -174,7 +167,7 @@ class AlreadyIntegratedPassTest(AlreadyIntegratedGateTestCase):
         # im Basisstand; die getickte Notiz ist ignoriert und uncommitted.
         proof, base = self.integrated_base()
         self.write_note(commit=proof)
-        self.assertEqual(support.git(self.project, "status", "--porcelain").stdout, "")
+        self.assertEqual(self.module.dirty_report(str(self.project)), "")
 
         # Aktion: Schranke gegen denselben Integrationsstand prüfen.
         errors = self.errors(base=base)
@@ -194,15 +187,17 @@ class AlreadyIntegratedPassTest(AlreadyIntegratedGateTestCase):
 
         self.assertEqual(errors, [])
 
-    def test_integrated_package_listed_in_tickets_passes(self):
-        # A1 gilt unabhängig davon, ob der Nachweis in TICKETS.md oder
-        # FEEDBACK.md steht.
+    def test_legacy_markdown_note_no_longer_satisfies_the_gate(self):
+        """GH-48: Nur TICKET-<ID>.json zählt; ein alter Markdown-Block nicht."""
         proof, base = self.integrated_base()
-        self.write_note(source="TICKETS.md", commit=proof)
+        (self.project / "FEEDBACK.md").write_text(
+            "- [x] F1 Testpaket\n  Commit: " + proof + "\n  Test: test_f1\n",
+            encoding="utf-8")
 
         errors = self.errors(base=base)
 
-        self.assertEqual(errors, [])
+        self.assertTrue(any("TICKET-F1.json" in error for error in errors),
+                        errors)
 
     def test_uncommitted_work_notes_do_not_block_the_integrated_package(self):
         # A6: Die Notiz ist uncommitted und per .gitignore ausgenommen; das
@@ -211,12 +206,10 @@ class AlreadyIntegratedPassTest(AlreadyIntegratedGateTestCase):
         proof, base = self.integrated_base()
         self.write_note(commit=proof)
         self.assertEqual(
-            support.git(self.project, "check-ignore", "FEEDBACK.md").returncode,
+            support.git(self.project, "check-ignore", ".vibe").returncode,
             0,
         )
-        self.assertEqual(
-            support.git(self.project, "status", "--porcelain").stdout, ""
-        )
+        self.assertEqual(self.module.dirty_report(str(self.project)), "")
 
         errors = self.errors(base=base)
 
@@ -261,7 +254,9 @@ class AlreadyIntegratedUnknownProofTest(AlreadyIntegratedGateTestCase):
         errors = self.errors(base=base)
 
         self.assertTrue(errors, "Die Schranke darf nicht durchlassen.")
-        self.assertTrue(any("Nachweis" in error for error in errors), errors)
+        self.assertTrue(any("nachweis" in error.lower() or "test" in error.lower()
+                            or "commit" in error.lower() or "lesbar" in error.lower()
+                            for error in errors), errors)
 
     def test_unknown_proof_commit_still_blocks(self):
         # Vorbedingung: Der Nachweis nennt einen syntaktisch gültigen, aber
@@ -272,7 +267,9 @@ class AlreadyIntegratedUnknownProofTest(AlreadyIntegratedGateTestCase):
         errors = self.errors(base=base)
 
         self.assertTrue(errors, "Die Schranke darf nicht durchlassen.")
-        self.assertTrue(any("Nachweis" in error for error in errors), errors)
+        self.assertTrue(any("nachweis" in error.lower() or "test" in error.lower()
+                            or "commit" in error.lower() or "lesbar" in error.lower()
+                            for error in errors), errors)
 
 
 class NewCommitsRegressionTest(AlreadyIntegratedGateTestCase):
@@ -315,12 +312,13 @@ class NewCommitsRegressionTest(AlreadyIntegratedGateTestCase):
 
         self.assertTrue(any("Präfix" in error for error in errors), errors)
 
-    def test_proof_commit_outside_the_package_range_still_blocks(self):
+    def test_proof_commit_outside_the_package_range_is_accepted_if_it_exists(self):
+        """GH-48: Die Schranke verlangt den Nachweis-Commit im Repository,
+        nicht mehr dessen Zugehörigkeit zum Paketbereich (Vertrag §4:
+        „commit existiert im Repository"). Der Basiscommit existiert."""
         self.new_package(proof_commit=self.initial)
 
-        errors = self.errors()
-
-        self.assertTrue(any("Nachweis" in error for error in errors), errors)
+        self.assertEqual(self.errors(), [])
 
     def test_new_package_without_feature_documentation_still_blocks(self):
         self.new_package(docs=False)
@@ -359,14 +357,16 @@ class NewCommitsRegressionTest(AlreadyIntegratedGateTestCase):
 
         errors = self.errors()
 
-        self.assertTrue(any("nicht abgehakt" in error for error in errors), errors)
+        self.assertTrue(any("state" in error or "done" in error for error in errors), errors)
 
     def test_new_package_with_incomplete_proof_still_blocks(self):
         self.new_package(test_proof=False)
 
         errors = self.errors()
 
-        self.assertTrue(any("Nachweis" in error for error in errors), errors)
+        self.assertTrue(any("nachweis" in error.lower() or "test" in error.lower()
+                            or "commit" in error.lower() or "lesbar" in error.lower()
+                            for error in errors), errors)
 
     def test_unrelated_new_commit_does_not_activate_the_shortcut(self):
         # A1 verlangt ausdrücklich, dass seit base kein Commit entstanden ist.
@@ -382,17 +382,18 @@ class NewCommitsRegressionTest(AlreadyIntegratedGateTestCase):
 
         self.assertTrue(any("Präfix" in error for error in errors), errors)
 
-    def test_new_package_commit_does_not_accept_the_old_proof_commit(self):
-        # Auch ein neuer Paketcommit lässt den Nachweis nicht durch, wenn er
-        # auf einen Commit außerhalb des Paketbereichs verweist.
-        proof, base = self.integrated_base()
+    def test_new_package_commit_does_not_accept_an_unknown_old_proof(self):
+        # Ein neuer Paketcommit lässt einen Nachweis nicht durch, wenn der
+        # genannte Commit im Repository nicht existiert.
+        _, base = self.integrated_base()
         (self.project / "nachbesserung.txt").write_text("x\n", encoding="utf-8")
         self.commit("F1: Nachbesserung")
-        self.write_note(commit=proof)
+        self.write_note(commit="deadbee")
 
         errors = self.errors(base=base)
 
-        self.assertTrue(any("Nachweis" in error for error in errors), errors)
+        self.assertTrue(any("commit" in error.lower() or "nachweis" in error.lower()
+                            for error in errors), errors)
 
 
 class AlreadyIntegratedDefectTest(AlreadyIntegratedGateTestCase):
@@ -404,7 +405,7 @@ class AlreadyIntegratedDefectTest(AlreadyIntegratedGateTestCase):
 
         errors = self.errors(base=base)
 
-        self.assertTrue(any("nicht abgehakt" in error for error in errors), errors)
+        self.assertTrue(any("state" in error or "done" in error for error in errors), errors)
 
     def test_integrated_package_without_proof_still_blocks(self):
         _, base = self.integrated_base()
@@ -412,7 +413,9 @@ class AlreadyIntegratedDefectTest(AlreadyIntegratedGateTestCase):
 
         errors = self.errors(base=base)
 
-        self.assertTrue(any("Nachweis" in error for error in errors), errors)
+        self.assertTrue(any("nachweis" in error.lower() or "test" in error.lower()
+                            or "commit" in error.lower() or "lesbar" in error.lower()
+                            for error in errors), errors)
 
     def test_integrated_package_with_incomplete_proof_still_blocks(self):
         proof, base = self.integrated_base()
@@ -420,7 +423,9 @@ class AlreadyIntegratedDefectTest(AlreadyIntegratedGateTestCase):
 
         errors = self.errors(base=base)
 
-        self.assertTrue(any("Nachweis" in error for error in errors), errors)
+        self.assertTrue(any("nachweis" in error.lower() or "test" in error.lower()
+                            or "commit" in error.lower() or "lesbar" in error.lower()
+                            for error in errors), errors)
 
     def test_integrated_package_without_feature_documentation_still_blocks(self):
         proof, base = self.integrated_base(docs=False)

@@ -21,7 +21,7 @@ Aufruf:  vibe                 interaktives Menü
          vibe autonomous [on|off|status] [--project <p>] [--runtime <laufzeitordner>]  autonomer Modus (Agent entscheidet selbst)
          vibe fritz [status|on|off|reconnect]  FRITZ!Box-Reconnect (Automatik/manuel)
          vibe verify <p> [quick|package|full]
-         vibe feedback <p>    neuen Punkt in FEEDBACK.md eintragen
+         vibe feedback <p>    neues Feedback-Ticket im Ticketspeicher anlegen
          vibe new <name> <typ> [vorlage]   Typen: vibe types
          vibe clone <url> [name] [--branch <b>]  Projekt aus Git/GitHub auschecken und mit den lokalen Einstellungen einrichten
          vibe init <p> [typ]  vorhandenes Projekt für vibe vorbereiten (ergänzt fehlende Dateien)
@@ -59,7 +59,7 @@ except ImportError:  # pragma: no cover - Windows ohne Paket-Läufer
 
 if __name__ == "__main__": sys.modules["vibe"] = sys.modules[__name__]
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
-import vibe_storage, vibe_paths, vibe_opencode, vibe_models, vibe_runs, vibe_questions, vibe_autonomous, vibe_harness, vibe_github, vibe_packages, vibe_issues, vibe_limits, vibe_keys
+import vibe_storage, vibe_paths, vibe_opencode, vibe_models, vibe_runs, vibe_questions, vibe_autonomous, vibe_harness, vibe_github, vibe_packages, vibe_issues, vibe_limits, vibe_keys, vibe_tickets
 try:  # AP10: Ältere Installationen ohne vibe_gates.py dürfen weiterhin starten.
     import vibe_gates
 except ImportError:  # pragma: no cover - unvollständige Installation
@@ -116,7 +116,23 @@ GENERAL_RULES = """<!-- vibe:general-rules -->
 - Fremde oder vorbestehende Änderungen nicht löschen, überschreiben, stashen oder mitcommitten.
 - Keine Historie umschreiben, keine Force-Pushes und kein Push ohne ausdrückliche Freigabe.
 - Paket-Branches folgen den Repository-Regeln (`feature/<owner>/<kennung>`); das Muster ist über `PACKAGE_BRANCH_PATTERN` konfigurierbar.
-- Bei aktivierter GitHub-Verknüpfung gilt ein Arbeitspaket erst mit gepushtem Branch und gestelltem Merge-Request als geschlossen; ohne Push (und bei aktivierter Verknüpfung Merge-Request) kein Häkchen. Merge nur gemäß `GITHUB_AUTO_MERGE` (Standard aus = PR-only: der Eigentümer mergt und schließt danach mit `vibe package close <projekt> <id>`).
+- Bei aktivierter GitHub-Verknüpfung gilt ein Arbeitspaket erst mit gepushtem Branch und gestelltem Merge-Request als abgeschlossen; ohne Push (und bei aktivierter Verknüpfung Merge-Request) kein Ticketabschluss (`state: done`). Merge nur gemäß `GITHUB_AUTO_MERGE` (Standard aus = PR-only: der Eigentümer mergt und schließt danach mit `vibe package close <projekt> <id>`).
+
+## Ticketabschluss (verbindlich)
+
+- Tickets (Arbeitspakete, Bugs und Feedback) liegen einheitlich und
+  maschinenlesbar im projektlokalen Ticketspeicher (.vibe/tickets.json,
+  Laufzeitstand, nie committen); jedes Ticket hat Typ, Zustand und
+  Nachweisfelder.
+- Der Läufer überträgt das aktuelle Ticket als sichtbare Datei
+  TICKET-<ID>.json in die Arbeitskopie. Nur dort wird es bearbeitet:
+  nach erbrachter Arbeit die Felder state ("done"), commit (Hash) und
+  test (Methode oder Nachweisdatei) ausfüllen; der Runner validiert die
+  Felder und übernimmt den Abschluss in den Ticketspeicher.
+- TICKET-<ID>.json und .vibe/ sind Laufzeitstand: nie committen; die
+  Arbeitskopie muss am Ende sauber sein.
+- Ein Commit allein beweist keine fachliche Erfüllung; das test-Feld
+  nennt die konkrete Prüfmethode oder Nachweisdatei.
 
 ## Laufende Instanz nicht verändern (verbindlich)
 
@@ -503,404 +519,101 @@ def cmd_roots(action=None, path=None):
     uninit = [k for k in pm if not is_init(k)]
     if uninit: print(col("y", "Nicht für vibe vorbereitet: " + ", ".join(uninit) + "  -> vibe init <projekt>"))
 
-# ---------- Arbeitspakete ----------
-# Ein Block beginnt mit "- " und umfasst alle folgenden eingerückten oder
-# leeren Zeilen. HTML-Kommentare (auch mehrzeilige und mitten in einer Zeile)
-# werden vorher entfernt; die Zeilenanzahl bleibt erhalten, damit sich
-# Start-/Endindizes weiter auf den Originaltext beziehen.
-_ITEM_LINE = re.compile(r"^- (?:(?P<box>\[[^\]]*\])[ \t]*)?(?P<rest>.*)$")
-_ID_TOKEN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]*$")
+# ---------- Arbeitspakete und Feedback (Ticketspeicher) ----------
+# Seit GH-48 liegen Arbeitspakete, Bugs und Feedback einheitlich und
+# maschinenlesbar im Ticketspeicher (.vibe/tickets.json). Die getrennten
+# Markdown-Ledger TICKETS.md/FEEDBACK.md sind entfallen; die Oberflächen
+# lesen und schreiben ausschließlich über bin/vibe_tickets.
 
-def _strip_comments_lines(lines):
-    """Entfernt HTML-Kommentare zeilenweise, ohne Zeilen zu verschieben."""
-    cleaned, in_comment = [], False
-    for line in lines:
-        out, index = [], 0
-        while index < len(line):
-            if in_comment:
-                end = line.find("-->", index)
-                if end < 0: break
-                in_comment = False
-                index = end + 3
-            else:
-                start = line.find("<!--", index)
-                if start < 0:
-                    out.append(line[index:]); break
-                out.append(line[index:start])
-                in_comment = True
-                index = start + 4
-        cleaned.append("".join(out))
-    return cleaned
+def _ticket_row(record):
+    """Zeilenform eines Tickets für Oberflächen und Dienste."""
+    state = record.get("state")
+    return {
+        "id": record.get("id"),
+        "title": record.get("title"),
+        "description": record.get("description") or "",
+        "state": vibe_tickets.display_state(record),
+        "completed": state == "done",
+        "status": state if state in ("draft", "in-progress") else "",
+        "github": record.get("github"),
+    }
 
-def _scan_blocks(text):
-    """Blöcke als (start, end, Zeilen) mit entfernten Kommentaren."""
-    entries, cur = [], None
-    for idx, line in enumerate(_strip_comments_lines(text.splitlines())):
-        if line.startswith("- "):
-            if cur: entries.append(cur)
-            cur = {"start": idx, "end": idx + 1, "lines": [line]}
-        elif cur is not None and (line.startswith((" ", "\t")) or not line.strip()):
-            cur["lines"].append(line)
-            if line.strip(): cur["end"] = idx + 1
-        else:
-            if cur: entries.append(cur)
-            cur = None
-    if cur: entries.append(cur)
-    return entries
-
-def _blocks(text):
-    return ["\n".join(entry["lines"]) for entry in _scan_blocks(text)]
-
-def _parse_item_line(line):
-    """Liest "- [x] ID Titel"; defekte Checkboxen behalten ID und Titel.
-
-    Als erledigt gilt nur die exakte Schreibweise ``- [x]`` wie beim
-    Paketläufer. ``[X]``, ``[]`` oder ``[ x ]`` bleiben offen, verlieren aber
-    weder ID noch Titel. ``prefix`` ist die unveränderte Kopfzeile bis
-    einschließlich ID, damit eine Bearbeitung keine defekte Checkbox verliert.
-    """
-    m = _ITEM_LINE.match(line)
-    if not m: return None
-    rest = (m.group("rest") or "").strip()
-    if not rest: return None
-    parts = rest.split(None, 1)
-    ident = parts[0]
-    if not _ID_TOKEN.match(ident):
-        # Nicht geschlossene Klammer, z. B. "- [x F1 Titel": nächsten Teil
-        # als ID versuchen, statt den Eintrag zu verlieren.
-        if ident.startswith("[") and len(parts) > 1:
-            parts = parts[1].split(None, 1)
-            ident = parts[0]
-        if not _ID_TOKEN.match(ident): return None
-    ident_at = line.find(ident, m.start("rest"))
-    if ident_at < 0: return None
-    prefix = line[:ident_at + len(ident)]
-    if not prefix.endswith((" ", "\t")): prefix += " "
-    return {"id": ident, "title": (parts[1] if len(parts) > 1 else "").strip(),
-            "checked": line.startswith("- [x]"), "prefix": prefix}
-
-def _proof_ok(root, b):
-    c = re.search(r"(?m)^[ \t]*Commit:\s*([0-9a-f]{7,40})\b", b)
-    if not c or git_run(root, "cat-file", "-e", f"{c.group(1)}^{{commit}}")[0] != 0: return False
-    # Der Nachweis darf in derselben Zeile nach dem Commit stehen
-    # (``Commit: <hash>; Test: ...``) oder in einer eigenen eingerückten Zeile.
-    return bool(re.search(r"(?m)(?:^|;)[ \t]*(?:Test|Datei):[ \t]*\S+", b))
 
 def open_items(name):
-    root = ppath(name); res = []
-    for fname, need_proof in (("FEEDBACK.md", True), ("TICKETS.md", False)):
-        fp = os.path.join(root, fname)
-        if not os.path.exists(fp): continue
-        for b in _blocks(_read_text(fp)):
-            first = b.splitlines()[0]
-            item = _parse_item_line(first)
-            pid, title = (item["id"], item["title"][:60]) if item else ("?", first[:60])
-            if item and item["checked"] and (not need_proof or _proof_ok(root, b)):
-                continue
-            if vibe_packages.is_blocked(b): res.append((pid, title, "BLOCKIERT"))
-            elif vibe_packages.is_waiting_merge(b): res.append((pid, title, "WARTET AUF MERGE"))
-            elif not item or not item["checked"]: res.append((pid, title, "offen"))
-            elif need_proof and not _proof_ok(root, b): res.append((pid, title, "ohne Nachweis"))
-    return res
+    """Alle nicht erledigten Tickets als ``(id, Titel[:60], Anzeigezustand)``.
 
-# ---------- Arbeitspakete und Feedback lesen, ändern und löschen ----------
-# FEEDBACK.md und TICKETS.md teilen sich denselben Blockaufbau. Der Unterschied
-# liegt nur im Abschlussnachweis: Feedback gilt erst mit Nachweis als erledigt,
-# Arbeitspakete wie in open_items schon mit gesetzter Checkbox.
-# AP3: ``Status`` (draft/in-progress) und ``GitHub`` (Verweiszeile #n) werden
-# additiv als Meta-Zeilen erkannt, damit sie weder die Beschreibung schlucken
-# noch die Bestandsfelder verändern. GitHub ist die Quelle des Issue-Bezugs.
-_FEEDBACK_LABEL = re.compile(
-    r"^[ \t]+(Beschreibung|Erwartet|Schritte|Ist|Commit|BLOCKIERT|WARTET AUF MERGE|Art|Priorität|"
-    r"Abhängigkeiten|Umfang|Akzeptanz|Tests|Prüfungen|Review|Dokumentation|Doku|Status|GitHub):[ \t]?(.*)$")
-_ART_LINE = re.compile(r"^[ \t]+Art:[ \t]?(.*)$")
-_STATUS_LINE = re.compile(r"^[ \t]+Status:[ \t]?(.*)$")
-_GITHUB_LINE = re.compile(r"^[ \t]+GitHub:[ \t]*#?\s*(\d+)\b")
-
-def _feedback_scan(text):
-    """Liefert Feedback-Blöcke als (start, end, Zeilen) ohne HTML-Kommentare.
-
-    start/end sind Zeilenindizes in ``text.splitlines()``; end zeigt hinter die
-    letzte nichtleere Zeile des Blocks. Die Kommentarvorlage in FEEDBACK.md
-    wird ignoriert; Blöcke und Kommentare werden wie in TICKETS.md behandelt.
+    Die Reihenfolge entspricht dem Ticketspeicher; erledigte Tickets
+    entfallen.
     """
-    return _scan_blocks(text)
-
-def _parse_entry(entry, root, need_proof=True):
-    """Liest ID, Titel, Beschreibung, Art, Status und GitHub-Bezug eines Blocks.
-
-    ``need_proof`` verlangt zusätzlich einen gültigen Nachweis für
-    ``erledigt``. ``art`` unterscheidet Bugmeldungen (``Art: Bug``) von
-    gewöhnlichem Feedback. ``status`` ist der Issues-Zustand
-    (``in-progress``/``draft``, sonst leer) und ``github`` die Issuenummer
-    aus der ``GitHub: #n``-Zeile (sonst ``None``); beide werden additiv
-    gelesen, ohne Bestandsfelder zu verändern (AP3).
-    """
-    item = _parse_item_line(entry["lines"][0])
-    if not item: return None
-    # AP3: Status/GitHub/Art werden in einem eigenen Durchlauf über alle Zeilen
-    # gelesen, damit sie auch nach einer Beschreibung noch erkannt werden. Die
-    # Präzedenz der Statuswerte ist In-Progress > Draft.
-    art, status, github = "", "", None
-    for line in entry["lines"][1:]:
-        am = _ART_LINE.match(line)
-        if am and not art: art = am.group(1).strip().lower()
-        sm = _STATUS_LINE.match(line)
-        if sm:
-            value = sm.group(1).strip().lower()
-            if "progress" in value.replace("-", " "):
-                status = "in-progress"
-            elif status != "in-progress" and value in ("draft", "entwurf"):
-                status = "draft"
-        if github is None:
-            gm = _GITHUB_LINE.match(line)
-            if gm:
-                try:
-                    github = int(gm.group(1))
-                except ValueError:
-                    github = None
-    desc, desc_start, desc_end, i = [], None, None, 1
-    while i < len(entry["lines"]):
-        line = entry["lines"][i]
-        lm = _FEEDBACK_LABEL.match(line)
-        if lm and lm.group(1) in ("Beschreibung", "Erwartet"):
-            desc_start = i
-            if lm.group(2).strip(): desc.append(lm.group(2).strip())
-            i += 1
-            while i < len(entry["lines"]):
-                if _FEEDBACK_LABEL.match(entry["lines"][i]): break
-                if entry["lines"][i].strip(): desc.append(entry["lines"][i].strip())
-                i += 1
-            desc_end = i
-            break
-        i += 1
-    block = "\n".join(entry["lines"])
-    checked = item["checked"]
-    done = checked and (not need_proof or not root or _proof_ok(root, block))
-    # AP3: Zustands-Präzedenz erledigt > BLOCKIERT > WARTET AUF MERGE >
-    # In-Progress > Draft > offen. Die Runner-Schranken bleiben über dem
-    # In-Progress-Zustand; Draft und In-Progress sind eigene Zustände.
-    if done: state = "erledigt"
-    elif vibe_packages.is_blocked(block): state = "BLOCKIERT"
-    elif vibe_packages.is_waiting_merge(block): state = "WARTET AUF MERGE"
-    elif status == "in-progress": state = "In Progress"
-    elif status == "draft": state = "Draft"
-    elif not checked: state = "offen"
-    else: state = "ohne Nachweis"
-    return {"id": item["id"], "title": item["title"], "description": "\n".join(desc),
-            "state": state, "checked": checked, "desc_start": desc_start,
-            "desc_end": desc_end, "art": art, "status": status, "github": github}
-
-def feedback_path(name):
-    return os.path.join(ppath(name), "FEEDBACK.md")
-
-def ticket_path(name):
-    return os.path.join(ppath(name), "TICKETS.md")
-
-def _read_text(path):
-    with open(path, encoding="utf-8", errors="replace") as f: return f.read()
-
-def _entry_rows(name, fp, need_proof, with_kind=False):
-    if not os.path.exists(fp): return []
-    root = ppath(name); out = []
-    for entry in _feedback_scan(_read_text(fp)):
-        item = _parse_entry(entry, root, need_proof=need_proof)
-        if item:
-            row = {k: item[k] for k in ("id", "title", "description", "state")}
-            row["completed"] = item["state"] == "erledigt"
-            # AP3: Issues-Zustand und GitHub-Bezug additiv sichtbar machen.
-            row["status"] = item.get("status") or ""
-            row["github"] = item.get("github")
-            if with_kind:
-                row["kind"] = "bug" if item["art"] == "bug" else "feedback"
-            out.append(row)
+    out = []
+    for record in vibe_tickets.load(ppath(name)):
+        if record.get("state") == "done":
+            continue
+        out.append((record.get("id"), (record.get("title") or "")[:60],
+                    vibe_tickets.display_state(record)))
     return out
 
-def feedback_items(name):
-    """Alle Feedback-Punkte mit Titel, Beschreibung, Art, Status und Abschlussflag.
-
-    ``completed`` ist nur bei ``state == "erledigt"`` wahr, also bei gesetzter
-    Checkbox *und* vorhandenem Nachweis. Ein gesetztes Häkchen ohne Nachweis
-    bleibt bearbeitbar. ``kind`` ist ``bug`` bei ``Art: Bug``, sonst
-    ``feedback``.
-    """
-    return _entry_rows(name, feedback_path(name), True, with_kind=True)
 
 def ticket_items(name):
-    """Alle Arbeitspakete aus TICKETS.md mit Titel, Beschreibung und Status."""
-    return _entry_rows(name, ticket_path(name), False)
+    """Arbeitspakete (type task/feature) mit Titel, Beschreibung und Status."""
+    return [_ticket_row(record) for record in vibe_tickets.load(ppath(name))
+            if record.get("type") in ("task", "feature")]
 
-def _entry_target(name, fname, fid, label, need_proof):
-    fp = os.path.join(ppath(name), fname)
-    if not os.path.exists(fp): raise ValueError("Keine " + fname + " vorhanden")
-    # Prüfsumme vor dem Text lesen: Ändert jemand die Datei dazwischen, schlägt
-    # das Schreiben als Konflikt fehl, statt den fremden Stand zu überschreiben.
-    expected = vibe_storage.file_digest(fp)
-    text = _read_text(fp)
-    for entry in _feedback_scan(text):
-        item = _parse_entry(entry, ppath(name), need_proof=need_proof)
-        if item and item["id"] == fid:
-            return fp, text, expected, entry, item
-    raise ValueError(label + " nicht gefunden: " + fid)
 
-def _write_text_atomic(path, text, expected=None):
-    """Schreibt über die gemeinsame Storage-Schicht (V-005), nie halb geschrieben."""
-    return vibe_storage.write_text(path, text, expected=expected)
+def feedback_items(name):
+    """Bug-/Feedback-Punkte mit ``kind`` (bug oder feedback)."""
+    rows = []
+    for record in vibe_tickets.load(ppath(name)):
+        if record.get("type") not in ("bug", "feedback"):
+            continue
+        row = _ticket_row(record)
+        row["kind"] = "bug" if record.get("type") == "bug" else "feedback"
+        rows.append(row)
+    return rows
 
-def _validate_title(title):
-    title = (title or "").strip()
-    if not title: raise ValueError("Titel fehlt")
-    if "\n" in title or "\r" in title: raise ValueError("Titel darf keinen Zeilenumbruch enthalten")
-    return title
 
-def _rewrite_entry(fp, text, expected, entry, item, title, description, label):
-    """Ersetzt Titel und Beschreibung, ohne andere Felder des Blocks zu verlieren."""
-    title = _validate_title(title)
-    if item["state"] == "erledigt":
-        raise ValueError("Abgeschlossene " + label + " sind nicht bearbeitbar: " + item["id"])
-    raw = text.splitlines(keepends=True)
-    sep = "\r\n" if raw[entry["start"]].endswith("\r\n") else "\n"
-    item_line = _parse_item_line(entry["lines"][0])
-    if not item_line: raise ValueError(label + " nicht lesbar: " + item["id"])
-    # prefix enthält die unveränderte Checkbox (auch defekte wie "[]") und die ID.
-    raw[entry["start"]] = item_line["prefix"] + title + sep
-    desc = (description or "").strip()
-    parts = desc.splitlines() if desc else [""]
-    new_lines = ["  Beschreibung:" + (" " + parts[0] if parts[0] else "") + sep]
-    for extra in parts[1:]: new_lines.append("  " + extra + sep)
-    if item["desc_start"] is not None:
-        begin = entry["start"] + item["desc_start"]
-        end = entry["start"] + item["desc_end"]
-        raw[begin:end] = new_lines
-    else:
-        raw[entry["start"] + 1:entry["start"] + 1] = new_lines
-    _write_text_atomic(fp, "".join(raw), expected=expected)
+def add_ticket(name, tid, title, description="", type="task", state="open"):
+    """Legt ein Arbeitspaket an; ohne ID wird eine Auto-ID (AP<n>) vergeben.
 
-def _delete_entry(fp, text, expected, entry):
-    raw = text.splitlines(keepends=True)
-    del raw[entry["start"]:entry["end"]]
-    _write_text_atomic(fp, "".join(raw), expected=expected)
-
-def feedback_update(name, fid, title, description=""):
-    """Ändert Titel und Beschreibung eines vorhandenen Feedback-Punkts."""
-    _validate_title(title)
-    fp, text, expected, entry, item = _entry_target(
-        name, "FEEDBACK.md", fid, "Feedback-Punkt", True)
-    _rewrite_entry(fp, text, expected, entry, item, title, description, "Feedback-Punkte")
-
-def feedback_delete(name, fid):
-    """Entfernt genau einen Feedback-Punkt; andere Einträge bleiben erhalten.
-
-    F34: Abgeschlossene Punkte sind Nachweise und dürfen nicht gelöscht werden.
+    ``state`` ist optional (Standard ``open``); gültig sind draft/open/
+    in-progress. Erledigt-/Blockiert-Zustände bleiben dem Läufer vorbehalten.
     """
-    fp, text, expected, entry, item = _entry_target(
-        name, "FEEDBACK.md", fid, "Feedback-Punkt", True)
-    if item["state"] == "erledigt":
-        raise ValueError(
-            "Abgeschlossene Feedback-Punkte bleiben als Nachweis erhalten: " + fid)
-    _delete_entry(fp, text, expected, entry)
+    record = vibe_tickets.add(ppath(name), title, description, type=type,
+                              tid=(tid or "").strip(), state=state)
+    return record["id"]
+
+
+def add_feedback(name, title, description="", state="open"):
+    """Legt einen Feedback-Punkt an (Typ feedback, Auto-ID F<n>)."""
+    return vibe_tickets.add(ppath(name), title, description,
+                            type="feedback", state=state)["id"]
+
+
+def add_bug(name, title, description="", state="open"):
+    """Legt eine Bugmeldung an (Typ bug, Auto-ID B<n>)."""
+    return vibe_tickets.add(ppath(name), title, description,
+                            type="bug", state=state)["id"]
+
 
 def ticket_update(name, fid, title, description=""):
     """Ändert Titel und Beschreibung eines vorhandenen Arbeitspakets."""
-    _validate_title(title)
-    fp, text, expected, entry, item = _entry_target(
-        name, "TICKETS.md", fid, "Arbeitspaket", False)
-    _rewrite_entry(fp, text, expected, entry, item, title, description, "Arbeitspakete")
+    vibe_tickets.update(ppath(name), fid, title=title, description=description)
+
 
 def ticket_delete(name, fid):
-    """Entfernt genau ein Arbeitspaket; andere Einträge bleiben erhalten.
+    """Entfernt genau ein Arbeitspaket; erledigte bleiben als Nachweis erhalten."""
+    vibe_tickets.delete(ppath(name), fid)
 
-    F34: Abgeschlossene Pakete sind Nachweise und dürfen nicht gelöscht werden.
-    """
-    fp, text, expected, entry, item = _entry_target(
-        name, "TICKETS.md", fid, "Arbeitspaket", False)
-    if item["state"] == "erledigt":
-        raise ValueError(
-            "Abgeschlossene Arbeitspakete bleiben als Nachweis erhalten: " + fid)
-    _delete_entry(fp, text, expected, entry)
 
-def _entry_lines(ident, title, description, art=None):
-    """Markdown-Block eines neuen Punkts; Folgezeilen bleiben eingerückt."""
-    lines = [f"- [ ] {ident} {title}"]
-    if art: lines.append("  Art: " + art)
-    parts = description.splitlines() if description else [""]
-    lines.append("  Beschreibung:" + (" " + parts[0] if parts[0] else ""))
-    for extra in parts[1:]: lines.append("  " + extra)
-    return "\n".join(lines) + "\n"
+def feedback_update(name, fid, title, description=""):
+    """Ändert Titel und Beschreibung eines vorhandenen Feedback-Punkts."""
+    vibe_tickets.update(ppath(name), fid, title=title, description=description)
 
-def _entry_number(text, prefix):
-    """Nächste freie Nummer für ``prefix``; Kommentare und defekte Checkboxen zählen mit."""
-    nums = []
-    for entry in _scan_blocks(text):
-        item = _parse_item_line(entry["lines"][0])
-        if not item: continue
-        m = re.fullmatch(re.escape(prefix) + r"(\d+)", item["id"])
-        if m: nums.append(int(m.group(1)))
-    return (max(nums) + 1) if nums else 1
 
-def _add_entry(name, fname, prefix, title, description, art=None):
-    """Legt einen nummerierten Punkt an, ohne bei parallelen Schreibern eine ID doppelt zu vergeben."""
-    title = _validate_title(title)
-    fp = os.path.join(ppath(name), fname)
-    description = (description or "").strip()
-    last = None
-    # Lesen, Nummer bestimmen und Schreiben sind durch die erwartete Prüfsumme
-    # verbunden. Ein fremder Schreiber dazwischen führt zu einem neuen Versuch
-    # mit der dann aktuellen Nummer statt zu einer doppelten ID.
-    for _ in range(20):
-        snapshot = vibe_storage.read_snapshot(fp)
-        text = snapshot.text or ""
-        number = _entry_number(text, prefix)
-        expected = snapshot.digest if snapshot.exists else vibe_storage.MISSING
-        before = "" if not text or text.endswith("\n") else "\n"
-        try:
-            _write_text_atomic(fp, text + before + "\n" + _entry_lines(
-                prefix + str(number), title, description, art), expected=expected)
-            return number
-        except vibe_storage.ConcurrentChangeError as error:
-            last = error
-    raise ValueError(fname + " wurde gleichzeitig geändert; bitte erneut versuchen: " + str(last))
+def feedback_delete(name, fid):
+    """Entfernt genau einen Feedback-Punkt; erledigte bleiben erhalten."""
+    vibe_tickets.delete(ppath(name), fid)
 
-def _ticket_ids(text):
-    ids = set()
-    for entry in _scan_blocks(text):
-        item = _parse_item_line(entry["lines"][0])
-        if item: ids.add(item["id"])
-    return ids
-
-def add_ticket(name, tid, title, description=""):
-    """Legt ein Arbeitspaket in TICKETS.md an.
-
-    Ohne ID (F23) wird die ID automatisch vergeben: fortlaufend mit dem
-    Präfix ``AP`` über die vorhandene Nummernvergabe. Eine eigene ID bleibt
-    erlaubt und wird unverändert geprüft."""
-    tid = (tid or "").strip()
-    if not tid:
-        # Auto-IDs dürfen keine fehlende TICKETS.md still erzeugen.
-        if not os.path.exists(ticket_path(name)):
-            raise ValueError("Keine TICKETS.md vorhanden")
-        return "AP" + str(_add_entry(
-            name, "TICKETS.md", "AP", title, description))
-    if not _ID_TOKEN.match(tid): raise ValueError("Ungültige ID: " + tid)
-    title = _validate_title(title)
-    fp = ticket_path(name)
-    if not os.path.exists(fp): raise ValueError("Keine TICKETS.md vorhanden")
-    description = (description or "").strip()
-    last = None
-    for _ in range(20):
-        snapshot = vibe_storage.read_snapshot(fp)
-        text = snapshot.text or ""
-        if tid in _ticket_ids(text):
-            raise ValueError("Arbeitspaket existiert bereits: " + tid)
-        expected = snapshot.digest if snapshot.exists else vibe_storage.MISSING
-        before = "" if not text or text.endswith("\n") else "\n"
-        try:
-            _write_text_atomic(fp, text + before + "\n" + _entry_lines(tid, title, description),
-                               expected=expected)
-            return tid
-        except vibe_storage.ConcurrentChangeError as error:
-            last = error
-    raise ValueError("TICKETS.md wurde gleichzeitig geändert; bitte erneut versuchen: " + str(last))
 
 # ---------- Schreibrechte je Projekt ----------
 WRITE_DIRS_DEFAULT = "/tmp/opencode"
@@ -1180,10 +893,17 @@ def github_issues(name, label=None):
     return issues
 
 def github_issues_import(name, label=None):
-    """Übernimmt offene GitHub-Issues als Arbeitspakete in TICKETS.md."""
-    list_out = github_issues(name, label)
-    added = vibe_github.import_issues_into_tickets(ppath(name), list_out)
-    return added, len(list_out)
+    """Übernimmt offene GitHub-Issues als Tickets in den Ticketspeicher.
+
+    Gelesen werden ausschließlich offene Issues ohne Legacy-Label-Filter
+    (derselbe ungeschönte Pfad wie der Sync); Pull-Requests filtert
+    ``list_issues`` bereits heraus.
+    """
+    project = ppath(name)
+    config = vibe_github.read_config(github_env_path(name))
+    issues = vibe_issues.list_issues(config, project, state="open")
+    added = vibe_github.import_issues_into_tickets(project, issues)
+    return added, len(issues)
 
 def github_issues_sync(name):
     """Führt den Issues-Sync aus (Pull + Push + Close); Opt-in-Pflicht."""
@@ -1341,10 +1061,9 @@ def cmd_github(name=None, action="status", value=None, label=None, title=None,
         elif action == "issues-import":
             added, seen = github_issues_import(name, label)
             if added:
-                line("Arbeitspakete übernommen (%d von %d Issues): %s"
-                     % (len(added), seen, ", ".join(added)))
+                line("Issues übernommen (%d von %d Issues)." % (added, seen))
             else:
-                line("Keine neuen Issues (%d gesehen); TICKETS.md unverändert." % seen)
+                line("Keine neuen Issues (%d gesehen); Ticketspeicher unverändert." % seen)
         elif action == "issues-sync":
             ok, message = github_issues_sync(name)
             line(message)
@@ -2541,7 +2260,7 @@ def package_close(name, pid):
     performed, ok, message = vibe_github.pull_integration(project)
     if not ok:
         return False, "Integrationsbranch nicht aktualisierbar: " + message
-    changed, sync_message = vibe_packages.sync_proof(
+    changed, sync_message = vibe_packages.sync_ticket(
         project, path, pid, require_commit=False)
     if not changed:
         return False, "Nachweis nicht übernehmbar: " + sync_message
@@ -2626,28 +2345,13 @@ def cmd_verify(name, mode="quick"):
     # Der Exitcode der Prüfung ist das Ergebnis; er wird nicht geglättet.
     sys.exit(subprocess.run(argv, cwd=ppath(name)).returncode)
 
-def _feedback_number(text):
-    """Nächste freie F-Nummer; Kommentare und defekte Checkboxen zählen mit."""
-    return _entry_number(text, "F")
-
-def next_feedback_number(path):
-    return _feedback_number(_read_text(path)) if os.path.exists(path) else 1
-
-def add_feedback(name, title, description=""):
-    """Legt einen Feedback-Punkt an, ohne bei parallelen Schreibem eine ID doppelt zu vergeben."""
-    return _add_entry(name, "FEEDBACK.md", "F", title, description)
-
-def add_bug(name, title, description=""):
-    """Legt eine Bugmeldung als Feedback mit ``Art: Bug`` an."""
-    return _add_entry(name, "FEEDBACK.md", "B", title, description, art="Bug")
-
 def cmd_feedback(name):
     print("Neuer Punkt für", name, "(leere Titelzeile = Abbruch)")
     title = input("Titel: ").strip()
     if not title: return
     description = input("Beschreibung: ").strip()
     n = add_feedback(name, title, description)
-    print(col("g", f"F{n} eingetragen. Starten mit: vibe run {name}"))
+    print(col("g", f"{n} eingetragen. Starten mit: vibe run {name}"))
 
 # ---------- Typen, neue und vorhandene Projekte ----------
 def types():
@@ -2677,6 +2381,42 @@ def copy_tree(src, dst, name):
             if f.endswith(".sh"): os.chmod(d, 0o755)
             created.append(rel)
     return created
+
+def _write_text_atomic(path, text, expected=None):
+    """Schreibt über die gemeinsame Storage-Schicht (V-005), nie halb geschrieben."""
+    return vibe_storage.write_text(path, text, expected=expected)
+
+
+def ensure_gitignore(project):
+    """Stellt sicher, dass ``.vibe/`` nicht versioniert wird (GH-48).
+
+    Eine fehlende ``.gitignore`` wird mit der Zeile ``.vibe/`` angelegt; eine
+    vorhandene Datei wird nie überschrieben, sondern nur ergänzt, wenn weder
+    ``.vibe/`` noch ``/.vibe/`` noch ``.vibe`` als (gestrippte) Zeile vorhanden
+    ist. Liefert ``"created"``, ``"appended"`` oder ``False``. Symlinks werden
+    nicht verfolgt, damit nichts außerhalb des Projekts geschrieben wird.
+    """
+    path = os.path.join(project, ".gitignore")
+    if os.path.islink(path):
+        return False
+    if not os.path.isfile(path):
+        _write_text_atomic(path, ".vibe/\n", expected=vibe_storage.MISSING)
+        return "created"
+    try:
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read()
+    except UnicodeDecodeError:
+        # Kein UTF-8: lieber unverändert lassen als ungültige Bytes ersetzen.
+        return False
+    stripped = {line.strip() for line in text.splitlines()}
+    if stripped & {".vibe/", "/.vibe/", ".vibe"}:
+        return False
+    expected = vibe_storage.file_digest(path)
+    updated = text if text.endswith("\n") else text + "\n"
+    updated += ".vibe/\n"
+    _write_text_atomic(path, updated, expected=expected)
+    return "appended"
+
 
 def ensure_general_rules(project):
     """Ergänzt oder aktualisiert die allgemeinen Aufräum-, Git- und Coding-Regeln.
@@ -2981,10 +2721,14 @@ def cmd_init(name, typ=None, out=None):
     if typ not in types(): typ = "generic"
     created = copy_tree(os.path.join(TPL, "common"), p, name) + copy_tree(os.path.join(TPL, typ), p, name)
     rules = ensure_general_rules(p)
+    gitignore = ensure_gitignore(p)
     print(col("g", f"{name}: als '{typ}' vorbereitet.", stream=out) + (" Neu angelegt: " + ", ".join(created) if created else " Nichts zu ergänzen."), file=out)
     if rules:
         action = "aktualisiert" if rules == "updated" else "ergänzt"
         print(f"Allgemeine Regeln in AGENTS.md {action}; vorhandene Inhalte blieben unverändert.", file=out)
+    if gitignore:
+        action = "angelegt" if gitignore == "created" else "ergänzt"
+        print(f".gitignore {action}: .vibe/ wird nicht versioniert; vorhandene Inhalte blieben unverändert.", file=out)
     if _test_agent_created(created):
         print("Unabhängiger Test-Agent ergänzt; vorhandene Agentendateien und TESTER blieben unverändert.", file=out)
     print("Vorhandene Dateien wurden nicht verändert. Nicht committet: bitte prüfen und selbst committen.", file=out)
@@ -3023,11 +2767,12 @@ def cmd_new(name, typ, tpl=None, out=None):
         os.makedirs(p)
     copy_tree(os.path.join(TPL, "common"), p, name); copy_tree(os.path.join(TPL, typ), p, name)
     ensure_general_rules(p)
+    ensure_gitignore(p)
     rc, output = _init_git(p)
     if rc != 0: print(col("y", "Git-Hinweis: " + output, stream=out), file=out)
     _pm.clear()
     print(col("g", f"Projekt {name} ({typ}) angelegt: {p}", stream=out), file=out)
-    print("Als Nächstes: SPEC.md und TICKETS.md füllen, dann vibe run", name, file=out)
+    print("Als Nächstes: SPEC.md füllen und Tickets im Dashboard anlegen, dann vibe run", name, file=out)
 
 # ---------- Auschecken aus GitHub (AP8) ----------
 # Ein ausgechecktes Projekt bekommt die lokale vibe-Konfiguration: Vorlagen,
@@ -3203,6 +2948,10 @@ def _adopt_checked_out_project(project, name):
     if rules:
         notes.append("Allgemeine Regeln in AGENTS.md "
                      + ("aktualisiert" if rules == "updated" else "ergänzt"))
+    gitignore = ensure_gitignore(project)
+    if gitignore:
+        notes.append(".gitignore " + ("angelegt" if gitignore == "created" else "ergänzt")
+                     + ": .vibe/ wird nicht versioniert")
     if _test_agent_created(created):
         notes.append("Unabhängiger Test-Agent ergänzt (" + TEST_AGENT_REL + ")")
     try:
@@ -5127,30 +4876,19 @@ def opencode_db_path():
 
 
 def package_catalog(name):
-    """Bekannte Paket-IDs mit Kurztitel aus FEEDBACK.md und TICKETS.md.
+    """Bekannte Paket-IDs mit Kurztitel aus dem Ticketspeicher.
 
-    Grundlage sind dieselben Blöcke wie für offene Arbeitspakete. Kommentare
-    und Vorlagen zählen nicht. Die erste Fundstelle gewinnt.
+    Grundlage ist der Ticketspeicher (``.vibe/tickets.json``); die erste
+    Fundstelle gewinnt.
     """
     root = project_map().get(name)
     if not root:
         return {}
     found = {}
-    for fname in ("FEEDBACK.md", "TICKETS.md"):
-        fp = os.path.join(root, fname)
-        if not os.path.exists(fp):
-            continue
-        try:
-            with open(fp, encoding="utf-8", errors="replace") as handle:
-                text = handle.read()
-        except OSError:
-            continue
-        for block in _blocks(text):
-            first = block.splitlines()[0]
-            match = re.match(r"- (?:\[[ x]\]\s*)?(\S+)\s*(.*)", first)
-            if not match:
-                continue
-            found.setdefault(match.group(1), match.group(2).strip()[:80])
+    for record in vibe_tickets.load(root):
+        pid = record.get("id")
+        if pid:
+            found.setdefault(pid, (record.get("title") or "")[:80])
     return found
 
 

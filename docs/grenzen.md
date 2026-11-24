@@ -4,7 +4,7 @@ Stand: 2026-11-03
 Gilt für: vibe 0.18.0 (Repositorystand, siehe `VERSION`)
 
 Diese Datei veröffentlicht Grenzen, die für den Betrieb wichtig sind. Sie
-ersetzt keine Tickets: offene Arbeitspakete bleiben in `TICKETS.md` sichtbar.
+ersetzt keine Tickets: offene Tickets bleiben im Dashboard und im Ticketspeicher (`.vibe/tickets.json`) sichtbar.
 Alles hier Genannte ist bewusst nicht zugesagt, bis ein Ticket es ändert.
 
 ## Offene Funktionen

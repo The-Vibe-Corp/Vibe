@@ -184,7 +184,9 @@ class B1RunnerFixture(unittest.TestCase):
             'VERIFY_PACKAGE="true"\n'
             'VERIFY_FULL="true"\n'
             "MAX_RETRIES=0\n",
-            feedback="- [ ] B1 Testpaket\n  Beschreibung: Projektmodelle weitergeben\n",
+            feedback=[support.ticket_record(
+                "B1", "Testpaket",
+                description="Projektmodelle weitergeben")],
         )
         # ``.vibe`` gehört nur zum Integrationsprojekt und ist nicht Teil des
         # Paketbranchs. Die Arbeitskopie enthält deshalb keine agents.json.

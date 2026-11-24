@@ -10,15 +10,16 @@ ausschließlich über die bestehenden Helpers von ``vibe_github``
 
 GitHub ist die Quelle der Wahrheit: Der Sync zieht alle Issues
 (``state=all``, ohne Pull-Requests, optional mit Assignee-Filter) und
-aktualisiert Titel und Zustand lokaler Blöcke, legt neue Blöcke als
-``- [ ] GH-<n> <Titel>`` an und schließt lokale Blöcke, deren Issue auf
-GitHub geschlossen wurde. Offene lokale Pakete ohne GitHub-Bezug werden als
-Issue angelegt und erhalten die Verweiszeile ``GitHub: #<n>``. Zustände sind
-mindestens Open, In Progress (Label) und Closed; Entwürfe
-(``Status: draft``) bleiben offen ohne Ready-Label und werden vom Läufer
-übersprungen. TICKETS.md wird ausschließlich über die atomare Storage-Schicht
-geschrieben (erwartete Prüfsumme); kollidierende Änderungen werden als
-Konflikt gemeldet, nie still überschrieben.
+aktualisiert Titel und Zustand der lokalen Tickets im Ticketspeicher, legt
+neue Tickets als ``GH-<n>`` an und setzt lokale Tickets, deren Issue auf
+GitHub geschlossen wurde, auf ``done``. Offene lokale Pakete ohne
+GitHub-Bezug werden als Issue angelegt und erhalten danach ``github=<n>``.
+Zustände sind mindestens Open, In Progress (Label) und Closed; Entwürfe
+bleiben ohne Ready-Label und werden vom Läufer übersprungen. Der
+Ticketspeicher (``.vibe/tickets.json``) wird ausschließlich über
+``vibe_tickets``/``vibe_storage`` geschrieben (erwartete Prüfsumme);
+kollidierende Änderungen werden als Konflikt gemeldet, nie still
+überschrieben.
 """
 import os
 import re
@@ -26,32 +27,12 @@ import urllib.parse
 
 import vibe_github
 import vibe_storage
-
-# ---- Block-/Zeilenstruktur, deckungsgleich mit dem Parser in bin/vibe ----
-_ENTRY_HEAD = re.compile(r"^- (?P<box>\[[^\]]*\])[ \t]*(?P<rest>.*)$")
-_GH_ID = re.compile(r"^GH-(\d+)$")
-_STATUS_LINE = re.compile(r"^[ \t]+Status:[ \t]?(.*)$")
-_GITHUB_REF = re.compile(r"^[ \t]*GitHub:[ \t]*#\s*(\d+)\b")
-_ART_LINE = re.compile(r"^[ \t]+Art:[ \t]?(.*)$")
-_DESC_LINE = re.compile(r"^[ \t]+Beschreibung:[ \t]?(.*)$")
-# Schlüsselwörter, die als Metadaten-/Markerzeile gelesen werden; deckungsgleich
-# mit dem Parser in bin/vibe (_FEEDBACK_LABEL).
-_META_KEYS = (
-    "Beschreibung", "Erwartet", "Schritte", "Ist", "Commit", "BLOCKIERT",
-    "WARTET AUF MERGE", "Art", "Priorität", "Abhängigkeiten", "Umfang",
-    "Akzeptanz", "Tests", "Prüfungen", "Review", "Dokumentation", "Doku",
-    "Status", "GitHub",
-)
-_META_LINE = re.compile(r"^[ \t]+(?:" + "|".join(_META_KEYS) + r"):[ \t]?")
-# Erkennung einer Steuerzeile beim Schreiben: Schlüsselwort plus Doppelpunkt
-# (auch mit Leerraum davor und unabhängig von Groß-/Kleinschreibung), damit
-# auch Substring-Marker (BLOCKIERT:, WARTET AUF MERGE:, Priorität:,
-# Abhängigkeiten:, Commit:) und der Draft-/Status-Abgleich entschärft werden.
-_CONTROL_LINE = re.compile(
-    r"^(?P<indent>[ \t]*)(?P<key>" + "|".join(_META_KEYS)
-    + r")[ \t]*:[ \t]?(?P<rest>.*)$", re.IGNORECASE)
+import vibe_tickets
 
 ISSUE_STATES = ("draft", "ready", "in-progress", "open")
+
+# GH-Kennung eines importierten Tickets (``GH-<n>``).
+_GH_ID = re.compile(r"^GH-(\d+)$")
 
 
 def _api(config):
@@ -132,309 +113,161 @@ def _label_names(issue):
             if isinstance(label, dict)]
 
 
-# ---------------------------------------------------------------- Blöcke
-def _scan_blocks(lines):
-    """(start, end)-Bereiche der Ticketblöcke (Kopfzeilen ``- [...] ...``)."""
-    spans, cur = [], None
-    for index, line in enumerate(lines):
-        if _ENTRY_HEAD.match(line):
-            if cur is not None:
-                spans.append(cur)
-            cur = [index, index + 1]
-        elif cur is not None and (line.startswith((" ", "\t")) or not line.strip()):
-            if line.strip():
-                cur[1] = index + 1
-        else:
-            if cur is not None:
-                spans.append(cur)
-            cur = None
-    if cur is not None:
-        spans.append(cur)
-    return spans
-
-
-def _split_header(header):
-    """Zerlegt eine Kopfzeile in ID, Titel, Checkbox und Prefix."""
-    match = _ENTRY_HEAD.match(header)
-    if not match:
-        return None
-    rest = match.group("rest")
-    parts = rest.strip().split(None, 1)
-    if not parts:
-        return None
-    ident = parts[0]
-    ident_at = rest.find(ident)
-    if ident_at < 0:
-        return None
-    prefix_end = match.start("rest") + ident_at + len(ident)
-    prefix = header[:prefix_end]
-    if not prefix.endswith((" ", "\t")):
-        prefix += " "
-    return {"id": ident, "title": (parts[1] if len(parts) > 1 else "").strip(),
-            "checked": header.startswith("- [x]"), "prefix": prefix}
-
-
-def _block_description(lines, start, end):
-    """Beschreibungstext eines Blocks (``Beschreibung:`` samt Folgezeilen)."""
-    desc, in_desc = [], False
-    for line in lines[start:end]:
-        match = _DESC_LINE.match(line)
-        if match:
-            in_desc = True
-            first = match.group(1).strip()
-            if first:
-                desc.append(first)
-            continue
-        if in_desc:
-            if _META_LINE.match(line):
-                break
-            if line.strip():
-                desc.append(line.strip())
-    return "\n".join(desc)
-
-
-def _parse_block(lines, start, end):
-    """Liest die für den Sync nötigen Felder eines Blocks."""
-    header = _split_header(lines[start])
-    status, github, art = None, None, ""
-    for line in lines[start + 1:end]:
-        match = _STATUS_LINE.match(line)
-        if match:
-            if status is None:
-                value = match.group(1).strip().lower()
-                if "progress" in value.replace("-", " "):
-                    status = "in-progress"
-                elif value in ("draft", "entwurf"):
-                    status = "draft"
-            continue
-        match = _GITHUB_REF.match(line)
-        if match and github is None:
-            try:
-                github = int(match.group(1))
-            except ValueError:
-                github = None
-            continue
-        match = _ART_LINE.match(line)
-        if match and not art:
-            art = match.group(1).strip().lower()
-    if github is None and header:
-        gh = _GH_ID.match(header["id"])
-        if gh:
-            github = int(gh.group(1))
-    return {
-        "id": header["id"], "checked": header["checked"],
-        "title": header["title"], "status": status, "github": github,
-        "art": art,
-        "description": _block_description(lines, start, end),
-    }
-
-
+# ---------------------------------------------------------------- Sync
 def _sanitize_title(value, number):
     """Einzeiliger Issue-Titel (Fallback mit Nummer)."""
     text = " ".join(str(value or "").split())
     return text or ("Issue " + str(number))
 
 
-def _remote_status(labels, in_progress, ready):
-    """Remote-Zustand: In-Progress-Label schlägt Ready-Label schlägt Draft."""
+def _type_from_labels(labels):
+    """Tickettyp aus Issue-Labels: bug/feature gewinnen, sonst task."""
+    if "bug" in labels:
+        return "bug"
+    if "feature" in labels:
+        return "feature"
+    return "task"
+
+
+def _state_from_labels(labels, in_progress, ready):
+    """Lokaler Zustand aus Labels: In-Progress > Ready > Draft."""
     if in_progress in labels:
         return "in-progress"
     if ready in labels:
-        return "ready"
+        return "open"
     return "draft"
 
 
-def _local_status_value(remote_status):
-    """Remote-Zustand -> Wert der lokalen ``Status:``-Zeile (leer = keine)."""
-    return {"in-progress": "in-progress", "draft": "draft"}.get(remote_status, "")
+def _local_state_value(state):
+    """State-Aktion -> lokaler Speicherzustand (``ready`` mappt auf ``open``)."""
+    return {"draft": "draft", "ready": "open",
+            "in-progress": "in-progress", "open": "open"}[state]
 
 
-def _replace_title(header, new_title):
-    """Ersetzt den Titel einer Kopfzeile; Checkbox und ID bleiben unverändert."""
-    parsed = _split_header(header)
-    if not parsed:
-        return header
-    return parsed["prefix"] + new_title
+def _ticket_number(record):
+    """Issuenummer eines Tickets (Feld ``github`` oder ``GH-<n>``-ID)."""
+    number = record.get("github")
+    if number is not None:
+        return int(number)
+    match = _GH_ID.match(str(record.get("id") or ""))
+    if match:
+        return int(match.group(1))
+    return None
 
 
-def _apply_open_state(block_lines, new_title, status_value):
-    """Neue Blockzeilen: Titel gesetzt, Statuszeile gesetzt/entfernt."""
-    out = list(block_lines)
-    out[0] = _replace_title(out[0], new_title)
-    out = [line for line in out if not _STATUS_LINE.match(line)]
-    if status_value:
-        out.insert(1, "  Status: " + status_value)
-    return out
+def _gh_ticket(number, title, description, typ, state):
+    """Normalisierter ``GH-<n>``-Datensatz inkl. Zeitstempel."""
+    record = vibe_tickets.normalize({
+        "id": "GH-" + str(number),
+        "title": _sanitize_title(title, number),
+        "type": typ,
+        "state": state,
+        "github": number,
+        "description": str(description or ""),
+    })
+    now = vibe_tickets._now_utc()
+    record["created"] = now
+    record["updated"] = now
+    return record
 
 
-def _apply_close(block_lines, number):
-    """Hakt einen Block ab und hängt die Nachweiszeile an (idempotent)."""
-    out = list(block_lines)
-    if not out[0].startswith("- [x]"):
-        out[0] = re.sub(r"^(- )\[[^\]]*\]", r"\1[x]", out[0], count=1)
-    if not any(("geschlossen" in line.lower() and "#" + str(number) in line)
-               for line in out):
-        out.append("  GitHub: Issue #" + str(number) + " auf GitHub geschlossen")
-    return out
-
-
-def _neutralize_description_line(line):
-    """Escaped eine Beschreibungs-Folgezeile, die als Metadaten-/Markerzeile
-    gelesen würde; harmlose Zeilen bleiben unverändert lesbar.
-
-    ``> `` markiert die Zeile als Freitext und unterbricht den Doppelpunkt
-    nach dem Schlüsselwort, sodass weder Parser (_META_LINE/_FEEDBACK_LABEL)
-    noch Läufer-Marker (is_draft, is_blocked, is_waiting_merge, priority,
-    dependencies, proof_commits) auf Freitext anschlagen.
-    """
-    match = _CONTROL_LINE.match(line)
-    if not match:
-        return line
-    rest = match.group("rest").strip()
-    text = match.group("key") + (" " + rest if rest else "")
-    return match.group("indent") + "> " + text
-
-
-def _build_block(number, title, body, art, status_value):
-    """Neuer Block ``- [ ] GH-<n> <Titel>`` aus einem Issue."""
-    block = ["- [ ] GH-" + str(number) + " " + title,
-             "  GitHub: #" + str(number)]
-    if art == "bug":
-        block.append("  Art: Bug")
-    if status_value:
-        block.append("  Status: " + status_value)
-    desc = (body or "").strip().splitlines() or [""]
-    block.append("  Beschreibung:" + (" " + desc[0] if desc[0] else ""))
-    for extra in desc[1:]:
-        block.append(_neutralize_description_line("  " + extra))
-    return block
-
-
-def _insert_github_ref(lines, start, number):
-    """Fügt ``  GitHub: #<n>`` direkt hinter die Kopfzeile eines Blocks."""
-    lines.insert(start + 1, "  GitHub: #" + str(number))
-
-
-# ---------------------------------------------------------------- Sync
 def sync_issues(project_path, config):
     """Zentrale Dienstfunktion: Pull + Push + Close in einem Aufruf.
 
     Liefert die Statistik ``{"created", "updated", "closed", "pushed"}``.
     Wirft bei einem Konflikt der Storage-Schicht ``ValueError`` (nie stilles
     Überschreiben) und bei REST-Fehlern ``vibe_github.GitHubError``.
+
+    Bewusste Entscheidung: Ein lokal bereits erledigtes Ticket bleibt
+    erledigt, auch wenn das zugehörige Issue auf GitHub wieder geöffnet
+    wurde. Im Offen-Zweig wird es übersprungen (kein Titel-/Zustandsupdate,
+    kein Abbruch durch den Done-Schutz von ``vibe_tickets.update``); das
+    Issue bleibt remote offen.
     """
     project = str(project_path)
-    path = os.path.join(project, "TICKETS.md")
-    snapshot = vibe_storage.read_snapshot(path)
-    if not snapshot.exists:
-        raise ValueError("Keine TICKETS.md vorhanden: " + path)
-    text = snapshot.text
-    newline = "\r\n" if "\r\n" in text else "\n"
-    ended = text.endswith(("\n", "\r"))
-    lines = text.splitlines()
-
-    stats = {"created": 0, "updated": 0, "closed": 0, "pushed": 0}
     in_progress = config["issues_in_progress_label"]
     ready = config["issues_ready_label"]
     assignee = str(config.get("issues_assignee") or "").strip()
 
+    stats = {"created": 0, "updated": 0, "closed": 0, "pushed": 0}
+
     remote = list_issues(config, project, state="all")
-    by_number = {}
-    for issue in remote:
-        number = issue.get("number")
+
+    tickets = vibe_tickets.load(project)
+    by_github = {}
+    for record in tickets:
+        number = record.get("github")
         if number is not None:
-            by_number[int(number)] = issue
+            by_github[int(number)] = record
 
-    spans = _scan_blocks(lines)
-    blocks = [_parse_block(lines, start, end) for start, end in spans]
-    by_ref, by_ghid = {}, {}
-    for (start, end), block in zip(spans, blocks):
-        if block["github"] is not None:
-            by_ref[block["github"]] = (start, end, block)
-        match = _GH_ID.match(block["id"])
-        if match:
-            by_ghid[int(match.group(1))] = (start, end, block)
-
-    # Phase A (Pull): bestehende Blöcke aktualisieren/schließen, neue anlegen.
-    replacements = {}  # start -> (end, neue Zeilen)
-    appended = []      # neue Blöcke (Listen von Zeilen)
+    # Phase A (Pull): bestehende Tickets aktualisieren/schließen, neue anlegen.
     for issue in remote:
         number = int(issue.get("number") or 0)
         if not number:
             continue
-        state = str(issue.get("state") or "")
+        issue_state = str(issue.get("state") or "")
         labels = _label_names(issue)
-        located = by_ref.get(number) or by_ghid.get(number)
+        remote_state = _state_from_labels(labels, in_progress, ready)
+        located = by_github.get(number)
         if located is not None:
-            start, end, block = located
-            title = _sanitize_title(issue.get("title"), number)
-            if state == "closed":
-                new_block = _apply_close(lines[start:end], number)
-                if new_block != lines[start:end]:
+            tid = located["id"]
+            if issue_state == "closed":
+                if located.get("state") != "done":
+                    # GH-48: Ein auf GitHub geschlossenes Issue gilt als
+                    # erledigt; der github-Bezug ersetzt den Nachweis-Commit,
+                    # das test-Feld hält die Herkunft fest (Done-Invariante).
+                    vibe_tickets.update(project, tid, state="done",
+                                        test="GitHub-Issue #" + str(number)
+                                        + " geschlossen")
                     stats["closed"] += 1
-                    replacements[start] = (end, new_block)
-            else:
-                status_value = _local_status_value(
-                    _remote_status(labels, in_progress, ready))
-                new_block = _apply_open_state(lines[start:end], title, status_value)
-                if new_block != lines[start:end]:
-                    stats["updated"] += 1
-                    replacements[start] = (end, new_block)
-        elif state != "closed":
-            art = "bug" if "bug" in labels else ""
-            appended.append(_build_block(
-                number, _sanitize_title(issue.get("title"), number),
-                str(issue.get("body") or ""), art,
-                _local_status_value(_remote_status(labels, in_progress, ready))))
+                continue
+            if located.get("state") == "done":
+                # GH-48: Ein lokal erledigtes Ticket bleibt erledigt, auch
+                # wenn das Issue remote wieder geöffnet wurde. Der
+                # Done-Schutz von update würde den gesamten Sync abbrechen;
+                # deshalb hier überspringen (kein Update, kein Crash).
+                continue
+            new_title = _sanitize_title(issue.get("title"), number)
+            if located.get("title") != new_title \
+                    or located.get("state") != remote_state:
+                vibe_tickets.update(project, tid, title=new_title,
+                                    state=remote_state, github=number)
+                stats["updated"] += 1
+        elif issue_state != "closed":
+            vibe_tickets._insert(project, _gh_ticket(
+                number, issue.get("title"), issue.get("body"),
+                _type_from_labels(labels), remote_state))
             stats["created"] += 1
 
-    for start in sorted(replacements, reverse=True):
-        end, new_block = replacements[start]
-        lines[start:end] = new_block
-    if appended:
-        if lines and lines[-1].strip():
-            lines.append("")
-        for block in appended:
-            lines.extend(block)
-            lines.append("")
-
-    # Phase B (Push): offene lokale Pakete ohne GitHub-Bezug als Issue anlegen.
-    spans = _scan_blocks(lines)
-    blocks = [_parse_block(lines, start, end) for start, end in spans]
-    for start in range(len(spans) - 1, -1, -1):
-        block = blocks[start]
-        if block["github"] is not None or block["checked"]:
+    # Phase B (Push): offene lokale Tickets ohne GitHub-Bezug als Issue anlegen.
+    # Bewusste Änderung (GH-48): blocked/waiting-merge werden nicht gepusht;
+    # nur open/in-progress (draft wird ohnehin nie gepusht).
+    tickets = vibe_tickets.load(project)
+    for record in tickets:
+        tid = str(record.get("id") or "")
+        if tid.startswith("GH-"):
             continue
-        if block["id"].startswith("GH-"):
-            continue  # GH-Block ohne Referenz: nicht erneut pushen
-        labels = ["bug"] if block["art"] == "bug" else []
-        # Zustandstreue: ohne Statuszeile -> Ready-Label, Entwurf -> ohne.
-        if block["status"] != "draft":
-            labels.append(ready)
+        if record.get("github") is not None:
+            continue
+        if record.get("state") not in ("open", "in-progress"):
+            continue
+        labels = []
+        if record.get("type") == "bug":
+            labels.append("bug")
+        elif record.get("type") == "feature":
+            labels.append("feature")
+        labels.append(ready)
         created = create_issue(
-            config, project, block["title"], block["description"],
-            labels=labels, assignees=([assignee] if assignee else ()))
+            config, project, record.get("title") or tid,
+            record.get("description") or "", labels=labels,
+            assignees=([assignee] if assignee else ()))
         number = int(created.get("number") or 0)
         if not number:
             continue
-        _insert_github_ref(lines, spans[start][0], number)
+        vibe_tickets.update(project, tid, github=number)
         stats["pushed"] += 1
 
-    result = newline.join(lines)
-    if ended:
-        result += newline
-    try:
-        vibe_storage.write_text(path, result, expected=snapshot.digest)
-    except vibe_storage.ConcurrentChangeError as error:
-        raise ValueError(
-            "TICKETS.md wurde zwischenzeitlich geändert — Sync wiederholen ("
-            + str(error) + ").") from None
     return stats
-
-
-def _issue_number(block):
-    """Issuenummer eines Blocks (Verweiszeile oder GH-Kennung), sonst None."""
-    return block["github"]
 
 
 def _state_labels(config, project_path, number, state):
@@ -455,65 +288,40 @@ def _state_labels(config, project_path, number, state):
 
 
 def set_issue_state(project_path, config, ticket_id, state):
-    """State-Aktion: PATCH der Labels und sofortige lokale Statuszeile.
+    """State-Aktion: PATCH der Labels und sofortiger lokaler Zustand.
 
-    ``state`` ist draft/ready/in-progress/open. Liefert die Issuenummer; wirft
-    bei fehlendem Bezug, unbekanntem Zustand, REST- oder Speicherfehler.
+    ``state`` ist draft/ready/in-progress/open; ``ready`` mappt lokal auf
+    ``open``. Liefert die Issuenummer; wirft bei fehlendem Bezug, unbekanntem
+    Zustand, REST- oder Speicherfehler.
     """
     project = str(project_path)
     if state not in ISSUE_STATES:
         raise ValueError("Unbekannter Issues-Zustand: " + str(state)
                          + " (draft|ready|in-progress|open)")
-    path = os.path.join(project, "TICKETS.md")
-    snapshot = vibe_storage.read_snapshot(path)
-    if not snapshot.exists:
-        raise ValueError("Keine TICKETS.md vorhanden: " + path)
-    text = snapshot.text
-    newline = "\r\n" if "\r\n" in text else "\n"
-    ended = text.endswith(("\n", "\r"))
-    lines = text.splitlines()
-
-    located = None
-    for start, end in _scan_blocks(lines):
-        block = _parse_block(lines, start, end)
-        if block["id"] == ticket_id:
-            located = (start, end, block)
-            break
-    if located is None:
-        raise ValueError("Arbeitspaket nicht gefunden: " + str(ticket_id))
-    start, end, block = located
-    number = _issue_number(block)
+    record = vibe_tickets.find(vibe_tickets.load(project), str(ticket_id))
+    if record is None:
+        raise ValueError("Ticket nicht gefunden im Ticketspeicher: "
+                         + str(ticket_id))
+    number = _ticket_number(record)
     if number is None:
-        raise ValueError("Arbeitspaket hat keinen GitHub-Bezug: " + str(ticket_id))
+        raise ValueError("Ticket hat keinen GitHub-Bezug: " + str(ticket_id))
 
-    labels = _state_labels(config, project, number, state)
-    update_issue(config, project, number, {"labels": labels})
+    update_issue(config, project, number,
+                 {"labels": _state_labels(config, project, number, state)})
 
-    status_value = {"draft": "draft", "in-progress": "in-progress"}.get(state, "")
-    out = [line for line in lines[start:end] if not _STATUS_LINE.match(line)]
-    if status_value:
-        out.insert(1, "  Status: " + status_value)
-    lines[start:end] = out
-
-    result = newline.join(lines)
-    if ended:
-        result += newline
-    try:
-        vibe_storage.write_text(path, result, expected=snapshot.digest)
-    except vibe_storage.ConcurrentChangeError as error:
-        raise ValueError(
-            "TICKETS.md wurde zwischenzeitlich geändert — Aktion wiederholen ("
-            + str(error) + ").") from None
+    local_state = _local_state_value(state)
+    if record.get("state") != local_state:
+        vibe_tickets.update(project, str(ticket_id), state=local_state)
     return number
 
 
 def add_ticket_connected(project_path, config, title, description, category,
                          draft):
-    """Legt im verbundenen Projekt zuerst das Issue an, dann den lokalen Block.
+    """Legt im verbundenen Projekt zuerst das Issue an, dann das Speicher-Ticket.
 
-    ``category`` ist ``bug``/``feature`` (Label); ``draft`` (Standard True)
-    lässt das Ready-Label weg und markiert den Block als ``Status: draft``.
-    Schlägt die Issue-Anlage fehl, bleibt TICKETS.md unverändert (wirft).
+    ``category`` ist ``bug``/``feature``; ``draft`` (Standard True) lässt das
+    Ready-Label weg und legt das Ticket als ``state=draft`` an. Schlägt die
+    Issue-Anlage fehl, bleibt der Ticketspeicher unverändert (wirft).
     """
     project = str(project_path)
     title = " ".join(str(title or "").split())
@@ -532,28 +340,9 @@ def add_ticket_connected(project_path, config, title, description, category,
     if not number:
         raise vibe_github.GitHubError("Issue-Anlage lieferte keine Nummer.")
 
-    status_value = "draft" if draft else ""
-    block = _build_block(number, title, str(description or ""),
-                         "bug" if category == "bug" else "", status_value)
-
-    path = os.path.join(project, "TICKETS.md")
-    snapshot = vibe_storage.read_snapshot(path)
-    if not snapshot.exists:
-        raise ValueError("Keine TICKETS.md vorhanden: " + path)
-    text = snapshot.text
-    newline = "\r\n" if "\r\n" in text else "\n"
-    ended = text.endswith(("\n", "\r"))
-    lines = text.splitlines()
-    if lines and lines[-1].strip():
-        lines.append("")
-    lines.extend(block)
-    result = newline.join(lines)
-    if ended:
-        result += newline
-    try:
-        vibe_storage.write_text(path, result, expected=snapshot.digest)
-    except vibe_storage.ConcurrentChangeError as error:
-        raise ValueError(
-            "TICKETS.md wurde zwischenzeitlich geändert — Anlage wiederholen ("
-            + str(error) + ").") from None
+    typ = "bug" if category == "bug" else (
+        "feature" if category == "feature" else "task")
+    state = "draft" if draft else "open"
+    vibe_tickets._insert(project, _gh_ticket(
+        number, title, description, typ, state))
     return "GH-" + str(number)

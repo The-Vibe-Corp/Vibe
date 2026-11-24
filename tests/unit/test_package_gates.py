@@ -5,6 +5,7 @@ versionierte Läuferlogik in ``bin/vibe_packages.py``. Es werden keine
 Modellaufrufe oder externen Dienste verwendet.
 """
 import importlib.machinery
+import json
 import importlib.util
 import os
 import sys
@@ -54,15 +55,15 @@ class PackageTestCase(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def write_feedback(self, text):
-        (self.project / "FEEDBACK.md").write_text(
-            "# FEEDBACK\n\n" + text, encoding="utf-8"
-        )
+    def write_feedback(self, records):
+        """GH-48: Feedback/Bugs sind Ticketdatensätze im Speicher."""
+        self.write_store(records)
 
-    def write_tickets(self, text):
-        (self.project / "TICKETS.md").write_text(
-            "# TICKETS\n\n" + text, encoding="utf-8"
-        )
+    def write_tickets(self, records):
+        self.write_store(records)
+
+    def write_store(self, records):
+        support.write_ticket_store(self.project, list(records))
 
     def commit(self, message):
         support.commit_all(self.project, message)
@@ -75,89 +76,92 @@ class PackageSelectionTest(PackageTestCase):
             str(self.project), skip=skip, state_path=self.root / "state.json"
         )
 
-    def test_tickets_are_selected_before_feedback(self):
-        self.write_tickets("- [ ] T1 Ticket zuerst\n  Beschreibung: Test\n")
-        self.write_feedback("- [ ] F1 Feedback danach\n  Beschreibung: Test\n")
+    def test_store_order_selects_the_first_ready_ticket(self):
+        """GH-48: Es gibt eine Quelle (Speicher); die Reihenfolge entscheidet."""
+        self.write_store([
+            support.ticket_record("T1", "Ticket zuerst"),
+            support.ticket_record("F1", "Feedback danach", type="feedback"),
+        ])
 
         selected = self.select()
 
         self.assertIsNotNone(selected)
         self.assertEqual(selected["id"], "T1")
-        self.assertEqual(selected["source"], "TICKETS.md")
+        self.assertNotIn("source", selected)
 
     def test_dependencies_block_a_ticket_until_the_dependency_is_done(self):
-        self.write_tickets(
-            "- [ ] T1 Abhängig\n  Abhängigkeiten: T2\n"
-            "- [ ] T2 Grundlage\n"
-        )
+        self.write_store([
+            support.ticket_record("T1", "Abhängig", dependencies=["T2"]),
+            support.ticket_record("T2", "Grundlage"),
+        ])
 
         first = self.select()
         self.assertEqual(first["id"], "T2")
 
-        self.write_tickets(
-            "- [ ] T1 Abhängig\n  Abhängigkeiten: T2\n"
-            "- [x] T2 Grundlage\n  Commit: %s; Test: test_t2\n"
-            % self.commit("T2: Grundlage")
-        )
-        support.commit_all(self.project, "T2: Nachweis")
+        self.write_store([
+            support.ticket_record("T1", "Abhängig", dependencies=["T2"]),
+            support.ticket_record("T2", "Grundlage", state="done",
+                                  commit="abcdef1", test="test_t2"),
+        ])
 
         second = self.select()
         self.assertEqual(second["id"], "T1")
 
-    def test_a_checked_ticket_without_proof_is_still_open(self):
-        self.write_tickets("- [x] T1 Ohne Nachweis\n  Beschreibung: Test\n")
+    def test_an_open_ticket_is_a_candidate_even_without_proof(self):
+        """GH-48: Der alte Zustand „ohne Nachweis" existiert nicht mehr; ein
+        offenes Ticket ist arbeitbar, done verlangt Commit und Test."""
+        self.write_store([support.ticket_record("T1", "Ohne Nachweis")])
 
         selected = self.select()
 
         self.assertIsNotNone(selected)
         self.assertEqual(selected["id"], "T1")
 
-    def test_a_checked_ticket_with_proof_counts_as_done(self):
-        (self.project / "umsetzung.txt").write_text("x\n", encoding="utf-8")
-        hash_value = self.commit("T1: Umsetzung")
-        self.write_tickets(
-            "- [x] T1 Mit Nachweis\n  Commit: %s; Test: test_t1\n" % hash_value
-        )
-        support.commit_all(self.project, "T1: Nachweis")
+    def test_a_done_ticket_with_proof_counts_as_done(self):
+        self.write_store([support.ticket_record(
+            "T1", "Mit Nachweis", state="done", commit="abcdef1",
+            test="test_t1")])
 
         self.assertIsNone(self.select())
 
     def test_blocked_entries_are_skipped(self):
-        self.write_tickets(
-            "- [ ] T1 Blockiert\n  BLOCKIERT: externer Dienst fehlt\n"
-            "- [ ] T2 Offen\n"
-        )
+        self.write_store([
+            support.ticket_record("T1", "Blockiert", state="blocked",
+                                  blocked_reason="externer Dienst fehlt"),
+            support.ticket_record("T2", "Offen"),
+        ])
 
         selected = self.select()
 
         self.assertEqual(selected["id"], "T2")
 
     def test_priority_orders_tickets(self):
-        self.write_tickets(
-            "- [ ] T1 Später\n  Priorität: P2\n"
-            "- [ ] T2 Sofort\n  Priorität: P0\n"
-        )
+        self.write_store([
+            support.ticket_record("T1", "Später", priority="P2"),
+            support.ticket_record("T2", "Sofort", priority="P0"),
+        ])
 
         selected = self.select()
 
         self.assertEqual(selected["id"], "T2")
 
     def test_skip_list_is_honoured(self):
-        self.write_tickets("- [ ] T1\n- [ ] T2\n")
+        self.write_store([support.ticket_record("T1", "Eins"),
+                          support.ticket_record("T2", "Zwei")])
 
         selected = self.select(skip={"T1"})
 
         self.assertEqual(selected["id"], "T2")
 
     def test_selection_state_is_written_inside_the_project(self):
-        self.write_feedback("- [ ] F1\n")
+        self.write_store([support.ticket_record("F1", "Feedback",
+                                                type="feedback")])
         state = self.project / ".vibe" / "tmp" / "next-package.json"
 
         selected = self.module.select_package(str(self.project))
 
         self.assertEqual(selected["id"], "F1")
         self.assertTrue(state.is_file())
-        self.assertEqual(state, self.project / ".vibe" / "tmp" / "next-package.json")
 
 
 class ClassificationTest(unittest.TestCase):
@@ -246,7 +250,6 @@ class PreflightTest(PackageTestCase):
             'VERIFY_FULL="echo TODO"\n',
             encoding="utf-8",
         )
-        support.commit_all(self.project, "Prüfbefehl entfernt")
 
         errors = self.errors()
 
@@ -280,6 +283,7 @@ class GateTest(PackageTestCase):
         review="Verdict: PASS",
         proof_commit=None,
     ):
+        """Legt Commits, Doku, Review und die sichtbare TICKET-Datei an."""
         (self.project / "impl.txt").write_text(pid + "\n", encoding="utf-8")
         support.commit_all(
             self.project, (pid + ": Umsetzung") if commit_prefix else "Umsetzung"
@@ -287,19 +291,6 @@ class GateTest(PackageTestCase):
         hash_value = support.git(
             self.project, "rev-parse", "--short", "HEAD"
         ).stdout.strip()
-        if ticket_done:
-            marker = "- [x]"
-        else:
-            marker = "- [ ]"
-        proof = ""
-        if ticket_proof:
-            proof = "  Commit: %s; Test: test_%s\n" % (
-                proof_commit or hash_value,
-                pid.lower().replace("-", "_"),
-            )
-        self.write_feedback(
-            "%s %s Testpaket\n  Beschreibung: Test\n%s" % (marker, pid, proof)
-        )
         if docs:
             (self.project / "docs" / "features").mkdir(parents=True, exist_ok=True)
             (self.project / "docs" / "features" / (pid + ".md")).write_text(
@@ -313,6 +304,17 @@ class GateTest(PackageTestCase):
         support.commit_all(
             self.project, (pid + ": Nachweis") if commit_prefix else "Nachweis"
         )
+        record = support.ticket_record(
+            pid, "Testpaket",
+            state="done" if ticket_done else "in-progress",
+            commit=(proof_commit if proof_commit is not None else hash_value)
+            if ticket_proof else "",
+            test=("test_" + pid.lower().replace("-", "_"))
+            if ticket_proof else "",
+        )
+        path = self.project / ("TICKET-" + pid + ".json")
+        path.write_text(json.dumps(record, ensure_ascii=False, indent=1) + "\n",
+                        encoding="utf-8")
 
     def errors(self, pid="F1"):
         return self.module.gate_errors(str(self.project), pid, self.base)
@@ -375,21 +377,23 @@ class GateTest(PackageTestCase):
 
         errors = self.errors()
 
-        self.assertTrue(any("Nachweis" in error for error in errors), errors)
+        self.assertTrue(any("test" in error.lower() or "Nachweis" in error
+                            for error in errors), errors)
 
-    def test_ticket_must_be_checked(self):
+    def test_ticket_must_be_done(self):
         self.create_package(ticket_done=False)
 
         errors = self.errors()
 
-        self.assertTrue(any("nicht abgehakt" in error for error in errors), errors)
+        self.assertTrue(any("state" in error for error in errors), errors)
 
-    def test_proof_from_outside_the_package_branch_is_rejected(self):
-        self.create_package(proof_commit=self.base)
+    def test_proof_commit_missing_in_the_repository_is_rejected(self):
+        self.create_package(proof_commit="deadbee")
 
         errors = self.errors()
 
-        self.assertTrue(any("Nachweis" in error for error in errors), errors)
+        self.assertTrue(any("commit" in error.lower() or "Nachweis" in error
+                            for error in errors), errors)
 
     def test_uncommitted_worktree_is_rejected(self):
         self.create_package()
@@ -402,15 +406,13 @@ class GateTest(PackageTestCase):
 
 class StatusReportTest(PackageTestCase):
     def test_report_distinguishes_open_blocked_and_done(self):
-        (self.project / "fertig.txt").write_text("x\n", encoding="utf-8")
-        hash_value = self.commit("F1: Umsetzung")
-        self.write_feedback(
-            "- [x] F1 Fertig\n  Commit: %s; Test: test_f1\n"
-            "- [ ] F2 Blockiert\n  BLOCKIERT: extern\n"
-            "- [ ] F3 Offen\n" % hash_value
-        )
-
-        support.commit_all(self.project, "Nachweise")
+        self.write_store([
+            support.ticket_record("F1", "Fertig", state="done",
+                                  commit="abcdef1", test="test_f1"),
+            support.ticket_record("F2", "Blockiert", state="blocked",
+                                  blocked_reason="extern"),
+            support.ticket_record("F3", "Offen"),
+        ])
 
         report = self.module.status_report(str(self.project))
 

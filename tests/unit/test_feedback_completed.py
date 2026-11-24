@@ -91,6 +91,19 @@ def free_port():
         return sock.getsockname()[1]
 
 
+def ticket_record(tid, title, type="task", state="open", **extra):
+    record = {
+        "id": tid, "title": title, "type": type, "state": state,
+        "description": "", "github": None, "pr_url": "", "commit": "",
+        "test": "", "blocked_reason": "", "waiting_note": "",
+        "priority": "", "dependencies": [],
+        "created": "2026-01-01T00:00:00+00:00",
+        "updated": "2026-01-01T00:00:00+00:00",
+    }
+    record.update(extra)
+    return record
+
+
 class FeedbackCompletedModelTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -102,44 +115,48 @@ class FeedbackCompletedModelTest(unittest.TestCase):
         )
         self.commit = init_git_repo(self.root)
         self.cli = load_cli(self.root)
-        self.feedback = self.project / "FEEDBACK.md"
+        self.store = self.project / ".vibe" / "tickets.json"
 
     def tearDown(self):
         self.tmp.cleanup()
 
-    def write_feedback(self, text):
-        self.feedback.write_text(text, encoding="utf-8")
+    def write_feedback(self, records):
+        self.store.write_text(
+            json.dumps({"version": 1, "tickets": list(records)},
+                       ensure_ascii=False, indent=1) + "\n",
+            encoding="utf-8")
 
     def text(self):
-        return self.feedback.read_text(encoding="utf-8")
+        return self.store.read_text(encoding="utf-8")
 
-    def test_flags_only_entries_with_proof_as_completed(self):
-        self.write_feedback(
-            "# FEEDBACK\n\n"
-            "- [x] F1 Erledigter Punkt\n"
-            "  Beschreibung: Erste Beschreibung\n"
-            f"  Commit: {self.commit}; Test: test_x\n\n"
-            "- [x] F2 Ohne Nachweis\n"
-            "  Beschreibung: Zweite Beschreibung\n\n"
-            "- [ ] F3 Offener Punkt\n"
-            "  Beschreibung: Dritte Beschreibung\n"
-        )
+    def test_flags_only_done_entries_as_completed(self):
+        """Vor: F1 done mit Nachweis, F2 offen, F3 in-progress.
+        Aktion: feedback_items. Erwartet: completed nur bei F1."""
+        self.write_feedback([
+            ticket_record("F1", "Erledigter Punkt", type="feedback",
+                          state="done", commit=self.commit,
+                          test="test_x"),
+            ticket_record("F2", "Offener Punkt", type="feedback"),
+            ticket_record("F3", "Läuft", type="feedback",
+                          state="in-progress"),
+        ])
 
-        entries = {entry["id"]: entry for entry in self.cli.feedback_items("proj")}
+        entries = {entry["id"]: entry
+                   for entry in self.cli.feedback_items("proj")}
 
         self.assertTrue(entries["F1"]["completed"])
-        self.assertEqual(entries["F1"]["state"], "erledigt")
+        self.assertEqual("erledigt", entries["F1"]["state"])
         self.assertFalse(entries["F2"]["completed"])
-        self.assertEqual(entries["F2"]["state"], "ohne Nachweis")
+        self.assertEqual("offen", entries["F2"]["state"])
         self.assertFalse(entries["F3"]["completed"])
-        self.assertEqual(entries["F3"]["state"], "offen")
+        self.assertEqual("In Progress", entries["F3"]["state"])
 
-    def test_update_rejects_completed_entry_without_changing_file(self):
-        self.write_feedback(
-            "- [x] F1 Erledigter Punkt\n"
-            "  Beschreibung: Alt\n"
-            f"  Commit: {self.commit}; Test: test_x\n"
-        )
+    def test_update_rejects_done_entry_without_changing_the_store(self):
+        """Vor: F1 done. Aktion: feedback_update.
+        Erwartet: ValueError „nicht bearbeitbar", Speicher unverändert."""
+        self.write_feedback([ticket_record(
+            "F1", "Erledigter Punkt", type="feedback", state="done",
+            commit=self.commit, test="test_x")])
         before = self.text()
 
         with self.assertRaisesRegex(ValueError, "nicht bearbeitbar"):
@@ -147,53 +164,42 @@ class FeedbackCompletedModelTest(unittest.TestCase):
 
         self.assertEqual(self.text(), before)
 
-    def test_update_rejects_completed_entry_named_like_open_one(self):
-        self.write_feedback(
-            "- [x] F1 Erledigter Punkt\n"
-            "  Beschreibung: Alt\n"
-            f"  Commit: {self.commit}; Test: test_x\n\n"
-            "- [x] F2 Ohne Nachweis\n"
-            "  Beschreibung: Alt\n"
-        )
+    def test_update_allows_an_open_entry_with_a_similar_id(self):
+        """Vor: F1 done, F2 offen. Aktion: feedback_update F2.
+        Erwartet: F2 neu, F1 unverändert."""
+        self.write_feedback([
+            ticket_record("F1", "Erledigter Punkt", type="feedback",
+                          state="done", commit=self.commit, test="test_x"),
+            ticket_record("F2", "Offener Punkt", type="feedback"),
+        ])
 
         self.cli.feedback_update("proj", "F2", "Neuer Titel", "Neu")
 
-        self.assertIn("- [x] F2 Neuer Titel", self.text())
-        self.assertIn("Test: test_x", self.text(), "erledigter Nachweis bleibt erhalten")
+        records = {item["id"]: item for item in json.loads(
+            self.text())["tickets"]}
+        self.assertEqual("Neuer Titel", records["F2"]["title"])
+        self.assertEqual("done", records["F1"]["state"])
 
-    def test_delete_rejects_completed_entry_and_keeps_file(self):
-        """F34 WP7.1: Abgeschlossene Punkte sind Nachweise.
-
-        Vorbedingung: F1 abgeschlossen (Nachweis), F2 offen. Aktion: Löschen
-        von F1, danach von F2. Erwartung: F1 wird mit ValueError abgelehnt und
-        bleibt samt Nachweis erhalten; der offene F2 bleibt löschbar.
-        Fehlerfall: Ein Nachweis verschwindet oder offenes Feedback ist gesperrt.
-        """
-        self.write_feedback(
-            "- [x] F1 Erledigter Punkt\n"
-            "  Beschreibung: Alt\n"
-            f"  Commit: {self.commit}; Test: test_x\n\n"
-            "- [ ] F2 Offener Punkt\n"
-            "  Beschreibung: Offen\n"
-        )
+    def test_delete_rejects_done_entry_and_allows_open_entries(self):
+        """Vor: F1 done, F2 offen. Aktion: Delete F1, dann F2.
+        Erwartet: F1 ValueError und bleibt; F2 wird entfernt."""
+        self.write_feedback([
+            ticket_record("F1", "Erledigter Punkt", type="feedback",
+                          state="done", commit=self.commit, test="test_x"),
+            ticket_record("F2", "Offener Punkt", type="feedback"),
+        ])
         before = self.text()
 
-        with self.assertRaisesRegex(ValueError, "bleiben als Nachweis erhalten"):
+        with self.assertRaisesRegex(ValueError,
+                                    "bleiben als Nachweis erhalten"):
             self.cli.feedback_delete("proj", "F1")
 
-        self.assertEqual(self.text(), before,
-                         "Die abgelehnte Löschung veränderte FEEDBACK.md")
-        self.assertIn("F1 Erledigter Punkt", self.text())
-        self.assertIn("Test: test_x", self.text(),
-                      "Der Nachweis des abgeschlossenen Punkts ging verloren")
-
+        self.assertEqual(self.text(), before)
         self.cli.feedback_delete("proj", "F2")
-
-        text = self.text()
-        self.assertNotIn("F2 Offener Punkt", text,
-                         "Der offene Punkt blieb trotz Löschung erhalten")
-        self.assertIn("F1 Erledigter Punkt", text,
-                      "Das Löschen des offenen Punkts entfernte den Nachweis")
+        records = {item["id"]: item for item in json.loads(
+            self.text())["tickets"]}
+        self.assertEqual(["F1"], list(records))
+        self.assertEqual("done", records["F1"]["state"])
 
 
 class FeedbackCompletedApiFixture(unittest.TestCase):
@@ -260,13 +266,15 @@ class FeedbackCompletedApiFixture(unittest.TestCase):
         cls.tmp.cleanup()
 
     def setUp(self):
-        (self.project / "FEEDBACK.md").write_text(
-            "# FEEDBACK\n\n"
-            "- [x] F1 Erledigter Punkt\n"
-            "  Beschreibung: Erste Beschreibung\n"
-            f"  Commit: {self.commit}; Test: test_x\n\n"
-            "- [ ] F2 Offener Punkt\n"
-            "  Beschreibung: Zweite Beschreibung\n",
+        (self.project / ".vibe" / "tickets.json").write_text(
+            json.dumps({"version": 1, "tickets": [
+                ticket_record("F1", "Erledigter Punkt", type="feedback",
+                              state="done", commit=self.commit,
+                              description="Erste Beschreibung",
+                              test="test_x"),
+                ticket_record("F2", "Offener Punkt", type="feedback",
+                              description="Zweite Beschreibung"),
+            ]}, ensure_ascii=False, indent=1) + "\n",
             encoding="utf-8",
         )
 
@@ -292,7 +300,8 @@ class FeedbackCompletedApiFixture(unittest.TestCase):
             return code, body
 
     def feedback_text(self):
-        return (self.project / "FEEDBACK.md").read_text(encoding="utf-8")
+        return (self.project / ".vibe" / "tickets.json").read_text(
+            encoding="utf-8")
 
 
 class FeedbackCompletedApiTest(FeedbackCompletedApiFixture):
@@ -335,9 +344,11 @@ class FeedbackCompletedApiTest(FeedbackCompletedApiFixture):
         )
 
         self.assertEqual(status, 200, body)
-        text = self.feedback_text()
-        self.assertIn("- [ ] F2 Geänderter Titel", text)
-        self.assertIn("- [x] F1 Erledigter Punkt", text)
+        records = {item["id"]: item for item in json.loads(
+            self.feedback_text())["tickets"]}
+        self.assertEqual("Geänderter Titel", records["F2"]["title"])
+        self.assertEqual("Erledigter Punkt", records["F1"]["title"])
+        self.assertEqual("done", records["F1"]["state"])
 
     def test_api_delete_rejects_completed_entry_and_keeps_file(self):
         """F34 WP7.1: Die API liefert 400 ``ok:false`` statt zu löschen.
@@ -365,10 +376,11 @@ class FeedbackCompletedApiTest(FeedbackCompletedApiFixture):
         )
 
         self.assertEqual(200, status, body)
-        text = self.feedback_text()
-        self.assertNotIn("F2 Offener Punkt", text)
-        self.assertIn("- [x] F1 Erledigter Punkt", text,
-                      "Das Löschen des offenen Punkts entfernte den Nachweis")
+        records = {item["id"]: item for item in json.loads(
+            self.feedback_text())["tickets"]}
+        self.assertNotIn("F2", records)
+        self.assertEqual("done", records["F1"]["state"],
+                         "Das Löschen des offenen Punkts entfernte den Nachweis")
 
     def test_detail_page_mentions_completed_toggle(self):
         html = served_page(self.request)

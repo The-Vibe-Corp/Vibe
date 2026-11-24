@@ -64,7 +64,8 @@ VERIFY_PACKAGE="true"
 VERIFY_FULL="true"
 """
 
-FEEDBACK = "- [ ] F1 Erstes Paket\n  Beschreibung: Test\n"
+FEEDBACK = [support.ticket_record(
+    "F1", "Erstes Paket", type="feedback", description="Test")]
 
 
 def load_cli(vibe_root, home):

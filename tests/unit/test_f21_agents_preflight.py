@@ -136,7 +136,6 @@ class PreflightProfilesTest(unittest.TestCase):
     def test_project_env_reviewer_wins_over_profiles_role(self):
         """REVIEWER aus project.env hat Vorrang vor der Rollenauflösung."""
         support.write_project(self.project, project_env("nicht-vorhanden"))
-        support.commit_all(self.project, "REVIEWER gesetzt")
 
         errors = self.errors()
 
@@ -437,7 +436,9 @@ class RunnerPreflightProfilesTest(unittest.TestCase):
         support.write_project(
             self.project,
             project_env(),
-            feedback="- [ ] F1 Erstes Paket\n  Beschreibung: Test\n",
+            feedback=[support.ticket_record(
+                "F1", "Erstes Paket", type="feedback",
+                description="Test")],
         )
         support.commit_all(self.project, "Ausgangsstand")
         self.calls = self.root / "calls.log"
