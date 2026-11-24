@@ -33,6 +33,7 @@ Run:
 
     python3 -m unittest tests.unit.test_ap9_runner_wiring -v
 """
+import json
 import os
 import subprocess
 import sys
@@ -56,7 +57,8 @@ VERIFY_FULL="true"
 MAX_RETRIES=1
 """
 
-FEEDBACK_ONE = "- [ ] F1 Erstes Paket\n  Beschreibung: Test\n"
+FEEDBACK_ONE = [support.ticket_record(
+    "F1", "Erstes Paket", type="feedback", description="Test")]
 
 DEAD_API = "http://127.0.0.1:9"  # Loopback ohne Dienst: schnelle Verweigerung
 
@@ -248,8 +250,10 @@ class PullWiringTest(AP9WiringFixture):
             "Das Paket wurde trotz fehlgeschlagener GitHub-Schranke "
             "gemergt:\n" + log)
         # Das Ticket bleibt offen:
-        self.assertIn("- [ ] F1", (project / "FEEDBACK.md").read_text(
-            encoding="utf-8"))
+        document = json.loads(
+            (project / ".vibe" / "tickets.json").read_text(encoding="utf-8"))
+        record = {item["id"]: item for item in document["tickets"]}["F1"]
+        self.assertEqual("open", record["state"], record)
         report = (self.runtime / (project.name + ".report.txt")).read_text(
             encoding="utf-8")
         self.assertIn("Blockiert: F1", report)

@@ -1402,6 +1402,30 @@
       ],
       "datum": "2026-11-23",
       "grund": "generische GENERAL_RULES von projektspezifischen Test-Implementierungen befreit (verify.sh-Vertrag, Baseline-Disziplin) und auf die Prüfbefehle in .vibe/project.env zurückgeführt; Baseline-Transport und -Hashwächter für Arbeitskopien entfernt; erste committete Baseline für pi-aarch64-py3.14-namespaces"
+    },
+    {
+      "arbeitspaket": "GH-48",
+      "dateien": [
+        "bin/vibe",
+        "bin/vibe-run.sh",
+        "bin/vibe-web.py",
+        "bin/vibe_github.py",
+        "bin/vibe_guide.py",
+        "bin/vibe_issues.py",
+        "bin/vibe_packages.py",
+        "bin/vibe_tickets.py",
+        "bin/web/app.js",
+        "bin/web/nova-project.js",
+        "templates/android/AGENTS.md",
+        "templates/docker/AGENTS.md",
+        "templates/generic/AGENTS.md",
+        "templates/rebuild/AGENTS.md",
+        "templates/web/AGENTS.md",
+        "templates/common/FEEDBACK.md",
+        "templates/common/TICKETS.md"
+      ],
+      "datum": "2026-11-24",
+      "grund": "Ticketsystem auf einen maschinenlesbaren Speicher umgestellt: Arbeitspakete, Bugs und Feedback sind einheitliche Tickets in .vibe/tickets.json (Laufzeitstand, nie committet) mit Typ, Zustand und Nachweisfeldern; getrennte TICKETS.md/FEEDBACK.md entfallen. Der Runner transportiert nur das aktuelle Ticket als TICKET-<ID>.json in die Arbeitskopie und übernimmt den feldbasierten Abschluss (state/commit/test) in den Ticketspeicher."
     }
   ],
   "files": [
@@ -1417,18 +1441,18 @@
     },
     {
       "path": "bin/vibe",
-      "bytes": 312785,
-      "sha256": "a6876be15e0c09f4561df3e4ecaa4a29eaf12863ac56947dcce428ff1a907313"
+      "bytes": 299548,
+      "sha256": "153817b06c299a45dfb9c6387935fd64a9a93a1bafdb8b23177afa69cd262b37"
     },
     {
-      "bytes": 86330,
+      "bytes": 86690,
       "path": "bin/vibe-run.sh",
-      "sha256": "cd544f364a5fb84437baf30bb95edb09b050eb533483fd662ca3010ea8da5d18"
+      "sha256": "675b8ec4eca9a47abd9a41945c80773056d7c6cf638195cf6908709009919aab"
     },
     {
-      "bytes": 131073,
+      "bytes": 133606,
       "path": "bin/vibe-web.py",
-      "sha256": "336eebbe8ec88a801abed442d80d2dfc58feb859a2649ec493a8d150b460e43c"
+      "sha256": "6e6338e2353038da4081399757741bcd4397607c6d007b0bc23391b920654d58"
     },
     {
       "bytes": 5189,
@@ -1441,14 +1465,14 @@
       "sha256": "0f6d9c2c9d72ff1400ba0c2e8173217102ac9f163a41191c34367dd5f81f5778"
     },
     {
-      "bytes": 79843,
+      "bytes": 79234,
       "path": "bin/vibe_github.py",
-      "sha256": "d5ddf9533920b08c262a45ee2d54a6b4346a496d9d6526e7c5f6f3781a44a9d0"
+      "sha256": "0a08fbacef9c9ba3bf18fd4e483be63fcf9fd10c84b35e94566bda8674d701ab"
     },
     {
-      "bytes": 27530,
+      "bytes": 27194,
       "path": "bin/vibe_guide.py",
-      "sha256": "5f3960c199534fe83685b6572f5bdf6c85c940bb6c6ee3cb54313733f2642f4a"
+      "sha256": "8a9c5b1844b1215a9f75368645aeef771a9dcb1e884824bea9b0538104a197ea"
     },
     {
       "bytes": 23512,
@@ -1456,9 +1480,9 @@
       "sha256": "30f0394d2ac58458ecf607159c6041ebe19d4aef73e4878a510db3902bd11670"
     },
     {
-      "bytes": 22190,
+      "bytes": 14022,
       "path": "bin/vibe_issues.py",
-      "sha256": "d4e8df8736ef9aa1ca50afd7c395fba89ec98224b11f0d831d7f659cdbf871c4"
+      "sha256": "491ba46f89841250970298912c4e038dc9f46fd983cb7c81ba9e97a384a717c0"
     },
     {
       "bytes": 22514,
@@ -1486,9 +1510,9 @@
       "sha256": "ac3b26da4208a087a09c67c389238c82802d7c1bd50b10d9bcd9492a07050462"
     },
     {
-      "bytes": 82406,
+      "bytes": 71770,
       "path": "bin/vibe_packages.py",
-      "sha256": "4a8477009e4e2443d4e0ed9cad383c70a9e2f697fb761a531bdae968ee948979"
+      "sha256": "60ff1773cc15b4bc401a512aff1bba0071d8689a4fb9622c55b5d99d2a366391"
     },
     {
       "bytes": 20789,
@@ -1521,14 +1545,19 @@
       "sha256": "7b6aa4118259dc3440b37eaeec5eaa96eac7d928e6e704b2310946490bd25fbb"
     },
     {
+      "bytes": 14390,
+      "path": "bin/vibe_tickets.py",
+      "sha256": "92983725ab3d2cde3cc97fe70d8c4171063fc7333f719f2922539e1513a7f1d3"
+    },
+    {
       "bytes": 12460,
       "path": "bin/vibe_ui_config.py",
       "sha256": "baf438e2032b06a478b2a3debe6b62eff104f6d9a105f829013eabfcddf1acd5"
     },
     {
-      "bytes": 156429,
+      "bytes": 157132,
       "path": "bin/web/app.js",
-      "sha256": "dfceefa63c3321bd2ff6f8ca4a44ee660ca881d68b19f795d56114e5eefafa90"
+      "sha256": "3f9bb27bddb4723f147fc9b4a845acf11c5ed56fa5d1bf8b5cb851be059087cb"
     },
     {
       "bytes": 688,
@@ -1536,9 +1565,9 @@
       "sha256": "19ea677f5c3dc3579279fd9b5bf7584612967654b8ec0bbde3818576c78b46b5"
     },
     {
-      "bytes": 160661,
+      "bytes": 160733,
       "path": "bin/web/i18n.js",
-      "sha256": "d07bbd15715c9ee98811127418f02d9bb4dfc8bca239536e8a857e8d2d3263b8"
+      "sha256": "c37569a6502e1104cb6681ec58bda7e9d12bb72fdf7c762b78fff4c35ce3741f"
     },
     {
       "bytes": 3532,
@@ -1576,9 +1605,9 @@
       "sha256": "cbca5b169f3c5052e50da0910560d7fbcd1b6c42380fe6b925a4f98021f753ab"
     },
     {
-      "bytes": 94378,
+      "bytes": 94683,
       "path": "bin/web/nova-project.js",
-      "sha256": "13e7d9f5eb9b41cf741519bd19658f8ad5054ca1485dd5e924805adc8859241d"
+      "sha256": "98d7235d4b3a44cb49859e2308aa77fadc8a3c562c679ab976f22f1a5a3cb010"
     },
     {
       "bytes": 60613,
@@ -1616,9 +1645,9 @@
       "sha256": "7f8450dcf34c6b6f94695720954e2072edeb60d69f70b29bb3924882ed6c0f21"
     },
     {
-      "bytes": 74347,
+      "bytes": 74370,
       "path": "scripts/setup-vibe.py",
-      "sha256": "1c62e6f4f7d14582367b0d33267020f4b2e722d2f5645480e2d0bc9255178890"
+      "sha256": "ec5562f2d4780e097fbcb709f21ccca3619645d26a24ce92acced89ca694c2b5"
     },
     {
       "bytes": 377,
@@ -1631,9 +1660,9 @@
       "sha256": "b45ed5e95c842e67dbecf165bb6096ec9c513cc431ede7442cd4bbad9ed0e806"
     },
     {
-      "bytes": 5762,
+      "bytes": 6620,
       "path": "templates/android/AGENTS.md",
-      "sha256": "40bd66ca4cdd4cd0db699c6f53740749cb3b5d2ca7c96ccb18a75fb1ec641ea5"
+      "sha256": "0a1b2d0b03c5ceda660996bffd624065837f0936f39377d64bc334cdd4c2eae5"
     },
     {
       "bytes": 522,
@@ -1651,16 +1680,6 @@
       "sha256": "d9972b72b48d370baf15a0e495c7bc3bf5b44e53bc63332da7d31e7eb69287c5"
     },
     {
-      "bytes": 424,
-      "path": "templates/common/FEEDBACK.md",
-      "sha256": "e843730d69d4f02f4bb9158a3a88826cb5074654c9c3077a5d2868cbf9343f35"
-    },
-    {
-      "bytes": 195,
-      "path": "templates/common/TICKETS.md",
-      "sha256": "85601551f67bde402c5f7b50626f949653825696b80921b4a2f3d7207af16c9c"
-    },
-    {
       "bytes": 199,
       "path": "templates/common/opencode.json",
       "sha256": "c7b5f4e754661eabdf02ecf6a9c799e52c194126fa2df6dea2d725109d19e8b3"
@@ -1671,9 +1690,9 @@
       "sha256": "da366d196e69282f922723f0a0755f9cfe167d1dd210737668df0d8b76b71b8a"
     },
     {
-      "bytes": 5376,
+      "bytes": 6234,
       "path": "templates/docker/AGENTS.md",
-      "sha256": "0e6e7e70e76568bc61b76e3b85c2f3667e82bf73ed2223d2ea07e3bb8d38b7bf"
+      "sha256": "8e8f93c2c7e5532cc8bd2be51feb5cf3556dca3992e865b5778222e690745b66"
     },
     {
       "bytes": 354,
@@ -1681,9 +1700,9 @@
       "sha256": "63c0ebab49aa870ae5e5f731890cce3f0ce2859364152c00b64cb89e3e6d9ae5"
     },
     {
-      "bytes": 5061,
+      "bytes": 5919,
       "path": "templates/generic/AGENTS.md",
-      "sha256": "c5c6fab02e2a5b0c8a8ee6c5eb4382abcaaa51b4855fdfe9b1a50ce0597596f4"
+      "sha256": "165c9ce1f39d168df026e028b9084edb3ce5eedbdd52121cf9c02efd9eb026be"
     },
     {
       "bytes": 670,
@@ -1736,9 +1755,9 @@
       "sha256": "db8026a75dd2f358a771be9e2fc2fd4ba88c6180f026078552c3259e5156360f"
     },
     {
-      "bytes": 8706,
+      "bytes": 9564,
       "path": "templates/rebuild/AGENTS.md",
-      "sha256": "1d060bf97639d3ebeb0476010fab0410a5104c3bc5d6064665376c1363860a56"
+      "sha256": "4edcbeb85050698c164463688b66e2e274bf9eef6b770b903c169831cb46221e"
     },
     {
       "bytes": 1675,
@@ -1761,9 +1780,9 @@
       "sha256": "84b60ea398f9969f924239023adf52eaa48410db66b3c7bcf9c6cc75fe624af4"
     },
     {
-      "bytes": 5426,
+      "bytes": 6284,
       "path": "templates/web/AGENTS.md",
-      "sha256": "6ebf5d41c58b80921e7d7ef46a1d222ba72ee56aaa0b91acf431c2cc9e60cf7a"
+      "sha256": "845e6f80abba00f8e507b36077b2e001a2f93df7371f9e042177929b71aec8fb"
     }
   ],
   "hinweis": "SHA-256 der übernommenen Programmdateien. Beabsichtigte Änderungen an diesen Dateien sind nur zulässig, wenn dieser Eintrag im selben Arbeitspaket aktualisiert und begründet wird. Laufzeitdaten, Sicherungen und Geheimnisse sind nicht Bestandteil des Imports.",

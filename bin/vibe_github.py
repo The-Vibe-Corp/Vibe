@@ -75,6 +75,7 @@ if os.path.dirname(os.path.realpath(__file__)) not in sys.path:
 # Skriptausführung liegt bewusst vor dem Import; das Modul wird auch einzeln
 # mit unvollständiger Installation aufgerufen (gemeinsame Storage-Schicht, V-005).
 import vibe_storage  # pylint: disable=wrong-import-position
+import vibe_tickets  # pylint: disable=wrong-import-position
 
 OFFICIAL_API = "https://api.github.com"
 DEFAULT_LABEL = "vibe"
@@ -84,7 +85,6 @@ TIMEOUT_GIT = 120
 TIMEOUT_REMOTE_READ = 10
 TIMEOUT_HTTP = 30
 RE_REPO = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
-TICKET_GH_RE = re.compile(r"(?m)^\s*-\s*\[[^\]]*\]\s*GH-(\d+)\b")
 
 
 class GitHubError(ValueError):
@@ -1197,10 +1197,10 @@ def integration_state(project_path, branch=None, base=None):
         return state
 
 def _package_issue_number(project_path, package_id):
-    """Issuenummer des Ticketblocks eines Pakets (AP3).
+    """Issuenummer eines Paket-Tickets (AP3, seit GH-48 aus dem Speicher).
 
-    Ein Bezug ist entweder die Kennung selbst (``GH-<n>``) oder die
-    Verweiszeile ``GitHub: #<n>`` im Block. Ohne Bezug bleibt ``None``.
+    Ein Bezug ist entweder die Kennung selbst (``GH-<n>``) oder das Feld
+    ``github`` des Tickets im Ticketspeicher. Ohne Bezug bleibt ``None``.
     """
     pid = str(package_id or "").strip()
     if not pid:
@@ -1208,29 +1208,14 @@ def _package_issue_number(project_path, package_id):
     gh_match = re.match(r"^GH-(\d+)$", pid)
     if gh_match:
         return int(gh_match.group(1))
-    path = os.path.join(str(project_path), "TICKETS.md")
     try:
-        with open(path, encoding="utf-8", errors="replace") as handle:
-            lines = handle.read().splitlines()
-    except OSError:
+        record = vibe_tickets.find(vibe_tickets.load(project_path), pid)
+    except ValueError:
         return None
-    header_re = re.compile(r"^- \[[^\]]*\]\s+(.+)$")
-    ref_re = re.compile(r"^\s*GitHub:\s*#\s*(\d+)\b")
-    in_block = False
-    for line in lines:
-        match = header_re.match(line)
-        if match:
-            ident = match.group(1).split(None, 1)[0]
-            if ident == pid:
-                in_block = True
-            elif in_block:
-                break
-            continue
-        if in_block:
-            ref = ref_re.match(line)
-            if ref:
-                return int(ref.group(1))
-    return None
+    if record is None:
+        return None
+    number = record.get("github")
+    return int(number) if number is not None else None
 
 
 def complete_package(project_path, branch, package_id=None, title=None):
@@ -1736,31 +1721,20 @@ def quote(value):
     return urllib.parse.quote(str(value), safe="/")
 
 
-
-def _sanitize_title(value, number):
-    text = " ".join(str(value or "").split())
-    return text or f"Issue {number}"
-
-
 def import_issues_into_tickets(project_path, issues):
-    """Hängt fehlende GitHub-Issues idempotent in TICKETS.md ein.
+    """Legt fehlende GitHub-Issues idempotent als Tickets im Speicher an.
 
-    Format ``- [ ] GH-<Nummer> <Titel>`` bleibt mit dem Ticket-Parser von
-    vibe kompatibel (ID ``GH-<Nummer>``, offen). Vorhandene Nummern werden
-    nicht doppelt eingetragen; die Datei wird über die gemeinsame
-    Storage-Schicht (V-005) atomar geschrieben und konkurrierende Änderungen
-    werden als Konflikt gemeldet, statt sie still zu überschreiben.
+    Jedes neue Ticket erhält die Kennung ``GH-<Nummer>``, ``state=open`` und
+    einen ``type`` aus dem bug-/feature-Label (sonst ``task``). Vorhandene
+    Nummern werden nicht doppelt eingetragen; der Speicher wird ausschließlich
+    über ``vibe_tickets`` geschrieben, konkurrierende Änderungen werden als
+    Konflikt gemeldet, statt sie still zu überschreiben.
     """
     project = str(project_path)
-    path = os.path.join(project, "TICKETS.md")
-    snapshot = vibe_storage.read_snapshot(path)
-    if not snapshot.exists:
-        raise ValueError("Keine TICKETS.md vorhanden: " + path)
-    text = snapshot.text
-    existing = {int(match) for match in TICKET_GH_RE.findall(text)}
-    newline = "\r\n" if "\r\n" in text else "\n"
-    added = []
-    block = []
+    tickets = vibe_tickets.load(project)
+    existing = {int(record.get("github"))
+                for record in tickets if record.get("github") is not None}
+    added = 0
     for issue in issues:
         number = issue.get("number") if isinstance(issue, dict) else None
         try:
@@ -1769,18 +1743,23 @@ def import_issues_into_tickets(project_path, issues):
             continue
         if not number or number in existing:
             continue
-        entry = f"- [ ] GH-{number} {_sanitize_title(issue.get('title'), number)}"
+        labels = {str(label.get("name", "")) for label in issue.get("labels", [])
+                  if isinstance(label, dict)}
+        typ = "bug" if "bug" in labels else (
+            "feature" if "feature" in labels else "task")
+        title = " ".join(str(issue.get("title") or "").split())
+        record = vibe_tickets.normalize({
+            "id": "GH-" + str(number),
+            "title": title or ("Issue " + str(number)),
+            "type": typ,
+            "state": "open",
+            "github": number,
+            "description": str(issue.get("body") or ""),
+        })
+        now = vibe_tickets._now_utc()
+        record["created"] = now
+        record["updated"] = now
+        vibe_tickets._insert(project, record)
         existing.add(number)
-        block.append(entry)
-        added.append(f"GH-{number}")
-    if not block:
-        return 0
-    if text and not text.endswith(("\n", "\r")):
-        text += newline
-    text += newline.join(block) + newline
-    try:
-        vibe_storage.write_text(path, text, expected=snapshot.digest)
-    except vibe_storage.ConcurrentChangeError as error:
-        raise ValueError("TICKETS.md wurde zwischenzeitlich geändert — "
-                         "Import wiederholen (" + str(error) + ").") from None
-    return len(added)
+        added += 1
+    return added

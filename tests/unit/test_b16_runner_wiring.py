@@ -36,6 +36,7 @@ Run:
 
     python3 -m unittest tests.unit.test_b16_runner_wiring -v
 """
+import json
 import os
 import subprocess
 import sys
@@ -49,7 +50,10 @@ import runner_support as support  # noqa: E402
 from tests.unit.test_ap9_runner_github import RestFakeServer  # noqa: E402
 from tests.unit.test_ap9_runner_wiring import AP9WiringFixture, git  # noqa: E402
 
-FEEDBACK_ONE = "- [ ] F1 Erstes Paket\n  Beschreibung: Test\n"
+# GH-48: Tickets liegen im Projekt-Speicher; der frühere FEEDBACK.md-Ledger
+# existiert nicht mehr.
+FEEDBACK_ONE = [support.ticket_record(
+    "F1", "Erstes Paket", type="feedback", description="Test")]
 
 GITHUB_ENV = (
     'GITHUB_ENABLED="1"\n'
@@ -104,10 +108,20 @@ class B16WiringFixture(AP9WiringFixture):
                    ).returncode,
             "Das Paket darf nicht lokal gemergt sein")
 
+    def ticket(self, project, pid="F1"):
+        """Liest das Ticket aus dem GH-48-Projektspeicher."""
+        path = project / ".vibe" / "tickets.json"
+        data = json.loads(path.read_text(encoding="utf-8"))
+        for record in data["tickets"]:
+            if record["id"] == pid:
+                return record
+        self.fail("Ticket %s fehlt im Speicher %s" % (pid, path))
+
     def assert_ticket_open(self, project, pid="F1"):
-        text = (project / "FEEDBACK.md").read_text(encoding="utf-8")
-        self.assertIn("- [ ] " + pid, text,
-                      "Das Ticket muss offen bleiben:\n" + text)
+        record = self.ticket(project, pid)
+        self.assertNotEqual(
+            "done", record["state"],
+            "Das Ticket muss offen bleiben: %r" % (record,))
 
 
 # --------------------------------------------------------------- PR-only-Fall
@@ -156,14 +170,15 @@ class PrOnlyClosureTest(B16WiringFixture):
         # PR-only: kein lokaler Merge, kein Cleanup, Ticket bleibt offen.
         self.assert_not_merged(project)
         self.assert_ticket_open(project)
-        feedback = (project / "FEEDBACK.md").read_text(
-            encoding="utf-8").upper()
-        self.assertIn("WARTET AUF MERGE", feedback,
-                      "AP5-Korbat 4b: PR-only muss als Wartezustand "
-                      "vermerkt sein:\n" + feedback)
-        self.assertNotIn("BLOCKIERT", feedback,
-                         "AP5-Korbat 4b: PR-only darf nicht mehr als "
-                         "blockiert vermerkt werden:\n" + feedback)
+        record = self.ticket(project)
+        self.assertEqual("waiting-merge", record["state"],
+                         "AP5-Korbat 4b: PR-only muss als Wartezustand "
+                         "vermerkt sein: %r" % (record,))
+        self.assertTrue(record["waiting_note"],
+                        "Der Wartezustand braucht eine Notiz: %r" % (record,))
+        self.assertFalse(record["blocked_reason"],
+                         "PR-only darf nicht als blockiert vermerkt "
+                         "werden: %r" % (record,))
         self.assertTrue(self.worktrees(),
                         "Die Arbeitskopie muss bis zum Merge registriert "
                         "bleiben:\n" + log)

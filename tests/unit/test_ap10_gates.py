@@ -245,11 +245,16 @@ PREFLIGHT_OPTIONS = [
     "Erneut prüfen", "Lauf abbrechen", "Agent behebt die Befunde",
 ]
 
-FEEDBACK_ONE = "- [ ] F1 Erstes Paket\n  Beschreibung: Test\n"
-FEEDBACK_TWO = (
-    "- [ ] F1 Erstes Paket\n  Beschreibung: Test\n"
-    "- [ ] F2 Zweites Paket\n  Beschreibung: Test\n"
-)
+# GH-48: Arbeitspakete liegen als Ticketdatensätze im Speicher; die alten
+# Markdown-Ledger gibt es nicht mehr.
+FEEDBACK_ONE = [support.ticket_record(
+    "F1", "Erstes Paket", type="feedback", description="Test")]
+FEEDBACK_TWO = [
+    support.ticket_record("F1", "Erstes Paket", type="feedback",
+                          description="Test"),
+    support.ticket_record("F2", "Zweites Paket", type="feedback",
+                          description="Test"),
+]
 
 _MODULE_COUNTER = [0]
 
@@ -840,23 +845,18 @@ class RunnerFixture(unittest.TestCase):
         return self.calls.read_text(encoding="utf-8").splitlines()
 
     def note_block(self, project, pid):
-        """Block mit dieser Kennung aus TICKETS.md/FEEDBACK.md des Projekts."""
-        for name in ("TICKETS.md", "FEEDBACK.md"):
-            path = project / name
-            if not path.is_file():
-                continue
-            lines = path.read_text(encoding="utf-8").splitlines()
-            for index, line in enumerate(lines):
-                if re.match(r"- \[[ xX]\] " + re.escape(pid) + r"\b", line):
-                    block = [line]
-                    for follower in lines[index + 1:]:
-                        if follower.startswith((" ", "\t")) \
-                                or not follower.strip():
-                            block.append(follower)
-                        else:
-                            break
-                    return "\n".join(block)
-        return ""
+        """Ticketdatensatz dieser Kennung aus dem GH-48-Speicher."""
+        path = project / ".vibe" / "tickets.json"
+        if not path.is_file():
+            return {}
+        try:
+            document = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {}
+        for item in document.get("tickets") or []:
+            if item.get("id") == pid:
+                return item
+        return {}
 
     # -- Rückfragen (F16) ---------------------------------------------------
     def question_records(self):
@@ -1064,20 +1064,21 @@ class RunnerGateWiringTest(RunnerFixture):
         self.assertEqual(self.question_records(), [], self.question_records())
         self.assertIn("Blockiert: F1", combined, combined)
 
-    def test_merge_package_logs_the_discarded_work_note_change(self):
-        """Der Verwurf uncommitteter Arbeitsnotizen wird protokolliert.
+    def test_merge_package_keeps_uncommitted_agents_md_out_of_the_package(self):
+        """GH-48: AGENTS.md ist die verbleibende Arbeitsnotiz.
 
-        Review-Befund 1: ``merge_package`` verwirft vor dem ff-Merge
-        uncommittete Änderungen an TICKETS.md/FEEDBACK.md. Das muss im
-        Laufprotokoll sichtbar sein, ohne dass der Merge scheitert.
+        Eine uncommittete Änderung an AGENTS.md gehört dem Nutzer: Sie wird
+        nicht in die Arbeitskopie übernommen (HINWEIS), der Merge geht durch,
+        und der lokale Stand bleibt erhalten. Die frühere Ledger-Datei
+        TICKETS.md ist ein normales Projektfile und daher kein Sonderfall
+        mehr.
         """
         project = self.make_project(
             env_text=write_project_env_text(), feedback=FEEDBACK_ONE)
-        tickets = project / "TICKETS.md"
-        tickets.write_text(
-            tickets.read_text(encoding="utf-8")
-            + "Hinweis: manuelle Notizänderung während des Laufs\n",
-            encoding="utf-8")
+        agents = project / "AGENTS.md"
+        agents.write_text("# Regeln\n", encoding="utf-8")
+        support.commit_all(project, "Regeln")
+        agents.write_text("# Regeln\nManuell ergänzt\n", encoding="utf-8")
 
         result = self.run_runner(
             project, FAKE_MODE="complete", VIBE_MAX_PACKAGES="1")
@@ -1086,35 +1087,20 @@ class RunnerGateWiringTest(RunnerFixture):
         log = self.log(project)
         self.assertEqual(result.returncode, 0, combined)
         self.assertIn("Geschlossen: F1", log, log)
-        warnings = [
-            line for line in log.splitlines()
-            if line.startswith(
-                "WARNUNG: Uncommittete Änderungen an Arbeitsnotizen")
-        ]
-        self.assertEqual(len(warnings), 1, log)
-        self.assertIn("TICKETS.md", warnings[0], warnings)
+        self.assertIn("AGENTS.md hat nicht committete Änderungen", log, log)
+        self.assertNotIn(
+            "Uncommittete Änderungen an Arbeitsnotizen werden für den "
+            "Merge verworfen", log, log)
+        merged = support.git(project, "show", "HEAD:AGENTS.md").stdout
+        self.assertNotIn("Manuell ergänzt", merged, merged)
+        self.assertIn("Manuell ergänzt",
+                      agents.read_text(encoding="utf-8"))
         self.assertEqual(
             support.git(
                 project, "cat-file", "-e", "HEAD:impl-F1.txt").returncode,
             0,
-            "Der Merge ist trotz Verwurf nicht durchgegangen.",
-        )
-        merged = support.git(project, "show", "HEAD:TICKETS.md").stdout
-        self.assertIn(
-            "Hinweis: manuelle Notizänderung während des Laufs", merged,
-            merged,
-        )
-        proof = support.git(project, "show", "HEAD:FEEDBACK.md").stdout
-        self.assertIn(
-            "Commit:", proof,
-            "Der Paketnachweis fehlt im gemergten Notizenstand.",
-        )
-        self.assertEqual(
-            support.git(
-                project, "status", "--porcelain", "--",
-                "TICKETS.md", "FEEDBACK.md").stdout,
-            "",
-            "Die uncommittete Notizänderung ist nach dem Merge ungelöst.",
+            "Der Merge ist trotz uncommitteter Arbeitsnotiz nicht "
+            "durchgegangen.",
         )
 
     def test_merge_without_note_changes_logs_no_discard_warning(self):
@@ -1189,9 +1175,11 @@ class BarrierDecisionTest(RunnerFixture):
         self.assertIn("Geschlossen: F2", output, output)
         self.assertIn("Blockiert: F1", output, output)
         note = self.note_block(project, "F1")
-        self.assertIn("BLOCKIERT", note, note)
+        self.assertEqual("blocked", note.get("state"), note)
+        reason = str(note.get("blocked_reason") or "")
+        self.assertTrue(reason, note)
         self.assertTrue(
-            re.search(r"(?i)nutzerentscheidung|übersprungen", note + output),
+            re.search(r"(?i)nutzerentscheidung|übersprungen", reason + output),
             "Der Vermerk nennt die Nutzerentscheidung nicht:\n%s" % note,
         )
         self.assertNotEqual(

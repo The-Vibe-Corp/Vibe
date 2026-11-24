@@ -225,7 +225,9 @@ class RunnerProcessFixture(unittest.TestCase):
             'VERIFY_PACKAGE="true"\n'
             'VERIFY_FULL="true"\n'
             "MAX_RETRIES=0\n",
-            feedback="- [ ] F1 Erstes Paket\n  Beschreibung: Test\n",
+            feedback=[support.ticket_record(
+                "F1", "Erstes Paket", type="feedback",
+                description="Test")],
         )
         support.commit_all(self.project, "Ausgangsstand")
 

@@ -403,6 +403,19 @@ def _init_git_repo(path):
     ).stdout.strip()
 
 
+def ticket_record(tid, title, type="task", state="open", **extra):
+    record = {
+        "id": tid, "title": title, "type": type, "state": state,
+        "description": "", "github": None, "pr_url": "", "commit": "",
+        "test": "", "blocked_reason": "", "waiting_note": "",
+        "priority": "", "dependencies": [],
+        "created": "2026-01-01T00:00:00+00:00",
+        "updated": "2026-01-01T00:00:00+00:00",
+    }
+    record.update(extra)
+    return record
+
+
 class DeleteProtectionTest(unittest.TestCase):
     """Abgeschlossene Einträge (Feedback/Paket) sind nicht löschbar."""
 
@@ -419,81 +432,65 @@ class DeleteProtectionTest(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def write_feedback(self, text):
-        (self.project / "FEEDBACK.md").write_text(text, encoding="utf-8")
+    def write_store(self, records):
+        path = self.project / ".vibe" / "tickets.json"
+        path.write_text(
+            json.dumps({"version": 1, "tickets": list(records)},
+                       ensure_ascii=False, indent=1) + "\n",
+            encoding="utf-8")
+        return path
 
-    def feedback_text(self):
-        return (self.project / "FEEDBACK.md").read_text(encoding="utf-8")
+    def records(self):
+        document = json.loads(
+            (self.project / ".vibe" / "tickets.json").read_text(
+                encoding="utf-8"))
+        return {item["id"]: item for item in document["tickets"]}
 
-    def write_ticket(self, text):
-        (self.project / "TICKETS.md").write_text(text, encoding="utf-8")
-
-    def ticket_text(self):
-        return (self.project / "TICKETS.md").read_text(encoding="utf-8")
-
-    def test_feedback_delete_rejects_a_closed_entry_and_keeps_the_file(self):
-        """Vorbedingung: FEEDBACK.md mit geschlossenem Eintrag.
+    def test_feedback_delete_rejects_a_done_entry_and_keeps_the_store(self):
+        """Vorbedingung: erledigtes Feedback-Ticket mit Nachweis.
         Aktion: ``vibe.feedback_delete('proj', 'F1')``.
-        Erwartung: ``ValueError``; die Datei bleibt unverändert.
-        """
-        self.write_feedback(
-            "# FEEDBACK\n\n"
-            "- [x] F1 Erledigter Punkt\n"
-            "  Beschreibung: Erste Beschreibung\n"
-            f"  Commit: {self.commit}; Test: tests/unit/test_f34_backend.py\n"
-        )
-        before = self.feedback_text()
+        Erwartung: ``ValueError``; der Speicher bleibt byte-identisch."""
+        path = self.write_store([ticket_record(
+            "F1", "Erledigter Punkt", type="feedback", state="done",
+            commit=self.commit, test="tests/unit/test_f34_backend.py")])
+        before = path.read_bytes()
 
-        with self.assertRaises(ValueError, msg="Löschen eines abgeschlossenen "
-                         "Feedback-Punkts wird mit ValueError abgelehnt"):
+        with self.assertRaises(ValueError):
             self.cli.feedback_delete("proj", "F1")
-        self.assertEqual(self.feedback_text(), before, "Der abgelehnte "
-                         "Löschversuch hat die Datei verändert")
 
-    def test_ticket_delete_rejects_a_closed_entry_and_keeps_the_file(self):
-        """Vorbedingung: TICKETS.md mit geschlossenem Arbeitspaket.
+        self.assertEqual(before, path.read_bytes())
+
+    def test_ticket_delete_rejects_a_done_entry_and_keeps_the_store(self):
+        """Vorbedingung: erledigtes Arbeitspaket mit Nachweis.
         Aktion: ``vibe.ticket_delete('proj', 'F1')``.
-        Erwartung: ``ValueError``; die Datei bleibt unverändert.
-        """
-        self.write_ticket(
-            "# TICKETS\n\n"
-            "- [x] F1 Erledigtes Arbeitspaket\n"
-            "  Beschreibung: Test\n"
-        )
-        before = self.ticket_text()
+        Erwartung: ``ValueError``; der Speicher bleibt unverändert."""
+        path = self.write_store([ticket_record(
+            "F1", "Erledigtes Arbeitspaket", state="done",
+            commit=self.commit, test="tests/unit/test_f34_backend.py")])
+        before = path.read_bytes()
 
         with self.assertRaises(ValueError):
             self.cli.ticket_delete("proj", "F1")
-        self.assertEqual(self.ticket_text(), before)
+
+        self.assertEqual(before, path.read_bytes())
 
     def test_open_entries_stay_deletable(self):
-        """Vorbedingung: FEEDBACK.md und TICKETS.md mit offenem Eintrag.
-        Aktion: Delete des offenen Eintrags.
-        Erwartung: Eintrag wird entfernt, andere Einträge bleiben.
-        """
-        self.write_feedback(
-            "# FEEDBACK\n\n"
-            "- [ ] F1 Offener Punkt\n"
-            "  Beschreibung: Erste Beschreibung\n\n"
-            "- [ ] F2 Offener Punkt zwei\n"
-            "  Beschreibung: Zweite Beschreibung\n"
-        )
+        """Vorbedingung: offenes Feedback und offenes Arbeitspaket.
+        Aktion: Delete der offenen Einträge.
+        Erwartung: Einträge werden entfernt, andere bleiben erhalten."""
+        self.write_store([
+            ticket_record("F1", "Offener Punkt", type="feedback"),
+            ticket_record("F2", "Offener Punkt zwei", type="feedback"),
+            ticket_record("F3", "Offenes Arbeitspaket"),
+        ])
+
         self.cli.feedback_delete("proj", "F1")
-        self.assertNotIn("F1 Offener Punkt", self.feedback_text())
-        self.assertIn("F2 Offener Punkt zwei", self.feedback_text())
-
-        self.write_ticket(
-            "# TICKETS\n\n"
-            "- [ ] F3 Offenes Arbeitspaket\n"
-            "  Beschreibung: Test\n"
-        )
         self.cli.ticket_delete("proj", "F3")
-        self.assertNotIn("F3 Offenes Arbeitspaket", self.ticket_text())
 
+        records = self.records()
+        self.assertEqual(["F2"], list(records))
+        self.assertIn("F2", records)
 
-# ---------------------------------------------------------------------------
-# WP7.2: Session-Limit je Projekt
-# ---------------------------------------------------------------------------
 
 class SessionLimitPerProjectTest(unittest.TestCase):
     """Projekt-Limits für Sessions über das SessionRegistry."""
@@ -723,10 +720,13 @@ class CostsMonthlyTest(unittest.TestCase):
         (self.proj / ".vibe").mkdir(parents=True)
         (self.proj / ".vibe" / "project.env").write_text(
             "TYPE=generic\n", encoding="utf-8")
-        # package_catalog ordnet Sitzungen über die Paketkennungen in FEEDBACK.md
-        # zu; ohne Eintrag kennt der Katalog "F1" nicht.
-        (self.proj / "FEEDBACK.md").write_text(
-            "# FEEDBACK\n\n- [ ] F1 Testpaket\n", encoding="utf-8")
+        # package_catalog ordnet Sitzungen über die Paketkennungen im
+        # Ticketspeicher zu; ohne Eintrag kennt der Katalog "F1" nicht.
+        (self.proj / ".vibe" / "tickets.json").write_text(
+            json.dumps({"version": 1, "tickets": [
+                ticket_record("F1", "Testpaket", type="feedback")]},
+                ensure_ascii=False, indent=1) + "\n",
+            encoding="utf-8")
         self.root.joinpath("_toolchain").mkdir()
         self.db = self.root / "opencode.db"
         self.cli = load_vibe_module(self.root)

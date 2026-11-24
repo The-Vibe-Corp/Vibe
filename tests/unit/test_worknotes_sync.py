@@ -1,16 +1,27 @@
-"""Tests für den Umgang mit den Arbeitsnotizen FEEDBACK.md und TICKETS.md.
+"""GH-48: Arbeitsnotizen, Tickettransport und Abschluss-Sync des Läufers.
 
-Die Notizen sind Laufzeit- und Werknotizen: Eine manuelle Änderung an ihnen
-darf Preflight und Abschlussschranke nicht blockieren. Ein per ``git worktree``
-angelegte Arbeitskopie enthält sie nicht; zwei neue CLI-Befehle kopieren sie
-hinein und schreiben den Ticket-Nachweis in den Projektordner zurück.
+Neu abgeleitet aus Arbeitspaket GH-48, ``SPEC.md`` (Git & work-package
+closing) und dem verbindlichen Implementierungsvertrag GH-48 (§4). Die alten
+Markdown-Ledger TICKETS.md/FEEDBACK.md sind keine Arbeitsnotizen mehr:
 
-Die Tests arbeiten mit echten temporären Git-Repositories und echten
-Arbeitskopien (``tests/unit/runner_support.py``). Es werden keine
-Modellaufrufe, keine Netzverbindungen und keine Router-/MCP-Aufrufe verwendet.
+* ``AGENTS.md`` und die sichtbare Stammdatei ``TICKET-<ID>.json`` dürfen
+  Preflight und Abschlussschranke nicht blockieren; andere Änderungen schon.
+* ``copy-notes`` transportiert AGENTS.md und ``.vibe/project.env``; mit
+  ``--id`` zusätzlich genau das aktuelle Ticket.
+* ``sync-ticket`` übernimmt state/commit/test aus der Arbeitskopie in den
+  Projekt-Ticketspeicher und verweigert Unfertiges mit ``FEHLT:``/Exit 1.
+
+Echte temporäre Git-Repositories und Arbeitskopien
+(``tests/unit/runner_support.py``); keine Modellaufrufe, keine Netzverbindungen,
+keine produktiven Pfade.
+
+Run:
+
+    python3 -m unittest tests.unit.test_worknotes_sync -v
 """
 import importlib.machinery
 import importlib.util
+import json
 import os
 import subprocess
 import sys
@@ -23,6 +34,7 @@ import runner_support as support
 
 REPO = Path(__file__).resolve().parents[2]
 MODULE = REPO / "bin" / "vibe_packages.py"
+STAMP = "2026-01-01T00:00:00+00:00"
 
 ENV_TEXT = (
     "TYPE=generic\n"
@@ -36,658 +48,356 @@ ENV_TEXT = (
 
 def load_module():
     loader = importlib.machinery.SourceFileLoader(
-        "vibe_packages_worknotes_under_test", str(MODULE)
-    )
+        "vibe_packages_worknotes_under_test", str(MODULE))
     spec = importlib.util.spec_from_loader(loader.name, loader)
     module = importlib.util.module_from_spec(spec)
     loader.exec_module(module)
     return module
 
 
+def ticket(tid, title, type="task", state="open", **extra):
+    record = {
+        "id": tid, "title": title, "type": type, "state": state,
+        "description": "", "github": None, "pr_url": "", "commit": "",
+        "test": "", "blocked_reason": "", "waiting_note": "",
+        "priority": "", "dependencies": [],
+        "created": STAMP, "updated": STAMP,
+    }
+    record.update(extra)
+    return record
+
+
 class WorkNotesTestCase(unittest.TestCase):
-    """Gemeinsames echtes Repository mit versionierten Arbeitsnotizen."""
+    """Gemeinsames echtes Repository mit versionierter AGENTS.md."""
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
         self.project = self.root / "proj"
         support.init_repo(self.project)
         self.agents = self.root / "agents"
         support.write_agents(self.agents, "test-agent", "code-reviewer")
-        support.write_project(self.project, ENV_TEXT)
+        (self.project / ".vibe").mkdir(parents=True, exist_ok=True)
+        (self.project / ".vibe" / "project.env").write_text(
+            ENV_TEXT, encoding="utf-8")
+        (self.project / "AGENTS.md").write_text("# Regeln\n", encoding="utf-8")
         support.commit_all(self.project)
         self.module = load_module()
         self.worktrees = []
-        self.base = support.git(
-            self.project, "rev-parse", "HEAD"
-        ).stdout.strip()
+        self.base = self.head(self.project)
 
     def tearDown(self):
         for worktree in self.worktrees:
-            support.git(
-                self.project, "worktree", "remove", "--force", str(worktree)
-            )
-        self.tmp.cleanup()
+            support.git(self.project, "worktree", "remove", "--force",
+                        str(worktree))
+
+    def head(self, cwd):
+        return support.git(cwd, "rev-parse", "HEAD").stdout.strip()
 
     def git_ok(self, cwd, *args):
         result = support.git(cwd, *args)
-        self.assertEqual(
-            result.returncode, 0, result.stdout + result.stderr
-        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         return result
 
     def add_worktree(self, name="wt"):
-        """Legt eine echte Arbeitskopie vom aktuellen Projekt-HEAD an."""
-        self.base = support.git(
-            self.project, "rev-parse", "HEAD"
-        ).stdout.strip()
+        self.base = self.head(self.project)
         worktree = self.root / name
-        self.git_ok(
-            self.project,
-            "worktree",
-            "add",
-            "-q",
-            "-b",
-            "branch-" + name,
-            str(worktree),
-            "HEAD",
-        )
+        self.git_ok(self.project, "worktree", "add", "-q", "-b",
+                    "branch-" + name, str(worktree), "HEAD")
         self.worktrees.append(worktree)
         return worktree
 
-    def make_notes_untracked(self):
-        """Nimmt die versionierten Notizen aus Git, lässt sie aber liegen."""
-        self.git_ok(
-            self.project, "rm", "--cached", "-q", "FEEDBACK.md", "TICKETS.md"
-        )
-        self.git_ok(
-            self.project,
-            "commit",
-            "-q",
-            "-m",
-            "Notizen aus der Versionierung nehmen",
-        )
+    def make_agents_untracked(self):
+        self.git_ok(self.project, "rm", "--cached", "-q", "AGENTS.md")
+        self.git_ok(self.project, "commit", "-q", "-m",
+                    "AGENTS.md aus der Versionierung nehmen")
 
-    def write_project_feedback(self, text):
-        (self.project / "FEEDBACK.md").write_text(
-            "# FEEDBACK\n\n" + text, encoding="utf-8"
-        )
+    def store(self, *records):
+        return support.write_ticket_store(self.project, list(records))
 
-    def write_worktree_feedback(self, worktree, text):
-        (worktree / "FEEDBACK.md").write_text(
-            "# FEEDBACK\n\n" + text, encoding="utf-8"
-        )
+    def read_store(self):
+        path = self.project / ".vibe" / "tickets.json"
+        return {item["id"]: item for item in json.loads(
+            path.read_text(encoding="utf-8"))["tickets"]}
+
+    def write_ticket_file(self, worktree, record):
+        path = worktree / ("TICKET-" + record["id"] + ".json")
+        path.write_text(json.dumps(record, ensure_ascii=False, indent=1) + "\n",
+                        encoding="utf-8")
+        return path
 
     def run_cli(self, *args):
+        env = {key: value for key, value in os.environ.items()
+               if not key.startswith("VIBE")}
+        env.update({
+            "HOME": str(self.root / "home"),
+            "VIBE": str(self.root),
+            "VIBE_STORAGE_LOCK_DIR": str(self.root / "locks"),
+            "VIBE_NO_CONTAINER": "1",
+        })
+        (self.root / "home").mkdir(exist_ok=True)
         return subprocess.run(
             [sys.executable, str(MODULE), *args],
-            cwd=str(self.root),
-            stdin=subprocess.DEVNULL,
-            capture_output=True,
-            text=True,
-            timeout=120,
-        )
+            cwd=str(self.root), env=env, stdin=subprocess.DEVNULL,
+            capture_output=True, text=True, timeout=120)
 
-    def sync_proof(self, worktree, pid):
-        return self.run_cli(
-            "sync-proof",
-            "--project",
-            str(self.project),
-            "--worktree",
-            str(worktree),
-            "--id",
-            pid,
-        )
+    def copy_notes(self, worktree, *extra):
+        return self.run_cli("copy-notes", "--project", str(self.project),
+                            "--worktree", str(worktree), *extra)
 
-    def copy_notes(self, worktree):
-        return self.run_cli(
-            "copy-notes",
-            "--project",
-            str(self.project),
-            "--worktree",
-            str(worktree),
-        )
+    def sync_ticket(self, worktree, pid):
+        return self.run_cli("sync-ticket", "--project", str(self.project),
+                            "--worktree", str(worktree), "--id", pid)
 
 
 class PreflightWorkNotesTest(WorkNotesTestCase):
-    """A1: geänderte oder unversionierte Notizen blockieren den Preflight nicht."""
+    """Geänderte oder unversionierte Arbeitsnotizen blockieren nicht."""
 
     def errors(self):
         return self.module.preflight_errors(
-            str(self.project),
-            agents_dir=str(self.agents),
-            tester="test-agent",
-            reviewer="code-reviewer",
-        )
+            str(self.project), agents_dir=str(self.agents),
+            tester="test-agent", reviewer="code-reviewer")
 
-    def test_modified_versioned_work_notes_do_not_block_the_preflight(self):
-        self.write_project_feedback("- [ ] F9 Manuell ergänzt\n")
-        (self.project / "TICKETS.md").write_text(
-            "# TICKETS\n\n- [ ] T9 Manuell ergänzt\n", encoding="utf-8"
-        )
+    def test_modified_agents_md_does_not_block_the_preflight(self):
+        """Vor: versionierte AGENTS.md wird geändert. Aktion: Preflight.
+        Erwartet: keine Befunde."""
+        (self.project / "AGENTS.md").write_text("# Regeln\nNeu\n",
+                                                encoding="utf-8")
 
-        self.assertEqual(self.errors(), [])
+        self.assertEqual([], self.errors())
 
-    def test_modified_other_versioned_file_still_blocks_the_preflight(self):
+    def test_untracked_agents_md_does_not_block_the_preflight(self):
+        """Vor: AGENTS.md ist unversioniert vorhanden. Aktion: Preflight.
+        Erwartet: keine Befunde."""
+        self.make_agents_untracked()
+        (self.project / "AGENTS.md").write_text("# Regeln\nNeu\n",
+                                                encoding="utf-8")
+
+        self.assertEqual([], self.errors())
+
+    def test_untracked_ticket_file_does_not_block_the_preflight(self):
+        """Vor: TICKET-AP1.json liegt unversioniert im Projektstamm. Aktion:
+        Preflight. Erwartet: keine Befunde (Laufzeitstand)."""
+        (self.project / "TICKET-AP1.json").write_text(
+            json.dumps(ticket("AP1", "Titel")), encoding="utf-8")
+
+        self.assertEqual([], self.errors())
+
+    def test_other_modified_file_still_blocks_the_preflight(self):
+        """Vor: versionierte Datei notiz.txt wird geändert. Aktion: Preflight.
+        Erwartet: Befund nennt notiz.txt, nicht AGENTS.md."""
         other = self.project / "notiz.txt"
         other.write_text("alt\n", encoding="utf-8")
         support.commit_all(self.project, "weitere versionierte Datei")
         other.write_text("neu\n", encoding="utf-8")
-        self.write_project_feedback("- [ ] F9 Manuell ergänzt\n")
-        (self.project / "TICKETS.md").write_text(
-            "# TICKETS\n\n- [ ] T9 Manuell ergänzt\n", encoding="utf-8"
-        )
 
         errors = self.errors()
 
         text = "\n".join(errors)
         self.assertTrue(any("Arbeitsbaum" in error for error in errors), errors)
         self.assertIn("notiz.txt", text)
-        self.assertNotIn("FEEDBACK.md", text)
-        self.assertNotIn("TICKETS.md", text)
+        self.assertNotIn("AGENTS.md", text)
 
-    def test_untracked_work_notes_do_not_block_the_preflight(self):
-        self.make_notes_untracked()
-        self.write_project_feedback("- [ ] F9 Manuell ergänzt\n")
-        (self.project / "TICKETS.md").write_text(
-            "# TICKETS\n\n- [ ] T9 Manuell ergänzt\n", encoding="utf-8"
-        )
-
-        self.assertEqual(self.errors(), [])
-
-    def test_untracked_other_file_still_blocks_the_preflight(self):
-        self.make_notes_untracked()
-        self.write_project_feedback("- [ ] F9 Manuell ergänzt\n")
-        (self.project / "TICKETS.md").write_text(
-            "# TICKETS\n\n- [ ] T9 Manuell ergänzt\n", encoding="utf-8"
-        )
+    def test_other_untracked_file_still_blocks_the_preflight(self):
+        """Vor: unversionierte Datei unfertig.txt. Aktion: Preflight.
+        Erwartet: Befund nennt unfertig.txt."""
         (self.project / "unfertig.txt").write_text("x\n", encoding="utf-8")
 
         errors = self.errors()
 
-        text = "\n".join(errors)
         self.assertTrue(any("Arbeitsbaum" in error for error in errors), errors)
-        self.assertIn("unfertig.txt", text)
-        self.assertNotIn("FEEDBACK.md", text)
-        self.assertNotIn("TICKETS.md", text)
+        self.assertIn("unfertig.txt", "\n".join(errors))
+
+    def test_ticket_file_in_a_subfolder_still_blocks_the_preflight(self):
+        """Vor: TICKET-AP1.json in einem Unterordner. Aktion: Preflight.
+        Erwartet: nur der Projektstamm ist Arbeitsnotiz; der Unterordner
+        blockiert und wird genannt."""
+        (self.project / "sub").mkdir()
+        (self.project / "sub" / "TICKET-AP1.json").write_text("{}",
+                                                               encoding="utf-8")
+
+        errors = self.errors()
+
+        self.assertTrue(any("Arbeitsbaum" in error for error in errors), errors)
+        self.assertIn("sub/", "\n".join(errors))
 
 
 class GateWorkNotesTest(WorkNotesTestCase):
-    """A2: Notizänderungen in der Arbeitskopie verletzen die Sauberkeit nicht."""
+    """Arbeitsnotizen verletzen die Sauberkeit der Arbeitskopie nicht."""
 
-    def gate_errors(self, worktree, pid="F1"):
+    def gate_errors(self, worktree, pid="AP7"):
         return self.module.gate_errors(str(worktree), pid, self.base)
 
-    def commit_paths(self, worktree, paths, message):
-        self.git_ok(worktree, "add", "--", *paths)
-        self.git_ok(worktree, "commit", "-q", "-m", message)
-
-    def prepare_package(self, worktree, pid="F1", notes_tracked=True):
-        """Legt einen vollständigen Paketnachweis in der Arbeitskopie an.
-
-        ``notes_tracked=False`` lässt FEEDBACK.md/TICKETS.md unversioniert und
-        committet nur Umsetzung und Dokumentation.
-        """
-        (worktree / ("impl-" + pid + ".txt")).write_text(
-            pid + "\n", encoding="utf-8"
-        )
-        if notes_tracked:
-            self.git_ok(worktree, "add", "-A")
-        else:
-            self.git_ok(worktree, "add", "--", "impl-" + pid + ".txt")
+    def prepare_package(self, worktree, pid="AP7"):
+        (worktree / ("impl-" + pid + ".txt")).write_text(pid + "\n",
+                                                         encoding="utf-8")
+        (worktree / "docs" / "features").mkdir(parents=True, exist_ok=True)
+        (worktree / "docs" / "features" / (pid + ".md")).write_text(
+            "# " + pid + "\n", encoding="utf-8")
+        (worktree / "docs" / "reviews").mkdir(parents=True, exist_ok=True)
+        (worktree / "docs" / "reviews" / (pid + "-review-1.md")).write_text(
+            "# Review\n\nVerdict: PASS\n", encoding="utf-8")
+        self.git_ok(worktree, "add", "-A")
         self.git_ok(worktree, "commit", "-q", "-m", pid + ": Umsetzung")
-        revision = support.git(
-            worktree, "rev-parse", "--short", "HEAD"
-        ).stdout.strip()
-
-        self.write_worktree_feedback(
-            worktree,
-            "- [x] " + pid + " Testpaket\n"
-            "  Beschreibung: Agentenstand.\n"
-            "  Commit: " + revision + "\n"
-            "  Test: test_" + pid.lower().replace("-", "_") + "\n",
-        )
-        features = worktree / "docs" / "features"
-        features.mkdir(parents=True, exist_ok=True)
-        (features / (pid + ".md")).write_text(
-            "# " + pid + "\n\nTestdokumentation.\n", encoding="utf-8"
-        )
-        reviews = worktree / "docs" / "reviews"
-        reviews.mkdir(parents=True, exist_ok=True)
-        (reviews / (pid + "-review-1.md")).write_text(
-            "# Review\n\nVerdict: PASS\n", encoding="utf-8"
-        )
-        if notes_tracked:
-            self.git_ok(worktree, "add", "-A")
-        else:
-            self.git_ok(worktree, "add", "--", "docs")
-        self.git_ok(worktree, "commit", "-q", "-m", pid + ": Nachweis")
+        revision = self.head(worktree)
+        self.write_ticket_file(worktree, ticket(
+            pid, "Titel", state="done", commit=revision, test="test_ap7"))
         return revision
 
-    def test_modified_tracked_notes_do_not_dirty_the_workcopy(self):
+    def test_modified_agents_md_does_not_dirty_the_workcopy(self):
+        """Vor: vollständiges Paket, danach AGENTS.md geändert. Aktion:
+        gate_errors. Erwartet: keine Befunde."""
         worktree = self.add_worktree()
-        self.prepare_package(worktree, notes_tracked=True)
+        self.prepare_package(worktree)
+        (worktree / "AGENTS.md").write_text("# Regeln\nManuell\n",
+                                            encoding="utf-8")
 
-        (worktree / "FEEDBACK.md").write_text(
-            (worktree / "FEEDBACK.md").read_text(encoding="utf-8")
-            + "  Manuelle Notiz zum Paket\n",
-            encoding="utf-8",
-        )
-        (worktree / "TICKETS.md").write_text(
-            "# TICKETS\n\n- [ ] T9 Manuell ergänzt\n", encoding="utf-8"
-        )
+        self.assertEqual([], self.gate_errors(worktree))
 
-        self.assertEqual(self.gate_errors(worktree), [])
+    def test_ticket_files_do_not_dirty_the_workcopy(self):
+        """Vor: vollständiges Paket mit TICKET-AP7.json und einer weiteren
+        TICKET-Datei im Stamm. Aktion: gate_errors. Erwartet: keine Befunde
+        (Laufzeitstand wird ignoriert)."""
+        worktree = self.add_worktree()
+        self.prepare_package(worktree)
+        (worktree / "TICKET-X9.json").write_text("{}", encoding="utf-8")
+
+        self.assertEqual([], self.gate_errors(worktree))
 
     def test_modified_other_file_still_dirties_the_workcopy(self):
+        """Vor: vollständiges Paket, danach impl-Datei geändert. Aktion:
+        gate_errors. Erwartet: Sauberkeitsbefund nennt impl-AP7.txt."""
         worktree = self.add_worktree()
-        self.prepare_package(worktree, notes_tracked=True)
-        (worktree / "FEEDBACK.md").write_text(
-            (worktree / "FEEDBACK.md").read_text(encoding="utf-8")
-            + "  Manuelle Notiz zum Paket\n",
-            encoding="utf-8",
-        )
-        (worktree / "TICKETS.md").write_text(
-            "# TICKETS\n\n- [ ] T9 Manuell ergänzt\n", encoding="utf-8"
-        )
-        (worktree / "impl-F1.txt").write_text("geändert\n", encoding="utf-8")
+        self.prepare_package(worktree)
+        (worktree / "impl-AP7.txt").write_text("geändert\n", encoding="utf-8")
 
         errors = self.gate_errors(worktree)
 
         text = "\n".join(errors)
         self.assertTrue(any("sauber" in error for error in errors), errors)
-        self.assertIn("impl-F1.txt", text)
-        self.assertNotIn("FEEDBACK.md", text)
-        self.assertNotIn("TICKETS.md", text)
-
-    def test_untracked_notes_do_not_dirty_the_workcopy(self):
-        self.make_notes_untracked()
-        worktree = self.add_worktree()
-        self.assertFalse((worktree / "FEEDBACK.md").exists())
-        self.prepare_package(worktree, notes_tracked=False)
-
-        self.write_worktree_feedback(
-            worktree,
-            "- [x] F1 Testpaket\n"
-            "  Beschreibung: Agentenstand.\n"
-            "  Commit: "
-            + support.git(
-                worktree, "rev-parse", "--short", "HEAD"
-            ).stdout.strip()
-            + "\n"
-            "  Test: test_f1\n",
-        )
-        (worktree / "TICKETS.md").write_text(
-            "# TICKETS\n\n- [ ] T9 Manuell ergänzt\n", encoding="utf-8"
-        )
-
-        self.assertEqual(self.gate_errors(worktree), [])
-
-    def test_untracked_other_file_still_dirties_the_workcopy(self):
-        self.make_notes_untracked()
-        worktree = self.add_worktree()
-        self.prepare_package(worktree, notes_tracked=False)
-        revision = support.git(
-            worktree, "rev-parse", "--short", "HEAD"
-        ).stdout.strip()
-        self.write_worktree_feedback(
-            worktree,
-            "- [x] F1 Testpaket\n"
-            "  Beschreibung: Agentenstand.\n"
-            "  Commit: " + revision + "\n"
-            "  Test: test_f1\n",
-        )
-        (worktree / "TICKETS.md").write_text(
-            "# TICKETS\n\n- [ ] T9 Manuell ergänzt\n", encoding="utf-8"
-        )
-        (worktree / "offen.txt").write_text("x\n", encoding="utf-8")
-
-        errors = self.gate_errors(worktree)
-
-        text = "\n".join(errors)
-        self.assertTrue(any("sauber" in error for error in errors), errors)
-        self.assertIn("offen.txt", text)
-        self.assertNotIn("FEEDBACK.md", text)
-        self.assertNotIn("TICKETS.md", text)
+        self.assertIn("impl-AP7.txt", text)
+        self.assertNotIn("TICKET-AP7.json", text)
 
 
 class CopyNotesCommandTest(WorkNotesTestCase):
-    """A3: copy-notes überträgt vorhandene Notizen in die Arbeitskopie."""
+    """copy-notes transportiert nur noch die aktuellen Arbeitsnotizen."""
 
-    def setUp(self):
-        super().setUp()
-        self.make_notes_untracked()
-        self.write_project_feedback("- [ ] F7 Aus dem Projekt\n")
-        (self.project / "TICKETS.md").write_text(
-            "# TICKETS\n\n- [ ] T7 Aus dem Projekt\n", encoding="utf-8"
-        )
-        self.worktree = self.add_worktree()
-        self.assertFalse((self.worktree / "FEEDBACK.md").exists())
-        self.assertFalse((self.worktree / "TICKETS.md").exists())
+    def test_agents_and_project_env_are_transported_without_ledgers(self):
+        """Vor: Projekt mit AGENTS.md, altem TICKETS.md und project.env.
+        Aktion: copy-notes ohne --id. Erwartet: AGENTS.md und project.env
+        sind in der Arbeitskopie; TICKETS.md nicht."""
+        (self.project / "TICKETS.md").write_text("# TICKETS\n",
+                                                 encoding="utf-8")
+        worktree = self.add_worktree()
 
-    def test_both_existing_notes_are_copied_unchanged(self):
-        result = self.copy_notes(self.worktree)
+        result = self.copy_notes(worktree)
 
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
         self.assertEqual(
-            (self.worktree / "FEEDBACK.md").read_text(encoding="utf-8"),
-            (self.project / "FEEDBACK.md").read_text(encoding="utf-8"),
-        )
-        self.assertEqual(
-            (self.worktree / "TICKETS.md").read_text(encoding="utf-8"),
-            (self.project / "TICKETS.md").read_text(encoding="utf-8"),
-        )
+            (self.project / "AGENTS.md").read_text(encoding="utf-8"),
+            (worktree / "AGENTS.md").read_text(encoding="utf-8"))
+        self.assertTrue((worktree / ".vibe" / "project.env").is_file())
+        self.assertFalse((worktree / "TICKETS.md").exists())
 
-    def test_a_note_missing_in_the_project_is_not_created(self):
-        (self.project / "TICKETS.md").unlink()
+    def test_without_id_no_ticket_is_transported(self):
+        """Vor: AP1 im Speicher, Arbeitskopie ohne TICKET-Datei. Aktion:
+        copy-notes ohne --id. Erwartet: keine TICKET-Datei (Abwärts-
+        kompatibilität des Aufrufs ohne Paket)."""
+        self.store(ticket("AP1", "Titel"))
+        worktree = self.add_worktree()
 
-        result = self.copy_notes(self.worktree)
+        result = self.copy_notes(worktree)
 
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertFalse((self.worktree / "TICKETS.md").exists())
-        self.assertEqual(
-            (self.worktree / "FEEDBACK.md").read_text(encoding="utf-8"),
-            (self.project / "FEEDBACK.md").read_text(encoding="utf-8"),
-        )
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertFalse((worktree / "TICKET-AP1.json").exists())
 
 
-class SyncProofCommandTest(WorkNotesTestCase):
-    """A4/A5: sync-proof schreibt den Nachweis gezielt und verweigert Unfertiges."""
+class SyncTicketCommandTest(WorkNotesTestCase):
+    """sync-ticket schreibt den Abschluss gezielt in den Speicher."""
 
-    def setUp(self):
-        super().setUp()
-        self.make_notes_untracked()
-        self.write_project_feedback(
-            "- [ ] F1 Erstes Paket\n"
-            "  Beschreibung: Manuell im Projekt gepflegt.\n"
-            "  Notiz: Diese Zeile gehört dem Nutzer.\n"
-            "  Commit: 0000000\n"
-            "  Test: test_alt\n"
-            "\n"
-            "- [ ] F2 Zweites Paket\n"
-            "  Beschreibung: Nicht anfassen.\n"
-            "\n"
-            "Nachbemerkung: bleibt stehen.\n"
-        )
-        (self.project / "TICKETS.md").write_text(
-            "# TICKETS\n\n- [ ] T7 Unverändert\n", encoding="utf-8"
-        )
-        self.worktree = self.add_worktree()
-        (self.worktree / "impl-F1.txt").write_text("F1\n", encoding="utf-8")
-        self.git_ok(self.worktree, "add", "--", "impl-F1.txt")
-        self.git_ok(self.worktree, "commit", "-q", "-m", "F1: Umsetzung")
-        self.revision = support.git(
-            self.worktree, "rev-parse", "--short", "HEAD"
-        ).stdout.strip()
-        self.proof_lines = (
-            "  Commit: " + self.revision + "\n"
-            "  Test: test_f1_sync\n"
-            "  Review: docs/reviews/F1-review-1.md (PASS)\n"
-            "  Doku: docs/features/F1.md\n"
-        )
-        self.write_worktree_feedback(
-            self.worktree,
-            "- [x] F1 Erstes Paket\n"
-            "  Beschreibung: Stand des Agenten.\n"
-            + self.proof_lines
-            + "\n"
-            "- [x] F2 Zweites Paket\n"
-            "  Beschreibung: Anderer Stand.\n"
-            "  Commit: " + self.revision + "\n"
-            "  Test: test_f2\n",
-        )
-        (self.worktree / "TICKETS.md").write_text(
-            "# TICKETS\n\n- [ ] T7 Unverändert\n", encoding="utf-8"
-        )
+    def test_a_complete_ticket_reaches_the_project_store(self):
+        """Vor: AP1 offen im Speicher; Arbeitskopie TICKET-AP1.json done mit
+        commit/test/pr_url. Aktion: sync-ticket. Erwartet: Exit 0 mit OK;
+        Speicher übernimmt state/commit/test/pr_url."""
+        self.store(ticket("AP1", "Titel"))
+        worktree = self.add_worktree()
+        (worktree / "impl-AP1.txt").write_text("x\n", encoding="utf-8")
+        self.git_ok(worktree, "add", "-A")
+        self.git_ok(worktree, "commit", "-q", "-m", "AP1: Umsetzung")
+        revision = self.head(worktree)
+        self.write_ticket_file(worktree, ticket(
+            "AP1", "Titel", state="done", commit=revision, test="test_ap1",
+            pr_url="http://example.invalid/pr/1"))
 
-    def project_feedback(self):
-        return (self.project / "FEEDBACK.md").read_text(encoding="utf-8")
+        result = self.sync_ticket(worktree, "AP1")
 
-    def project_tickets(self):
-        return (self.project / "TICKETS.md").read_text(encoding="utf-8")
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertIn("OK:", result.stdout)
+        record = self.read_store()["AP1"]
+        self.assertEqual("done", record["state"])
+        self.assertEqual(revision, record["commit"])
+        self.assertEqual("test_ap1", record["test"])
+        self.assertEqual("http://example.invalid/pr/1", record["pr_url"])
 
-    def assert_command_is_available(self):
-        """Stellt sicher, dass der Befehl existiert und nicht an argparse scheitert."""
-        result = self.run_cli("sync-proof", "--help")
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+    def test_a_ticket_that_is_not_done_is_refused(self):
+        """Vor: Arbeitskopie TICKET-AP1.json state=in-progress. Aktion:
+        sync-ticket. Erwartet: Exit 1 mit FEHLT; Speicher unverändert."""
+        self.store(ticket("AP1", "Titel"))
+        before = self.read_store()
+        worktree = self.add_worktree()
+        self.write_ticket_file(worktree, ticket(
+            "AP1", "Titel", state="in-progress"))
 
-    def test_checkbox_and_proof_lines_reach_the_project_block(self):
-        result = self.sync_proof(self.worktree, "F1")
+        result = self.sync_ticket(worktree, "AP1")
 
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        text = self.project_feedback()
-        self.assertIn("- [x] F1 Erstes Paket", text)
-        for line in self.proof_lines.splitlines():
-            self.assertIn(line, text)
+        self.assertEqual(1, result.returncode, result.stdout + result.stderr)
+        self.assertIn("FEHLT:", result.stdout)
+        self.assertEqual(before, self.read_store())
 
-    def test_other_blocks_and_manual_changes_stay_untouched(self):
-        before_tickets = self.project_tickets()
-        result = self.sync_proof(self.worktree, "F1")
+    def test_a_missing_ticket_file_is_refused(self):
+        """Vor: keine TICKET-Datei in der Arbeitskopie. Aktion: sync-ticket.
+        Erwartet: Exit 1 mit FEHLT; Speicher unverändert."""
+        self.store(ticket("AP1", "Titel"))
+        before = self.read_store()
+        worktree = self.add_worktree()
 
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        text = self.project_feedback()
-        self.assertIn(
-            "- [ ] F2 Zweites Paket\n  Beschreibung: Nicht anfassen.", text
-        )
-        self.assertIn("  Notiz: Diese Zeile gehört dem Nutzer.", text)
-        self.assertIn("Nachbemerkung: bleibt stehen.", text)
-        self.assertNotIn("Stand des Agenten.", text)
-        self.assertNotIn("0000000", text)
-        self.assertNotIn("test_alt", text)
-        self.assertEqual(self.project_tickets(), before_tickets)
+        result = self.sync_ticket(worktree, "AP1")
 
-    def test_the_command_is_idempotent(self):
-        first = self.sync_proof(self.worktree, "F1")
-        self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
-        after_first = self.project_feedback()
-        tickets_after_first = self.project_tickets()
+        self.assertEqual(1, result.returncode, result.stdout + result.stderr)
+        self.assertIn("FEHLT:", result.stdout)
+        self.assertEqual(before, self.read_store())
 
-        second = self.sync_proof(self.worktree, "F1")
+    def test_an_unknown_proof_commit_is_refused(self):
+        """Vor: Arbeitskopie nennt commit=deadbee, den das Projekt nicht
+        kennt. Aktion: sync-ticket ohne Ausnahme-Flag. Erwartet: Exit 1 mit
+        FEHLT; Speicher unverändert."""
+        self.store(ticket("AP1", "Titel"))
+        before = self.read_store()
+        worktree = self.add_worktree()
+        self.write_ticket_file(worktree, ticket(
+            "AP1", "Titel", state="done", commit="deadbee",
+            test="test_ap1"))
 
-        self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
-        self.assertEqual(self.project_feedback(), after_first)
-        self.assertEqual(self.project_tickets(), tickets_after_first)
+        result = self.sync_ticket(worktree, "AP1")
 
-    def test_an_unchecked_block_in_the_workcopy_is_refused(self):
-        self.assert_command_is_available()
-        self.write_worktree_feedback(
-            self.worktree,
-            "- [ ] F1 Erstes Paket\n"
-            "  Beschreibung: Noch nicht abgehakt.\n" + self.proof_lines,
-        )
-        before = self.project_feedback()
+        self.assertEqual(1, result.returncode, result.stdout + result.stderr)
+        self.assertIn("FEHLT:", result.stdout)
+        self.assertEqual(before, self.read_store())
 
-        result = self.sync_proof(self.worktree, "F1")
+    def test_a_ticket_missing_in_the_project_is_refused(self):
+        """Vor: Arbeitskopie X9 done, Projekt-Speicher ohne X9. Aktion:
+        sync-ticket. Erwartet: Exit 1 mit FEHLT; kein Ticket erfunden."""
+        self.store(ticket("AP1", "Titel"))
+        worktree = self.add_worktree()
+        self.write_ticket_file(worktree, ticket(
+            "X9", "Fremd", state="done", commit="abcdef1", test="test_x9"))
 
-        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual(self.project_feedback(), before)
+        result = self.sync_ticket(worktree, "X9")
 
-    def test_an_incomplete_proof_is_refused(self):
-        self.assert_command_is_available()
-        self.write_worktree_feedback(
-            self.worktree,
-            "- [x] F1 Erstes Paket\n"
-            "  Beschreibung: Nachweis fehlt vollständig.\n",
-        )
-        before = self.project_feedback()
-
-        result = self.sync_proof(self.worktree, "F1")
-
-        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual(self.project_feedback(), before)
-
-    def test_a_missing_block_aborts_without_changing_the_project(self):
-        self.assert_command_is_available()
-        self.write_worktree_feedback(
-            self.worktree,
-            "- [x] F2 Zweites Paket\n"
-            "  Beschreibung: Anderer Block.\n"
-            "  Commit: " + self.revision + "\n"
-            "  Test: test_f2\n",
-        )
-        before = self.project_feedback()
-
-        result = self.sync_proof(self.worktree, "F1")
-
-        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual(self.project_feedback(), before)
-
-    def test_a_block_missing_in_the_project_is_refused(self):
-        self.assert_command_is_available()
-        self.write_project_feedback(
-            "- [ ] F2 Zweites Paket\n"
-            "  Beschreibung: Nur dieser Block ist im Projekt.\n"
-        )
-        before = self.project_feedback()
-
-        result = self.sync_proof(self.worktree, "F1")
-
-        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual(self.project_feedback(), before)
-
-    def test_a_proof_commit_unknown_to_the_project_is_refused(self):
-        self.assert_command_is_available()
-        self.write_worktree_feedback(
-            self.worktree,
-            "- [x] F1 Erstes Paket\n"
-            "  Beschreibung: Stand des Agenten.\n"
-            "  Commit: deadbee\n"
-            "  Test: test_f1_sync\n"
-            "  Review: docs/reviews/F1-review-1.md (PASS)\n"
-            "  Doku: docs/features/F1.md\n",
-        )
-        before = self.project_feedback()
-
-        result = self.sync_proof(self.worktree, "F1")
-
-        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual(self.project_feedback(), before)
-
-
-class RunnerWorkNotesTest(WorkNotesTestCase):
-    """A7: Der Läufer verdrahtet copy-notes und sync-proof im echten Ablauf.
-
-    Das Projekt führt FEEDBACK.md/TICKETS.md bewusst unversioniert. Der
-    nachgebildete Agent arbeitet in einer echten ``git worktree``-Arbeitskopie.
-    Nach dem Lauf müssen Arbeitskopie und Paketbranch weg, der Code gemergt und
-    der Paketnachweis in den Projektnotizen angekommen sein.
-    """
-
-    def setUp(self):
-        super().setUp()
-        env_path = self.project / ".vibe" / "project.env"
-        env_path.write_text(ENV_TEXT + "MAX_RETRIES=1\n", encoding="utf-8")
-        support.commit_all(self.project, "Wiederholungslimit festlegen")
-        self.write_project_feedback(
-            "- [ ] F1 Erstes Paket\n  Beschreibung: Test\n"
-        )
-        (self.project / "TICKETS.md").write_text("# TICKETS\n", encoding="utf-8")
-        self.make_notes_untracked()
-        self.base = support.git(
-            self.project, "rev-parse", "HEAD"
-        ).stdout.strip()
-
-        self.install = self.root / "_toolchain"
-        self.tool_bin = support.install_runner(self.install)
-        (self.tool_bin / "vibe").write_text(support.FAKE_VIBE, encoding="utf-8")
-        (self.tool_bin / "vibe").chmod(0o755)
-        self.runtime = self.root / "_logs"
-        self.fakebin = support.install_fake_tools(self.root)
-        self.calls = self.root / "calls.log"
-        self.counter = self.root / "counter"
-        self.home = self.root / "home"
-        self.home.mkdir(parents=True, exist_ok=True)
-
-    def env(self):
-        env = os.environ.copy()
-        for key in list(env):
-            if key.startswith("VIBE") or key.startswith("FAKE_"):
-                env.pop(key, None)
-        for key in (
-            "AGENT",
-            "MAX_PACKAGES",
-            "MAX_RETRIES",
-            "SANDBOX",
-            "SANDBOX_TOOLS",
-            "VERIFY_FULL",
-            "VERIFY_PACKAGE",
-        ):
-            env.pop(key, None)
-        env.update(
-            {
-                "VIBE": str(self.root),
-                "VIBE_INSTALL": str(self.install),
-                "VIBE_RUNTIME": str(self.runtime),
-                "VIBE_AGENTS_DIR": str(self.agents),
-                "VIBE_LOGNAME": "proj",
-                "VIBE_MAX_PACKAGES": "1",
-                "VIBE_RETRY_DELAY": "0",
-                "HOME": str(self.home),
-                "PATH": str(self.fakebin) + os.pathsep + env.get("PATH", ""),
-                "FAKE_CALLS": str(self.calls),
-                "FAKE_COUNTER": str(self.counter),
-            }
-        )
-        return env
-
-    def run_runner(self):
-        return subprocess.run(
-            ["bash", str(self.tool_bin / "vibe-run.sh"), str(self.project)],
-            cwd=str(self.project),
-            env=self.env(),
-            stdin=subprocess.DEVNULL,
-            capture_output=True,
-            text=True,
-            timeout=120,
-        )
-
-    def worktree_dirs(self):
-        path = self.runtime / "worktrees"
-        if not path.is_dir():
-            return []
-        return [entry for entry in path.glob("*") if entry.is_dir()]
-
-    def test_runner_copies_notes_and_writes_the_proof_back(self):
-        result = self.run_runner()
-
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("Geschlossen: F1", result.stdout)
-
-        text = (self.project / "FEEDBACK.md").read_text(encoding="utf-8")
-        self.assertIn("- [x] F1 Erstes Paket", text)
-        self.assertIn("Commit:", text)
-        self.assertIn("Test: test_f1", text)
-
-        self.assertTrue(
-            (self.project / "impl-F1.txt").is_file(), "Umsetzung nicht gemergt"
-        )
-        self.assertTrue(
-            (self.project / "docs" / "features" / "F1.md").is_file(),
-            "Feature-Dokumentation nicht gemergt",
-        )
-        merged = support.git(
-            self.project, "log", "--format=%s", self.base + "..HEAD"
-        ).stdout
-        self.assertIn("F1: Nachweis", merged)
-
-        self.assertEqual(self.worktree_dirs(), [], "Arbeitskopie blieb liegen")
-        # B16: Paketbranches folgen dem Muster feature/{owner}/{id}
-        # (Fixture: feature/test/<id>). Die frühere Prüfung auf "vibe/*"
-        # war seit dem neuen Branch-Schema immer erfüllt und damit blind.
-        self.assertEqual(
-            support.git(
-                self.project, "branch", "--list", "feature/*"
-            ).stdout.strip(),
-            "",
-            "Paketbranch wurde nicht entfernt",
-        )
-        self.assertEqual(
-            support.git(
-                self.project, "ls-files", "FEEDBACK.md", "TICKETS.md"
-            ).stdout.strip(),
-            "",
-            "Arbeitsnotizen dürfen nicht versioniert werden",
-        )
+        self.assertEqual(1, result.returncode, result.stdout + result.stderr)
+        self.assertIn("FEHLT:", result.stdout)
+        self.assertNotIn("X9", self.read_store())
 
 
 if __name__ == "__main__":

@@ -116,39 +116,19 @@ def run(*command, check=True):
                           capture_output=True, text=True)
 
 
-def mark_done(path, commit):
-    if not path.is_file():
-        return
-    lines = path.read_text(encoding="utf-8").splitlines()
-    out = []
-    index = 0
-    pattern = re.compile(r"^- \[ \] " + re.escape(pid) + r"\b")
-    while index < len(lines):
-        line = lines[index]
-        if not pattern.match(line):
-            out.append(line)
-            index += 1
-            continue
-        out.append(line.replace("- [ ]", "- [x]", 1))
-        index += 1
-        continuation = []
-        while index < len(lines):
-            candidate = lines[index]
-            if candidate.startswith((" ", "\t")):
-                continuation.append(candidate)
-                index += 1
-            elif not candidate.strip():
-                index += 1
-            else:
-                break
-        continuation = [
-            item
-            for item in continuation
-            if not re.match(r"\s*(Commit|Test|Datei):", item)
-        ]
-        out.extend(continuation)
-        out.append("  Commit: " + commit + "; Test: test_" + pid.lower().replace("-", "_"))
-    path.write_text("\n".join(out) + "\n", encoding="utf-8")
+def complete_ticket(commit):
+    """GH-48: schließt die sichtbare TICKET-<ID>.json ab."""
+    path = cwd / ("TICKET-" + pid + ".json")
+    try:
+        record = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        record = {"id": pid, "title": pid, "type": "task",
+                  "description": ""}
+    record.setdefault("type", "task")
+    record.update({"id": pid, "state": "done", "commit": commit,
+                   "test": "test_" + pid.lower().replace("-", "_")})
+    path.write_text(json.dumps(record, ensure_ascii=False, indent=1) + "\n",
+                    encoding="utf-8")
 
 
 (cwd / ("impl-" + pid + ".txt")).write_text(pid + "\n", encoding="utf-8")
@@ -156,8 +136,7 @@ run("git", "add", "-A")
 run("git", "commit", "-q", "-m", pid + ": Umsetzung")
 short = run("git", "rev-parse", "--short", "HEAD").stdout.strip()
 
-for name in ("TICKETS.md", "FEEDBACK.md"):
-    mark_done(cwd / name, short)
+complete_ticket(short)
 
 (cwd / "docs" / "features").mkdir(parents=True, exist_ok=True)
 (cwd / "docs" / "features" / (pid + ".md")).write_text(
@@ -200,7 +179,8 @@ class PiRunnerFixture(unittest.TestCase):
             'VERIFY_PACKAGE="true"\n'
             'VERIFY_FULL="true"\n'
             "MAX_RETRIES=0\n",
-            feedback="- [ ] B6 Testpaket\n  Beschreibung: Test\n",
+            feedback=[support.ticket_record("B6", "Testpaket",
+                                            description="Test")],
         )
         self.tool_bin = support.install_runner(self.root / "_toolchain")
         self.install = self.root / "_toolchain"

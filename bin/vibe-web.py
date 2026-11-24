@@ -87,6 +87,41 @@ def write_private(path, text):
     """
     vibe_storage.write_text(path, text, mode=0o600)
 
+
+# GH-48: Über die Oberfläche frei wählbare Zustände. done/blocked/
+# waiting-merge bleiben dem Läufer bzw. GitHub-Sync vorbehalten und werden
+# hier abgelehnt.
+WEB_TICKET_STATES = ("draft", "open", "in-progress")
+
+
+def web_ticket_state(value):
+    """Normalisiert den optionalen Zustand von add/state-Aufrufen.
+
+    Leerer Wert gilt als ``open``; fremde oder dem Läufer vorbehaltene Werte
+    werden mit verständlicher Meldung als ``ValueError`` abgelehnt.
+    """
+    state = str(value or "").strip() or "open"
+    if state not in WEB_TICKET_STATES:
+        raise ValueError("Zustand '" + state + "' ist nicht zulässig "
+                         "(erlaubt: " + ", ".join(WEB_TICKET_STATES) + ").")
+    return state
+
+
+def ticket_set_state(name, tid, state):
+    """Setzt draft/open/in-progress an einem nicht erledigten Ticket.
+
+    ``state`` ist bereits durch :func:`web_ticket_state` validiert. Unbekannte
+    IDs und erledigte Tickets werden mit verständlicher Meldung abgelehnt
+    (``ValueError``), damit die Oberfläche kein 500 erzeugt.
+    """
+    project = vibe.ppath(name)
+    record = vibe.vibe_tickets.find(vibe.vibe_tickets.load(project), tid)
+    if record is None:
+        raise ValueError("Ticket nicht gefunden im Ticketspeicher: " + tid)
+    if record.get("state") == "done":
+        raise ValueError("Erledigte Tickets sind nicht bearbeitbar: " + tid)
+    vibe.vibe_tickets.update(project, tid, state=state)
+
 def prepare_runtime():
     """Legt Laufzeitordner und Kennungen erst beim Start an.
 
@@ -1749,13 +1784,20 @@ class H(BaseHTTPRequestHandler):
                     if act == "add":
                         t = (body.get("title") or "").strip()
                         assert t, "Titel fehlt"
+                        state = web_ticket_state(body.get("state"))
                         kind = body.get("kind") or "feedback"
                         if kind == "bug":
-                            num = vibe.add_bug(name, t, body.get("description", ""))
-                            ok, msg = True, f"B{num} eingetragen"
+                            fid = vibe.add_bug(name, t, body.get("description", ""), state=state)
+                            ok, msg = True, f"{fid} eingetragen"
                         else:
-                            num = vibe.add_feedback(name, t, body.get("description", ""))
-                            ok, msg = True, f"F{num} eingetragen"
+                            fid = vibe.add_feedback(name, t, body.get("description", ""), state=state)
+                            ok, msg = True, f"{fid} eingetragen"
+                    elif act == "state":
+                        fid = (body.get("id") or "").strip()
+                        assert fid, "Feedback-ID fehlt"
+                        state = web_ticket_state(body.get("state"))
+                        ticket_set_state(name, fid, state)
+                        ok, msg = True, f"{fid} auf {state} gesetzt"
                     elif act == "update":
                         fid = (body.get("id") or "").strip()
                         assert fid, "Feedback-ID fehlt"
@@ -1778,19 +1820,29 @@ class H(BaseHTTPRequestHandler):
                         # angelegt (Kategorie -> Label, draft -> ohne
                         # Ready-Label); ein Fehlschlag lässt keinen halben
                         # lokalen Eintrag zurück. Ohne Opt-in bleibt die
-                        # lokale AP-ID-Vergabe unverändert.
+                        # lokale AP-ID-Vergabe unverändert. GH-48: Der frühere
+                        # draft-Schalter wird auf den Speicherzustand
+                        # abgebildet (draft -> ohne Ready-Label).
+                        state = web_ticket_state(body.get("state"))
                         config = vibe_github.read_config(vibe.github_env_path(name))
                         if config["issues_enabled"]:
                             category = str(body.get("category") or body.get("kind") or "").strip().lower()
-                            draft = bool(body.get("draft", True))
+                            draft = (state == "draft")
                             tid = vibe_issues.add_ticket_connected(
                                 vibe.ppath(name), config, body.get("title"),
                                 body.get("description", ""), category, draft)
                         else:
                             tid = vibe.add_ticket(
                                 name, (body.get("id") or "").strip(),
-                                body.get("title"), body.get("description", ""))
+                                body.get("title"), body.get("description", ""),
+                                state=state)
                         ok, msg = True, f"{tid} angelegt"
+                    elif act == "state":
+                        tid = (body.get("id") or "").strip()
+                        assert tid, "ID fehlt"
+                        state = web_ticket_state(body.get("state"))
+                        ticket_set_state(name, tid, state)
+                        ok, msg = True, f"{tid} auf {state} gesetzt"
                     elif act == "update":
                         tid = (body.get("id") or "").strip()
                         assert tid, "ID fehlt"
@@ -1997,10 +2049,12 @@ class H(BaseHTTPRequestHandler):
                     elif act == "import":
                         added, seen = vibe.github_issues_import(name, str(body.get("label") or "") if body.get("label") is not None else None)
                         ok = bool(added) or seen == 0
-                        if not added and seen:
-                            msg = f"Keine neuen Issues ({seen} gesehen); TICKETS.md unverändert."
+                        if added:
+                            msg = f"Issues übernommen ({added} von {seen} Issues)."
+                        elif seen:
+                            msg = f"Keine neuen Issues ({seen} gesehen); Ticketspeicher unverändert."
                         else:
-                            msg = ("Arbeitspakete übernommen: " + ", ".join(added)) if added else "Keine offenen Issues."
+                            msg = "Keine offenen Issues."
                     elif act == "issues.sync":
                         # AP3: Pull + Push + Close; ohne Opt-in klare Meldung und
                         # kein Netz. Die Statistik steht unter extra["stats"].

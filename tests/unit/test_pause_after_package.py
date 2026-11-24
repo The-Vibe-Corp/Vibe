@@ -300,19 +300,22 @@ class RunnerPauseTest(unittest.TestCase):
         self.project = self.root / "proj"
         self.agents = self.root / "home" / ".config" / "opencode" / "agents"
         support.write_agents(self.agents, "test-agent", "code-reviewer")
-        (self.project / ".vibe").mkdir(parents=True)
+        support.init_repo(self.project)
+        (self.project / ".gitignore").write_text(".vibe/\n", encoding="utf-8")
+        support.commit_all(self.project)
+        (self.project / ".vibe").mkdir(exist_ok=True)
         (self.project / ".vibe" / "project.env").write_text(
             'TYPE=generic\nAGENT=tester\nTESTER=test-agent\nREVIEWER=code-reviewer\n'
             'VERIFY_PACKAGE="true"\nVERIFY_FULL="touch verify.done"\nMAX_RETRIES=1\n',
             encoding="utf-8",
         )
-        (self.project / "FEEDBACK.md").write_text(
-            "# FEEDBACK\n\n"
-            "- [ ] F1 Testpaket\n  Beschreibung: Test\n"
-            "- [ ] F2 Zweites Paket\n  Beschreibung: Test\n",
-            encoding="utf-8",
-        )
-        (self.project / "TICKETS.md").write_text("# TICKETS\n", encoding="utf-8")
+        # GH-48: Die Pakete liegen im Ticketspeicher, nicht in FEEDBACK.md.
+        support.write_ticket_store(self.project, [
+            support.ticket_record("F1", "Testpaket", type="feedback",
+                                  description="Test"),
+            support.ticket_record("F2", "Zweites Paket", type="feedback",
+                                  description="Test"),
+        ])
         self.verify = self.root / "_toolchain" / "verify"
         self.verify.mkdir(parents=True)
         marker = self.verify / "verify-marker.txt"
@@ -326,8 +329,6 @@ class RunnerPauseTest(unittest.TestCase):
         self.fakebin = support.install_fake_tools(self.root)
         self.calls = self.root / "calls.log"
         self.counter = self.root / "counter"
-        support.init_repo(self.project)
-        support.commit_all(self.project)
         self.flag = self.root / "_logs" / "proj.pause-after"
 
     def tearDown(self):

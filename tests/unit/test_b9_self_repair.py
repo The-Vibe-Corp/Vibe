@@ -62,11 +62,10 @@ VERIFY_FULL="true"
 MAX_RETRIES=1
 """
 
-FEEDBACK_ONE = "- [ ] F1 Erstes Paket\n  Beschreibung: Test\n"
-FEEDBACK_TWO = (
-    "- [ ] F1 Erstes Paket\n  Beschreibung: Test\n"
-    "- [ ] F2 Zweites Paket\n  Beschreibung: Test\n"
-)
+FEEDBACK_ONE = [support.ticket_record(
+    "F1", "Erstes Paket", type="feedback", description="Test")]
+FEEDBACK_TWO = FEEDBACK_ONE + [support.ticket_record(
+    "F2", "Zweites Paket", type="feedback", description="Test")]
 
 FINAL_VERIFY_ENV = (
     'VERIFY_FULL=\'echo final > "$VIBE_VERIFY_RUNTIME/final-ran"\''
@@ -129,47 +128,26 @@ def run(*command, check=True):
 
 def commit(message):
     run("git", "add", "-A")
-    run("git", "commit", "-q", "-m", message)
+    staged = subprocess.run(["git", "-C", str(cwd), "diff", "--cached",
+                             "--quiet"], check=False)
+    if staged.returncode != 0:
+        run("git", "commit", "-q", "-m", message)
     return run("git", "rev-parse", "--short", "HEAD").stdout.strip()
 
 
 def mark_done(pid, short):
-    for name in ("TICKETS.md", "FEEDBACK.md"):
-        path = cwd / name
-        if not path.is_file():
-            continue
-        lines = path.read_text(encoding="utf-8").splitlines()
-        out = []
-        index = 0
-        pattern = re.compile(r"^- \[ \] " + re.escape(pid) + r"\b")
-        while index < len(lines):
-            line = lines[index]
-            if not pattern.match(line):
-                out.append(line)
-                index += 1
-                continue
-            out.append(line.replace("- [ ]", "- [x]", 1))
-            index += 1
-            continuation = []
-            while index < len(lines):
-                candidate = lines[index]
-                if candidate.startswith((" ", "\t")):
-                    continuation.append(candidate)
-                    index += 1
-                elif not candidate.strip():
-                    index += 1
-                else:
-                    break
-            continuation = [
-                item for item in continuation
-                if not re.match(r"\s*(Commit|Test|Datei):", item)
-            ]
-            out.extend(continuation)
-            out.append(
-                "  Commit: " + short + "; Test: test_"
-                + pid.lower().replace("-", "_")
-            )
-        path.write_text("\n".join(out) + "\n", encoding="utf-8")
+    """GH-48: schließt die sichtbare TICKET-<ID>.json ab."""
+    path = cwd / ("TICKET-" + pid + ".json")
+    try:
+        record = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        record = {"id": pid, "title": pid, "type": "task",
+                  "description": ""}
+    record.setdefault("type", "task")
+    record.update({"id": pid, "state": "done", "commit": short,
+                   "test": "test_" + pid.lower().replace("-", "_")})
+    path.write_text(json.dumps(record, ensure_ascii=False, indent=1) + "\n",
+                    encoding="utf-8")
 
 
 def write_evidence(pid):
@@ -209,9 +187,11 @@ if not match:
 # Ein Reparaturauftrag darf den Wortlaut des Pakets wiederholen. Sobald die
 # Arbeitskopie bereits eine Umsetzung enthält, ist ein weiterer Aufruf keine
 # neue Paketbearbeitung, sondern eine Reparatur.
+# GH-48: Der Paket-Prompt enthält keinen "Wortlaut:"-Block mehr, sondern
+# verweist auf TICKET-<ID>.json. Ein Reparaturauftrag nennt "Reparatur".
 is_package = (
-    "Wortlaut:" in prompt
-    and "Arbeitspaket " in prompt
+    "Arbeitspaket " in prompt
+    and "Reparatur" not in prompt
     and not (cwd / ("impl-" + pid + ".txt")).exists()
 )
 
@@ -272,167 +252,10 @@ def install_b9_fake_tools(root):
     return fakebin
 
 
-# ---------------------------------------------------------------------------
-# (a) Abschlussschranke mit mehreren Commit-Hashes
-# ---------------------------------------------------------------------------
-class PackageGateTest(unittest.TestCase):
-    """Schrankenlogik mit echten Mini-Repositories aus ``vibe_packages``."""
-
-    def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        self.root = Path(self.tmp.name)
-        self.project = self.root / "proj"
-        support.init_repo(self.project)
-        self.agents = self.root / "agents"
-        support.write_agents(self.agents, "test-agent", "code-reviewer")
-        support.write_project(
-            self.project,
-            PROJECT_ENV.replace("MAX_RETRIES=1\n", ""),
-            feedback=FEEDBACK_ONE,
-        )
-        support.commit_all(self.project, "Ausgangsstand")
-        self.base = support.git(
-            self.project, "rev-parse", "HEAD"
-        ).stdout.strip()
-        self.module = load_module(PACKAGES, "vibe_packages_b9_gate")
-
-    def tearDown(self):
-        self.tmp.cleanup()
-
-    def write(self, name, text):
-        path = self.project / name
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text, encoding="utf-8")
-        return path
-
-    def commit(self, message):
-        support.commit_all(self.project, message)
-        return support.git(
-            self.project, "rev-parse", "--short", "HEAD"
-        ).stdout.strip()
-
-    def write_proof(self, first, second):
-        (self.project / "FEEDBACK.md").write_text(
-            "# FEEDBACK\n\n"
-            "- [x] F1 Mehrfachnachweis\n"
-            "  Beschreibung: Test\n"
-            "  Commit: %s (Umsetzung), %s (Tests); Test: test_f1\n"
-            % (first, second),
-            encoding="utf-8",
-        )
-
-    def write_proof_block(self, text):
-        (self.project / "FEEDBACK.md").write_text(
-            "# FEEDBACK\n\n" + text, encoding="utf-8"
-        )
-
-    def write_evidence(self):
-        self.write("docs/features/F1.md", "# F1\n\nDoku.\n")
-        self.write(
-            "docs/reviews/F1-review-1.md",
-            "# Review\n\nVerdict: PASS\n",
-        )
-
-    def errors(self):
-        return self.module.gate_errors(
-            str(self.project), "F1", self.base
-        )
-
-    def test_gate_accepts_proof_when_one_of_several_commits_is_on_the_branch(self):
-        """Ein Paket-Commit unter mehreren gelisteten Commits genügt."""
-        self.write("impl.txt", "umsetzung\n")
-        self.commit("F1: Umsetzung")
-        self.write("tests/test_f1.py", "def test_f1():\n    pass\n")
-        package_commit = self.commit("F1: Tests")
-        # Der erste gelistete Commit liegt außerhalb des Paketbranches; nur
-        # der zweite, ausdrücklich benannte Paket-Commit belegt das Paket.
-        self.write_proof(self.base[:7], package_commit)
-        self.write_evidence()
-        self.commit("F1: Nachweis")
-
-        self.assertEqual(self.errors(), [])
-
-    def test_gate_blocks_and_names_all_checked_commits_when_none_is_on_the_branch(
-        self,
-    ):
-        """Kein gelisteter Commit auf dem Paketbranch: blockiert mit Nennung."""
-        support.git(self.project, "checkout", "-q", "-b", "other")
-        self.write("fremd-a.txt", "a\n")
-        foreign_a = self.commit("Other: alt")
-        self.write("fremd-b.txt", "b\n")
-        foreign_b = self.commit("Other: neu")
-        support.git(self.project, "checkout", "-q", "main")
-
-        self.write("impl.txt", "umsetzung\n")
-        self.commit("F1: Umsetzung")
-        self.write_proof(foreign_a, foreign_b)
-        self.write_evidence()
-        self.commit("F1: Nachweis")
-
-        errors = self.errors()
-        combined = "\n".join(errors)
-
-        self.assertTrue(errors, "Schranke akzeptierte fremde Nachweise")
-        self.assertIn(foreign_a, combined)
-        self.assertIn(foreign_b, combined)
-
-    def test_gate_finds_package_commit_on_wrapped_commit_line(self):
-        """Ein Paket-Commit auf der eingerückten Fortsetzungszeile genügt.
-
-        Charakterisierung: Dieses Verhalten ist in ``bb94d86`` bereits
-        umgesetzt. Der Test wurde nachgezogen und ist deshalb sofort grün;
-        eine Rotphase wird hier nicht behauptet.
-        """
-        self.write("impl.txt", "umsetzung\n")
-        self.commit("F1: Umsetzung")
-        self.write("tests/test_f1.py", "def test_f1():\n    pass\n")
-        package_commit = self.commit("F1: Tests")
-        self.write_proof_block(
-            "- [x] F1 Umbrochener Nachweis\n"
-            "  Beschreibung: Test\n"
-            "  Commit: %s (Umsetzung),\n"
-            "    %s (Tests); Test: test_f1\n"
-            % (self.base[:7], package_commit)
-        )
-        self.write_evidence()
-        self.commit("F1: Nachweis")
-
-        self.assertEqual(self.errors(), [])
-
-    def test_gate_stops_commit_collection_at_next_proof_field(self):
-        """Ein Hash im folgenden ``Test:``-Feld gilt nicht als Commit.
-
-        Charakterisierung: Auch dieses Verhalten ist in ``bb94d86`` bereits
-        umgesetzt; der Test ist sofort grün und belegt nur die bestehende
-        Feldgrenze, keine neue Rotphase.
-        """
-        support.git(self.project, "checkout", "-q", "-b", "other")
-        self.write("fremd.txt", "fremd\n")
-        foreign = self.commit("Other: fremd")
-        support.git(self.project, "checkout", "-q", "main")
-        self.write("impl.txt", "umsetzung\n")
-        package_commit = self.commit("F1: Umsetzung")
-        self.write_proof_block(
-            "- [x] F1 Neues Feld\n"
-            "  Beschreibung: Test\n"
-            "  Commit: %s (Umsetzung),\n"
-            "    %s (Tests)\n"
-            "  Test: %s; test_f1\n"
-            % (self.base[:7], foreign, package_commit)
-        )
-        self.write_evidence()
-        self.commit("F1: Nachweis")
-
-        errors = self.errors()
-        combined = "\n".join(errors)
-
-        self.assertTrue(errors, "Hash im Test-Feld wurde als Commit gelesen")
-        self.assertIn(foreign, combined)
-        self.assertNotIn(
-            package_commit,
-            combined,
-            "Der Hash aus dem Test-Feld wurde als Commit geprüft.",
-        )
+# GH-48: Der alte Markdown-Gate-Parser (mehrere Commit-Hashes, umbrochene
+# Fortsetzungszeilen, Feldgrenzen im Text) ist entfernt. Die Schranke liest
+# genau ein commit-Feld aus TICKET-<ID>.json; die Aussagen tragen
+# tests/unit/test_package_gates.py und tests/unit/test_gh48_runner_tickets.py.
 
 
 # ---------------------------------------------------------------------------

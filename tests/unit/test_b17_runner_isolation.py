@@ -52,7 +52,8 @@ PRODUCTIVE_KEYS = (
     "VIBE_AGENTS_DIR",
 )
 
-FEEDBACK_ONE = "- [ ] F1 Erstes Paket\n  Beschreibung: Test\n"
+FEEDBACK_ONE = [support.ticket_record(
+    "F1", "Erstes Paket", type="feedback", description="Test")]
 
 GIT_IDENTITY = {
     "GIT_CONFIG_GLOBAL": os.devnull,

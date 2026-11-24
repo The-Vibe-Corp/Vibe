@@ -266,7 +266,9 @@ class PrivateServerIgnoresInheritedPasswordTest(b13.B13RunnerFixture):
         self.assertEqual(
             1, env_file.read_text(encoding="utf-8").count(line.strip()),
             "OPENCODE_PASSWORD muss genau einmal in der Projektdatei stehen")
-        support.commit_all(self.project, "AK1b: Projektdatei belegt Kennwort")
+        # GH-48: .vibe/ ist Laufzeitstand und wird nicht versioniert; der
+        # Läufer liest die Datei direkt. Ein Commit ist weder nötig noch
+        # möglich.
 
     def test_project_env_opencode_password_is_absent_from_the_server_env(self):
         """AK1b: OPENCODE_PASSWORD aus .vibe/project.env erreicht den Server nicht.

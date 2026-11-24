@@ -89,13 +89,6 @@ function nvpKindBadge(kind) {
   return el('span', {class: 'nv-kind-badge', 'data-nv-kind': kind}, label);
 }
 
-/* „ohne Nachweis“ ist kein Zustand mehr, sondern ein Badge am Eintrag. */
-function nvpProofBadge() {
-  return el('span', {class: 'nv-pill nv-warn', 'data-nv-proof': '',
-    title: tr('Für diesen Eintrag liegt kein Nachweis vor.')},
-  tr('ohne Nachweis'));
-}
-
 /* Linke Farbkante: gleiche Bedienung, unterschiedliche Farbe je Typ. */
 function nvpKindColor(kind) {
   if (kind === 'bug') return 'var(--nv-error-text, #b3261e)';
@@ -111,7 +104,6 @@ function nvpStateLabel(state) {
   if (state === 'BLOCKIERT') return tr('Blockiert');
   if (state === 'In Progress') return tr('In Progress');
   if (state === 'Draft') return tr('Entwurf');
-  if (state === 'ohne Nachweis') return tr('Ohne Nachweis');
   if (state === 'erledigt') return tr('Erledigt');
   return tr('Offen');
 }
@@ -219,9 +211,7 @@ function nvpTicketCard(name, token, row, rank) {
           : row.state === 'Draft' ? ' nv-muted' : '')}, nvpStateLabel(row.state))),
     el('div', {class: 'nv-ticket-title'}, String(row.title || id)),
     descNode,
-    el('div', {class: 'nv-row nv-ticket-meta'},
-      String(row.state) === 'ohne Nachweis' ? nvpProofBadge() : null,
-      more));
+    el('div', {class: 'nv-row nv-ticket-meta'}, more));
   card.addEventListener('click', function () {
     nvpOpenTicketDetail(name, token, row, kind);
   });
@@ -240,8 +230,7 @@ function nvpOpenTicketDetail(name, token, row, kind) {
       el('span', {class: 'nv-pill nv-state'}, nvpStateLabel(row.state))),
     el('h3', {}, title),
     el('p', {class: 'nv-muted'}, el('code', {}, id)),
-    el('p', {}, String(row.description || tr('Keine Beschreibung vorhanden.'))),
-    String(row.state) === 'ohne Nachweis' ? nvpProofBadge() : null);
+    el('p', {}, String(row.description || tr('Keine Beschreibung vorhanden.'))));
   var actions = el('div', {class: 'nv-row nv-ticket-detail-actions'});
   if (done) {
     actions.append(el('span', {class: 'nv-pill nv-warn', 'data-nv-done-notice': '',
@@ -328,8 +317,18 @@ function nvpOpenTicketForm(name, token, options) {
     categorySelect.append(el('option', {value: 'bug'}, tr('Bug')));
     categorySelect.append(el('option', {value: 'feature'}, tr('Feature')));
     categorySelect.value = 'feature';
-
-
+  }
+  /* GH-48: Zustandsauswahl für alle neuen Tickets (draft/open/in-progress,
+     Voreinstellung open). Der verbundene Draft-Haken wird beim Speichern auf
+     state=draft abgebildet. */
+  var stateSelect = null;
+  if (!editing) {
+    stateSelect = el('select', {'data-nv-field': 'state',
+      'aria-label': tr('Zustand')});
+    stateSelect.append(el('option', {value: 'draft'}, tr('Entwurf')));
+    stateSelect.append(el('option', {value: 'open'}, tr('Offen')));
+    stateSelect.append(el('option', {value: 'in-progress'}, tr('In Progress')));
+    stateSelect.value = 'open';
   }
   var error = nvpErrorBox();
 
@@ -344,6 +343,7 @@ function nvpOpenTicketForm(name, token, options) {
     nvpLabel(tr('Titel'), titleInput),
     nvpLabel(tr('Beschreibung'), descInput),
     categorySelect ? nvpLabel(tr('Kategorie'), categorySelect) : null,
+    stateSelect ? nvpLabel(tr('Zustand'), stateSelect) : null,
     draftInput ? nvpLabel(tr('Entwurf'), draftInput) : null,
     el('div', {class: 'nv-row'},
       el('button', {class: 'nv-btn nv-primary', type: 'button',
@@ -375,7 +375,9 @@ function nvpOpenTicketForm(name, token, options) {
             body.action = 'add';
             if (mode === 'package') body.id = String(idInput.value || '');
             if (categorySelect) body.category = String(categorySelect.value || '');
-            if (draftInput) body.draft = !!draftInput.checked;
+            var nextState = stateSelect ? String(stateSelect.value || 'open') : 'open';
+            if (draftInput && draftInput.checked) nextState = 'draft';
+            body.state = nextState;
           }
           try {
             var result = await api(path, Object.assign({name: nvpCurrentName()}, body));

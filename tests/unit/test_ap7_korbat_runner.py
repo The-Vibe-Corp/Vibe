@@ -54,8 +54,6 @@ VERIFY_FULL="true"
 MAX_RETRIES=3
 """
 
-FEEDBACK_ONE = "- [ ] F1 Erstes Paket\n  Beschreibung: Test\n"
-
 BASELINE_TEXT = (
     "{\n"
     '  "version": 1,\n'
@@ -80,20 +78,32 @@ class HashGuardFixture(AP9WiringFixture):
         project = self.root / name
         support.init_repo(project)
         (project / ".gitignore").write_text("/.vibe/\n", encoding="utf-8")
-        (project / "FEEDBACK.md").write_text(
-            "# FEEDBACK\n\n" + FEEDBACK_ONE, encoding="utf-8"
-        )
-        (project / "TICKETS.md").write_text("# TICKETS\n\n", encoding="utf-8")
         support.commit_all(project, "Ausgangsstand")
         (project / ".vibe").mkdir()
         (project / ".vibe" / "project.env").write_text(
             PROJECT_ENV, encoding="utf-8"
         )
+        # GH-48: Das Paket liegt unversioniert im Projekt-Ticketspeicher.
+        support.write_ticket_store(project, [
+            support.ticket_record("F1", "Erstes Paket", type="feedback",
+                                  description="Test"),
+        ])
         if baseline:
             (project / ".vibe" / "verify-baseline").write_text(
                 BASELINE_TEXT, encoding="utf-8"
             )
         return project
+
+    def ticket(self, project, pid="F1"):
+        """Liest das Ticket aus dem Projekt-Ticketspeicher."""
+        import json
+
+        data = json.loads(
+            (project / ".vibe" / "tickets.json").read_text(encoding="utf-8"))
+        for record in data["tickets"]:
+            if record["id"] == pid:
+                return record
+        self.fail("Ticket %s fehlt im Speicher" % pid)
 
     # ---------------------------------------------------------- Beobachtung
     def blocked_lines(self, log):
@@ -171,8 +181,8 @@ class TamperedProjectEnvTest(HashGuardFixture):
             0, git(project, "cat-file", "-e", "HEAD:impl-F1.txt").returncode,
             "Ein blockiertes Paket darf nicht lokal gemergt sein:\n" + log,
         )
-        self.assertIn("- [ ] F1",
-                      (project / "FEEDBACK.md").read_text(encoding="utf-8"))
+        self.assertNotEqual("done", self.ticket(project)["state"],
+                            "Ein blockiertes Paket muss offen bleiben")
 
     def test_identical_rewrite_is_not_a_block(self):
         """Vorbedingung: Der Agent schreibt ``.vibe/project.env`` mit

@@ -1475,7 +1475,9 @@ class RunnerFixture(unittest.TestCase):
             'VERIFY_PACKAGE="true"\n'
             'VERIFY_FULL="true"\n'
             "MAX_RETRIES=0\n",
-            feedback="- [ ] B6 Testpaket\n  Beschreibung: opencode-Agenten im Lauf\n",
+            feedback=[support.ticket_record(
+                "B6", "Testpaket",
+                description="opencode-Agenten im Lauf")],
         )
         (self.project / ".gitignore").write_text("/.vibe/\n", encoding="utf-8")
         support.init_repo(self.project)

@@ -474,7 +474,7 @@ class RunnerV015Test(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def write_project(self, verify, retries, feedback):
+    def write_project(self, verify, retries):
         (self.project / ".vibe").mkdir(parents=True, exist_ok=True)
         (self.project / ".vibe" / "project.env").write_text(
             "TYPE=generic\n"
@@ -486,16 +486,16 @@ class RunnerV015Test(unittest.TestCase):
             f"MAX_RETRIES={retries}\n",
             encoding="utf-8",
         )
-        (self.project / "FEEDBACK.md").write_text(
-            "# FEEDBACK\n\n" + feedback, encoding="utf-8"
-        )
-        (self.project / "TICKETS.md").write_text("# TICKETS\n", encoding="utf-8")
+        # GH-48: ein offenes Ticket im Speicher statt FEEDBACK.md. .vibe ist
+        # Laufzeitstand und wird nicht versioniert.
+        (self.project / ".gitignore").write_text(".vibe/\n", encoding="utf-8")
+        support.write_ticket_store(self.project, [support.ticket_record(
+            "F1", "Testpaket", type="feedback", description="Test")])
 
     def run_runner(
-        self, verify="true", retries=2, opencode_rc=0, packages=1, feedback=None
+        self, verify="true", retries=2, opencode_rc=0, packages=1
     ):
-        feedback = feedback or "- [ ] F1 Testpaket\n  Beschreibung: Test\n"
-        self.write_project(verify, retries, feedback)
+        self.write_project(verify, retries)
         if not (self.project / ".git").exists():
             support.init_repo(self.project)
         support.commit_all(self.project, "Teststand")

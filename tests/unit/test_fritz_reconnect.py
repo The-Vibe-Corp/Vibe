@@ -563,11 +563,9 @@ class RunnerFritzTest(unittest.TestCase):
             "MAX_RETRIES=0\n",
             encoding="utf-8",
         )
-        (self.project / "FEEDBACK.md").write_text(
-            "# FEEDBACK\n\n- [ ] F1 Testpaket\n  Beschreibung: Test\n",
-            encoding="utf-8",
-        )
-        (self.project / "TICKETS.md").write_text("# TICKETS\n", encoding="utf-8")
+        (self.project / ".gitignore").write_text(".vibe/\n", encoding="utf-8")
+        support.write_ticket_store(self.project, [
+            support.ticket_record("F1", "Testpaket", type="feedback")])
         self.verify = self.root / "_toolchain" / "verify"
         self.verify.mkdir(parents=True)
         marker = self.verify / "verify-marker.txt"

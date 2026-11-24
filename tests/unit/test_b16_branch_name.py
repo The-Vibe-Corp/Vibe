@@ -32,6 +32,7 @@ Run:
     python3 -m unittest tests.unit.test_b16_branch_name -v
 """
 import importlib.machinery
+import json
 import importlib.util
 import os
 import subprocess
@@ -117,8 +118,9 @@ class BranchNameCase(unittest.TestCase):
                 os.environ[key] = value
 
     # ------------------------------------------------------------ Projekt
-    def make_project(self, name="proj", env_extra="", feedback="",
-                     tickets="", user_name=None):
+    def make_project(self, name="proj", env_extra="", feedback=None,
+                     tickets=None, user_name=None):
+        """Projekt mit GH-48-Ticketspeicher statt Markdown-Ledgern."""
         project = self.base / name
         project.mkdir(parents=True, exist_ok=True)
         real_git(project, "init", "-q", "-b", "main")
@@ -128,10 +130,15 @@ class BranchNameCase(unittest.TestCase):
         (project / ".vibe").mkdir(exist_ok=True)
         (project / ".vibe" / "project.env").write_text(
             "TYPE=generic\nTESTER=test-agent\n" + env_extra, encoding="utf-8")
-        (project / "TICKETS.md").write_text(
-            "# TICKETS\n\n" + tickets, encoding="utf-8")
-        (project / "FEEDBACK.md").write_text(
-            "# FEEDBACK\n\n" + feedback, encoding="utf-8")
+        records = []
+        for source in (tickets, feedback):
+            if source:
+                records.extend(source)
+        if records:
+            (project / ".vibe" / "tickets.json").write_text(
+                json.dumps({"version": 1, "tickets": records},
+                           ensure_ascii=False, indent=1) + "\n",
+                encoding="utf-8")
         return project
 
     def create_branch(self, project, name):
@@ -196,7 +203,7 @@ class PatternConfigurationTest(BranchNameCase):
     def test_configured_pattern_with_slug_uses_the_ticket_title(self):
         project = self.make_project(
             env_extra='PACKAGE_BRANCH_PATTERN="feature/{owner}/{id}-{slug}"\n',
-            feedback="- [ ] F1 Kurzer Titel\n  Beschreibung: Test\n",
+            feedback=[{"id": "F1", "title": "Kurzer Titel"}],
             user_name="Test",
         )
 
@@ -208,7 +215,7 @@ class PatternConfigurationTest(BranchNameCase):
         title = "Ein sehr langer Pakettitel mit vielen Woertern"
         project = self.make_project(
             env_extra='PACKAGE_BRANCH_PATTERN="feature/{id}-{slug}"\n',
-            feedback="- [ ] F1 " + title + "\n",
+            feedback=[{"id": "F1", "title": title}],
             user_name="Test",
         )
         full_slug = "ein-sehr-langer-pakettitel-mit-vielen-woertern"

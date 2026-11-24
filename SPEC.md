@@ -71,14 +71,13 @@ Die bisherige Nutzerbestätigung belegt grundsätzliche Nutzbarkeit, nicht volls
 
 ### Arbeitspakete und Feedback
 
-- Arbeitspakete liegen in einer lokalen, nicht versionierten Datei vor.
-- Offene, blockierte und erledigte Einträge werden unterschieden.
+- Tickets (Arbeitspakete, Bugs und Feedback) liegen einheitlich in einer lokalen, nicht versionierten, maschinenlesbaren Datei (`.vibe/tickets.json`) vor.
+- Entwürfe, offene, in Arbeit befindliche, blockierte, auf Merge wartende und erledigte Tickets werden unterschieden; die Zustände gelten auch ohne GitHub-Verbindung.
 - Feedback kann über die Oberfläche ergänzt werden.
 - Arbeitspakete können über die Oberfläche definiert, bearbeitet und gelöscht werden; bei neuen Arbeitspaketen wird die ID automatisch vergeben, eine eigene ID bleibt möglich.
 - IDs sind eindeutig; parallele Schreibvorgänge erzeugen keine Doppelungen.
 - Erledigt bedeutet: Akzeptanzkriterien erfüllt und Nachweise vorhanden.
 - Ein Commit allein beweist keine fachliche Erfüllung.
-- Markdown-Kommentare und Vorlagen gelten nicht als offene Arbeitspakete.
 - Blockierte Einträge werden nicht automatisch als erledigt interpretiert.
 
 ### Agenten
@@ -291,7 +290,7 @@ docs/
 - Vor dem Abschluss macht der Runner den PR mergebar, indem er `origin/<base>` abruft und in den Feature-Branch mergt (`git merge origin/<base>`; Merge, niemals Rebase).
 - Bei einem Konflikt lässt der Runner den Worktree im Konfliktzustand und startet den Agenten erneut, um den Konflikt zu lösen (`git add` + `git merge --continue`). Der Runner prüft einen sauberen Merge vor dem einzelnen Push in `github-complete`.
 - Im Worktree mit dem Paketpräfix committen (`<ID>:`). Nur eigene Dateien stagen; vor dem Commit `git status` und Diff prüfen.
-- Das Ticket in `TICKETS.md`/`FEEDBACK.md` abhaken (`[x]`) und `Commit: <hash>; Test: <method or file>` ergänzen.
+- Das aktuelle Ticket in der Arbeitskopie (`TICKET-<ID>.json`) auf `state: done` setzen und die Nachweisfelder `commit: <hash>` und `test: <Methode oder Datei>` ausfüllen; der Runner validiert und übernimmt den Abschluss in den Ticketspeicher (`.vibe/tickets.json`).
 - `docs/features/<ID>.md` erstellen und einen unabhängigen Review als `docs/reviews/<ID>-review-*.md` mit `Verdict: PASS` erhalten.
 - Den Worktree sauber hinterlassen. Nicht mergen, pushen oder Branches löschen.
 - Der projektbezogene Abschlussmodus wird durch `GITHUB_AUTO_MERGE` in `.vibe/project.env` gesteuert:

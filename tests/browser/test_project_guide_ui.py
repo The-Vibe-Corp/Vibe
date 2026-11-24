@@ -198,10 +198,12 @@ class ProjectGuideBrowserTest(unittest.TestCase):
         spec = (self.project / "SPEC.md").read_text(encoding="utf-8")
         self.assertIn("## Produktziel", spec)
         self.assertIn("Das Projekt prüft Rechnungen.", spec)
-        self.assertTrue((self.project / "TICKETS.md").is_file())
         self.assertTrue((self.project / "AGENTS.md").is_file())
-        self.assertTrue((self.project / "FEEDBACK.md").is_file())
         self.assertTrue((self.project / "README.md").is_file())
+        # GH-48: Der Assistent legt keine Markdown-Ledger mehr an; Tickets
+        # entstehen im Dashboard/Ticketspeicher.
+        self.assertFalse((self.project / "TICKETS.md").exists())
+        self.assertFalse((self.project / "FEEDBACK.md").exists())
 
         self.assertIn("complete", self.page.locator("#guide").inner_text())
 

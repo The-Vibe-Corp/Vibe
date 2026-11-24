@@ -172,14 +172,14 @@ class SpecCanonicalTest(unittest.TestCase):
         """Vorbedingung: ``SPEC.md``.
         Aktion: den kanonischen Abschnitt aus AP3 §6.1 suchen.
         Erwartung: genau eine Git-Abschnittsüberschrift, der kanonische Text
-        vorhanden.
+        (deutsche Fassung der SPEC) vorhanden.
         Fehlerfall: Duplikat oder fehlender Abschnitt.
         """
         headings = [line for line in self.text.splitlines()
                     if line.startswith("## ") and "Git" in line]
         self.assertEqual([CANONICAL_SPEC_HEADING], headings, headings)
-        self.assertIn("The runner owns worktrees, branches, mergeability, "
-                      "push, PR, merge and cleanup.", self.text)
+        self.assertIn("Der Runner besitzt Worktrees, Branches, Mergebarkeit, "
+                      "Push, PR, Merge und Cleanup.", self.text)
 
     def test_canonical_section_describes_pr_only_and_auto_merge(self):
         """Vorbedingung: kanonischer Abschnitt.

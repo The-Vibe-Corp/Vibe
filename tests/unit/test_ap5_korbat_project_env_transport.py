@@ -13,8 +13,10 @@ Projekt mit echter ``git worktree``-Arbeitskopie:
   Exclude-Eintrag.
 * Nur exakt ``project.env`` wird transportiert; ``_secrets.env`` und andere
   ``.vibe/``-Dateien bleiben zurück.
-* ``sync-proof`` schreibt nie in die Projekt-``project.env`` zurück; die
-  Worktree-Kopie bleibt liegen.
+* ``sync-ticket`` (GH-48; früher ``sync-proof``) schreibt nie in die
+  Projekt-``project.env`` zurück; die Worktree-Kopie bleibt liegen. Das
+  abgeschlossene Paket liegt dabei als ``TICKET-T1.json`` in der Arbeitskopie,
+  der Abschluss wird in den Ticketspeicher übernommen.
 * Die CLI-Ausgabe enthält eine eigene OK-Zeile mit „project.env“.
 
 GH-46 entfernt den Transport der lokalen Baseline: ``.vibe/verify-baseline``
@@ -32,6 +34,7 @@ Run:
 """
 import importlib.machinery
 import importlib.util
+import json
 import os
 import stat
 import subprocess
@@ -88,12 +91,9 @@ class ProjectEnvTransportTest(unittest.TestCase):
         (self.project / ".vibe").mkdir()
         self.project_env = self.project / ".vibe" / "project.env"
         self.project_env.write_text(ENV_TEXT, encoding="utf-8")
-        (self.project / "TICKETS.md").write_text(
-            "# TICKETS\n\n- [ ] T1 Paket\n", encoding="utf-8"
-        )
-        (self.project / "FEEDBACK.md").write_text(
-            "# FEEDBACK\n", encoding="utf-8"
-        )
+        # GH-48: Ticket im Projektspeicher statt im Markdown-Ledger.
+        support.write_ticket_store(self.project, [
+            support.ticket_record("T1", "Paket", type="task")])
         self.worktree = self.add_worktree()
         self.assertFalse((self.worktree / ".vibe").exists(),
                          "Vorbedingung: Arbeitskopie kennt .vibe noch nicht")
@@ -256,11 +256,11 @@ class ProjectEnvTransportTest(unittest.TestCase):
         self.assertEqual(self.exclude_lines().count(".vibe/project.env"), 1,
                          self.exclude_lines())
 
-    def test_sync_proof_never_writes_the_project_env_back(self):
+    def test_sync_ticket_never_writes_the_project_env_back(self):
         """Vorbedingung: ``copy-notes`` hat die Datei transportiert; im
-        Worktree liegt ein abgehakter Nachweis für T1, die Worktree-Kopie
-        wurde lokal geändert. Der Projektstand ist autoritativ.
-        Aktion: ``sync-proof --project … --worktree … --id T1`` ausführen.
+        Worktree liegt ein abgeschlossenes TICKET-T1.json, die Worktree-Kopie
+        der project.env wurde lokal geändert. Der Projektstand ist autoritativ.
+        Aktion: ``sync-ticket --project … --worktree … --id T1`` ausführen.
         Erwartung: Exit 0; die Projekt-``project.env`` bleibt byte-gleich; die
         Worktree-Kopie bleibt mit ihrem lokalen Inhalt liegen.
         Fehlerfall: Rückschreiben in das Projekt oder Löschen der Kopie.
@@ -274,21 +274,23 @@ class ProjectEnvTransportTest(unittest.TestCase):
         revision = support.git(
             self.project, "rev-parse", "--short", "HEAD"
         ).stdout.strip()
-        (self.worktree / "TICKETS.md").write_text(
-            "# TICKETS\n\n- [x] T1 Paket\n"
-            "  Commit: %s; Test: test_t1\n" % revision,
+        record = support.ticket_record(
+            "T1", "Paket", type="task", state="done",
+            commit=revision, test="test_t1")
+        (self.worktree / "TICKET-T1.json").write_text(
+            json.dumps(record, ensure_ascii=False, indent=1) + "\n",
             encoding="utf-8",
         )
         project_before = self.project_env.read_bytes()
 
         result = self.run_cli(
-            "sync-proof", "--project", str(self.project),
+            "sync-ticket", "--project", str(self.project),
             "--worktree", str(self.worktree), "--id", "T1",
         )
 
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(self.project_env.read_bytes(), project_before,
-                         "sync-proof darf project.env nie zurückschreiben")
+                         "sync-ticket darf project.env nie zurückschreiben")
         self.assertEqual(copied.read_text(encoding="utf-8"), local,
                          "Die Worktree-Kopie muss liegen bleiben")
 

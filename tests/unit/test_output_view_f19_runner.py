@@ -74,7 +74,9 @@ class RunnerFixture(unittest.TestCase):
             'VERIFY_PACKAGE="true"\n'
             'VERIFY_FULL="true"\n'
             "MAX_RETRIES=0\n",
-            feedback="- [ ] F19 Testpaket\n  Beschreibung: Test\n",
+            feedback=[support.ticket_record("F19", "Testpaket",
+                                            type="feedback",
+                                            description="Test")],
         )
         self.tool_bin = support.install_runner(self.root / "_toolchain")
         self.fakebin = support.install_fake_tools(self.root)

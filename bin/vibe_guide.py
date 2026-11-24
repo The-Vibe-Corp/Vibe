@@ -117,9 +117,7 @@ STEPS = [
 
 FILES = [
     {"path": "SPEC.md", "label": "Fachliche Wahrheit", "required": True},
-    {"path": "TICKETS.md", "label": "Arbeitspakete", "required": True},
     {"path": "AGENTS.md", "label": "Regeln für Agenten", "required": True},
-    {"path": "FEEDBACK.md", "label": "Rückmeldungen", "required": True},
     {"path": ".vibe/project.env", "label": "Prüf- und Agentenkonfiguration", "required": True},
     {"path": "README.md", "label": "Projektübersicht", "required": True},
 ]
@@ -246,8 +244,6 @@ def _readme(name, ziel):
         + beschreibung + "\n\n"
         + "## Grundlagen\n\n"
         + "- `SPEC.md` – fachliche Wahrheit\n"
-        + "- `TICKETS.md` – Arbeitspakete\n"
-        + "- `FEEDBACK.md` – Rückmeldungen\n"
         + "- `AGENTS.md` – Regeln für Agenten\n"
     )
 
@@ -264,8 +260,6 @@ def _template_source(templates_dir, project_type, rel):
         return None
     base = os.path.realpath(str(templates_dir))
     kind = project_type if os.path.isdir(os.path.join(base, project_type)) else "generic"
-    if rel in ("TICKETS.md", "FEEDBACK.md"):
-        return os.path.join(base, "common", rel)
     return os.path.join(base, kind, rel)
 
 

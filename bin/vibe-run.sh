@@ -510,9 +510,11 @@ import shlex
 import sys
 
 data = json.load(open(sys.argv[1], encoding="utf-8"))
-print("ID=" + shlex.quote(data["id"]))
-print("BLOCK=" + shlex.quote(data["block"]))
-print("SOURCE=" + shlex.quote(data["source"]))
+print("ID=" + shlex.quote(str(data["id"])))
+print("TICKET_TYPE=" + shlex.quote(str(data.get("type") or "")))
+print("TITLE=" + shlex.quote(str(data.get("title") or "")))
+print("DESCRIPTION=" + shlex.quote(str(data.get("description") or "")))
+print("PRIORITY=" + shlex.quote(str(data.get("priority") or "")))
 # AP11: Die projektweise Priorisierung ist verbindlich; der Lauf meldet,
 # ob die Wahl aus PACKAGE_ORDER kam oder die Standardordnung galt.
 print("ORDERED=" + ("1" if data.get("ordered") else "0"))
@@ -880,7 +882,7 @@ merge_package() {
     printf '%s\n' "$dirty_files" | grep -Fxq -- "$file" || continue
     discarded="$discarded $file"
     case "$file" in
-      TICKETS.md|FEEDBACK.md|AGENTS.md) ;;
+      AGENTS.md) ;;
       *) all_notes=0 ;;
     esac
     git -C "$P" checkout -q HEAD -- "$file" 2>>"$LOG" || true
@@ -899,7 +901,7 @@ merge_package() {
   return 0
 }
 sync_work_notes() {
-  python3 "$PACKAGES_PY" sync-proof \
+  python3 "$PACKAGES_PY" sync-ticket \
     --project "$P" --worktree "$WT" --id "$ID" >>"$LOG" 2>&1
 }
 cleanup_worktree() {
@@ -1440,7 +1442,7 @@ pr_only_fallback() {
   local note="PR-only: wartet auf Merge des Eigentümers; Merge-Request $PR_URL; danach 'vibe package close $NAME $ID'"
   [ -n "${1:-}" ] && note="PR-only-Rückfall ($1): $note"
   python3 "$PACKAGES_PY" mark-waiting --project "$P" --id "$ID" \
-    --note "$note" >>"$LOG" 2>&1 || true
+    --note "$note" --pr-url "$PR_URL" >>"$LOG" 2>&1 || true
   record_block "$ID" "PR-only: wartet auf Merge (Merge-Request $PR_URL)"
   WAITING_MERGE+=("$ID — Merge-Request $PR_URL; danach: vibe package close $NAME $ID")
   echo "WARTET AUF MERGE: $ID — Merge-Request $PR_URL; danach: vibe package close $NAME $ID" | tee -a "$LOG"
@@ -1467,12 +1469,12 @@ finish_closed_package() {
   PACKAGE_DONE=1
   return 0
 }
-# Arbeitsnotizen (TICKETS.md/FEEDBACK.md am Projektstamm) sind Laufzeitstand
-# wie in dirty_report (bin/vibe_packages.py). Ihre uncommitteten Änderungen —
-# Blockievermerk (AP10), zurückgeschriebener Paketnachweis — blockieren die
+# Arbeitsnotiz (AGENTS.md am Projektstamm) und die sichtbare Ticketdatei
+# TICKET-<ID>.json sind Laufzeitstand wie in dirty_report
+# (bin/vibe_packages.py). Ihre uncommitteten Änderungen blockieren die
 # Integrationsprüfungen des Läufers nicht; andere Änderungen bleiben sichtbar.
 work_note_noise() {
-  grep -vE '^.. (TICKETS\.md|FEEDBACK\.md)$' || true
+  grep -vE '^.. (AGENTS\.md|TICKET-[A-Za-z0-9_.-]+\.json)$' || true
 }
 report() {
   local status_json
@@ -1599,7 +1601,7 @@ STREAM_FILTER=(python3 "$RUNS_PY" stream --state "$LOG.state.json" --attempt --s
   if [ "$RECONNECT" = 1 ]; then
     echo "RECONNECT: copy-notes übersprungen (Arbeitskopie ist kanonisch)." >>"$LOG"
   elif ! python3 "$PACKAGES_PY" copy-notes \
-      --project "$P" --worktree "$WT" >>"$LOG" 2>&1; then
+      --project "$P" --worktree "$WT" --id "$ID" >>"$LOG" 2>&1; then
     BLOCK_REASON="Arbeitsnotizen konnten nicht in die Arbeitskopie übernommen werden."
     record_block "$ID" "$BLOCK_REASON"
     echo "BLOCKIERT: $BLOCK_REASON" | tee -a "$LOG"
@@ -1611,10 +1613,11 @@ STREAM_FILTER=(python3 "$RUNS_PY" stream --state "$LOG.state.json" --attempt --s
   if [ -f "$WT/.vibe/project.env" ]; then
     PKG_HASH_PROJECT_ENV="$(package_file_hash "$WT/.vibe/project.env")"
   fi
-  PROMPT="Arbeitspaket $ID. Der Punkt steht in $SOURCE des Projektordners. Wortlaut:
-$BLOCK
+  PROMPT="Arbeitspaket $ID. Das Ticket liegt als maschinenlesbare Datei $WT/TICKET-$ID.json vor.
+Titel: $TITLE
+Beschreibung: $DESCRIPTION
 Bearbeite NUR dieses Arbeitspaket gemäß deinem Workflow. Du arbeitest in der isolierten Arbeitskopie $WT auf dem Branch $BRANCH; der Integrationsstand $P bleibt unberührt. Committe dort mit dem Präfix '$ID:'.
-Vor dem Abschluss müssen im Paketbranch vorliegen: ein Commit mit Präfix '$ID:', das Ticket in TICKETS.md bzw. FEEDBACK.md auf [x] mit Commit:/Test:, docs/features/$ID.md und ein Review unter docs/reviews/$ID-review-*.md mit 'Verdict: PASS'. Die Arbeitskopie muss sauber sein. Sonst gilt das Paket als BLOCKIERT und der Lauf hält an.
+Vor dem Abschluss müssen im Paketbranch vorliegen: ein Commit mit Präfix '$ID:', das Ticket in $WT/TICKET-$ID.json mit state \"done\" und ausgefüllten Feldern commit (Hash im Paketbranch) und test (Methode oder Datei), docs/features/$ID.md und ein Review unter docs/reviews/$ID-review-*.md mit 'Verdict: PASS'. TICKET-$ID.json ist Laufzeitstand und wird nie committet; die Arbeitskopie muss sauber sein. Sonst gilt das Paket als BLOCKIERT und der Lauf hält an.
 $QUESTION_HINT"
   ATTEMPT=0
   PACKAGE_DONE=0
@@ -1917,4 +1920,4 @@ if [ "$VRC" = 0 ]; then
 fi
 report
 register_finish "$VRC" failed
-echo "Noch Lücken (oder Durchgangsgrenze erreicht), Prüfung Exit-Code $VRC. Blockierte/übersprungene Punkte in FEEDBACK.md prüfen." | tee -a "$LOG"; exit "$VRC"
+echo "Noch Lücken (oder Durchgangsgrenze erreicht), Prüfung Exit-Code $VRC. Blockierte/übersprungene Punkte in der Ticketübersicht (Dashboard) prüfen." | tee -a "$LOG"; exit "$VRC"
