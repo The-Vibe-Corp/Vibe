@@ -26,8 +26,9 @@ Testfälle (Name, Vorbedingung, Aktion, Erwartung)
     Vorbedingung: Überblick geöffnet.
     Erwartung: ``section[data-nv-autonomous-card]`` ist das erste Element
     (y-Position vor den Kacheln), enthält ``input[data-nv-autonomous]``, eine
-    Überschrift, die Erklärung („Beantwortet offene Rückfragen automatisch…“)
-    und eine Zustands-Pille ``span[data-nv-autonomous-state]`` („aktiv“/„inaktiv“).
+    Überschrift, die Erklärung („Im autonomen Modus sind Rückfragen nicht
+    möglich; der Agent entscheidet offene Punkte selbst“) und eine
+    Zustands-Pille ``span[data-nv-autonomous-state]`` („aktiv“/„inaktiv“).
 ``test_tiles_match_the_contract_set``
     Vorbedingung: Pakete in den Zuständen offen, erledigt, BLOCKIERT, WARTET
     AUF MERGE, Draft, In Progress.
@@ -893,8 +894,9 @@ class OverviewTest(F34ProjectBrowserTest):
         Erwartung: ``section[data-nv-autonomous-card]`` ist das erste Element
         der Übersicht (y-Position vor den Kacheln), enthält
         ``input[data-nv-autonomous]``, eine Überschrift, die Erklärung
-        („Beantwortet offene Rückfragen automatisch …“) und eine
-        Zustands-Pille ``span[data-nv-autonomous-state]`` mit einem Wert.
+        („Im autonomen Modus sind Rückfragen nicht möglich; der Agent
+        entscheidet offene Punkte selbst“) und eine Zustands-Pille
+        ``span[data-nv-autonomous-state]`` mit einem Wert.
         """
         self.open_overview()
         panel = self.page.locator("section[data-nv-ppanel='overview']")

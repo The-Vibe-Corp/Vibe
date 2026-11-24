@@ -857,6 +857,9 @@ def assist_preflight(project, agents_dir, tester, reviewer, state_dir=None,
                 options=ASSIST_OPTIONS,
                 free_text=True,
             )
+        except questions.AutonomousActiveError:
+            print("PREFLIGHT: Autonomer Modus aktiv; keine Rückfrage gestellt.")
+            return _autonomous_result(errors, rounds)
         except (OSError, ValueError) as error:
             print("PREFLIGHT: Rückfrage konnte nicht gestellt werden: " + str(error))
             return _assist_result(errors, "unavailable")
@@ -998,6 +1001,9 @@ def assist_barrier(project, package_id, reason="", runtime=None,
             options=BARRIER_OPTIONS,
             free_text=True,
         )
+    except questions.AutonomousActiveError:
+        print("BARRIER: Autonomer Modus aktiv; keine Rückfrage gestellt.")
+        return _assist_result(errors, "autonomous")
     except (OSError, ValueError) as error:
         print("BARRIER: Rückfrage konnte nicht gestellt werden: " + str(error))
         return _assist_result(errors, "unavailable")

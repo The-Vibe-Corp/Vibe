@@ -2184,6 +2184,29 @@ class H(BaseHTTPRequestHandler):
                 state = state or vibe_autonomous.status(PATHS.runtime, name)
                 extra["autonomous"] = state
                 extra.update(state)
+                # GH-58: Ein Moduswechsel während eines Laufs erreicht den
+                # Agenten; die Zustellung ist best effort und blockiert nicht.
+                if ok and act in ("on", "off"):
+                    info = (
+                        "Autonomer Modus aktiviert: Rückfragen sind ab jetzt nicht möglich; entscheide offene fachliche Entscheidungen selbst."
+                        if act == "on" else
+                        "Autonomer Modus deaktiviert: Rückfragen sind ab jetzt wieder möglich."
+                    )
+                    delivered, detail = steer_project(name, info)
+                    if delivered:
+                        msg += " Der laufende Agent wurde informiert."
+                    elif os.path.exists(vibe.logpath(name)):
+                        # GH-58: Best effort — der Grund der gescheiterten
+                        # Zustellung wird im Laufprotokoll festgehalten;
+                        # das Umschalten bleibt erfolgreich.
+                        try:
+                            with open(vibe.logpath(name), "a", encoding="utf-8") as handle:
+                                handle.write(
+                                    "\n[Dashboard] Autonomer Modus geändert; der "
+                                    "Agent wurde nicht informiert: "
+                                    + " ".join(str(detail).split()) + "\n")
+                        except OSError:
+                            pass
             elif u.path == "/api/guide":
                 act = body.get("action") or "save"
                 path = vibe.ppath(name)
