@@ -3,7 +3,7 @@
 Status: Binding product specification  
 Starting point: Installed Vibe v5 system and existing desktop launcher  
 Web interface: English, German supported  
-Project documentation and review reports: German
+Project documentation and review reports: English
 
 ## Product goal
 
