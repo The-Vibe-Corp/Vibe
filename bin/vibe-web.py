@@ -433,9 +433,6 @@ def subagents_of(name):
     session = state.get("session") or ""
     entries = [public_subagent(entry) for entry in state.get("subagents") or []]
     if session:
-        # Die Set-Abbildung wurde nie gelesen; der Unterstrich markiert das
-        # angedeutete, nicht ausgebaute Feld.
-        _known = {entry.get("session") for entry in entries if entry.get("session")}
         for live in live_subagents(session, name):
             existing = next(
                 (entry for entry in entries if entry.get("session") == live["session"]),

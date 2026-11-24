@@ -290,12 +290,6 @@ function nvpOpenTicketDetail(name, token, row, kind) {
   NV.context.open({title: title, content: body});
 }
 
-function nvpIssueStateLabel(stateValue) {
-  if (stateValue === 'draft') return 'Entwurf';
-  if (stateValue === 'ready') return 'Bereit';
-  return 'In Progress';
-}
-
 /* Das Formular für „Anlegen/Bearbeiten“ öffnet im zentralen Kontext-Panel.
    Der Name wird bei Bedarf aus dem Hash geholt. */
 function nvpOpenTicketForm(name, token, options) {

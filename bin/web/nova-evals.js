@@ -12,7 +12,6 @@
 'use strict';
 
 var NV_EVAL_TABS = ['costs', 'runs', 'environment'];
-var NV_EVAL_LIVE_STATES = ['starting', 'running'];
 var NV_EVAL_PRUNE_STATES = ['finished', 'stopped', 'failed', 'ended', 'paused', 'blocked'];
 var NV_EVAL_STATE_LABELS = {
   starting: 'startet', running: 'läuft', finished: 'abgeschlossen',
