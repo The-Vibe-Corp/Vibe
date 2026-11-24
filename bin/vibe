@@ -18,7 +18,7 @@ Aufruf:  vibe                 interaktives Menü
          vibe ask --wait <id> [--timeout <s>]  auf die Antwort einer Rückfrage warten
          vibe questions       offene Rückfragen anzeigen
          vibe answer <id> [--option <nummer>|--text "..."] [--by <quelle>]  Rückfrage beantworten
-         vibe autonomous [on|off|status] [--project <p>]  autonomer Modus (Agent entscheidet selbst)
+         vibe autonomous [on|off|status] [--project <p>] [--runtime <laufzeitordner>]  autonomer Modus (Agent entscheidet selbst)
          vibe fritz [status|on|off|reconnect]  FRITZ!Box-Reconnect (Automatik/manuel)
          vibe verify <p> [quick|package|full]
          vibe feedback <p>    neuen Punkt in FEEDBACK.md eintragen
@@ -6499,6 +6499,8 @@ def cmd_mcp(action="list", name=None, scope="global", backup=None):
 
 # ---------- Rückfragen (F16) ----------
 ASK_DEFAULT_TIMEOUT = 90.0
+ASK_AUTONOMOUS_HINT = ("Der Nutzer ist nicht erreichbar. Entscheide selbst und "
+                       "dokumentiere die Entscheidung in deinem Abschlussbericht.")
 
 def _ask_number(text, name):
     try:
@@ -6524,10 +6526,35 @@ def _ask_timeout(qid, timeout, seconds, runtime):
 
 def _ask_autonomous(qid, record=None, runtime=LOGS):
     """Hinweis an den Agenten, wenn der autonome Modus die Antwort ersetzt."""
-    print("Autonomer Modus aktiv: Der Nutzer ist nicht erreichbar.")
+    print("Autonomer Modus aktiv: Das Warten auf eine Antwort ist beendet; der Nutzer ist nicht erreichbar.")
     choice = '--option <nummer> --text "..."' if record and record.get("options") else '--text "..."'
     print("Entscheide selbst und dokumentiere die Entscheidung mit: vibe answer --runtime "
           + runtime + " " + qid + " " + choice + " --by agent")
+
+def _project_for_cwd(runtime=None):
+    """Projektname für das aktuelle Verzeichnis — auch aus einer Arbeitskopie."""
+    name = vibe_questions.project_for_path(os.getcwd(), project_map())
+    if name:
+        return name
+    if not runtime:
+        return None
+    # Agenten laufen in Worktrees außerhalb des Projektpfads: Die Registry
+    # verknüpft den Arbeitskopie-Pfad mit dem echten Projektpfad.
+    cwd = os.path.realpath(os.getcwd())
+    projects = project_map()
+    matches = []
+    for entry in vibe_runs.WorktreeRegistry(runtime).all():
+        path = str(entry.get("path") or "").strip()
+        if not path:
+            continue
+        candidate = os.path.realpath(path)
+        if cwd == candidate or cwd.startswith(candidate + os.sep):
+            matches.append((len(candidate), str(entry.get("project") or "")))
+    for _, project_root in sorted(matches, reverse=True):
+        for mapped_name, mapped_path in projects.items():
+            if _real(mapped_path) == _real(project_root):
+                return mapped_name
+    return None
 
 def _ask_wait(qid, project, timeout, runtime):
     """Wartet auf eine Antwort; der autonome Modus beendet das Warten sofort."""
@@ -6578,10 +6605,16 @@ def cmd_ask(args):
             _ask_timeout(wait_id, timeout, ASK_DEFAULT_TIMEOUT, runtime); sys.exit(3)
         if not text:
             sys.exit('Frage fehlt: vibe ask "Frage" [--option "A"] ...')
-        if project is None:
-            project = vibe_questions.project_for_path(os.getcwd(), project_map()) or ""
-        elif project:
+        if not project:
+            # GH-58: Ein leerer --project-Wert gilt wie „nicht angegeben“,
+            # sonst umginge er die Projektauflösung und damit den Wächter.
+            project = _project_for_cwd(runtime) or ""
+        else:
             ppath(project)
+        if vibe_autonomous.is_enabled(runtime, project):
+            print(vibe_questions.autonomous_message(project))
+            print(ASK_AUTONOMOUS_HINT)
+            return
         qid = vibe_questions.create(runtime, project=project, text=text, options=options, free_text=free_text)
         print("Rückfrage " + qid + " gestellt: " + text)
         print("Der Nutzer sieht sie im Dashboard; Antwort im Terminal: vibe answer --runtime "
@@ -6594,6 +6627,11 @@ def cmd_ask(args):
         if mode == "stop" or vibe_autonomous.is_enabled(runtime, project):
             _ask_autonomous(qid, vibe_questions.load(runtime, qid), runtime); return
         _ask_timeout(qid, timeout, ASK_DEFAULT_TIMEOUT, runtime); sys.exit(3)
+    except vibe_questions.AutonomousActiveError as error:
+        # Wettlauf: Der Modus wurde zwischen Vorabprüfung und create aktiv.
+        print(str(error))
+        print(ASK_AUTONOMOUS_HINT)
+        return
     except ValueError as error:
         sys.exit(str(error))
 
@@ -6632,11 +6670,14 @@ def cmd_answer(args):
 def cmd_autonomous(args):
     """Schaltet den autonomen Modus um oder zeigt seinen Zustand."""
     action, project, given = "status", None, False
+    runtime = LOGS
     i = 0
     while i < len(args):
         arg = args[i]
         if arg == "--project":
             i += 1; project = _ask_value(args, i, "--project")
+        elif arg == "--runtime":
+            i += 1; runtime = _ask_value(args, i, "--runtime")
         elif arg.startswith("-"): sys.exit("Unbekannte Option: " + arg)
         else:
             if given: sys.exit("Nur eine Aktion erlaubt (on, off, status).")
@@ -6645,18 +6686,18 @@ def cmd_autonomous(args):
     if action not in ("on", "off", "status"):
         sys.exit("Unbekannte Aktion: " + action + " (erlaubt: on|off|status)")
     if project is None:
-        project = vibe_questions.project_for_path(os.getcwd(), project_map()) or ""
+        project = _project_for_cwd(runtime) or ""
     elif project:
         ppath(project)
     try:
         if action == "status":
-            state = vibe_autonomous.status(LOGS, project)
+            state = vibe_autonomous.status(runtime, project)
             where = " für " + project if project else ""
             print("Autonomer Modus" + where + ": " + ("aktiv" if state["enabled"] else "aus"))
             if state["changed"]:
                 print("Geändert: " + state["changed"])
             return
-        state = vibe_autonomous.set_enabled(LOGS, project, action == "on")
+        state = vibe_autonomous.set_enabled(runtime, project, action == "on")
         where = " für " + project if project else ""
         print("Autonomer Modus" + where + (" aktiviert." if state["enabled"] else " ausgeschaltet."))
         if state["enabled"]:

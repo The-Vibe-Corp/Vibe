@@ -721,11 +721,11 @@ function nvpAutonomousCard(name, token, autonomous) {
     el('div', {style: 'flex:1 1 24rem;min-width:0;'},
       el('h3', {style: 'margin:0 0 8px;font-size:1.35rem;'}, tr('Autonomer Modus')),
       el('p', {class: 'nv-muted', style: 'margin:0;'},
-        tr('Beantwortet offene Rückfragen automatisch, wenn keine Antwort kommt'))),
+        tr('Im autonomen Modus sind Rückfragen nicht möglich; der Agent entscheidet offene Punkte selbst'))),
     state,
     el('div', {class: 'nv-row nv-autonomous', 'data-nv-autonomous-row': ''},
       el('small', {class: 'nv-muted'},
-        tr('Beantwortet offene Rückfragen automatisch, wenn keine Antwort kommt')),
+        tr('Im autonomen Modus sind Rückfragen nicht möglich; der Agent entscheidet offene Punkte selbst')),
       input));
 }
 

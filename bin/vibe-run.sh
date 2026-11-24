@@ -418,13 +418,13 @@ fi
 TRIES_PER_ITEM=$((MAXR + 1))
 # Hinweis an den Agenten (F16): Rückfragen erscheinen im Dashboard; ohne
 # Antwort im Zeitlimit bleibt die Frage offen und wird später fortgesetzt.
-# Ist der autonome Modus aktiv, entscheidet der Agent selbst (auch wenn der
-# Nutzer ihn während des Wartens einschaltet) und dokumentiert die Entscheidung.
-QUESTION_HINT='Wenn eine fachliche Entscheidung offen ist, stelle eine Rückfrage mit vibe ask "Frage" --option "A" --option "B"; sie erscheint im Dashboard. Ohne Antwort im Zeitlimit endet der Befehl mit Exit-Code 3, die Frage bleibt offen; setze danach mit vibe ask --wait <id> fort. Im autonomen Modus (vibe autonomous on <projekt>) oder wenn der Nutzer ihn während des Wartens einschaltet, entscheidest du selbst und dokumentierst die Entscheidung mit vibe answer <id> --text "..." --by agent.'
+# Ist der autonome Modus aktiv, sind Rückfragen nicht möglich: vibe ask lehnt
+# sie sofort ab; der Agent entscheidet selbst und prüft den Zustand mit status.
+QUESTION_HINT='Wenn eine fachliche Entscheidung offen ist, stelle eine Rückfrage mit vibe ask "Frage" --option "A" --option "B"; sie erscheint im Dashboard. Ohne Antwort im Zeitlimit endet der Befehl mit Exit-Code 3, die Frage bleibt offen; setze danach mit vibe ask --wait <id> fort. Im autonomen Modus sind Rückfragen nicht möglich: vibe ask meldet das direkt und du entscheidest selbst; der Nutzer ist nicht erreichbar. Wird der Modus während des Wartens eingeschaltet, endet das Warten sofort; dokumentiere die Entscheidung mit vibe answer <id> --text "..." --by agent.'
 # B17: Die Produktivpfade fehlen in der Agentenumgebung; der Laufzeitordner
 # wird deshalb ausdrücklich übergeben. Die Kurzform oben bleibt als Hinweis,
 # die folgende Form mit --runtime ist für diesen Lauf maßgeblich.
-QUESTION_HINT+=" Wichtig: In diesem Lauf immer vibe ask --runtime $RUNTIME \"Frage\" --option \"A\" verwenden und mit vibe ask --wait <id> --runtime $RUNTIME fortsetzen; Antworten mit vibe answer --runtime $RUNTIME <id> --text \"...\" --by agent dokumentieren."
+QUESTION_HINT+=" Wichtig: In diesem Lauf immer vibe ask --runtime $RUNTIME \"Frage\" --option \"A\" verwenden und mit vibe ask --wait <id> --runtime $RUNTIME fortsetzen; Antworten mit vibe answer --runtime $RUNTIME <id> --text \"...\" --by agent dokumentieren. Den aktuellen Zustand prüfst du mit vibe autonomous status --runtime $RUNTIME."
 # Ein zu großes Protokoll wird vor dem Start rotiert (max. 5 MiB, 3 Archive).
 if [ -f "$RUNS_PY" ]; then
   python3 "$RUNS_PY" rotate "$LOG" >/dev/null 2>&1 || true

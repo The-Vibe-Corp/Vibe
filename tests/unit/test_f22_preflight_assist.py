@@ -831,6 +831,80 @@ class AutonomousRepairLimitTest(PreflightAssistFixture):
         self.assert_autonomous_agent_assignment(output)
 
 
+class AutonomousRaceTest(unittest.TestCase):
+    """GH-58: Moduswechsel zwischen Prüfung und Frage (Wettlauf)."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        self.home = self.root / "home"
+        self.home.mkdir()
+        self.agents = self.home / ".config" / "opencode" / "agents"
+        support.write_agents(self.agents, "test-agent", "code-reviewer")
+        self.state = self.root / "_state"
+        self.state.mkdir()
+        self.runtime = self.root / "_logs"
+        self.runtime.mkdir()
+        self.project = self.root / "proj"
+        support.init_repo(self.project)
+        support.write_project(self.project, PROJECT_ENV, feedback=FEEDBACK)
+        support.commit_all(self.project, "Ausgangsstand")
+        self.dirty = self.project / "unfertig.txt"
+        self.dirty.write_text("unfertig\n", encoding="utf-8")
+
+        bin_dir = str(REPO / "bin")
+        if bin_dir not in sys.path:
+            sys.path.insert(0, bin_dir)
+        self.packages = importlib.import_module("vibe_packages")
+        self.questions = importlib.import_module("vibe_questions")
+        self.autonomous = importlib.import_module("vibe_autonomous")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_create_race_hands_the_findings_to_the_agent_instead_of_unavailable(self):
+        """Vorbedingung: Der Preflight blockiert (unsauberer Arbeitsbaum); die
+        Modusprüfung sieht den Modus noch als aus, zwischen Prüfung und
+        Fragenstellung wird er aktiv, sodass ``create`` mit
+        ``AutonomousActiveError`` abbricht.
+
+        Aktion: ``assist_preflight`` wird in-process mit gepatchtem
+        ``create`` (Wettlauf) und gepatchter Modusprüfung aufgerufen.
+
+        Erwartung: Ergebnis ``action="agent"`` und ``source="autonomous"``;
+        ``create`` wurde genau einmal versucht; die Anweisung nennt den
+        Befund; es entsteht keine Rückfragedatei.
+
+        Signifikanz: GH-58/E — der Wettlauf wird als autonome Entscheidung
+        behandelt und nicht als „unavailable“ (Regression: Abbruch ohne
+        Agentenauftrag).
+        """
+        with mock.patch.object(self.autonomous, "is_enabled", return_value=False):
+            with mock.patch.object(
+                self.questions,
+                "create",
+                side_effect=self.questions.AutonomousActiveError(
+                    "Autonomer Modus aktiv; Rückfragen sind nicht möglich."
+                ),
+            ) as create:
+                result = self.packages.assist_preflight(
+                    str(self.project),
+                    str(self.agents),
+                    "test-agent",
+                    "code-reviewer",
+                    state_dir=str(self.state),
+                    runtime=str(self.runtime),
+                    project_name="proj",
+                    timeout=1,
+                )
+
+        self.assertEqual("agent", result["action"])
+        self.assertEqual("autonomous", result["source"])
+        self.assertEqual(create.call_count, 1)
+        self.assertIn("unfertig.txt", result["instruction"])
+        self.assertEqual(list((self.runtime / "questions").glob("*.json")), [])
+
+
 class SuccessfulPreflightTest(PreflightAssistFixture):
     """Verhalten 7: Ein erfolgreicher Preflight fragt nicht."""
 
