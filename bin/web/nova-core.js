@@ -560,7 +560,12 @@ function initChrome() {
     closeBellPanel();
     if (NV.context.isOpen()) NV.context.close();
   });
-  window.addEventListener('hashchange', function () { render(); });
+  window.addEventListener('hashchange', function () {
+    // GH-56: Ein Routenwechsel schließt die Bearbeitungsansicht; sonst
+    // blockiert der Scrim der alten Ansicht die neue Seite.
+    if (NV.editView && NV.editView.isOpen()) NV.editView.close();
+    render();
+  });
   window.addEventListener('vibe:langchange', function () {
     retranslateDOM();
     setTimeout(function () { render(); }, 20);

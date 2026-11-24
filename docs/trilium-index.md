@@ -78,3 +78,4 @@ Zuordnung der Projekt-Dokumentation zu den Notizen in Trilium (Stand 2026-11-24)
 | vibe | Features | AP23 — Key Management (save key management) | `Q2dZHh43viuH` |
 | vibe | Features | GH-57 UI-Überarbeitung Settings (erstes UI-Überarbeitungspaket) | `IOJMDFGkBDKj` |
 | vibe | Features | GH-60 Code Janitor Runde (Inventur, verhaltensneutrale Altlasten, Fundkatalog) | `Tks38FPz2aUY` |
+| vibe | Features | GH-56 UI-Anpassung der Projektansicht „Work" | `0g9uBbxl6wRd` |
