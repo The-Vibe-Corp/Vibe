@@ -50,6 +50,18 @@
 <div class="nv-context-body" data-nv-context-body></div>
 <div class="nv-context-foot" data-nv-context-foot></div>
 </aside>
+<!-- GH-57: Bearbeitungsansicht für längere Formulare. Der Scrim liegt unter
+     dem Kontext-Panel, damit Bestätigungen darüber sichtbar bleiben. -->
+<div class="nv-editview-scrim" data-nv-editview-scrim hidden></div>
+<aside class="nv-editview" data-nv-editview tabindex="-1" hidden>
+<div class="nv-editview-resize" data-nv-editview-resize aria-hidden="true"></div>
+<div class="nv-editview-head">
+<h2 data-nv-editview-title></h2>
+<button type="button" class="nv-btn nv-ghost nv-close" data-nv-editview-close aria-label="" title="">×</button>
+</div>
+<div class="nv-editview-body" data-nv-editview-body></div>
+<div class="nv-editview-foot" data-nv-editview-foot></div>
+</aside>
 <div id="nv-toasts" class="nv-toasts" aria-live="polite"></div>
 <script src="/static/i18n.js"></script>
 <script src="/static/nova-core.js"></script>

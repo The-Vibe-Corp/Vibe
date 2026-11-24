@@ -1358,3 +1358,136 @@ small[data-nv-gate-help] {
 .nv-question-answer input { flex: 1 1 16rem; min-width: 0; }
 .nv-question-card[aria-busy="true"] { opacity: 0.7; }
 
+/* ===== GH-57: Settings-Shell, Edit-View und Formularbausteine ===== */
+.nv-settings-layout { display: flex; flex-direction: row; flex-wrap: nowrap; align-items: flex-start; gap: var(--nv-space-5); }
+.nv-settings-nav {
+  position: sticky;
+  top: calc(var(--nv-top-h) + var(--nv-space-4));
+  align-self: flex-start;
+  flex: 0 0 15rem;
+  width: 15rem;
+  max-height: calc(100vh - var(--nv-top-h) - var(--nv-space-6));
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  flex-wrap: nowrap;
+  gap: var(--nv-space-1);
+  padding: var(--nv-space-2);
+  background: var(--nv-surface);
+  border: 1px solid var(--nv-border);
+  border-radius: var(--nv-radius);
+  box-shadow: var(--nv-shadow);
+}
+.nv-settings-nav button { width: 100%; text-align: left; justify-content: flex-start; }
+.nv-settings-nav button[aria-current="true"] {
+  background: var(--nv-accent-soft-bg);
+  color: var(--nv-accent-soft-fg);
+  font-weight: 600;
+}
+.nv-settings-content { flex: 1 1 auto; min-width: 0; max-width: none; }
+[data-nv-ssection] { scroll-margin-top: calc(var(--nv-top-h) + var(--nv-space-6)); }
+[data-nv-ssection] > h2 { margin-bottom: var(--nv-space-2); }
+
+/* Der Limits-Schalter trägt den Vertragsselektor als Klassennamen. */
+[class="label.nv-switch-row"] {
+  display: flex !important;
+  align-items: flex-start !important;
+  gap: var(--nv-space-2);
+  font-weight: 400 !important;
+  margin: var(--nv-space-2) 0 !important;
+  cursor: pointer;
+}
+[class="label.nv-switch-row"] input[type="checkbox"] { margin-top: 0.15rem; }
+[class="label.nv-switch-row"] .nv-switch-text { display: flex; flex-direction: column; line-height: 1.35; }
+[class="label.nv-switch-row"] .nv-switch-text small { color: var(--nv-muted); font-size: 0.8125rem; }
+
+label.nv-field { display: block; margin: var(--nv-space-3) 0; }
+label.nv-field > span, label.nv-field > strong { display: block; margin-bottom: var(--nv-space-1); }
+label.nv-field input, label.nv-field select, label.nv-field textarea { max-width: 32rem; }
+.nv-default-hint { display: block; margin-top: var(--nv-space-1); color: var(--nv-muted); }
+.nv-empty {
+  padding: var(--nv-space-4);
+  color: var(--nv-muted);
+  background: var(--nv-surface-2);
+  border-radius: var(--nv-radius-sm);
+}
+
+/* Bestätigungen liegen über der Bearbeitungsansicht, damit NV.confirmView
+   auch aus deren Fuß erreichbar bleibt. */
+.nv-context-scrim { z-index: 68; }
+.nv-context { z-index: 69; }
+.nv-editview-scrim { position: fixed; inset: 0; z-index: 66; background: rgba(12, 18, 28, 0.45); }
+.nv-editview {
+  position: fixed;
+  z-index: 67;
+  top: var(--nv-top-h);
+  right: 0;
+  bottom: 0;
+  width: max(30vw, 22rem);
+  min-width: 22rem;
+  max-width: 70vw;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: var(--nv-space-4);
+  background: var(--nv-surface);
+  border-left: 1px solid var(--nv-border);
+  box-shadow: var(--nv-shadow);
+}
+.nv-editview:focus { outline: none; }
+.nv-editview-resize {
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  z-index: 2;
+  width: 10px;
+  cursor: ew-resize;
+}
+.nv-editview-resize:hover { background: var(--nv-accent-soft-bg); }
+.nv-editview-head { display: flex; align-items: center; justify-content: space-between; gap: var(--nv-space-3); margin-bottom: var(--nv-space-3); }
+.nv-editview-head h2 { margin: 0; font-size: 1.125rem; }
+.nv-editview-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+.nv-editview-body textarea { width: 100%; min-height: 18rem; font-family: var(--nv-mono); }
+.nv-editview-foot { flex: 0 0 auto; padding-top: var(--nv-space-3); border-top: 1px solid var(--nv-border); }
+
+.nv-state-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--nv-space-2);
+  padding: 0.1rem 0.6rem;
+  border-radius: 999px;
+  background: var(--nv-surface-2);
+  color: var(--nv-muted);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.nv-state-badge::before { content: ""; width: 0.5rem; height: 0.5rem; border-radius: 50%; background: currentColor; }
+.nv-state-badge[data-on="true"] { background: var(--nv-ok-bg); color: var(--nv-ok-text); }
+[data-nv-mcp-server] { display: flex; flex-direction: column; gap: var(--nv-space-2); }
+[data-nv-mcp-server] .nv-row { margin-bottom: 0; }
+
+@media (max-width: 1023px) {
+  .nv-settings-layout { flex-direction: column; gap: var(--nv-space-4); }
+  .nv-settings-nav {
+    position: sticky;
+    top: var(--nv-top-h);
+    z-index: 19;
+    align-self: stretch;
+    flex: 0 0 auto;
+    width: 100%;
+    max-width: 100%;
+    max-height: none;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+  }
+  .nv-settings-nav button { flex: 0 0 auto; min-height: 40px; white-space: nowrap; }
+  .nv-settings-content { width: 100%; }
+  [data-nv-ssection] { scroll-margin-top: calc(var(--nv-top-h) + 3.75rem); }
+}
+@media (max-width: 768px) {
+  .nv-editview { inset: 0; width: 100vw !important; height: 100vh; max-width: none; min-width: 0; border-left: 0; }
+  .nv-editview-resize { display: none; }
+}

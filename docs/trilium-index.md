@@ -1,6 +1,6 @@
 # Trilium-Index
 
-Zuordnung der Projekt-Dokumentation zu den Notizen in Trilium (Stand 2026-11-22).
+Zuordnung der Projekt-Dokumentation zu den Notizen in Trilium (Stand 2026-11-24).
 
 | Projekt | Bereich | Notiz | Notiz-ID |
 | --- | --- | --- | --- |
@@ -76,3 +76,4 @@ Zuordnung der Projekt-Dokumentation zu den Notizen in Trilium (Stand 2026-11-22)
 | vibe | Features | AP22 New vibe ui — Neuaufbau der Weboberfläche | `hdEzA6xNANuB` |
 | vibe | Features | AP24 Lizenz anpassung der projektes (Dual-Lizenz: AGPLv3 + kommerzielle Lizenz) | `d9QcZajOpUue` |
 | vibe | Features | AP23 — Key Management (save key management) | `Q2dZHh43viuH` |
+| vibe | Features | GH-57 UI-Überarbeitung Settings (erstes UI-Überarbeitungspaket) | `IOJMDFGkBDKj` |

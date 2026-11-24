@@ -375,11 +375,15 @@ function featureMap() {
 
 NV.feature = function (id) { return !!featureMap()[id]; };
 
-NV.setFeature = function (id, enabled) {
+NV.setFeature = function (id, enabled, options) {
   var all = featureMap();
   if (enabled) all[id] = true; else delete all[id];
   localStorage.setItem('nv-features', JSON.stringify(all));
-  window.dispatchEvent(new CustomEvent('nv:featureschange', {detail: {id: id, on: !!enabled}}));
+  var detail = {id: id, on: !!enabled};
+  // Die Einstellungen zeichnen ihre Sektionen selbst; ein Voll-Neurender
+  // würde dort die Scroll-Position verlieren (GH-57).
+  if (options && options.source === 'settings') detail.source = 'settings';
+  window.dispatchEvent(new CustomEvent('nv:featureschange', {detail: detail}));
 };
 
 /* ---------- Router: Hash → Ansicht, mit RENDER_TOKEN gegen Rennen ---------- */
@@ -561,7 +565,14 @@ function initChrome() {
     retranslateDOM();
     setTimeout(function () { render(); }, 20);
   });
-  window.addEventListener('nv:featureschange', function () { render(); });
+  window.addEventListener('nv:featureschange', function (event) {
+    if (event && event.detail && event.detail.source === 'settings') return;
+    var scroll = window.scrollY;
+    var pending = render();
+    if (pending && typeof pending.then === 'function') {
+      pending.then(function () { window.scrollTo(0, scroll); });
+    }
+  });
   var scheme = media('(prefers-color-scheme: dark)');
   if (scheme && scheme.addEventListener) {
     scheme.addEventListener('change', function () {

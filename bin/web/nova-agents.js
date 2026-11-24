@@ -376,7 +376,7 @@ function nvAgentWizard(data, token, onCancel) {
 
   /* Modell als Combobox (WP2): leerer Standardwert über opts.blank. */
   var modelValues = (data.models || []).slice();
-  var model = NV.combobox(modelValues, '',
+  var model = NV.modelCombobox(modelValues, '',
     {field: 'model', blank: tr('— Standardmodell —')});
   model.setAttribute('aria-label', tr('Modell'));
 
@@ -713,7 +713,7 @@ async function nvAgentEditor(name, scope, data, token) {
         if (row.override && overrideValues.indexOf(row.override) < 0) {
           overrideValues.push(row.override);
         }
-        var override = NV.combobox(overrideValues, row.override || '',
+        var override = NV.modelCombobox(overrideValues, row.override || '',
           {field: 'model', blank: tr('— Modell des Agentens verwenden —')});
         override.setAttribute('data-nv-assign-model', project);
         assignmentRows.push({project: project, toggle: toggle, model: override});
