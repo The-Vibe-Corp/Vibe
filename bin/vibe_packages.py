@@ -1206,8 +1206,9 @@ def classify_output(exit_code, text):
 
 
 def status_report(project):
-    """Liefert offene, wartende, blockierte und erledigte Pakete."""
-    report = {"open": [], "waiting": [], "blocked": [], "done": []}
+    """Liefert offene, wartende, blockierte, erledigte und Entwurf-Pakete."""
+    report = {"open": [], "waiting": [], "blocked": [], "done": [],
+              "draft": []}
     for record in vibe_tickets.load(project):
         pid = record.get("id")
         if not pid:
@@ -1219,6 +1220,8 @@ def status_report(project):
             report["blocked"].append(pid)
         elif state == "waiting-merge":
             report["waiting"].append(pid)
+        elif state == "draft":
+            report["draft"].append(pid)
         else:
             report["open"].append(pid)
     return report
@@ -1249,6 +1252,8 @@ def priority_view(project):
             return "gesperrt"
         if state == "waiting-merge":
             return "wartet auf Merge"
+        if state == "draft":
+            return "Entwurf"
         return "offen"
 
     entries = []

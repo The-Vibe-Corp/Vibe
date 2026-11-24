@@ -10,9 +10,19 @@
           "signature": "sha256:09cb4dba7d82ddfe68e8345a160daa204a5e47359d3c04f58014d59327b3b793"
         },
         {
+          "module": "tests.unit.test_ap12_github_readiness",
+          "class": "AssertionError",
+          "signature": "sha256:b44445e4b279716df69359d0aa4398723ea2c7c875b18e9330d567e744ff4616"
+        },
+        {
           "module": "tests.unit.test_ap4_korbat_rules",
           "class": "AssertionError",
           "signature": "sha256:e23e4f067913b115ee04a011b17241cc3e5139cab67c0bf49b0baa72be2316a6"
+        },
+        {
+          "module": "tests.unit.test_ap7_korbat_rules",
+          "class": "AssertionError",
+          "signature": "sha256:977776f78d09d6030aa8f725605ca6469472f6699c0d7d13bd2e1357d6930709"
         },
         {
           "module": "tests.unit.test_ap8_github_checkout",
@@ -73,6 +83,11 @@
           "module": "tests.unit.test_release",
           "class": "AssertionError",
           "signature": "sha256:4338c03760b18118f434d2a71a144d7823e7d49c6190e9fd7f24fd35ae1b5932"
+        },
+        {
+          "module": "tests.unit.test_release",
+          "class": "AssertionError",
+          "signature": "sha256:af13c6bde2887ebff608bfe9ce295dedeb2286890d9ed0762056695b03331c13"
         },
         {
           "module": "tests.unit.test_sandbox",

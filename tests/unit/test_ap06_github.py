@@ -9,13 +9,13 @@ independent of any implementation diff. Covered interface contract:
   - branches(project_path) -> list of dicts (name, current, ahead, behind)
   - fetch pull push        -> (ok, message), argument lists only, no shell
   - list_issues(repo, label, api, token) -> list with number/title/html_url
-  - import_issues_into_tickets(project_path, issues) -> idempotent, atomic,
-    writes "- [ ] GH-<num> <title>" blocks compatible with the ticket parser
+    (GH-47: eigenständiger REST-Helper; der frühere Ticket-Import entfällt)
   - create_pull_request(...) -> dict with "url"; token only from
     GITHUB_TOKEN|GH_TOKEN; without a token a clear German error message and
     no request at all; API base is configurable (default https://api.github.com)
-* CLI ``vibe github <project> status|link|unlink|fetch|pull|issues|pr`` where
-  ``pr`` without --confirm must not push and must not call the API.
+* CLI ``vibe github <project> status|link|unlink|fetch|pull|issues-sync|pr``
+  (GH-47: das getrennte ``issues``/``issues-import`` entfällt) where ``pr``
+  without --confirm must not push and must not call the API.
 * Rules: GENERAL_RULES and all templates/*/AGENTS.md state that commit
   messages stay human readable (für Menschen) and essential (Wesentliche).
 
@@ -730,54 +730,19 @@ class GitHubHttpLayerTest(unittest.TestCase):
         self.assertIn("401", message)
 
 
-class IssuesImportTest(ProjectFixture):
-    """import_issues_into_tickets: atomic, idempotent, label filtered."""
+class IssuesImportRemovalTest(ProjectFixture):
+    """GH-47: der getrennte Importpfad ist entfallen.
 
-    def setUp(self):
-        super().setUp()
-        self.server = FakeGitHubServer().start()
-        self.addCleanup(self.server.close)
-        self.cli.set_env_values(
-            "proj",
-            {"GITHUB_ENABLED": "1", "GITHUB_REPO": "owner/name", "GITHUB_API": self.server.base},
-        )
-        self.vibe_issues = [dict(item) for item in ISSUES if item["number"] == 7]
+    ``list_issues`` bleibt als eigenständiger REST-Helper bestehen; die
+    Ticketübernahme läuft ausschließlich über den einen Issues-Sync
+    (``vibe_issues.sync_issues``).
+    """
 
-    def test_import_creates_gh_tickets_in_the_store_and_is_idempotent(self):
-        self.gh.import_issues_into_tickets(str(self.project), self.vibe_issues)
-
-        records = {record["id"]: record for record in self.store_tickets()}
-        self.assertIn("GH-7", records)
-        self.assertEqual(records["GH-7"]["title"], "Sandbox für Import einschränken")
-        self.assertEqual(records["GH-7"]["state"], "open")
-        self.assertEqual(records["GH-7"]["github"], 7)
-        self.assertNotIn("GH-8", records)  # nur die übergebenen Issues
-        before = self.store.read_text(encoding="utf-8")
-
-        self.gh.import_issues_into_tickets(str(self.project), self.vibe_issues)
-
-        self.assertEqual(self.store.read_text(encoding="utf-8"), before)
-
-    def test_import_keeps_existing_ticket_entries_unchanged(self):
-        existing = {
-            "id": "AP1", "title": "Erstes Paket", "type": "task",
-            "state": "open", "description": "vorhanden",
-        }
-        self.write_store_tickets([existing])
-
-        self.gh.import_issues_into_tickets(str(self.project), self.vibe_issues)
-
-        records = {record["id"]: record for record in self.store_tickets()}
-        self.assertEqual(records["AP1"], existing)
-        self.assertIn("GH-7", records)
-
-    def test_imported_items_are_parseable_as_open_tickets(self):
-        self.gh.import_issues_into_tickets(str(self.project), self.vibe_issues)
-
-        items = self.cli.ticket_items("proj")
-        gh_items = [i for i in items if i["id"] == "GH-7"]
-        self.assertEqual(len(gh_items), 1)
-        self.assertEqual(gh_items[0]["state"], "offen")
+    def test_import_helper_is_removed_and_list_issues_stays(self):
+        self.assertFalse(hasattr(self.gh, "import_issues_into_tickets"),
+                         "import_issues_into_tickets existiert noch")
+        self.assertTrue(callable(getattr(self.gh, "list_issues", None)),
+                        "list_issues muss als REST-Helper erhalten bleiben")
 
 
 # ------------------------------------------------------------------- CLI actions
@@ -878,65 +843,6 @@ class DefaultBaseTest(ProjectFixture):
 
         self.assertTrue(str(ctx.exception))
         self.assertEqual(self.server.requests, [])
-
-
-class ImportCollisionTest(ProjectFixture):
-    """Ticket import detects concurrent store edits (atomic write, review R1)."""
-
-    def setUp(self):
-        super().setUp()
-        self.server = FakeGitHubServer().start()
-        self.addCleanup(self.server.close)
-        self.cli.set_env_values(
-            "proj",
-            {"GITHUB_ENABLED": "1", "GITHUB_REPO": "owner/name", "GITHUB_API": self.server.base},
-        )
-        self.vibe_issues = [dict(item) for item in ISSUES if item["number"] == 7]
-
-    def collision(self, touch_after_read):
-        """Rewires the storage seam the product module actually binds to.
-
-        ``bin/vibe_github.py`` imports ``vibe_storage`` through sys.modules,
-        not through the loader alias; therefore the attribute of the loaded
-        product module is the object the patch has to target.
-        """
-        storage = getattr(self.gh, "vibe_storage", None) or storage_module()
-        real_snapshot = storage.read_snapshot
-        calls = []
-
-        def snapshot_seq(path, *rest, **kw):
-            snapshot = real_snapshot(path, *rest, **kw)
-            calls.append(path)
-            if touch_after_read and len(calls) == 1:
-                # Side writer between the module's read and its write step.
-                self.write_store_tickets([{
-                    "id": "AP9", "title": "Eingriff", "type": "task",
-                    "state": "open", "description": "seitlich",
-                }])
-            return snapshot
-
-        return storage, snapshot_seq
-
-    def test_concurrent_ticket_change_survives_the_retried_import(self):
-        storage, snapshot_seq = self.collision(touch_after_read=True)
-
-        with mock.patch.object(storage, "read_snapshot", side_effect=snapshot_seq):
-            added = self.gh.import_issues_into_tickets(
-                str(self.project), self.vibe_issues)
-
-        self.assertEqual(added, 1)
-        records = {record["id"] for record in self.store_tickets()}
-        self.assertIn("AP9", records)   # the outside write survived
-        self.assertIn("GH-7", records)  # the import retried, nothing was lost
-
-    def test_import_without_interference_keeps_working(self):
-        storage, snapshot_seq = self.collision(touch_after_read=False)
-
-        with mock.patch.object(storage, "read_snapshot", side_effect=snapshot_seq):
-            self.gh.import_issues_into_tickets(str(self.project), self.vibe_issues)
-
-        records = {record["id"] for record in self.store_tickets()}
-        self.assertIn("GH-7", records)
 
 
 class RemotesMaskingTest(ProjectFixture):

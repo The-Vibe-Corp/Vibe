@@ -256,6 +256,33 @@ class SelectionOrderTest(unittest.TestCase):
                          ["T0"]["status"])
         self.assertEqual("T1", self.select(project)["id"])
 
+    def test_draft_entries_are_marked_as_entwurf_and_skipped(self):
+        """GH-47: Entwürfe sind in der Priorisierung sichtbar, aber nicht
+        lauffähig.
+        Vorbedingung: ``PACKAGE_ORDER="T1,T2"``; T1 Entwurf, T2 offen.
+        Aktion: ``priority_view`` und ``select_package``.
+        Erwartung: ``order``/``standard`` weisen T1 als „Entwurf“ aus; die
+        wirksame ``queue`` enthält T1 nicht und beginnt mit T2. ``select``
+        wählt T2.
+        Fehlerfall: Entwürfe gelten als „offen“ oder werden gestartet.
+        """
+        project = self.project([
+            ticket_record("T1", "Entwurf", state="draft", priority="P0"),
+            ticket_record("T2", "Offen"),
+        ])
+        write_env(project / ".vibe" / "project.env",
+                  'TYPE=generic\nPACKAGE_ORDER="T1,T2"\n')
+
+        view = self.module.priority_view(project)
+
+        by_id = {entry["id"]: entry for entry in view["order"]}
+        self.assertEqual("Entwurf", by_id["T1"]["status"])
+        standard = {entry["id"]: entry for entry in view["standard"]}
+        self.assertEqual("Entwurf", standard["T1"]["status"])
+        self.assertEqual("T2", view["queue"][0]["id"])
+        self.assertNotIn("T1", [item["id"] for item in view["queue"]])
+        self.assertEqual("T2", self.select(project)["id"])
+
     def test_a_done_first_entry_never_becomes_the_choice(self):
         project = self.project()
         commit = new_proof_commit(project)

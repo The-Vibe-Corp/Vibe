@@ -995,7 +995,6 @@ function githubBody(d,name){
  const active=!!g.enabled;
  const fact=(k,v)=>el('div',{class:'factrow'},el('span',{class:'mut'},k),el('span',{},String(v)));
  const errBox=el('div',{class:''});
- const issuesBox=el('div',{class:'mut'});
  const setErr=message=>{errBox.className=String(message||'').length?'bad':'';errBox.textContent=String(message||'')};
  const refresh=()=>detail(name).catch(showErr);
  const post=async body=>{const r=await api('/api/github',body);toast(bt(r.message)||'');if(r.ok)setErr('');else setErr(bt(r.message));return r};
@@ -1058,14 +1057,7 @@ function githubBody(d,name){
    connLine.className=c.ok?'ok':'bad';
    connLine.textContent=tr('Verbindung: ')+(c.ok?'OK':tr('FEHLER'))+' — '+String(r.message||c.message||'');
    toast(bt(r.message)||'')}}},tr('Verbindung testen'));
- const issueFilter=el('input',{value:g.label||'vibe',placeholder:tr('Label (leer = alle)'),'aria-label':tr('Issues nach Label filtern')});
- const loadBtn=el('button',{class:'b',on:{click:async()=>{const r=await api('/api/github',{name,action:'issues',label:issueFilter.value.trim()});
-   if(!r.ok){setErr(bt(r.message));toast(bt(r.message));return}
-   const rows=(r.issues||[]).map(i=>el('div',{class:'mut'},el('b',{},'GH-'+i.number+' '),i.title,
-     i.labels&&i.labels.length?el('span',{class:'mut'},' ['+i.labels.join(', ')+']'):null));
-   issuesBox.replaceChildren(...(rows.length?rows:[el('span',{class:'mut'},tr('Keine offenen Issues für dieses Label.'))]))}}},tr('Issues laden'));
- const importBtn=el('button',{class:'b',on:{click:async()=>{const r=await api('/api/github',{name,action:'import',label:issueFilter.value.trim()});
-   if(!r.ok)setErr(bt(r.message));else setErr('');toast(bt(r.message));if(r.ok)refresh()}}},'Import');
+ const syncBtn=el('button',{class:'b p',on:{click:async()=>{const r=await post({name,action:'issues.sync'});if(r.ok)refresh()}}},tr('Issues synchronisieren'));
  const prBtn=el('button',{class:'b p',on:{click:()=>{askInline(prBtn,tr('Merge-Request stellen: Erst den aktuellen Branch nach origin pushen, dann den Merge-Request über GitHub anlegen. Fortfahren?'),tr('Ja, stellen'),async()=>{
    const r=await api('/api/github',{name,action:'pr',confirm:true});
    if(!r.ok)setErr(bt(r.message));toast(bt(r.message)||tr('Fehler beim Merge-Request'));if(r.ok)refresh()})}}},tr('Merge-Request stellen'));
@@ -1105,10 +1097,8 @@ function githubBody(d,name){
    el('div',{class:'bar'},prBtn),
    el('hr'),
    el('b',{},tr('Issues als Arbeitspakete')),
-   el('div',{class:'mut'},tr('Offene GitHub-Issues nach Label filtern und als Tickets (GH-Nummer) in den Ticketspeicher übernehmen.')),
-   el('label',{},tr('Label-Filter')),issueFilter,
-   el('div',{class:'bar'},loadBtn,importBtn),
-   issuesBox):null;
+   el('div',{class:'mut'},tr('Der einheitliche Sync zieht offene Issues samt Text, pusht neue Tickets, schließt gelöschte Tickets best effort und setzt erledigte Tickets über geschlossene Issues zurück.')),
+   g.issues_enabled?el('div',{class:'bar'},syncBtn):null):null;
  return el('div',{},conn,actions,errBox)}
 
 /* ---------- Offene Arbeitspakete (F29: Die Reihenfolge der Arbeitspakete

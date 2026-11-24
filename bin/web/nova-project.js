@@ -152,6 +152,16 @@ function nvpStateBadge(row) {
   return el('span', {class: 'nv-pill nv-state' + tone}, label);
 }
 
+/* Rohzustand (draft/open/in-progress) aus dem Anzeigezustand; blocked/
+   waiting-merge/done haben keine Vorbelegung (GH-47). */
+function nvpRawState(row) {
+  var state = String(row && row.state || '');
+  if (state === 'Draft') return 'draft';
+  if (state === 'offen') return 'open';
+  if (state === 'In Progress') return 'in-progress';
+  return '';
+}
+
 function nvpRowKind(row) {
   if (!row) return 'package';
   if (row.__feedback) return nvpFeedbackKind(row);
@@ -691,6 +701,25 @@ function nvpOpenTicketDetail(name, token, row, kind) {
       title: tr('Abgeschlossene Einträge bleiben als Nachweis erhalten')},
     tr('Abgeschlossene Einträge bleiben als Nachweis erhalten')));
   } else {
+    var stateSelect = el('select', {'data-nv-ticket-state-select': '',
+      'aria-label': tr('Zustand')});
+    stateSelect.append(el('option', {value: 'draft'}, tr('Entwurf')));
+    stateSelect.append(el('option', {value: 'open'}, tr('Offen')));
+    stateSelect.append(el('option', {value: 'in-progress'}, tr('In Progress')));
+    var rawState = nvpRawState(row);
+    stateSelect.value = rawState;
+    actions.append(stateSelect);
+    actions.append(el('button', {class: 'nv-btn nv-primary', type: 'button',
+      'data-nv-action': 'ticket-state-save', on: {click: function () {
+        var path = kind === 'package' ? '/api/ticket' : '/api/feedback';
+        nvpPost(name, path, {action: 'state', id: id,
+          state: String(stateSelect.value || '')}, 'Gespeichert', token)
+          .then(function (result) {
+            if (NV.stale(token) || !result || result.ok === false) return;
+            NV.context.close();
+            NV.render();
+          });
+      }}}, tr('Zustand setzen')));
     actions.append(el('button', {class: 'nv-btn nv-secondary', type: 'button',
       'data-nv-action': 'ticket-edit', on: {click: function () {
         nvpOpenTicketForm(name, token, {
@@ -1750,33 +1779,6 @@ function nvpGithubSection(name, token, github) {
     value: String(g.issues_ready_label || ''), 'aria-label': tr('Ready-Label')});
   var issuesAssignee = el('input', {type: 'text', 'data-nv-field': 'issues_assignee',
     value: String(g.issues_assignee || ''), 'aria-label': tr('Assignee (leer = alle)')});
-  var issueFilter = el('input', {type: 'text', 'data-nv-field': 'github-issue-label',
-    value: String(g.label || 'vibe'), placeholder: tr('Label (leer = alle)'),
-    'aria-label': tr('Label-Filter')});
-  var issuesResult = el('div', {class: 'nv-muted', 'data-nv-github-issues': '', hidden: ''});
-  var loadIssues = nvpButton(tr('Issues laden'), 'github-issues', function () {
-    post({action: 'issues', label: issueFilter.value.trim()}, function (result) {
-      if (!result) return;
-      var ok = result.ok !== false;
-      issuesResult.setAttribute('data-nv-ok', ok ? 'true' : 'false');
-      if (!ok) {
-        setTx(issuesResult, bt(result.message) || tr('Fehler beim Laden der Issues'));
-      } else {
-        var issues = result.issues || [];
-        setTx(issuesResult, issues.length
-          ? issues.map(function (issue) {
-            return 'GH-' + (issue.number || '') + ' ' + String(issue.title || '');
-          }).join(' · ')
-          : tr('Keine offenen Issues für dieses Label.'));
-      }
-      issuesResult.removeAttribute('hidden');
-    });
-  });
-  var importIssues = nvpButton(tr('Issues importieren'), 'github-import', function () {
-    post({action: 'import', label: issueFilter.value.trim()}, function (result) {
-      if (result && result.ok !== false) NV.render();
-    });
-  });
   var issuesSync = g.issues_enabled
     ? nvpButton(tr('Issues synchronisieren'), 'issues-sync', function () {
         post({action: 'issues.sync'}, function (result) {
@@ -1839,15 +1841,11 @@ function nvpGithubSection(name, token, github) {
 
     el('h4', {}, tr('Issues als Arbeitspakete')),
     nvpLabel(tr('Issues-Sync aktivieren (GitHub als Quelle der Wahrheit)'), issuesEnabled),
-    el('p', {class: 'nv-muted'}, tr('GitHub-Issues können als Arbeitspakete importiert und synchronisiert werden.')),
+    el('p', {class: 'nv-muted'}, tr('Der einheitliche Sync synchronisiert beidseitig: zieht offene Issues samt Text, pusht neue Tickets, schließt gelöschte Tickets best effort auf GitHub und setzt erledigte Tickets über geschlossene Issues zurück. Ready-Label → offen/lauffähig, ohne Label → Entwurf.')),
     nvpLabel(tr('In-Progress-Label'), issuesInProgress),
     nvpLabel(tr('Ready-Label'), issuesReady),
     nvpLabel(tr('Assignee (leer = alle)'), issuesAssignee),
-    nvpLabel(tr('Label-Filter'), issueFilter),
-    el('p', {class: 'nv-muted'}, tr('„Issues laden“ zeigt die Treffer nur an; „Issues importieren“ legt daraus neue Einträge an.')),
-    el('p', {class: 'nv-muted'}, tr('Die Verknüpfung erfolgt über den Freitext im Titel oder über ein Label.')),
-    el('div', {class: 'nv-row'}, loadIssues, importIssues, issuesSync),
-    issuesResult,
+    el('div', {class: 'nv-row'}, issuesSync),
     error
   ]);
 }
@@ -2460,9 +2458,8 @@ if (window.VIBE_I18N && typeof VIBE_I18N.extend === 'function') {
       "Status: ": "Status: ",
       "Aktueller Branch: ": "Current branch: ",
       "Synchronisieren": "Synchronize",
-      "GitHub-Issues können als Arbeitspakete importiert und synchronisiert werden.": "GitHub issues can be imported and synchronized as work packages.",
-      "„Issues laden“ zeigt die Treffer nur an; „Issues importieren“ legt daraus neue Einträge an.": "'Load issues' only shows matches; 'Import issues' creates new entries from them.",
-      "Die Verknüpfung erfolgt über den Freitext im Titel oder über ein Label.": "Linking works through free text in the title or through a label.",
+      "Der einheitliche Sync synchronisiert beidseitig: zieht offene Issues samt Text, pusht neue Tickets, schließt gelöschte Tickets best effort auf GitHub und setzt erledigte Tickets über geschlossene Issues zurück. Ready-Label → offen/lauffähig, ohne Label → Entwurf.": "The unified sync synchronizes both ways: pulls open issues including their text, pushes new tickets, best-effort closes deleted tickets on GitHub, and marks tickets done via closed issues. Ready label → open/runnable, no label → draft.",
+      "Zustand setzen": "Set state",
       "Die Sandbox grenzt die Arbeit des Agenten ein: ": "The sandbox confines the agent's work: ",
       "Erlaubt: Lesen im Projekt und Schreiben in freigegebenen Verzeichnissen.": "Allowed: reading in the project and writing in permitted directories.",
       "Verboten: Zugriffe außerhalb des Projekts und ungewollte Netzwerkzugriffe.": "Forbidden: access outside the project and unintended network access.",
@@ -2545,9 +2542,8 @@ if (window.VIBE_I18N && typeof VIBE_I18N.extend === 'function') {
       "Status: ": "Status: ",
       "Aktueller Branch: ": "Aktueller Branch: ",
       "Synchronisieren": "Synchronisieren",
-      "GitHub-Issues können als Arbeitspakete importiert und synchronisiert werden.": "GitHub-Issues können als Arbeitspakete importiert und synchronisiert werden.",
-      "„Issues laden“ zeigt die Treffer nur an; „Issues importieren“ legt daraus neue Einträge an.": "„Issues laden“ zeigt die Treffer nur an; „Issues importieren“ legt daraus neue Einträge an.",
-      "Die Verknüpfung erfolgt über den Freitext im Titel oder über ein Label.": "Die Verknüpfung erfolgt über den Freitext im Titel oder über ein Label.",
+      "Der einheitliche Sync synchronisiert beidseitig: zieht offene Issues samt Text, pusht neue Tickets, schließt gelöschte Tickets best effort auf GitHub und setzt erledigte Tickets über geschlossene Issues zurück. Ready-Label → offen/lauffähig, ohne Label → Entwurf.": "Der einheitliche Sync synchronisiert beidseitig: zieht offene Issues samt Text, pusht neue Tickets, schließt gelöschte Tickets best effort auf GitHub und setzt erledigte Tickets über geschlossene Issues zurück. Ready-Label → offen/lauffähig, ohne Label → Entwurf.",
+      "Zustand setzen": "Zustand setzen",
       "Die Sandbox grenzt die Arbeit des Agenten ein: ": "Die Sandbox grenzt die Arbeit des Agenten ein: ",
       "Erlaubt: Lesen im Projekt und Schreiben in freigegebenen Verzeichnissen.": "Erlaubt: Lesen im Projekt und Schreiben in freigegebenen Verzeichnissen.",
       "Verboten: Zugriffe außerhalb des Projekts und ungewollte Netzwerkzugriffe.": "Verboten: Zugriffe außerhalb des Projekts und ungewollte Netzwerkzugriffe.",

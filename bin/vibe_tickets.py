@@ -386,6 +386,69 @@ def delete(project, tid):
         "Ticketspeicher wurde gleichzeitig geändert; bitte erneut versuchen.")
 
 
+def _normalize_deletions(values):
+    """Deduplizierte, positive Int-Liste aus einem ``github_deletions``-Rohwert."""
+    result = []
+    for value in values or []:
+        try:
+            number = int(value)
+        except (TypeError, ValueError):
+            continue
+        if number and number not in result:
+            result.append(number)
+    return result
+
+
+def github_deletions(project):
+    """Liste der zum Schließen vorgemerkten Issue-Nummern (dedupliziert)."""
+    snapshot = vibe_storage.read_snapshot(store_path(project))
+    if not snapshot.exists:
+        return []
+    document = _parse_document(snapshot.text, snapshot.path)
+    return _normalize_deletions(document.get("github_deletions"))
+
+
+def _mutate_deletions(project, change):
+    """Atomar ``change(liste)`` auf ``github_deletions`` anwenden (kollisionssicher).
+
+    Unbekannte Dokumentschlüssel bleiben erhalten; Tickets und ``version``
+    werden nie angetastet. Eine konkurrierende Änderung wird als
+    ``TicketStoreConflict`` gemeldet, nie still überschrieben.
+    """
+    path = store_path(project)
+    for _ in range(20):
+        snapshot = vibe_storage.read_snapshot(path)
+        document = _parse_document(snapshot.text, path) if snapshot.exists else {}
+        current = _normalize_deletions(document.get("github_deletions"))
+        updated = change(current)
+        if updated == current:
+            return
+        document["github_deletions"] = updated
+        text = json.dumps(document, ensure_ascii=False, indent=1) + "\n"
+        expected = snapshot.digest if snapshot.exists else vibe_storage.MISSING
+        try:
+            vibe_storage.write_text(path, text, expected=expected)
+            return
+        except vibe_storage.ConcurrentChangeError:
+            continue
+    raise TicketStoreConflict(
+        "Ticketspeicher wurde gleichzeitig geändert; bitte erneut versuchen.")
+
+
+def mark_github_deletion(project, number):
+    """Vermerkt eine Issue-Nummer als Tombstone (dedupliziert, atomar)."""
+    number = int(number)
+    _mutate_deletions(project, lambda current: (
+        current + [number] if number not in current else current))
+
+
+def drop_github_deletion(project, number):
+    """Entfernt eine Tombstone-Nummer (atomar)."""
+    number = int(number)
+    _mutate_deletions(project, lambda current: (
+        [value for value in current if value != number]))
+
+
 def ticket_file_name(tid):
     """Dateiname der sichtbaren Einzeldatei in der Arbeitskopie."""
     return TICKET_FILE_TEMPLATE.format(id=tid)

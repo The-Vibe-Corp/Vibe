@@ -272,11 +272,13 @@ class WaitingSelectionAndReportTest(unittest.TestCase):
 
     def test_status_report_lists_waiting_before_open(self):
         """Vorbedingung: T1 wartet, T2 offen, T3 blockiert, T4 trägt beide
-        Marker.
+        Marker, T5 ist ein Entwurf.
         Aktion: ``status_report(project)``.
         Erwartung: ``waiting`` enthält T1 (nicht ``open``); ``open`` enthält
-        nur T2; ``blocked`` enthält T3 und T4 (BLOCKIERT wiegt schwerer).
-        Fehlerfall: Wartende erscheinen als offen oder verdrängen BLOCKIERT.
+        nur T2; ``blocked`` enthält T3 und T4 (BLOCKIERT wiegt schwerer);
+        ``draft`` enthält T5 (GH-47: Entwürfe sind nicht offen).
+        Fehlerfall: Wartende/Entwürfe erscheinen als offen oder verdrängen
+        BLOCKIERT.
         """
         project = make_project(
             self.root,
@@ -289,17 +291,21 @@ class WaitingSelectionAndReportTest(unittest.TestCase):
                 ticket_record("T4", "Beides", state="blocked",
                               waiting_note="PR #7",
                               blocked_reason="extern"),
+                ticket_record("T5", "Entwurf", state="draft"),
             ],
         )
 
         report = self.module.status_report(project)
 
         self.assertIn("waiting", report, report)
+        self.assertIn("draft", report, report)
         self.assertEqual(["T1"], report["waiting"])
         self.assertEqual(["T2"], report["open"])
+        self.assertEqual(["T5"], report["draft"])
         self.assertIn("T3", report["blocked"])
         self.assertIn("T4", report["blocked"])
         self.assertNotIn("T1", report["open"])
+        self.assertNotIn("T5", report["open"])
 
     def test_priority_view_marks_waiting_in_order_and_standard(self):
         """Vorbedingung: ``PACKAGE_ORDER="T1,T2"``; T1 wartet, T2 offen.

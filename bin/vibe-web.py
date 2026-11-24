@@ -116,7 +116,9 @@ def ticket_set_state(name, tid, state):
 
     ``state`` ist bereits durch :func:`web_ticket_state` validiert. Unbekannte
     IDs und erledigte Tickets werden mit verständlicher Meldung abgelehnt
-    (``ValueError``), damit die Oberfläche kein 500 erzeugt.
+    (``ValueError``), damit die Oberfläche kein 500 erzeugt. Bei aktivem
+    Issues-Sync und GitHub-Bezug wird der Zustand zusätzlich über die Labels
+    des Issues gesetzt (GH-47); sonst bleibt die Änderung rein lokal.
     """
     project = vibe.ppath(name)
     record = vibe.vibe_tickets.find(vibe.vibe_tickets.load(project), tid)
@@ -124,6 +126,10 @@ def ticket_set_state(name, tid, state):
         raise ValueError("Ticket nicht gefunden im Ticketspeicher: " + tid)
     if record.get("state") == "done":
         raise ValueError("Erledigte Tickets sind nicht bearbeitbar: " + tid)
+    config = vibe_github.read_config(vibe.github_env_path(name))
+    if config["issues_enabled"] and record.get("github") is not None:
+        vibe_issues.set_issue_state(project, config, tid, state)
+        return
     vibe.vibe_tickets.update(project, tid, state=state)
 
 def prepare_runtime():
@@ -1808,8 +1814,14 @@ class H(BaseHTTPRequestHandler):
                     elif act == "delete":
                         fid = (body.get("id") or "").strip()
                         assert fid, "Feedback-ID fehlt"
-                        vibe.feedback_delete(name, fid)
-                        ok, msg = True, f"{fid} gelöscht"
+                        config = vibe_github.read_config(vibe.github_env_path(name))
+                        if config["issues_enabled"]:
+                            msg = vibe_issues.delete_ticket_connected(
+                                vibe.ppath(name), config, fid)
+                        else:
+                            vibe.feedback_delete(name, fid)
+                            msg = f"{fid} gelöscht"
+                        ok = True
                     else:
                         ok, msg = False, "Unbekannte Aktion"
                 except ValueError as e:
@@ -1882,8 +1894,14 @@ class H(BaseHTTPRequestHandler):
                     elif act == "delete":
                         tid = (body.get("id") or "").strip()
                         assert tid, "ID fehlt"
-                        vibe.ticket_delete(name, tid)
-                        ok, msg = True, f"{tid} gelöscht"
+                        config = vibe_github.read_config(vibe.github_env_path(name))
+                        if config["issues_enabled"]:
+                            msg = vibe_issues.delete_ticket_connected(
+                                vibe.ppath(name), config, tid)
+                        else:
+                            vibe.ticket_delete(name, tid)
+                            msg = f"{tid} gelöscht"
+                        ok = True
                     else:
                         ok, msg = False, "Unbekannte Aktion"
                 except ValueError as e:
@@ -2072,20 +2090,6 @@ class H(BaseHTTPRequestHandler):
                         msg = view.get("message") or ("Verbindung: "
                                                       + ("OK" if ok else "FEHLER"))
                         extra["connection"] = view
-                    elif act == "issues":
-                        label = body.get("label")
-                        extra["issues"] = vibe.github_issues(name, None if label is None else str(label))
-                        extra["label"] = str(label) if label is not None else ""
-                        msg = f"{len(extra['issues'])} offene Issue(s) geladen"
-                    elif act == "import":
-                        added, seen = vibe.github_issues_import(name, str(body.get("label") or "") if body.get("label") is not None else None)
-                        ok = bool(added) or seen == 0
-                        if added:
-                            msg = f"Issues übernommen ({added} von {seen} Issues)."
-                        elif seen:
-                            msg = f"Keine neuen Issues ({seen} gesehen); Ticketspeicher unverändert."
-                        else:
-                            msg = "Keine offenen Issues."
                     elif act == "issues.sync":
                         # AP3: Pull + Push + Close; ohne Opt-in klare Meldung und
                         # kein Netz. Die Statistik steht unter extra["stats"].
@@ -2094,10 +2098,7 @@ class H(BaseHTTPRequestHandler):
                             raise ValueError("Issues-Sync ist für dieses Projekt nicht aktiv (GITHUB_ISSUES_ENABLED=1).")
                         stats = vibe_issues.sync_issues(vibe.ppath(name), config)
                         extra["stats"] = stats
-                        msg = ("Issues synchronisiert: %d angelegt, %d aktualisiert, "
-                               "%d geschlossen, %d gepusht."
-                               % (stats["created"], stats["updated"],
-                                  stats["closed"], stats["pushed"]))
+                        msg = vibe_issues.sync_message(stats)
                     elif act == "issues.state":
                         config = vibe_github.read_config(vibe.github_env_path(name))
                         if not config["issues_enabled"]:

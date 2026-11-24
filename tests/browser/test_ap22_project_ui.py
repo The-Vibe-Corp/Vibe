@@ -1144,9 +1144,9 @@ class GithubParityTest(AP22ProjectBrowserTest):
         select[data-nv-github-push-target]           Push: Ziel
         [data-nv-action="github-push"]               Push ausführen
         [data-nv-action="github-pull"]               Pull (--ff-only)
-        [data-nv-action="github-issues"]             Issues laden
-        [data-nv-github-issues][data-nv-ok]           Issue-Ergebnis
-        [data-nv-action="github-import"]             Issues importieren
+        [data-nv-action="issues-sync"]               einen Issues-Sync
+                                                    (GH-47: kein
+                                                    github-issues/import)
         [data-nv-action="github-pr"]                 Merge-Request anfragen
         [data-nv-github-pr-confirm]                  Bestätigungsbereich
         [data-nv-action="github-pr-confirm"]         Merge-Request bestätigen
@@ -1214,15 +1214,32 @@ class GithubParityTest(AP22ProjectBrowserTest):
                       f"refs/heads/{branch}")
         return out.split()[0] if out else ""
 
-    def test_github_section_offers_every_parity_action(self):
-        """Vorbedingung: Feature ``github`` ist über #/settings eingeschaltet.
+    def enable_issue_sync_env(self, api=None):
+        """GH-47: Issues-Sync zusätzlich zur GitHub-Verknüpfung aktivieren."""
+        self.write_project_env(enabled=True, api=api)
+        path = self.project / ".vibe" / "project.env"
+        path.write_text(
+            path.read_text(encoding="utf-8")
+            + 'GITHUB_ISSUES_ENABLED="1"\n',
+            encoding="utf-8")
+        # Derselbe Hash lädt die Seite nicht neu; ohne Reload bliebe der
+        # Issues-Schalter aus dem vorherigen Projektstand stehen.
+        self.page.reload()
 
-        Erwartung: Der Projektbereich ``[data-nv-psection="github"]`` bietet
-        Aktivierung, Token speichern/löschen, Verbindungstest, Branch-Zeilen
-        mit Auschecken, Pull, Push mit Quelle/Ziel, Issues, Import und
-        Merge-Request samt Bestätigung.
+    def test_github_section_offers_every_parity_action(self):
+        """Vorbedingung: Feature ``github`` ist über #/settings eingeschaltet,
+        Issues-Sync ist aktiv.
+
+        Erwartung (GH-47/q6cbba05d8ca9): Der Projektbereich
+        ``[data-nv-psection="github"]`` bietet Aktivierung, Token
+        speichern/löschen, Verbindungstest, Branch-Zeilen mit Auschecken,
+        Pull, Push mit Quelle/Ziel, genau einen Issues-Sync und den
+        Merge-Request samt Bestätigung; die getrennten Aktionen
+        ``github-issues``/``github-import`` fehlen.
         """
-        section = self.open_github_section()
+        self.activate_github()
+        self.enable_issue_sync_env()
+        section = self.reload_github_section()
         controls = [
             "input[data-nv-field='github-enabled']",
             "[data-nv-action='github-settings-save']",
@@ -1234,8 +1251,7 @@ class GithubParityTest(AP22ProjectBrowserTest):
             "select[data-nv-github-push-target]",
             "[data-nv-action='github-push']",
             "[data-nv-action='github-pull']",
-            "[data-nv-action='github-issues']",
-            "[data-nv-action='github-import']",
+            "[data-nv-action='issues-sync']",
             "[data-nv-action='github-pr']",
         ]
         for selector in controls:
@@ -1243,6 +1259,13 @@ class GithubParityTest(AP22ProjectBrowserTest):
                 self.assertEqual(
                     1, section.locator(selector).count(),
                     f"GitHub-Bedienelement {selector!r} fehlt")
+        for selector in ("[data-nv-action='github-issues']",
+                         "[data-nv-action='github-import']",
+                         "[data-nv-field='github-issue-label']"):
+            with self.subTest(removed=selector):
+                self.assertEqual(
+                    0, section.locator(selector).count(),
+                    f"Entfallenes Bedienelement {selector!r} ist noch da")
         main_row = section.locator("[data-nv-github-branch='main']")
         self.assertEqual(
             1, main_row.count(),
@@ -1451,44 +1474,45 @@ class GithubParityTest(AP22ProjectBrowserTest):
                     "Spitze gebracht")
         self.assert_clean_page()
 
-    def test_github_issues_reports_a_structured_network_error(self):
-        """Vorbedingung: aktive Verknüpfung, API-Basis auf einer geschlossenen
-        Loopback-Adresse (kein Dienst, kein externes Netz).
+    def test_github_issues_section_offers_only_the_unified_sync(self):
+        """Vorbedingung: aktive Verknüpfung, Issues-Sync aktiv.
 
-        Aktion: ``[data-nv-action="github-issues"]`` klicken.
-        Erwartung: ``[data-nv-github-issues][data-nv-ok="false"]`` zeigt die
-        strukturierte Fehlermeldung; die Oberfläche bleibt bedienbar.
+        Erwartung (GH-47/q6cbba05d8ca9): Die Issues-Sektion bietet genau
+        einen Sync-Button; die früheren Aktionen „Issues laden“,
+        „Issues importieren“ und der Label-Filter fehlen. Es findet kein
+        REST-Aufruf statt, weil nichts geklickt wird.
         """
         self.activate_github()
-        closed_port = free_port()
-        self.write_project_env(
-            enabled=True, api=f"http://127.0.0.1:{closed_port}")
+        self.enable_issue_sync_env()
         section = self.reload_github_section()
-        section.locator("[data-nv-action='github-issues']").first.click()
-        result = section.locator("[data-nv-github-issues]")
-        result.wait_for(state="visible", timeout=25000)
-        self.assertEqual("false", result.get_attribute("data-nv-ok"),
-                         "Der Issue-Fehler ist nicht als Fehler markiert: "
-                         + repr(result.inner_text()))
-        self.assertRegex(
-            result.inner_text(), r"(?i)nicht erreichbar|github|fehler|verbindung",
-            "Die Fehlermeldung ist nicht verständlich: "
-            + repr(result.inner_text()))
+
+        self.assertEqual(
+            1, section.locator("[data-nv-action='issues-sync']").count(),
+            "Der eine Sync-Button fehlt")
+        for selector in ("[data-nv-action='github-issues']",
+                         "[data-nv-action='github-import']",
+                         "[data-nv-field='github-issue-label']"):
+            with self.subTest(removed=selector):
+                self.assertEqual(
+                    0, section.locator(selector).count(),
+                    f"Entfallenes Bedienelement {selector!r} ist noch da")
         self.assert_clean_page()
 
-    def test_github_import_creates_tickets_for_open_issues(self):
+    def test_issues_sync_pulls_open_issues_into_the_store(self):
         """Vorbedingung: lokale GitHub-Attrappe liefert GH-7 (Label vibe) und
-        GH-8 (Label bug).
+        GH-8 (Label bug); der Ticketspeicher ist leer.
 
-        Aktion: ``[data-nv-action="github-import"]`` klicken.
-        Erwartung (GH-48): Beide offenen Issues werden als GH-Tickets in den
-        Speicher übernommen; GH-8 erhält type=bug. Der Import folgt damit
-        demselben ungefilterten Pfad wie der Sync (der UI-Label-Filter wirkt
-        nicht mehr auf den Import).
+        Aktion: ``[data-nv-action="issues-sync"]`` klicken.
+        Erwartung (GH-47/q6cbba05d8ca9): Beide offenen Issues werden als
+        GH-Tickets in den Speicher übernommen; GH-8 erhält type=bug.
         """
         self.activate_github()
+        self.enable_issue_sync_env()
+        (self.project / ".vibe" / "tickets.json").write_text(
+            json.dumps({"version": 1, "tickets": []}) + "\n",
+            encoding="utf-8")
         section = self.reload_github_section()
-        section.locator("[data-nv-action='github-import']").first.click()
+        section.locator("[data-nv-action='issues-sync']").first.click()
         store = self.project / ".vibe" / "tickets.json"
 
         def records():
@@ -1498,7 +1522,7 @@ class GithubParityTest(AP22ProjectBrowserTest):
         self.wait_until(
             lambda: {"GH-7", "GH-8"} <= set(records()),
             timeout=25,
-            message="Offene Issues wurden nicht importiert")
+            message="Offene Issues wurden nicht synchronisiert")
         self.assertEqual("task", records()["GH-7"]["type"])
         self.assertEqual("bug", records()["GH-8"]["type"])
         self.assertEqual("Sandbox für Import einschränken",
