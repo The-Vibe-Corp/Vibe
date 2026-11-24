@@ -1855,8 +1855,37 @@ class H(BaseHTTPRequestHandler):
                         tid = (body.get("id") or "").strip()
                         assert tid, "ID fehlt"
                         state = web_ticket_state(body.get("state"))
+                        # GH-56: Geschlossene Tickets sind gesperrt. Die
+                        # Oberfläche wertet ok=false als fachliche Ablehnung
+                        # mit Klartext; der Status bleibt 200, damit sie den
+                        # Hinweis ohne technischen Fehlerpfad anzeigt.
+                        record = vibe.vibe_tickets.find(
+                            vibe.vibe_tickets.load(vibe.ppath(name)), tid)
+                        if record is not None and record.get("state") == "done":
+                            message = redact(
+                                "Erledigte Tickets sind nicht bearbeitbar: "
+                                + tid)
+                            self._send(200, {
+                                "ok": False, "message": message,
+                                "error": {"code": "rejected",
+                                          "message": message}})
+                            return None
                         ticket_set_state(name, tid, state)
                         ok, msg = True, f"{tid} auf {state} gesetzt"
+                    elif act == "close":
+                        # GH-56: Schließen verlangt eine ausdrückliche
+                        # Bestätigung im Request (doppelte Absicherung neben
+                        # dem Dialog der Oberfläche). ``done`` bleibt weiterhin
+                        # dem Close-Pfad vorbehalten; action="state" mit
+                        # state="done" wird unverändert abgelehnt.
+                        tid = (body.get("id") or "").strip()
+                        assert tid, "ID fehlt"
+                        if body.get("confirm") is not True:
+                            raise ValueError(
+                                "Ticket schließen erfordert die Bestätigung "
+                                "confirm: true.")
+                        vibe.vibe_tickets.close(vibe.ppath(name), tid)
+                        ok, msg = True, f"{tid} geschlossen"
                     elif act == "update":
                         tid = (body.get("id") or "").strip()
                         assert tid, "ID fehlt"
@@ -2185,6 +2214,29 @@ class H(BaseHTTPRequestHandler):
                 state = state or vibe_autonomous.status(PATHS.runtime, name)
                 extra["autonomous"] = state
                 extra.update(state)
+                # GH-58: Ein Moduswechsel während eines Laufs erreicht den
+                # Agenten; die Zustellung ist best effort und blockiert nicht.
+                if ok and act in ("on", "off"):
+                    info = (
+                        "Autonomer Modus aktiviert: Rückfragen sind ab jetzt nicht möglich; entscheide offene fachliche Entscheidungen selbst."
+                        if act == "on" else
+                        "Autonomer Modus deaktiviert: Rückfragen sind ab jetzt wieder möglich."
+                    )
+                    delivered, detail = steer_project(name, info)
+                    if delivered:
+                        msg += " Der laufende Agent wurde informiert."
+                    elif os.path.exists(vibe.logpath(name)):
+                        # GH-58: Best effort — der Grund der gescheiterten
+                        # Zustellung wird im Laufprotokoll festgehalten;
+                        # das Umschalten bleibt erfolgreich.
+                        try:
+                            with open(vibe.logpath(name), "a", encoding="utf-8") as handle:
+                                handle.write(
+                                    "\n[Dashboard] Autonomer Modus geändert; der "
+                                    "Agent wurde nicht informiert: "
+                                    + " ".join(str(detail).split()) + "\n")
+                        except OSError:
+                            pass
             elif u.path == "/api/guide":
                 act = body.get("action") or "save"
                 path = vibe.ppath(name)

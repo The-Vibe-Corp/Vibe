@@ -29,6 +29,7 @@ import secrets
 import time
 
 import vibe_storage
+import vibe_autonomous
 
 MAX_TEXT = 4000
 MAX_OPTION = 200
@@ -38,6 +39,19 @@ MAX_LABEL = 120
 ID_RE = re.compile(r"^q[0-9a-f]{12}$")
 ANSWER_SUFFIX = ".answer.json"
 WAIT_INTERVAL = 0.25
+
+
+class AutonomousActiveError(ValueError):
+    """Rückfragen im autonomen Modus sind nicht möglich."""
+
+
+def autonomous_message(project):
+    """Meldung bei einer im autonomen Modus abgelehnten Rückfrage."""
+    if project:
+        return ("Autonomer Modus aktiv für '" + project
+                + "': Rückfragen sind nicht möglich.")
+    return ("Autonomer Modus aktiv (globale Voreinstellung): "
+            "Rückfragen sind nicht möglich.")
 
 
 def question_dir(runtime):
@@ -112,6 +126,9 @@ def create(runtime, project="", agent="", text="", options=None, free_text=True,
     project = _clean_label(project, "Projekt")
     agent = _clean_label(agent, "Agent")
     options = normalize_options(options)
+    # Zentraler Wächter: Im autonomen Modus entsteht gar keine Rückfrage.
+    if vibe_autonomous.is_enabled(runtime, project):
+        raise AutonomousActiveError(autonomous_message(project))
     folder = question_dir(runtime)
     os.makedirs(folder, exist_ok=True)
     created = _stamp(now)

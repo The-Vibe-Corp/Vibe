@@ -232,7 +232,7 @@ function questionCard(q){
   inp.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();go()}});
   free=el('div',{class:'qfree'},inp,el('button',{class:'b p',type:'button',on:{click:go}},tr('Antwort senden')));
  }
- const auto=q.project?el('button',{class:'b',type:'button',title:tr('Der Agent entscheidet ohne Antwort selbst und dokumentiert die Entscheidung'),on:{click:()=>setAutonomous(q.project)}},tr('Autonom entscheiden')):null;
+ const auto=q.project?el('button',{class:'b',type:'button',title:tr('Der Agent entscheidet ohne Antwort selbst; weitere Rückfragen sind im autonomen Modus nicht möglich'),on:{click:()=>setAutonomous(q.project)}},tr('Autonom entscheiden')):null;
  return el('section',{class:'qcard','data-question':q.id,'data-id':q.id},el('div',{class:'qhead'},el('span',{class:'pill warn'},tr('Rückfrage')),q.project?el('span',{class:'mut'},q.project):null,q.agent?el('span',{class:'mut'},tr('Agent: ')+q.agent):null),el('p',{class:'qtext'},q.text),opts.length?el('div',{class:'qopts'},...opts):null,free,auto?el('div',{class:'qopts'},auto):null);
 }
 function showQuestions(list){
@@ -410,7 +410,7 @@ function autonomousCard(d,name){
  const active=!!d.autonomous;
  const btn=el('button',{class:'b'+(active?'':' p'),type:'button',on:{click:async()=>{const r=await api('/api/autonomous',{name,action:active?'off':'on'});toast(bt(r.message));if(r.ok)detail(name).catch(showErr)}}},active?tr('Autonomen Modus ausschalten'):tr('Autonomen Modus einschalten'));
  return el('div',{class:'card',id:'autonomous'},el('div',{class:'bar'},el('b',{},tr('Autonomer Modus')),el('span',{class:'pill '+(active?'warn':'mut')},active?tr('aktiv'):tr('aus')),btn),
-  el('div',{class:'mut'},tr('Ist der Modus aktiv, entscheidet der Agent ohne Antwort des Nutzers selbst und dokumentiert die Entscheidung als Antwort auf seine Rückfrage. Die Einstellung lässt sich auch während eines Laufs ändern und gilt nur für dieses Projekt.')))}
+  el('div',{class:'mut'},tr('Im autonomen Modus sind Rückfragen nicht möglich; der Agent entscheidet offene Punkte selbst. Rückfragen, die vor dem Einschalten entstanden sind, beantwortet der Agent selbst und dokumentiert die Entscheidung. Die Einstellung lässt sich auch während eines Laufs ändern und gilt nur für dieses Projekt.')))}
 /* AP19: Erfasste Sessions im Projektpanel. Die Karte lädt die Liste einmalig
    beim Öffnen (kein Polling) und zeigt Zustand, Agent und lesbare Zeit. */
 function sessionTone(state){

@@ -112,13 +112,14 @@ def save(project, tickets, expected=None):
             "Ticketspeicher-Konflikt beim Schreiben: " + str(error)) from None
 
 
-def normalize(record):
+def normalize(record, require_done_proof=True):
     """Setzt Defaults und validiert ein Ticket; liefert ein neues Dict.
 
     Unbekannte Felder bleiben erhalten. ``ValueError`` bei ungültigen
     Pflichtfeldern, geschlossenen Aufzählungen, ungültigem Commit/Priorität
     oder einer verletzten Done-Invariante (erledigt braucht ``test`` sowie
-    ``commit`` oder ``github``).
+    ``commit`` oder ``github``). ``require_done_proof=False`` gilt nur für
+    das manuelle Schließen durch den Nutzer (siehe :func:`close`).
     """
     if not isinstance(record, dict):
         raise ValueError("Ticket muss ein Objekt sein")
@@ -182,7 +183,7 @@ def normalize(record):
             raise ValueError("Ungültige Abhängigkeits-ID: " + repr(dep))
     out["dependencies"] = list(dependencies)
 
-    if state == "done":
+    if state == "done" and require_done_proof:
         has_test = bool(out["test"])
         has_commit = bool(out["commit"])
         has_github = out["github"] is not None
@@ -317,6 +318,39 @@ def update(project, tid, **fields):
         merged.update(fields)
         merged["updated"] = _now_utc()
         normalized = normalize(merged)
+        expected = snapshot.digest if snapshot.exists else vibe_storage.MISSING
+        try:
+            save(project,
+                 [normalized if item.get("id") == tid else item
+                  for item in tickets], expected=expected)
+            return normalized
+        except TicketStoreConflict:
+            continue
+    raise TicketStoreConflict(
+        "Ticketspeicher wurde gleichzeitig geändert; bitte erneut versuchen.")
+
+
+def close(project, tid):
+    """Schließt ein Ticket manuell (``state=done``) und liefert es zurück.
+
+    Das ist bewusst getrennt vom Läufer-Abschluss: Ein Mensch darf ein Ticket
+    ohne Nachweis schließen, während die Zustands-API und der Läufer weiterhin
+    die Done-Invariante durchsetzen. Die übrigen Felder bleiben unverändert.
+    Bereits geschlossene Tickets werden nicht erneut verändert.
+    """
+    tid = str(tid or "").strip()
+    for _ in range(20):
+        snapshot = vibe_storage.read_snapshot(store_path(project))
+        tickets = _tickets_from_snapshot(snapshot)
+        record = find(tickets, tid)
+        if record is None:
+            raise ValueError("Ticket nicht gefunden im Ticketspeicher: " + tid)
+        if record.get("state") == "done":
+            raise ValueError("Ticket ist bereits geschlossen: " + tid)
+        merged = dict(record)
+        merged["state"] = "done"
+        merged["updated"] = _now_utc()
+        normalized = normalize(merged, require_done_proof=False)
         expected = snapshot.digest if snapshot.exists else vibe_storage.MISSING
         try:
             save(project,

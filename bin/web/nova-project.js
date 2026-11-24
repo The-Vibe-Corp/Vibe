@@ -74,7 +74,82 @@ function nvpShortId(value, max) {
 }
 
 function nvpIsDone(row) {
-  return String(row && row.state || '') === 'erledigt';
+  var state = String(row && row.state || '');
+  return state === 'erledigt' || state === 'done';
+}
+
+/* GH-56: Die API liefert den Anzeigezustand (deutsch). Das Board arbeitet mit
+   dem Rohzustand aus dem Ticketspeicher; die Zuordnung bleibt hier eindeutig. */
+function nvpRawState(row) {
+  var state = String(row && row.state || '');
+  var map = {
+    'Draft': 'draft', 'offen': 'open', 'In Progress': 'in-progress',
+    'BLOCKIERT': 'blocked', 'WARTET AUF MERGE': 'waiting-merge',
+    'erledigt': 'done', 'draft': 'draft', 'open': 'open',
+    'in-progress': 'in-progress', 'blocked': 'blocked',
+    'waiting-merge': 'waiting-merge', 'done': 'done'
+  };
+  return map[state] || state;
+}
+
+/* Board-Spalte eines Rohzustands; done bleibt in Ready, wird aber ausgeblendet. */
+function nvpColOfState(state) {
+  if (state === 'draft') return 'draft';
+  if (state === 'in-progress') return 'running';
+  return 'ready';
+}
+
+/* Priorisierte Reihenfolge: konfiguriert, dann Standard, dann Rest. Jede
+   Kennung erscheint genau einmal; erledigte Einträge bleiben im DOM (für den
+   Erledigt-Filter) und werden nur standardmäßig ausgeblendet. */
+function nvpOrderedItems(view, items) {
+  var priority = (view && view.priority) || {};
+  var rows = (items || []).filter(function (row) {
+    return !!String(row && row.id || '');
+  });
+  var byId = {};
+  var seen = {};
+  rows.forEach(function (row) {
+    var id = String(row && row.id || '');
+    if (seen[id]) return;
+    seen[id] = true;
+    byId[id] = row;
+  });
+  var result = [];
+  function add(entry) {
+    var id = typeof entry === 'string' ? entry : String(entry && entry.id || '');
+    if (byId[id] && result.indexOf(byId[id]) < 0) result.push(byId[id]);
+  }
+  (priority.order || []).forEach(add);
+  (priority.standard || []).forEach(add);
+  rows.forEach(add);
+  return result;
+}
+
+/* Paket-ID → Sitzungs-ID für den Resume-Knopf der Karten. */
+function nvpSessionMap(view) {
+  var rows = (view && view.sessions
+    && (view.sessions.sessions || view.sessions.entries)) || [];
+  var map = {};
+  rows.forEach(function (row) {
+    var packageId = String(row && row.package_id || '');
+    var session = String(row && (row.session || row.id || row.name) || '');
+    if (packageId && session && !map[packageId]) map[packageId] = session;
+  });
+  return map;
+}
+
+/* Badge nur für Zustände, die eine Aussage über die Spalte hinaus treffen.
+   Die Board-Sprache ist knapp: Running, Blocked, Ready for Merge. */
+function nvpStateBadge(row) {
+  var raw = nvpRawState(row);
+  if (raw === 'open') return null;
+  var tone = raw === 'blocked' || raw === 'waiting-merge' ? ' nv-warn'
+    : raw === 'in-progress' ? ' nv-ok' : ' nv-muted';
+  var label = raw === 'in-progress' ? tr('Laufend')
+    : raw === 'waiting-merge' ? tr('Bereit zum Merge')
+      : nvpStateLabel(row && row.state);
+  return el('span', {class: 'nv-pill nv-state' + tone}, label);
 }
 
 /* Rohzustand (draft/open/in-progress) aus dem Anzeigezustand; blocked/
@@ -180,52 +255,431 @@ function nvpPost(name, path, body, successKey, token) {
   });
 }
 
-/* ---------- Arbeit: integrierte Liste, Kontext-Panel, Formular ---------- */
+/* ---------- Arbeit: Board, Liste, Kontext-Panel, Editor ---------- */
 
-/* Eine Karte für alle Typen. Badge und linke Farbkante trennen visuell, die
-   Bedienung (Klick öffnet Details, Beschreibung klappt auf) ist identisch. */
-function nvpTicketCard(name, token, row, rank) {
+/* Eine Karte für Board und mobile Liste. Titel zuerst, Status-Badge nur bei
+   Bedarf, danach die Aktionen. Die Karte trägt den Rohzustand als
+   data-nv-state, damit Filter und Spaltenzuordnung eindeutig sind. */
+function nvpTicketCard(name, token, row, rank, sessions, rows) {
   var id = String(row.id || '');
   var kind = nvpRowKind(row);
+  var raw = nvpRawState(row);
+  var title = String(row.title || id);
   var description = String(row.description || '');
-  var descNode = null;
-  var more = null;
-  if (description) {
-    descNode = el('div', {class: 'nv-muted nv-ticket-desc nv-feedback-desc',
-      style: 'max-height:4.5rem;overflow:hidden;'}, description);
-    more = el('button', {class: 'nv-btn nv-ghost nv-compact', type: 'button',
-      'data-nv-ticket-more': '', 'aria-expanded': 'false',
-      on: {click: function (event) {
-        event.stopPropagation();
-        var opened = more.getAttribute('aria-expanded') === 'true';
-        more.setAttribute('aria-expanded', opened ? 'false' : 'true');
-        descNode.style.maxHeight = opened ? '4.5rem' : 'none';
-        setTx(more, opened ? tr('mehr') : tr('weniger'));
-      }}}, tr('mehr'));
-  }
+  var session = String((sessions || {})[id] || '');
   var card = el('article', {
     class: 'nv-card nv-ticket',
     'data-nv-kind': kind,
-    'data-nv-state': String(row.state || ''),
+    'data-nv-state': raw,
+    'data-nv-ticket': id,
+    'data-nv-search-text': (id + ' ' + title + ' ' + description).toLowerCase(),
+    title: title,
     style: 'border-left: 4px solid ' + nvpKindColor(kind) + '; cursor: pointer;'
   });
-  if (kind === 'package') card.setAttribute('data-nv-ticket', id);
-  else card.setAttribute('data-nv-feedback-item', id);
+  if (row.__feedback) card.setAttribute('data-nv-feedback-item', id);
+  if (session) card.setAttribute('data-nv-session', session);
+
+  var actions = el('div', {class: 'nv-row nv-ticket-actions'});
+  actions.addEventListener('click', function (event) { event.stopPropagation(); });
+  actions.append(el('button', {class: 'nv-btn nv-secondary nv-compact',
+    type: 'button', 'data-nv-action': 'ticket-details', on: {click: function () {
+      nvpOpenTicketDetail(name, token, row, kind);
+    }}}, tr('Details')));
+
+  if (raw === 'in-progress' || raw === 'blocked' || raw === 'waiting-merge') {
+    actions.append(el('button', {class: 'nv-btn nv-ghost nv-compact',
+      type: 'button', 'data-nv-action': 'ticket-resume',
+      title: session ? tr('Sitzung fortsetzen') : tr('Keine Sitzung zum Fortsetzen'),
+      on: {click: function () { nvpResumeTicket(name, token, session); }}},
+    tr('Fortsetzen')));
+  }
+  if (raw === 'draft') {
+    actions.append(el('button', {class: 'nv-btn nv-ghost nv-compact',
+      type: 'button', 'data-nv-action': 'ticket-ready',
+      on: {click: function () { nvpMoveTicketState(name, token, card, 'open'); }}},
+    tr('Bereit')));
+  }
+  if (raw === 'open') {
+    actions.append(el('button', {class: 'nv-btn nv-ghost nv-compact',
+      type: 'button', 'data-nv-action': 'ticket-draft',
+      on: {click: function () { nvpMoveTicketState(name, token, card, 'draft'); }}},
+    tr('Entwurf')));
+  }
+  /* Tastaturalternative zur vertikalen DnD-Reihenfolge. */
+  actions.append(el('button', {class: 'nv-btn nv-ghost nv-compact',
+    type: 'button', 'data-nv-action': 'priority-up', 'aria-label': tr('Nach oben'),
+    on: {click: function () { nvpReorderCard(name, token, card, -1); }}}, '↑'));
+  actions.append(el('button', {class: 'nv-btn nv-ghost nv-compact',
+    type: 'button', 'data-nv-action': 'priority-down', 'aria-label': tr('Nach unten'),
+    on: {click: function () { nvpReorderCard(name, token, card, 1); }}}, '↓'));
+  if (raw === 'done') {
+    actions.append(el('button', {class: 'nv-btn nv-ghost nv-compact',
+      type: 'button', 'data-nv-action': 'ticket-copy', on: {click: function () {
+        nvpOpenTicketForm(name, token, {
+          mode: kind === 'bug' ? 'bug'
+            : kind === 'feedback' ? 'feedback' : 'package',
+          title: title, description: description, rows: rows
+        });
+      }}}, tr('Kopieren')));
+  }
+
   card.append(
     el('div', {class: 'nv-ticket-head'},
       nvpKindBadge(kind),
       el('span', {class: 'nv-ticket-id'}, id),
       rank ? el('span', {'data-nv-prio-badge': ''}, 'P' + String(rank)) : null,
-      el('span', {class: 'nv-pill nv-state'
-        + ((row.state === 'WARTET AUF MERGE' || row.state === 'In Progress') ? ' nv-warn'
-          : row.state === 'Draft' ? ' nv-muted' : '')}, nvpStateLabel(row.state))),
-    el('div', {class: 'nv-ticket-title'}, String(row.title || id)),
-    descNode,
-    el('div', {class: 'nv-row nv-ticket-meta'}, more));
+      nvpStateBadge(row)),
+    el('div', {class: 'nv-ticket-title'}, title),
+    actions);
   card.addEventListener('click', function () {
     nvpOpenTicketDetail(name, token, row, kind);
   });
   return card;
+}
+
+/* Board mit drei Spalten (Entwurf, Bereit, In Umsetzung). Karten liegen genau
+   einmal im DOM; die Spaltenzuordnung kommt aus dem Rohzustand. */
+function nvpWorkBoard(name, token, items, ranks, sessions) {
+  var columns = [
+    ['draft', tr('Entwurf')],
+    ['ready', tr('Bereit zur Implementierung')],
+    ['running', tr('In Umsetzung')]
+  ];
+  var board = el('div', {class: 'nv-work-board', 'data-nv-board': ''});
+  var boxes = {};
+  columns.forEach(function (def) {
+    var cards = el('div', {'data-nv-col-cards': ''});
+    var count = el('span', {class: 'nv-pill', 'data-nv-col-count': ''}, '0');
+    var empty = el('div', {class: 'nv-empty', 'data-nv-col-empty': ''},
+      tr('Keine Tickets in dieser Spalte'));
+    board.append(el('article', {class: 'nv-board-col', 'data-nv-col': def[0]},
+      el('div', {'data-nv-col-head': ''},
+        el('h3', {class: 'nv-col-title'}, def[1]), count),
+      cards, empty));
+    boxes[def[0]] = cards;
+  });
+  items.forEach(function (row) {
+    var card = nvpTicketCard(name, token, row, ranks[String(row.id || '')],
+      sessions, items);
+    card.setAttribute('draggable', 'true');
+    boxes[nvpColOfState(nvpRawState(row))].append(card);
+  });
+  nvpWireBoardDnD(board, name, token);
+  nvpRefreshColumns(board);
+  return board;
+}
+
+/* Mobile Liste mit denselben Karten; Touch-Ziele kommen aus dem CSS. */
+function nvpWorkList(name, token, items, ranks, sessions) {
+  var list = el('div', {class: 'nv-work-list', 'data-nv-work-list': ''});
+  items.forEach(function (row) {
+    list.append(nvpTicketCard(name, token, row,
+      ranks[String(row.id || '')], sessions, items));
+  });
+  if (!items.length) {
+    list.append(el('p', {class: 'nv-muted'}, tr('Keine Einträge')));
+  }
+  return list;
+}
+
+/* Arbeitsfläche: Priorisierung zuerst, darunter Board (Desktop) oder Liste
+   (Mobile). Es wird genau eine der beiden Varianten gebaut, damit kein
+   verborgenes Board im DOM zurückbleibt. */
+function nvpWorkView(name, token, view, items) {
+  var priorityView = (view && view.priority) || {};
+  var ranks = nvpRankMap(priorityView.order || []);
+  var sessions = nvpSessionMap(view);
+  var ordered = nvpOrderedItems(view, items);
+  var desktop = !!(window.matchMedia
+    && window.matchMedia('(min-width: 769px)').matches);
+  var surface = desktop
+    ? nvpWorkBoard(name, token, ordered, ranks, sessions)
+    : nvpWorkList(name, token, ordered, ranks, sessions);
+  var strip = nvpPriorityStrip(name, token, view, items, surface);
+  return el('div', {class: 'nv-work-view', 'data-nv-work-view': ''},
+    strip, surface);
+}
+
+function nvpCardChildren(box) {
+  return Array.prototype.slice.call(box.children).filter(function (node) {
+    return node.nodeType === 1 && node.hasAttribute('data-nv-ticket');
+  });
+}
+
+/* Sichtbare Spaltenzähler und Leerhinweise nach jeder DOM-Änderung angleichen. */
+function nvpRefreshColumns(root) {
+  if (!root || !root.querySelectorAll) return;
+  Array.prototype.slice.call(root.querySelectorAll('article[data-nv-col]'))
+    .forEach(function (column) {
+      var box = column.querySelector('[data-nv-col-cards]');
+      if (!box) return;
+      var visible = nvpCardChildren(box).filter(function (card) {
+        return !card.hasAttribute('hidden');
+      });
+      var count = column.querySelector('[data-nv-col-count]');
+      if (count) setTx(count, String(visible.length));
+      var empty = column.querySelector('[data-nv-col-empty]');
+      if (empty) {
+        if (visible.length) empty.setAttribute('hidden', '');
+        else empty.removeAttribute('hidden');
+      }
+    });
+}
+
+/* Projektreihenfolge = DOM-Reihenfolge der Karten (Board spaltenweise, Liste
+   von oben nach unten). Speicherung über die bestehende Priorisierungs-API. */
+function nvpContentOrder(root) {
+  var ids = [];
+  if (!root || !root.querySelectorAll) return ids;
+  root.querySelectorAll('article[data-nv-ticket]').forEach(function (card) {
+    var id = card.getAttribute('data-nv-ticket');
+    if (id && ids.indexOf(id) < 0) ids.push(id);
+  });
+  return ids;
+}
+
+function nvpPersistOrder(name, token, root, rollback) {
+  var order = nvpContentOrder(root);
+  api('/api/priority', {name: name, action: 'set', order: order.join(' ')})
+    .then(function (result) {
+      if (NV.stale(token)) return;
+      if (result && result.ok === false) {
+        if (rollback) rollback();
+        toast(bt(result.message) || tr('Speichern fehlgeschlagen'));
+      } else {
+        toast(tr('Reihenfolge gespeichert'));
+      }
+    }).catch(function (error) {
+      if (NV.stale(token)) return;
+      if (rollback) rollback();
+      toast(tr('Speichern fehlgeschlagen: ')
+        + String(error && error.message || error));
+    });
+}
+
+function nvpRestoreCard(card, origin) {
+  if (origin && origin.next && origin.next.parentNode === origin.parent) {
+    origin.parent.insertBefore(card, origin.next);
+  } else if (origin && origin.parent) {
+    origin.parent.appendChild(card);
+  }
+}
+
+/* Vertikale Tastatur-/Knopf-Reihenfolge; optimistisch mit Rollback. */
+function nvpReorderCard(name, token, card, delta) {
+  var box = card.parentNode;
+  var siblings = nvpCardChildren(box);
+  var index = siblings.indexOf(card);
+  var target = index + delta;
+  if (index < 0 || target < 0 || target >= siblings.length) return;
+  var root = card.closest('[data-nv-board], [data-nv-work-list]') || box;
+  var origin = {parent: box, next: card.nextSibling};
+  var anchor = siblings[target];
+  if (delta < 0) box.insertBefore(card, anchor);
+  else box.insertBefore(card, anchor.nextSibling);
+  nvpRefreshColumns(root);
+  nvpPersistOrder(name, token, root, function () {
+    nvpRestoreCard(card, origin);
+    nvpRefreshColumns(root);
+  });
+}
+
+/* Zustandswechsel über die Tastatur-Alternativen (Bereit/Entwurf). */
+function nvpMoveTicketState(name, token, card, state) {
+  var board = card.closest('[data-nv-board]');
+  var origin = {parent: card.parentNode, next: card.nextSibling};
+  if (board) {
+    var column = board.querySelector(
+      'article[data-nv-col="' + (state === 'draft' ? 'draft' : 'ready')
+        + '"] [data-nv-col-cards]');
+    if (column) column.appendChild(card);
+    card.setAttribute('data-nv-state', state);
+    nvpRefreshColumns(board);
+  }
+  api('/api/ticket', {name: name, action: 'state', id:
+    card.getAttribute('data-nv-ticket'), state: state}).then(function (result) {
+    if (NV.stale(token)) return;
+    if (!result || result.ok === false) {
+      if (board) {
+        nvpRestoreCard(card, origin);
+        nvpRefreshColumns(board);
+      }
+      toast(bt(result && result.message) || tr('Statuswechsel fehlgeschlagen'));
+      return;
+    }
+    NV.render();
+  }).catch(function (error) {
+    if (NV.stale(token)) return;
+    if (board) {
+      nvpRestoreCard(card, origin);
+      nvpRefreshColumns(board);
+    }
+    toast(tr('Statuswechsel fehlgeschlagen: ')
+      + String(error && error.message || error));
+  });
+}
+
+/* Board-only Drag & Drop mit Geist, Einfügemarke, Hervorhebung und Rollback. */
+function nvpWireBoardDnD(board, name, token) {
+  var drag = null;
+
+  function clearDrag() {
+    if (!drag) return;
+    if (drag.ghost) drag.ghost.remove();
+    if (drag.marker) drag.marker.remove();
+    if (drag.column) drag.column.classList.remove('nv-drop-target');
+    if (drag.card) drag.card.classList.remove('nv-dragging');
+    drag = null;
+  }
+
+  function dropIndex(box, clientY) {
+    var cards = nvpCardChildren(box);
+    for (var index = 0; index < cards.length; index += 1) {
+      var box2 = cards[index].getBoundingClientRect();
+      if (Number(clientY) < box2.top + box2.height / 2) return index;
+    }
+    return cards.length;
+  }
+
+  function insertCard(box, card, index) {
+    var cards = nvpCardChildren(box).filter(function (node) {
+      return node !== card;
+    });
+    if (index >= cards.length) box.appendChild(card);
+    else box.insertBefore(card, cards[index]);
+  }
+
+  board.addEventListener('dragstart', function (event) {
+    var card = event.target.closest
+      && event.target.closest('article[data-nv-ticket]');
+    if (!card || !board.contains(card)) return;
+    clearDrag();
+    var column = card.closest('article[data-nv-col]');
+    var rect = card.getBoundingClientRect();
+    /* Der Geist ist ein eigener div-Knoten: ein Klon der Karte würde als
+       zweites article[data-nv-ticket] die Karten-Lokatoren verfälschen. */
+    var ghost = el('div', {'data-nv-board-ghost': '', 'aria-hidden': 'true',
+      class: 'nv-drag-ghost'},
+    String(card.querySelector('.nv-ticket-title')
+      ? card.querySelector('.nv-ticket-title').textContent : ''));
+    ghost.style.cssText = 'position:fixed;z-index:9999;pointer-events:none;'
+      + 'opacity:.92;width:' + rect.width + 'px;left:' + rect.left + 'px;'
+      + 'top:' + rect.top + 'px;background:var(--nv-surface);'
+      + 'border:1px solid var(--nv-border);border-radius:var(--nv-radius);'
+      + 'padding:var(--nv-space-3);box-shadow:var(--nv-shadow);';
+    document.body.append(ghost);
+    card.classList.add('nv-dragging');
+    drag = {
+      card: card, id: card.getAttribute('data-nv-ticket'),
+      sourceCol: column ? column.getAttribute('data-nv-col') : '',
+      ghost: ghost, marker: null, column: null, dropIndex: 0
+    };
+    if (event.dataTransfer) {
+      event.dataTransfer.effectAllowed = 'move';
+      try { event.dataTransfer.setData('text/plain', drag.id); } catch (e) { /* noop */ }
+      try { event.dataTransfer.setDragImage(ghost, 16, 16); } catch (e) { /* noop */ }
+    }
+  });
+
+  board.addEventListener('drag', function (event) {
+    if (!drag || !drag.ghost) return;
+    drag.ghost.style.left = (Number(event.clientX || 0) + 12) + 'px';
+    drag.ghost.style.top = (Number(event.clientY || 0) + 12) + 'px';
+  });
+
+  board.addEventListener('dragover', function (event) {
+    if (!drag) return;
+    var column = event.target.closest
+      && event.target.closest('article[data-nv-col]');
+    if (!column || !board.contains(column)) return;
+    var targetCol = column.getAttribute('data-nv-col');
+    var allowed = drag.sourceCol === targetCol
+      || (drag.sourceCol === 'draft' && targetCol === 'ready')
+      || (drag.sourceCol === 'ready' && targetCol === 'draft');
+    if (!allowed) {
+      if (drag.marker) drag.marker.remove();
+      drag.marker = null;
+      if (drag.column) drag.column.classList.remove('nv-drop-target');
+      drag.column = null;
+      return;
+    }
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+    if (drag.column && drag.column !== column) {
+      drag.column.classList.remove('nv-drop-target');
+    }
+    drag.column = column;
+    column.classList.add('nv-drop-target');
+    var box = column.querySelector('[data-nv-col-cards]');
+    if (!box) return;
+    if (!drag.marker) {
+      drag.marker = el('div', {class: 'nv-drop-marker',
+        'data-nv-drop-marker': '', 'aria-hidden': 'true'});
+    }
+    drag.dropIndex = dropIndex(box, event.clientY);
+    var cards = nvpCardChildren(box);
+    if (drag.dropIndex >= cards.length) box.append(drag.marker);
+    else box.insertBefore(drag.marker, cards[drag.dropIndex]);
+  });
+
+  board.addEventListener('drop', function (event) {
+    if (!drag) return;
+    var card = drag.card;
+    var sourceCol = drag.sourceCol;
+    var column = drag.column;
+    var index = drag.dropIndex;
+    var targetCol = column ? column.getAttribute('data-nv-col') : '';
+    var box = column ? column.querySelector('[data-nv-col-cards]') : null;
+    var target = event.target.closest
+      && event.target.closest('article[data-nv-col]');
+    if (target && target.getAttribute('data-nv-col') === targetCol) {
+      index = dropIndex(box, event.clientY);
+    }
+    clearDrag();
+    if (!column || !box || !card) return;
+    event.preventDefault();
+
+    if (sourceCol === targetCol) {
+      var siblings = nvpCardChildren(box);
+      var from = siblings.indexOf(card);
+      if (from >= 0 && index > from) index -= 1;
+      var origin = {parent: box, next: card.nextSibling};
+      insertCard(box, card, index);
+      nvpRefreshColumns(board);
+      nvpPersistOrder(name, token, board, function () {
+        nvpRestoreCard(card, origin);
+        nvpRefreshColumns(board);
+      });
+      return;
+    }
+
+    var originCross = {parent: card.parentNode, next: card.nextSibling};
+    insertCard(box, card, index);
+    var nextState = targetCol === 'draft' ? 'draft' : 'open';
+    card.setAttribute('data-nv-state', nextState);
+    nvpRefreshColumns(board);
+    api('/api/ticket', {name: name, action: 'state',
+      id: card.getAttribute('data-nv-ticket'), state: nextState})
+      .then(function (result) {
+        if (NV.stale(token)) return;
+        if (!result || result.ok === false) {
+          nvpRestoreCard(card, originCross);
+          nvpRefreshColumns(board);
+          toast(bt(result && result.message)
+            || tr('Statuswechsel fehlgeschlagen'));
+          return;
+        }
+        NV.render();
+      }).catch(function (error) {
+        if (NV.stale(token)) return;
+        nvpRestoreCard(card, originCross);
+        nvpRefreshColumns(board);
+        toast(tr('Statuswechsel fehlgeschlagen: ')
+          + String(error && error.message || error));
+      });
+  });
+
+  board.addEventListener('dragend', clearDrag);
 }
 
 /* Details und Aktionen stehen im zentralen Kontext-Panel. Abgeschlossene
@@ -273,6 +727,10 @@ function nvpOpenTicketDetail(name, token, row, kind) {
           description: String(row.description || '')
         });
       }}}, tr('Bearbeiten')));
+    actions.append(el('button', {class: 'nv-btn nv-ghost', type: 'button',
+      'data-nv-action': 'ticket-close', on: {click: function () {
+        nvpConfirmClose(name, token, id);
+      }}}, tr('Schließen')));
     actions.append(el('button', {class: 'nv-btn nv-danger', type: 'button',
       'data-nv-action': 'ticket-delete', on: {click: function () {
         if (!window.confirm(String(tr('wirklich löschen?')) + ' ' + id)) return;
@@ -308,8 +766,54 @@ function nvpOpenTicketDetail(name, token, row, kind) {
   NV.context.open({title: title, content: body});
 }
 
-/* Das Formular für „Anlegen/Bearbeiten“ öffnet im zentralen Kontext-Panel.
-   Der Name wird bei Bedarf aus dem Hash geholt. */
+/* Schließen mit doppelter Absicherung: klare Rückfrage im Browser und
+   zusätzlich confirm=true im API-Aufruf. */
+function nvpConfirmClose(name, token, id) {
+  var question = String(tr('Ticket {{id}} wirklich schließen?',
+    {id: id}));
+  if (!window.confirm(question)) return;
+  api('/api/ticket', {name: name, action: 'close', id: id, confirm: true})
+    .then(function (result) {
+      if (NV.stale(token)) return;
+      if (!result || result.ok === false) {
+        toast(bt(result && result.message) || tr('Schließen fehlgeschlagen'));
+        return;
+      }
+      toast(bt(result.message) || tr('Ticket geschlossen'));
+      NV.context.close();
+      NV.editView.close();
+      NV.render();
+    }).catch(function (error) {
+      if (!NV.stale(token)) {
+        toast(tr('Schließen fehlgeschlagen: ')
+          + String(error && error.message || error));
+      }
+    });
+}
+
+function nvpResumeTicket(name, token, session) {
+  if (!session) {
+    toast(tr('Keine Sitzung zum Fortsetzen'));
+    return;
+  }
+  api('/api/sessions', {name: name, action: 'continue', session: session})
+    .then(function (result) {
+      if (NV.stale(token)) return;
+      if (result && result.ok === false) {
+        toast(bt(result.message));
+        return;
+      }
+      toast(bt(result && result.message) || tr('Sitzung fortgesetzt'));
+    }).catch(function (error) {
+      if (!NV.stale(token)) {
+        toast(tr('Aktion fehlgeschlagen: ')
+          + String(error && error.message || error));
+      }
+    });
+}
+
+/* Der Ticket-Editor nutzt die geteilte Bearbeitungsansicht (GH-57), erhält
+   aber die breitere Vollhöhen-Variante und den Marker data-nv-ticket-editor. */
 function nvpOpenTicketForm(name, token, options) {
   var opts = options || {};
   var mode = opts.mode || 'package';
@@ -326,32 +830,25 @@ function nvpOpenTicketForm(name, token, options) {
   var idHint = el('small', {'data-nv-id-hint': '', class: 'nv-muted'},
     tr('Die Kennung wird automatisch vergeben, wenn das Feld leer bleibt — oder selbst benennen.'));
   if (!editing) {
-    idInput.value = nvpSuggestId(opts.rows, mode === 'bug' ? 'B' : 'F');
+    idInput.value = nvpSuggestId(opts.rows,
+      mode === 'bug' ? 'B' : mode === 'feedback' ? 'F' : 'AP');
   }
-  /* AP3: Entwurf (Vorgabe gesetzt) und Kategorie (Bug/Feature) nur beim
-     Anlegen eines Pakets im verbundenen Projekt. */
-  var draftInput = null;
+  /* Kategorie nur beim Anlegen eines Pakets im verbundenen Projekt. */
   var categorySelect = null;
   if (issuesEnabled && !editing && mode === 'package') {
-    draftInput = el('input', {'data-nv-field': 'draft', type: 'checkbox',
-      checked: true, 'aria-label': tr('Entwurf')});
     categorySelect = el('select', {'data-nv-field': 'category',
       'aria-label': tr('Kategorie')});
     categorySelect.append(el('option', {value: 'bug'}, tr('Bug')));
     categorySelect.append(el('option', {value: 'feature'}, tr('Feature')));
     categorySelect.value = 'feature';
   }
-  /* GH-48: Zustandsauswahl für alle neuen Tickets (draft/open/in-progress,
-     Voreinstellung open). Der verbundene Draft-Haken wird beim Speichern auf
-     state=draft abgebildet. */
+  /* Neue Tickets starten immer als Entwurf; Übergänge laufen über das Board. */
   var stateSelect = null;
   if (!editing) {
     stateSelect = el('select', {'data-nv-field': 'state',
       'aria-label': tr('Zustand')});
     stateSelect.append(el('option', {value: 'draft'}, tr('Entwurf')));
-    stateSelect.append(el('option', {value: 'open'}, tr('Offen')));
-    stateSelect.append(el('option', {value: 'in-progress'}, tr('In Progress')));
-    stateSelect.value = 'open';
+    stateSelect.value = 'draft';
   }
   var error = nvpErrorBox();
 
@@ -367,7 +864,6 @@ function nvpOpenTicketForm(name, token, options) {
     nvpLabel(tr('Beschreibung'), descInput),
     categorySelect ? nvpLabel(tr('Kategorie'), categorySelect) : null,
     stateSelect ? nvpLabel(tr('Zustand'), stateSelect) : null,
-    draftInput ? nvpLabel(tr('Entwurf'), draftInput) : null,
     el('div', {class: 'nv-row'},
       el('button', {class: 'nv-btn nv-primary', type: 'button',
         'data-nv-action': 'ticket-save', on: {click: async function () {
@@ -398,9 +894,8 @@ function nvpOpenTicketForm(name, token, options) {
             body.action = 'add';
             if (mode === 'package') body.id = String(idInput.value || '');
             if (categorySelect) body.category = String(categorySelect.value || '');
-            var nextState = stateSelect ? String(stateSelect.value || 'open') : 'open';
-            if (draftInput && draftInput.checked) nextState = 'draft';
-            body.state = nextState;
+            /* GH-56: Neue Tickets sind immer Entwürfe. */
+            body.state = 'draft';
           }
           try {
             var result = await api(path, Object.assign({name: nvpCurrentName()}, body));
@@ -410,18 +905,27 @@ function nvpOpenTicketForm(name, token, options) {
               return;
             }
             toast(bt(result && result.message) || tr('Gespeichert'));
-            NV.context.close();
+            NV.editView.close();
             NV.render();
           } catch (e) {
             nvpShowError(error, tr('Speichern fehlgeschlagen: ') + String(e && e.message || e));
           }
         }}}, tr('Speichern')),
       el('button', {class: 'nv-btn nv-ghost', type: 'button',
-        'data-nv-action': 'ticket-cancel', on: {click: function () { NV.context.close(); }}},
-        tr('Abbrechen'))),
+        'data-nv-action': 'ticket-cancel', on: {click: function () {
+          NV.editView.close();
+        }}}, tr('Abbrechen')),
+      editing ? el('button', {class: 'nv-btn nv-ghost', type: 'button',
+        'data-nv-action': 'ticket-close', on: {click: function () {
+          nvpConfirmClose(name, token, String(idInput.value || ''));
+        }}}, tr('Schließen')) : null),
     error);
-  NV.context.open({
+  /* GH-56: Der Editor öffnet sich über dem Detail-Panel. Dessen Scrim läge
+     sonst über dem Formular und würde „Speichern" blockieren. */
+  NV.context.close();
+  NV.editView.open({
     title: heading,
+    marker: 'data-nv-ticket-editor',
     content: el('div', {'data-nv-ticket-form-wrap': ''}, form)
   });
   titleInput.focus();
@@ -483,9 +987,11 @@ function nvpPriorityStrip(name, token, view, items, cards) {
   var standard = priority.standard || [];
   var titles = {};
   var open = {};
+  /* GH-56: Die Work-Priorisierung zeigt ausschließlich Ready-Tickets
+     (Rohzustand ``open``); Draft und Running gehören in ihre Board-Spalten. */
   (items || []).forEach(function (row) {
     var id = String(row && row.id || '');
-    if (!id || nvpIsDone(row)) return;
+    if (!id || nvpRawState(row) !== 'open') return;
     open[id] = true;
     titles[id] = String(row && row.title || id);
   });
@@ -682,16 +1188,32 @@ function nvpPriorityStrip(name, token, view, items, cards) {
   return strip;
 }
 
-/* Live-Suche, Typ-Chips und „Erledigte anzeigen“ teilen eine
-   Sichtbarkeitsfunktion. Ein Suchtreffer wird immer eingeblendet — auch bei
-   erledigten Einträgen und unabhängig vom Erledigt-Schalter. */
-function nvpWireWorkFilters(panel, toggle, doneCount) {
+/* Live-Suche, Typ-Chips, Zustands-Chips und „Erledigte anzeigen“ teilen eine
+   Sichtbarkeitsfunktion. Zustands-Chips bilden die Board-Spalten ab; der
+   Erledigt-Chip überstimmt den Erledigt-Schalter, damit geschlossene Tickets
+   gezielt auffindbar bleiben. */
+function nvpWireWorkFilters(panel, toggle, doneCount, surface) {
   var search = panel.querySelector('input[data-nv-work-search]');
   if (!search) return;
   var hideDone = true;
   var kind = 'all';
-  var chips = panel.querySelectorAll('button[data-nv-work-kind]');
+  var state = 'all';
+  var kindChips = panel.querySelectorAll('button[data-nv-work-kind]');
+  var stateChips = panel.querySelectorAll('button[data-nv-work-state]');
+
+  function cardState(card) {
+    var raw = String(card.getAttribute('data-nv-state') || '');
+    return raw === 'erledigt' ? 'done' : raw;
+  }
+  function chipOf(raw) {
+    if (raw === 'done') return 'done';
+    if (raw === 'draft') return 'draft';
+    if (raw === 'in-progress') return 'running';
+    return 'ready';
+  }
   function cardText(card) {
+    var indexed = String(card.getAttribute('data-nv-search-text') || '');
+    if (indexed) return indexed;
     var id = card.getAttribute('data-nv-ticket')
       || card.getAttribute('data-nv-feedback-item') || '';
     var title = nvpText(card.querySelector('.nv-ticket-title, .nv-feedback-title'));
@@ -701,10 +1223,12 @@ function nvpWireWorkFilters(panel, toggle, doneCount) {
   function apply() {
     var query = String(search.value || '').trim().toLowerCase();
     panel.querySelectorAll('[data-nv-ticket], [data-nv-feedback-item]').forEach(function (card) {
+      var raw = cardState(card);
       var matches = !query || cardText(card).indexOf(query) >= 0;
       var matchesKind = kind === 'all' || card.getAttribute('data-nv-kind') === kind;
-      var isDone = card.getAttribute('data-nv-state') === 'erledigt';
-      var hide = !matches || !matchesKind || (!query && hideDone && isDone);
+      var matchesState = state === 'all' || chipOf(raw) === state;
+      var hiddenDone = hideDone && raw === 'done' && state !== 'done';
+      var hide = !matches || !matchesKind || !matchesState || hiddenDone;
       if (hide) card.setAttribute('hidden', '');
       else card.removeAttribute('hidden');
     });
@@ -712,16 +1236,28 @@ function nvpWireWorkFilters(panel, toggle, doneCount) {
     setTx(toggle, hideDone
       ? tr('Erledigte anzeigen') + ' (' + String(doneCount) + ')'
       : tr('Erledigte ausblenden'));
-    chips.forEach(function (chip) {
+    kindChips.forEach(function (chip) {
       chip.setAttribute('aria-pressed',
         chip.getAttribute('data-nv-work-kind') === kind ? 'true' : 'false');
     });
+    stateChips.forEach(function (chip) {
+      chip.setAttribute('aria-pressed',
+        chip.getAttribute('data-nv-work-state') === state ? 'true' : 'false');
+    });
+    if (surface) nvpRefreshColumns(surface);
   }
   search.addEventListener('input', apply);
   toggle.addEventListener('click', function () { hideDone = !hideDone; apply(); });
-  chips.forEach(function (chip) {
+  kindChips.forEach(function (chip) {
     chip.addEventListener('click', function () {
       kind = chip.getAttribute('data-nv-work-kind') || 'all';
+      apply();
+    });
+  });
+  stateChips.forEach(function (chip) {
+    chip.addEventListener('click', function () {
+      var next = chip.getAttribute('data-nv-work-state') || 'all';
+      state = state === next ? 'all' : next;
       apply();
     });
   });
@@ -752,11 +1288,11 @@ function nvpAutonomousCard(name, token, autonomous) {
     el('div', {style: 'flex:1 1 24rem;min-width:0;'},
       el('h3', {style: 'margin:0 0 8px;font-size:1.35rem;'}, tr('Autonomer Modus')),
       el('p', {class: 'nv-muted', style: 'margin:0;'},
-        tr('Beantwortet offene Rückfragen automatisch, wenn keine Antwort kommt'))),
+        tr('Im autonomen Modus sind Rückfragen nicht möglich; der Agent entscheidet offene Punkte selbst'))),
     state,
     el('div', {class: 'nv-row nv-autonomous', 'data-nv-autonomous-row': ''},
       el('small', {class: 'nv-muted'},
-        tr('Beantwortet offene Rückfragen automatisch, wenn keine Antwort kommt')),
+        tr('Im autonomen Modus sind Rückfragen nicht möglich; der Agent entscheidet offene Punkte selbst')),
       input));
 }
 
@@ -1615,9 +2151,12 @@ NV.views.project = async function project(context, token) {
       api('/api/project-agents?name=' + enc),
       api('/api/guide?name=' + enc),
       api('/api/autonomous?name=' + enc),
-      api('/api/sessions?name=' + enc)
+      api('/api/sessions?name=' + enc),
+      /* GH-56: Die Board-Reihenfolge hängt an der gespeicherten
+         Priorisierung; deshalb wird sie unabhängig vom optionalen
+         Priorisierungs-Feature immer geladen. */
+      api('/api/priority?name=' + enc)
     ];
-    if (NV.feature('priority')) requests.push(api('/api/priority?name=' + enc));
     if (NV.feature('agentsfile')) requests.push(api('/api/agents_file?name=' + enc));
     requests.push(api('/api/global_agents_file'));
     var results = await Promise.all(requests);
@@ -1629,7 +2168,7 @@ NV.views.project = async function project(context, token) {
     view.autonomous = results[4] || {};
     view.sessions = results[5] || {};
     var cursor = 6;
-    if (NV.feature('priority')) view.priority = results[cursor++];
+    view.priority = results[cursor++] || {};
     if (NV.feature('agentsfile')) view.agents_file = results[cursor++];
     view.global_agents = results[cursor++];
   } catch (error) {
@@ -1767,7 +2306,7 @@ NV.views.project = async function project(context, token) {
   });
   panels.overview.append(sessionBox);
 
-  /* ---- Arbeit: Aktionsleiste → Filter → Priorisierung → Liste ---- */
+  /* ---- Arbeit: Aktionsleiste → Filter → Priorisierung → Board/Liste ---- */
   var issuesEnabled = !!(data.github && data.github.issues_enabled);
   var newRow = el('div', {class: 'nv-row nv-work-actions'},
     nvpButton(tr('Paket anlegen'), 'new-package', function () {
@@ -1790,35 +2329,38 @@ NV.views.project = async function project(context, token) {
   var searchInput = el('input', {type: 'search', 'data-nv-work-search': '',
     placeholder: tr('Arbeitspakete suchen'),
     'aria-label': tr('Arbeitspakete suchen')});
-  var chips = el('div', {class: 'nv-row', 'data-nv-work-kinds': ''});
+  var kindChips = el('div', {class: 'nv-row', 'data-nv-work-kinds': ''});
   [['all', tr('Alle')], ['package', tr('Pakete')], ['bug', tr('Bugs')],
     ['feedback', tr('Feedback')]].forEach(function (def) {
-      chips.append(el('button', {class: 'nv-btn nv-ghost nv-compact',
+      kindChips.append(el('button', {class: 'nv-btn nv-ghost nv-compact',
         type: 'button', 'data-nv-work-kind': def[0],
         'aria-pressed': def[0] === 'all' ? 'true' : 'false'}, def[1]));
     });
+  /* GH-56: Zustands-Chips decken alle Board-Zustände ab und sind mit Board
+     und mobiler Liste identisch verdrahtet. */
+  var stateChips = el('div', {class: 'nv-row nv-work-states',
+    'data-nv-work-states': ''});
+  [['draft', tr('Entwurf')], ['ready', tr('Bereit')],
+    ['running', tr('In Progress')], ['done', tr('Erledigt')]]
+    .forEach(function (def) {
+      stateChips.append(el('button', {class: 'nv-btn nv-ghost nv-compact',
+        type: 'button', 'data-nv-work-state': def[0],
+        'aria-pressed': 'false'}, def[1]));
+    });
   panels.work.append(NV.filterBar(
     NV.search({input: searchInput, placeholder: tr('Arbeitspakete suchen')}),
-    chips, hideDoneButton));
+    kindChips, hideDoneButton, stateChips));
 
-  var ranks = nvpRankMap(priorityView.order);
-  var ticketList = el('div', {class: 'nv-ticket-list', 'data-nv-ticket-list': ''});
-  if (!allItems.length) {
-    ticketList.append(el('p', {class: 'nv-muted'}, tr('Keine Einträge')));
-  }
-  allItems.forEach(function (row) {
-    ticketList.append(nvpTicketCard(name, token, row,
-      ranks[String(row.id || '')]));
-  });
-  panels.work.append(nvpPriorityStrip(name, token, view, allItems, ticketList));
-  panels.work.append(ticketList);
+  var workView = nvpWorkView(name, token, view, allItems);
+  panels.work.append(workView);
+  var surface = workView.querySelector('[data-nv-board], [data-nv-work-list]');
 
   var backToTop = el('button', {class: 'nv-btn nv-back-to-top', type: 'button',
     'data-nv-back-to-top': '', hidden: '', title: tr('Zurück zum Listenanfang')},
   '↑ ' + tr('Nach oben'));
   backToTop.style.cssText = 'position:fixed;right:24px;bottom:24px;z-index:60;';
   function nvpSyncBackToTop() {
-    if (!document.contains(backToTop) || !document.contains(ticketList)) {
+    if (!document.contains(backToTop) || !document.contains(workView)) {
       window.removeEventListener('scroll', nvpSyncBackToTop);
       return;
     }
@@ -1828,14 +2370,15 @@ NV.views.project = async function project(context, token) {
     else backToTop.setAttribute('hidden', '');
   }
   backToTop.addEventListener('click', function () {
-    var top = ticketList.getBoundingClientRect().top
+    var top = workView.getBoundingClientRect().top
       + (window.scrollY || 0) - 16;
     window.scrollTo({top: Math.max(0, top), behavior: 'smooth'});
   });
   panels.work.append(backToTop);
   window.addEventListener('scroll', nvpSyncBackToTop, {passive: true});
   nvpSyncBackToTop();
-  nvpWireWorkFilters(panels.work, hideDoneButton, nvpCount(tickets, 'erledigt'));
+  nvpWireWorkFilters(panels.work, hideDoneButton, nvpCount(tickets, 'erledigt'),
+    surface);
 
   /* ---- Output: nur Container, Inhalt kommt aus B2 ---- */
   if (window.NV && NV.output && typeof NV.output.render === 'function') {
@@ -1940,6 +2483,17 @@ if (window.VIBE_I18N && typeof VIBE_I18N.extend === 'function') {
       "Alle": "All",
       "Bugs": "Bugs",
       "Zurück zum Listenanfang": "Back to the start of the list",
+      "Details": "Details",
+      "Schließen": "Close",
+      "Bereit zum Merge": "Ready for Merge",
+      "Sitzung fortsetzen": "Resume session",
+      "Keine Sitzung zum Fortsetzen": "No session to resume",
+      "Reihenfolge gespeichert": "Order saved",
+      "Statuswechsel fehlgeschlagen": "Status change failed",
+      "Schließen fehlgeschlagen": "Close failed",
+      "Ticket geschlossen": "Ticket closed",
+      "Ticket {{id}} wirklich schließen?": "Really close ticket {{id}}?",
+      "Keine Tickets in dieser Spalte": "No tickets in this column",
       "Allgemeines Projekt ohne besondere Werkzeuge.": "General project without special tools.",
       "Android-Projekt mit Emulator und Gradle-Werkzeugen.": "Android project with emulator and Gradle tools.",
       "Swift-Projekt für Apple-Plattformen.": "Swift project for Apple platforms.",
@@ -2013,6 +2567,17 @@ if (window.VIBE_I18N && typeof VIBE_I18N.extend === 'function') {
       "Alle": "Alle",
       "Bugs": "Bugs",
       "Zurück zum Listenanfang": "Zurück zum Listenanfang",
+      "Details": "Details",
+      "Schließen": "Schließen",
+      "Bereit zum Merge": "Bereit zum Merge",
+      "Sitzung fortsetzen": "Sitzung fortsetzen",
+      "Keine Sitzung zum Fortsetzen": "Keine Sitzung zum Fortsetzen",
+      "Reihenfolge gespeichert": "Reihenfolge gespeichert",
+      "Statuswechsel fehlgeschlagen": "Statuswechsel fehlgeschlagen",
+      "Schließen fehlgeschlagen": "Schließen fehlgeschlagen",
+      "Ticket geschlossen": "Ticket geschlossen",
+      "Ticket {{id}} wirklich schließen?": "Ticket {{id}} wirklich schließen?",
+      "Keine Tickets in dieser Spalte": "Keine Tickets in dieser Spalte",
       "Allgemeines Projekt ohne besondere Werkzeuge.": "Allgemeines Projekt ohne besondere Werkzeuge.",
       "Android-Projekt mit Emulator und Gradle-Werkzeugen.": "Android-Projekt mit Emulator und Gradle-Werkzeugen.",
       "Swift-Projekt für Apple-Plattformen.": "Swift-Projekt für Apple-Plattformen.",
