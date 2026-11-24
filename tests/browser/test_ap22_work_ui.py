@@ -405,16 +405,13 @@ class BoardTest(AP22WorkBrowserTest):
             self.assertEqual(
                 1, board.locator(f"article[data-nv-col='{column}']").count(),
                 f"Die Board-Spalte {column} fehlt")
-        # Ordnung: Aktionsleiste → Filterleiste → Priorisierung → Board.
+        # Ordnung: Aktionsleiste → Filterleiste → Board. GH-67: die
+        # Priorisierungsansicht liegt auf Desktop nicht im DOM; die
+        # Reihenfolge-Prüfung für den Strip erfolgt in den PriorityTest-
+        # Fällen bzw. in test_gh67_work_ui.py (mobil).
         self.assertTrue(
             self._follows("[data-nv-action='new-package']", "[data-nv-filter-bar]"),
             "Die Aktionsleiste steht nicht vor der Filterleiste")
-        self.assertTrue(
-            self._follows("[data-nv-filter-bar]", "[data-nv-priority-strip]"),
-            "Die Filterleiste steht nicht vor der Priorisierung")
-        self.assertTrue(
-            self._follows("[data-nv-priority-strip]", "div[data-nv-board]"),
-            "Die Priorisierung steht nicht vor dem Board")
         filter_bar = self.page.locator("[data-nv-filter-bar]").first
         filter_bar.wait_for(state="visible", timeout=20000)
         self.assertEqual(
@@ -425,14 +422,22 @@ class BoardTest(AP22WorkBrowserTest):
                 1, filter_bar.locator(
                     f"button[data-nv-work-kind='{kind}']").count(),
                 f"Der Chip data-nv-work-kind='{kind}' fehlt in der Filterleiste")
+        # GH-67: „Show done“ ist ein eigenständiger Schalter außerhalb der
+        # Filterleiste, und der Done-Schnellfilter entfällt.
         self.assertEqual(
-            1, filter_bar.locator("[data-nv-work-hide-done]").count(),
-            "Der Knopf [data-nv-work-hide-done] fehlt in der Filterleiste")
-        for state in ("draft", "ready", "running", "done"):
+            0, filter_bar.locator("[data-nv-work-hide-done]").count(),
+            "Show-done liegt wider Erwarten in der Filterleiste")
+        self.assertEqual(
+            1, self.page.locator("button[data-nv-work-hide-done]").count(),
+            "Der Knopf [data-nv-work-hide-done] fehlt")
+        for state in ("draft", "ready", "running"):
             self.assertEqual(
                 1, filter_bar.locator(
                     f"button[data-nv-work-state='{state}']").count(),
                 f"Der Status-Chip {state} fehlt in der Filterleiste")
+        self.assertEqual(
+            0, filter_bar.locator("button[data-nv-work-state='done']").count(),
+            "Der Done-Schnellfilter gibt es nicht mehr")
 
         # Erledigte einblenden (hideDone startet true), damit AP-104 sitzt.
         self.page.locator("[data-nv-work-hide-done]").first.click()
@@ -686,15 +691,17 @@ class FeedbackCreateTest(AP22WorkBrowserTest):
 
 class PriorityTest(AP22WorkBrowserTest):
     def test_priority_card_appears_with_feature_and_persists(self):
-        """Vorbedingung: Feature ``priority`` aus.
+        """Vorbedingung: Feature ``priority`` aus, Viewport 600x800.
 
+        GH-67: die Priorisierungsansicht gibt es nur auf kleinen Bildschirmen;
+        der Fall läuft deshalb mobil statt auf dem Desktop-Board.
         Aktion: Schalter in ``#/settings`` aktivieren, Arbeit öffnen,
         ``AP-102`` hochschieben, neu laden.
         Erwartung: ``div[data-nv-priority-strip]`` steht mit Drag-Griff,
-        ``priority-up|down`` und Zurücksetzen oberhalb des Boards; die neue
-        Reihenfolge wird sofort gespeichert und bleibt über den Reload
-        erhalten.
+        ``priority-up|down`` und Zurücksetzen; die neue Reihenfolge wird
+        sofort gespeichert und bleibt über den Reload erhalten.
         """
+        self.page.set_viewport_size({"width": 600, "height": 800})
         self.open_work()
         # F33 WP3/2o: die alte Priorisierungskarte entfällt. Die Leiste ist
         # als Arbeitswerkzeug immer im DOM; ohne Feature fehlen die P-Badges.

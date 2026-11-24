@@ -516,8 +516,6 @@ function initChrome() {
     setChromeLabel(contextClose, 'Kontext schließen', '×');
     contextClose.addEventListener('click', function () { NV.context.close(); });
   }
-  var contextScrim = document.querySelector('[data-nv-context-scrim]');
-  if (contextScrim) contextScrim.addEventListener('click', function () { NV.context.close(); });
   var bell = document.querySelector('[data-nv-bell]');
   if (bell) {
     setChromeLabel(bell, 'Benachrichtigungen');
@@ -558,12 +556,11 @@ function initChrome() {
   document.addEventListener('keydown', function (event) {
     if (event.key !== 'Escape') return;
     closeBellPanel();
-    if (NV.context.isOpen()) NV.context.close();
   });
   window.addEventListener('hashchange', function () {
-    // GH-56: Ein Routenwechsel schließt die Bearbeitungsansicht; sonst
-    // blockiert der Scrim der alten Ansicht die neue Seite.
-    if (NV.editView && NV.editView.isOpen()) NV.editView.close();
+    // GH-67: Ein Routenwechsel schließt alle Sidebars (Kontext und
+    // Bearbeitungsansicht); sonst blockiert ein Scrim die neue Seite.
+    NV.sidebar.closeAll();
     render();
   });
   window.addEventListener('vibe:langchange', function () {
@@ -980,29 +977,123 @@ function fillNode(target, value) {
   target.replaceChildren.apply(target, Array.prototype.slice.call(holder.childNodes));
 }
 
+/* GH-67: Eine gemeinsame Sidebar-Steuerung für Kontext-Panel und
+   Bearbeitungsansicht. attach() liefert open/close/isOpen; Escape, Scrim,
+   body-Attribut und Fokus-Rückgabe werden nur hier behandelt. */
+NV.sidebar = (function () {
+  var attached = [];
+  var sequence = 0;
+  var lastEntry = null;
+
+  function topEntry() {
+    var found = null;
+    attached.forEach(function (entry) {
+      if (!entry.instance.isOpen()) return;
+      if (!found || entry.order > found.order) found = entry;
+    });
+    return found;
+  }
+
+  function attach(options) {
+    var opts = options || {};
+    var panel = opts.panel;
+    if (!panel) return null;
+    var scrim = opts.scrim || null;
+    var attribute = opts.bodyAttribute ? String(opts.bodyAttribute) : '';
+    var returnFocus = null;
+    var entry = {order: 0, panel: panel, instance: null};
+
+    entry.instance = {
+      open: function (state) {
+        var trigger = document.activeElement;
+        if (trigger && trigger !== document.body && !panel.contains(trigger)) {
+          returnFocus = trigger;
+        }
+        if (typeof opts.fill === 'function') opts.fill(state || {});
+        panel.hidden = false;
+        if (scrim) scrim.hidden = false;
+        if (attribute) document.body.setAttribute(attribute, 'true');
+        if (!panel.hasAttribute('tabindex')) panel.setAttribute('tabindex', '-1');
+        entry.order = sequence += 1;
+        panel.focus();
+      },
+      close: function () {
+        var wasOpen = !panel.hidden;
+        panel.hidden = true;
+        if (scrim) scrim.hidden = true;
+        if (attribute) document.body.removeAttribute(attribute);
+        var focus = returnFocus;
+        returnFocus = null;
+        if (!wasOpen) return;
+        if (typeof opts.onClose === 'function') opts.onClose();
+        if (focus && document.contains(focus)) focus.focus();
+      },
+      isOpen: function () { return !panel.hidden; }
+    };
+    attached.push(entry);
+    lastEntry = entry;
+    if (scrim) scrim.addEventListener('click', function () {
+      entry.instance.close();
+    });
+    return entry.instance;
+  }
+
+  function closeAll() {
+    attached.forEach(function (entry) {
+      if (entry.instance.isOpen()) entry.instance.close();
+    });
+  }
+
+  document.addEventListener('keydown', function (event) {
+    if (event.key !== 'Escape') return;
+    var top = topEntry();
+    if (!top) return;
+    // Eine offene Modellliste schließt zuerst sich selbst (NV.combobox).
+    if (top.panel.querySelector(
+        'input[data-nv-combobox-input][aria-expanded="true"]')) return;
+    top.instance.close();
+  });
+
+  return {
+    attach: attach,
+    closeAll: closeAll,
+    open: function (state) {
+      var target = topEntry() || lastEntry;
+      if (target) target.instance.open(state);
+    },
+    close: function () {
+      var top = topEntry();
+      if (top) top.instance.close();
+    },
+    isOpen: function () { return !!topEntry(); }
+  };
+})();
+
 var contextPanel = document.querySelector('aside[data-nv-context]');
 var contextScrim = document.querySelector('[data-nv-context-scrim]');
+var contextSidebar = NV.sidebar.attach({
+  panel: contextPanel,
+  scrim: contextScrim,
+  bodyAttribute: 'data-nv-context-open',
+  fill: function (opts) {
+    if (!contextPanel) return;
+    fillNode(contextPanel.querySelector('[data-nv-context-title]'),
+      opts.title == null ? '' : opts.title);
+    fillNode(contextPanel.querySelector('[data-nv-context-body]'),
+      opts.content == null ? '' : opts.content);
+    fillNode(contextPanel.querySelector('[data-nv-context-foot]'),
+      opts.footer == null ? '' : opts.footer);
+  }
+});
 
 NV.context = {
   open: function (options) {
-    if (!contextPanel) return;
-    var opts = options || {};
-    var title = contextPanel.querySelector('[data-nv-context-title]');
-    var body = contextPanel.querySelector('[data-nv-context-body]');
-    var foot = contextPanel.querySelector('[data-nv-context-foot]');
-    fillNode(title, opts.title == null ? '' : opts.title);
-    fillNode(body, opts.content == null ? '' : opts.content);
-    fillNode(foot, opts.footer == null ? '' : opts.footer);
-    contextPanel.hidden = false;
-    if (contextScrim) contextScrim.hidden = false;
-    document.body.setAttribute('data-nv-context-open', 'true');
+    if (contextSidebar) contextSidebar.open(options);
   },
   close: function () {
-    if (contextPanel) contextPanel.hidden = true;
-    if (contextScrim) contextScrim.hidden = true;
-    document.body.removeAttribute('data-nv-context-open');
+    if (contextSidebar) contextSidebar.close();
   },
-  isOpen: function () { return !!contextPanel && !contextPanel.hidden; }
+  isOpen: function () { return !!contextSidebar && contextSidebar.isOpen(); }
 };
 
 NV.search = function (options) {

@@ -89,7 +89,7 @@ function nvpRawState(row) {
     'in-progress': 'in-progress', 'blocked': 'blocked',
     'waiting-merge': 'waiting-merge', 'done': 'done'
   };
-  return map[state] || state;
+  return map[state] || '';
 }
 
 /* Board-Spalte eines Rohzustands; done bleibt in Ready, wird aber ausgeblendet. */
@@ -139,27 +139,14 @@ function nvpSessionMap(view) {
   return map;
 }
 
-/* Badge nur für Zustände, die eine Aussage über die Spalte hinaus treffen.
-   Die Board-Sprache ist knapp: Running, Blocked, Ready for Merge. */
+/* Jeder Zustand erhält ein nicht interaktives Badge; der Wechsel läuft über
+   die separaten Schaltflächen, DnD oder die Auswahl im Detail. */
 function nvpStateBadge(row) {
   var raw = nvpRawState(row);
-  if (raw === 'open') return null;
   var tone = raw === 'blocked' || raw === 'waiting-merge' ? ' nv-warn'
     : raw === 'in-progress' ? ' nv-ok' : ' nv-muted';
-  var label = raw === 'in-progress' ? tr('Laufend')
-    : raw === 'waiting-merge' ? tr('Bereit zum Merge')
-      : nvpStateLabel(row && row.state);
-  return el('span', {class: 'nv-pill nv-state' + tone}, label);
-}
-
-/* Rohzustand (draft/open/in-progress) aus dem Anzeigezustand; blocked/
-   waiting-merge/done haben keine Vorbelegung (GH-47). */
-function nvpRawState(row) {
-  var state = String(row && row.state || '');
-  if (state === 'Draft') return 'draft';
-  if (state === 'offen') return 'open';
-  if (state === 'In Progress') return 'in-progress';
-  return '';
+  return el('span', {class: 'nv-pill nv-state' + tone,
+    'data-nv-state-badge': ''}, nvpStateLabel(raw));
 }
 
 function nvpRowKind(row) {
@@ -184,13 +171,14 @@ function nvpKindColor(kind) {
 /* ---------- Help: Zustand/Formatierung ---------- */
 
 function nvpStateLabel(state) {
-  if (state === 'offen') return tr('Offen');
-  if (state === 'WARTET AUF MERGE') return tr('Wartet auf Merge');
-  if (state === 'BLOCKIERT') return tr('Blockiert');
-  if (state === 'In Progress') return tr('In Progress');
-  if (state === 'Draft') return tr('Entwurf');
-  if (state === 'erledigt') return tr('Erledigt');
-  return tr('Offen');
+  var raw = nvpRawState({state: state});
+  if (raw === 'draft') return tr('Entwurf');
+  if (raw === 'open') return tr('Bereit');
+  if (raw === 'in-progress') return tr('In Progress');
+  if (raw === 'blocked') return tr('Blockiert');
+  if (raw === 'waiting-merge') return tr('Bereit zum Merge');
+  if (raw === 'done') return tr('Erledigt');
+  return '';
 }
 
 function nvpCount(list, state) {
@@ -296,14 +284,16 @@ function nvpTicketCard(name, token, row, rank, sessions, rows) {
   if (raw === 'draft') {
     actions.append(el('button', {class: 'nv-btn nv-ghost nv-compact',
       type: 'button', 'data-nv-action': 'ticket-ready',
+      title: tr('Gibt das Ticket für die Umsetzung frei'),
       on: {click: function () { nvpMoveTicketState(name, token, card, 'open'); }}},
-    tr('Bereit')));
+    tr('Freigeben')));
   }
   if (raw === 'open') {
     actions.append(el('button', {class: 'nv-btn nv-ghost nv-compact',
       type: 'button', 'data-nv-action': 'ticket-draft',
+      title: tr('Zieht das Ticket zurück in die Planung'),
       on: {click: function () { nvpMoveTicketState(name, token, card, 'draft'); }}},
-    tr('Entwurf')));
+    tr('Zurück in Planung')));
   }
   /* Tastaturalternative zur vertikalen DnD-Reihenfolge. */
   actions.append(el('button', {class: 'nv-btn nv-ghost nv-compact',
@@ -395,9 +385,14 @@ function nvpWorkView(name, token, view, items) {
   var surface = desktop
     ? nvpWorkBoard(name, token, ordered, ranks, sessions)
     : nvpWorkList(name, token, ordered, ranks, sessions);
-  var strip = nvpPriorityStrip(name, token, view, items, surface);
-  return el('div', {class: 'nv-work-view', 'data-nv-work-view': ''},
-    strip, surface);
+  var children = [];
+  /* GH-67: Die Priorisierungsleiste ist eine mobile Ansicht; auf Desktop
+     belegt sie weder Platz noch DOM-Fläche. */
+  if (!desktop) {
+    children.push(nvpPriorityStrip(name, token, view, items, surface));
+  }
+  children.push(surface);
+  return el('div', {class: 'nv-work-view', 'data-nv-work-view': ''}, children);
 }
 
 function nvpCardChildren(box) {
@@ -484,14 +479,72 @@ function nvpReorderCard(name, token, card, delta) {
   });
 }
 
-/* Zustandswechsel über die Tastatur-Alternativen (Bereit/Entwurf). */
+function nvpFindCard(id) {
+  var cards = document.querySelectorAll('article[data-nv-ticket]');
+  for (var index = 0; index < cards.length; index += 1) {
+    if (cards[index].getAttribute('data-nv-ticket') === String(id)) {
+      return cards[index];
+    }
+  }
+  return null;
+}
+
+function nvpStateToggle(name, token, card, state, label, hint) {
+  return el('button', {class: 'nv-btn nv-ghost nv-compact', type: 'button',
+    'data-nv-action': state === 'draft' ? 'ticket-draft' : 'ticket-ready',
+    title: hint,
+    on: {click: function () { nvpMoveTicketState(name, token, card, state); }}},
+  label);
+}
+
+/* Kartenaktionen nach einem Statuswechsel lokal angleichen. */
+function nvpSyncCardActions(name, token, card, state) {
+  var actions = card.querySelector('.nv-ticket-actions');
+  if (!actions) return;
+  actions.querySelectorAll(
+    '[data-nv-action="ticket-ready"], [data-nv-action="ticket-draft"]')
+    .forEach(function (button) { button.remove(); });
+  var toggle = state === 'draft'
+    ? nvpStateToggle(name, token, card, 'open', tr('Freigeben'),
+      tr('Gibt das Ticket für die Umsetzung frei'))
+    : state === 'open'
+      ? nvpStateToggle(name, token, card, 'draft', tr('Zurück in Planung'),
+        tr('Zieht das Ticket zurück in die Planung'))
+      : null;
+  if (!toggle) return;
+  var anchor = actions.querySelector('[data-nv-action="priority-up"]');
+  if (anchor) actions.insertBefore(toggle, anchor);
+  else actions.append(toggle);
+}
+
+/* Teilaktualisierung nach einem Statuswechsel: Karte bleibt im DOM, nur
+   Zustand, Badge, Aktionen, Spalte und Filter werden nachgezogen. */
+function nvpSyncCardState(name, token, card, state) {
+  var surface = card.closest('[data-nv-board], [data-nv-work-list]');
+  var board = card.closest('[data-nv-board]');
+  card.setAttribute('data-nv-state', state);
+  if (board) {
+    var box = board.querySelector(
+      'article[data-nv-col="' + nvpColOfState(state) + '"] [data-nv-col-cards]');
+    if (box && card.parentNode !== box) box.appendChild(card);
+  }
+  var badge = card.querySelector('[data-nv-state-badge]');
+  var next = nvpStateBadge({state: state});
+  if (badge && badge.parentNode) badge.parentNode.replaceChild(next, badge);
+  nvpSyncCardActions(name, token, card, state);
+  if (board) nvpRefreshColumns(board);
+  if (surface && typeof surface.__nvApplyFilters === 'function') {
+    surface.__nvApplyFilters();
+  }
+}
+
+/* Zustandswechsel über die Tastatur-Alternativen. */
 function nvpMoveTicketState(name, token, card, state) {
   var board = card.closest('[data-nv-board]');
   var origin = {parent: card.parentNode, next: card.nextSibling};
   if (board) {
     var column = board.querySelector(
-      'article[data-nv-col="' + (state === 'draft' ? 'draft' : 'ready')
-        + '"] [data-nv-col-cards]');
+      'article[data-nv-col="' + nvpColOfState(state) + '"] [data-nv-col-cards]');
     if (column) column.appendChild(card);
     card.setAttribute('data-nv-state', state);
     nvpRefreshColumns(board);
@@ -507,7 +560,7 @@ function nvpMoveTicketState(name, token, card, state) {
       toast(bt(result && result.message) || tr('Statuswechsel fehlgeschlagen'));
       return;
     }
-    NV.render();
+    nvpSyncCardState(name, token, card, state);
   }).catch(function (error) {
     if (NV.stale(token)) return;
     if (board) {
@@ -669,7 +722,7 @@ function nvpWireBoardDnD(board, name, token) {
             || tr('Statuswechsel fehlgeschlagen'));
           return;
         }
-        NV.render();
+        nvpSyncCardState(name, token, card, nextState);
       }).catch(function (error) {
         if (NV.stale(token)) return;
         nvpRestoreCard(card, originCross);
@@ -704,7 +757,7 @@ function nvpOpenTicketDetail(name, token, row, kind) {
     var stateSelect = el('select', {'data-nv-ticket-state-select': '',
       'aria-label': tr('Zustand')});
     stateSelect.append(el('option', {value: 'draft'}, tr('Entwurf')));
-    stateSelect.append(el('option', {value: 'open'}, tr('Offen')));
+    stateSelect.append(el('option', {value: 'open'}, tr('Bereit')));
     stateSelect.append(el('option', {value: 'in-progress'}, tr('In Progress')));
     var rawState = nvpRawState(row);
     stateSelect.value = rawState;
@@ -712,19 +765,22 @@ function nvpOpenTicketDetail(name, token, row, kind) {
     actions.append(el('button', {class: 'nv-btn nv-primary', type: 'button',
       'data-nv-action': 'ticket-state-save', on: {click: function () {
         var path = kind === 'package' ? '/api/ticket' : '/api/feedback';
+        var nextState = String(stateSelect.value || '');
         nvpPost(name, path, {action: 'state', id: id,
-          state: String(stateSelect.value || '')}, 'Gespeichert', token)
+          state: nextState}, 'Gespeichert', token)
           .then(function (result) {
             if (NV.stale(token) || !result || result.ok === false) return;
             NV.context.close();
-            NV.render();
+            var card = nvpFindCard(id);
+            if (card) nvpSyncCardState(name, token, card, nextState);
           });
       }}}, tr('Zustand setzen')));
     actions.append(el('button', {class: 'nv-btn nv-secondary', type: 'button',
       'data-nv-action': 'ticket-edit', on: {click: function () {
         nvpOpenTicketForm(name, token, {
           mode: kind, id: id, title: title,
-          description: String(row.description || '')
+          description: String(row.description || ''),
+          state: nvpRawState(row)
         });
       }}}, tr('Bearbeiten')));
     actions.append(el('button', {class: 'nv-btn nv-ghost', type: 'button',
@@ -755,7 +811,8 @@ function nvpOpenTicketDetail(name, token, row, kind) {
             }
             toast(bt(result && result.message) || tr('Paket abgeschlossen'));
             NV.context.close();
-            NV.render();
+            var card = nvpFindCard(id);
+            if (card) nvpSyncCardState(name, token, card, 'done');
           }).catch(function (e) {
             if (!NV.stale(token)) nvpShowError(error, String(e && e.message || e));
           });
@@ -782,7 +839,8 @@ function nvpConfirmClose(name, token, id) {
       toast(bt(result.message) || tr('Ticket geschlossen'));
       NV.context.close();
       NV.editView.close();
-      NV.render();
+      var card = nvpFindCard(id);
+      if (card) nvpSyncCardState(name, token, card, 'done');
     }).catch(function (error) {
       if (!NV.stale(token)) {
         toast(tr('Schließen fehlgeschlagen: ')
@@ -812,13 +870,34 @@ function nvpResumeTicket(name, token, session) {
     });
 }
 
+/* GH-67: Das Bearbeiten eines noch nicht begonnenen Tickets startet die
+   Umsetzung. Nur der Status wird gesetzt; Formularfelder bleiben unberührt,
+   und die Karte wird lokal nachgezogen (kein NV.render). */
+function nvpStartTicketProgress(name, token, id) {
+  return api('/api/ticket', {name: name, action: 'state', id: id,
+    state: 'in-progress'}).then(function (result) {
+    if (NV.stale(token)) return;
+    if (!result || result.ok === false) {
+      toast(bt(result && result.message) || tr('Statuswechsel fehlgeschlagen'));
+      return;
+    }
+    var card = nvpFindCard(id);
+    if (card) nvpSyncCardState(name, token, card, 'in-progress');
+  }).catch(function (error) {
+    if (!NV.stale(token)) {
+      toast(tr('Statuswechsel fehlgeschlagen: ')
+        + String(error && error.message || error));
+    }
+  });
+}
+
 /* Der Ticket-Editor nutzt die geteilte Bearbeitungsansicht (GH-57), erhält
    aber die breitere Vollhöhen-Variante und den Marker data-nv-ticket-editor. */
 function nvpOpenTicketForm(name, token, options) {
   var opts = options || {};
   var mode = opts.mode || 'package';
   var editing = !!opts.id;
-  var issuesEnabled = !!opts.issuesEnabled;
+  var editState = editing ? nvpRawState({state: opts.state}) : '';
   var titleInput = el('input', {'data-nv-field': 'title', type: 'text',
     value: opts.title || '', 'aria-label': tr('Titel')});
   var descInput = el('textarea', {'data-nv-field': 'description', rows: '4',
@@ -833,14 +912,27 @@ function nvpOpenTicketForm(name, token, options) {
     idInput.value = nvpSuggestId(opts.rows,
       mode === 'bug' ? 'B' : mode === 'feedback' ? 'F' : 'AP');
   }
-  /* Kategorie nur beim Anlegen eines Pakets im verbundenen Projekt. */
+  /* GH-67: Kategorie (GitHub-Label) und Tickettyp sind getrennte Felder.
+     Die Kategorie bleibt bei der Vorauswahl des Typs unverändert feature. */
   var categorySelect = null;
-  if (issuesEnabled && !editing && mode === 'package') {
+  var typeSelect = null;
+  if (!editing) {
     categorySelect = el('select', {'data-nv-field': 'category',
       'aria-label': tr('Kategorie')});
-    categorySelect.append(el('option', {value: 'bug'}, tr('Bug')));
     categorySelect.append(el('option', {value: 'feature'}, tr('Feature')));
+    categorySelect.append(el('option', {value: 'bug'}, tr('Bug')));
+    categorySelect.append(el('option', {value: 'feedback'}, tr('Feedback')));
     categorySelect.value = 'feature';
+
+    var defaultType = opts.type
+      || (mode === 'bug' ? 'bug' : mode === 'feedback' ? 'feedback' : 'task');
+    typeSelect = el('select', {'data-nv-field': 'ticket-type',
+      'aria-label': tr('Ticket Type')});
+    typeSelect.append(el('option', {value: 'task'}, tr('Paket')));
+    typeSelect.append(el('option', {value: 'bug'}, tr('Bug')));
+    typeSelect.append(el('option', {value: 'feature'}, tr('Feature')));
+    typeSelect.append(el('option', {value: 'feedback'}, tr('Feedback')));
+    typeSelect.value = defaultType;
   }
   /* Neue Tickets starten immer als Entwurf; Übergänge laufen über das Board. */
   var stateSelect = null;
@@ -863,6 +955,7 @@ function nvpOpenTicketForm(name, token, options) {
     nvpLabel(tr('Titel'), titleInput),
     nvpLabel(tr('Beschreibung'), descInput),
     categorySelect ? nvpLabel(tr('Kategorie'), categorySelect) : null,
+    typeSelect ? nvpLabel(tr('Tickettyp'), typeSelect) : null,
     stateSelect ? nvpLabel(tr('Zustand'), stateSelect) : null,
     el('div', {class: 'nv-row'},
       el('button', {class: 'nv-btn nv-primary', type: 'button',
@@ -882,17 +975,24 @@ function nvpOpenTicketForm(name, token, options) {
             title: cleanTitle,
             description: String(descInput.value || '')
           };
+          var selectedType = typeSelect ? String(typeSelect.value || 'task') : '';
           var path = '/api/ticket';
-          if (mode === 'bug' || mode === 'feedback') {
+          if (editing) {
+            if (mode === 'bug' || mode === 'feedback') path = '/api/feedback';
+          } else if (selectedType === 'bug' || selectedType === 'feedback') {
             path = '/api/feedback';
-            if (!editing && mode === 'bug') body.kind = 'bug';
           }
           if (editing) {
             body.action = 'update';
             body.id = String(idInput.value || '');
           } else {
             body.action = 'add';
-            if (mode === 'package') body.id = String(idInput.value || '');
+            body.type = selectedType;
+            if (selectedType === 'bug' || selectedType === 'feedback') {
+              body.kind = selectedType;
+            } else {
+              body.id = String(idInput.value || '');
+            }
             if (categorySelect) body.category = String(categorySelect.value || '');
             /* GH-56: Neue Tickets sind immer Entwürfe. */
             body.state = 'draft';
@@ -916,9 +1016,12 @@ function nvpOpenTicketForm(name, token, options) {
           NV.editView.close();
         }}}, tr('Abbrechen')),
       editing ? el('button', {class: 'nv-btn nv-ghost', type: 'button',
-        'data-nv-action': 'ticket-close', on: {click: function () {
+        'data-nv-action': 'ticket-close',
+        'aria-label': tr('Schließt das Ticket dauerhaft und setzt es auf erledigt'),
+        title: tr('Schließt das Ticket dauerhaft und setzt es auf erledigt'),
+        on: {click: function () {
           nvpConfirmClose(name, token, String(idInput.value || ''));
-        }}}, tr('Schließen')) : null),
+        }}}, tr('Ticket abschließen')) : null),
     error);
   /* GH-56: Der Editor öffnet sich über dem Detail-Panel. Dessen Scrim läge
      sonst über dem Formular und würde „Speichern" blockieren. */
@@ -928,6 +1031,9 @@ function nvpOpenTicketForm(name, token, options) {
     marker: 'data-nv-ticket-editor',
     content: el('div', {'data-nv-ticket-form-wrap': ''}, form)
   });
+  if (editing && (editState === 'draft' || editState === 'open')) {
+    nvpStartTicketProgress(name, token, String(idInput.value || ''));
+  }
   titleInput.focus();
 }
 
@@ -976,6 +1082,26 @@ function nvpUpdateCardBadges(list, ranks) {
   });
 }
 
+function nvpEntryId(entry) {
+  return typeof entry === 'string' ? entry : String(entry && entry.id || '');
+}
+
+/* Zählt nur konfigurierte Einträge, die zugleich ein echtes Ready-Ticket
+   sind; pausierte Einträge (status != offen) zählen nicht mit. */
+function nvpPrioritizedCount(configured, open) {
+  return (configured || []).reduce(function (n, entry) {
+    var id = nvpEntryId(entry);
+    if (!open[id]) return n;
+    if (entry && entry.status && entry.status !== 'offen') return n;
+    return n + 1;
+  }, 0);
+}
+
+function nvpPriorityCountLabel(n) {
+  return n === 1 ? tr('{{n}} priorisiertes Ticket', {n: n})
+    : tr('{{n}} priorisierte Tickets', {n: n});
+}
+
 /* Die Priorisierungsleiste steht zwischen Filtern und Liste. Manuell
    priorisierte Einträge stehen zuerst, danach die Standardreihenfolge;
    erledigte Einträge erscheinen nie. Drag & Drop zeigt eine Live-Vorschau
@@ -997,7 +1123,7 @@ function nvpPriorityStrip(name, token, view, items, cards) {
   });
   var ids = [];
   function add(entry) {
-    var id = String(entry && entry.id || '');
+    var id = nvpEntryId(entry);
     if (!id || !open[id] || ids.indexOf(id) >= 0) return;
     ids.push(id);
     if (!titles[id]) titles[id] = String(entry && entry.title || id);
@@ -1007,7 +1133,7 @@ function nvpPriorityStrip(name, token, view, items, cards) {
   (items || []).forEach(add);
   var ranks = nvpRankMap(configured);
   var count = el('div', {class: 'nv-muted', 'data-nv-prio-count': ''},
-    String(configured.length) + ' ' + tr('priorisiert'));
+    nvpPriorityCountLabel(nvpPrioritizedCount(configured, open)));
   var rowsBox = el('div', {class: 'nv-priority-rows'});
   var marker = el('div', {'data-nv-drop-marker': '', 'aria-hidden': 'true',
     style: 'height:3px;border-radius:2px;background:var(--nv-primary, #2b6cb0);margin:2px 0;'});
@@ -1026,7 +1152,7 @@ function nvpPriorityStrip(name, token, view, items, cards) {
       /* Nach dem Speichern ist die ganze Liste die konfigurierte Reihenfolge:
          Ränge, Zähler und Karten-Badges lokal nachziehen statt Voll-Neurender. */
       ranks = nvpRankMap(order);
-      setTx(count, String(order.length) + ' ' + tr('priorisiert'));
+      setTx(count, nvpPriorityCountLabel(nvpPrioritizedCount(order, open)));
       draw();
       nvpUpdateCardBadges(cards, ranks);
     } catch (e) {
@@ -1206,7 +1332,6 @@ function nvpWireWorkFilters(panel, toggle, doneCount, surface) {
     return raw === 'erledigt' ? 'done' : raw;
   }
   function chipOf(raw) {
-    if (raw === 'done') return 'done';
     if (raw === 'draft') return 'draft';
     if (raw === 'in-progress') return 'running';
     return 'ready';
@@ -1227,7 +1352,7 @@ function nvpWireWorkFilters(panel, toggle, doneCount, surface) {
       var matches = !query || cardText(card).indexOf(query) >= 0;
       var matchesKind = kind === 'all' || card.getAttribute('data-nv-kind') === kind;
       var matchesState = state === 'all' || chipOf(raw) === state;
-      var hiddenDone = hideDone && raw === 'done' && state !== 'done';
+      var hiddenDone = hideDone && raw === 'done';
       var hide = !matches || !matchesKind || !matchesState || hiddenDone;
       if (hide) card.setAttribute('hidden', '');
       else card.removeAttribute('hidden');
@@ -1246,6 +1371,7 @@ function nvpWireWorkFilters(panel, toggle, doneCount, surface) {
     });
     if (surface) nvpRefreshColumns(surface);
   }
+  if (surface) surface.__nvApplyFilters = apply;
   search.addEventListener('input', apply);
   toggle.addEventListener('click', function () { hideDone = !hideDone; apply(); });
   kindChips.forEach(function (chip) {
@@ -2256,7 +2382,7 @@ NV.views.project = async function project(context, token) {
     });
   var lastText = lastId
     ? lastId + ' · ' + String(lastEntry && lastEntry.title || lastId)
-      + ' · ' + nvpStateLabel(lastEntry && lastEntry.state)
+      + ' · ' + nvpStateLabel(lastEntry && (lastEntry.state || lastEntry.status))
     : tr('Kein offenes Arbeitspaket');
   panels.overview.append(el('section', {class: 'nv-card nv-kv', 'data-nv-state-card': ''},
     el('h3', {}, tr('Zustand')),
@@ -2307,19 +2433,18 @@ NV.views.project = async function project(context, token) {
   panels.overview.append(sessionBox);
 
   /* ---- Arbeit: Aktionsleiste → Filter → Priorisierung → Board/Liste ---- */
-  var issuesEnabled = !!(data.github && data.github.issues_enabled);
   var newRow = el('div', {class: 'nv-row nv-work-actions'},
     nvpButton(tr('Paket anlegen'), 'new-package', function () {
-      nvpOpenTicketForm(name, token, {mode: 'package', rows: tickets,
-        issuesEnabled: issuesEnabled});
+      nvpOpenTicketForm(name, token, {mode: 'package', type: 'task',
+        rows: tickets});
     }, 'nv-primary'),
     nvpButton(tr('Bug melden'), 'new-bug', function () {
-      nvpOpenTicketForm(name, token, {mode: 'bug', rows: feedback,
-        issuesEnabled: issuesEnabled});
+      nvpOpenTicketForm(name, token, {mode: 'bug', type: 'bug',
+        rows: feedback});
     }),
     nvpButton(tr('Feedback geben'), 'new-feedback', function () {
-      nvpOpenTicketForm(name, token, {mode: 'feedback', rows: feedback,
-        issuesEnabled: issuesEnabled});
+      nvpOpenTicketForm(name, token, {mode: 'feedback', type: 'feedback',
+        rows: feedback});
     }));
   panels.work.append(newRow);
 
@@ -2341,7 +2466,7 @@ NV.views.project = async function project(context, token) {
   var stateChips = el('div', {class: 'nv-row nv-work-states',
     'data-nv-work-states': ''});
   [['draft', tr('Entwurf')], ['ready', tr('Bereit')],
-    ['running', tr('In Progress')], ['done', tr('Erledigt')]]
+    ['running', tr('In Progress')]]
     .forEach(function (def) {
       stateChips.append(el('button', {class: 'nv-btn nv-ghost nv-compact',
         type: 'button', 'data-nv-work-state': def[0],
@@ -2349,7 +2474,11 @@ NV.views.project = async function project(context, token) {
     });
   panels.work.append(NV.filterBar(
     NV.search({input: searchInput, placeholder: tr('Arbeitspakete suchen')}),
-    kindChips, hideDoneButton, stateChips));
+    kindChips, stateChips));
+  /* GH-67: „Erledigte anzeigen“ ist ein eigener Schalter außerhalb der
+     Schnellfilter; der frühere Closed-Chip entfällt. */
+  panels.work.append(el('div', {class: 'nv-work-show-done',
+    'data-nv-work-show-done': ''}, hideDoneButton));
 
   var workView = nvpWorkView(name, token, view, allItems);
   panels.work.append(workView);
@@ -2500,7 +2629,20 @@ if (window.VIBE_I18N && typeof VIBE_I18N.extend === 'function') {
       "Python-Projekt mit virtueller Umgebung.": "Python project with a virtual environment.",
       "Node- und TypeScript-Projekt mit npm-Werkzeugen.": "Node and TypeScript project with npm tools.",
       "Rust-Projekt mit Cargo-Werkzeugen.": "Rust project with Cargo tools.",
-      "Go-Projekt mit den Go-Werkzeugen.": "Go project with the Go tools."
+      "Go-Projekt mit den Go-Werkzeugen.": "Go project with the Go tools.",
+      /* GH-67: Aktionen tragen keine Statuswörter im sichtbaren Text. */
+      "Freigeben": "Release",
+      "Gibt das Ticket für die Umsetzung frei": "Releases the ticket for implementation",
+      "Zurück in Planung": "Back to planning",
+      "Zieht das Ticket zurück in die Planung": "Moves the ticket back to planning",
+      "Ticket Type": "Ticket Type",
+      "Tickettyp": "Ticket type",
+      "{{n}} priorisiertes Ticket": "{{n}} prioritized ticket",
+      "{{n}} priorisierte Tickets": "{{n}} prioritized tickets",
+      "Ticket abschließen": "Close ticket",
+      "Schließt das Ticket dauerhaft und setzt es auf erledigt": "Permanently closes the ticket and marks it done",
+      "Bereit zur Implementierung": "Ready for implementation",
+      "In Umsetzung": "In progress"
     },
     de: {
       "gerade eben": "gerade eben",
@@ -2584,7 +2726,20 @@ if (window.VIBE_I18N && typeof VIBE_I18N.extend === 'function') {
       "Python-Projekt mit virtueller Umgebung.": "Python-Projekt mit virtueller Umgebung.",
       "Node- und TypeScript-Projekt mit npm-Werkzeugen.": "Node- und TypeScript-Projekt mit npm-Werkzeugen.",
       "Rust-Projekt mit Cargo-Werkzeugen.": "Rust-Projekt mit Cargo-Werkzeugen.",
-      "Go-Projekt mit den Go-Werkzeugen.": "Go-Projekt mit den Go-Werkzeugen."
+      "Go-Projekt mit den Go-Werkzeugen.": "Go-Projekt mit den Go-Werkzeugen.",
+      /* GH-67 */
+      "Freigeben": "Freigeben",
+      "Gibt das Ticket für die Umsetzung frei": "Gibt das Ticket für die Umsetzung frei",
+      "Zurück in Planung": "Zurück in Planung",
+      "Zieht das Ticket zurück in die Planung": "Zieht das Ticket zurück in die Planung",
+      "Ticket Type": "Ticket-Typ",
+      "Tickettyp": "Tickettyp",
+      "{{n}} priorisiertes Ticket": "{{n}} priorisiertes Ticket",
+      "{{n}} priorisierte Tickets": "{{n}} priorisierte Tickets",
+      "Ticket abschließen": "Ticket abschließen",
+      "Schließt das Ticket dauerhaft und setzt es auf erledigt": "Schließt das Ticket dauerhaft und setzt es auf erledigt",
+      "Bereit zur Implementierung": "Bereit zur Implementierung",
+      "In Umsetzung": "In Umsetzung"
     }
   });
 }

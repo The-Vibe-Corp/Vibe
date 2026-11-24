@@ -1836,20 +1836,31 @@ class H(BaseHTTPRequestHandler):
                         # lokalen Eintrag zurück. Ohne Opt-in bleibt die
                         # lokale AP-ID-Vergabe unverändert. GH-48: Der frühere
                         # draft-Schalter wird auf den Speicherzustand
-                        # abgebildet (draft -> ohne Ready-Label).
+                        # abgebildet (draft -> ohne Ready-Label). GH-67:
+                        # ``type`` ist der Tickettyp (task/bug/feature/
+                        # feedback) und von der Kategorie getrennt; die
+                        # Kategorie bestimmt weiterhin das GitHub-Label.
                         state = web_ticket_state(body.get("state"))
+                        raw_type = body.get("type")
+                        ttype = str(raw_type or "task").strip().lower()
+                        if ttype not in vibe.vibe_tickets.TYPES:
+                            raise ValueError(
+                                "Unbekannter Tickettyp: '" + ttype + "' "
+                                "(erlaubt: "
+                                + ", ".join(vibe.vibe_tickets.TYPES) + ").")
                         config = vibe_github.read_config(vibe.github_env_path(name))
                         if config["issues_enabled"]:
                             category = str(body.get("category") or body.get("kind") or "").strip().lower()
                             draft = (state == "draft")
                             tid = vibe_issues.add_ticket_connected(
                                 vibe.ppath(name), config, body.get("title"),
-                                body.get("description", ""), category, draft)
+                                body.get("description", ""), category, draft,
+                                type=(ttype if raw_type else None))
                         else:
                             tid = vibe.add_ticket(
                                 name, (body.get("id") or "").strip(),
                                 body.get("title"), body.get("description", ""),
-                                state=state)
+                                type=ttype, state=state)
                         ok, msg = True, f"{tid} angelegt"
                     elif act == "state":
                         tid = (body.get("id") or "").strip()

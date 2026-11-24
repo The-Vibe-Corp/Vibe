@@ -271,7 +271,6 @@ function nvWidgetFill(target, value) {
 var NV_EDITVIEW_WIDTH_KEY = 'nv-editview-width';
 var editView = document.querySelector('aside[data-nv-editview]');
 var editScrim = document.querySelector('[data-nv-editview-scrim]');
-var editViewReturnFocus = null;
 var editViewMarker = null;
 
 function nvEditViewMarked() {
@@ -298,34 +297,28 @@ function nvSetEditViewMarker(attribute) {
   if (editViewMarker) editView.setAttribute(editViewMarker, '');
 }
 
-NV.editView = {
-  open: function (options) {
-    if (!editView) return;
-    var opts = options || {};
-    var trigger = document.activeElement;
-    if (trigger && trigger !== document.body) editViewReturnFocus = trigger;
+var editViewSidebar = editView ? NV.sidebar.attach({
+  panel: editView,
+  scrim: editScrim,
+  bodyAttribute: 'data-nv-editview-open',
+  fill: function (opts) {
     nvSetEditViewMarker(opts.marker || null);
     nvWidgetFill(editView.querySelector('[data-nv-editview-title]'), opts.title);
     nvWidgetFill(editView.querySelector('[data-nv-editview-body]'), opts.content);
     nvWidgetFill(editView.querySelector('[data-nv-editview-foot]'), opts.footer);
     editView.style.width = nvEditViewWidth();
-    editView.hidden = false;
-    if (editScrim) editScrim.hidden = false;
-    document.body.setAttribute('data-nv-editview-open', 'true');
-    editView.focus();
+  },
+  onClose: function () { nvSetEditViewMarker(null); }
+}) : null;
+
+NV.editView = {
+  open: function (options) {
+    if (editViewSidebar) editViewSidebar.open(options);
   },
   close: function () {
-    if (!editView || editView.hidden) return;
-    editView.hidden = true;
-    if (editScrim) editScrim.hidden = true;
-    document.body.removeAttribute('data-nv-editview-open');
-    nvSetEditViewMarker(null);
-    if (editViewReturnFocus && document.contains(editViewReturnFocus)) {
-      editViewReturnFocus.focus();
-    }
-    editViewReturnFocus = null;
+    if (editViewSidebar) editViewSidebar.close();
   },
-  isOpen: function () { return !!editView && !editView.hidden; }
+  isOpen: function () { return !!editViewSidebar && editViewSidebar.isOpen(); }
 };
 
 if (editView) {
@@ -336,7 +329,6 @@ if (editView) {
     editClose.addEventListener('click', function () { NV.editView.close(); });
   }
   editView.setAttribute('aria-label', tr('Bearbeitungsansicht'));
-  if (editScrim) editScrim.addEventListener('click', function () { NV.editView.close(); });
 
   var resizeHandle = editView.querySelector('[data-nv-editview-resize]');
   if (resizeHandle) {
@@ -363,14 +355,6 @@ if (editView) {
     });
   }
 }
-
-document.addEventListener('keydown', function (event) {
-  if (event.key !== 'Escape' || !NV.editView.isOpen()) return;
-  // Eine offene Modellliste schließt zuerst sich selbst (NV.combobox).
-  if (editView.querySelector(
-      'input[data-nv-combobox-input][aria-expanded="true"]')) return;
-  NV.editView.close();
-});
 
 /* Bestätigungen ohne window.confirm — immer im kleineren Kontext-Panel. */
 NV.confirmView = function (options) {

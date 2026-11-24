@@ -18,9 +18,10 @@ Erwartete Hooks (Vertrag für die Umsetzung):
     Karten: ``.nv-ticket-title``, ``button[data-nv-action='ticket-details|ticket-resume']``,
       ``data-nv-state`` (Rohzustand), ``draggable='true'``
     DnD-Feedback: ``div[data-nv-board-ghost]``, ``div[data-nv-drop-marker]``
-    Filter: ``button[data-nv-work-state='draft|ready|running|done']`` mit
-      ``aria-pressed``, ``input[data-nv-work-search]``,
-      ``button[data-nv-work-hide-done]``
+    Filter: ``button[data-nv-work-state='draft|ready|running']`` mit
+      ``aria-pressed`` (GH-67: kein done-Chip), ``input[data-nv-work-search]``,
+      ``button[data-nv-work-hide-done]`` (eigenständiger Schalter außerhalb
+      der Filterleiste)
     Editor: ``aside[data-nv-ticket-editor]``, ``[data-nv-field]``,
       ``button[data-nv-action='ticket-save|ticket-cancel|ticket-close|ticket-copy']``
     Mobile: ``div[data-nv-work-list]``, kein ``div[data-nv-board]``
@@ -595,15 +596,20 @@ class GH56WorkBrowserTest(unittest.TestCase):
     def test_08_priority_strip_keyboard_reorder_persists(self):
         """AP4 Tastatur: ↑/↓ der Priorisierung ändert und speichert Reihenfolge.
 
-        Vorbedingung: zwei Ready-Tickets. Aktion: priority-down der ersten
-        Strip-Zeile. Erwartung: Strip und /api/priority kippen übereinstimmend.
+        GH-67: Die separate Priorisierungsansicht existiert nur auf kleinen
+        Bildschirmen. Deshalb läuft dieser Fall jetzt mit 600x800 statt auf dem
+        Desktop-Board (dort gibt es keinen Strip mehr). Die Tastaturpriorisierung
+        selbst bleibt unverändert Gegenstand der Abnahme.
+
+        Vorbedingung: zwei Ready-Tickets, Viewport 600x800. Aktion:
+        priority-down der ersten Strip-Zeile. Erwartung: Strip und
+        /api/priority kippen übereinstimmend.
         """
         self.write_store([
             ticket("AP1", "Ein AP", priority=""),
             ticket("AP2", "Zwei AP", priority=""),
         ])
-        self.goto_work()
-        self.board().wait_for(state="visible", timeout=5000)
+        self.goto_work(viewport={"width": 600, "height": 800})
         strip = self.strip()
         strip.wait_for(state="visible", timeout=5000)
 
@@ -630,12 +636,18 @@ class GH56WorkBrowserTest(unittest.TestCase):
 
     # ------------------------------------------------------- Filter & Suche
     def test_09_state_chips_cover_all_states_and_reset(self):
-        """AP5: State-Filter für draft/ready/running/done, aktiv erkennbar, resetbar.
+        """AP5: State-Filter für draft/ready/running, aktiv erkennbar, resetbar.
+
+        GH-67: Der Schnellfilter „Closed“/„done“ entfällt; die Sichtbarkeit
+        erledigter Tickets wird ausschließlich über „Show done“ gesteuert.
+        Deshalb prüft dieser Fall die drei verbleibenden Chips und anschließend
+        den Show-done-Schalter statt eines done-Chips.
 
         Vorbedingung: je ein Ticket in draft/open/in-progress/done. Aktion:
-        State-Chips einzeln klicken und erneut klicken. Erwartung: genau der
-        gefilterte Status bleibt sichtbar, aria-pressed markiert den aktiven
-        Chip, zweiter Klick setzt zurück.
+        State-Chips einzeln klicken und erneut klicken, danach Show done.
+        Erwartung: genau der gefilterte Status bleibt sichtbar, aria-pressed
+        markiert den aktiven Chip, zweiter Klick setzt zurück; done erscheint
+        nur nach Show done.
         """
         self.write_store([
             ticket("AP3", "Nur Entwurf", state="draft"),
@@ -650,7 +662,6 @@ class GH56WorkBrowserTest(unittest.TestCase):
             ("draft", "AP3", ("AP1", "AP2", "AP4")),
             ("ready", "AP1", ("AP3", "AP2", "AP4")),
             ("running", "AP2", ("AP3", "AP1", "AP4")),
-            ("done", "AP4", ("AP3", "AP1", "AP2")),
         )
         for state, shown, hidden in cases:
             with self.subTest(state=state):
@@ -674,6 +685,14 @@ class GH56WorkBrowserTest(unittest.TestCase):
                 self.assertTrue(self.card("AP3").is_visible()
                                 or state == "draft",
                                 "Zurücksetzen stellt die Draft-Karte nicht wieder her")
+        self.assertEqual(0, self.page.locator(
+            "button[data-nv-work-state='done']").count(),
+            "Es gibt noch einen done-Schnellfilter")
+        self.wait_until(lambda: not self.card("AP4").is_visible(),
+                        message="Erledigte sind nicht standardmäßig verborgen")
+        self.show_done()
+        self.wait_until(lambda: self.card("AP4").is_visible(),
+                        message="Show done blendet erledigte Tickets nicht ein")
 
     def test_10_search_filters_board_and_can_be_cleared(self):
         """AP5 Suche: Treffer bleiben, Nicht-Treffer verschwinden, Reset.
@@ -745,7 +764,9 @@ class GH56WorkBrowserTest(unittest.TestCase):
 
         Vorbedingung: offenes Ticket AP1. Aktion: close anklicken, Dialog
         abbrechen, erneut anklicken und bestätigen. Erwartung: Dialog mit
-        klarer Rückfrage; nach Abbruch bleibt state=open; nach Bestätigung
+        klarer Rückfrage; nach Abbruch bleibt der Zustand unverändert (open,
+        oder in-progress falls der Close nur im Editor erreichbar ist —
+        GH-67 setzt beim Öffnen des Editors auf in-progress); nach Bestätigung
         state=done und die Karte ist standardmäßig verborgen.
         """
         self.write_store([ticket("AP1", "Abschlusskandidat GH56")])
@@ -762,10 +783,12 @@ class GH56WorkBrowserTest(unittest.TestCase):
                 "button[data-nv-action='ticket-close'], "
                 "button[data-nv-action='package-close']").first
 
+        editor_opened = False
         if close_button().count() == 0:
             self.page.locator(
                 "[data-nv-ticket-detail='AP1'] "
                 "button[data-nv-action='ticket-edit']").first.click()
+            editor_opened = True
         close = close_button()
         close.wait_for(state="visible", timeout=5000)
         close.click()
@@ -773,7 +796,8 @@ class GH56WorkBrowserTest(unittest.TestCase):
                          "Schließen fragt nicht per Bestätigungsdialog nach")
         self.assertTrue(self.dialogs[0].strip(),
                         "Der Bestätigungsdialog enthält keine Rückfrage")
-        self.assertEqual("open", self.read_store()["AP1"]["state"],
+        self.assertEqual("in-progress" if editor_opened else "open",
+                         self.read_store()["AP1"]["state"],
                          "Abbrechen der Rückfrage hat trotzdem geschlossen")
 
         close_button().click()

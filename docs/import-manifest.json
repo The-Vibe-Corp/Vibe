@@ -1,6 +1,19 @@
 {
   "aenderungen": [
     {
+      "arbeitspaket": "GH-67",
+      "dateien": [
+        "bin/vibe-web.py",
+        "bin/vibe_issues.py",
+        "bin/web/nova-core.js",
+        "bin/web/nova-project.js",
+        "bin/web/nova-widgets.js",
+        "bin/web/nova.css"
+      ],
+      "datum": "2026-11-24",
+      "grund": "UI Work Package 3: gemeinsame Sidebar-Steuerung NV.sidebar fuer Kontext-Panel und Bearbeitungsansicht; Priorisierungsansicht nur mobil und Zaehler als Schnittmenge aus konfigurierter Reihenfolge und echten Ready-Tickets mit Plural-i18n; vollstaendige Lokalisierung der Work-Ansicht; Category (feature/bug/feedback) von Ticket Type getrennt und bis zum Speichern aenderbar; Filterleiste mit Show-done ausserhalb der Schnellfilter und ohne Closed-Chip; Draft/Ready-Zuordnung korrigiert (doppelte nvpRawState-Definition entfernt), Statuswechsel als Partial-Update ohne Voll-Reload; automatischer Wechsel auf in-progress beim Oeffnen des Editors bestehender Draft-/Ready-Tickets; Close-Aktion eindeutig benannt."
+    },
+    {
       "arbeitspaket": "F1",
       "dateien": [
         "bin/vibe",
@@ -1528,9 +1541,9 @@
       "sha256": "969016d30026a07808606c2d790d225774d4c19b8cdbc293fa27391d361ddee0"
     },
     {
-      "bytes": 143745,
+      "bytes": 144480,
       "path": "bin/vibe-web.py",
-      "sha256": "a832b618312de944f403c57598039068e3a89e2ca5784951796a6f911951e7c5"
+      "sha256": "5be2278deb919fd60879ff798b0987343d87e071ff1acc86ceba5e3ac004ac58"
     },
     {
       "bytes": 5189,
@@ -1558,9 +1571,9 @@
       "sha256": "30f0394d2ac58458ecf607159c6041ebe19d4aef73e4878a510db3902bd11670"
     },
     {
-      "bytes": 20363,
+      "bytes": 20724,
       "path": "bin/vibe_issues.py",
-      "sha256": "416a0c2b2b141fd73c26d87b59288314a684ab6da090de50ce29acd6cdca5b12"
+      "sha256": "7ece3216cdd55edb4546d47b1bde31db825e8cf964490b6085500a3aecec6c8a"
     },
     {
       "bytes": 22514,
@@ -1663,9 +1676,9 @@
       "sha256": "1692d57fff1cb15413b839e8a3ac8e6a3caf234db6556a100e0983b982c0cec5"
     },
     {
-      "bytes": 41756,
+      "bytes": 44312,
       "path": "bin/web/nova-core.js",
-      "sha256": "66646115a03b55eda33c24722e0661d4353f7c1f54346e48e4a9324c9dcb3a29"
+      "sha256": "0c368509c77b9057e59b3201e6aa217b87738d06e935c00dafddab7529cef84f"
     },
     {
       "path": "bin/web/nova-evals.js",
@@ -1683,9 +1696,9 @@
       "sha256": "cbca5b169f3c5052e50da0910560d7fbcd1b6c42380fe6b925a4f98021f753ab"
     },
     {
-      "bytes": 116733,
+      "bytes": 123855,
       "path": "bin/web/nova-project.js",
-      "sha256": "efa4e6eec5a488a9b35bafd0d37244e4c847938f369c27ae9c4ac66e32ee349a"
+      "sha256": "7fa67cf5a72975cd82340005f076504ad1e5f54c2352094ad73cba8024dab909"
     },
     {
       "bytes": 90883,
@@ -1693,14 +1706,14 @@
       "sha256": "f2ab2bb02b97e94c22067e63b687552e339b371ac5ce51c844be85b936811874"
     },
     {
-      "bytes": 16119,
+      "bytes": 15335,
       "path": "bin/web/nova-widgets.js",
-      "sha256": "2484bc283206bcec3c986f1d5cb0d77e20662ffce28cd0aaba0d4b517c371fbf"
+      "sha256": "84ae6329f31c04fcc8b48c552ade8f9d276c283ab81b1babb66f8988b627d8a7"
     },
     {
-      "bytes": 66198,
+      "bytes": 67139,
       "path": "bin/web/nova.css",
-      "sha256": "0d2d9755b7bf308f8373d406a5bcc7711b228e6093a2fe0f50611fed0140102c"
+      "sha256": "755c4f1ea24d68ee8e5cba5e2537249880cddaf7ad56b24fb09542fc8535db7c"
     },
     {
       "bytes": 12751,

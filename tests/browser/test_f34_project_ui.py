@@ -695,6 +695,24 @@ class F34ProjectBrowserTest(unittest.TestCase):
             state="visible", timeout=20000)
         self.page.locator("input[data-nv-work-search]").wait_for(
             state="visible", timeout=20000)
+        # GH-67: die separate Priorisierungsansicht gibt es nur mobil;
+        # auf diesem Desktop-Viewport liegt kein div[data-nv-priority-strip]
+        # im DOM. Strip-Tests nutzen open_work_mobile().
+        self.install_render_counter()
+        return panel
+
+    def open_work_mobile(self):
+        """GH-67: Priorisierung ist an den Breakpoint <=768px gebunden.
+
+        Der Desktop-Helfer wartet auf das Board; mobil gibt es stattdessen
+        die Liste plus Priorisierungsstrip. Dieser Helfer bildet genau diesen
+        Pfad ab und wartet bewusst nicht auf div[data-nv-board].
+        """
+        self.page.set_viewport_size({"width": 600, "height": 800})
+        self.open_project()
+        panel = self.open_tab("work")
+        self.page.locator("input[data-nv-work-search]").wait_for(
+            state="visible", timeout=20000)
         self.page.locator("div[data-nv-priority-strip]").wait_for(
             state="visible", timeout=20000)
         self.install_render_counter()
@@ -881,9 +899,13 @@ class F34ProjectBrowserTest(unittest.TestCase):
         return data.get("sessions") or []
 
     def state_label(self, state):
-        """Zustands-Pille der Oberfläche (englischer Modus, siehe i18n.js)."""
+        """Zustands-Pille der Oberfläche (englischer Modus, siehe i18n.js).
+
+        GH-67: ``offen``/``open`` heißt in der Oberfläche nun ``Ready``
+        (deutsch ``Bereit``); interne Kennungen bleiben unverändert.
+        """
         return {
-            "offen": "Open",
+            "offen": "Ready",
             "WARTET AUF MERGE": "Waiting for merge",
             "BLOCKIERT": "Blocked",
             "In Progress": "In Progress",
@@ -968,7 +990,7 @@ class OverviewTest(F34ProjectBrowserTest):
 
         Erwartung: ``section[data-nv-state-card]`` nennt Kennung + Titel +
         Zustand des letzten Arbeitspakets („B7“, „Wunsch für die Oberfläche“,
-        „Offen“); danach „Letzter Commit“ und „Prüfung“.
+        GH-67: „Ready“ statt „Offen“); danach „Letzter Commit“ und „Prüfung“.
         """
         panel = self.open_overview()
         tickets, feedback = self.project_entries()
@@ -1084,8 +1106,9 @@ class WorkTest(F34ProjectBrowserTest):
     def test_work_order_and_no_board(self):
         """Vorbedingung: Arbeit geöffnet.
 
-        Erwartung (GH-56): Aktionsleiste → Filterleiste → Priorisierung →
-        Kanban-Board in DOM-Reihenfolge.
+        Erwartung (GH-56, GH-67): Aktionsleiste → Filterleiste → Kanban-Board
+        in DOM-Reihenfolge. GH-67: die Priorisierung liegt auf Desktop nicht
+        im DOM und ist deshalb nicht Teil der Kette (siehe open_work_mobile).
         """
         panel = self.open_work()
         self.assert_follows(
@@ -1094,11 +1117,10 @@ class WorkTest(F34ProjectBrowserTest):
                 "section[data-nv-ppanel='work'] [data-nv-action='new-bug']",
                 "section[data-nv-ppanel='work'] [data-nv-action='new-feedback']",
                 "section[data-nv-ppanel='work'] div.nv-filter-bar[data-nv-filter-bar]",
-                "section[data-nv-ppanel='work'] div[data-nv-priority-strip]",
                 "section[data-nv-ppanel='work'] div[data-nv-board]",
             ],
             "Die Arbeitsbereiche stehen nicht in der Reihenfolge "
-            "Aktionsleiste → Filterleiste → Priorisierung → Board")
+            "Aktionsleiste → Filterleiste → Board")
         self.assertEqual(
             3, panel.locator("[data-nv-col]").count(),
             "GH-56: Das Board muss genau drei Spalten haben")
@@ -1175,18 +1197,17 @@ class WorkTest(F34ProjectBrowserTest):
     def test_work_search_finds_done_and_filters(self):
         """Vorbedingung: F2 ist erledigt und ausgeblendet.
 
-        GH-56: Erledigte bleiben unabhängig von der Suche verborgen und werden
-        ausschließlich über den Erledigt-Schalter bzw. den Done-Chip sichtbar.
-        Die frühere Annahme „Suchtreffer überstimmt Erledigte ausblenden“ ist
-        überholt. Erhalten bleibt die Fachlichkeit: Suche filtert Treffer, der
-        Done-Chip blendet erledigte Treffer gezielt ein, Reset stellt den
-        Ausgangszustand wieder her.
+        GH-56/GH-67: Erledigte bleiben unabhängig von der Suche verborgen und
+        werden ausschließlich über den Show-done-Schalter sichtbar. Der frühere
+        Done-Schnellfilter gibt es nicht mehr. Die Fachlichkeit bleibt: Suche
+        filtert Treffer, der Schalter blendet erledigte Treffer gezielt ein,
+        Reset stellt den Ausgangszustand wieder her.
         """
         panel = self.open_work()
         search = panel.locator("input[data-nv-work-search]")
         f2 = self.page.locator("div[data-nv-board] [data-nv-ticket='F2']")
         f1 = self.page.locator("div[data-nv-board] [data-nv-ticket='F1']")
-        done_chip = panel.locator("button[data-nv-work-state='done']")
+        done_chip = panel.locator("button[data-nv-work-hide-done]")
         self.assertFalse(f2.is_visible(), "Vorbedingung: F2 ist ausgeblendet")
         search.fill("F2")
         self.wait_until(
@@ -1197,13 +1218,14 @@ class WorkTest(F34ProjectBrowserTest):
         done_chip.click()
         self.wait_until(
             lambda: f2.is_visible(), timeout=15,
-            message="Der Done-Chip blendet den erledigten Suchtreffer nicht ein")
+            message="Der Show-done-Schalter blendet den erledigten "
+                    "Suchtreffer nicht ein")
         search.fill("")
         done_chip.click()
         self.wait_until(
             lambda: f1.is_visible() and not f2.is_visible(), timeout=15,
-            message="Nach Reset der Suche und des Done-Chips stimmt die "
-                    "Sichtbarkeit nicht")
+            message="Nach Reset der Suche und des Show-done-Schalters stimmt "
+                    "die Sichtbarkeit nicht")
         self.assert_clean_page()
 
     def test_hide_done_toggle(self):
@@ -1324,13 +1346,12 @@ class WorkTest(F34ProjectBrowserTest):
         """Vorbedingung: ``POST /api/priority`` order „F7 F8“ (beide Ready).
 
         GH-56: Der Strip enthält ausschließlich Ready-Tickets; Draft F5
-        darf nicht erscheinen. Erwartung: Strip-Reihenfolge == effektive
-        Ordnung, erste beide F7, F8.
+        darf nicht erscheinen. GH-67: der Strip existiert nur mobil, daher
+        läuft dieser Fall mit 600x800 statt auf dem Desktop-Board.
+        Erwartung: Strip-Reihenfolge == effektive Ordnung, erste beide F7, F8.
         """
         self.set_priority("F7 F8")
-        self.open_work()
-        self.page.locator("div[data-nv-priority-strip]").wait_for(
-            state="visible", timeout=20000)
+        self.open_work_mobile()
         expected = self.expected_effective_ids()
         self.assertEqual(
             ["F7", "F8"], expected[:2],
@@ -1343,7 +1364,8 @@ class WorkTest(F34ProjectBrowserTest):
             message="Die Strip-Reihenfolge passt nicht zur effektiven Ordnung: "
                     + repr(self.strip_ids()) + " erwartet: " + repr(expected))
         self.assertIn("F1", expected, "Vorbedingung: F1 in der Ordnung")
-        f7_card = self.page.locator("div[data-nv-board] [data-nv-ticket='F7']")
+        f7_card = self.page.locator(
+            "section[data-nv-ppanel='work'] [data-nv-ticket='F7']")
         f7_card.wait_for(state="visible", timeout=15000)
         self.assertEqual(
             "P1", f7_card.locator("span[data-nv-prio-badge]").first
@@ -1362,9 +1384,7 @@ class WorkTest(F34ProjectBrowserTest):
         Reihenfolge sofort; ``GET /api/priority`` liefert sie persistiert.
         """
         self.set_priority("F7 F8")
-        self.open_work()
-        self.page.locator("div[data-nv-priority-strip]").wait_for(
-            state="visible", timeout=20000)
+        self.open_work_mobile()
         before = self.strip_ids()
         handle = self.page.locator(
             "div[data-nv-priority-strip] [data-nv-priority-id='F7'] "
@@ -1447,9 +1467,7 @@ class WorkTest(F34ProjectBrowserTest):
         per POST und ``GET /api/priority`` persistiert.
         """
         self.set_priority("F7 B7 F8 F1")
-        self.open_work()
-        self.page.locator("div[data-nv-priority-strip]").wait_for(
-            state="visible", timeout=20000)
+        self.open_work_mobile()
         expected_before = ["F7", "B7", "F8", "F1"]
         self.wait_until(
             lambda: self.strip_ids() == expected_before, timeout=20,
@@ -1555,9 +1573,7 @@ class WorkTest(F34ProjectBrowserTest):
         ``GET /api/priority`` bestätigt die neue Reihenfolge.
         """
         self.set_priority("F7 F8")
-        self.open_work()
-        self.page.locator("div[data-nv-priority-strip]").wait_for(
-            state="visible", timeout=20000)
+        self.open_work_mobile()
         strip = self.page.locator("div[data-nv-priority-strip]")
         strip.evaluate(
             "node => node.setAttribute('data-nv-f34-no-rerender', '1')")
@@ -1620,9 +1636,8 @@ class WorkTest(F34ProjectBrowserTest):
         Voll-Neurender (echter Render-Zähler unverändert).
         """
         self.set_priority("F7 F8 B7")
-        self.open_work()
+        self.open_work_mobile()
         strip = self.page.locator("div[data-nv-priority-strip]")
-        strip.wait_for(state="visible", timeout=20000)
         self.wait_until(
             lambda: self.strip_ids()[:3] == ["F7", "F8", "B7"], timeout=20,
             message="Vorbedingung: der Strip beginnt nicht mit F7, F8, B7: "
@@ -1634,8 +1649,8 @@ class WorkTest(F34ProjectBrowserTest):
                 """() => {
                   const out = {};
                   document.querySelectorAll(
-                    'div[data-nv-board] [data-nv-ticket], '
-                    + 'div[data-nv-board] [data-nv-feedback-item]'
+                    'section[data-nv-ppanel="work"] [data-nv-ticket], '
+                    + 'section[data-nv-ppanel="work"] [data-nv-feedback-item]'
                   ).forEach(card => {
                     const id = card.getAttribute('data-nv-ticket')
                       || card.getAttribute('data-nv-feedback-item');
@@ -1750,9 +1765,8 @@ class WorkTest(F34ProjectBrowserTest):
         (``span[data-nv-prio-badge]``) verschwinden.
         """
         self.set_priority("F7 F8")
-        self.open_work()
+        self.open_work_mobile()
         strip = self.page.locator("div[data-nv-priority-strip]")
-        strip.wait_for(state="visible", timeout=20000)
         self.assertGreaterEqual(
             self.page.locator("span[data-nv-prio-badge]").count(), 2,
             "Vorbedingung: die priorisierten Einträge zeigen keine Badges")
@@ -1773,13 +1787,26 @@ class WorkTest(F34ProjectBrowserTest):
         self.assert_clean_page()
 
     def test_back_to_top(self):
-        """Vorbedingung: Arbeit geöffnet.
+        """Vorbedingung: Arbeit geöffnet, Seite mindestens 600px scrollbar.
+
+        GH-67: Der Desktop-Strip entfällt und verkürzt die Seite. Damit die
+        600px-Schwelle des Nach-oben-Knopfs überhaupt erreichbar bleibt,
+        ergänzt dieser Fall zusätzliche Tickets im Fixture. Die fachliche
+        Erwartung wird dadurch nicht abgeschwächt.
 
         Aktion: bis zu 600 px Scrolltiefe scrollen.
 
         Erwartung: ``button[data-nv-back-to-top]`` erscheint; Klick scrollt
         zum Listenanfang (scrollY sinkt deutlich).
         """
+        store = self.project / ".vibe" / "tickets.json"
+        data = json.loads(store.read_text(encoding="utf-8"))
+        data["tickets"].extend(
+            ticket("BT%d" % index, "Zusätzliche Karte %d" % index)
+            for index in range(8))
+        store.write_text(
+            json.dumps(data, ensure_ascii=False, indent=1) + "\n",
+            encoding="utf-8")
         panel = self.open_work()
         button = panel.locator("button[data-nv-back-to-top]")
         self.assertEqual(1, button.count(),
