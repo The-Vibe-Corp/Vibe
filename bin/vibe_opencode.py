@@ -316,10 +316,6 @@ def is_mcp_server(value):
     return isinstance(value.get("url"), str)
 
 
-# Rückwärtskompatibler interner Name für vorhandene Aufrufer.
-_looks_like_server = is_mcp_server
-
-
 def detect_mcp_layout(config, info=None, binary="opencode", runner=None):
     """Ermittelt das tatsächliche MCP-Schema aus der Konfiguration.
 
@@ -341,7 +337,7 @@ def detect_mcp_layout(config, info=None, binary="opencode", runner=None):
         servers = mcp.get("servers")
         if isinstance(servers, dict):
             return {"layout": LAYOUT_SERVERS, "servers": servers, "source": "config", "message": ""}
-        entries = {name: value for name, value in mcp.items() if _looks_like_server(value)}
+        entries = {name: value for name, value in mcp.items() if is_mcp_server(value)}
         # Ein gemischter Block (Serverobjekte plus nicht zuordenbare Objekte)
         # darf nicht als schreibbares "classic" gelten: _store würde die
         # unbekannten Objekte sonst stillschweigend verwerfen.

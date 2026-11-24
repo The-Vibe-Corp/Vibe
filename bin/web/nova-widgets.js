@@ -255,3 +255,161 @@ NV.questionCard = function (question, opts) {
   article.append(error);
   return article;
 };
+
+/* ------------------------------------------------------------------------- */
+/* GH-57 — gemeinsame Komponenten der Einstellungen                          */
+/* ------------------------------------------------------------------------- */
+
+/* Beliebige Inhalte in einen Container übernehmen (wie NV.context.fillNode,
+   aber lokal, damit die Komponenten unabhängig von der Kerndatei bleiben). */
+function nvWidgetFill(target, value) {
+  if (!target) return;
+  var holder = el('div', {}, value);
+  target.replaceChildren.apply(target, Array.prototype.slice.call(holder.childNodes));
+}
+
+var NV_EDITVIEW_WIDTH_KEY = 'nv-editview-width';
+var editView = document.querySelector('aside[data-nv-editview]');
+var editScrim = document.querySelector('[data-nv-editview-scrim]');
+var editViewReturnFocus = null;
+
+function nvEditViewWidth() {
+  var stored = sessionStorage.getItem(NV_EDITVIEW_WIDTH_KEY);
+  var pixels = parseFloat(stored);
+  return isFinite(pixels) && pixels >= 352
+    ? Math.min(pixels, window.innerWidth * 0.7) + 'px'
+    : 'max(30vw, 22rem)';
+}
+
+NV.editView = {
+  open: function (options) {
+    if (!editView) return;
+    var opts = options || {};
+    var trigger = document.activeElement;
+    if (trigger && trigger !== document.body) editViewReturnFocus = trigger;
+    nvWidgetFill(editView.querySelector('[data-nv-editview-title]'), opts.title);
+    nvWidgetFill(editView.querySelector('[data-nv-editview-body]'), opts.content);
+    nvWidgetFill(editView.querySelector('[data-nv-editview-foot]'), opts.footer);
+    editView.style.width = nvEditViewWidth();
+    editView.hidden = false;
+    if (editScrim) editScrim.hidden = false;
+    document.body.setAttribute('data-nv-editview-open', 'true');
+    editView.focus();
+  },
+  close: function () {
+    if (!editView || editView.hidden) return;
+    editView.hidden = true;
+    if (editScrim) editScrim.hidden = true;
+    document.body.removeAttribute('data-nv-editview-open');
+    if (editViewReturnFocus && document.contains(editViewReturnFocus)) {
+      editViewReturnFocus.focus();
+    }
+    editViewReturnFocus = null;
+  },
+  isOpen: function () { return !!editView && !editView.hidden; }
+};
+
+if (editView) {
+  var editClose = editView.querySelector('[data-nv-editview-close]');
+  if (editClose) {
+    editClose.setAttribute('aria-label', tr('Bearbeitung schließen'));
+    editClose.setAttribute('title', tr('Bearbeitung schließen'));
+    editClose.addEventListener('click', function () { NV.editView.close(); });
+  }
+  editView.setAttribute('aria-label', tr('Bearbeitungsansicht'));
+  if (editScrim) editScrim.addEventListener('click', function () { NV.editView.close(); });
+
+  var resizeHandle = editView.querySelector('[data-nv-editview-resize]');
+  if (resizeHandle) {
+    resizeHandle.addEventListener('pointerdown', function (event) {
+      if (window.innerWidth <= 768) return;
+      event.preventDefault();
+      var startX = event.clientX;
+      var startWidth = editView.getBoundingClientRect().width;
+      var limit = window.innerWidth * 0.7;
+      function move(moveEvent) {
+        var next = Math.min(limit, Math.max(352,
+          startWidth + startX - moveEvent.clientX));
+        editView.style.width = Math.round(next) + 'px';
+      }
+      function stop() {
+        window.removeEventListener('pointermove', move);
+        window.removeEventListener('pointerup', stop);
+        sessionStorage.setItem(NV_EDITVIEW_WIDTH_KEY,
+          String(Math.round(editView.getBoundingClientRect().width)));
+      }
+      window.addEventListener('pointermove', move);
+      window.addEventListener('pointerup', stop);
+    });
+  }
+}
+
+document.addEventListener('keydown', function (event) {
+  if (event.key !== 'Escape' || !NV.editView.isOpen()) return;
+  // Eine offene Modellliste schließt zuerst sich selbst (NV.combobox).
+  if (editView.querySelector(
+      'input[data-nv-combobox-input][aria-expanded="true"]')) return;
+  NV.editView.close();
+});
+
+/* Bestätigungen ohne window.confirm — immer im kleineren Kontext-Panel. */
+NV.confirmView = function (options) {
+  var opts = options || {};
+  var foot = el('div', {class: 'nv-form-actions'},
+    el('button', {class: 'nv-btn nv-primary' + (opts.danger ? ' nv-danger' : ''),
+      type: 'button',
+      on: {click: function () {
+        NV.context.close();
+        if (typeof opts.onConfirm === 'function') opts.onConfirm();
+      }}}, opts.confirmLabel || tr('Bestätigen')),
+    el('button', {class: 'nv-btn', type: 'button',
+      on: {click: function () { NV.context.close(); }}}, tr('Abbrechen')));
+  NV.context.open({title: opts.title || tr('Bestätigung'),
+    content: el('div', {class: 'nv-stack'},
+      opts.message || el('p', {}, ''), opts.content || null),
+    footer: foot});
+};
+
+/* Einheitlicher Modell-Auswahlkasten mit sichtbarer Default-Kette. */
+NV.modelCombobox = function (models, current, options) {
+  var opts = Object.assign({}, options || {});
+  var original = typeof opts.onchange === 'function' ? opts.onchange : null;
+  var resolve = typeof opts.resolveDefault === 'function' ? opts.resolveDefault : null;
+  var node, hint = null;
+
+  function update(value) {
+    if (!resolve) return;
+    var fallback = String(resolve() || '');
+    if (String(value || '') === '' && fallback) {
+      if (!hint) {
+        hint = el('small', {class: 'nv-default-hint',
+          'data-nv-default-hint': '', 'data-nv-profile-default-hint': ''});
+        node.append(hint);
+      }
+      hint.replaceChildren(document.createTextNode(
+        String(tr('Default')) + ' → ' + fallback));
+      hint.hidden = false;
+    } else if (hint) {
+      hint.hidden = true;
+    }
+  }
+
+  opts.onchange = function (value) {
+    update(value);
+    if (original) original(value);
+  };
+  node = NV.combobox(models, current, opts);
+  update(String(current == null ? '' : current));
+  return node;
+};
+
+/* Status eines MCP-Servers / einer Installation — immer mit Text und Punkt. */
+NV.stateBadge = function (options) {
+  var opts = options || {};
+  var on = !!opts.on;
+  var label = on
+    ? (opts.labelOn || tr('Aktiv'))
+    : (opts.labelOff || tr('Inaktiv'));
+  return el('span', {class: 'nv-state-badge', 'data-nv-state-badge': '',
+    'data-on': String(on)}, label);
+};

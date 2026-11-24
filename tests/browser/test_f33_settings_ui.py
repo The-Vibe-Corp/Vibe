@@ -912,9 +912,9 @@ class GlobalAgentsFileTest(F33SettingsBrowserTest):
 
     Vorbedingung: Die globale Datei liegt unter ``HOME/.config/opencode/AGENTS.md``;
     jeder Fall legt sie selbst an oder löscht sie, damit die Fälle
-    unabhängig bleiben. Der Editor zuhanden erfolgt unter
-    ``section[data-nv-ssection='global-agents']`` (F34-Vertrag: ``details[
-    data-nv-global-agents][open]``).
+    unabhängig bleiben. Der Editor erfolgt unter
+    ``section[data-nv-ssection='global-agents']`` (GH-57-Vertrag: flache
+    Sektion, Editor in ``NV.editView`` mit ``textarea[data-nv-agents-text]``).
     """
 
     def setUp(self):
@@ -948,10 +948,22 @@ class GlobalAgentsFileTest(F33SettingsBrowserTest):
         return self.api_json("/api/global_agents_file")
 
     def section(self):
-        # F34-Vertrag: Sektion global-agents mit details[data-nv-global-agents].
+        # GH-57-Vertrag: flache Sektion global-agents ohne details.
         return self.page.locator(
-            "section[data-nv-ssection='global-agents'] "
-            "details[data-nv-global-agents]")
+            "section[data-nv-ssection='global-agents']")
+
+    def open_global_agents_editor(self):
+        """Öffnet den gemeinsamen Editor über den Bearbeiten-Knopf (GH-57)."""
+        section = self.section()
+        section.wait_for(state="visible", timeout=20000)
+        edit = section.locator(
+            "button[data-nv-action='global-agents-edit']")
+        edit.wait_for(state="visible", timeout=20000)
+        edit.click()
+        editor = self.page.locator(
+            "aside[data-nv-editview] textarea[data-nv-agents-text]")
+        editor.wait_for(state="visible", timeout=20000)
+        return editor
 
     def test_missing_file_shows_hint_and_create_button(self):
         """Vorbedingung: globale AGENTS.md existiert nicht.
@@ -960,7 +972,8 @@ class GlobalAgentsFileTest(F33SettingsBrowserTest):
         "global-agents-create"]`` klicken.
         Erwartung: Ein Hinweis nennt die fehlende Datei; der Klick sendet
         ``POST /api/global_agents_file {action:"create"}``; danach erscheint
-        ``textarea[data-nv-global-agents]`` mit der angelegten Vorlage.
+        ``textarea[data-nv-agents-text]`` in der Edit-View mit der
+        angelegten Vorlage.
         """
         self.global_agents.unlink(missing_ok=True)
         self.open_settings()
@@ -988,7 +1001,8 @@ class GlobalAgentsFileTest(F33SettingsBrowserTest):
         self.wait_until(
             lambda: self.global_agents.is_file(), timeout=20,
             message="Die globale AGENTS.md wurde nicht angelegt")
-        editor = self.page.locator("textarea[data-nv-global-agents]")
+        editor = self.page.locator(
+            "aside[data-nv-editview] textarea[data-nv-agents-text]")
         editor.wait_for(state="visible", timeout=20000)
         self.assertTrue(
             (editor.input_value() or "").strip(),
@@ -999,7 +1013,7 @@ class GlobalAgentsFileTest(F33SettingsBrowserTest):
         """Vorbedingung: globale AGENTS.md mit Text vorhanden.
 
         Aktion: Text im Editor ändern und speichern.
-        Erwartung: ``textarea[data-nv-global-agents]`` ist mit dem aktuellen
+        Erwartung: ``textarea[data-nv-agents-text]`` ist mit dem aktuellen
         Text vorbelegt; der POST ``{action:"save", text, digest}`` trägt den
         neuen Text und eine Prüfsumme; ein Toast bestätigt; die Datei enthält
         den neuen Text. Ein zweites Speichern nutzt den aktualisierten Digest
@@ -1007,8 +1021,7 @@ class GlobalAgentsFileTest(F33SettingsBrowserTest):
         """
         self.global_agents.write_text(GLOBAL_AGENTS_TEXT, encoding="utf-8")
         self.open_settings()
-        editor = self.page.locator("textarea[data-nv-global-agents]")
-        editor.wait_for(state="visible", timeout=20000)
+        editor = self.open_global_agents_editor()
         self.assertIn(
             "GLOBALE-REGEL-4711", editor.input_value(),
             "Der Editor ist nicht mit dem aktuellen Text der globalen "
@@ -1018,9 +1031,10 @@ class GlobalAgentsFileTest(F33SettingsBrowserTest):
                         "Vorbedingung: Die globale Datei wird nicht erkannt")
         new_text = GLOBAL_AGENTS_TEXT + "Neue globale Regel 4711.\n"
         editor.fill(new_text)
-        save = self.page.locator("button[data-nv-action='global-agents-save']")
+        save = self.page.locator(
+            "aside[data-nv-editview] button[data-nv-action='agents-save']")
         self.assertEqual(1, save.count(),
-                         "Der Speichern-Knopf global-agents-save fehlt")
+                         "Der Speichern-Knopf agents-save fehlt")
         save.click()
         self.wait_until(
             lambda: any(payload.get("action") == "save"
@@ -1078,13 +1092,14 @@ class GlobalAgentsFileTest(F33SettingsBrowserTest):
     def test_hint_explains_the_scope_of_the_global_file(self):
         """Vorbedingung: globale AGENTS.md vorhanden.
 
-        Erwartung: ``small[data-nv-global-agents-hint]`` ist sichtbar und
+        Erwartung: ``[data-nv-global-agents-hint]`` ist sichtbar und
         erklärt, dass die Regeln für alle Projekte gelten und die
-        projektbezogene AGENTS.md sie ergänzt.
+        projektbezogene AGENTS.md sie ergänzt. (GH-57: Hook ohne Element-
+        Typ-Vorgabe, Text-Assertionen unverändert.)
         """
         self.global_agents.write_text(GLOBAL_AGENTS_TEXT, encoding="utf-8")
         self.open_settings()
-        hint = self.page.locator("small[data-nv-global-agents-hint]")
+        hint = self.page.locator("[data-nv-global-agents-hint]")
         hint.wait_for(state="visible", timeout=20000)
         text = hint.inner_text() or ""
         self.assertTrue(text.strip(),

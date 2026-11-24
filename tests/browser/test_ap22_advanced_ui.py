@@ -705,84 +705,104 @@ class AP22AdvancedBrowserTest(unittest.TestCase):
 
 
 class ModelsTest(AP22AdvancedBrowserTest):
-    def test_catalog_expands_and_separates_facts_from_assessments(self):
-        """Vorbedingung: Testkatalog in ``<install>/models.json``.
+    def test_model_row_opens_editview_with_separated_facts_and_assessments(self):
+        """GH-57 (models): Modellzeile öffnet die Edit-View statt Detailzeile.
 
-        Aktion: Feature ``models`` einschalten; Katalog öffnen; Modellzeile
-        öffnen. Erwartung: ``section[data-nv-ssection='models']``;
-        ``details[data-nv-model-catalog]`` existiert; echte Hooks: Katalog
-        ist standardmäßig zugeklappt (Contract/Task-Text prüfen „zu“) und
-        wird über ``summary`` aufgeklappt; die Modellzeile
-        ``[data-nv-model='opencode/vibe-modell']`` öffnet die Detailzeile
-        ``[data-nv-model-detail]`` mit den getrennten Fakten (Block
-        ``td > div`` mit Etikett „Fakten“: Wert 200.000 Token, Quelle
-        ``models.dev API``) und Einschätzungen (Block ``td > div`` mit Etikett
-        „Einschätzungen“: ``schnell``, Quelle ``Altkatalog``). Die Hooks
-        ``data-nv-model-facts``/``data-nv-model-assessments`` existieren nicht.
-        Kein JS-Fehler.
+        Vorbedingung: Testkatalog in ``<install>/models.json``, Feature
+        ``models`` an. Aktion: ``details[data-nv-models]`` über ``summary``
+        aufklappen, Modellzeile
+        ``tr[data-nv-model='opencode/vibe-modell']`` anklicken.
+        Erwartung: ``aside[data-nv-editview]`` zeigt
+        ``[data-nv-model-detail]`` mit Anbieter/Preis/Status, getrennten
+        Blöcken „Fakten“ (200.000 Token, Quelle ``models.dev API``) und
+        „Einschätzungen“ (``schnell``, Quelle ``Altkatalog``) sowie der
+        Preisquelle; in der Sektion existiert keine eingebettete Detailzeile
+        ``tr[data-nv-model-detail]``. Kein JS-Fehler.
+
+        Ersetzt den F34-Stand (eingebettete ``td > div``-Detailzeile in der
+        Sektion), der dem GH-57-Vertrag widerspricht; die Fachprüfung
+        (Fakten/Einschätzungen getrennt, Preisquelle) bleibt vollständig.
         """
         self.boot()
         self.enable_features("models")
         models = self.section("models")
-        self.assertEqual(
-            1, models.count(),
-            "Die Sektion section[data-nv-ssection='models'] fehlt")
 
-        details = models.locator("details[data-nv-model-catalog]")
-        details.wait_for(state="visible", timeout=20000)
-        self.assertEqual(1, details.count(),
-                          "details[data-nv-model-catalog] fehlt")
-        self.assertFalse(
-            details.evaluate("node => node.open"),
-            "Der Katalog ist laut implementierter Hook standardmäßig "
-            "zugeklappt")
-        details.locator("summary").click()
-        row = models.locator("[data-nv-model='opencode/vibe-modell']")
-        self.assertEqual(
-            1, row.count(), "Die Modellzeile [data-nv-model] fehlt")
-        row.wait_for(state="visible", timeout=15000)
+        details = models.locator("details[data-nv-models]")
+        details.wait_for(state="attached", timeout=20000)
+        if not details.evaluate("node => node.open"):
+            details.locator("summary").click()
+            self.wait_until(
+                lambda: details.evaluate("node => node.open"),
+                timeout=10000,
+                message="details[data-nv-models] ließ sich nicht aufklappen")
 
+        row = models.locator("tr[data-nv-model='opencode/vibe-modell']")
+        row.wait_for(state="visible", timeout=30000)
         row.click()
-        detail = models.locator(
-            "[data-nv-model-detail='opencode/vibe-modell']")
-        detail.wait_for(state="visible", timeout=15000)
-        # Echte Hooks (nova-settings.js): der Detailblock besteht aus den
-        # „Fakten"- und „Einschätzungen"-Abschnitten (Labels + Wert/Quelle
-        # je Fakt/Einschätzung) — keine data-nv-model-facts/
-        # data-nv-model-assessments-Hooks.
-        sections = detail.locator("td > div")
-        self.assertGreaterEqual(
-            sections.count(), 2, "Der Detailblock mit Fakten fehlt")
-        facts_text = sections.nth(0).inner_text() or ""
-        assessments_text = sections.nth(1).inner_text() or ""
-        self.assertIn("Fakten", facts_text,
-                      "Der Faktenabschnitt fehlt (Etikett)")
-        self.assertIn("200.000 Token", facts_text)
-        self.assertIn("models.dev API", facts_text)
-        self.assertIn("Einschätzungen", assessments_text,
-                      "Der Einschätzungsabschnitt fehlt (Etikett)")
-        self.assertIn("schnell", assessments_text)
-        self.assertIn("Altkatalog", assessments_text)
-        self.assertNotIn("Altkatalog", facts_text,
-                          "Fakten und Einschätzungen sind vermischt")
-        self.assertNotIn("200.000 Token", assessments_text,
-                          "Fakten und Einschätzungen sind vermischt")
+
+        aside = self.page.locator("aside[data-nv-editview]")
+        aside.wait_for(state="visible", timeout=20000)
+        detail = aside.locator("[data-nv-model-detail]")
+        detail.wait_for(state="visible", timeout=20000)
+        detail_text = detail.inner_text() or ""
+        for label in ("Anbieter", "Preis", "Status", "Fakten",
+                      "Einschätzungen", "Preisquelle"):
+            with self.subTest(label=label):
+                self.assertIn(
+                    label, detail_text,
+                    "Die Modelldetail-Ansicht nennt %r nicht: %r"
+                    % (label, detail_text))
+
+        blocks = detail.evaluate(
+            """node => {
+                 const result = {};
+                 Array.from(node.children).forEach(child => {
+                   if (child.tagName !== 'DIV') return;
+                   const label = child.querySelector(':scope > b');
+                   if (label) result[label.textContent.trim()] = child.innerText;
+                 });
+                 return result;
+               }""")
+        facts_text = blocks.get("Fakten", "")
+        assessments_text = blocks.get("Einschätzungen", "")
+        self.assertIn(
+            "200.000 Token", facts_text,
+            "Der Faktenblock nennt den Kontextwert nicht: %r" % facts_text)
+        self.assertIn(
+            "models.dev API", facts_text,
+            "Der Faktenblock nennt die Faktenquelle nicht: %r" % facts_text)
+        self.assertIn(
+            "schnell", assessments_text,
+            "Der Einschätzungsblock nennt die Einschätzung nicht: %r"
+            % assessments_text)
+        self.assertIn(
+            "Altkatalog", assessments_text,
+            "Der Einschätzungsblock nennt die Einschätzungsquelle nicht: %r"
+            % assessments_text)
+        self.assertNotIn(
+            "Altkatalog", facts_text,
+            "Fakten und Einschätzungen sind vermischt: %r" % facts_text)
+        self.assertNotIn(
+            "200.000 Token", assessments_text,
+            "Fakten und Einschätzungen sind vermischt: %r" % assessments_text)
+        self.assertRegex(
+            detail_text, r"Preisquelle:\s*models\.dev API",
+            "Die Preisquelle fehlt in der Detailansicht: %r" % detail_text)
+        self.assertEqual(
+            0, models.locator("tr[data-nv-model-detail]").count(),
+            "Die Modelldetails liegen weiterhin als eingebettete Zeile")
+        self.page.keyboard.press("Escape")
         self.assert_no_page_errors()
 
 
 class ProfilesTest(AP22AdvancedBrowserTest):
-    def test_profiles_preview_then_apply(self):
-        """Vorbedingung: ``profiles.json`` mit den Profilen kostenlos,
-        guenstig, stark; Agent ``tester`` hat Rolle coder.
-
-        Aktion: Feature ``profiles`` einschalten; auf Profil ``kostenlos``
-        klicken (Vorschau); dann ``profile-apply`` im Kontext „Bestätigen“
-        anklicken. Erwartung: Die Liste nennt alle drei Profile; die Vorschau
-        (Karte markiert, ``[data-nv-profile-details]`` nennt das Profil und
-        die Rollen-Zielmodelle) schreibt ``aktiv`` nicht; erst
-        ``profile-apply`` schreibt ``aktiv`` in ``profiles.json`` und das
-        Agentenmodell.
-        """
+    def test_profiles_select_preview_then_apply(self):
+        """GH-57 (profiles): Auswahl über select[data-nv-profiles-select] und
+        [data-nv-profile-selected]-Anzeige statt article-Karten (F34-Stand
+        widerspricht dem Vertrag docs/features/GH-57.md); Anwenden zeigt die
+        NV.context-Vorschau und schreibt nach Bestätigen ``aktiv`` und das
+        Agentenmodell. Altbestand (kostenlos/guenstig/stark) bleibt als
+        nutzerdefinierte Profile auswählbar."""
         tester = self.home / ".config" / "opencode" / "agents" / "tester.md"
         tester.write_text(
             "---\ndescription: Testet\nmode: subagent\n"
@@ -791,58 +811,37 @@ class ProfilesTest(AP22AdvancedBrowserTest):
         self.boot()
         self.enable_features("profiles")
         profiles = self.section("profiles")
-        card = profiles.locator("article[data-nv-profile='kostenlos']")
-        card.wait_for(state="visible", timeout=25000)
-        text = profiles.inner_text()
+        select = profiles.locator("select[data-nv-profiles-select]")
+        select.wait_for(state="visible", timeout=25000)
+        values = select.evaluate(
+            "node => Array.from(node.options).map(o => o.value)")
         for name in ("kostenlos", "guenstig", "stark"):
-            self.assertIn(name, text,
-                          f"Profil {name!r} fehlt in der Liste")
-
-        self.assertEqual(
-            1, card.count(),
-            "Die Profil-Karte [data-nv-profile='kostenlos'] fehlt")
-        self.assertGreaterEqual(
-            card.locator("[data-nv-profile-role]").count(), 1,
-            "Dem Profil fehlen die Rollen-Comboboxen")
-        # Vorschau: Klick auf die Karte — markiert + Vorschau-Details.
-        card.click()
+            self.assertIn(name, values, f"Profil {name!r} fehlt in der Auswahl")
+        select.select_option("kostenlos")
+        display = profiles.locator("[data-nv-profile-selected]")
         self.wait_until(
-            lambda: card.get_attribute("data-nv-profile-selected") == "true",
-            timeout=20000,
-            message="Die Profil-Karte ist nicht markiert (Vorschau fehlt)")
-        preview = profiles.locator("[data-nv-profile-details]")
-        preview.wait_for(state="visible", timeout=20000)
-        preview_text = preview.inner_text()
-        self.assertIn("kostenlos", preview_text)
-        self.assertIn("opencode/vibe-modell", preview_text)
+            lambda: display.count() >= 1
+            and "kostenlos" in (display.first.inner_text() or ""),
+            timeout=20000, message="Die Auswahl zeigt das Profil nicht an")
+        self.assertGreaterEqual(
+            profiles.locator("[data-nv-profile-role]").count(), 1,
+            "Dem Profil fehlen die Rollen-Comboboxen")
         self.assertEqual(
             "kostenlos",
             self.json_file(self.state_dir / "profiles.json").get("aktiv"),
-            "Die Vorschau hat das aktive Profil verändert")
-
-        # Anwenden: Kontext „Profilvorschau“ → „Bestätigen“ (Knopf liegt auf
-        # der Profilkarte, je Karte je „Anwenden“-Knopf).
-        card.locator("[data-nv-action='profile-apply']").click()
+            "Die Auswahl hat das aktive Profil verändert")
+        profiles.locator("[data-nv-action='profile-apply']").click()
         context = self.page.locator("aside[data-nv-context]")
         context.wait_for(state="visible", timeout=20000)
         confirm = context.locator(
             "[data-nv-context-foot] button", has_text="Bestätigen")
         confirm.wait_for(state="visible", timeout=20000)
         confirm.click()
-
-        def target_model_written():
-            try:
-                return "opencode/vibe-modell" in tester.read_text(
-                    encoding="utf-8")
-            except OSError:
-                return False
-
         self.wait_until(
-            target_model_written, timeout=30,
-            message="Das Profil hat das Agentenmodell nicht angewendet")
-        self.assertIn(
-            "opencode/vibe-modell", tester.read_text(encoding="utf-8"),
-            "Das Profil hat das Agentenmodell nicht angewendet")
+            lambda: "opencode/vibe-modell" in tester.read_text(
+                encoding="utf-8"),
+            timeout=30, message="Das Profil hat das Agentenmodell nicht "
+                                "angewendet")
         self.assertEqual(
             "kostenlos", self.json_file(
                 self.state_dir / "profiles.json").get("aktiv"),
@@ -983,41 +982,68 @@ class HarnessTest(AP22AdvancedBrowserTest):
 
 class LimitsTest(AP22AdvancedBrowserTest):
     def test_limits_mode_switches_between_continue_and_stop(self):
-        """Vorbedingung: Modus ``stop``. Aktion: Feature ``limits``
-        einschalten, ``limits-continue``, danach ``limits-stop``.
+        """GH-57 (limits): ein Schalter statt Optionskarten.
 
-        Erwartung: Sektion ``section[data-nv-ssection='limits']`` mit den
-        Modus-Karten; ``limits-continue`` → ``GET /api/limits`` meldet
-        ``continue``; ``limits-stop`` → ``stop``.
+        Vorbedingung: Modus ``stop``, Feature ``limits`` aus.
+        Aktion: Feature einschalten; Schalter
+        ``input[type=checkbox][data-nv-limits-mode]`` umlegen, zurücklegen.
+        Erwartung: Sektion ``section[data-nv-ssection='limits']``; genau ein
+        Schalter in ``label.nv-switch-row``; Erklärung
+        ``[data-nv-limits-help]`` nennt die Wirkung; aus = Stopp, an =
+        Fortsetzen, jeweils bestätigt durch ``GET /api/limits``; keine
+        Modus-Karten ``limits-continue``/``limits-stop``. Ersetzt den
+        F34-Stand (Optionskarten), der dem GH-57-Vertrag widerspricht.
         """
         self.api_post("/api/limits", {"action": "stop"})
         self.boot()
         self.enable_features("limits")
         limits = self.section("limits")
-        continue_button = limits.locator(
-            "[data-nv-action='limits-continue']")
-        continue_button.wait_for(state="visible", timeout=20000)
-        self.assertIn("stop", (limits.inner_text() or "").lower(),
-                      "Der Bereich limits nennt den Modus stop nicht: "
-                      + repr(limits.inner_text()))
+        toggle = limits.locator(
+            "input[type=checkbox][data-nv-limits-mode]")
+        toggle.wait_for(state="visible", timeout=20000)
+        self.assertEqual(
+            1, limits.locator(
+                "input[type=checkbox][data-nv-limits-mode]").count(),
+            "Es gibt nicht genau einen Limits-Schalter")
+        self.assertEqual(
+            0, limits.locator(
+                "button[data-nv-action='limits-continue'],"
+                " button[data-nv-action='limits-stop']").count(),
+            "Die alten Modus-Karten existieren weiterhin")
+        help_box = limits.locator("[data-nv-limits-help]")
+        help_box.wait_for(state="visible", timeout=20000)
+        self.assertRegex(
+            (help_box.inner_text() or "") + " " + (limits.inner_text() or ""),
+            r"(?i)new run|neue läuf|fortsetz|stopp",
+            "Die Limits-Erklärung enthält keine Wirkungsbeschreibung: "
+            + repr(limits.inner_text()))
+        self.assertFalse(
+            toggle.is_checked(),
+            "Der Schalter spiegelt den Modus stop nicht (aus = Stopp)")
+        self.assertEqual(
+            "label.nv-switch-row",
+            toggle.evaluate(
+                "node => { const l = node.closest('label');"
+                " return l ? l.className : ''; }"),
+            "Der Schalter liegt nicht in label.nv-switch-row")
 
-        continue_button.click()
+        toggle.check()
         self.wait_until(
             lambda: self.api_json("/api/limits").get("mode") == "continue",
             timeout=30,
             message="Der Modus continue wird nicht bestätigt: "
                     + repr(self.api_json("/api/limits")))
-        self.await_highlight(
-            continue_button,
-            "Der Modus continue ist nicht hervorgehoben")
+        self.assertTrue(toggle.is_checked(),
+                         "Der Schalter zeigt den Modus continue nicht")
 
-        stop_button = limits.locator("[data-nv-action='limits-stop']")
-        stop_button.click()
+        toggle.uncheck()
         self.wait_until(
             lambda: self.api_json("/api/limits").get("mode") == "stop",
             timeout=30,
             message="Der Modus stop wird nicht bestätigt: "
                     + repr(self.api_json("/api/limits")))
+        self.assertFalse(toggle.is_checked(),
+                          "Der Schalter zeigt den Modus stop nicht")
         self.assert_no_page_errors()
 
 

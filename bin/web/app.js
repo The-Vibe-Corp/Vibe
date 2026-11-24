@@ -221,7 +221,7 @@ function toast(m){const t=el('div',{class:'toast'},el('span',{class:'toasttext'}
 /* Rückfragen (F16): Der Agent stellt eine Frage, das Dashboard zeigt sie mit
    den angebotenen Möglichkeiten und schreibt die Antwort zurück. */
 const qbox=document.getElementById('questions'),qBaseTitle=document.title;qbox.setAttribute('aria-label',tr('Rückfragen'));
-let qSeen=new Set(),qSig=null,qLast=[];
+let qSeen=new Set(),qSig=null;
 function questionCard(q){
  const send=body=>answerQuestion(q.id,body);
  const opts=(q.options||[]).map((text,i)=>el('button',{class:'b'+(i===0?' p':''),type:'button','data-option':String(i),on:{click:()=>send({option:i})}},text));
@@ -1457,7 +1457,7 @@ function profilesCard(d,isPi){const P=JSON.parse(JSON.stringify(d.profiles));con
  return el('div',{class:'card'},el('details',{open:'open'},el('summary',{},tr('Profile – Modelle pro Rolle umschalten (z. B. kostenlos ↔ bezahlt)')),
   el('div',{class:'mut',style:'margin:6px 0'},tr('Ein Profil legt fest, welches Modell die Rollen Coder und Reviewer nutzen. „Anwenden“ schreibt die model:-Zeile der zugeordneten globalen Agenten (mit Sicherung). ')+(isPi?tr('Bezahlte Modelle erscheinen erst, wenn der Anbieter in Pi angemeldet ist (Ergebnis von „pi --list-models“).'):tr('Bezahlte Modelle erscheinen erst, wenn der Anbieter verbunden ist (/connect bzw. opencode auth login).'))),
   el('div',{class:'bar'},cur,el('button',{class:'b',on:{click:async()=>{const r=await api('/api/profiles',{action:'save',data:P});toast(bt(r.message))}}},tr('Profile speichern')),
-   el('button',{class:'b p',on:{click:async()=>{const sv=await api('/api/profiles',{action:'save',data:P});const r=await api('/api/profiles',{action:'use',profile:cur.value});toast(bt(r.message));if(r.ok)agents().catch(showErr)}}},tr('Speichern und anwenden'))),body,rol))}
+   el('button',{class:'b p',on:{click:async()=>{await api('/api/profiles',{action:'save',data:P});const r=await api('/api/profiles',{action:'use',profile:cur.value});toast(bt(r.message));if(r.ok)agents().catch(showErr)}}},tr('Speichern und anwenden'))),body,rol))}
 function modelsCard(d,isPi){const used={};d.agents.forEach(a=>{(used[a.model]=used[a.model]||[]).push(a.name+(a.scope==='global'?'':'@'+a.scope))});
  const K=d.katalog||{};const known=d.models.length>0;
  const ids=d.models.filter(m=>m.startsWith('opencode/')||d.info[m]);Object.keys(d.info).forEach(i=>{if(!ids.includes(i))ids.push(i)});
@@ -1887,7 +1887,6 @@ async function security(){
    stammen (Marker aus el()); Protokoll- und Nutzerdaten bleiben unberuehrt.
    Danach wird die active Ansicht neu gerendert, damit auch zusammengesetzte
    Texte (z. B. „Paket '+id+' verschieben“) vollstaendig umschalten. */
-let LAST_LANG=(window.VIBE_I18N||window.I18N||{current:()=>'en'}).current();
 let RERENDER_BUSY=false;
 function retranslateDOM(){
  const walk=node=>{
@@ -1915,7 +1914,7 @@ function rerenderView(){
 }
 window.addEventListener('vibe:langchange',()=>{
  const api=window.VIBE_I18N||window.I18N;if(!api)return;
- retranslateDOM();LAST_LANG=api.current();
+ retranslateDOM();
  qbox.setAttribute('aria-label',tr('Rückfragen'));
  setTimeout(rerenderView,30);
 });

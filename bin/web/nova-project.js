@@ -279,12 +279,6 @@ function nvpOpenTicketDetail(name, token, row, kind) {
   NV.context.open({title: title, content: body});
 }
 
-function nvpIssueStateLabel(stateValue) {
-  if (stateValue === 'draft') return 'Entwurf';
-  if (stateValue === 'ready') return 'Bereit';
-  return 'In Progress';
-}
-
 /* Das Formular für „Anlegen/Bearbeiten“ öffnet im zentralen Kontext-Panel.
    Der Name wird bei Bedarf aus dem Hash geholt. */
 function nvpOpenTicketForm(name, token, options) {
@@ -871,7 +865,7 @@ function nvpTeamSection(name, token, agents) {
     });
     var current = String(row.override || row.model || '');
     if (current && !seen[current]) values.push(current);
-    var combo = NV.combobox(values, current, {
+    var combo = NV.modelCombobox(values, current, {
       onchange: function (value) {
         api('/api/project-agents', {name: name, agent: agent, model: value})
           .then(function (result) {

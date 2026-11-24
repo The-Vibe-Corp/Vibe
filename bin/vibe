@@ -2656,22 +2656,30 @@ def global_agents_path(environ=None):
     return os.path.join(base, "opencode", "AGENTS.md")
 
 
+def global_agents_backup_dir():
+    """Ablage der Sicherungen der universellen AGENTS.md."""
+    return os.path.join(PATHS.state, "global-agents-backups")
+
+
 def global_agents_view():
     """Ansicht der universellen AGENTS.md: ``exists``, ``digest``, ``text``, ``path_hint``.
 
     Eine fehlende Datei ist kein Fehler (``exists`` falsch, Text leer); ein
-    Symlink wird nicht gelesen.
+    Symlink wird nicht gelesen. ``backups`` listet vorhandene Sicherungen.
     """
     path = global_agents_path(None)
+    backups = vibe_storage.list_backups(global_agents_backup_dir())
     if os.path.islink(path):
         return {"exists": False, "digest": "", "text": "",
-                "path_hint": "Symlink wird nicht gelesen: " + str(path)}
+                "path_hint": "Symlink wird nicht gelesen: " + str(path),
+                "backups": backups}
     snapshot = vibe_storage.read_snapshot(path)
     if not snapshot.exists:
         return {"exists": False, "digest": "", "text": "",
-                "path_hint": str(path)}
+                "path_hint": str(path), "backups": backups}
     return {"exists": True, "digest": snapshot.digest,
-            "text": snapshot.text, "path_hint": str(path)}
+            "text": snapshot.text, "path_hint": str(path),
+            "backups": backups}
 
 
 def global_agents_save(text, digest):
@@ -4469,9 +4477,58 @@ def apply_write_dirs_to_project(name):
         changed.append(agent_name)
     return changed
 
+MODELS_CACHE_FILE = os.path.join(PATHS.state, "models-cache.json")
+
+def _models_cache():
+    """Gelesener Modell-Cache oder ``None`` (fehlend/unlesbar)."""
+    snapshot = vibe_storage.read_snapshot(MODELS_CACHE_FILE)
+    if not snapshot.exists:
+        return None
+    try:
+        data = json.loads(snapshot.text)
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(data, dict) or not isinstance(data.get("models"), list):
+        return None
+    return {"models": [str(model) for model in data["models"]],
+            "stand": str(data.get("stand") or "")}
+
 def models_list():
-    """Alle Modelle des aktiven Harness (opencode-Adapter oder Pi-CLI)."""
+    """Alle Modelle des aktiven Harness; ein vorhandener Cache hat Vorrang."""
+    cached = _models_cache()
+    if cached is not None:
+        return list(cached["models"])
     return vibe_harness.list_models(state_dir=PATHS.state)["models"]
+
+def models_state():
+    """Modelle samt Cache-Stand und Fehlermeldung des Live-Laufs."""
+    cached = _models_cache()
+    if cached is not None:
+        return {"models": list(cached["models"]), "stand": cached["stand"], "error": ""}
+    try:
+        result = vibe_harness.list_models(state_dir=PATHS.state)
+    except vibe_harness.HarnessError as error:
+        return {"models": [], "stand": "", "error": str(error)}
+    return {"models": list(result.get("models") or []), "stand": "",
+            "error": str(result.get("error") or "")}
+
+def models_refresh():
+    """Holt die Modelle live und schreibt den Cache; nur hier wird geschrieben."""
+    try:
+        result = vibe_harness.list_models(state_dir=PATHS.state)
+    except vibe_harness.HarnessError as error:
+        return False, str(error)
+    if not result.get("ok"):
+        return False, str(result.get("error") or "Modelle konnten nicht geladen werden")
+    stand = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    try:
+        vibe_storage.write_text(
+            MODELS_CACHE_FILE,
+            json.dumps({"stand": stand, "models": list(result.get("models") or [])},
+                       ensure_ascii=False))
+    except OSError as error:
+        return False, "Modell-Cache konnte nicht geschrieben werden: " + str(error)
+    return True, "Modelle aktualisiert (Stand " + stand + ")"
 
 def models_info():
     """Modellkatalog als normalisierte Sicht inklusive Prüfbefunden."""
@@ -4655,38 +4712,67 @@ def cmd_model(agent, model, scope="global", out=None):
     except ValueError as e:
         sys.exit(str(e))
 
-# ---------- Profile: Modelle pro Rolle umschalten (kostenlos / bezahlt) ----------
+# ---------- Profile: Modelle pro Rolle umschalten (Standard / kostenlos / mittel / hoch) ----------
+# Die Standardprofile beginnen ohne Modellwerte: Jede Rolle fällt dann auf die
+# Agent-Einstellungen und schließlich auf das Modell des Vibe-Agenten zurück.
+STANDARD_PROFILES = ("default", "free", "mid", "high")
 DEFAULT_PROFILES = {
- "aktiv": "kostenlos",
+ "aktiv": "default",
  # Rollen sind bewusst leer: vibe kennt keine fest eingebauten Agentennamen.
  # Die Zuordnung erfolgt in der Oberfläche oder in profiles.json.
  "rollen": {},
- "profile": {
-  "kostenlos": {"coder": "opencode/deepseek-v4.1-flash-free", "reviewer": "opencode/glm-5.3-flash-free"},
-  "guenstig": {"coder": "opencode/deepseek-v4.1-flash", "reviewer": "opencode/glm-5.3-flash"},
-  "stark": {"coder": "", "reviewer": ""}}}
+ "profile": {"default": {}, "free": {}, "mid": {}, "high": {}}}
 
 def profiles_load(return_snapshot=False):
     snapshot = vibe_storage.read_snapshot(PROFILES_FILE)
     try: d = json.loads(snapshot.text) if snapshot.exists else json.loads(json.dumps(DEFAULT_PROFILES))
     except Exception: d = json.loads(json.dumps(DEFAULT_PROFILES))
+    if not isinstance(d, dict): d = json.loads(json.dumps(DEFAULT_PROFILES))
     for k, v in DEFAULT_PROFILES.items(): d.setdefault(k, json.loads(json.dumps(v)))
+    if not isinstance(d.get("profile"), dict): d["profile"] = {}
+    # Standardprofile werden nur ergänzt; nutzerdefinierte Profile bleiben.
+    for name in STANDARD_PROFILES: d["profile"].setdefault(name, {})
+    if d.get("aktiv") not in d["profile"]: d["aktiv"] = "default"
     return (d, snapshot) if return_snapshot else d
 
 def profiles_save(d, expected=None):
     os.makedirs(PATHS.state, exist_ok=True)
     vibe_storage.write_text(PROFILES_FILE, json.dumps(d, indent=1, ensure_ascii=False), expected=expected)
 
+def profile_backup_dir():
+    """Ablage der Sicherungen von profiles.json."""
+    return os.path.join(PATHS.state, "profile-backups")
+
+def default_role_models():
+    """Rolle → Modell des ersten globalen Agenten mit dieser Rolle.
+
+    Ohne Zuordnung oder ohne Modell bleibt der Wert leer; die Fallback-Kette
+    überspringt ihn dann, statt einen Platzhalter zu schreiben.
+    """
+    result = {}
+    for row in agents_all():
+        if row.get("scope") != "global": continue
+        role = row.get("role") or ""
+        if not role or role in result: continue
+        model = row.get("model") or ""
+        result[role] = "" if model == "-" else model
+    return result
+
 def profile_apply(name):
     d, before = profiles_load(return_snapshot=True)
     if name not in d["profile"]: raise ValueError("Unbekanntes Profil: " + name)
     prof, ml, done, skipped = d["profile"][name], models_list(), [], []
+    defaults = default_role_models()
+    vibe_model = vibe_agent_status().get("model", "")
+    resolved = []
     for agent, role in d["rollen"].items():
-        model = prof.get(role, "")
-        if not model: skipped.append(f"{agent}: für Rolle '{role}' ist im Profil kein Modell gesetzt"); continue
+        # Wirksame Kette: Profilwert → Default-Profil (Agent-Einstellungen) →
+        # Modell des Vibe-Agenten. Erst alle Werte prüfen, dann schreiben.
+        model = prof.get(role) or defaults.get(role) or vibe_model
+        resolved.append((agent, role, model))
+        if not model: skipped.append(f"{agent}: für Rolle '{role}' ist kein Modell gesetzt"); continue
         if ml and model not in ml: raise ValueError(f"Modell '{model}' ist beim aktiven Harness nicht verfügbar. Anbieter zuerst verbinden (opencode: /connect oder 'opencode auth login'; Pi: /login). Nichts wurde geändert.")
-    for agent, role in d["rollen"].items():
-        model = prof.get(role, "")
+    for agent, role, model in resolved:
         if not model: continue
         try: snapshot = agent_snapshot("global", agent)
         except ValueError: skipped.append(f"{agent}: Agent nicht gefunden"); continue
@@ -4920,14 +5006,12 @@ def _known_project(name):
     return path
 
 
-def costs_set_prices(name, prices, expected=None):
-    """Speichert Nutzerpreise für genau ein Projekt.
+def _normalize_prices(prices):
+    """Validiert eine Preis-Map und liefert ``Modell-ID → Preis oder None``.
 
-    ``prices`` bildet Modell-ID auf ``{input, cached_input, output}`` ab. Ein
-    Wert ``None`` entfernt die Nutzereingabe, sodass wieder der systemische
-    Preis gilt. Ungültige Eingaben ändern die Datei nicht.
+    ``None`` entfernt die Nutzereingabe. Ungültige Eingaben lösen ``ValueError``
+    aus und schreiben nichts; die Meldungen sind Teil des API-Vertrags.
     """
-    _known_project(name)
     if not isinstance(prices, dict):
         raise ValueError("prices muss ein Objekt sein")
     normalized = {}
@@ -4938,6 +5022,18 @@ def costs_set_prices(name, prices, expected=None):
         if len(model) > 200 or any(char in model for char in "\r\n\t"):
             raise ValueError("Modellname ist ungültig: " + model[:60])
         normalized[model] = None if price is None else _normalize_price(price)
+    return normalized
+
+
+def costs_set_prices(name, prices, expected=None):
+    """Speichert Nutzerpreise für genau ein Projekt.
+
+    ``prices`` bildet Modell-ID auf ``{input, cached_input, output}`` ab. Ein
+    Wert ``None`` entfernt die Nutzereingabe, sodass wieder der systemische
+    Preis gilt. Ungültige Eingaben ändern die Datei nicht.
+    """
+    _known_project(name)
+    normalized = _normalize_prices(prices)
     data, snapshot = _costs_data()
     entry = data["projects"].get(name)
     if not isinstance(entry, dict):
@@ -4971,16 +5067,7 @@ def costs_set_global_prices(prices):
     ``None``-Wert entfernt den Eintrag. Ungültige Eingaben lösen
     ``ValueError`` aus und schreiben nichts. Liefert ``global_prices()``.
     """
-    if not isinstance(prices, dict):
-        raise ValueError("prices muss ein Objekt sein")
-    normalized = {}
-    for model, price in prices.items():
-        model = str(model).strip()
-        if not model:
-            raise ValueError("Modellname fehlt")
-        if len(model) > 200 or any(char in model for char in "\r\n\t"):
-            raise ValueError("Modellname ist ungültig: " + model[:60])
-        normalized[model] = None if price is None else _normalize_price(price)
+    normalized = _normalize_prices(prices)
     kept = {model: price for model, price in normalized.items()
             if price is not None}
     vibe_storage.write_text(

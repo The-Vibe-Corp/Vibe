@@ -54,7 +54,6 @@ try:  # Nur unter POSIX verfügbar; ohne Sperre bleibt der letzte Schreibvorgang
 except ImportError:  # pragma: no cover - Windows ohne vibe-Betrieb
     fcntl = None
 
-KEY_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 KEEP_RECORDS = 100
 DEFAULT_MAX_BYTES = 5 * 1024 * 1024
 DEFAULT_KEEP = 3
@@ -808,6 +807,26 @@ def _atomic_write(path, text):
         raise
 
 
+@contextlib.contextmanager
+def _registry_lock(runtime, lock_path):
+    """Sperrt eine Registerdatei für einen Lese-/Schreibzugriff.
+
+    Gemeinsame Implementierung für Lauf-, Session- und Worktree-Register:
+    dieselbe Sperrdatei, dieselbe flock-Semantik, dieselbe Freigabe.
+    """
+    os.makedirs(runtime, exist_ok=True)
+    handle = open(lock_path, "a+", encoding="utf-8")
+    try:
+        if fcntl is not None:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        yield
+    finally:
+        if fcntl is not None:
+            with contextlib.suppress(OSError):
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+        handle.close()
+
+
 class RunRegistry:
     """Zustand aller bekannten Läufe eines Laufzeitordners."""
 
@@ -817,19 +836,8 @@ class RunRegistry:
         self.lock_path = os.path.join(self.runtime, "runs.lock")
         self.keep = int(keep)
 
-    @contextlib.contextmanager
     def _locked(self):
-        os.makedirs(self.runtime, exist_ok=True)
-        handle = open(self.lock_path, "a+", encoding="utf-8")
-        try:
-            if fcntl is not None:
-                fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
-            yield
-        finally:
-            if fcntl is not None:
-                with contextlib.suppress(OSError):
-                    fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
-            handle.close()
+        return _registry_lock(self.runtime, self.lock_path)
 
     def _read(self):
         try:
@@ -973,19 +981,8 @@ class SessionRegistry:
         self.path = os.path.join(self.runtime, "sessions.json")
         self.lock_path = os.path.join(self.runtime, "sessions.lock")
 
-    @contextlib.contextmanager
     def _locked(self):
-        os.makedirs(self.runtime, exist_ok=True)
-        handle = open(self.lock_path, "a+", encoding="utf-8")
-        try:
-            if fcntl is not None:
-                fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
-            yield
-        finally:
-            if fcntl is not None:
-                with contextlib.suppress(OSError):
-                    fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
-            handle.close()
+        return _registry_lock(self.runtime, self.lock_path)
 
     def _read(self):
         try:
@@ -1230,19 +1227,8 @@ class WorktreeRegistry:
         self.path = os.path.join(self.runtime, "worktrees.json")
         self.lock_path = os.path.join(self.runtime, "worktrees.lock")
 
-    @contextlib.contextmanager
     def _locked(self):
-        os.makedirs(self.runtime, exist_ok=True)
-        handle = open(self.lock_path, "a+", encoding="utf-8")
-        try:
-            if fcntl is not None:
-                fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
-            yield
-        finally:
-            if fcntl is not None:
-                with contextlib.suppress(OSError):
-                    fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
-            handle.close()
+        return _registry_lock(self.runtime, self.lock_path)
 
     def _read(self):
         try:
