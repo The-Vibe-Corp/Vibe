@@ -17,6 +17,20 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import runner_support as support
 
 
+FEEDBACK_ONE = [support.ticket_record(
+    "F1", "Erstes Paket", type="feedback", description="Test")]
+FEEDBACK_TWO = [
+    support.ticket_record("F1", "Erstes Paket", type="feedback",
+                          description="Test"),
+    support.ticket_record("F2", "Zweites Paket", type="feedback",
+                          description="Test"),
+]
+FEEDBACK_THREE = FEEDBACK_TWO + [
+    support.ticket_record("F3", "Drittes Paket", type="feedback",
+                          description="Test"),
+]
+
+
 class RunnerGateTestCase(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -31,13 +45,7 @@ class RunnerGateTestCase(unittest.TestCase):
         self.runtime = self.root / "_logs"
         self.project = self.root / "proj"
         support.init_repo(self.project)
-        self.write_project(
-            feedback=(
-                "- [ ] F1 Erstes Paket\n  Beschreibung: Test\n"
-                "- [ ] F2 Zweites Paket\n  Beschreibung: Test\n"
-                "- [ ] F3 Drittes Paket\n  Beschreibung: Test\n"
-            )
-        )
+        self.write_project(feedback=FEEDBACK_THREE)
         self.calls = self.root / "calls.log"
         self.counter = self.root / "counter"
         self.fakebin = support.install_fake_tools(self.root)
@@ -58,13 +66,11 @@ class RunnerGateTestCase(unittest.TestCase):
         support.write_project(
             self.project,
             env_text,
-            feedback=feedback if feedback is not None else (
-                "- [ ] F1 Erstes Paket\n  Beschreibung: Test\n"
-                "- [ ] F2 Zweites Paket\n  Beschreibung: Test\n"
-                "- [ ] F3 Drittes Paket\n  Beschreibung: Test\n"
-            ),
+            feedback=feedback if feedback is not None else FEEDBACK_THREE,
         )
-        support.commit_all(self.project, "Ausgangsstand")
+        support.git(self.project, "add", "-A")
+        if support.git(self.project, "diff", "--cached", "--quiet").returncode:
+            support.commit_all(self.project, "Ausgangsstand")
 
     def env(self, **extra):
         env = os.environ.copy()
@@ -159,12 +165,7 @@ class WorktreeIsolationTest(RunnerGateTestCase):
         self.assertEqual(self.call_lines(), [])
 
     def test_dirty_integration_tree_between_packages_blocks(self):
-        self.write_project(
-            feedback=(
-                "- [ ] F1 Erstes Paket\n  Beschreibung: Test\n"
-                "- [ ] F2 Zweites Paket\n  Beschreibung: Test\n"
-            )
-        )
+        self.write_project(feedback=FEEDBACK_TWO)
 
         result = self.run_runner(
             FAKE_DIRTY_INTEGRATION=str(self.project), VIBE_MAX_PACKAGES="2"
@@ -176,9 +177,7 @@ class WorktreeIsolationTest(RunnerGateTestCase):
         self.assertEqual(self.worktrees(), [], "Arbeitskopie blieb liegen")
 
     def test_agent_works_in_a_worktree_under_runtime_and_it_is_removed(self):
-        self.write_project(
-            feedback="- [ ] F1 Erstes Paket\n  Beschreibung: Test\n"
-        )
+        self.write_project(feedback=FEEDBACK_ONE)
 
         result = self.run_runner()
 
@@ -206,9 +205,7 @@ class WorktreeIsolationTest(RunnerGateTestCase):
 
 class ClosingGateTest(RunnerGateTestCase):
     def test_missing_artifacts_block_and_stop_the_run(self):
-        self.write_project(
-            feedback="- [ ] F1 Erstes Paket\n  Beschreibung: Test\n"
-        )
+        self.write_project(feedback=FEEDBACK_ONE)
 
         result = self.run_runner(FAKE_MODE="no-artifacts")
 
@@ -233,15 +230,15 @@ class ClosingGateTest(RunnerGateTestCase):
                 "REVIEWER=code-reviewer\n"
                 'VERIFY_PACKAGE="true"\nVERIFY_FULL="true"\nMAX_RETRIES=1\n'
             ),
-            feedback="- [ ] F1 Erstes Paket\n  Beschreibung: Test\n",
+            feedback=FEEDBACK_ONE,
         )
         support.write_project(
             self.project,
             (self.project / ".vibe" / "project.env").read_text(encoding="utf-8"),
-            feedback="- [ ] F1 Erstes Paket\n  Beschreibung: Test\n",
-            tickets="- [ ] T1 Ticket\n  Beschreibung: Test\n",
+            feedback=FEEDBACK_ONE,
+            tickets=[support.ticket_record("T1", "Ticket",
+                                           description="Test")],
         )
-        support.commit_all(self.project, "Ticket ergänzt")
 
         result = self.run_runner(VIBE_MAX_PACKAGES="1")
 
@@ -258,7 +255,7 @@ class ErrorClassTest(RunnerGateTestCase):
                 "REVIEWER=code-reviewer\n"
                 'VERIFY_PACKAGE="true"\nVERIFY_FULL="true"\nMAX_RETRIES=3\n'
             ),
-            feedback="- [ ] F1 Erstes Paket\n  Beschreibung: Test\n",
+            feedback=FEEDBACK_ONE,
         )
 
         result = self.run_runner(FAKE_MODE="quota")
@@ -269,12 +266,7 @@ class ErrorClassTest(RunnerGateTestCase):
         self.assertIn("BLOCKIERT", result.stdout)
 
     def test_network_retry_does_not_consume_the_package_budget(self):
-        self.write_project(
-            feedback=(
-                "- [ ] F1 Erstes Paket\n  Beschreibung: Test\n"
-                "- [ ] F2 Zweites Paket\n  Beschreibung: Test\n"
-            )
-        )
+        self.write_project(feedback=FEEDBACK_TWO)
 
         result = self.run_runner(
             FAKE_MODE_SEQUENCE="network-first,complete,complete",
@@ -287,12 +279,7 @@ class ErrorClassTest(RunnerGateTestCase):
         self.assertIn("Geschlossen: F2", result.stdout)
 
     def test_retry_limit_skips_a_package_and_continues(self):
-        self.write_project(
-            feedback=(
-                "- [ ] F1 Erstes Paket\n  Beschreibung: Test\n"
-                "- [ ] F2 Zweites Paket\n  Beschreibung: Test\n"
-            )
-        )
+        self.write_project(feedback=FEEDBACK_TWO)
 
         result = self.run_runner(FAKE_MODE="fail", VIBE_MAX_PACKAGES="2")
 
@@ -330,7 +317,7 @@ class IntegrationVerificationTest(RunnerGateTestCase):
                 'VERIFY_FULL="git status --porcelain > \\"$VIBE_RUNTIME/verify.status\\""\n'
                 "MAX_RETRIES=1\n"
             ),
-            feedback="- [ ] F1 Erstes Paket\n  Beschreibung: Test\n",
+            feedback=FEEDBACK_ONE,
         )
 
         result = self.run_runner(VIBE_MAX_PACKAGES="1")

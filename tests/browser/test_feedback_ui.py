@@ -5,6 +5,7 @@ mit Chromium über Playwright. Geprüft werden Bearbeiten/Löschen vorhandener
 Feedback-Punkte, Pause/Fortsetzen der Live-Ausgabe sowie die Höhe und die
 Vergrößerung der Live-Ausgabe.
 """
+import json
 import os
 import re
 import socket
@@ -20,19 +21,27 @@ from playwright.sync_api import sync_playwright
 REPO = Path(__file__).resolve().parents[2]
 WEB = REPO / "bin" / "vibe-web.py"
 
-BASELINE = """# FEEDBACK — Rückmeldungen an den Agenten
+STAMP = "2026-01-01T00:00:00+00:00"
 
-<!-- Vorlage (nicht abhaken):
-  - [ ] F99 Kurztitel
-    Beschreibung: ...
--->
 
-- [x] F1 Erledigter Punkt
-  Beschreibung: Erste Beschreibung
+def ticket_record(tid, title, type="feedback", state="open", **extra):
+    record = {
+        "id": tid, "title": title, "type": type, "state": state,
+        "description": "", "github": None, "pr_url": "", "commit": "",
+        "test": "", "blocked_reason": "", "waiting_note": "",
+        "priority": "", "dependencies": [],
+        "created": STAMP, "updated": STAMP,
+    }
+    record.update(extra)
+    return record
 
-- [ ] F2 Zweiter Punkt
-  Beschreibung: Zweite Beschreibung
-"""
+
+# GH-48: Feedback liegt im Ticketspeicher; F1 und F2 sind offen und damit
+# bearbeitbar/löschbar (done-Schutz deckt test_feedback_completed_ui ab).
+BASELINE = [
+    ticket_record("F1", "Erledigter Punkt", description="Erste Beschreibung"),
+    ticket_record("F2", "Zweiter Punkt", description="Zweite Beschreibung"),
+]
 
 
 def free_port():
@@ -118,7 +127,10 @@ class FeedbackBrowserTest(unittest.TestCase):
         cls.tmp.cleanup()
 
     def setUp(self):
-        (self.project / "FEEDBACK.md").write_text(BASELINE, encoding="utf-8")
+        (self.project / ".vibe" / "tickets.json").write_text(
+            json.dumps({"version": 1, "tickets": BASELINE},
+                       ensure_ascii=False, indent=1) + "\n",
+            encoding="utf-8")
         (self.log_dir / "proj.log").write_text("Startzeile\n", encoding="utf-8")
         self.page = self.browser.new_page(viewport={"width": 1400, "height": 1000})
 
@@ -134,7 +146,12 @@ class FeedbackBrowserTest(unittest.TestCase):
         self.fail(message)
 
     def feedback_text(self):
-        return (self.project / "FEEDBACK.md").read_text(encoding="utf-8")
+        return (self.project / ".vibe" / "tickets.json").read_text(
+            encoding="utf-8")
+
+    def records(self):
+        return {item["id"]: item for item in json.loads(
+            self.feedback_text())["tickets"]}
 
     def open_detail(self):
         self.page.goto(self.base + "/classic#t=" + self.token)
@@ -158,14 +175,13 @@ class FeedbackBrowserTest(unittest.TestCase):
         first.get_by_role("button", name="Save").click()
 
         self.wait_until(
-            lambda: "Geänderter Titel" in self.feedback_text(),
+            lambda: self.records()["F1"]["title"] == "Geänderter Titel",
             message="Bearbeiteter Titel wurde nicht gespeichert",
         )
-        text = self.feedback_text()
-        self.assertIn("- [x] F1 Geänderter Titel", text)
-        self.assertIn("  Beschreibung: Geänderte Beschreibung", text)
-        self.assertIn("- [ ] F2 Zweiter Punkt", text)
-        self.assertIn("F99 Kurztitel", text)
+        records = self.records()
+        self.assertEqual("Geänderte Beschreibung",
+                         records["F1"]["description"])
+        self.assertEqual("Zweiter Punkt", records["F2"]["title"])
 
         # Die Karte lädt nach dem Speichern neu. Erst wenn der neue Titel in
         # der Oberfläche steht, ist der Re-Render abgeschlossen; sonst würde
@@ -180,12 +196,10 @@ class FeedbackBrowserTest(unittest.TestCase):
         second.get_by_role("button", name="Delete").click()
         second.locator(".confirm").get_by_role("button", name="Yes, delete").click(force=True)
         self.wait_until(
-            lambda: "F2 Zweiter Punkt" not in self.feedback_text(),
+            lambda: "F2" not in self.records(),
             message="Feedback-Punkt wurde nicht gelöscht",
         )
-        text = self.feedback_text()
-        self.assertIn("- [x] F1 Geänderter Titel", text)
-        self.assertIn("F99 Kurztitel", text)
+        self.assertEqual("Geänderter Titel", self.records()["F1"]["title"])
 
     def test_live_output_can_be_paused_and_resumed(self):
         self.open_detail()

@@ -255,7 +255,7 @@ def init_git_repo(path, branch="main"):
 
 
 class ProjectFixture(unittest.TestCase):
-    """Project with .vibe/project.env, TICKETS.md, FEEDBACK.md and real git."""
+    """Project with .vibe/project.env, the GH-48 ticket store and real git."""
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -288,8 +288,23 @@ class ProjectFixture(unittest.TestCase):
         self.env_path_tmp.write_text(
             'TYPE=generic\nTESTER=test-agent\nSANDBOX="off"\n', encoding="utf-8"
         )
-        (self.project / "TICKETS.md").write_text("# TICKETS\n", encoding="utf-8")
-        (self.project / "FEEDBACK.md").write_text("# FEEDBACK\n", encoding="utf-8")
+        # Der Ticketspeicher ist Laufzeitstand und wird nie versioniert.
+        (self.project / ".gitignore").write_text(".vibe/\n", encoding="utf-8")
+        self.store = self.project / ".vibe" / "tickets.json"
+
+    def store_tickets(self):
+        """Ticketliste aus dem GH-48-Speicher; fehlende Datei heißt leer."""
+        if not self.store.exists():
+            return []
+        return json.loads(self.store.read_text(encoding="utf-8"))["tickets"]
+
+    def write_store_tickets(self, tickets):
+        self.store.parent.mkdir(parents=True, exist_ok=True)
+        self.store.write_text(
+            json.dumps({"version": 1, "tickets": tickets},
+                       ensure_ascii=False, indent=1) + "\n",
+            encoding="utf-8",
+        )
 
     def make_bare(self, name):
         bare = self.base / name
@@ -728,32 +743,33 @@ class IssuesImportTest(ProjectFixture):
         )
         self.vibe_issues = [dict(item) for item in ISSUES if item["number"] == 7]
 
-    def test_import_appends_vibe_issues_in_ticket_format_and_is_idempotent(self):
-        tickets = self.project / "TICKETS.md"
+    def test_import_creates_gh_tickets_in_the_store_and_is_idempotent(self):
+        self.gh.import_issues_into_tickets(str(self.project), self.vibe_issues)
+
+        records = {record["id"]: record for record in self.store_tickets()}
+        self.assertIn("GH-7", records)
+        self.assertEqual(records["GH-7"]["title"], "Sandbox für Import einschränken")
+        self.assertEqual(records["GH-7"]["state"], "open")
+        self.assertEqual(records["GH-7"]["github"], 7)
+        self.assertNotIn("GH-8", records)  # nur die übergebenen Issues
+        before = self.store.read_text(encoding="utf-8")
 
         self.gh.import_issues_into_tickets(str(self.project), self.vibe_issues)
 
-        text = tickets.read_text(encoding="utf-8")
-        self.assertRegex(text, r"(?m)^- \[ \] GH-7 \S")
-        self.assertNotIn("GH-8", text)  # label filter keeps bugs out
-        self.assertIn("Sandbox für Import einschränken", text)
-
-        self.gh.import_issues_into_tickets(str(self.project), self.vibe_issues)
-
-        self.assertEqual(tickets.read_text(encoding="utf-8"), text)
+        self.assertEqual(self.store.read_text(encoding="utf-8"), before)
 
     def test_import_keeps_existing_ticket_entries_unchanged(self):
-        tickets = self.project / "TICKETS.md"
-        tickets.write_text(
-            "# TICKETS\n\n- [ ] AP1 Erstes Paket\n  Beschreibung: vorhanden\n",
-            encoding="utf-8",
-        )
+        existing = {
+            "id": "AP1", "title": "Erstes Paket", "type": "task",
+            "state": "open", "description": "vorhanden",
+        }
+        self.write_store_tickets([existing])
 
         self.gh.import_issues_into_tickets(str(self.project), self.vibe_issues)
 
-        text = tickets.read_text(encoding="utf-8")
-        self.assertIn("AP1 Erstes Paket", text)
-        self.assertIn("GH-7", text)
+        records = {record["id"]: record for record in self.store_tickets()}
+        self.assertEqual(records["AP1"], existing)
+        self.assertIn("GH-7", records)
 
     def test_imported_items_are_parseable_as_open_tickets(self):
         self.gh.import_issues_into_tickets(str(self.project), self.vibe_issues)
@@ -865,7 +881,7 @@ class DefaultBaseTest(ProjectFixture):
 
 
 class ImportCollisionTest(ProjectFixture):
-    """TICKETS import detects concurrent edits (atomic write, review R1)."""
+    """Ticket import detects concurrent store edits (atomic write, review R1)."""
 
     def setUp(self):
         super().setUp()
@@ -876,7 +892,6 @@ class ImportCollisionTest(ProjectFixture):
             {"GITHUB_ENABLED": "1", "GITHUB_REPO": "owner/name", "GITHUB_API": self.server.base},
         )
         self.vibe_issues = [dict(item) for item in ISSUES if item["number"] == 7]
-        self.tickets = self.project / "TICKETS.md"
 
     def collision(self, touch_after_read):
         """Rewires the storage seam the product module actually binds to.
@@ -894,25 +909,25 @@ class ImportCollisionTest(ProjectFixture):
             calls.append(path)
             if touch_after_read and len(calls) == 1:
                 # Side writer between the module's read and its write step.
-                with open(self.tickets, "a", encoding="utf-8") as fh:
-                    fh.write("\n- [ ] AP9 Eingriff\n  Beschreibung: seitlich\n")
+                self.write_store_tickets([{
+                    "id": "AP9", "title": "Eingriff", "type": "task",
+                    "state": "open", "description": "seitlich",
+                }])
             return snapshot
 
         return storage, snapshot_seq
 
-    def test_concurrent_ticket_change_is_reported_and_file_stays_intact(self):
+    def test_concurrent_ticket_change_survives_the_retried_import(self):
         storage, snapshot_seq = self.collision(touch_after_read=True)
 
         with mock.patch.object(storage, "read_snapshot", side_effect=snapshot_seq):
-            with self.assertRaises(ValueError) as ctx:
-                self.gh.import_issues_into_tickets(str(self.project), self.vibe_issues)
+            added = self.gh.import_issues_into_tickets(
+                str(self.project), self.vibe_issues)
 
-        message = str(ctx.exception)
-        self.assertIn("zwischenzeitlich", message)
-        self.assertIn("Import", message)
-        text = self.tickets.read_text(encoding="utf-8")
-        self.assertIn("AP9 Eingriff", text)   # the outside write survived
-        self.assertNotIn("GH-7", text)        # the import wrote nothing
+        self.assertEqual(added, 1)
+        records = {record["id"] for record in self.store_tickets()}
+        self.assertIn("AP9", records)   # the outside write survived
+        self.assertIn("GH-7", records)  # the import retried, nothing was lost
 
     def test_import_without_interference_keeps_working(self):
         storage, snapshot_seq = self.collision(touch_after_read=False)
@@ -920,7 +935,8 @@ class ImportCollisionTest(ProjectFixture):
         with mock.patch.object(storage, "read_snapshot", side_effect=snapshot_seq):
             self.gh.import_issues_into_tickets(str(self.project), self.vibe_issues)
 
-        self.assertIn("- [ ] GH-7", self.tickets.read_text(encoding="utf-8"))
+        records = {record["id"] for record in self.store_tickets()}
+        self.assertIn("GH-7", records)
 
 
 class RemotesMaskingTest(ProjectFixture):

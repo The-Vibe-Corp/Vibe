@@ -5,6 +5,7 @@ mit Chromium über Playwright. Abgeschlossene Punkte (Checkbox gesetzt und
 Nachweis vorhanden) sollen im Standard ausgeblendet und nicht bearbeitbar
 sein; gesetzte Punkte ohne Nachweis gelten nicht als abgeschlossen.
 """
+import json
 import os
 import re
 import socket
@@ -132,15 +133,33 @@ class FeedbackCompletedBrowserTest(unittest.TestCase):
         cls.tmp.cleanup()
 
     def setUp(self):
-        (self.project / "FEEDBACK.md").write_text(
-            "# FEEDBACK — Rückmeldungen an den Agenten\n\n"
-            "- [x] F1 Erledigter Punkt\n"
-            "  Beschreibung: Erste Beschreibung\n"
-            f"  Commit: {self.commit}; Test: test_erledigt\n\n"
-            "- [x] F2 Ohne Nachweis\n"
-            "  Beschreibung: Zweite Beschreibung\n\n"
-            "- [ ] F3 Offener Punkt\n"
-            "  Beschreibung: Dritte Beschreibung\n",
+        (self.project / ".vibe" / "tickets.json").write_text(
+            json.dumps({"version": 1, "tickets": [
+                {"id": "F1", "title": "Erledigter Punkt",
+                 "type": "feedback", "state": "done",
+                 "description": "Erste Beschreibung",
+                 "commit": self.commit, "test": "test_erledigt",
+                 "github": None, "pr_url": "", "blocked_reason": "",
+                 "waiting_note": "", "priority": "", "dependencies": [],
+                 "created": "2026-01-01T00:00:00+00:00",
+                 "updated": "2026-01-01T00:00:00+00:00"},
+                {"id": "F3", "title": "Offener Punkt",
+                 "type": "feedback", "state": "open",
+                 "description": "Dritte Beschreibung",
+                 "commit": "", "test": "", "github": None, "pr_url": "",
+                 "blocked_reason": "", "waiting_note": "", "priority": "",
+                 "dependencies": [],
+                 "created": "2026-01-01T00:00:00+00:00",
+                 "updated": "2026-01-01T00:00:00+00:00"},
+                {"id": "F4", "title": "In Arbeit",
+                 "type": "feedback", "state": "in-progress",
+                 "description": "Vierte Beschreibung",
+                 "commit": "", "test": "", "github": None, "pr_url": "",
+                 "blocked_reason": "", "waiting_note": "", "priority": "",
+                 "dependencies": [],
+                 "created": "2026-01-01T00:00:00+00:00",
+                 "updated": "2026-01-01T00:00:00+00:00"},
+            ]}, ensure_ascii=False, indent=1) + "\n",
             encoding="utf-8",
         )
         (self.log_dir / "proj.log").write_text("Startzeile\n", encoding="utf-8")
@@ -228,16 +247,20 @@ class FeedbackCompletedBrowserTest(unittest.TestCase):
         open_entry = self.page.locator('.fbentry[data-id="F3"]')
         self.assertEqual(open_entry.get_by_role("button", name="Edit").count(), 1)
 
-    def test_checked_entry_without_proof_stays_visible_and_editable(self):
+    def test_in_progress_entry_stays_visible_and_editable(self):
+        """GH-48: Nur done gilt als abgeschlossen; ein Ticket in Arbeit
+        bleibt sichtbar und bearbeitbar (der alte Zustand „ohne Nachweis"
+        existiert nicht mehr)."""
         self.open_detail()
 
-        unproven = self.page.locator('.fbentry[data-id="F2"]')
+        working = self.page.locator('.fbentry[data-id="F4"]')
         self.assertEqual(
-            unproven.count(),
+            working.count(),
             1,
-            "gesetzter Punkt ohne Nachweis wurde wie abgeschlossen ausgeblendet",
+            "Ticket in Arbeit wurde wie abgeschlossen ausgeblendet",
         )
-        self.assertEqual(unproven.get_by_role("button", name="Edit").count(), 1)
+        self.assertIn("In Progress", working.inner_text())
+        self.assertEqual(working.get_by_role("button", name="Edit").count(), 1)
 
 
 if __name__ == "__main__":

@@ -165,6 +165,15 @@ def load_cli(vibe_root):
     return module
 
 
+def write_tickets(project, tickets):
+    """Legt den maschinenlesbaren Ticketspeicher (GH-48) an."""
+    store = Path(project) / ".vibe" / "tickets.json"
+    store.parent.mkdir(parents=True, exist_ok=True)
+    store.write_text(json.dumps({"version": 1, "tickets": tickets},
+                                ensure_ascii=False, indent=1) + "\n",
+                     encoding="utf-8")
+
+
 def make_db(path, schema="v2"):
     con = sqlite3.connect(str(path))
     con.executescript(DDL_V2 if schema == "v2" else DDL_V1)
@@ -240,12 +249,10 @@ class CostFixture(unittest.TestCase):
         self.proj = self.root / "proj"
         (self.proj / ".vibe").mkdir(parents=True)
         (self.proj / ".vibe" / "project.env").write_text("TYPE=generic\n", encoding="utf-8")
-        (self.proj / "FEEDBACK.md").write_text(
-            "# FEEDBACK\n\n"
-            "- [ ] F1 Erster Punkt\n  Beschreibung: Erste Beschreibung\n\n"
-            "- [ ] F2 Zweiter Punkt\n  Beschreibung: Zweite Beschreibung\n",
-            encoding="utf-8",
-        )
+        write_tickets(self.proj, [
+            {"id": "F1", "title": "Erster Punkt", "type": "feedback"},
+            {"id": "F2", "title": "Zweiter Punkt", "type": "feedback"},
+        ])
         (self.root / "_toolchain").mkdir()
         self.db = self.root / "opencode.db"
         self.cli = load_cli(self.root)
@@ -264,7 +271,8 @@ class CostFixture(unittest.TestCase):
         path = self.root / name
         (path / ".vibe").mkdir(parents=True)
         (path / ".vibe" / "project.env").write_text("TYPE=generic\n", encoding="utf-8")
-        (path / "FEEDBACK.md").write_text("# FEEDBACK\n", encoding="utf-8")
+        write_tickets(path, [{"id": "F1", "title": "Erster Punkt",
+                              "type": "feedback"}])
         self.cli._pm.clear()
         return path
 
@@ -582,20 +590,25 @@ class DataSourceTest(CostFixture):
 
 
 class PackageIdTest(CostFixture):
-    def test_ids_come_from_feedback_and_tickets(self):
-        (self.proj / "TICKETS.md").write_text(
-            "# TICKETS\n\n- [x] A4 Fertig\n- [ ] Sf-17 Offen\n", encoding="utf-8")
+    def test_ids_come_from_the_ticket_store(self):
+        write_tickets(self.proj, [
+            {"id": "F1", "title": "Erster Punkt"},
+            {"id": "F2", "title": "Zweiter Punkt"},
+            {"id": "A4", "title": "Fertig", "state": "done"},
+            {"id": "Sf-17", "title": "Offen"},
+        ])
         ids = self.cli.package_ids("proj")
         self.assertTrue({"F1", "F2", "A4", "Sf-17"} <= ids)
 
     def test_an_id_without_a_title_is_still_a_known_package(self):
-        (self.proj / "FEEDBACK.md").write_text(
-            "# FEEDBACK\n\n- [ ] F99\n", encoding="utf-8")
+        write_tickets(self.proj, [{"id": "F99", "title": ""}])
         self.assertIn("F99", self.cli.package_ids("proj"))
 
     def test_the_longer_id_wins_against_its_prefix(self):
-        (self.proj / "FEEDBACK.md").write_text(
-            "# FEEDBACK\n\n- [ ] F1 Kurz\n- [ ] F12 Lang\n", encoding="utf-8")
+        write_tickets(self.proj, [
+            {"id": "F1", "title": "Kurz"},
+            {"id": "F12", "title": "Lang"},
+        ])
         ids = self.cli.package_ids("proj")
         self.assertEqual(self.cli.package_for_title("vibe F12", ids), "F12")
         self.assertEqual(self.cli.package_for_title("Review F1 delta", ids), "F1")

@@ -114,7 +114,8 @@ class CliContinueExportTest(unittest.TestCase):
         support.init_repo(cls.project)
         support.write_project(
             cls.project, PROJECT_ENV,
-            feedback="- [ ] AP14 Continue\n  Beschreibung: Test\n",
+            feedback=[support.ticket_record(
+                "AP14", "Continue", description="Test")],
         )
         project_agent = cls.project / ".opencode" / "agents" / "test-agent.md"
         project_agent.parent.mkdir(parents=True)
@@ -275,10 +276,12 @@ class RunnerContinueChainFixture(unittest.TestCase):
         env_text = env_text or PROJECT_ENV
         support.write_project(
             self.project, env_text,
-            feedback=feedback if feedback is not None else (
-                "- [ ] AP14A Erster Schritt\n  Beschreibung: Test\n"
-                "- [ ] AP14B Zweiter Schritt\n  Beschreibung: Test\n"
-            ),
+            feedback=feedback if feedback is not None else [
+                support.ticket_record("AP14-1", "Erster Schritt",
+                                      description="Test"),
+                support.ticket_record("AP14-2", "Zweiter Schritt",
+                                      description="Test"),
+            ],
         )
         support.commit_all(self.project, "Ausgangsstand")
 
@@ -362,7 +365,7 @@ class RunnerContinueChainTest(RunnerContinueChainFixture):
             + CONTINUE_SESSION + ": " + repr(records[0]),
         )
         self.assertIn(
-            "Arbeitspaket AP14A", records[0][-1],
+            "Arbeitspaket AP14-1", records[0][-1],
             "Erster Prompt unvollständig: " + repr(records[0][-1]),
         )
         chain = session_values(records[1])
@@ -377,7 +380,7 @@ class RunnerContinueChainTest(RunnerContinueChainFixture):
             + repr(chain),
         )
         self.assertIn(
-            "Arbeitspaket AP14B", records[1][-1],
+            "Arbeitspaket AP14-2", records[1][-1],
             "Zweiter Prompt unvollständig: " + repr(records[1][-1]),
         )
         continuation_lines = [
@@ -412,7 +415,7 @@ class RunnerPlainRepeatTest(RunnerContinueChainFixture):
         records = self.arg_records()
         self.assertEqual(
             3, len(records),
-            f"Erwartet zwei Versuche für AP14A und einen für AP14B: "
+            f"Erwartet zwei Versuche für AP14-1 und einen für AP14-2: "
             f"{records}",
         )
         self.assertNotIn(

@@ -57,6 +57,7 @@ PROGRAM_FILES = (
     "vibe_paths.py",
     "vibe_ui_config.py",
     "vibe_storage.py",
+    "vibe_tickets.py",
     "vibe_guide.py",
     "vibe_questions.py",
     "vibe_autonomous.py",

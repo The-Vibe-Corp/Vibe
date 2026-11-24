@@ -609,10 +609,13 @@ class RunnerModelTest(unittest.TestCase):
         self.verify.mkdir()
         self.runtime = self.root / "_logs"
         self.project = self.root / "proj"
-        (self.project / ".vibe").mkdir(parents=True)
         self.calls = self.root / "opencode.calls"
         self.args = self.root / "_logs" / "opencode.args"
         self.fakebin = support.install_fake_tools(self.root)
+        support.init_repo(self.project)
+        (self.project / ".gitignore").write_text(".vibe/\n", encoding="utf-8")
+        support.commit_all(self.project)
+        (self.project / ".vibe").mkdir()
         (self.project / ".vibe" / "project.env").write_text(
             "TYPE=generic\n"
             "AGENT=tester\n"
@@ -623,13 +626,11 @@ class RunnerModelTest(unittest.TestCase):
             "MAX_RETRIES=0\n",
             encoding="utf-8",
         )
-        (self.project / "FEEDBACK.md").write_text(
-            "# FEEDBACK\n\n- [ ] F1 Testpaket\n  Beschreibung: Test\n",
-            encoding="utf-8",
-        )
-        (self.project / "TICKETS.md").write_text("# TICKETS\n", encoding="utf-8")
-        support.init_repo(self.project)
-        support.commit_all(self.project)
+        # GH-48: Das Paket liegt im Ticketspeicher, nicht in FEEDBACK.md.
+        support.write_ticket_store(self.project, [
+            support.ticket_record("F1", "Testpaket", type="feedback",
+                                  description="Test"),
+        ])
         self.env = isolated_env(self.root, self.home)
         self.env.update(
             {

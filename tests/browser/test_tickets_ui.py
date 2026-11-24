@@ -1,9 +1,14 @@
-"""Browserabnahme für Arbeitspakete und Bugmeldungen (F15).
+"""Browserabnahme für Arbeitspakete und Bugmeldungen (F15, GH-48).
 
 Die Tests starten das echte Dashboard auf einem eigenen Port und bedienen es
 mit Chromium über Playwright. Geprüft werden Anlegen, Bearbeiten und Löschen
-von Arbeitspaketen in TICKETS.md sowie das Melden eines Bugs in FEEDBACK.md.
+von Arbeitspaketen sowie das Melden eines Bugs — auf dem JSON-Ticketspeicher
+``.vibe/tickets.json``. Markdown-Ledger existieren nicht mehr.
+
+Ist Playwright oder Chromium in der Umgebung nicht verfügbar, wird das Modul
+mit Begründung übersprungen (kein erfundenes Grün).
 """
+import json
 import os
 import re
 import socket
@@ -14,7 +19,10 @@ import time
 import unittest
 from pathlib import Path
 
-from playwright.sync_api import sync_playwright
+try:
+    from playwright.sync_api import sync_playwright
+except ImportError:  # pragma: no cover - Umgebung ohne Playwright
+    sync_playwright = None
 
 REPO = Path(__file__).resolve().parents[2]
 WEB = REPO / "bin" / "vibe-web.py"
@@ -22,61 +30,51 @@ SHOTS = Path(
     os.environ.get("VIBE_VERIFY_SCREENSHOT_DIR", REPO / "docs" / "features")
 )
 SHOT = SHOTS / "F15-arbeitspakete.png"
+STAMP = "2026-01-01T00:00:00+00:00"
 
-TICKETS = """# TICKETS — Test
 
-- [ ] F15 Arbeitspakete
-  Beschreibung: Bestehendes Paket
-  Priorität: P1
+def ticket_record(tid, title, type="task", state="open", **extra):
+    record = {
+        "id": tid, "title": title, "type": type, "state": state,
+        "description": "", "github": None, "pr_url": "", "commit": "",
+        "test": "", "blocked_reason": "", "waiting_note": "",
+        "priority": "", "dependencies": [],
+        "created": STAMP, "updated": STAMP,
+    }
+    record.update(extra)
+    return record
 
-- [x] V-001 Erledigtes Paket
-  Beschreibung: Fertig
-  Commit: abcdef1; Test: test_x
-"""
 
-FEEDBACK = """# FEEDBACK — Test
+BASELINE = [
+    ticket_record("F15", "Arbeitspakete", description="Bestehendes Paket",
+                  priority="P1"),
+    ticket_record("V-001", "Erledigtes Paket", state="done",
+                  description="Fertig", commit="abcdef1", test="test_x"),
+    ticket_record("F1", "Bestehender Punkt", type="feedback",
+                  description="Bestehende Beschreibung"),
+]
 
-- [ ] F1 Bestehender Punkt
-  Beschreibung: Bestehende Beschreibung
-"""
-
-# Die Prüfumgebung kann eine produktive vibe-Umgebung erben. Ohne diese Liste
-# würde das Dashboard den echten Agentenordner, Zustandsordner und die echte
-# Laufzeit lesen und beschreiben.
 ISOLATED_ENV = (
-    "VIBE",
-    "VIBE_NO_CONTAINER",
-    "HOME",
-    "VIBE_PROFILE",
-    "VIBE_INSTALL",
-    "VIBE_RUNTIME",
-    "VIBE_STATE",
-    "VIBE_AGENTS_DIR",
-    "VIBE_CONFIG_FILE",
-    "VIBE_CONFIG_DIR",
-    "VIBE_UI_PORT",
-    "VIBE_OPENCODE_PORT",
-    "VIBE_UI_BIND",
+    "VIBE", "VIBE_NO_CONTAINER", "HOME", "VIBE_PROFILE", "VIBE_INSTALL",
+    "VIBE_RUNTIME", "VIBE_STATE", "VIBE_AGENTS_DIR", "VIBE_CONFIG_FILE",
+    "VIBE_CONFIG_DIR", "VIBE_UI_PORT", "VIBE_OPENCODE_PORT", "VIBE_UI_BIND",
     "VIBE_CONTAINER",
 )
 
 
 def isolated_env(root, home, port):
-    """Umgebung, die ausschließlich im temporären Prüfverzeichnis arbeitet."""
     env = os.environ.copy()
     for key in ISOLATED_ENV:
         env.pop(key, None)
-    env.update(
-        {
-            "VIBE": str(root),
-            "VIBE_NO_CONTAINER": "1",
-            "VIBE_UI_PORT": str(port),
-            "HOME": str(home),
-            "VIBE_STATE": str(Path(root) / "_toolchain"),
-            "VIBE_AGENTS_DIR": str(Path(home) / ".config" / "opencode" / "agents"),
-            "VIBE_CONFIG_FILE": str(Path(home) / ".config" / "vibe" / "config.json"),
-        }
-    )
+    env.update({
+        "VIBE": str(root),
+        "VIBE_NO_CONTAINER": "1",
+        "VIBE_UI_PORT": str(port),
+        "HOME": str(home),
+        "VIBE_STATE": str(Path(root) / "_toolchain"),
+        "VIBE_AGENTS_DIR": str(Path(home) / ".config" / "opencode" / "agents"),
+        "VIBE_CONFIG_FILE": str(Path(home) / ".config" / "vibe" / "config.json"),
+    })
     return env
 
 
@@ -86,6 +84,7 @@ def free_port():
         return sock.getsockname()[1]
 
 
+@unittest.skipIf(sync_playwright is None, "Playwright ist nicht installiert.")
 class WorkPackageBrowserTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -94,40 +93,50 @@ class WorkPackageBrowserTest(unittest.TestCase):
         cls.project = cls.root / "proj"
         (cls.project / ".vibe").mkdir(parents=True)
         (cls.project / ".vibe" / "project.env").write_text(
-            "TYPE=generic\n", encoding="utf-8"
-        )
+            "TYPE=generic\n", encoding="utf-8")
+        cls.store = cls.project / ".vibe" / "tickets.json"
         cls.log_dir = cls.root / "_logs"
         cls.log_dir.mkdir()
         cls.home = cls.root / "home"
         cls.home.mkdir()
         cls.port = free_port()
+
+        cls.playwright = sync_playwright().start()
+        try:
+            cls.browser = cls.playwright.chromium.launch(headless=True)
+        except Exception as error:  # noqa: BLE001 - Chromium kann fehlen
+            cls.playwright.stop()
+            cls.tmp.cleanup()
+            raise unittest.SkipTest(
+                "Chromium ist für Playwright nicht verfügbar: " + str(error))
+
         env = isolated_env(cls.root, cls.home, cls.port)
         cls.proc = subprocess.Popen(
-            [sys.executable, str(WEB)],
-            env=env,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-        )
+            [sys.executable, str(WEB)], env=env,
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         token_file = cls.log_dir / "web.token"
         deadline = time.time() + 20
         while time.time() < deadline:
             if token_file.exists():
                 try:
-                    with socket.create_connection(("127.0.0.1", cls.port), timeout=0.5):
+                    with socket.create_connection(("127.0.0.1", cls.port),
+                                                  timeout=0.5):
                         break
                 except OSError:
                     pass
             if cls.proc.poll() is not None:
                 output = cls.proc.stdout.read() if cls.proc.stdout else ""
-                raise AssertionError("vibe-web wurde vorzeitig beendet: " + output)
+                cls.browser.close()
+                cls.playwright.stop()
+                raise AssertionError(
+                    "vibe-web wurde vorzeitig beendet: " + output)
             time.sleep(0.05)
         else:
+            cls.browser.close()
+            cls.playwright.stop()
             raise AssertionError("vibe-web ist nicht erreichbar")
         cls.token = token_file.read_text(encoding="utf-8").strip()
         cls.base = f"http://127.0.0.1:{cls.port}"
-        cls.playwright = sync_playwright().start()
-        cls.browser = cls.playwright.chromium.launch(headless=True)
 
     @classmethod
     def tearDownClass(cls):
@@ -145,15 +154,20 @@ class WorkPackageBrowserTest(unittest.TestCase):
         cls.tmp.cleanup()
 
     def setUp(self):
-        (self.project / "TICKETS.md").write_text(TICKETS, encoding="utf-8")
-        (self.project / "FEEDBACK.md").write_text(FEEDBACK, encoding="utf-8")
+        self.store.write_text(
+            json.dumps({"version": 1, "tickets": BASELINE},
+                       ensure_ascii=False, indent=1) + "\n",
+            encoding="utf-8")
         (self.log_dir / "proj.log").write_text("Startzeile\n", encoding="utf-8")
-        self.page = self.browser.new_page(viewport={"width": 1400, "height": 1000})
+        self.page = self.browser.new_page(viewport={"width": 1400,
+                                                    "height": 1000})
+        self.page.set_default_timeout(10000)
 
     def tearDown(self):
         self.page.close()
 
-    def wait_until(self, predicate, timeout=10, message="Bedingung nicht erfüllt"):
+    # -------------------------------------------------------------- Helfer
+    def wait_until(self, predicate, timeout=10, message="Bedingung fehlt"):
         deadline = time.time() + timeout
         while time.time() < deadline:
             if predicate():
@@ -161,11 +175,9 @@ class WorkPackageBrowserTest(unittest.TestCase):
             time.sleep(0.05)
         self.fail(message)
 
-    def ticket_text(self):
-        return (self.project / "TICKETS.md").read_text(encoding="utf-8")
-
-    def feedback_text(self):
-        return (self.project / "FEEDBACK.md").read_text(encoding="utf-8")
+    def records(self):
+        return {item["id"]: item for item in json.loads(
+            self.store.read_text(encoding="utf-8"))["tickets"]}
 
     def open_detail(self):
         self.page.goto(self.base + "/classic#t=" + self.token)
@@ -175,25 +187,36 @@ class WorkPackageBrowserTest(unittest.TestCase):
         self.page.locator("#tickets").wait_for()
         self.page.get_by_role("tab", name="Work", exact=True).wait_for()
 
+    def create_ticket(self, title, description, tid="", state=""):
+        form = self.page.locator("#ticket-new")
+        if tid:
+            form.locator("input").first.fill(tid)
+        form.locator("input").nth(1).fill(title)
+        form.locator("textarea").fill(description)
+        if state:
+            form.locator("select").first.select_option(state)
+        form.locator("button").first.click()
+
+    # -------------------------------------------------------------- Fälle
     def test_add_edit_and_delete_a_work_package(self):
+        """Vor: Speicher mit F15 und done V-001. Aktion: F18 über das Formular
+        anlegen, bearbeiten, löschen. Erwartet: Datensatz mit Titel,
+        Beschreibung und Zustand entsteht, ändert sich und verschwindet;
+        F15 und der erledigte Nachweis bleiben erhalten."""
         self.open_detail()
 
-        form = self.page.locator("#ticket-new")
-        form.locator(
-            "input[aria-label='ID des Arbeitspakets'], "
-            "input[aria-label='Work package ID']").fill("F18")
-        form.locator("input").nth(1).fill("Neues Paket")
-        form.locator("textarea").fill("Zeile eins\nZeile zwei")
-        form.get_by_role("button", name="Create work package").click()
+        self.create_ticket("Neues Paket", "Zeile eins\nZeile zwei", tid="F18")
 
         self.wait_until(
-            lambda: "F18 Neues Paket" in self.ticket_text(),
+            lambda: "F18" in self.records(),
             message="Neues Arbeitspaket wurde nicht gespeichert",
         )
-        text = self.ticket_text()
-        self.assertIn("- [ ] F18 Neues Paket", text)
-        self.assertIn("  Beschreibung: Zeile eins\n  Zeile zwei", text)
-        self.assertIn("- [ ] F15 Arbeitspakete", text)
+        record = self.records()["F18"]
+        self.assertEqual("Neues Paket", record["title"])
+        self.assertEqual("Zeile eins\nZeile zwei", record["description"])
+        self.assertEqual("task", record["type"])
+        self.assertEqual("open", record["state"])
+        self.assertEqual("P1", self.records()["F15"]["priority"])
 
         entry = self.page.locator('#tickets .fbentry[data-id="F18"]')
         entry.get_by_role("button", name="Edit").click()
@@ -202,96 +225,78 @@ class WorkPackageBrowserTest(unittest.TestCase):
         entry.get_by_role("button", name="Save").click()
 
         self.wait_until(
-            lambda: "F18 Geändertes Paket" in self.ticket_text(),
+            lambda: self.records()["F18"]["title"] == "Geändertes Paket",
             message="Bearbeitetes Arbeitspaket wurde nicht gespeichert",
         )
-        text = self.ticket_text()
-        self.assertIn("- [ ] F18 Geändertes Paket", text)
-        self.assertIn("  Beschreibung: Geänderte Beschreibung", text)
-        self.assertIn("  Priorität: P1", text)
-        self.assertIn("- [ ] F15 Arbeitspakete", text)
+        self.assertEqual("Geänderte Beschreibung",
+                         self.records()["F18"]["description"])
+        self.assertEqual("P1", self.records()["F15"]["priority"])
 
         entry = self.page.locator('#tickets .fbentry[data-id="F18"]')
         entry.get_by_role("button", name="Delete").click()
-        entry.locator(".confirm").get_by_role("button", name="Yes, delete").click()
+        entry.locator(".confirm").get_by_role(
+            "button", name="Yes, delete").click()
         self.wait_until(
-            lambda: "F18 Geändertes Paket" not in self.ticket_text(),
+            lambda: "F18" not in self.records(),
             message="Arbeitspaket wurde nicht gelöscht",
         )
-        text = self.ticket_text()
-        self.assertIn("- [ ] F15 Arbeitspakete", text)
-        self.assertIn("V-001 Erledigtes Paket", text)
+        records = self.records()
+        self.assertIn("F15", records)
+        self.assertEqual("done", records["V-001"]["state"])
 
     def test_add_work_package_without_an_id_and_use_the_assigned_id(self):
-        """F23/AK8: Das Formular-Feld "ID des Arbeitspakets" bleibt leer.
-        Server und Oberfläche vergeben dann automatisch eine ID; sie wird
-        hier dynamisch gelesen ( Inhaltsliste ) und anschließend bearbeitet
-        und gelöscht."""
+        """F23/AK8: Das ID-Feld bleibt leer; die Oberfläche zeigt die
+        automatisch vergebene ID und meldet sie. Anschließend bearbeiten und
+        löschen."""
         self.open_detail()
 
-        form = self.page.locator("#ticket-new")
-        # Das ID-Eingabefeld bleibt absichtlich leer.
-        form.locator("input").nth(1).fill("Auto Paket")
-        form.locator("textarea").fill("Zeile eins\nZeile zwei")
-        form.get_by_role("button", name="Create work package").click()
+        self.create_ticket("Auto Paket", "Zeile eins\nZeile zwei")
 
         def assigned_id():
-            ids = self.page.eval_on_selector_all(
-                "#tickets .fbentry", "els => els.map(e => e.dataset.id)"
-            )
-            fresh = [i for i in ids if i not in ("F15", "V-001")]
+            identifiers = self.page.eval_on_selector_all(
+                "#tickets .fbentry", "els => els.map(e => e.dataset.id)")
+            fresh = [ident for ident in identifiers
+                     if ident not in ("F15", "V-001")]
             return fresh[0] if len(fresh) == 1 else None
 
-        self.wait_until(
-            lambda: assigned_id() is not None,
-            message="Arbeitspaket ohne ID wurde nicht angelegt",
-        )
+        self.wait_until(assigned_id, message="Arbeitspaket ohne ID fehlt")
         assigned = assigned_id()
         self.assertTrue(assigned)
         self.assertRegex(assigned, r"[A-Za-z0-9][A-Za-z0-9_.:-]*")
-
-        text = self.ticket_text()
-        self.assertIn("- [ ] %s Auto Paket" % assigned, text)
-        self.assertIn("  Beschreibung: Zeile eins\n  Zeile zwei", text)
-        self.assertIn("- [ ] F15 Arbeitspakete", text)
-        self.assertIn("- [x] V-001 Erledigtes Paket", text)
+        self.assertIn(assigned, self.records())
+        self.assertEqual("Auto Paket", self.records()[assigned]["title"])
 
         self.wait_until(
             lambda: f"{assigned} angelegt"
-            in "\n".join(
-                self.page.locator(".toasttext").all_inner_texts()
-            ),
-            message="Meldung nennt nicht die tatsächlich vergebene ID",
+            in "\n".join(self.page.locator(".toasttext").all_inner_texts()),
+            message="Meldung nennt nicht die vergebene ID",
         )
 
-        entry = self.page.locator(
-            '#tickets .fbentry[data-id="%s"]' % assigned
-        )
+        entry = self.page.locator('#tickets .fbentry[data-id="%s"]' % assigned)
         entry.get_by_role("button", name="Edit").click()
         entry.locator("textarea").fill("Geänderte Beschreibung")
         entry.get_by_role("button", name="Save").click()
 
         self.wait_until(
-            lambda: "  Beschreibung: Geänderte Beschreibung"
-            in self.ticket_text()
-            and "- [ ] %s Auto Paket" % assigned in self.ticket_text(),
+            lambda: self.records()[assigned]["description"]
+            == "Geänderte Beschreibung",
             message="Bearbeitetes Auto-Arbeitspaket wurde nicht gespeichert",
         )
+        self.assertEqual("Auto Paket", self.records()[assigned]["title"])
 
-        entry = self.page.locator(
-            '#tickets .fbentry[data-id="%s"]' % assigned
-        )
+        entry = self.page.locator('#tickets .fbentry[data-id="%s"]' % assigned)
         entry.get_by_role("button", name="Delete").click()
-        entry.locator(".confirm").get_by_role("button", name="Yes, delete").click()
+        entry.locator(".confirm").get_by_role(
+            "button", name="Yes, delete").click()
         self.wait_until(
-            lambda: "Auto Paket" not in self.ticket_text(),
+            lambda: assigned not in self.records(),
             message="Auto-Arbeitspaket wurde nicht gelöscht",
         )
-        text = self.ticket_text()
-        self.assertIn("- [ ] F15 Arbeitspakete", text)
-        self.assertIn("V-001 Erledigtes Paket", text)
+        self.assertIn("F15", self.records())
 
     def test_report_a_bug_from_the_ui(self):
+        """Vor: F1 als Feedback im Speicher. Aktion: Bug über das Formular
+        melden. Erwartet: B1 mit type bug und Beschreibung, F1 bleibt."""
         self.open_detail()
 
         form = self.page.locator("#bug-new")
@@ -300,14 +305,16 @@ class WorkPackageBrowserTest(unittest.TestCase):
         form.get_by_role("button", name="Report bug").click()
 
         self.wait_until(
-            lambda: "B1 Absturz beim Start" in self.feedback_text(),
+            lambda: any(record["type"] == "bug"
+                        for record in self.records().values()),
             message="Bugmeldung wurde nicht gespeichert",
         )
-        text = self.feedback_text()
-        self.assertIn("- [ ] B1 Absturz beim Start", text)
-        self.assertIn("  Art: Bug", text)
-        self.assertIn("  Beschreibung: Fenster bleibt leer", text)
-        self.assertIn("- [ ] F1 Bestehender Punkt", text)
+        bug = next(record for record in self.records().values()
+                   if record["type"] == "bug")
+        self.assertEqual("B1", bug["id"])
+        self.assertEqual("Absturz beim Start", bug["title"])
+        self.assertEqual("Fenster bleibt leer", bug["description"])
+        self.assertIn("F1", self.records())
 
         entry = self.page.locator('#feedback .fbentry[data-id="B1"]')
         entry.wait_for()

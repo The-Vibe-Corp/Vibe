@@ -14,11 +14,13 @@ Abgedeckt:
 * ``/api/github action=issues.sync`` verweigert ohne Opt-in ohne Netzaufruf
   und liefert bei aktivem Sync die Statistik ``created/updated/closed/pushed``.
 * ``/api/github action=issues.state`` setzt/entfernt das In-Progress-Label per
-  PATCH und spiegelt die lokale ``Status:``-Zeile.
+  PATCH und spiegelt den lokalen Zustand im Ticketspeicher (GH-48:
+  ``.vibe/tickets.json`` statt einer ``Status:``-Zeile).
 * ``/api/ticket action=add`` legt im verbundenen Projekt zuerst das Issue an
-  (Kategorie ``bug``/``feature`` -> Label) und schreibt ``GH-<n>`` plus
-  ``GitHub: #<n>``; ein Fehlschlag hinterlaesst keinen halben Eintrag; ohne
-  Opt-in bleibt die lokale AP-ID-Vergabe unveraendert.
+  (Kategorie ``bug``/``feature`` -> ``type`` und Label) und schreibt ein
+  ``GH-<n>``-Ticket mit ``github=<n>`` in den Speicher; ein Fehlschlag
+  hinterlaesst keinen halben Eintrag; ohne Opt-in bleibt die lokale
+  AP-ID-Vergabe unveraendert.
 * CLI ``vibe github <projekt> issues-sync`` / ``issues-state <id>
   in-progress|open``: gleiches Verhalten, ohne Opt-in klare Meldung und kein
   Netz.
@@ -56,6 +58,7 @@ from tests.unit.test_ap3_korbat_issues_backend import (
     FAKE_TOKEN,
     FakeIssuesServer,
     stats_dict,
+    ticket_record,
 )
 
 REPO = Path(__file__).resolve().parents[2]
@@ -84,22 +87,30 @@ def js_region(text, marker, fallback=8000):
     return text[start:end]
 
 
-def entry_block(text, ident):
-    entry = re.compile(r"^- \[[^\]]*\] ")
-    lines = text.splitlines()
-    start = None
-    for index, line in enumerate(lines):
-        if entry.match(line) and line[6:].split(" ", 1)[0] == ident:
-            start = index
-            break
-    if start is None:
-        return ""
-    end = len(lines)
-    for index in range(start + 1, len(lines)):
-        if entry.match(lines[index]):
-            end = index
-            break
-    return "\n".join(lines[start:end])
+def ticket_store(project, records):
+    """Schreibt den GH-48-Ticketspeicher ``.vibe/tickets.json``.
+
+    Alte Markdown-Ledger werden entfernt: Sie duerfen als Eingabe nicht mehr
+    wirken (kein Dual-Read-Fallback), und ein liegengebliebener Altbestand
+    soll die Speicherfaelle nicht verdecken.
+    """
+    path = Path(project) / ".vibe" / "tickets.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps({"version": 1, "tickets": list(records)},
+                   ensure_ascii=False, indent=1) + "\n",
+        encoding="utf-8",
+    )
+    for name in ("TICKETS.md", "FEEDBACK.md"):
+        (Path(project) / name).unlink(missing_ok=True)
+    return path
+
+
+def ticket_records(project):
+    """Ticketspeicher als ``{id: Datensatz}`` lesen."""
+    document = json.loads(
+        (Path(project) / ".vibe" / "tickets.json").read_text(encoding="utf-8"))
+    return {item["id"]: item for item in document["tickets"]}
 
 
 # ----------------------------------------------------------- Web-API-Fixture
@@ -122,7 +133,9 @@ class IssuesWebFixture(DashboardFixture):
         super().setUp()
         self.server = FakeIssuesServer().start()
         self.addCleanup(self.server.close)
-        self.write_tickets("# TICKETS\n\n")
+        # GH-48: Der Speicher ist die einzige Ticketquelle; jeder Fall startet
+        # mit einem leeren Speicher, damit kein Testzustand ueberlaeuft.
+        self.write_tickets([])
 
     def write_env(self, **values):
         base = {
@@ -137,11 +150,11 @@ class IssuesWebFixture(DashboardFixture):
         (self.project / ".vibe" / "project.env").write_text(text,
                                                            encoding="utf-8")
 
-    def write_tickets(self, text):
-        (self.project / "TICKETS.md").write_text(text, encoding="utf-8")
+    def write_tickets(self, records):
+        ticket_store(self.project, records)
 
     def tickets(self):
-        return (self.project / "TICKETS.md").read_text(encoding="utf-8")
+        return ticket_records(self.project)
 
     def github(self, body):
         status, text, _headers = self.post(
@@ -218,7 +231,7 @@ class IssuesSyncApiTest(IssuesWebFixture):
         fehlt.
         Aktion: ``/api/github action=issues.sync``.
         Erwartung: ``ok:false`` mit verstaendlicher Meldung; der Fake erhaelt
-        keinen einzigen Aufruf; TICKETS.md bleibt unveraendert.
+        keinen einzigen Aufruf; der Ticketspeicher bleibt unveraendert.
         Fehlerfall: Netzaufruf oder stilles Anlegen lokaler Eintraege.
         """
         self.write_env(GITHUB_ISSUES_ENABLED="")
@@ -240,13 +253,13 @@ class IssuesSyncApiTest(IssuesWebFixture):
         AP1.
         Aktion: ``issues.sync``.
         Erwartung: 200; Statistik ``created``/``updated``/``closed``/
-        ``pushed``; TICKETS.md enthaelt GH-101 und einen GitHub-Verweis am
-        lokalen AP1.
+        ``pushed``; der Ticketspeicher enthaelt GH-101 und AP1 traegt den
+        GitHub-Bezug ``github=<n>``.
         Fehlerfall: keine Statistik, kein Pull oder kein Push.
         """
         self.write_env(GITHUB_ISSUES_ENABLED="1")
-        self.write_tickets("# TICKETS\n\n- [ ] AP1 Local task\n"
-                           "  Beschreibung: Do it\n")
+        self.write_tickets([
+            ticket_record("AP1", "Local task", description="Do it")])
 
         status, data = self.github({"action": "issues.sync"})
 
@@ -255,29 +268,29 @@ class IssuesSyncApiTest(IssuesWebFixture):
         stats = stats_dict(data)
         for key in ("created", "updated", "closed", "pushed"):
             self.assertIn(key, stats, data)
-        text = self.tickets()
-        self.assertIn("- [ ] GH-101 Remote open", text)
-        self.assertRegex(entry_block(text, "AP1"), r"GitHub: #\d+")
+        records = self.tickets()
+        self.assertEqual("Remote open", records["GH-101"]["title"])
+        self.assertEqual(101, records["GH-101"]["github"])
+        self.assertIsInstance(records["AP1"]["github"], int,
+                              records["AP1"])
 
     def test_state_action_sets_and_removes_the_in_progress_label(self):
-        """Vorbedingung: lokaler Block GH-101, Issues-Sync aktiv.
+        """Vorbedingung: lokales Ticket GH-101, Issues-Sync aktiv.
         Aktion: ``issues.state`` mit ``in-progress`` und danach ``open``.
-        Erwartung: PATCH setzt/entfernt das Label; die lokale
-        ``Status: in-progress``-Zeile erscheint und verschwindet wieder.
+        Erwartung: PATCH setzt/entfernt das Label; der lokale Speicherzustand
+        wechselt auf ``in-progress`` und zurueck auf ``open``.
         Fehlerfall: Label und lokaler Zustand laufen auseinander.
         """
         self.write_env(GITHUB_ISSUES_ENABLED="1")
-        self.write_tickets("# TICKETS\n\n- [ ] GH-101 Remote open\n"
-                           "  Beschreibung: Open body\n"
-                           "  GitHub: #101\n")
+        self.write_tickets([
+            ticket_record("GH-101", "Remote open", github=101)])
 
         status, data = self.github({"action": "issues.state", "id": "GH-101",
                                     "state": "in-progress"})
 
         self.assertEqual(200, status, data)
         self.assertTrue(data.get("ok"), data)
-        block = entry_block(self.tickets(), "GH-101")
-        self.assertIn("Status: in-progress", block)
+        self.assertEqual("in-progress", self.tickets()["GH-101"]["state"])
         patches = self.server.calls("PATCH")
         self.assertEqual(1, len(patches), patches)
         self.assertIn("in-progress",
@@ -288,8 +301,7 @@ class IssuesSyncApiTest(IssuesWebFixture):
 
         self.assertEqual(200, status, data)
         self.assertTrue(data.get("ok"), data)
-        self.assertNotIn("Status: in-progress",
-                         entry_block(self.tickets(), "GH-101"))
+        self.assertEqual("open", self.tickets()["GH-101"]["state"])
         patches = self.server.calls("PATCH")
         self.assertEqual(2, len(patches), patches)
         self.assertNotIn("in-progress",
@@ -297,27 +309,28 @@ class IssuesSyncApiTest(IssuesWebFixture):
 
     def test_state_action_supports_draft_and_ready(self):
         """Vorbedingung: Remote-Issue 101 traegt ``ready`` und
-        ``in-progress``; lokal steht ``Status: in-progress``.
+        ``in-progress``; lokal steht ``state=in-progress``.
         Aktion: ``issues.state`` nacheinander mit ``draft``, ``ready`` und
         ``in-progress``.
         Erwartung: draft entfernt Ready- und In-Progress-Label, ready setzt
         Ready und entfernt In-Progress, in-progress setzt In-Progress und
-        laesst Ready stehen; die lokale Statuszeile folgt sofort.
-        Fehlerfall: Labels/Statuszeile laufen auseinander oder Ready geht
+        laesst Ready stehen; der lokale Speicherzustand folgt sofort
+        (draft -> open -> in-progress).
+        Fehlerfall: Labels/Speicherzustand laufen auseinander oder Ready geht
         verloren.
         """
         self.write_env(GITHUB_ISSUES_ENABLED="1")
         self.server.httpd.issues[0]["labels"] = [{"name": "ready"},
                                                  {"name": "in-progress"}]
-        self.write_tickets("# TICKETS\n\n- [ ] GH-101 Remote open\n"
-                           "  GitHub: #101\n"
-                           "  Status: in-progress\n")
+        self.write_tickets([
+            ticket_record("GH-101", "Remote open", github=101,
+                          state="in-progress")])
 
         status, data = self.github({"action": "issues.state", "id": "GH-101",
                                     "state": "draft"})
         self.assertEqual(200, status, data)
         self.assertTrue(data.get("ok"), data)
-        self.assertIn("Status: draft", entry_block(self.tickets(), "GH-101"))
+        self.assertEqual("draft", self.tickets()["GH-101"]["state"])
         labels = self.server.calls("PATCH")[-1]["body"].get("labels") or []
         self.assertNotIn("ready", labels)
         self.assertNotIn("in-progress", labels)
@@ -326,8 +339,7 @@ class IssuesSyncApiTest(IssuesWebFixture):
                                     "state": "ready"})
         self.assertEqual(200, status, data)
         self.assertTrue(data.get("ok"), data)
-        self.assertNotRegex(entry_block(self.tickets(), "GH-101"),
-                            r"(?m)^\s+Status:")
+        self.assertEqual("open", self.tickets()["GH-101"]["state"])
         labels = self.server.calls("PATCH")[-1]["body"].get("labels") or []
         self.assertIn("ready", labels)
         self.assertNotIn("in-progress", labels)
@@ -336,8 +348,7 @@ class IssuesSyncApiTest(IssuesWebFixture):
                                     "state": "in-progress"})
         self.assertEqual(200, status, data)
         self.assertTrue(data.get("ok"), data)
-        self.assertIn("Status: in-progress",
-                      entry_block(self.tickets(), "GH-101"))
+        self.assertEqual("in-progress", self.tickets()["GH-101"]["state"])
         labels = self.server.calls("PATCH")[-1]["body"].get("labels") or []
         self.assertIn("in-progress", labels)
         self.assertIn("ready", labels)
@@ -349,9 +360,9 @@ class TicketAddApiTest(IssuesWebFixture):
     def test_bug_category_creates_issue_and_github_block(self):
         """Vorbedingung: Issues-Sync aktiv.
         Aktion: ``/api/ticket action=add`` mit ``category="bug"``.
-        Erwartung: Issue wird mit Label ``bug`` angelegt; TICKETS.md enthaelt
-        ``GH-<n>``, ``GitHub: #<n>`` und ``Art: Bug``.
-        Fehlerfall: lokale AP-ID statt GH-Block oder fehlendes Label.
+        Erwartung: Issue wird mit Label ``bug`` angelegt; der Ticketspeicher
+        enthaelt ``GH-<n>`` mit ``type=bug`` und ``github=<n>``.
+        Fehlerfall: lokale AP-ID statt GH-Ticket oder fehlendes Label.
         """
         self.write_env(GITHUB_ISSUES_ENABLED="1")
 
@@ -361,11 +372,14 @@ class TicketAddApiTest(IssuesWebFixture):
 
         self.assertEqual(200, status, data)
         self.assertTrue(data.get("ok"), data)
-        text = self.tickets()
-        self.assertRegex(text, r"(?m)^- \[ \] GH-\d+ Web bug", text)
-        block = entry_block(text, re.search(r"GH-\d+", text).group(0))
-        self.assertIn("Art: Bug", block)
-        self.assertRegex(block, r"GitHub: #\d+")
+        records = self.tickets()
+        self.assertEqual(1, len(records), records)
+        ident, record = next(iter(records.items()))
+        self.assertRegex(ident, r"^GH-\d+$")
+        self.assertEqual("Web bug", record["title"])
+        self.assertEqual("kaputt", record["description"])
+        self.assertEqual("bug", record["type"])
+        self.assertIsInstance(record["github"], int)
         posts = self.server.by_path("POST", "/issues")
         self.assertEqual(1, len(posts), posts)
         self.assertIn("bug", posts[0]["body"].get("labels") or [], posts)
@@ -373,7 +387,8 @@ class TicketAddApiTest(IssuesWebFixture):
     def test_feature_category_uses_the_feature_label(self):
         """Vorbedingung: Issues-Sync aktiv.
         Aktion: ``/api/ticket action=add`` mit ``category="feature"``.
-        Erwartung: Issue mit Label ``feature``; lokaler Block ohne ``Art: Bug``.
+        Erwartung: Issue mit Label ``feature``; das Speicher-Ticket hat
+        ``type=feature`` (nicht ``bug``).
         Fehlerfall: Feature wird als Bug markiert oder ohne Label angelegt.
         """
         self.write_env(GITHUB_ISSUES_ENABLED="1")
@@ -384,63 +399,63 @@ class TicketAddApiTest(IssuesWebFixture):
 
         self.assertEqual(200, status, data)
         self.assertTrue(data.get("ok"), data)
-        text = self.tickets()
-        self.assertRegex(text, r"(?m)^- \[ \] GH-\d+ Web feature", text)
+        records = self.tickets()
+        self.assertEqual(1, len(records), records)
+        ident, record = next(iter(records.items()))
+        self.assertRegex(ident, r"^GH-\d+$")
+        self.assertEqual("Web feature", record["title"])
+        self.assertEqual("feature", record["type"])
         post = self.server.by_path("POST", "/issues")[0]
         self.assertIn("feature", post["body"].get("labels") or [], post)
-        ident = re.search(r"GH-\d+", text).group(0)
-        self.assertNotIn("Art: Bug", entry_block(text, ident))
 
-    def test_ticket_add_defaults_to_draft_in_connected_projects(self):
-        """Vorbedingung: Issues-Sync aktiv, kein ``draft``-Feld im Request.
-        Aktion: ``/api/ticket action=add`` mit Kategorie ``bug``.
-        Erwartung: Das Issue wird OHNE Ready-Label angelegt; der lokale Block
-        traegt ``Status: draft``.
-        Fehlerfall: Neue Tickets sind sofort arbeitbar, obwohl Entwurf der
-        Standard ist.
+    def test_ticket_add_with_state_draft_creates_a_draft_ticket(self):
+        """Vorbedingung: Issues-Sync aktiv.
+        Aktion: ``/api/ticket action=add`` mit ``state="draft"``.
+        Erwartung: Das Issue wird OHNE Ready-Label angelegt; das Speicher-
+        Ticket traegt ``state=draft``.
+        Fehlerfall: Ein ausdruecklicher Entwurf wird sofort arbeitbar.
         """
         self.write_env(GITHUB_ISSUES_ENABLED="1")
 
         status, data = self.ticket({
             "action": "add", "title": "Web draft", "description": "entwurf",
-            "category": "bug"})
+            "category": "bug", "state": "draft"})
 
         self.assertEqual(200, status, data)
         self.assertTrue(data.get("ok"), data)
-        text = self.tickets()
-        self.assertRegex(text, r"(?m)^- \[ \] GH-\d+ Web draft", text)
-        ident = re.search(r"GH-\d+", text).group(0)
-        self.assertIn("Status: draft", entry_block(text, ident))
+        records = self.tickets()
+        ident, record = next(iter(records.items()))
+        self.assertRegex(ident, r"^GH-\d+$")
+        self.assertEqual("draft", record["state"])
         post = self.server.by_path("POST", "/issues")[0]
         self.assertNotIn("ready", post["body"].get("labels") or [], post)
 
-    def test_ticket_add_with_draft_false_creates_a_ready_issue(self):
-        """Vorbedingung: Issues-Sync aktiv.
-        Aktion: ``/api/ticket action=add`` mit ``draft:false``.
-        Erwartung: Das Issue traegt das Ready-Label; der lokale Block hat
-        keine Statuszeile.
-        Fehlerfall: Die ausdrueckliche Freigabe wird ignoriert.
+    def test_ticket_add_defaults_to_open_and_creates_a_ready_issue(self):
+        """Vorbedingung: Issues-Sync aktiv, kein ``state``-Feld im Request.
+        Aktion: ``/api/ticket action=add``.
+        Erwartung (GH-48): Vorgabe ``state=open``; das Issue traegt das
+        Ready-Label.
+        Fehlerfall: Die Vorgabe ist Entwurf oder das Ready-Label fehlt.
         """
         self.write_env(GITHUB_ISSUES_ENABLED="1")
 
         status, data = self.ticket({
-            "action": "add", "title": "Web ready", "description": "frei",
-            "draft": False})
+            "action": "add", "title": "Web ready", "description": "frei"})
 
         self.assertEqual(200, status, data)
         self.assertTrue(data.get("ok"), data)
-        text = self.tickets()
-        self.assertRegex(text, r"(?m)^- \[ \] GH-\d+ Web ready", text)
-        ident = re.search(r"GH-\d+", text).group(0)
-        self.assertNotRegex(entry_block(text, ident), r"(?m)^\s+Status:")
+        records = self.tickets()
+        ident, record = next(iter(records.items()))
+        self.assertRegex(ident, r"^GH-\d+$")
+        self.assertEqual("open", record["state"])
         post = self.server.by_path("POST", "/issues")[0]
         self.assertIn("ready", post["body"].get("labels") or [], post)
 
     def test_failed_issue_creation_leaves_no_local_entry(self):
         """Vorbedingung: Issues-Sync aktiv, der Fake lehnt die Anlage ab.
         Aktion: ``/api/ticket action=add`` mit Kategorie ``bug``.
-        Erwartung: ``ok:false``; TICKETS.md bleibt leer (kein GH- und kein
-        AP-Block).
+        Erwartung: ``ok:false``; der Ticketspeicher bleibt leer (kein GH- und
+        kein AP-Ticket).
         Fehlerfall: halbfertiger lokaler Eintrag trotz GitHub-Fehler.
         """
         self.write_env(GITHUB_ISSUES_ENABLED="1")
@@ -459,8 +474,8 @@ class TicketAddApiTest(IssuesWebFixture):
     def test_without_issue_sync_the_local_auto_id_is_kept(self):
         """Vorbedingung: GitHub verknuepft, Issues-Sync aus.
         Aktion: ``/api/ticket action=add`` mit ``draft:true``.
-        Erwartung: lokaler ``AP1``-Block ohne Statuszeile; kein REST-Aufruf;
-        das Draft-Feld bleibt wirkungslos.
+        Erwartung: lokales ``AP1``-Ticket im Zustand ``open``; kein REST-
+        Aufruf; das Draft-Feld bleibt wirkungslos.
         Fehlerfall: Opt-out erzwingt GitHub-Issues oder eine Draft-Markierung.
         """
         self.write_env(GITHUB_ISSUES_ENABLED="")
@@ -471,10 +486,11 @@ class TicketAddApiTest(IssuesWebFixture):
 
         self.assertEqual(200, status, data)
         self.assertTrue(data.get("ok"), data)
-        text = self.tickets()
-        self.assertIn("- [ ] AP1 Nur lokal", text)
-        self.assertNotRegex(text, r"GH-\d+")
-        self.assertNotIn("Status: draft", entry_block(text, "AP1"))
+        records = self.tickets()
+        self.assertEqual(["AP1"], list(records))
+        self.assertEqual("Nur lokal", records["AP1"]["title"])
+        self.assertEqual("open", records["AP1"]["state"])
+        self.assertIsNone(records["AP1"]["github"])
         self.assertEqual([], self.server.calls("POST"))
 
 
@@ -508,11 +524,11 @@ class IssuesCliTest(unittest.TestCase):
                     for key, value in base.items()),
             encoding="utf-8")
 
-    def write_tickets(self, text):
-        (self.project / "TICKETS.md").write_text(text, encoding="utf-8")
+    def write_tickets(self, records):
+        ticket_store(self.project, records)
 
     def tickets(self):
-        return (self.project / "TICKETS.md").read_text(encoding="utf-8")
+        return ticket_records(self.project)
 
     def run_cli(self, *argv):
         env = {key: value for key, value in os.environ.items()
@@ -538,11 +554,11 @@ class IssuesCliTest(unittest.TestCase):
         """Vorbedingung: GitHub verknuepft, Issues-Sync aus.
         Aktion: ``vibe github proj issues-sync``.
         Erwartung: Exit ungleich 0 mit klarer Meldung; kein REST-Aufruf;
-        TICKETS.md unveraendert.
+        der Ticketspeicher bleibt unveraendert.
         Fehlerfall: stiller Netzaufruf oder Erfolgsmeldung.
         """
         self.write_env(GITHUB_ISSUES_ENABLED="")
-        self.write_tickets("# TICKETS\n\n")
+        self.write_tickets([])
         before = self.tickets()
 
         result = self.run_cli("issues-sync")
@@ -558,11 +574,11 @@ class IssuesCliTest(unittest.TestCase):
     def test_issues_sync_pulls_a_remote_issue(self):
         """Vorbedingung: Issues-Sync aktiv, Remote hat Issue 101.
         Aktion: ``vibe github proj issues-sync``.
-        Erwartung: Exit 0; TICKETS.md enthaelt GH-101.
+        Erwartung: Exit 0; der Ticketspeicher enthaelt GH-101.
         Fehlerfall: Befehl unbekannt oder ohne Wirkung.
         """
         self.write_env(GITHUB_ISSUES_ENABLED="1")
-        self.write_tickets("# TICKETS\n\n")
+        self.write_tickets([])
 
         result = self.run_cli("issues-sync")
 
@@ -571,56 +587,53 @@ class IssuesCliTest(unittest.TestCase):
         self.assertIn("GH-101", self.tickets())
 
     def test_issues_state_sets_and_removes_the_local_status_line(self):
-        """Vorbedingung: lokaler Block GH-101, Issues-Sync aktiv.
+        """Vorbedingung: lokales Ticket GH-101, Issues-Sync aktiv.
         Aktion: ``issues-state GH-101 in-progress`` und danach ``open``.
-        Erwartung: Status-Zeile erscheint/verschwindet; PATCH-Aufrufe tragen
-        bzw. entfernen das Label.
-        Fehlerfall: CLI-Aktion fehlt oder Statuszeile bleibt stehen.
+        Erwartung: Der Speicherzustand wechselt auf ``in-progress`` und
+        zurueck auf ``open``; PATCH-Aufrufe tragen bzw. entfernen das Label.
+        Fehlerfall: CLI-Aktion fehlt oder der lokale Zustand bleibt stehen.
         """
         self.write_env(GITHUB_ISSUES_ENABLED="1")
-        self.write_tickets("# TICKETS\n\n- [ ] GH-101 Remote open\n"
-                           "  GitHub: #101\n")
+        self.write_tickets([
+            ticket_record("GH-101", "Remote open", github=101)])
 
         first = self.run_cli("issues-state", "GH-101", "in-progress")
         first_out = first.stdout + first.stderr
         self.assertEqual(0, first.returncode, first_out)
-        self.assertIn("Status: in-progress",
-                      entry_block(self.tickets(), "GH-101"))
+        self.assertEqual("in-progress", self.tickets()["GH-101"]["state"])
 
         second = self.run_cli("issues-state", "GH-101", "open")
         second_out = second.stdout + second.stderr
         self.assertEqual(0, second.returncode, second_out)
-        self.assertNotIn("Status: in-progress",
-                         entry_block(self.tickets(), "GH-101"))
+        self.assertEqual("open", self.tickets()["GH-101"]["state"])
         self.assertGreaterEqual(len(self.server.calls("PATCH")), 2)
 
     def test_issues_state_supports_draft_and_ready(self):
         """Vorbedingung: Remote-Issue 101 traegt ``ready`` und
-        ``in-progress``; lokaler Block GH-101.
+        ``in-progress``; lokales Ticket GH-101.
         Aktion: ``issues-state GH-101 draft``, ``... ready`` und
         ``... in-progress``.
-        Erwartung: Exit 0 je Aktion; lokale Statuszeile draft -> keine ->
+        Erwartung: Exit 0 je Aktion; lokaler Speicherzustand draft -> open ->
         in-progress; PATCH-Labels wie in Design 19.
         Fehlerfall: CLI kennt die neuen Zustaende nicht oder synchronisiert
-        die Statuszeile nicht.
+        den Speicherzustand nicht.
         """
         self.write_env(GITHUB_ISSUES_ENABLED="1")
         self.server.httpd.issues[0]["labels"] = [{"name": "ready"},
                                                  {"name": "in-progress"}]
-        self.write_tickets("# TICKETS\n\n- [ ] GH-101 Remote open\n"
-                           "  GitHub: #101\n")
+        self.write_tickets([
+            ticket_record("GH-101", "Remote open", github=101)])
 
         draft = self.run_cli("issues-state", "GH-101", "draft")
         self.assertEqual(0, draft.returncode, draft.stdout + draft.stderr)
-        self.assertIn("Status: draft", entry_block(self.tickets(), "GH-101"))
+        self.assertEqual("draft", self.tickets()["GH-101"]["state"])
         labels = self.server.calls("PATCH")[-1]["body"].get("labels") or []
         self.assertNotIn("ready", labels)
         self.assertNotIn("in-progress", labels)
 
         ready = self.run_cli("issues-state", "GH-101", "ready")
         self.assertEqual(0, ready.returncode, ready.stdout + ready.stderr)
-        self.assertNotRegex(entry_block(self.tickets(), "GH-101"),
-                            r"(?m)^\s+Status:")
+        self.assertEqual("open", self.tickets()["GH-101"]["state"])
         labels = self.server.calls("PATCH")[-1]["body"].get("labels") or []
         self.assertIn("ready", labels)
         self.assertNotIn("in-progress", labels)
@@ -628,8 +641,7 @@ class IssuesCliTest(unittest.TestCase):
         progress = self.run_cli("issues-state", "GH-101", "in-progress")
         self.assertEqual(0, progress.returncode,
                          progress.stdout + progress.stderr)
-        self.assertIn("Status: in-progress",
-                      entry_block(self.tickets(), "GH-101"))
+        self.assertEqual("in-progress", self.tickets()["GH-101"]["state"])
         labels = self.server.calls("PATCH")[-1]["body"].get("labels") or []
         self.assertIn("in-progress", labels)
         self.assertIn("ready", labels)

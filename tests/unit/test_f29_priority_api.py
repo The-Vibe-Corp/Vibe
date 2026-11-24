@@ -156,18 +156,27 @@ class F29PriorityApiTest(unittest.TestCase):
         commit = subprocess.run(
             ["git", "-C", str(cls.project), "rev-parse", "--short", "HEAD"],
             capture_output=True, text=True, check=True).stdout.strip()
-        (cls.project / "TICKETS.md").write_text(
-            "# TICKETS\n\n"
-            "- [x] T0 Erledigte Aufgabe\n"
-            "  Beschreibung: fertig\n"
-            "  Commit: %s; Test: test_ap11\n\n" % commit +
-            "- [ ] T1 Erste Aufgabe\n  Beschreibung: offen\n"
-            "- [ ] T2 Zweite Aufgabe\n  Beschreibung: offen\n",
+        def record(tid, title, state="open", **extra):
+            item = {
+                "id": tid, "title": title, "type": "task", "state": state,
+                "description": "", "github": None, "pr_url": "",
+                "commit": "", "test": "", "blocked_reason": "",
+                "waiting_note": "", "priority": "", "dependencies": [],
+                "created": "2026-01-01T00:00:00+00:00",
+                "updated": "2026-01-01T00:00:00+00:00",
+            }
+            item.update(extra)
+            return item
+        (cls.project / ".vibe" / "tickets.json").write_text(
+            json.dumps({"version": 1, "tickets": [
+                record("T0", "Erledigte Aufgabe", state="done",
+                       description="fertig", commit=commit,
+                       test="test_ap11"),
+                record("T1", "Erste Aufgabe", description="offen"),
+                record("T2", "Zweite Aufgabe", description="offen"),
+            ]}, ensure_ascii=False, indent=1) + "\n",
             encoding="utf-8")
-        (cls.project / "FEEDBACK.md").write_text(
-            "# FEEDBACK\n", encoding="utf-8")
-        git(cls.project, "add", "-A")
-        git(cls.project, "commit", "-q", "-m", "Nachweis T0")
+        (cls.project / ".gitignore").write_text(".vibe/\n", encoding="utf-8")
         cls.env_path = cls.project / ".vibe" / "project.env"
         cls.base_env = "TYPE=generic\nTESTER=test-agent\n"
 
@@ -429,33 +438,43 @@ class F29PriorityApiTest(unittest.TestCase):
         Paket und einen FEEDBACK-Eintrag. Stellt beide Dateien nach dem
         Test wieder her.
         """
-        tickets = self.project / "TICKETS.md"
-        feedback = self.project / "FEEDBACK.md"
-        original_tickets = tickets.read_text(encoding="utf-8")
-        original_feedback = feedback.read_text(encoding="utf-8")
-        commit = re.search(
-            r"Commit:\s*([0-9a-f]+)", original_tickets).group(1)
-        self.addCleanup(
-            lambda: (tickets.write_text(original_tickets, encoding="utf-8"),
-                     feedback.write_text(original_feedback, encoding="utf-8")))
-        tickets.write_text(
-            "# TICKETS\n\n"
-            "- [x] T0 Erledigte Aufgabe\n"
-            "  Beschreibung: fertig\n"
-            "  Commit: %s; Test: test_ap11\n\n" % commit +
-            "- [ ] T1 Erste Aufgabe\n  Beschreibung: offen\n"
-            "  Priorität: P1\n\n"
-            "- [ ] T2 Zweite Aufgabe\n  Beschreibung: offen\n"
-            "  Priorität: P0\n\n"
-            "- [ ] T3 Dritte Aufgabe\n  Beschreibung: ohne Priorität\n\n"
-            "- [ ] T4 Gesperrte Aufgabe\n  Beschreibung: wartet\n"
-            "  BLOCKIERT: fehlende Freigabe\n\n"
-            "- [ ] T5 Abhängige Aufgabe\n  Beschreibung: wartet auf T1\n"
-            "  Abhängigkeiten: T1\n",
-            encoding="utf-8")
-        feedback.write_text(
-            "# FEEDBACK\n\n"
-            "- [ ] F1 Feedback-Paket\n  Beschreibung: offen\n",
+        store = self.project / ".vibe" / "tickets.json"
+        original = store.read_text(encoding="utf-8")
+        commit = subprocess.run(
+            ["git", "-C", str(self.project), "rev-parse", "--short", "HEAD"],
+            capture_output=True, text=True, check=True).stdout.strip()
+        self.addCleanup(store.write_text, original, encoding="utf-8")
+
+        def record(tid, title, type="task", state="open", **extra):
+            item = {
+                "id": tid, "title": title, "type": type, "state": state,
+                "description": "", "github": None, "pr_url": "",
+                "commit": "", "test": "", "blocked_reason": "",
+                "waiting_note": "", "priority": "", "dependencies": [],
+                "created": "2026-01-01T00:00:00+00:00",
+                "updated": "2026-01-01T00:00:00+00:00",
+            }
+            item.update(extra)
+            return item
+
+        store.write_text(
+            json.dumps({"version": 1, "tickets": [
+                record("T0", "Erledigte Aufgabe", state="done",
+                       description="fertig", commit=commit,
+                       test="test_ap11"),
+                record("T1", "Erste Aufgabe", description="offen",
+                       priority="P1"),
+                record("T2", "Zweite Aufgabe", description="offen",
+                       priority="P0"),
+                record("T3", "Dritte Aufgabe",
+                       description="ohne Priorität"),
+                record("T4", "Gesperrte Aufgabe", state="blocked",
+                       description="wartet", blocked_reason="fehlende Freigabe"),
+                record("T5", "Abhängige Aufgabe",
+                       description="wartet auf T1", dependencies=["T1"]),
+                record("F1", "Feedback-Paket", type="feedback",
+                       description="offen"),
+            ]}, ensure_ascii=False, indent=1) + "\n",
             encoding="utf-8")
 
     def get_priority(self, name="proj"):

@@ -104,7 +104,8 @@ class SessionsCliFixture(unittest.TestCase):
             support.init_repo(project)
             support.write_project(
                 project, PROJECT_ENV,
-                feedback=f"- [ ] {title}\n  Beschreibung: Test\n",
+                feedback=[support.ticket_record(
+                    "F1", title, type="feedback", description="Test")],
             )
             support.commit_all(project, "Ausgangsstand")
             cls.projects[name] = project

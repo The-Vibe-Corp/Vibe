@@ -96,6 +96,22 @@ def read_jsonl(path):
     return entries
 
 
+def commit_changed_fixture_state(project):
+    """Commitet den Fixture-Stand nur, wenn es tatsächlich Änderungen gibt.
+
+    GH-48 führt ``.vibe/`` als Laufzeitstand in die .gitignore der
+    Fixture-Projekte ein. Ein Fall, der ausschließlich ``.vibe``-Dateien
+    schreibt, hat deshalb nichts zu committen; ein leerer Commit ist an
+    dieser Stelle kein Testfehler und darf den Lauf nicht abbrechen. Die
+    fachlichen Assertionen des Falls bleiben unverändert.
+    """
+    status = support.git(project, "status", "--porcelain")
+    if status.returncode != 0:
+        raise RuntimeError(status.stdout + status.stderr)
+    if status.stdout.strip():
+        support.commit_all(project)
+
+
 class SharedFakeOpenCode:
     """Erreichbarer „gemeinsamer Server“ für AK9 (Testprozess-Thread).
 
@@ -171,7 +187,9 @@ class B13RunnerFixture(unittest.TestCase):
             'VERIFY_PACKAGE="true"\n'
             'VERIFY_FULL="true"\n'
             "MAX_RETRIES=0\n",
-            feedback="- [ ] B13 Testpaket\n  Beschreibung: Test\n",
+            feedback=[support.ticket_record("B13", "Testpaket",
+                                            type="feedback",
+                                            description="Test")],
         )
         support.init_repo(self.project)
         support.commit_all(self.project)
@@ -638,7 +656,7 @@ class SandboxPrivateServerTest(B13RunnerFixture):
                 os.path.realpath(self.runtime),
             ]}),
             encoding="utf-8")
-        support.commit_all(self.project)
+        commit_changed_fixture_state(self.project)
         # vibe_sandbox.py gehört zur Installation; der Läufer bricht sonst
         # ab, sobald SANDBOX gesetzt ist.
         shutil.copy(REPO / "bin" / "vibe_sandbox.py",

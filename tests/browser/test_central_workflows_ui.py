@@ -23,18 +23,27 @@ from playwright.sync_api import sync_playwright
 REPO = Path(__file__).resolve().parents[2]
 WEB = REPO / "bin" / "vibe-web.py"
 
-TICKETS = """# TICKETS — Test
+STAMP = "2026-01-01T00:00:00+00:00"
 
-- [ ] V-900 Bestehendes Paket
-  Beschreibung: Bleibt erhalten
-  Priorität: P1
-"""
 
-FEEDBACK = """# FEEDBACK — Test
+def ticket_record(tid, title, type="task", **extra):
+    record = {
+        "id": tid, "title": title, "type": type, "state": "open",
+        "description": "", "github": None, "pr_url": "", "commit": "",
+        "test": "", "blocked_reason": "", "waiting_note": "",
+        "priority": "", "dependencies": [],
+        "created": STAMP, "updated": STAMP,
+    }
+    record.update(extra)
+    return record
 
-- [ ] F1 Bestehender Punkt
-  Beschreibung: Bleibt erhalten
-"""
+
+BASELINE = [
+    ticket_record("V-900", "Bestehendes Paket", description="Bleibt erhalten",
+                  priority="P1"),
+    ticket_record("F1", "Bestehender Punkt", type="feedback",
+                  description="Bleibt erhalten"),
+]
 
 
 def free_port():
@@ -145,8 +154,10 @@ class CentralWorkflowBrowserTest(unittest.TestCase):
         cls.tmp.cleanup()
 
     def setUp(self):
-        (self.project / "TICKETS.md").write_text(TICKETS, encoding="utf-8")
-        (self.project / "FEEDBACK.md").write_text(FEEDBACK, encoding="utf-8")
+        (self.project / ".vibe" / "tickets.json").write_text(
+            json.dumps({"version": 1, "tickets": BASELINE},
+                       ensure_ascii=False, indent=1) + "\n",
+            encoding="utf-8")
         (self.log_dir / "proj.log").write_text("Startzeile\n", encoding="utf-8")
         self.page = self.browser.new_page(viewport={"width": 1400, "height": 1000})
 
@@ -161,8 +172,10 @@ class CentralWorkflowBrowserTest(unittest.TestCase):
             time.sleep(0.05)
         self.fail(message)
 
-    def ticket_text(self):
-        return (self.project / "TICKETS.md").read_text(encoding="utf-8")
+    def records(self):
+        return {item["id"]: item for item in json.loads(
+            (self.project / ".vibe" / "tickets.json").read_text(
+                encoding="utf-8"))["tickets"]}
 
     def open_list(self):
         self.page.goto(self.base + "/classic#t=" + self.token)
@@ -194,9 +207,10 @@ class CentralWorkflowBrowserTest(unittest.TestCase):
         form.locator("textarea").fill("Im Browser angelegt")
         form.get_by_role("button", name="Create work package").click()
         self.wait_until(
-            lambda: "- [ ] V-901 Zentraler Ablauf" in self.ticket_text(),
+            lambda: "V-901" in self.records(),
             message="Arbeitspaket wurde nicht gespeichert",
         )
+        self.assertEqual("Zentraler Ablauf", self.records()["V-901"]["title"])
 
         self.page.get_by_role("button", name="Check quick").click()
         self.wait_until(

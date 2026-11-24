@@ -352,7 +352,7 @@ async function detail(name){
    el('button',{class:'b',type:'button',on:{click:startVerify('full')}},tr('Prüfung full')),
    isPi?null:el('a',{href:OC_URL,target:'_blank'},tr('opencode-Weboberfläche'))));
  const tsel=el('select',{});api('/api/types').then(t=>t.forEach(x=>{const o=el('option',{},x);if(x===d.type)o.selected=true;tsel.append(o)}));
- const initCard=d.init?null:el('div',{class:'card warnbox'},el('b',{class:'warn'},tr('Noch nicht für vibe vorbereitet')),el('div',{class:'mut'},tr('Ergänzt fehlende Dateien (FEEDBACK.md, TICKETS.md, AGENTS.md, .vibe/project.env). Vorhandenes wird nie überschrieben, es wird nichts committet.')),
+ const initCard=d.init?null:el('div',{class:'card warnbox'},el('b',{class:'warn'},tr('Noch nicht für vibe vorbereitet')),el('div',{class:'mut'},tr('Ergänzt fehlende Dateien (AGENTS.md, .vibe/project.env) und sichert .vibe/ über die .gitignore ab. Vorhandenes wird nie überschrieben, es wird nichts committet.')),
   el('div',{class:'bar'},tsel,el('button',{class:'b p',type:'button',on:{click:act('/api/init',{name,type:tsel.value})}},tr('Für vibe vorbereiten'))));
  const head=el('div',{class:'bar detailbar'},
   el('button',{class:'b',type:'button',on:{click:()=>setTab('projects')}},tr('← zurück')),
@@ -679,18 +679,27 @@ function ticketCard(d,name){const list=el('div',{});const cls=s=>({erledigt:'ok'
  toggle.addEventListener('click',()=>{showDone=!showDone;draw()});
  draw();
  return el('div',{class:'card',id:'tickets'},el('div',{class:'bar'},el('b',{},tr('Arbeitspakete (')+d.tickets.length+')'),toggle),list)}
+/* GH-48: Zustandsauswahl für Ticket-/Feedback-Formulare. Die Optionswerte
+   sind die Speicherzustände draft/open/in-progress (Labels übersetzt);
+   Voreinstellung ist open. */
+function ticketStateSelect(){
+ const s=el('select',{'aria-label':tr('Zustand')},
+  el('option',{value:'draft'},tr('Entwurf')),
+  el('option',{value:'open'},tr('Offen')),
+  el('option',{value:'in-progress'},tr('In Progress')));
+ s.value='open';return s}
 function ticketFormCard(d,name){
- const f={id:el('input',{placeholder:tr('leer lassen: automatisch vergebene ID'),'aria-label':tr('ID des Arbeitspakets')}),t:el('input',{}),b:el('textarea',{rows:3,placeholder:tr('Was soll umgesetzt werden?')})};
- return el('div',{class:'card',id:'ticket-new'},el('b',{},tr('Neues Arbeitspaket')),el('label',{},tr('ID (automatisch vergeben, wenn leer)')),f.id,el('label',{},tr('Titel')),f.t,el('label',{},tr('Beschreibung')),f.b,
-  el('div',{class:'bar'},el('button',{class:'b p',type:'button',on:{click:async()=>{const r=await api('/api/ticket',{name,action:'add',id:f.id.value,title:f.t.value,description:f.b.value});toast(bt(r.message));if(r.ok)detail(name).catch(showErr)}}},tr('Arbeitspaket anlegen'))))}
+ const f={id:el('input',{placeholder:tr('leer lassen: automatisch vergebene ID'),'aria-label':tr('ID des Arbeitspakets')}),t:el('input',{}),b:el('textarea',{rows:3,placeholder:tr('Was soll umgesetzt werden?')}),state:ticketStateSelect()};
+ return el('div',{class:'card',id:'ticket-new'},el('b',{},tr('Neues Arbeitspaket')),el('label',{},tr('ID (automatisch vergeben, wenn leer)')),f.id,el('label',{},tr('Titel')),f.t,el('label',{},tr('Beschreibung')),f.b,el('label',{},tr('Zustand')),f.state,
+  el('div',{class:'bar'},el('button',{class:'b p',type:'button',on:{click:async()=>{const r=await api('/api/ticket',{name,action:'add',id:f.id.value,title:f.t.value,description:f.b.value,state:f.state.value});toast(bt(r.message));if(r.ok)detail(name).catch(showErr)}}},tr('Arbeitspaket anlegen'))))}
 function bugFormCard(d,name){
- const f={t:el('input',{}),b:el('textarea',{rows:3,placeholder:tr('Was funktioniert nicht?')})};
- return el('div',{class:'card',id:'bug-new'},el('b',{},tr('Bug melden')),el('label',{},tr('Titel')),f.t,el('label',{},tr('Beschreibung')),f.b,
-  el('div',{class:'bar'},el('button',{class:'b p',type:'button',on:{click:async()=>{const r=await api('/api/feedback',{name,kind:'bug',title:f.t.value,description:f.b.value});toast(bt(r.message));if(r.ok)detail(name).catch(showErr)}}},tr('Bug melden'))))}
+ const f={t:el('input',{}),b:el('textarea',{rows:3,placeholder:tr('Was funktioniert nicht?')}),state:ticketStateSelect()};
+ return el('div',{class:'card',id:'bug-new'},el('b',{},tr('Bug melden')),el('label',{},tr('Titel')),f.t,el('label',{},tr('Beschreibung')),f.b,el('label',{},tr('Zustand')),f.state,
+  el('div',{class:'bar'},el('button',{class:'b p',type:'button',on:{click:async()=>{const r=await api('/api/feedback',{name,kind:'bug',title:f.t.value,description:f.b.value,state:f.state.value});toast(bt(r.message));if(r.ok)detail(name).catch(showErr)}}},tr('Bug melden'))))}
 function feedbackFormCard(d,name){
- const f={t:el('input',{}),b:el('textarea',{rows:3,placeholder:tr('Was soll geändert oder ergänzt werden?')})};
- return el('div',{class:'card',id:'feedback-new'},el('b',{},tr('Feedback eintragen')),el('label',{},tr('Titel')),f.t,el('label',{},tr('Beschreibung')),f.b,
-  el('div',{class:'bar'},el('button',{class:'b p',type:'button',on:{click:async()=>{const r=await api('/api/feedback',{name,title:f.t.value,description:f.b.value});toast(bt(r.message));detail(name).catch(showErr)}}},tr('Eintragen'))))}
+ const f={t:el('input',{}),b:el('textarea',{rows:3,placeholder:tr('Was soll geändert oder ergänzt werden?')}),state:ticketStateSelect()};
+ return el('div',{class:'card',id:'feedback-new'},el('b',{},tr('Feedback eintragen')),el('label',{},tr('Titel')),f.t,el('label',{},tr('Beschreibung')),f.b,el('label',{},tr('Zustand')),f.state,
+  el('div',{class:'bar'},el('button',{class:'b p',type:'button',on:{click:async()=>{const r=await api('/api/feedback',{name,title:f.t.value,description:f.b.value,state:f.state.value});toast(bt(r.message));detail(name).catch(showErr)}}},tr('Eintragen'))))}
 /* F19: Syntaxhervorhebung der Live-Ausgabe. Es werden ausschließlich
    DOM-Knoten erzeugt (kein innerHTML), damit Protokollinhalt nie als HTML
    interpretiert wird. Die Hervorhebung ist eine Darstellungshilfe und ändert
@@ -1096,7 +1105,7 @@ function githubBody(d,name){
    el('div',{class:'bar'},prBtn),
    el('hr'),
    el('b',{},tr('Issues als Arbeitspakete')),
-   el('div',{class:'mut'},tr('Offene GitHub-Issues nach Label filtern und als Arbeitspakete (GH-Nummer) in TICKETS.md übernehmen.')),
+   el('div',{class:'mut'},tr('Offene GitHub-Issues nach Label filtern und als Tickets (GH-Nummer) in den Ticketspeicher übernehmen.')),
    el('label',{},tr('Label-Filter')),issueFilter,
    el('div',{class:'bar'},loadBtn,importBtn),
    issuesBox):null;

@@ -27,19 +27,25 @@ REPO = Path(__file__).resolve().parents[2]
 CLI = REPO / "bin" / "vibe"
 WEB = REPO / "bin" / "vibe-web.py"
 
-BASELINE = """# FEEDBACK — Rückmeldungen an den Agenten
+STAMP = "2026-01-01T00:00:00+00:00"
 
-<!-- Vorlage (nicht abhaken):
-  - [ ] F99 Kurztitel
-    Beschreibung: ...
--->
 
-- [ ] F1 Erster Punkt
-  Beschreibung: Erste Beschreibung
+def ticket_record(tid, title, type="feedback", state="open", **extra):
+    record = {
+        "id": tid, "title": title, "type": type, "state": state,
+        "description": "", "github": None, "pr_url": "", "commit": "",
+        "test": "", "blocked_reason": "", "waiting_note": "",
+        "priority": "", "dependencies": [],
+        "created": STAMP, "updated": STAMP,
+    }
+    record.update(extra)
+    return record
 
-- [ ] F2 Zweiter Punkt
-  Beschreibung: Zweite Beschreibung
-"""
+
+BASELINE = [
+    ticket_record("F1", "Erster Punkt", description="Erste Beschreibung"),
+    ticket_record("F2", "Zweiter Punkt", description="Zweite Beschreibung"),
+]
 
 
 def load_cli(vibe_root):
@@ -111,145 +117,138 @@ class FeedbackEditModelTest(unittest.TestCase):
         )
         self.commit = init_git_repo(self.root)
         self.cli = load_cli(self.root)
-        self.feedback = self.project / "FEEDBACK.md"
+        self.store = self.project / ".vibe" / "tickets.json"
 
     def tearDown(self):
         self.tmp.cleanup()
 
-    def write_feedback(self, text):
-        self.feedback.write_text(text, encoding="utf-8")
+    def write_feedback(self, records):
+        self.store.write_text(
+            json.dumps({"version": 1, "tickets": list(records)},
+                       ensure_ascii=False, indent=1) + "\n",
+            encoding="utf-8")
+        return self.store
 
     def text(self):
-        return self.feedback.read_text(encoding="utf-8")
+        return self.store.read_text(encoding="utf-8")
+
+    def records(self):
+        return {item["id"]: item for item in json.loads(
+            self.text())["tickets"]}
 
     def test_lists_all_feedback_entries_with_description_and_state(self):
-        self.write_feedback(
-            "# FEEDBACK\n\n"
-            "- [ ] F1 Offener Punkt\n"
-            "  Beschreibung: Erste Beschreibung\n\n"
-            "- [x] F2 Erledigter Punkt\n"
-            "  Beschreibung: Zweite Beschreibung\n"
-            f"  Commit: {self.commit}; Test: test_x\n\n"
-            "- [ ] F3 Blockierter Punkt\n"
-            "  Beschreibung: Dritte Beschreibung\n"
-            "  BLOCKIERT: fehlende Freigabe\n"
-        )
+        """Vor: offen/done/blockiert im Speicher. Aktion: feedback_items.
+        Erwartet: Reihenfolge und Anzeigezustände offen/erledigt/BLOCKIERT."""
+        self.write_feedback([
+            ticket_record("F1", "Offener Punkt",
+                          description="Erste Beschreibung"),
+            ticket_record("F2", "Erledigter Punkt", state="done",
+                          description="Zweite Beschreibung",
+                          commit=self.commit, test="test_x"),
+            ticket_record("F3", "Blockierter Punkt", state="blocked",
+                          description="Dritte Beschreibung",
+                          blocked_reason="fehlende Freigabe"),
+        ])
 
         entries = self.cli.feedback_items("proj")
 
-        self.assertEqual([e["id"] for e in entries], ["F1", "F2", "F3"])
-        self.assertEqual(entries[0]["title"], "Offener Punkt")
-        self.assertEqual(entries[0]["description"], "Erste Beschreibung")
-        self.assertEqual(entries[0]["state"], "offen")
-        self.assertEqual(entries[1]["state"], "erledigt")
-        self.assertEqual(entries[2]["state"], "BLOCKIERT")
+        self.assertEqual([entry["id"] for entry in entries],
+                         ["F1", "F2", "F3"])
+        self.assertEqual("Offener Punkt", entries[0]["title"])
+        self.assertEqual("Erste Beschreibung", entries[0]["description"])
+        self.assertEqual("offen", entries[0]["state"])
+        self.assertEqual("erledigt", entries[1]["state"])
+        self.assertEqual("BLOCKIERT", entries[2]["state"])
 
-    def test_collects_multiline_description_without_field_labels(self):
-        self.write_feedback(
-            "- [ ] F1 Alter Punkt\n"
-            "  Schritte: Schritt A\n"
-            "  Erwartet: Erste Zeile\n"
-            "  Zweite Zeile der Beschreibung\n"
-            "  Ist: Ist-Zustand\n"
-        )
+    def test_collects_a_multiline_description(self):
+        """Vor: Ticket mit zweizeiliger Beschreibung. Aktion: feedback_items.
+        Erwartet: beide Zeilen bleiben erhalten."""
+        self.write_feedback([ticket_record(
+            "F1", "Alter Punkt",
+            description="Erste Zeile\nZweite Zeile der Beschreibung")])
 
         entries = self.cli.feedback_items("proj")
 
-        self.assertEqual(len(entries), 1)
-        self.assertEqual(
-            entries[0]["description"],
-            "Erste Zeile\nZweite Zeile der Beschreibung",
-        )
+        self.assertEqual("Erste Zeile\nZweite Zeile der Beschreibung",
+                         entries[0]["description"])
 
     def test_update_changes_title_and_description_only(self):
-        self.write_feedback(
-            "- [ ] F1 Alter Titel\n"
-            "  Schritte: Schritt A\n"
-            "  Erwartet: Alte Beschreibung\n"
-            "  Fortsetzung der alten Beschreibung\n"
-            "  Ist: Ist-Zustand\n\n"
-            "- [ ] F2 Bleibt unverändert\n"
-            "  Beschreibung: Unverändert\n"
-        )
+        """Vor: F1 mit Zusatzfeld, F2 daneben. Aktion: update F1.
+        Erwartet: F1 neu, Zusatzfeld und F2 unverändert."""
+        self.write_feedback([
+            ticket_record("F1", "Alter Titel", description="Alte Beschreibung",
+                          custom="bleibt"),
+            ticket_record("F2", "Bleibt unverändert",
+                          description="Unverändert"),
+        ])
 
-        self.cli.feedback_update("proj", "F1", "Neuer Titel", "Neue Beschreibung")
+        self.cli.feedback_update("proj", "F1", "Neuer Titel",
+                                 "Neue Beschreibung")
 
-        text = self.text()
-        self.assertIn("- [ ] F1 Neuer Titel", text)
-        self.assertIn("  Beschreibung: Neue Beschreibung", text)
-        self.assertIn("  Schritte: Schritt A", text)
-        self.assertIn("  Ist: Ist-Zustand", text)
-        self.assertNotIn("Erwartet:", text)
-        self.assertNotIn("Fortsetzung der alten Beschreibung", text)
-        self.assertIn("- [ ] F2 Bleibt unverändert", text)
-        self.assertIn("  Beschreibung: Unverändert", text)
+        records = self.records()
+        self.assertEqual("Neuer Titel", records["F1"]["title"])
+        self.assertEqual("Neue Beschreibung", records["F1"]["description"])
+        self.assertEqual("bleibt", records["F1"]["custom"])
+        self.assertEqual("Bleibt unverändert", records["F2"]["title"])
 
-    def test_update_adds_description_when_missing(self):
-        self.write_feedback("- [ ] F1 Nur Titel\n")
+    def test_update_keeps_other_fields(self):
+        """Vor: F1 mit Priorität und Typ. Aktion: update des Titels.
+        Erwartet: Typ, Priorität und Zustand bleiben."""
+        self.write_feedback([ticket_record(
+            "F1", "Titel", priority="P2", state="in-progress")])
 
-        self.cli.feedback_update("proj", "F1", "Neuer Titel", "Neue Beschreibung")
+        self.cli.feedback_update("proj", "F1", "Neu", "Text")
 
-        self.assertEqual(
-            [line for line in self.text().splitlines() if line.strip()],
-            ["- [ ] F1 Neuer Titel", "  Beschreibung: Neue Beschreibung"],
-        )
+        record = self.records()["F1"]
+        self.assertEqual("feedback", record["type"])
+        self.assertEqual("P2", record["priority"])
+        self.assertEqual("in-progress", record["state"])
 
-    def test_update_keeps_multiline_description(self):
-        self.write_feedback("- [ ] F1 Titel\n  Beschreibung: Alt\n")
+    def test_update_accepts_a_multiline_description(self):
+        """Vor: F1. Aktion: update mit zwei Zeilen.
+        Erwartet: beide Zeilen im Feld."""
+        self.write_feedback([ticket_record("F1", "Titel", description="Alt")])
 
-        self.cli.feedback_update("proj", "F1", "Titel", "Zeile eins\nZeile zwei")
+        self.cli.feedback_update("proj", "F1", "Titel",
+                                 "Zeile eins\nZeile zwei")
 
-        entries = self.cli.feedback_items("proj")
-        self.assertEqual(entries[0]["description"], "Zeile eins\nZeile zwei")
+        self.assertEqual("Zeile eins\nZeile zwei",
+                         self.records()["F1"]["description"])
 
-    def test_update_keeps_done_checkbox(self):
-        self.write_feedback("- [x] F1 Alter Titel\n  Beschreibung: Alt\n")
-
-        self.cli.feedback_update("proj", "F1", "Neuer Titel", "Neu")
-
-        self.assertEqual(
-            [line for line in self.text().splitlines() if line.strip()],
-            ["- [x] F1 Neuer Titel", "  Beschreibung: Neu"],
-        )
-
-    def test_update_rejects_empty_title_without_changing_file(self):
-        self.write_feedback("- [ ] F1 Titel\n  Beschreibung: Alt\n")
+    def test_update_rejects_empty_title_without_changing_the_store(self):
+        """Vor: F1. Aktion: update mit Leertitel.
+        Erwartet: ValueError „Titel fehlt", Speicher unverändert."""
+        self.write_feedback([ticket_record("F1", "Titel", description="Alt")])
         before = self.text()
 
-        with self.assertRaisesRegex(ValueError, "Titel fehlt"):
+        with self.assertRaisesRegex(ValueError, "Titel"):
             self.cli.feedback_update("proj", "F1", "   ", "Neu")
 
         self.assertEqual(self.text(), before)
 
-    def test_update_rejects_title_with_line_break_without_changing_file(self):
-        self.write_feedback("- [ ] F1 Titel\n  Beschreibung: Alt\n")
+    def test_update_rejects_title_with_line_break(self):
+        """Vor: F1. Aktion: update mit mehrzeiligem Titel.
+        Erwartet: ValueError „Zeilenumbruch", Speicher unverändert."""
+        self.write_feedback([ticket_record("F1", "Titel", description="Alt")])
         before = self.text()
 
         with self.assertRaisesRegex(ValueError, "Zeilenumbruch"):
-            self.cli.feedback_update("proj", "F1", "Neu\n- [ ] F2 Eingeschmuggelt", "Neu")
+            self.cli.feedback_update("proj", "F1", "Neu\nF2", "Neu")
 
         self.assertEqual(self.text(), before)
 
-    def test_update_keeps_file_mode(self):
-        self.write_feedback("- [ ] F1 Titel\n  Beschreibung: Alt\n")
-        os.chmod(self.feedback, 0o640)
-
-        self.cli.feedback_update("proj", "F1", "Neuer Titel", "Neu")
-
-        self.assertEqual(os.stat(self.feedback).st_mode & 0o777, 0o640)
-
-    def test_update_writes_empty_description_without_trailing_space(self):
-        self.write_feedback("- [ ] F1 Titel\n  Beschreibung: Alt\n")
+    def test_update_accepts_an_empty_description(self):
+        """Vor: F1 mit Beschreibung. Aktion: update mit leerer Beschreibung.
+        Erwartet: das Feld ist leer, kein Resttext."""
+        self.write_feedback([ticket_record("F1", "Titel", description="Alt")])
 
         self.cli.feedback_update("proj", "F1", "Titel", "")
 
-        self.assertEqual(
-            [line for line in self.text().splitlines() if line.strip()],
-            ["- [ ] F1 Titel", "  Beschreibung:"],
-        )
+        self.assertEqual("", self.records()["F1"]["description"])
 
-    def test_update_rejects_unknown_id_without_changing_file(self):
-        self.write_feedback("- [ ] F1 Titel\n  Beschreibung: Alt\n")
+    def test_update_rejects_unknown_id_without_changing_the_store(self):
+        """Vor: F1. Aktion: update F99. Erwartet: ValueError „nicht gefunden"."""
+        self.write_feedback([ticket_record("F1", "Titel", description="Alt")])
         before = self.text()
 
         with self.assertRaisesRegex(ValueError, "nicht gefunden"):
@@ -258,19 +257,17 @@ class FeedbackEditModelTest(unittest.TestCase):
         self.assertEqual(self.text(), before)
 
     def test_delete_removes_only_selected_entry(self):
+        """Vor: F1, F2. Aktion: delete F1. Erwartet: nur F2 bleibt."""
         self.write_feedback(BASELINE)
 
         self.cli.feedback_delete("proj", "F1")
 
-        text = self.text()
-        self.assertNotIn("F1 Erster Punkt", text)
-        self.assertNotIn("Erste Beschreibung", text)
-        self.assertIn("- [ ] F2 Zweiter Punkt", text)
-        self.assertIn("  Beschreibung: Zweite Beschreibung", text)
-        self.assertIn("F99 Kurztitel", text, "Kommentar-Vorlage muss erhalten bleiben")
-        self.assertIn("<!-- Vorlage (nicht abhaken):", text)
+        records = self.records()
+        self.assertEqual(["F2"], list(records))
+        self.assertEqual("Zweite Beschreibung", records["F2"]["description"])
 
-    def test_delete_rejects_unknown_id_without_changing_file(self):
+    def test_delete_rejects_unknown_id_without_changing_the_store(self):
+        """Vor: BASELINE. Aktion: delete F99. Erwartet: ValueError, unverändert."""
         self.write_feedback(BASELINE)
         before = self.text()
 
@@ -278,6 +275,17 @@ class FeedbackEditModelTest(unittest.TestCase):
             self.cli.feedback_delete("proj", "F99")
 
         self.assertEqual(self.text(), before)
+
+    def test_update_preserves_the_file_mode(self):
+        """Vor: Speicher mit Modus 0640. Aktion: update.
+        Erwartet: der Modus bleibt erhalten."""
+        path = self.write_feedback([ticket_record("F1", "Titel",
+                                                  description="Alt")])
+        os.chmod(path, 0o640)
+
+        self.cli.feedback_update("proj", "F1", "Neu", "Text")
+
+        self.assertEqual(os.stat(path).st_mode & 0o777, 0o640)
 
 
 class FeedbackApiFixture(unittest.TestCase):
@@ -343,7 +351,10 @@ class FeedbackApiFixture(unittest.TestCase):
         cls.tmp.cleanup()
 
     def setUp(self):
-        (self.project / "FEEDBACK.md").write_text(BASELINE, encoding="utf-8")
+        (self.project / ".vibe" / "tickets.json").write_text(
+            json.dumps({"version": 1, "tickets": BASELINE},
+                       ensure_ascii=False, indent=1) + "\n",
+            encoding="utf-8")
 
     def request(self, path, payload=None, token=True):
         data = json.dumps(payload).encode("utf-8") if payload is not None else None
@@ -367,7 +378,12 @@ class FeedbackApiFixture(unittest.TestCase):
             return code, body
 
     def feedback_text(self):
-        return (self.project / "FEEDBACK.md").read_text(encoding="utf-8")
+        return (self.project / ".vibe" / "tickets.json").read_text(
+            encoding="utf-8")
+
+    def records(self):
+        return {item["id"]: item for item in json.loads(
+            self.feedback_text())["tickets"]}
 
 
 class FeedbackApiTest(FeedbackApiFixture):
@@ -397,11 +413,11 @@ class FeedbackApiTest(FeedbackApiFixture):
 
         self.assertEqual(status, 200, body)
         self.assertTrue(json.loads(body)["ok"])
-        text = self.feedback_text()
-        self.assertIn("- [ ] F1 Geänderter Titel", text)
-        self.assertIn("  Beschreibung: Geänderte Beschreibung", text)
-        self.assertIn("- [ ] F2 Zweiter Punkt", text)
-        self.assertNotIn("Erster Punkt", text)
+        records = self.records()
+        self.assertEqual("Geänderter Titel", records["F1"]["title"])
+        self.assertEqual("Geänderte Beschreibung",
+                         records["F1"]["description"])
+        self.assertEqual("Zweiter Punkt", records["F2"]["title"])
 
     def test_api_deletes_existing_entry(self):
         status, body = self.request(
@@ -409,10 +425,9 @@ class FeedbackApiTest(FeedbackApiFixture):
         )
 
         self.assertEqual(status, 200, body)
-        text = self.feedback_text()
-        self.assertNotIn("F2 Zweiter Punkt", text)
-        self.assertIn("- [ ] F1 Erster Punkt", text)
-        self.assertIn("F99 Kurztitel", text)
+        records = self.records()
+        self.assertNotIn("F2", records)
+        self.assertEqual("Erster Punkt", records["F1"]["title"])
 
     def test_api_rejects_unknown_entry_and_keeps_file(self):
         before = self.feedback_text()

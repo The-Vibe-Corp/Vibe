@@ -35,6 +35,7 @@ Run:
 """
 import contextlib
 import importlib.machinery
+import json
 import importlib.util
 import io
 import os
@@ -90,14 +91,33 @@ def load_cli(vibe_root, home):
                 os.environ[key] = value
 
 
-def make_project(root, tickets="", feedback="", env_text="TYPE=generic\n"):
+def ticket_record(tid, title, type="task", state="open", **extra):
+    record = {
+        "id": tid, "title": title, "type": type, "state": state,
+        "description": "", "github": None, "pr_url": "", "commit": "",
+        "test": "", "blocked_reason": "", "waiting_note": "",
+        "priority": "", "dependencies": [],
+        "created": "2026-01-01T00:00:00+00:00",
+        "updated": "2026-01-01T00:00:00+00:00",
+    }
+    record.update(extra)
+    return record
+
+
+def make_project(root, tickets=None, feedback=None, env_text="TYPE=generic\n"):
+    """Projekt mit GH-48-Ticketspeicher statt Markdown-Ledgern."""
     project = Path(root) / "proj"
-    (project / ".vibe").mkdir(parents=True)
+    (project / ".vibe").mkdir(parents=True, exist_ok=True)
     (project / ".vibe" / "project.env").write_text(env_text, encoding="utf-8")
-    (project / "TICKETS.md").write_text(
-        "# TICKETS\n\n" + tickets, encoding="utf-8")
-    (project / "FEEDBACK.md").write_text(
-        "# FEEDBACK\n\n" + feedback, encoding="utf-8")
+    records = []
+    for source in (tickets, feedback):
+        if source:
+            records.extend(source)
+    if records:
+        (project / ".vibe" / "tickets.json").write_text(
+            json.dumps({"version": 1, "tickets": records},
+                       ensure_ascii=False, indent=1) + "\n",
+            encoding="utf-8")
     return project
 
 
@@ -111,70 +131,9 @@ def js_region(text, marker, fallback=6000):
     return text[start:end]
 
 
-class WaitingMarkerUnitTest(unittest.TestCase):
-    """Semantik des neuen Markers und des Nachweis-Aufräumens."""
-
-    @classmethod
-    def setUpClass(cls):
-        cls.module = load_packages()
-
-    def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(self.tmp.cleanup)
-        self.root = Path(self.tmp.name)
-
-    def test_is_waiting_merge_is_true_for_the_new_marker_only(self):
-        """Vorbedingung: Blöcke mit WARTET- bzw. BLOCKIERT-Marker.
-        Aktion: ``is_waiting_merge`` und ``is_blocked`` auswerten.
-        Erwartung: WARTET → ``is_waiting_merge`` True, ``is_blocked`` False;
-        BLOCKIERT → ``is_blocked`` True, ``is_waiting_merge`` False.
-        Fehlerfall: Marker werden verwechselt oder ``is_blocked`` verändert.
-        """
-        waiting = "- [ ] T1 Wartet\n  WARTET AUF MERGE: MR offen\n"
-        blocked = "- [ ] T2 Blockiert\n  BLOCKIERT: extern\n"
-
-        self.assertTrue(self.module.is_waiting_merge(waiting))
-        self.assertFalse(self.module.is_blocked(waiting))
-        self.assertTrue(self.module.is_blocked(blocked))
-        self.assertFalse(self.module.is_waiting_merge(blocked))
-
-    def test_sync_proof_removes_waiting_and_blocked_markers(self):
-        """Vorbedingung: Projektblock enthält WARTET- und BLOCKIERT-Zeilen;
-        die Arbeitskopie liefert denselben Block abgehakt mit Nachweis.
-        Aktion: ``sync_proof(..., require_commit=False)``.
-        Erwartung: Beide Markerzeilen sind im Projekt entfernt, Checkbox und
-        Nachweis sind übernommen.
-        Fehlerfall: WARTET bleibt stehen und das Paket gilt weiter als wartend.
-        """
-        project = make_project(
-            self.root,
-            tickets=(
-                "- [ ] T1 Paket\n"
-                "  Beschreibung: offen\n"
-                "  WARTET AUF MERGE: alter PR\n"
-                "  BLOCKIERT: alter Vermerk\n"
-            ),
-        )
-        worktree = self.root / "wt"
-        worktree.mkdir()
-        (worktree / "TICKETS.md").write_text(
-            "# TICKETS\n\n"
-            "- [x] T1 Paket\n"
-            "  Beschreibung: offen\n"
-            "  Commit: abc1234; Test: test_t1\n",
-            encoding="utf-8",
-        )
-
-        changed, message = self.module.sync_proof(
-            project, worktree, "T1", require_commit=False
-        )
-
-        self.assertTrue(changed, message)
-        text = (project / "TICKETS.md").read_text(encoding="utf-8")
-        self.assertIn("- [x] T1", text)
-        self.assertNotIn(WAITING, text)
-        self.assertNotIn("BLOCKIERT", text)
-        self.assertIn("Test: test_t1", text)
+# GH-48: `is_waiting_merge`/`sync_proof` (Markdown-Marker) sind entfernt.
+# Die Zustandssemantik tragen tests/unit/test_gh48_runner_tickets.py und
+# tests/unit/test_gh48_ticket_store.py.
 
 
 class MarkWaitingCommandTest(unittest.TestCase):
@@ -190,10 +149,10 @@ class MarkWaitingCommandTest(unittest.TestCase):
         self.root = Path(self.tmp.name)
         self.project = make_project(
             self.root,
-            tickets=(
-                "- [ ] T1 Wartet\n  Beschreibung: PR offen\n\n"
-                "- [ ] T2 Offen\n  Beschreibung: frei\n"
-            ),
+            tickets=[
+                ticket_record("T1", "Wartet", description="PR offen"),
+                ticket_record("T2", "Offen", description="frei"),
+            ],
         )
 
     def mark_waiting(self, note="PR #6 wartet"):
@@ -204,8 +163,11 @@ class MarkWaitingCommandTest(unittest.TestCase):
             capture_output=True, text=True, timeout=60,
         )
 
-    def tickets_text(self):
-        return (self.project / "TICKETS.md").read_text(encoding="utf-8")
+    def records(self):
+        document = json.loads(
+            (self.project / ".vibe" / "tickets.json").read_text(
+                encoding="utf-8"))
+        return {item["id"]: item for item in document["tickets"]}
 
     def test_mark_waiting_writes_an_indented_marker_and_reports_waiting(self):
         """Vorbedingung: offenes Paket T1 in TICKETS.md.
@@ -218,13 +180,10 @@ class MarkWaitingCommandTest(unittest.TestCase):
         result = self.mark_waiting("PR #6 wartet")
 
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("wartend", (result.stdout + result.stderr).lower())
-        lines = self.tickets_text().splitlines()
-        self.assertTrue(
-            any(line.strip() == WAITING + ": PR #6 wartet"
-                and line.startswith("  ") for line in lines),
-            self.tickets_text(),
-        )
+        self.assertIn("wartet", (result.stdout + result.stderr).lower())
+        record = self.records()["T1"]
+        self.assertEqual("waiting-merge", record["state"])
+        self.assertEqual("PR #6 wartet", record["waiting_note"])
 
     def test_mark_waiting_is_idempotent(self):
         """Vorbedingung: ``mark-waiting`` lief bereits einmal für T1.
@@ -239,9 +198,8 @@ class MarkWaitingCommandTest(unittest.TestCase):
         second = self.mark_waiting()
 
         output = second.stdout + second.stderr
-        self.assertIn("wartend", output.lower())
-        text = self.tickets_text()
-        self.assertEqual(text.count(WAITING), 1, text)
+        self.assertIn("wartet", output.lower())
+        self.assertEqual("PR #6 wartet", self.records()["T1"]["waiting_note"])
 
     def test_mark_waiting_leaves_other_blocks_unchanged(self):
         """Vorbedingung: T1 und T2 offen.
@@ -249,15 +207,12 @@ class MarkWaitingCommandTest(unittest.TestCase):
         Erwartung: Nur der Block T1 erhält die Marke; T2 bleibt unverändert.
         Fehlerfall: Marke im falschen Block oder Datei-Umschreibung.
         """
-        before = self.tickets_text()
-
         result = self.mark_waiting()
 
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        after = self.tickets_text()
-        t2_before = before[before.index("- [ ] T2"):]
-        t2_after = after[after.index("- [ ] T2"):]
-        self.assertEqual(t2_before, t2_after)
+        self.assertEqual("T2", list(self.records())[1])
+        self.assertEqual("open", self.records()["T2"]["state"])
+        self.assertEqual("", self.records()["T2"]["waiting_note"])
 
 
 class WaitingSelectionAndReportTest(unittest.TestCase):
@@ -280,10 +235,11 @@ class WaitingSelectionAndReportTest(unittest.TestCase):
         """
         project = make_project(
             self.root,
-            tickets=(
-                "- [ ] T1 Wartet\n  WARTET AUF MERGE: PR #6\n"
-                "- [ ] T2 Offen\n"
-            ),
+            tickets=[
+                ticket_record("T1", "Wartet", state="waiting-merge",
+                              waiting_note="PR #6"),
+                ticket_record("T2", "Offen"),
+            ],
         )
 
         selected = self.module.select_package(
@@ -301,10 +257,11 @@ class WaitingSelectionAndReportTest(unittest.TestCase):
         """
         project = make_project(
             self.root,
-            tickets=(
-                "- [ ] T1 Wartet\n  WARTET AUF MERGE: PR #6\n"
-                "- [ ] T2 Offen\n"
-            ),
+            tickets=[
+                ticket_record("T1", "Wartet", state="waiting-merge",
+                              waiting_note="PR #6"),
+                ticket_record("T2", "Offen"),
+            ],
         )
 
         selected = self.module.select_package(
@@ -323,13 +280,16 @@ class WaitingSelectionAndReportTest(unittest.TestCase):
         """
         project = make_project(
             self.root,
-            tickets=(
-                "- [ ] T1 Wartet\n  WARTET AUF MERGE: PR #6\n"
-                "- [ ] T2 Offen\n"
-                "- [ ] T3 Blockiert\n  BLOCKIERT: extern\n"
-                "- [ ] T4 Beides\n  WARTET AUF MERGE: PR #7\n"
-                "  BLOCKIERT: extern\n"
-            ),
+            tickets=[
+                ticket_record("T1", "Wartet", state="waiting-merge",
+                              waiting_note="PR #6"),
+                ticket_record("T2", "Offen"),
+                ticket_record("T3", "Blockiert", state="blocked",
+                              blocked_reason="extern"),
+                ticket_record("T4", "Beides", state="blocked",
+                              waiting_note="PR #7",
+                              blocked_reason="extern"),
+            ],
         )
 
         report = self.module.status_report(project)
@@ -350,10 +310,11 @@ class WaitingSelectionAndReportTest(unittest.TestCase):
         """
         project = make_project(
             self.root,
-            tickets=(
-                "- [ ] T1 Wartet\n  WARTET AUF MERGE: PR #6\n"
-                "- [ ] T2 Offen\n"
-            ),
+            tickets=[
+                ticket_record("T1", "Wartet", state="waiting-merge",
+                              waiting_note="PR #6"),
+                ticket_record("T2", "Offen"),
+            ],
             env_text='TYPE=generic\nPACKAGE_ORDER="T1,T2"\n',
         )
 
@@ -380,7 +341,7 @@ class TicketStatusWaitingTest(unittest.TestCase):
         self.home.mkdir()
         self.cli = load_cli(self.workspace, self.home)
 
-    def project(self, tickets="", feedback=""):
+    def project(self, tickets=None, feedback=None):
         project = make_project(self.workspace, tickets=tickets, feedback=feedback)
         self.cli._pm.clear()
         return project
@@ -391,9 +352,9 @@ class TicketStatusWaitingTest(unittest.TestCase):
         Erwartung: T1 erscheint mit Status „WARTET AUF MERGE“.
         Fehlerfall: Status bleibt „offen“ oder Eintrag fehlt.
         """
-        self.project(
-            tickets="- [ ] T1 Wartet\n  WARTET AUF MERGE: PR #6\n"
-        )
+        self.project(tickets=[
+            ticket_record("T1", "Wartet", state="waiting-merge",
+                          waiting_note="PR #6")])
 
         items = self.cli.open_items("proj")
 
@@ -405,57 +366,43 @@ class TicketStatusWaitingTest(unittest.TestCase):
         Erwartung: F1 erscheint mit Status „WARTET AUF MERGE“.
         Fehlerfall: Feedback wartet still weiter als offen oder als erledigt.
         """
-        self.project(feedback="- [ ] F1 Wartet\n  WARTET AUF MERGE: PR #8\n")
+        self.project(feedback=[
+            ticket_record("F1", "Wartet", type="feedback",
+                          state="waiting-merge", waiting_note="PR #8")])
 
         items = self.cli.open_items("proj")
 
         self.assertIn(("F1", "Wartet", WAITING), items, items)
 
-    def test_blocked_wins_when_a_block_carries_both_markers(self):
-        """Vorbedingung: T1 trägt WARTET und BLOCKIERT.
-        Aktion: ``open_items("proj")`` und ``_parse_entry`` auswerten.
-        Erwartung: Status ist „BLOCKIERT“ (schwerer wiegt).
-        Fehlerfall: WARTET überdeckt den bestehenden Blockierzustand.
-        """
-        project = self.project(
-            tickets=(
-                "- [ ] T1 Beides\n"
-                "  WARTET AUF MERGE: PR #6\n"
-                "  BLOCKIERT: extern\n"
-            )
-        )
+    def test_done_wins_over_a_stale_waiting_note(self):
+        """Vorbedingung: erledigtes Ticket mit altem waiting_note.
+        Aktion: ``open_items``/``ticket_items``.
+        Erwartung: Es gilt der Zustand done (erledigt), nicht der Wartevermerk.
+        Fehlerfall: Ein Wartefeld überdeckt den Abschluss."""
+        self.project(tickets=[
+            ticket_record("T1", "Beides", state="done", commit="abcdef1",
+                          test="test_t1", waiting_note="PR #6")])
 
         items = self.cli.open_items("proj")
-        entries = self.cli._feedback_scan(
-            self.cli._read_text(project / "TICKETS.md"))
-        parsed = self.cli._parse_entry(entries[0], str(project), need_proof=False)
+        rows = self.cli.ticket_items("proj")
 
-        self.assertIn(("T1", "Beides", "BLOCKIERT"), items, items)
-        self.assertEqual("BLOCKIERT", parsed["state"], parsed)
+        self.assertEqual([], items)
+        self.assertEqual("erledigt", rows[0]["state"])
 
-    def test_waiting_marker_ends_the_description_section(self):
-        """Vorbedingung: T1 hat einen ``Beschreibung:``-Abschnitt, direkt
-        gefolgt von einer ``WARTET AUF MERGE:``-Zeile.
-        Aktion: ``_feedback_scan`` und ``_parse_entry(..., need_proof=False)``.
-        Erwartung: ``description`` enthält nur „Bitte warten.“; die Marke
-        beendet den Abschnitt. ``state`` bleibt „WARTET AUF MERGE“.
-        Fehlerfall: Die Marke wird in die Beschreibung eingesogen und erscheint
-        im Ticket-Editor als Beschreibungstext.
-        """
-        project = self.project(
-            tickets=(
-                "- [ ] T1 Titel\n"
-                "  Beschreibung: Bitte warten.\n"
-                "  WARTET AUF MERGE: PR #6\n"
-            )
-        )
+    def test_waiting_ticket_keeps_its_description(self):
+        """Vorbedingung: wartendes Ticket mit Beschreibung.
+        Aktion: ``ticket_items``.
+        Erwartung: state „WARTET AUF MERGE", Beschreibung unverändert.
+        Fehlerfall: Zustandsfelder landen in der Beschreibung."""
+        self.project(tickets=[
+            ticket_record("T1", "Titel", state="waiting-merge",
+                          waiting_note="PR #6",
+                          description="Bitte warten.")])
 
-        entries = self.cli._feedback_scan(
-            self.cli._read_text(project / "TICKETS.md"))
-        parsed = self.cli._parse_entry(entries[0], str(project), need_proof=False)
+        rows = self.cli.ticket_items("proj")
 
-        self.assertEqual("Bitte warten.", parsed["description"], parsed)
-        self.assertEqual(WAITING, parsed["state"], parsed)
+        self.assertEqual("WARTET AUF MERGE", rows[0]["state"])
+        self.assertEqual("Bitte warten.", rows[0]["description"])
 
 
 class PriorityCommandWaitingTest(unittest.TestCase):
@@ -481,10 +428,11 @@ class PriorityCommandWaitingTest(unittest.TestCase):
         """
         make_project(
             self.workspace,
-            tickets=(
-                "- [ ] T1 Wartet\n  WARTET AUF MERGE: PR #6\n"
-                "- [ ] T2 Offen\n"
-            ),
+            tickets=[
+                ticket_record("T1", "Wartet", state="waiting-merge",
+                              waiting_note="PR #6"),
+                ticket_record("T2", "Offen"),
+            ],
             env_text='TYPE=generic\nPACKAGE_ORDER="T1,T2"\n',
         )
         self.cli._pm.clear()
