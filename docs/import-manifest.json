@@ -1419,6 +1419,23 @@
       ],
       "datum": "2026-11-24",
       "grund": "UI-Ueberarbeitung Settings: responsive Shell mit sticky/floating Navigation und Scroll-Sync, gemeinsame Edit-View (>=30% Breite, mobil Vollbild), Modell-Combobox/Confirm/StateBadge als gemeinsame Komponenten, Sektionen AGENTS.md (Backup/Restore), Appearance, Access (Neustart-Knopf mit execv und Token-Erhalt), Features (Scroll-Erhalt), Limits (Schalter), Guards (Global-Kontext, Wirksam-Vorschau), Modelle (Refresh-Cache mit Stand), Profile (vier geschuetzte Standardprofile, Default-Kette, Backup/Restore), MCP (Hinzufuegen, Badge), Harness; toter Doppelcode in vibe-web.py entfernt."
+    },
+    {
+      "arbeitspaket": "GH-60",
+      "dateien": [
+        "bin/vibe",
+        "bin/vibe-web.py",
+        "bin/vibe_github.py",
+        "bin/vibe_opencode.py",
+        "bin/vibe_packages.py",
+        "bin/vibe_runs.py",
+        "bin/web/app.js",
+        "bin/web/nova-evals.js",
+        "bin/web/nova-project.js",
+        "bin/web/nova.css"
+      ],
+      "datum": "2026-11-24",
+      "grund": "Code Janitor Runde: vollstaendiger Scan des Produktstands durch sieben parallele Janitor-Agenten mit disjunktem Dateibesitz; belegte, verhaltensneutrale Altlasten entfernt (toter Code mit Repo-weit null Referenzen, ungenutzte Importe/Namen, exakt duplizierte Bloecke konsolidiert: Preisvalidierung bin/vibe, Register-Sperre bin/vibe_runs.py, Zielpfad-Map scripts/vibe-desktop.py, tote CSS-Selektoren nova.css). Alle Fix-Klassen verhaltensbewahrend, je gezielt vorhandene Testmodule gruen; Empfehlungen fuer verhaltensrelevante Funde liegen in docs/features/GH-60.md."
     }
   ],
   "files": [
@@ -1434,8 +1451,8 @@
     },
     {
       "path": "bin/vibe",
-      "bytes": 316545,
-      "sha256": "eaa750b057785f7d7d48c3726425db47064c5d2cbdfb8c42bf12bd152621e78a"
+      "bytes": 316239,
+      "sha256": "b1e64465dd732774e183f16630845501005ea9c4d784805658d756a8230d7d45"
     },
     {
       "bytes": 86330,
@@ -1443,9 +1460,9 @@
       "sha256": "cd544f364a5fb84437baf30bb95edb09b050eb533483fd662ca3010ea8da5d18"
     },
     {
-      "bytes": 138247,
+      "bytes": 138040,
       "path": "bin/vibe-web.py",
-      "sha256": "9d74cb17417b8ce58d2b882690b611fa08d91f155c1a8c678342097bfef86cd2"
+      "sha256": "4f00879c92495d250284f28363f2a6dd4641d54e5f39044a96e870e7472ba553"
     },
     {
       "bytes": 5189,
@@ -1458,9 +1475,9 @@
       "sha256": "0f6d9c2c9d72ff1400ba0c2e8173217102ac9f163a41191c34367dd5f81f5778"
     },
     {
-      "bytes": 79843,
+      "bytes": 79741,
       "path": "bin/vibe_github.py",
-      "sha256": "d5ddf9533920b08c262a45ee2d54a6b4346a496d9d6526e7c5f6f3781a44a9d0"
+      "sha256": "b2c00994ec04789fa5b095ed2a76ffbf7bea582557798566d72ce919de5c81b1"
     },
     {
       "bytes": 27530,
@@ -1498,14 +1515,14 @@
       "sha256": "645ed7fb1bf3cfc9bb66488d47ca49316b98ec95f887156f3ddd754d95b8c50b"
     },
     {
-      "bytes": 16753,
+      "bytes": 16646,
       "path": "bin/vibe_opencode.py",
-      "sha256": "ac3b26da4208a087a09c67c389238c82802d7c1bd50b10d9bcd9492a07050462"
+      "sha256": "2d5f5b9b1a1d3f74082985fc4c9c51ecbb0191f3a8b508cd9f5ac0f967d6d5bd"
     },
     {
-      "bytes": 82406,
+      "bytes": 82345,
       "path": "bin/vibe_packages.py",
-      "sha256": "4a8477009e4e2443d4e0ed9cad383c70a9e2f697fb761a531bdae968ee948979"
+      "sha256": "4e81c1b6bb7640f376512903e14edb4201c692f7d15d07efbb70eb37114196d3"
     },
     {
       "bytes": 20789,
@@ -1518,9 +1535,9 @@
       "sha256": "9a4bb9a2a182977c276b04676b133d918c97ed4f0a957c4d6f0e72835848b5cd"
     },
     {
-      "bytes": 70223,
+      "bytes": 69645,
       "path": "bin/vibe_runs.py",
-      "sha256": "7306ebe332888e7a107596635bbec459fd133dd1a4705471119a2c1086617f77"
+      "sha256": "ef5b91c488574a122f700b83e656809f006b69ecfa24a355ddaddf65ca2e417a"
     },
     {
       "bytes": 37162,
@@ -1543,9 +1560,9 @@
       "sha256": "baf438e2032b06a478b2a3debe6b62eff104f6d9a105f829013eabfcddf1acd5"
     },
     {
-      "bytes": 156429,
+      "bytes": 156310,
       "path": "bin/web/app.js",
-      "sha256": "dfceefa63c3321bd2ff6f8ca4a44ee660ca881d68b19f795d56114e5eefafa90"
+      "sha256": "d560ed1f66d245df5072704005a80ecc1ce8d58f7d38a72dd53984e186bacfe2"
     },
     {
       "bytes": 688,
@@ -1579,8 +1596,8 @@
     },
     {
       "path": "bin/web/nova-evals.js",
-      "bytes": 36027,
-      "sha256": "57e06ba16eecbbddfa5a34599a57adb54be82f2dfb2570eaa6fe8c9b1df0d66d"
+      "bytes": 35976,
+      "sha256": "96a2db41f959bc5bf663bf30bc8cb603db0233426af4b895dff91599d7c7bfd9"
     },
     {
       "bytes": 15653,
@@ -1593,9 +1610,9 @@
       "sha256": "cbca5b169f3c5052e50da0910560d7fbcd1b6c42380fe6b925a4f98021f753ab"
     },
     {
-      "bytes": 94383,
+      "bytes": 94219,
       "path": "bin/web/nova-project.js",
-      "sha256": "0f5741b712076664b5488bbbbb86b503d610f2306409e547a4f3e2c1940c6a01"
+      "sha256": "4f2435b81eb2cf28a27b58db65b68b50b1881d6df30d5e63611bdc08b62e84cb"
     },
     {
       "bytes": 90883,
@@ -1608,9 +1625,9 @@
       "sha256": "9bf731e7dc2992ce62ab76ccdbf3540d8599114a5fc3deee005180988b8fd5a0"
     },
     {
-      "bytes": 64630,
+      "bytes": 62702,
       "path": "bin/web/nova.css",
-      "sha256": "fb570f672ca03c7e2d8ca1c8ea0b09231d82c12644bc6f1db75a5f92fb44a44d"
+      "sha256": "7cb30fb292d4c2221fd13577639e528df1d3aefe919cebfd7adacae36673aab7"
     },
     {
       "bytes": 12751,

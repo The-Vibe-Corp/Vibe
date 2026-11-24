@@ -1336,11 +1336,6 @@ def _first_pr(payload):
     return None
 
 
-def _pr_field(payload, field):
-    pr = _first_pr(payload)
-    return pr.get(field) if pr else None
-
-
 def _find_open_pull_request(project, repo, branch, api, token):
     """Offener Merge-Request zum Branch; ``None`` ohne Treffer oder Fehler."""
     owner = str(repo or "").split("/", 1)[0]

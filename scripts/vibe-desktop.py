@@ -60,8 +60,9 @@ def data_home(home=None, environ=None):
     return os.path.join(os.path.abspath(os.path.expanduser(str(home))), ".local", "share")
 
 
-def _targets(home=None, environ=None):
-    base = Path(data_home(home, environ))
+def _targets_for_base(base):
+    """Zielpfade je Datenverzeichnis; einzige Definition für alle Aufrufer."""
+    base = Path(base)
     return {
         "base": base / APP_NAME,
         "starter": base / APP_NAME / STARTER_NAME,
@@ -70,6 +71,10 @@ def _targets(home=None, environ=None):
         "icon": base / "icons" / "hicolor" / "scalable" / "apps" / ICON_NAME,
         "desktop": base / "applications" / DESKTOP_NAME,
     }
+
+
+def _targets(home=None, environ=None):
+    return _targets_for_base(data_home(home, environ))
 
 
 def desktop_quote(value):
@@ -222,15 +227,7 @@ def install(home=None, data_home_path=None, starter_source=None, paths_source=No
     environ = dict(os.environ if environ is None else environ)
     targets = _targets(home, environ)
     if data_home_path:
-        base = Path(data_home_path)
-        targets = {
-            "base": base / APP_NAME,
-            "starter": base / APP_NAME / STARTER_NAME,
-            "paths": base / APP_NAME / PATHS_NAME,
-            "manifest": base / APP_NAME / MANIFEST_NAME,
-            "icon": base / "icons" / "hicolor" / "scalable" / "apps" / ICON_NAME,
-            "desktop": base / "applications" / DESKTOP_NAME,
-        }
+        targets = _targets_for_base(data_home_path)
     starter, paths, icon = _sources(starter_source, paths_source, icon_source)
     previous = _read_manifest(targets["manifest"])
     timestamp = time.strftime("%Y%m%d-%H%M%S")
@@ -273,15 +270,7 @@ def uninstall(home=None, data_home_path=None, dry_run=False, environ=None):
     environ = dict(os.environ if environ is None else environ)
     targets = _targets(home, environ)
     if data_home_path:
-        base = Path(data_home_path)
-        targets = {
-            "base": base / APP_NAME,
-            "starter": base / APP_NAME / STARTER_NAME,
-            "paths": base / APP_NAME / PATHS_NAME,
-            "manifest": base / APP_NAME / MANIFEST_NAME,
-            "icon": base / "icons" / "hicolor" / "scalable" / "apps" / ICON_NAME,
-            "desktop": base / "applications" / DESKTOP_NAME,
-        }
+        targets = _targets_for_base(data_home_path)
     manifest = _read_manifest(targets["manifest"])
     report = {"installed": bool(manifest), "dry_run": bool(dry_run),
               "removed": [], "kept": [], "missing": []}
@@ -340,15 +329,7 @@ def status(home=None, data_home_path=None, environ=None):
     environ = dict(os.environ if environ is None else environ)
     targets = _targets(home, environ)
     if data_home_path:
-        base = Path(data_home_path)
-        targets = {
-            "base": base / APP_NAME,
-            "starter": base / APP_NAME / STARTER_NAME,
-            "paths": base / APP_NAME / PATHS_NAME,
-            "manifest": base / APP_NAME / MANIFEST_NAME,
-            "icon": base / "icons" / "hicolor" / "scalable" / "apps" / ICON_NAME,
-            "desktop": base / "applications" / DESKTOP_NAME,
-        }
+        targets = _targets_for_base(data_home_path)
     manifest = _read_manifest(targets["manifest"])
     report = {"installed": False, "desktop": str(targets["desktop"]),
               "icon": str(targets["icon"]), "files": [], "problems": []}

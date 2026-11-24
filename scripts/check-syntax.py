@@ -17,16 +17,6 @@ from pathlib import Path
 SKIP_DIRS = {".git", "__pycache__", "node_modules", ".venv", "venv"}
 
 
-def is_python(path):
-    if path.suffix == ".py":
-        return True
-    try:
-        first = path.open("r", encoding="utf-8", errors="replace").readline()
-    except OSError:
-        return False
-    return first.startswith("#!") and "python" in first
-
-
 def walk_files(root, suffixes, name_filter=None):
     result = []
     for path in sorted(root.rglob("*")):

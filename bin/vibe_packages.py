@@ -72,7 +72,6 @@ BARRIER_ABORT_OPTION = 1
 BARRIER_AGENT_OPTION = 2
 
 CHECKBOX_DONE = re.compile(r"^- \[[xX]\]")
-CHECKBOX_ANY = re.compile(r"^- \[[ xX]\]")
 BLOCK_MARKER = "BLOCKIERT:"
 # AP5 (4a): PR-only-Pakete warten auf den Merge des Eigentümers statt als
 # blockiert zu erscheinen. Eigene Marke, damit Bestandstickets mit alten
@@ -792,7 +791,7 @@ def select_package(project, skip=None, state_path=None, prefer=""):
     known = set()
     located = {}
     for source, blocks in collect_blocks(project):
-        for index, block in enumerate(blocks):
+        for block in blocks:
             pid = block_id(block)
             if not pid:
                 continue
