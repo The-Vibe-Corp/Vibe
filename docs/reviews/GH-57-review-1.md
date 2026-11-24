@@ -13,7 +13,7 @@ Es gibt keine Critical-, High- oder Medium-Befunde. Ein Low-Befund betrifft auss
 - Medium: 0
 - Low: 1
 
-**Verdict: PASS** — alle 13 Akzeptanzkriterien sind PASS mit Implementierungs- und Testbeleg; die verbleibende Low-Auflage (Dokumentationsabschluss) blockiert nach der vereinbarten Aufgabenteilung zwischen Review und Koordinator die fachliche Abnahme nicht, muss aber vor Paketabschluss erfüllt sein.
+Verdict: **PASS** — alle 13 Akzeptanzkriterien sind PASS mit Implementierungs- und Testbeleg; die verbleibende Low-Auflage (Dokumentationsabschluss) blockiert nach der vereinbarten Aufgabenteilung zwischen Review und Koordinator die fachliche Abnahme nicht, muss aber vor Paketabschluss erfüllt sein.
 
 ## Acceptance criteria
 
@@ -55,3 +55,7 @@ No other findings.
 - Test-Provenienz: Die neuen Module `tests/unit/test_gh57_settings_backend.py` (32 Fälle) und `tests/browser/test_gh57_settings_ui.py` (29 Fälle) listen Name/Vorbedingung/Aktion/Erwartung im Docstring auf, dokumentieren die vor der Implementierung ausgeführte Rotphase und enthalten echte, nicht triviale Assertions; keine Skips, keine `assertTrue(True)`-Äquivalente, keine geleerten Testkörper. Die angepassten Bestandstests (`test_f34_settings_ui`, `test_f33_settings_ui`, `test_ap22_settings_ui`, `test_ap22_advanced_ui`) tragen jeweils eine GH-57-Begründung im Docstring; stichprobenhaft geprüft (Limits/Gates/Models/Profiles) bleibt ihre Fachprüfung erhalten oder wird verschärft.
 - Regelkonformität: KISS und Clean Code sind eingehalten (gemeinsame Komponenten statt kopierter Sektionslogik; kleine, benannte Hilfsfunktionen wie `syncOverrideBadge`, `nvWidgetFill`, `models_state`). Caching-Regel: `models-cache.json` hat einen eindeutigen Schlüssel im Zustandsordner und eine benannte, ereignisgesteuerte Invalidierung ausschließlich über `POST /api/agents {action:'refresh_models'}` (`bin/vibe:4750-4801`); der Schreibvorgang nutzt die atomare `vibe_storage.write_text`. Keine Geheimnisse im Repository oder in Antworten außer dem vertragsgemäßen `token`-Feld der Restart-Antwort; `redact()` bleibt für Meldungen aktiv. Keine temporären Dateien oder Artefakte im Changeset sichtbar. Keine `innerHTML`-Verwendung in den geprüften JS-Dateien. Feature-Umschaltung und Edit-View nutzen `sessionStorage` ausschließlich für die Breite (`nv-editview-width`). Duplikatbereinigung in `bin/vibe-web.py` ist verhaltensneutral (nur tote, frühere Definitionen entfernt).
 - Grenzen dieser Prüfung: Kein Testlauf, kein Build, kein `verify.sh`, kein Git-Diff; Bewertung der Nachweise ausschließlich anhand der vorgelegten Dokumentation und der gelesenen Quellen. Dieser Text ist der Review-Bericht; die Ablage als `docs/reviews/GH-57-review-1.md` mit `Verdict: PASS` erfolgt durch den Koordinator.
+
+## Ablage-Vermerk (Koordinator, 2026-11-24)
+
+Die Verdict-Zeile oben wurde ohne inhaltliche Änderung von `**Verdict: PASS**` auf `Verdict: **PASS**` normiert, weil die Abschlussschranke das Urteil nur in der Zeilenform `Verdict: PASS` erkennt (`VERDICT_PATTERN` in `bin/vibe_packages.py`) und das bestehende PASS zuvor nicht erkannte. Urteil, Begründung und Prüfungsumfang sind unverändert; es handelt sich um keine neue Reviewrunde und keine Abschwächung.
