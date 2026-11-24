@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """vibe-web — lokales Dashboard (nur Standardbibliothek). Start über: vibe ui"""
 import os
+import re
 import sys
 import json
 import time
@@ -78,6 +79,9 @@ SESSION_COOKIE = "vibe_session"
 # Wird beim Beenden gesetzt. Aktive SSE-Streams prüfen das Ereignis und senden
 # eine letzte Zeile, statt bis zum Verbindungsabbruch weiterzulaufen.
 STOP = threading.Event()
+# GH-57: Ein geplanter Dashboard-Neustart beendet den Server geordnet und
+# ersetzt den Prozess per os.execv; das Token bleibt dabei erhalten.
+RESTART = threading.Event()
 
 def write_private(path, text):
     """Schreibt Laufzeitkennungen atomar und setzt, soweit möglich, Rechte 0600.
@@ -98,10 +102,19 @@ def prepare_runtime():
         vibe_paths.ensure(PATHS, "runtime")
     except vibe_paths.ConfigError as error:
         raise SystemExit("Pfadkonfiguration: " + str(error)) from error
-    token = secrets.token_urlsafe(24)
+    token = ""
+    if os.environ.get("VIBE_WEB_KEEP_TOKEN") == "1":
+        # GH-57: Beim Neustart per os.execv bleibt die Sitzung gültig.
+        try:
+            with open(TOKFILE, encoding="utf-8") as handle:
+                token = handle.read().strip()
+        except OSError:
+            token = ""
+    if not token:
+        token = secrets.token_urlsafe(24)
+        write_private(TOKFILE, token)
     instance = secrets.token_hex(8)
     write_private(INSTFILE, instance)
-    write_private(TOKFILE, token)
     return token, instance
 
 def redact(text):
@@ -690,45 +703,6 @@ def session_resume_supported():
     except vibe_harness.HarnessError:
         return False
     return bool(vibe_harness.supports(selected, "continue"))
-
-
-def reload_ui_data():
-    """Lädt ui.json nach einer security-Aktion neu; Erfolg als boolescher Wert.
-
-    Eine dann defekte Datei ist praktisch ausgeschlossen (save schreibt
-    atomar und validiert vorher); sie wird gemeldet statt still als leer
-    behandelt zu werden — Allowlist/Kennwort würden sonst unbemerkt weichen.
-    """
-    try:
-        data = vibe_ui_config.load(PATHS.state)
-    except vibe_ui_config.ConfigError:
-        return False
-    UI_DATA.clear()
-    UI_DATA.update(data)
-    return True
-
-
-def restart_required():
-    """Markiert geplante Port-/Bind-Änderungen, die erst nach Neustart wirken.
-
-    ui.json kann jederzeit Port und Bind verschieben; der laufende Server
-    hält die Werte seines Starts. weicht der geplante Zustand vom laufenden
-    ab, zeigt die Oberfläche den Neustart-Hinweis.
-    """
-    planned_port = UI_DATA.get("ui_port") if UI_DATA.get("ui_port") is not None else PORT
-    planned_bind = UI_DATA.get("ui_bind") if UI_DATA.get("ui_bind") is not None else BIND
-    return planned_port != PORT or planned_bind != BIND
-
-
-def security_data():
-    """Zugriffssicherheit als Ansichtsobjekt, ohne Kennwort- oder Hash-Auskunft."""
-    return {
-        "port": PORT,
-        "bind": BIND,
-        "allowlist": list(UI_DATA.get("allowlist") or []),
-        "password_set": bool(UI_DATA.get("password_hash")),
-        "restart_required": restart_required(),
-    }
 
 
 def reload_ui_data():
@@ -1647,11 +1621,42 @@ class H(BaseHTTPRequestHandler):
                 if not (u.path == "/api/costs" and body.get("action") == "prices_global"):
                     known(name)
             extra = {}
-            if u.path == "/api/security":
+            if u.path == "/api/agents":
+                # GH-57: Der Aktualisieren-Knopf holt die Modelle live und
+                # schreibt den Cache; GET /api/agents nutzt ihn danach.
+                if body.get("action") != "refresh_models":
+                    ok, msg = False, "Unbekannte Aktion"
+                else:
+                    ok, msg = vibe.models_refresh()
+                    if ok:
+                        extra.update(vibe_services.agents_info(vibe))
+            elif u.path == "/api/security":
                 # AP13: Zugriffssicherheit je Aktion ändern. Validierung
                 # geschieht im Modul vor dem Schreiben; ungültige Eingaben
                 # verändern ui.json nicht (→ 400 "rejected").
                 act = body.get("action")
+                if act == "restart":
+                    # GH-57: Antwort sofort senden, danach geordnet beenden.
+                    # Der Neustart läuft im __main__-Block (os.execv).
+                    planned_port = (UI_DATA.get("ui_port")
+                                    if UI_DATA.get("ui_port") is not None
+                                    else PORT)
+                    planned_bind = (UI_DATA.get("ui_bind")
+                                    if UI_DATA.get("ui_bind") is not None
+                                    else BIND)
+                    self._send(200, {
+                        "ok": True,
+                        "message": "Dashboard wird neu gestartet",
+                        "port": planned_port,
+                        "bind": planned_bind,
+                        "token": TOKEN,
+                    })
+                    RESTART.set()
+                    STOP.set()
+                    threading.Thread(
+                        target=shutdown_server, kwargs={"delay": 1.0},
+                        daemon=True).start()
+                    return None
                 ok, msg = True, ""
                 try:
                     if act == "save":
@@ -2206,6 +2211,33 @@ class H(BaseHTTPRequestHandler):
                                          else "Vorlage war bereits vorhanden")
                     except ValueError as e:
                         ok, msg = False, str(e)
+                elif act == "backup":
+                    # GH-57: Sicherung der globalen AGENTS.md; eine fehlende
+                    # Datei ist ein Fachfehler, kein stiller Erfolg.
+                    try:
+                        path = vibe.global_agents_path(None)
+                        saved = vibe_storage.backup_file(
+                            path, vibe.global_agents_backup_dir(),
+                            label="AGENTS.md")
+                        ok, msg = True, "AGENTS.md gesichert: " + os.path.basename(saved)
+                    except (vibe_storage.StorageError, OSError) as e:
+                        ok, msg = False, str(e)
+                    extra["view"] = vibe.global_agents_view()
+                elif act == "restore":
+                    if not body.get("confirm"):
+                        return self._error(
+                            400, "rejected",
+                            "Restore ohne Bestätigung nicht möglich — senden "
+                            "Sie {\"action\": \"restore\", \"confirm\": true}.")
+                    try:
+                        vibe_storage.restore_backup(
+                            vibe.global_agents_backup_dir(),
+                            str(body.get("name") or ""),
+                            vibe.global_agents_path(None), label="AGENTS.md")
+                        ok, msg = True, "AGENTS.md wiederhergestellt"
+                    except (vibe_storage.StorageError, OSError) as e:
+                        ok, msg = False, str(e)
+                    extra["view"] = vibe.global_agents_view()
                 else:
                     return self._error(400, "rejected", "Unbekannte Aktion")
             elif u.path == "/api/priority":
@@ -2404,19 +2436,90 @@ class H(BaseHTTPRequestHandler):
                 act = body.get("action")
                 try:
                     if act == "save":
+                        # GH-57: profile wird gemischt, rollen ersetzt. Das
+                        # Default-Profil spiegelt nur die Agent-Einstellungen.
                         d = vibe.profiles_load()
                         data = body.get("data") or {}
-                        for k in ("rollen", "profile"):
-                            if isinstance(data.get(k), dict):
-                                d[k] = data[k]
-                        vibe.profiles_save(d)
-                        ok, msg = True, "Profile gespeichert"
+                        new_profiles = data.get("profile")
+                        if isinstance(new_profiles, dict) and new_profiles.get("default"):
+                            ok, msg = False, (
+                                "Das Default-Profil bildet die Agent-Einstellungen "
+                                "ab und ist nicht direkt editierbar.")
+                        else:
+                            if isinstance(new_profiles, dict):
+                                d["profile"].update(new_profiles)
+                            if isinstance(data.get("rollen"), dict):
+                                d["rollen"] = data["rollen"]
+                            vibe.profiles_save(d)
+                            ok, msg = True, "Profile gespeichert"
                     elif act == "use":
                         done, skipped = vibe.profile_apply(body.get("profile", ""))
                         ok, msg = True, "Angewendet: " + "; ".join(done) + (" | übersprungen: " + "; ".join(skipped) if skipped else "")
+                    elif act == "create":
+                        name = str(body.get("name") or "")
+                        if not re.fullmatch(r"[A-Za-z0-9 _-]{1,40}", name):
+                            ok, msg = False, (
+                                "Profilname: 1–40 Zeichen aus Buchstaben, Ziffern, "
+                                "Leerzeichen, _ und -.")
+                        elif name in vibe.STANDARD_PROFILES:
+                            ok, msg = False, (
+                                "'" + name + "' ist ein Standardprofil und kann "
+                                "nicht angelegt werden.")
+                        else:
+                            d = vibe.profiles_load()
+                            if name in d["profile"]:
+                                ok, msg = False, "Profil existiert bereits: " + name
+                            else:
+                                d["profile"][name] = {}
+                                vibe.profiles_save(d)
+                                ok, msg = True, "Profil angelegt: " + name
+                    elif act == "delete":
+                        name = str(body.get("name") or "")
+                        d = vibe.profiles_load()
+                        if name in vibe.STANDARD_PROFILES:
+                            ok, msg = False, (
+                                "'" + name + "' ist ein Standardprofil und kann "
+                                "nicht gelöscht werden.")
+                        elif name not in d["profile"]:
+                            ok, msg = False, "Unbekanntes Profil: " + name
+                        else:
+                            try:
+                                vibe_storage.backup_file(
+                                    vibe.PROFILES_FILE, vibe.profile_backup_dir())
+                            except (vibe_storage.StorageError, OSError) as e:
+                                ok, msg = False, str(e)
+                            else:
+                                del d["profile"][name]
+                                if d.get("aktiv") == name:
+                                    d["aktiv"] = "default"
+                                vibe.profiles_save(d)
+                                ok, msg = True, "Profil gelöscht: " + name
+                    elif act == "backup":
+                        try:
+                            saved = vibe_storage.backup_file(
+                                vibe.PROFILES_FILE, vibe.profile_backup_dir())
+                            ok, msg = True, "Profile gesichert: " + os.path.basename(saved)
+                            extra["backup"] = os.path.basename(saved)
+                        except (vibe_storage.StorageError, OSError) as e:
+                            ok, msg = False, str(e)
+                    elif act == "restore":
+                        if not body.get("confirm"):
+                            return self._error(
+                                400, "rejected",
+                                "Restore ohne Bestätigung nicht möglich — senden "
+                                "Sie {\"action\": \"restore\", \"confirm\": true}.")
+                        try:
+                            vibe_storage.restore_backup(
+                                vibe.profile_backup_dir(),
+                                str(body.get("name") or ""),
+                                vibe.PROFILES_FILE)
+                            ok, msg = True, "Profile wiederhergestellt"
+                        except (vibe_storage.StorageError, OSError) as e:
+                            ok, msg = False, str(e)
+                        extra["profiles"] = vibe.profiles_load()
                     else:
                         ok, msg = False, "Unbekannte Aktion"
-                except ValueError as e:
+                except (ValueError, OSError) as e:
                     ok, msg = False, str(e)
             elif u.path == "/api/model":
                 ok, msg = vibe_services.capture(vibe.cmd_model, body.get("agent", ""), body.get("model", ""), body.get("scope", "global"))
@@ -2633,4 +2736,15 @@ if __name__ == "__main__":
         STOP.set()
         with contextlib.suppress(Exception):
             SRV.server_close()
+    if RESTART.is_set():
+        # GH-57: gleiche CLI/Umgebung, aber der geplante Port/Bind aus
+        # ui.json muss Vorrang vor der ursprünglichen Umgebung erhalten.
+        planned_port = (UI_DATA.get("ui_port")
+                        if UI_DATA.get("ui_port") is not None else PORT)
+        planned_bind = (UI_DATA.get("ui_bind")
+                        if UI_DATA.get("ui_bind") is not None else BIND)
+        os.environ["VIBE_UI_PORT"] = str(planned_port)
+        os.environ["VIBE_UI_BIND"] = str(planned_bind)
+        os.environ["VIBE_WEB_KEEP_TOKEN"] = "1"
+        os.execv(sys.executable, [sys.executable] + sys.argv)
     print("vibe-web beendet.", flush=True)

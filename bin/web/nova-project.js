@@ -869,7 +869,7 @@ function nvpTeamSection(name, token, agents) {
     });
     var current = String(row.override || row.model || '');
     if (current && !seen[current]) values.push(current);
-    var combo = NV.combobox(values, current, {
+    var combo = NV.modelCombobox(values, current, {
       onchange: function (value) {
         api('/api/project-agents', {name: name, agent: agent, model: value})
           .then(function (result) {

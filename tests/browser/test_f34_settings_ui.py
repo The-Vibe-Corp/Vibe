@@ -125,6 +125,15 @@ Vertragsunklaritäten (bewusst so geprüft und dokumentiert)
    englische Übersetzung muss unterschiedlich sein und existieren. Der Test
    prüft das Wörterbuch ``DICTS`` direkt.
 
+GH-57-Anpassung (2026-11-23, Vertrag docs/features/GH-57.md): Global-agents
+ist flach ohne details-Editor (Edit-View + agents-text), Limits ist ein
+Schalter statt Karten, Models ist eingeklappt mit immer sichtbarem Refresh
+und Stand-Zeile, Profiles ist eine Auswahl statt Karten, Gates hat im
+Global-Kontext vier Spalten (Projektkontext: Global-Wert nur-lesend +
+Projektwert editierbar), das MCP-Formular liegt in der Edit-View. Die
+ersetzten Fälle behalten ihre ursprüngliche Prüfungsabsicht; vertiefte
+Prüfungen liegen in tests/browser/test_gh57_settings_ui.py.
+
 ROT-PHASE (2026-11-22, vor der Implementierung der F34-Einstellungen)
 -------------------------------------------------------------------
 Ausgeführt mit::
@@ -490,8 +499,17 @@ class F34SettingsBrowserTest(unittest.TestCase):
         Zählschranken werden um eins erhöht; Auswahl-Schranken (``override``)
         wechseln auf die jeweils andere Option. Der Wert bleibt damit
         gültig für ``POST /api/gates`` (bin/vibe_gates.py ``validate``).
+        GH-57: Der Vergleichswert darf aus einem nur-lesenden Feld kommen
+        (``[data-nv-gate-global]`` ist kein Eingabefeld mehr) — dann wird
+        der angezeigte Text gelesen.
         """
-        current = (field.input_value() or "").strip()
+        is_input = field.evaluate(
+            "node => ['input','select','textarea'].includes("
+            "node.tagName.toLowerCase())")
+        if is_input:
+            current = (field.input_value() or "").strip()
+        else:
+            current = (field.inner_text() or "").strip()
         if field.evaluate("node => node.tagName.toLowerCase()") == "select":
             options = field.evaluate(
                 "node => Array.from(node.options).map(o => o.value)")
@@ -541,134 +559,92 @@ class F34SettingsBrowserTest(unittest.TestCase):
 
 
 class GlobalAgentsSectionTest(F34SettingsBrowserTest):
-    def test_global_agents_section_is_first_collapsible_and_editor_rows(self):
-        """Vorbedingung: globale AGENTS.md existiert.
-
-        Erwartung: die Sektion ist die erste (y kleiner als Darstellung);
-        ``details[data-nv-global-agents]`` offen; ``textarea[data-nv-global-agents]``
-        hat rows >= 16; einklappbar über ``summary``.
-        """
+    def test_global_agents_section_flat_hint_and_editview_editor(self):
+        """GH-57 (global-agents): flache Sektion, Hinweis, Edit-View mit
+        textarea[data-nv-agents-text] rows >= 16. Ersetzt den F34-Stand
+        (details[data-nv-global-agents] + Inline-Editor), der dem
+        GH-57-Vertrag („flach, keine details-Verschachtelung“, gemeinsamer
+        Editor in NV.editView) widerspricht. Ersetzt die frühere Prüfung
+        „Sektion ist die erste“ (Deckung: test_f33 SettingsStructureTest)."""
         self.global_agents.write_text(GLOBAL_AGENTS_TEXT, encoding="utf-8")
         self.boot()
         self.open_settings()
-        details = self.page.locator("details[data-nv-global-agents]")
-        details.wait_for(state="visible", timeout=20000)
-        self.assertTrue(
-            details.evaluate("node => node.open"),
-            "Die globale AGENTS.md-Sektion ist nicht offen")
-        textarea = details.locator("textarea[data-nv-global-agents]")
+        section = self.page.locator("section[data-nv-ssection='global-agents']")
+        section.wait_for(state="visible", timeout=20000)
+        self.assertEqual(0, section.locator("details").count(),
+                         "Die Sektion ist weiterhin details-verschachtelt")
+        hint = section.locator("[data-nv-global-agents-hint]")
+        hint.wait_for(state="visible", timeout=20000)
+        self.assertTrue((hint.inner_text() or "").strip(),
+                        "Die Erklärung zur globalen AGENTS.md fehlt")
+        edit = section.locator("button[data-nv-action='global-agents-edit']")
+        edit.wait_for(state="visible", timeout=20000)
+        edit.click()
+        aside = self.page.locator("aside[data-nv-editview]")
+        aside.wait_for(state="visible", timeout=20000)
+        textarea = aside.locator("textarea[data-nv-agents-text]")
         textarea.wait_for(state="visible", timeout=20000)
         rows = textarea.evaluate(
-            "node => parseInt(node.getAttribute('rows') || '0', 10) || node.rows")
-        self.assertGreaterEqual(
-            rows, 16, "textarea[data-nv-global-agents] hat weniger als 16 rows")
-
-        details.locator("summary").first.click()
-        self.wait_until(
-            lambda: not details.evaluate("node => node.open"),
-            timeout=15000, message="details[data-nv-global-agents] lässt sich "
-                                  "nicht einklappen")
-
-        boxes = self.page.evaluate(
-            """(selectors) => {
-               const out = {};
-               for (const s of selectors) {
-                 const node = document.querySelector(s);
-                 const r = node ? node.getBoundingClientRect() : null;
-                 out[s] = r ? {y: r.top, x: r.left, width: r.width} : null;
-               }
-               return out;
-             }""",
-            ["[data-nv-ssection='global-agents']",
-             "[data-nv-ssection='appearance']"])
-        self.assertIsNotNone(
-            boxes["[data-nv-ssection='global-agents']"],
-            "Die globale AGENTS.md-Sektion fehlt")
-        self.assertIsNotNone(
-            boxes["[data-nv-ssection='appearance']"],
-            "Die Darstellungs-Sektion fehlt")
-        self.assertLess(
-            boxes["[data-nv-ssection='global-agents']"]["y"],
-            boxes["[data-nv-ssection='appearance']"]["y"],
-            "Die globale AGENTS.md-Sektion ist nicht ganz oben (vor Darstellung)")
+            "node => parseInt(node.getAttribute('rows') || '0', 10)"
+            " || node.rows")
+        self.assertGreaterEqual(rows, 16, "Editor hat weniger als 16 rows")
 
     def test_missing_global_agents_file_shows_create_only_when_missing(self):
-        """Vorbedingung: globale AGENTS.md fehlt.
-
-        Aktion: Einstellungen öffnen, Anlegen-Knopf sichtbar, Klick, Editor.
-        Erwartung: Knopf nur bei fehlender Datei; nach Anlegen erscheint Editor
-        mit Vorlage; Knopf danach ausgeblendet.
-        """
+        """GH-57: Anlegen-Knopf nur bei fehlender Datei; Klick legt die Datei
+        an und öffnet den Editor in der Edit-View (statt Inline-Editor)."""
         self.global_agents.unlink(missing_ok=True)
         self.boot()
         self.open_settings()
-        section = self.page.locator("[data-nv-global-agents]")
+        section = self.page.locator("section[data-nv-ssection='global-agents']")
         section.wait_for(state="visible", timeout=20000)
         create = section.locator(
             "button[data-nv-action='global-agents-create']")
-        self.assertEqual(
-            1, create.count(),
-            "Der Anlegen-Knopf global-agents-create fehlt bei fehlender Datei")
-        create.wait_for(state="visible", timeout=20000)
+        self.assertEqual(1, create.count(),
+                         "Der Anlegen-Knopf fehlt bei fehlender Datei")
         create.click()
-        self.wait_until(
-            lambda: self.global_agents.is_file(),
-            timeout=20000, message="Die Vorlage wurde nicht angelegt")
-        editor = self.page.locator("textarea[data-nv-global-agents]")
+        self.wait_until(lambda: self.global_agents.is_file(), timeout=20,
+                        message="Die Vorlage wurde nicht angelegt")
+        editor = self.page.locator(
+            "aside[data-nv-editview] textarea[data-nv-agents-text]")
         editor.wait_for(state="visible", timeout=20000)
-        self.assertTrue(
-            (editor.input_value() or "").strip(),
-            "Der Editor ist nach dem Anlegen nicht mit der Vorlage vorbelegt")
-        create = self.page.locator(
-            "button[data-nv-action='global-agents-create']")
-        self.assertFalse(
-            create.is_visible(),
-            "Der Anlegen-Knopf bleibt nach dem Anlegen sichtbar")
+        self.assertTrue((editor.input_value() or "").strip(),
+                        "Der Editor ist nicht vorbelegt")
+        self.wait_until(
+            lambda: self.page.locator(
+                "button[data-nv-action='global-agents-create']").count() == 0,
+            timeout=15, message="Der Anlegen-Knopf bleibt sichtbar")
         self.assert_no_page_errors()
 
     def test_global_agents_save_writes_file_and_toasts_without_rerender(self):
-        """Vorbedingung: globale AGENTS.md mit Inhalt vorhanden.
-
-        Aktion: Text ändern, Speichern, Toast abwarten, echten Render-Zähler
-        (testseitig umhülltes ``NV.render``) prüfen.
-        Erwartung: POST mit action=save; Datei enthält neuen Text; Toast;
-        Render-Zähler unverändert (kein Voll-Neurender).
-        """
+        """GH-57: Speichern aus der Edit-View (agents-save) schreibt die Datei,
+        bestätigt per Toast und löst keinen Voll-Neurender aus. Der Digest-
+        Vergleich liegt in test_f33 (Editor-Vertrag) und
+        test_gh57_settings_ui.GlobalAgentsSectionTest."""
         self.global_agents.write_text(GLOBAL_AGENTS_TEXT, encoding="utf-8")
         self.boot()
         self.open_settings()
-        editor = self.page.locator("textarea[data-nv-global-agents]")
+        section = self.page.locator("section[data-nv-ssection='global-agents']")
+        section.locator("button[data-nv-action='global-agents-edit']").click()
+        aside = self.page.locator("aside[data-nv-editview]")
+        aside.wait_for(state="visible", timeout=20000)
+        editor = aside.locator("textarea[data-nv-agents-text]")
         editor.wait_for(state="visible", timeout=20000)
-        before_value = editor.input_value()
         new_text = GLOBAL_AGENTS_TEXT + "Neue globale Regel 4711.\n"
         editor.fill(new_text)
-        save = self.page.locator(
-            "button[data-nv-action='global-agents-save']")
-        save.wait_for(state="visible", timeout=20000)
         render_before = self.nv_render_count()
-        save.click()
+        aside.locator("button[data-nv-action='agents-save']").click()
         self.wait_for_post(
-            "/api/global_agents_file",
-            lambda payload: payload.get("action") == "save", timeout=20,
-            message="Es wurde kein POST /api/global_agents_file mit "
-                    "action=save gesendet")
-        payload = [p for p in self.posts_to("/api/global_agents_file")
-                   if p.get("action") == "save"][-1]
-        self.assertEqual(
-            new_text, payload.get("text"),
-            "Der POST enthält nicht den eingegebenen Text")
+            "/api/global_agents_file", lambda p: p.get("action") == "save",
+            message="Kein POST action=save gesendet")
         self.wait_until(
-            lambda: re.search(r"gespeichert|saved", self.toast_text(), re.I)
-            is not None, timeout=20,
-            message="Das Speichern der globalen AGENTS.md bestätigt nicht: "
-                    + repr(self.toast_text()))
+            lambda: re.search(r"gespeichert|saved", self.toast_text(), re.I),
+            timeout=20, message="Kein Bestätigungs-Toast")
         self.wait_until(
             lambda: "Neue globale Regel 4711"
             in self.global_agents.read_text(encoding="utf-8"),
             timeout=20, message="Der neue Text steht nicht in der Datei")
-        self.assertEqual(
-            render_before, self.nv_render_count(),
-            "Das Speichern der globalen AGENTS.md vollneu-rendered")
+        self.assertEqual(render_before, self.nv_render_count(),
+                         "Das Speichern vollneu-rendered")
 
 
 class AppearanceSectionTest(F34SettingsBrowserTest):
@@ -882,89 +858,89 @@ class SettingsNavigationTest(F34SettingsBrowserTest):
 
 
 class LimitsTest(F34SettingsBrowserTest):
-    def test_limits_two_option_cards_highlight_current_mode_and_explain_effect(self):
-        """Vorbedingung: Feature ``limits`` an.
-
-        Erwartung: zwei erklärte Optionskarten; Buttons ``limits-continue`` /
-        ``limits-stop``; aktueller Modus hervorgehoben; Wirkung erklärt; Wechsel
-        bestätigt ``GET /api/limits``.
-        """
+    def test_limits_single_toggle_posts_mode_and_explains_effect(self):
+        """GH-57 (limits): statt zwei Optionskarten gibt es genau einen
+        Schalter input[type=checkbox][data-nv-limits-mode] in
+        label.nv-switch-row, eine Erklärung [data-nv-limits-help] und einen
+        POST /api/limits {action:'continue'|'stop'} ohne Voll-Neurender.
+        Ersetzt den F34-Stand (limits-continue/limits-stop-Karten), der dem
+        GH-57-Vertrag widerspricht; die Prüfung „Wirkung erklärt“ bleibt."""
         self.boot()
         self.open_settings()
         self.enable_features("limits")
-        box = self.page.locator("[data-nv-advanced='limits']")
+        box = self.page.locator("section[data-nv-ssection='limits']")
         box.wait_for(state="visible", timeout=20000)
-        continue_button = self.page.locator(
-            "[data-nv-action='limits-continue']")
-        continue_button.wait_for(state="visible", timeout=20000)
-        stop_button = self.page.locator("[data-nv-action='limits-stop']")
-        stop_button.wait_for(state="visible", timeout=20000)
-        self.assertTrue(
-            continue_button.is_visible(),
-            "Der Limits-Knopf limits-continue ist unsichtbar")
-        self.assertTrue(
-            stop_button.is_visible(),
-            "Der Limits-Knopf limits-stop ist unsichtbar")
-        mode = self.api_json("/api/limits").get("mode")
-        current_button = (continue_button if mode == "continue"
-                          else stop_button)
-        highlighted = (
-            current_button.get_attribute("aria-pressed") == "true"
-            or "nv-primary" in (current_button.get_attribute("class") or "")
-            or current_button.get_attribute("data-nv-current") == "true")
-        self.assertTrue(
-            highlighted,
-            f"Der Limits-Modus {mode!r} ist nicht hervorgehoben")
-        effect = (box.inner_text() or "") + " " + (stop_button.inner_text() or "")
+        self.assertEqual(
+            0, self.page.locator(
+                "button[data-nv-action='limits-continue'],"
+                " button[data-nv-action='limits-stop']").count(),
+            "Die alten Modus-Knöpfe existieren weiterhin")
+        help_box = box.locator("[data-nv-limits-help]")
+        help_box.wait_for(state="visible", timeout=20000)
+        effect = (help_box.inner_text() or "") + " " + (box.inner_text() or "")
         self.assertTrue(
             re.search(r"fortsetz|stopp|neuen|lauf|unterbrech", effect, re.I),
-            "Die Limits-Optionen/Erwartung enthalten keine Wirkungsbeschreibung: "
-            + repr(effect))
-        self.page.locator("[data-nv-action='limits-continue']").click()
+            "Die Limits-Erklärung enthält keine Wirkungsbeschreibung")
+        toggle = box.locator("input[type=checkbox][data-nv-limits-mode]")
+        toggle.wait_for(state="visible", timeout=20000)
+        mode = self.api_json("/api/limits").get("mode")
+        self.assertEqual(mode == "continue", toggle.is_checked(),
+                        "Der Schalter spiegelt den Modus nicht")
+        render_before = self.nv_render_count()
+        toggle.click()
+        expected = "continue" if mode != "continue" else "stop"
+        self.wait_for_post(
+            "/api/limits", lambda p: p.get("action") == expected,
+            message="Kein POST /api/limits {action:%r}" % expected)
         self.wait_until(
-            lambda: self.api_json("/api/limits").get("mode") == "continue",
-            timeout=20, message="Der Limits-Moduswechsel auf continue wird nicht "
-                               "bestätigt")
+            lambda: self.api_json("/api/limits").get("mode") == expected,
+            timeout=20, message="Der Moduswechsel wird nicht bestätigt")
+        self.assertEqual(render_before, self.nv_render_count(),
+                         "Der Limits-Schalter vollneu-rendered")
 
 
 class GatesTest(F34SettingsBrowserTest):
     def test_gates_project_select_table_and_override(self):
-        """Vorbedingung: Feature ``gates`` an.
-
-        Erwartung: ``select[data-nv-gates-project]`` (Global + Projekte, kein
-        Freitextfeld); ``table[data-nv-gates-table]`` mit ``tr[data-nv-gate]``,
-        je Zeile ``small[data-nv-gate-help]``, ``[data-nv-gate-value]``,
-        ``[data-nv-gate-origin]``; Projektkontext mit Override-Feld.
-        """
+        """GH-57 (gates): Global-Kontext (Standard) hat vier Spalten (Name,
+        Wirkung, editierbarer Wert, Herkunft); der Projektkontext zeigt den
+        globalen Wert nur-lesend [data-nv-gate-global] und den Projektwert
+        editierbar [data-nv-gate-override]. Die Abweichungs-Badge-Logik
+        („Weicht ab“ nur bei abweichendem Projektwert) bleibt unverändert.
+        Ersetzt die F34-Fünfspalten-Erwartung (Projektzelle „—“), die dem
+        GH-57-Vertrag widerspricht."""
         self.boot()
         self.open_settings()
         self.enable_features("gates")
         view = self.api_json("/api/gates")
         self.assertTrue(view.get("ok"), view)
-        table = self.page.locator("[data-nv-gates-table]")
+        section = self.page.locator("section[data-nv-ssection='gates']")
+        section.wait_for(state="visible", timeout=20000)
+        table = section.locator("[data-nv-gates-table]")
         table.wait_for(state="visible", timeout=20000)
         rows = table.locator("tr[data-nv-gate]")
-        self.wait_until(
-            lambda: rows.count() >= 1,
-            timeout=20000, message="Die Gates-Tabelle hat keine Zeilen")
+        self.wait_until(lambda: rows.count() >= 1, timeout=20,
+                        message="Die Gates-Tabelle hat keine Zeilen")
+        # Global-Kontext (Standard): editierbarer Wert, Herkunft, kein Override.
         for index in range(rows.count()):
-            with self.subTest(gate=index):
-                row = rows.nth(index)
-                help = row.locator("small[data-nv-gate-help]")
-                self.assertTrue(help.count() >= 1,
-                                "Eine Gates-Zeile hat keine Erklärung")
-                self.assertTrue(
-                    (help.first.inner_text() or "").strip(),
-                    "Eine Gates-Zeile hat eine leere Erklärung")
-                self.assertTrue(
-                    row.locator("[data-nv-gate-value]").count() >= 1,
+            row = rows.nth(index)
+            with self.subTest(gate=row.get_attribute("data-nv-gate")):
+                self.assertTrue((row.locator(
+                    "small[data-nv-gate-help]").first.inner_text()
+                    or "").strip(), "Eine Gates-Zeile hat keine Erklärung")
+                self.assertEqual(1, row.locator(
+                    "[data-nv-gate-value]").count(),
                     "Eine Gates-Zeile hat kein Wert-Feld")
-                self.assertTrue(
-                    row.locator("[data-nv-gate-origin]").count() >= 1,
-                    "Eine Gates-Zeile hat kein Herkunfts-Badge")
+                self.assertEqual(1, row.locator(
+                    "[data-nv-gate-origin]").count(),
+                    "Eine Gates-Zeile hat kein Herkunfts-Feld")
+                self.assertEqual(0, row.locator(
+                    "[data-nv-gate-override]").count(),
+                    "Im Global-Kontext gibt es ein Override-Feld")
+                self.assertEqual(0, row.locator(
+                    "span[data-nv-gate-override-badge]").count(),
+                    "Im Global-Kontext erscheint ein Abweichungs-Badge")
 
-        project_select = self.page.locator(
-            "select[data-nv-gates-project]")
+        project_select = section.locator("select[data-nv-gates-project]")
         project_select.wait_for(state="visible", timeout=20000)
         options = project_select.evaluate(
             "node => Array.from(node.options).map(o => o.value)")
@@ -972,33 +948,22 @@ class GatesTest(F34SettingsBrowserTest):
         self.assertIn(
             PROJECT, options, "Der Gates-Filter bietet das Projekt nicht an")
         self.assertEqual(
-            0, self.page.locator("input[data-nv-gates-project]").count(),
-            "Der Gates-Projektfilter darf kein Freitextfeld sein")
+            "global", project_select.input_value(),
+            "Die Projektauswahl startet nicht im Global-Kontext (GH-57)")
 
-        override = self.page.locator("input[data-nv-gate-override]")
-        override.first.wait_for(state="visible", timeout=20000)
-        self.assertTrue(
-            override.first.is_visible(), "Im Projektkontext fehlt das "
-                                         "Override-Feld data-nv-gate-override")
-
-        # Projektabweichung: einen vom globalen Wert abweichenden Projektwert
-        # speichern. Der Vertrag (WP4/Gates) verlangt danach an genau dieser
-        # Zeile ``span[data-nv-gate-override-badge]`` mit Text; Zeilen ohne
-        # Abweichung tragen kein Badge (bin/web/nova-settings.js draw():
-        # deviation = override nicht leer und != global).
-        rows = table.locator("tr[data-nv-gate]")
+        # Projektkontext: nur-lesender globaler Wert + Override.
+        project_select.select_option(PROJECT)
         first = rows.first
-        if project_select.input_value() != PROJECT:
-            project_select.select_option(PROJECT)
         self.wait_until(
             lambda: first.locator("input[data-nv-gate-override]").count() == 1,
-            timeout=20,
-            message="Im Projektkontext fehlt das Override-Feld an der "
-                    "ersten Gates-Zeile")
+            timeout=20, message="Im Projektkontext fehlt das Override-Feld")
+        self.assertTrue(
+            first.locator("[data-nv-gate-global]").count() >= 1,
+            "Im Projektkontext fehlt der nur-lesende globale Wert")
         gate_key = first.get_attribute("data-nv-gate")
-        deviation = self.gate_value_differing_from(
-            first.locator("[data-nv-gate-value]"))
         badge = "span[data-nv-gate-override-badge]"
+        deviation = self.gate_value_differing_from(
+            first.locator("[data-nv-gate-global]"))
         self.wait_until(
             lambda: (first.locator(
                 "input[data-nv-gate-override]").input_value() or "") == "",
@@ -1006,19 +971,13 @@ class GatesTest(F34SettingsBrowserTest):
             message="Der Projektkontext startet mit einem gesetzten "
                     "Override; die Abwesenheitsprüfung wäre nicht eindeutig")
         first.locator("input[data-nv-gate-override]").fill(deviation)
-        self.wait_until(
-            lambda: first.locator(
-                "input[data-nv-gate-override]").input_value() == deviation,
-            timeout=20,
-            message="Das Override-Feld übernimmt den eingegebenen Wert nicht")
         self.page.locator("button[data-nv-action='gates-save']").click()
         self.wait_until(
             lambda: first.locator(badge).count() == 1, timeout=20,
             message=(
                 "Nach dem Speichern des abweichenden Projektwerts %r für %r "
                 "fehlt das Abweichungs-Badge %s an genau dieser Zeile "
-                "(Erwartung laut docs/features/F34.md WP4/Gates; "
-                "Implementierung bin/web/nova-settings.js draw())"
+                "(Erwartung laut docs/features/GH-57.md Gates)"
                 % (deviation, gate_key, badge)))
         badge_text = (first.locator(badge).first.inner_text() or "").strip()
         self.assertTrue(
@@ -1043,53 +1002,8 @@ class GatesTest(F34SettingsBrowserTest):
             "Die Abwesenheitsprüfung des Badges hatte keine zweite "
             "Gates-Zeile ohne Abweichung")
 
-        # Global-Kontext: kein Override-Feld, kein Badge, Projektwert-Zelle „—“
-        # (bin/web/nova-settings.js draw(): projectSelect.value === 'global'
-        # → Zelle mit nv-muted „—“ statt overrideCell).
-        project_select.select_option("global")
-        self.wait_until(
-            lambda: self.page.locator("input[data-nv-gate-override]").count() == 0,
-            timeout=20,
-            message="Im Global-Kontext erscheint weiterhin ein "
-                    "Override-Feld data-nv-gate-override")
-        self.assertEqual(
-            0, self.page.locator(badge).count(),
-            "Im Global-Kontext erscheint ein Abweichungs-Badge")
-        self.wait_until(
-            lambda: rows.count() >= 1, timeout=20,
-            message="Die Gates-Tabelle hat im Global-Kontext keine Zeilen")
-        for index in range(rows.count()):
-            row = rows.nth(index)
-            with self.subTest(gate=row.get_attribute("data-nv-gate")):
-                cells = row.locator("td")
-                self.assertEqual(
-                    5, cells.count(),
-                    "Eine Gates-Zeile im Global-Kontext hat nicht fünf "
-                    "Zellen (Name, Wirkung, Wert, Herkunft, Projektwert)")
-                project_cell = cells.nth(4)
-                self.assertEqual(
-                    0, project_cell.locator("input, select").count(),
-                    "Die Projektwert-Zelle im Global-Kontext enthält ein "
-                    "Eingabefeld")
-                self.assertEqual(
-                    "—", (project_cell.inner_text() or "").strip(),
-                    "Die Projektwert-Zelle zeigt im Global-Kontext nicht „—“")
-
         # Ausgangszustand wiederherstellen und dabei prüfen, dass das Badge
         # nach dem Entfernen der Abweichung verschwindet.
-        project_select.select_option(PROJECT)
-        rows = table.locator("tr[data-nv-gate]")
-        first = rows.first
-        self.wait_until(
-            lambda: first.locator("input[data-nv-gate-override]").count() == 1,
-            timeout=20,
-            message="Nach der Rückkehr in den Projektkontext fehlt das "
-                    "Override-Feld")
-        self.assertNotEqual(
-            "", (first.locator("input[data-nv-gate-override]").input_value()
-                 or "").strip(),
-            "Der gespeicherte Projektwert wird im Projektkontext nicht "
-            "angezeigt")
         first.locator("input[data-nv-gate-override]").fill("")
         self.page.locator("button[data-nv-action='gates-save']").click()
         self.wait_until(
@@ -1100,6 +1014,7 @@ class GatesTest(F34SettingsBrowserTest):
         self.assertIn(
             view["gates"][gate_key].get("override"), ("", None),
             "Der geleerte Projektwert ist serverseitig nicht entfernt")
+        self.assert_no_page_errors()
 
     def test_gates_save_sends_all_values_one_post_without_rerender(self):
         """Vorbedingung: Feature ``gates`` an, Gates offen.
@@ -1251,74 +1166,72 @@ class GatesTest(F34SettingsBrowserTest):
 
 
 class ModelsSectionTest(F34SettingsBrowserTest):
-    def test_models_details_open_table_and_catalog_actions(self):
-        """Vorbedingung: Feature ``models`` an.
-
-        Erwartung: ``details[data-nv-models][open]`` mit Modelltabelle;
-        ``details[data-nv-model-catalog]`` standardmäßig zu; nach dem
-        Aufklappen die Aktionen ``models-prices`` / ``models-refresh`` und der
-        Hinweis auf die Preispflege im Kosten-Dashboard.
-        """
+    def test_models_collapsed_refresh_in_head_and_stand_line(self):
+        """GH-57 (models): details[data-nv-models] ist standardmäßig
+        EINGEKLAPPT (kein open); der Aktualisieren-Knopf steht im
+        Sektionskopf und ist auch eingeklappt sichtbar; die Katalog-
+        Beschreibung (data-nv-models-hint / „Referenz“-Text) ist entfallen.
+        Der Katalog (data-nv-model-catalog) bleibt eingeklappt mit
+        models-prices. Ersetzt den F34-Stand (details offen, Refresh im
+        Katalog, Hinweistext), der dem GH-57-Vertrag widerspricht."""
         self.boot()
         self.open_settings()
         self.enable_features("models")
-        models = self.page.locator("details[data-nv-models]")
-        models.wait_for(state="visible", timeout=20000)
-        self.assertTrue(
-            models.evaluate("node => node.open"),
-            "details[data-nv-models] ist nicht offen")
-        table = models.locator("table")
-        table.wait_for(state="visible", timeout=20000)
-        catalog = self.page.locator("details[data-nv-model-catalog]")
-        catalog.wait_for(state="visible", timeout=20000)
-        self.assertFalse(
-            catalog.evaluate("node => node.open"),
-            "details[data-nv-model-catalog] ist nicht standardmäßig zugeklappt")
-        # Inhalt weiterhin prüfen: erst aufklappen, dann Aktionen und Hinweis.
+        section = self.page.locator("section[data-nv-ssection='models']")
+        section.wait_for(state="visible", timeout=20000)
+        models = section.locator("details[data-nv-models]")
+        models.wait_for(state="attached", timeout=20000)
+        self.assertFalse(models.evaluate("node => node.open"),
+                         "details[data-nv-models] ist standardmäßig offen")
+        refresh = section.locator("button[data-nv-action='models-refresh']")
+        self.assertTrue(refresh.is_visible(),
+                        "Der Aktualisieren-Knopf ist eingeklappt unsichtbar")
+        self.assertEqual(0, section.locator("[data-nv-models-hint]").count(),
+                         "Die Katalog-Beschreibung ist nicht entfallen")
+        self.assertEqual(1, section.locator(
+            "[data-nv-models-stand]").count(),
+            "Die Zeile mit dem Aktualisierungsstand fehlt")
+        catalog = section.locator("details[data-nv-model-catalog]")
+        catalog.wait_for(state="attached", timeout=20000)
+        self.assertFalse(catalog.evaluate("node => node.open"),
+                         "Der Katalog ist standardmäßig offen")
         catalog.locator("summary").first.click()
-        self.wait_until(
-            lambda: catalog.evaluate("node => node.open"),
-            timeout=10,
-            message="details[data-nv-model-catalog] lässt sich nicht aufklappen")
+        self.wait_until(lambda: catalog.evaluate("node => node.open"),
+                        timeout=10, message="Der Katalog lässt sich nicht "
+                                            "aufklappen")
         prices = catalog.locator("button[data-nv-action='models-prices']")
         prices.wait_for(state="visible", timeout=20000)
-        refresh = catalog.locator("button[data-nv-action='models-refresh']")
-        refresh.wait_for(state="visible", timeout=20000)
-        hint = self.page.locator(
-            "p[data-nv-models-hint], small[data-nv-models-hint]")
-        hint.first.wait_for(state="visible", timeout=20000)
-        self.assertTrue(
-            (hint.first.inner_text() or "").strip(),
-            "Der Hinweis auf die Preispflege im Modellkatalog fehlt")
         self.assert_no_page_errors()
 
 
 class ProfilesSectionTest(F34SettingsBrowserTest):
-    def test_profiles_articles_with_role_comboboxes_save_and_apply(self):
-        """Vorbedingung: Feature ``profiles`` an.
-
-        Erwartung: Profile als ``article[data-nv-profile]`` mit
-        Rollen-Comboboxen ``[data-nv-profile-role]``; Auswahl zeigt Einstellungen;
-        ``profile-save`` / ``profile-apply`` vorhanden.
-        """
+    def test_profiles_select_with_role_comboboxes_and_actions(self):
+        """GH-57 (profiles): Profilauswahl select[data-nv-profiles-select]
+        statt article[data-nv-profile]-Karten; Zuordnungen mit
+        [data-nv-profile-role]-Comboboxen; Aktionsknöpfe save/cancel/apply/
+        backup vorhanden. Ersetzt den F34-Stand (Profilkarten), der dem
+        GH-57-Vertrag widerspricht; Tiefe in test_gh57_settings_ui."""
         self.boot()
         self.open_settings()
         self.enable_features("profiles")
-        profiles = self.page.locator("article[data-nv-profile]")
-        profiles.first.wait_for(state="visible", timeout=20000)
+        section = self.page.locator("section[data-nv-ssection='profiles']")
+        section.wait_for(state="visible", timeout=20000)
+        select = section.locator("select[data-nv-profiles-select]")
+        select.wait_for(state="visible", timeout=20000)
+        self.assertEqual(0, section.locator("article[data-nv-profile]").count(),
+                         "Die Profile erscheinen weiterhin als Karten")
+        roles_box = section.locator("[data-nv-profile-roles]")
+        roles_box.wait_for(state="visible", timeout=20000)
         self.assertGreaterEqual(
-            profiles.count(), 1, "Es existieren keine Profile als Artikel")
-        for index in range(profiles.count()):
-            with self.subTest(profile=index):
-                card = profiles.nth(index)
-                combobox = card.locator("[data-nv-profile-role]")
-                self.assertTrue(combobox.count() >= 1,
-                                "Dem Profil fehlt die Rollen-Combobox")
-        save = self.page.locator("button[data-nv-action='profile-save']")
-        save.first.wait_for(state="visible", timeout=20000)
-        apply_button = self.page.locator(
-            "button[data-nv-action='profile-apply']")
-        apply_button.first.wait_for(state="visible", timeout=20000)
+            section.locator("[data-nv-profile-role]").count(), 1,
+            "Es gibt keine Rollen-Combobox")
+        for action in ("profile-save", "profile-cancel", "profile-apply",
+                       "profile-backup"):
+            self.assertEqual(
+                1, section.locator(
+                    f"button[data-nv-action='{action}']").count(),
+                f"Der Knopf {action} fehlt")
+        self.assert_no_page_errors()
 
 
 class McpSectionTest(F34SettingsBrowserTest):
@@ -1416,12 +1329,13 @@ class McpSectionTest(F34SettingsBrowserTest):
                 server_name, {}).get("enabled"),
             "Der Umschaltzustand ist nicht in der MCP-Konfiguration "
             "persistiert: " + repr(config.get("mcp")))
-        # Der Scope wird im Bearbeitungsformular (Kontext-Panel) gewählt.
+        # Der Scope wird im Bearbeitungsformular (Edit-View) gewählt —
+        # GH-57 öffnet das MCP-Formular in NV.editView statt im Kontext-Panel.
         edit = cards.first.locator("button[data-nv-action='mcp-edit']")
         edit.wait_for(state="visible", timeout=20000)
         edit.click()
         scope = self.page.locator(
-            "aside[data-nv-context] select[data-nv-mcp-scope]")
+            "aside[data-nv-editview] select[data-nv-mcp-scope]")
         scope.wait_for(state="visible", timeout=20000)
         self.assertIn(
             "global",

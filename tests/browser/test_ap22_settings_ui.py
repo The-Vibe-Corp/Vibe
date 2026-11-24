@@ -515,8 +515,14 @@ class SettingsTest(AP22SettingsBrowserTest):
         self.page.locator("input[data-nv-field='password']").fill(AP22_PASSWORD)
         self.page.locator("input[data-nv-field='password-repeat']").fill(AP22_PASSWORD)
         self.page.locator("[data-nv-action='password-set']").click()
+        # GH-57: [data-nv-restart-note] ist dauerhaft sichtbar und enthält
+        # „gespeichert“; confirmation_visible() würde daher sofort True
+        # liefern. Beobachtet wird die echte Toast-Bestätigung.
+        toasts = self.page.locator("#nv-toasts")
         self.wait_until(
-            self.confirmation_visible, timeout=20000,
+            lambda: toasts.count() >= 1 and toasts.is_visible()
+            and bool((toasts.inner_text() or "").strip()),
+            timeout=20000,
             message="Nach dem Setzen des Kennworts erscheint keine Bestätigung")
         self.assertTrue(
             self.api_json("/api/security").get("password_set"),
@@ -605,6 +611,18 @@ class SettingsTest(AP22SettingsBrowserTest):
         save.click()
         self.page.locator("[data-nv-restart-note]").wait_for(
             state="visible", timeout=20000)
+        # GH-57: Der Hinweis nennt die Neustart-Befristung ohne den
+        # technischen ui.json-Satz (Ticket: Satz ersetzen).
+        note_text = (self.page.locator("[data-nv-restart-note]")
+                     .inner_text() or "")
+        self.assertNotIn(
+            "ui.json", note_text,
+            "Der Neustart-Hinweis verwendet weiterhin den technischen "
+            "ui.json-Satz: " + repr(note_text))
+        # GH-57: Bei geplanten, noch nicht wirksamen Port-/Bind-Änderungen
+        # zeigt die Oberfläche zusätzlich die Warn-Notiz (restart_required).
+        self.page.locator("[data-nv-restart-pending]").wait_for(
+            state="visible", timeout=20000)
         self.assertEqual(
             free, self.ui_json().get("ui_port"),
             "ui.json enthält den gespeicherten Port nicht")
@@ -648,58 +666,71 @@ class SettingsTest(AP22SettingsBrowserTest):
                     "nicht mehr")
 
     def test_advanced_limits_appears_and_switches_mode(self):
-        """Vorbedingung: Modus ``stop``. Aktion: Feature ``limits`` einschalten,
-        ``limits-continue``, danach ``limits-stop``.
+        """GH-57: Vorbedingung Modus ``stop``, Feature ``limits`` aus. Aktion:
+        Feature einschalten (lokales Erscheinen der Sektion), Schalter
+        ``input[type=checkbox][data-nv-limits-mode]`` umlegen, zurücklegen.
 
-        Erwartung: Sektion ``section[data-nv-ssection='limits']`` ist
-        immer sichtbar; mit dem Schalter stehen die erklärten Modus-Karten;
-        aktiver Modus ist hervorgehoben; die Knöpfe ``limits-continue`` /
-        ``limits-stop`` wechseln den Modus — ``GET /api/limits`` bestätigt
-        ``continue`` bzw. ``stop``.
+        Erwartung: Die Sektion erscheint nach dem Einschalten lokal; genau ein
+        Schalter in ``label.nv-switch-row``; die Erklärung
+        ``[data-nv-limits-help]`` nennt die Wirkung; der Schalter spiegelt
+        ``GET /api/limits`` und wechselt ``continue``/``stop``. Das
+        „kein Voll-Neurender“-Kriterium sichern ``test_gh57_settings_ui``
+        und ``test_f34_settings_ui`` ab (diese Basisklasse besitzt keinen
+        Render-Zähler). Ersetzt den F34-Stand (Modus-Karten
+        limits-continue/limits-stop), der dem GH-57-Vertrag widerspricht.
         """
         self.api_post("/api/limits", {"action": "stop"})
         self.boot()
         self.open_settings()
+        # GH-57: Sektionen gesperrter Features sind vollständig ausgeblendet;
+        # das Einschalten lässt die Sektion lokal erscheinen.
         limits = self.page.locator("[data-nv-ssection='limits']")
-        limits.wait_for(state="visible", timeout=15000)
         self.page.locator("input[data-nv-feature='limits']").wait_for(
             state="visible", timeout=15000)
         self.page.locator("input[data-nv-feature='limits']").check()
-        continue_button = self.page.locator(
-            "[data-nv-action='limits-continue']")
-        continue_button.wait_for(state="visible", timeout=20000)
-        stop_button = self.page.locator("[data-nv-action='limits-stop']")
-        stop_button.wait_for(state="visible", timeout=20000)
+        limits.wait_for(state="visible", timeout=20000)
 
-        # Erklärungen der beiden Modus-Karten (Wirkung + Hinweis):
+        toggle = limits.locator(
+            "input[type=checkbox][data-nv-limits-mode]")
+        toggle.wait_for(state="visible", timeout=20000)
+        self.assertEqual(
+            0, self.page.locator(
+                "button[data-nv-action='limits-continue'],"
+                " button[data-nv-action='limits-stop']").count(),
+            "Die alten Modus-Knöpfe existieren weiterhin")
+        help_box = limits.locator("[data-nv-limits-help]")
+        help_box.wait_for(state="visible", timeout=20000)
         self.assertRegex(
-            (limits.inner_text() or ""), r"(?i)new run|neue läuf",
-            "Die Limits-Optionen enthalten keine Erklärung der Wirkung: "
-            + repr(limits.inner_text() if limits.count() else ""))
-        # Aktiver Modus ist hervorgehoben (aria-pressed / nv-primary):
-        self.wait_until(
-            lambda: stop_button.get_attribute("aria-pressed") == "true"
-            or "nv-primary" in (stop_button.get_attribute("class") or ""),
-            timeout=30,
-            message="Der Modus stop ist nicht hervorgehoben")
+            (help_box.inner_text() or "") + " " + (limits.inner_text() or ""),
+            r"(?i)new run|neue läuf|fortsetz|stopp",
+            "Die Limits-Erklärung enthält keine Wirkungsbeschreibung: "
+            + repr(limits.inner_text()))
+        self.assertFalse(
+            toggle.is_checked(),
+            "Der Schalter spiegelt den Modus stop nicht (aus = Stopp)")
+        self.assertEqual(
+            "label.nv-switch-row",
+            toggle.evaluate(
+                "node => { const l = node.closest('label');"
+                " return l ? l.className : ''; }"),
+            "Der Schalter liegt nicht in label.nv-switch-row")
 
-        continue_button.click()
+        toggle.check()
         self.wait_until(
             lambda: self.api_json("/api/limits").get("mode") == "continue",
             timeout=30,
             message="Der Moduswechsel auf continue wird nicht bestätigt: "
                     + repr(self.api_json("/api/limits")))
-        self.assertTrue(
-            continue_button.get_attribute("aria-pressed") == "true"
-            or "nv-primary" in (continue_button.get_attribute("class") or ""),
-            "Der Modus continue ist nicht hervorgehoben")
-
-        stop_button.click()
+        self.assertTrue(toggle.is_checked(),
+                         "Der Schalter zeigt den Modus continue nicht")
+        toggle.uncheck()
         self.wait_until(
             lambda: self.api_json("/api/limits").get("mode") == "stop",
             timeout=30,
             message="Der Moduswechsel auf stop wird nicht bestätigt: "
                     + repr(self.api_json("/api/limits")))
+        self.assertFalse(toggle.is_checked(),
+                         "Der Schalter zeigt den Modus stop nicht")
         self.assert_no_page_errors()
 
     def test_advanced_gates_shows_keys_and_project_form(self):
@@ -744,8 +775,10 @@ class SettingsTest(AP22SettingsBrowserTest):
                 self.assertEqual(
                     1, row.locator("[data-nv-gate-value]").count(),
                     f"Die Schranke {key!r} hat kein Wert-Feld")
+                # GH-57: Der Vertrag pinnt den Herkunfts-Hook ohne Element-Typ
+                # vor (keine Schwächung — das Feld bleibt gefordert).
                 self.assertEqual(
-                    1, row.locator("span[data-nv-gate-origin]").count(),
+                    1, row.locator("[data-nv-gate-origin]").count(),
                     f"Die Schranke {key!r} hat kein Herkunfts-Badge")
 
         project_select = section.locator("select[data-nv-gates-project]")

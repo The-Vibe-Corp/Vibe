@@ -245,13 +245,18 @@ def agents_info(vibe):
             write_dirs_errors[project] = str(error)
     profiles = vibe.profiles_load()
     agents = vibe.agents_all()
+    models = vibe.models_state()
     return {
         "agents": agents,
         "global_agents": [row for row in agents if row["scope"] == "global"],
         "vibe_agent": vibe.vibe_agent_status(),
         "roles": profiles.get("rollen", {}),
         "projects": projects,
-        "models": vibe.models_list(),
+        "models": models["models"],
+        "models_stand": models["stand"],
+        "models_error": models["error"],
+        "default_models": vibe.default_role_models(),
+        "standard_profiles": list(vibe.STANDARD_PROFILES),
         "info": {model["id"]: model for model in info.get("models", [])},
         "stand": info.get("stand", ""),
         "hinweis": info.get("hinweis", ""),
