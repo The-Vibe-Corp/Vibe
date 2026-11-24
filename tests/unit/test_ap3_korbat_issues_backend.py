@@ -369,11 +369,18 @@ class _IssuesHandler(BaseHTTPRequestHandler):
         payload = json.loads(raw.decode("utf-8")) if raw else {}
         if "/issues/" in path:
             number = self._number()
+            if number in self.server.fail_patch_numbers:
+                self._respond(403, {"message": "simulierte fehlende Berechtigung"})
+                return
             for item in self.server.issues:
                 if item.get("number") != number:
                     continue
                 if "state" in payload:
                     item["state"] = payload["state"]
+                if "title" in payload:
+                    item["title"] = payload["title"]
+                if "body" in payload:
+                    item["body"] = payload["body"]
                 if "labels" in payload:
                     item["labels"] = [{"name": name}
                                       for name in payload.get("labels") or []]
@@ -382,13 +389,16 @@ class _IssuesHandler(BaseHTTPRequestHandler):
                                          for name in payload.get("assignees") or []]
                 self._respond(200, item)
                 return
+            self._respond(404, {"message": "Not Found"})
+            return
         self._respond(404, {"message": "Not Found"})
 
 
 class FakeIssuesServer:
     """Loopback-REST-Fake fuer GitHub-Issues und Merge-Requests."""
 
-    def __init__(self, issues=None, next_number=200, fail_create=False):
+    def __init__(self, issues=None, next_number=200, fail_create=False,
+                 fail_patch_numbers=None):
         self.requests = []
         self.issues = [dict(item) for item in (issues if issues is not None
                                               else DEFAULT_ISSUES)]
@@ -403,6 +413,7 @@ class FakeIssuesServer:
         self.httpd.issues = self.issues
         self.httpd.next_number = self.next_number
         self.httpd.fail_create = self.fail_create
+        self.httpd.fail_patch_numbers = set(fail_patch_numbers or ())
         self.httpd.base = self.base
         self.thread = threading.Thread(target=self.httpd.serve_forever,
                                        daemon=True)
@@ -689,21 +700,29 @@ class IssuesSyncTest(GithubCase):
         self.assertEqual(2, stat_count(stats["created"]), stats)
 
     def test_pull_does_not_duplicate_and_updates_open_tickets(self):
-        """Vor: GH-101 mit altem Titel, AP7 mit github=102. Remote: neuer
-        Titel und in-progress. Aktion: sync zweimal.
+        """Vor: GH-101 und AP7 mit textgleichem Remote-Stand (Baseline);
+        danach ändert sich der Remote-Titel und AP7 wird in-progress.
+        Aktion: sync zweimal.
         Erwartet: eine GH-101-Zeile, Titel aktualisiert, AP7 bleibt ID und
         wird in-progress; zweiter Lauf erzeugt nichts Neues."""
         project = self.make_project(env_text=self.issues_env(self.server))
         self.write_store(project, [
-            ticket_record("GH-101", "Old title", github=101),
-            ticket_record("AP7", "Local title", github=102),
+            ticket_record("GH-101", "Remote open", github=101,
+                          description="Open body"),
+            ticket_record("AP7", "Remote progress", github=102,
+                          description="Progress body"),
         ])
 
+        self.sync(project)
+        self.server.httpd.issues[0]["title"] = "Remote open neu"
+        self.server.httpd.issues[1]["title"] = "Remote progress neu"
+        self.server.httpd.issues[1]["labels"] = [
+            {"name": "ready"}, {"name": "in-progress"}]
         self.sync(project)
         records = self.records(project)
 
         self.assertEqual({"GH-101", "AP7"}, set(records))
-        self.assertEqual("Remote open", records["GH-101"]["title"])
+        self.assertEqual("Remote open neu", records["GH-101"]["title"])
         self.assertEqual("in-progress", records["AP7"]["state"])
         self.assertEqual(102, records["AP7"]["github"])
 
@@ -725,19 +744,22 @@ class IssuesSyncTest(GithubCase):
         self.assertIn("#103", record["test"])
         self.assertEqual(1, stat_count(stats["closed"]), stats)
 
-    def test_pull_state_is_authoritative_and_descriptions_stay_local(self):
-        """Vor: lokale Tickets mit eigenen Beschreibungen; Remote trägt
-        abweichende Zustände und Titel, dazu ein neues Ready-Issue.
-        Aktion: sync_issues. Erwartet: Zustände/Titel vom Remote,
-        Beschreibungen bleiben lokal, GH-106 entsteht."""
+    def test_pull_state_is_authoritative_and_remote_text_updates_are_taken_over(self):
+        """GH-47: Zustand bleibt label-autoritativ, Texte sind bidirektional.
+        Vor: textgleicher Ausgangsstand (Baseline) für GH-101/102/105/103;
+        danach ändert der Remote-Stand Titel und Beschreibung, dazu ein neues
+        Ready-Issue.
+        Aktion: sync_issues zweimal.
+        Erwartet: Zustände/Titel/Beschreibungen vom Remote für offene Tickets;
+        das erledigte GH-103 behält seinen Text (Done-Schutz); GH-106 entsteht.
+        Fehlerfall: Beschreibungen bleiben lokal oder Done-Tickets werden
+        überschrieben."""
         self.server.httpd.issues[:] = [
-            issue(101, "Remote draft", labels=["bug"], body="Remote body 101"),
-            issue(102, "Remote progress", labels=["ready", "in-progress"],
-                  body="Remote body 102"),
-            issue(105, "Remote ready", labels=["ready"],
-                  body="Remote body 105"),
-            issue(103, "Remote closed", state="closed", body="Body 103"),
-            issue(106, "Fresh ready", labels=["ready"], body="Fresh body 106"),
+            issue(101, "Alt draft", labels=["bug"], body="lokal 101"),
+            issue(102, "Alt progress", labels=["ready", "in-progress"],
+                  body="lokal 102"),
+            issue(105, "Alt ready", labels=["ready"], body="lokal 105"),
+            issue(103, "Alt closed", state="closed", body="lokal 103"),
         ]
         project = self.make_project(env_text=self.issues_env(self.server))
         self.write_store(project, [
@@ -750,16 +772,32 @@ class IssuesSyncTest(GithubCase):
             ticket_record("GH-103", "Alt closed", github=103,
                           description="lokal 103"),
         ])
+        self.sync(project)  # Baseline für den Textabgleich
+
+        self.server.httpd.issues[:] = [
+            issue(101, "Remote draft", labels=["bug"],
+                  body="Remote body 101"),
+            issue(102, "Remote progress", labels=["ready", "in-progress"],
+                  body="Remote body 102"),
+            issue(105, "Remote ready", labels=["ready"],
+                  body="Remote body 105"),
+            issue(103, "Remote closed", state="closed", body="Remote body 103"),
+            issue(106, "Fresh ready", labels=["ready"], body="Fresh body 106"),
+        ]
 
         self.sync(project)
 
         records = self.records(project)
         self.assertEqual("draft", records["GH-101"]["state"])
         self.assertEqual("Remote draft", records["GH-101"]["title"])
-        self.assertEqual("lokal 101", records["GH-101"]["description"])
+        self.assertEqual("Remote body 101", records["GH-101"]["description"])
         self.assertEqual("in-progress", records["GH-102"]["state"])
+        self.assertEqual("Remote body 102", records["GH-102"]["description"])
         self.assertEqual("open", records["GH-105"]["state"])
+        self.assertEqual("Remote body 105", records["GH-105"]["description"])
         self.assertEqual("done", records["GH-103"]["state"])
+        self.assertEqual("Alt closed", records["GH-103"]["title"])
+        self.assertEqual("lokal 103", records["GH-103"]["description"])
         self.assertEqual("Fresh body 106", records["GH-106"]["description"])
 
     def test_previously_open_issue_without_ready_label_becomes_draft(self):

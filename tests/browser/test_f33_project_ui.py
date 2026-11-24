@@ -1608,12 +1608,18 @@ class SettingsTabTest(F33ProjectBrowserTest):
         self.assert_clean_page()
 
     def test_github_explains_branches_and_puts_mr_above_issues(self):
-        """Vorbedingung: Feature ``github`` an.
+        """Vorbedingung: Feature ``github`` an, Issues-Sync aktiv.
 
         Erwartung: ``small[data-nv-github-help-source]`` und
         ``small[data-nv-github-help-target]`` erklären Quell-/Ziel-Branch;
-        der Merge-Request-Block steht über dem Issue-Block.
+        der Merge-Request-Block steht über dem einen Issue-Sync-Block
+        (GH-47/q6cbba05d8ca9: ``github-issues`` ist entfallen).
         """
+        env_path = self.project / ".vibe" / "project.env"
+        env_path.write_text(
+            env_path.read_text(encoding="utf-8")
+            + 'GITHUB_ISSUES_ENABLED="1"\n',
+            encoding="utf-8")
         self.open_settings()
         section = self.section("github")
         source = section.locator("small[data-nv-github-help-source]")
@@ -1628,7 +1634,7 @@ class SettingsTabTest(F33ProjectBrowserTest):
                         "Die Erklärung des Ziel-Branches ist leer")
         self.assert_before(
             "[data-nv-psection='github'] [data-nv-action='github-pr']",
-            "[data-nv-psection='github'] [data-nv-action='github-issues']",
+            "[data-nv-psection='github'] [data-nv-action='issues-sync']",
             "Der Merge-Request-Block steht nicht über dem Issue-Block")
         self.assert_clean_page()
 

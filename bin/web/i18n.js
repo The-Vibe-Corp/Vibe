@@ -290,7 +290,6 @@
         "Label (leer = alle)": "Label (empty = all)",
         "Issues nach Label filtern": "Filter issues by label",
         "Keine offenen Issues für dieses Label.": "No open issues for this label.",
-        "Issues laden": "Load issues",
         "Merge-Request stellen: Erst den aktuellen Branch nach origin pushen, dann den Merge-Request über GitHub anlegen. Fortfahren?": "Create a merge request: first push the current branch to origin, then create the merge request on GitHub. Continue?",
         "Ja, stellen": "Yes, create",
         "Fehler beim Merge-Request": "Merge request failed",
@@ -310,7 +309,6 @@
         "Keine lokalen Branches erkannt.": "No local branches detected.",
         "Issues als Arbeitspakete": "Issues as work packages",
         "Offene GitHub-Issues nach Label filtern und als Tickets (GH-Nummer) in den Ticketspeicher übernehmen.": "Filter open GitHub issues by label and add them as tickets (GH number) to the ticket store.",
-        "Label-Filter": "Label filter",
         "Paket ": "Package ",
         " verschieben (Pfeiltasten auf/ab)": " move (arrow keys up/down)",
         " verschieben": " move",
@@ -1003,7 +1001,6 @@
         "Quell-Branch": "Source branch",
         "Push": "Push",
         "Fehler beim Laden der Issues": "Error loading issues",
-        "Issues importieren": "Import issues",
         "Merge-Request wirklich stellen? Der aktuelle Branch wird nach origin gepusht und der Merge-Request über GitHub angelegt.": "Create the merge request? The current branch is pushed to origin and the merge request is created on GitHub. Confirm?",
         "Ja, bestätigen": "Yes, confirm",
         "Kein Ergebnis zum Merge-Request": "No merge request result available",
@@ -1031,6 +1028,7 @@
         "Issues-Sync aktivieren (GitHub als Quelle der Wahrheit)": "Enable issues sync (GitHub as source of truth)",
         "Issues synchronisieren": "Sync issues",
         "Bereit": "Ready",
+        "Der einheitliche Sync zieht offene Issues samt Text, pusht neue Tickets, schließt gelöschte Tickets best effort und setzt erledigte Tickets über geschlossene Issues zurück.": "The unified sync pulls open issues including their text, pushes new tickets, best-effort closes deleted tickets, and marks tickets done via closed issues.",
         // ===== F33 WP1 keys (Shell/Design/Home) — nur in diesem Block ergänzen =====
         // ===== F33 WP2 keys (Combobox/Agenten/Wizard/Editor) — nur in diesem Block ergänzen =====
         "— Standardmodell —": "— Standard model —",
@@ -1414,7 +1412,6 @@
         "Label (leer = alle)": "Label (leer = alle)",
         "Issues nach Label filtern": "Issues nach Label filtern",
         "Keine offenen Issues für dieses Label.": "Keine offenen Issues für dieses Label.",
-        "Issues laden": "Issues laden",
         "Merge-Request stellen: Erst den aktuellen Branch nach origin pushen, dann den Merge-Request über GitHub anlegen. Fortfahren?": "Merge-Request stellen: Erst den aktuellen Branch nach origin pushen, dann den Merge-Request über GitHub anlegen. Fortfahren?",
         "Ja, stellen": "Ja, stellen",
         "Fehler beim Merge-Request": "Fehler beim Merge-Request",
@@ -1434,7 +1431,6 @@
         "Keine lokalen Branches erkannt.": "Keine lokalen Branches erkannt.",
         "Issues als Arbeitspakete": "Issues als Arbeitspakete",
         "Offene GitHub-Issues nach Label filtern und als Tickets (GH-Nummer) in den Ticketspeicher übernehmen.": "Offene GitHub-Issues nach Label filtern und als Tickets (GH-Nummer) in den Ticketspeicher übernehmen.",
-        "Label-Filter": "Label-Filter",
         "Paket ": "Paket ",
         " verschieben (Pfeiltasten auf/ab)": " verschieben (Pfeiltasten auf/ab)",
         " verschieben": " verschieben",
@@ -2127,7 +2123,6 @@
         "Quell-Branch": "Quell-Branch",
         "Push": "Push",
         "Fehler beim Laden der Issues": "Fehler beim Laden der Issues",
-        "Issues importieren": "Issues importieren",
         "Merge-Request wirklich stellen? Der aktuelle Branch wird nach origin gepusht und der Merge-Request über GitHub angelegt.": "Merge-Request wirklich stellen? Der aktuelle Branch wird nach origin gepusht und der Merge-Request über GitHub angelegt.",
         "Ja, bestätigen": "Ja, bestätigen",
         "Kein Ergebnis zum Merge-Request": "Kein Ergebnis zum Merge-Request",
@@ -2155,6 +2150,7 @@
         "Issues-Sync aktivieren (GitHub als Quelle der Wahrheit)": "Issues-Sync aktivieren (GitHub als Quelle der Wahrheit)",
         "Issues synchronisieren": "Issues synchronisieren",
         "Bereit": "Bereit",
+        "Der einheitliche Sync zieht offene Issues samt Text, pusht neue Tickets, schließt gelöschte Tickets best effort und setzt erledigte Tickets über geschlossene Issues zurück.": "Der einheitliche Sync zieht offene Issues samt Text, pusht neue Tickets, schließt gelöschte Tickets best effort und setzt erledigte Tickets über geschlossene Issues zurück.",
     }
 
   };

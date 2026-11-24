@@ -45,7 +45,7 @@ Aufruf:  vibe                 interaktives Menü
          vibe harness [status|list|use <name>|setup [name]]  Harness (opencode/Pi) wählen und einrichten
          vibe keys [add <name> [--provider P] [--secret S]|select <name>|list|remove <name>]  Secrets im lokalen Vault verwalten (ohne --secret: versteckte Eingabe)
          vibe gates [status] [<schranke> <wert>]  Schranken des Läufers zeigen oder setzen (global oder mit --project <p> je Projekt)
-         vibe github <p> [status|token [clear]|link <url>|unlink|branches|fetch|pull|push [branch]|checkout <branch>|test|issues|issues-import|pr]  GitHub-Verknüpfung (optional je Projekt); alle Aktionen bewusst, Merge-Request nur mit --confirm; Token wird je Projekt verschlüsselt gespeichert (AP9), test prüft die Verbindungen
+         vibe github <p> [status|token [clear]|link <url>|unlink|branches|fetch|pull|push [branch]|checkout <branch>|test|issues-sync|issues-state <id> <zustand>|pr]  GitHub-Verknüpfung (optional je Projekt); alle Aktionen bewusst, Merge-Request nur mit --confirm; Token wird je Projekt verschlüsselt gespeichert (AP9), test prüft die Verbindungen
          vibe types           verfügbare Projekttypen
          vibe doctor          Umgebung prüfen
 """
@@ -880,31 +880,6 @@ def github_unlink(name):
     set_env_values(name, {"GITHUB_ENABLED": "", "GITHUB_REPO": ""})
     return github_status(name)
 
-def github_issues(name, label=None):
-    """Offene GitHub-Issues (etikettenfilterbar, Standardlabel pro Projekt)."""
-    config = vibe_github.read_config(github_env_path(name))
-    if not config["repo"]:
-        raise ValueError("Nicht verknüpft: GITHUB_REPO fehlt")
-    wanted = config["label"] if label is None else label
-    issues = vibe_github.list_issues(config["repo"], wanted, api=config["api"],
-                                     project=ppath(name))
-    for issue in issues:
-        issue["label_requested"] = wanted
-    return issues
-
-def github_issues_import(name, label=None):
-    """Übernimmt offene GitHub-Issues als Tickets in den Ticketspeicher.
-
-    Gelesen werden ausschließlich offene Issues ohne Legacy-Label-Filter
-    (derselbe ungeschönte Pfad wie der Sync); Pull-Requests filtert
-    ``list_issues`` bereits heraus.
-    """
-    project = ppath(name)
-    config = vibe_github.read_config(github_env_path(name))
-    issues = vibe_issues.list_issues(config, project, state="open")
-    added = vibe_github.import_issues_into_tickets(project, issues)
-    return added, len(issues)
-
 def github_issues_sync(name):
     """Führt den Issues-Sync aus (Pull + Push + Close); Opt-in-Pflicht."""
     project = ppath(name)
@@ -913,10 +888,7 @@ def github_issues_sync(name):
         raise ValueError("Issues-Sync ist für dieses Projekt nicht aktiv "
                          "(GITHUB_ISSUES_ENABLED=1).")
     stats = vibe_issues.sync_issues(project, config)
-    return True, ("Issues synchronisiert: %d angelegt, %d aktualisiert, "
-                  "%d geschlossen, %d gepusht."
-                  % (stats["created"], stats["updated"], stats["closed"],
-                     stats["pushed"]))
+    return True, vibe_issues.sync_message(stats)
 
 def github_issues_state(name, ticket_id, state):
     """Setzt den Issues-Zustand (draft/ready/in-progress/open)."""
@@ -1051,19 +1023,6 @@ def cmd_github(name=None, action="status", value=None, label=None, title=None,
                 raise ValueError('Token nie als Argument angeben. Befehle: '
                                  '"vibe github <projekt> token" (Eingabe, unsichtbar) '
                                  'oder "vibe github <projekt> token clear"')
-        elif action == "issues":
-            rows = github_issues(name, label)
-            line("Offene Issues: %d" % len(rows))
-            for issue in rows:
-                line("* %s: %s" % (issue["number"], issue["title"]))
-                if issue["html_url"]:
-                    line("  " + issue["html_url"])
-        elif action == "issues-import":
-            added, seen = github_issues_import(name, label)
-            if added:
-                line("Issues übernommen (%d von %d Issues)." % (added, seen))
-            else:
-                line("Keine neuen Issues (%d gesehen); Ticketspeicher unverändert." % seen)
         elif action == "issues-sync":
             ok, message = github_issues_sync(name)
             line(message)
@@ -1081,7 +1040,7 @@ def cmd_github(name=None, action="status", value=None, label=None, title=None,
             line(result["message"])
         else:
             raise ValueError('Aktion unbekannt: "%s" (status|link|unlink|branches|'
-                             'fetch|pull|push|checkout|test|issues|issues-import|'
+                             'fetch|pull|push|checkout|test|'
                              'issues-sync|issues-state|token|pr)' % action)
     except ValueError as e:
         sys.exit(str(e))

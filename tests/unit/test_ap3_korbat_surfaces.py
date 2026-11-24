@@ -266,8 +266,14 @@ class IssuesSyncApiTest(IssuesWebFixture):
         self.assertEqual(200, status, data)
         self.assertTrue(data.get("ok"), data)
         stats = stats_dict(data)
-        for key in ("created", "updated", "closed", "pushed"):
+        contract = ("created", "updated", "closed", "pushed",
+                    "text_pushed", "text_pulled", "conflicts",
+                    "closed_remote")
+        for key in contract:
             self.assertIn(key, stats, data)
+        self.assertEqual(set(contract), set(stats), data)
+        self.assertTrue(all(isinstance(stats[key], int) for key in contract),
+                        data)
         records = self.tickets()
         self.assertEqual("Remote open", records["GH-101"]["title"])
         self.assertEqual(101, records["GH-101"]["github"])
@@ -277,9 +283,12 @@ class IssuesSyncApiTest(IssuesWebFixture):
     def test_state_action_sets_and_removes_the_in_progress_label(self):
         """Vorbedingung: lokales Ticket GH-101, Issues-Sync aktiv.
         Aktion: ``issues.state`` mit ``in-progress`` und danach ``open``.
-        Erwartung: PATCH setzt/entfernt das Label; der lokale Speicherzustand
-        wechselt auf ``in-progress`` und zurueck auf ``open``.
-        Fehlerfall: Label und lokaler Zustand laufen auseinander.
+        Erwartung: PATCH setzt/entfernt das In-Progress-Label; ``open`` setzt
+        das Ready-Label (GH-47: sonst würde der nächste Sync auf draft
+        zurücksetzen); der lokale Speicherzustand wechselt auf ``in-progress``
+        und zurueck auf ``open``.
+        Fehlerfall: Label und lokaler Zustand laufen auseinander oder Ready
+        fehlt nach ``open``.
         """
         self.write_env(GITHUB_ISSUES_ENABLED="1")
         self.write_tickets([
@@ -306,6 +315,8 @@ class IssuesSyncApiTest(IssuesWebFixture):
         self.assertEqual(2, len(patches), patches)
         self.assertNotIn("in-progress",
                          patches[1]["body"].get("labels") or [], patches)
+        self.assertIn("ready",
+                      patches[1]["body"].get("labels") or [], patches)
 
     def test_state_action_supports_draft_and_ready(self):
         """Vorbedingung: Remote-Issue 101 traegt ``ready`` und
@@ -702,15 +713,21 @@ class NovaIssuesSurfaceTest(unittest.TestCase):
     def test_github_card_has_sync_button_and_issues_fields(self):
         """Vorbedingung: ``nvpGithubSection``.
         Aktion: Aktionen und Formularfelder pruefen.
-        Erwartung: ``data-nv-action`` ``issues-sync``; Schalter
+        Erwartung (GH-47): genau ein Sync-Button ``issues-sync`` und die
+        entfallenen Aktionen ``github-issues``/``github-import`` sowie der
+        Label-Filter der Issues-Sektion fehlen; Schalter
         ``github-issues-enabled``; Felder fuer In-Progress-Label und Assignee,
         die ueber ``settings`` mit ``issues_enabled``/``issues_in_progress``/
         ``issues_assignee`` gespeichert werden.
-        Fehlerfall: Sync nicht ausloesbar oder Einstellungen nicht speicherbar.
+        Fehlerfall: Sync nicht ausloesbar, Altabktionen bleiben oder
+        Einstellungen nicht speicherbar.
         """
         region = js_region(self.text, "function nvpGithubSection(")
         self.assertTrue(region, "nvpGithubSection nicht gefunden")
         self.assertIn("issues-sync", region)
+        self.assertNotIn("'github-issues'", region)
+        self.assertNotIn("'github-import'", region)
+        self.assertNotIn("github-issue-label", region)
         self.assertIn("github-issues-enabled", region)
         self.assertRegex(region, r"(?i)in[ _-]?progress")
         self.assertRegex(region, r"(?i)assignee")

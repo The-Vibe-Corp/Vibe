@@ -9,7 +9,8 @@ neuen Ticketspeicher ``.vibe/tickets.json``:
   (status, kind, completed, Anzeigezustand),
 * Anlegen mit Auto-IDs und Typen, Bearbeiten/Löschen mit done-Schutz und
   Fehlermeldungen, die den Ticketspeicher statt TICKETS.md nennen,
-* GitHub-Import, -Sync und Zustandsaktion auf dem Speicher,
+* GitHub-Sync und Zustandsaktion auf dem Speicher (GH-47: der getrennte
+  Importpfad ist entfallen),
 * ``package_close`` übernimmt den Abschluss mit ``require_commit=False``.
 
 Kein echtes GitHub und kein Netz: GitHub-REST ausschließlich gegen einen
@@ -482,26 +483,31 @@ class GithubSurfaceTest(SurfaceCase):
         self.addCleanup(self.server.close)
         self.issues_env(self.server)
 
-    def test_import_creates_gh_tickets_in_the_store(self):
-        """Vor: Remote-Issues 101 (bug) und 102, ein PR. Aktion:
-        github_issues_import. Erwartet: GH-101 als bug, GH-102 als task;
-        der PR wird nicht zum Ticket; kein Markdown-Ledger entsteht."""
-        added, seen = self.cli.github_issues_import("proj")
-
-        self.assertEqual(2, added)
-        self.assertEqual(2, seen)
-        records = self.tickets()
-        self.assertEqual({"GH-101", "GH-102"}, set(records))
-        self.assertEqual("bug", records["GH-101"]["type"])
-        self.assertEqual(101, records["GH-101"]["github"])
-        self.assertEqual("task", records["GH-102"]["type"])
-        self.assertFalse((self.project / "TICKETS.md").exists())
+    def test_legacy_import_entry_points_are_gone(self):
+        """GH-47: ``github_issues`` und ``github_issues_import`` entfallen;
+        ihre Aufgabe übernimmt der eine Sync (``github_issues_sync``).
+        Vor: Projektkontext. Aktion: Attribute von ``bin/vibe`` prüfen.
+        Erwartet: beide Legacy-Funktionen fehlen; der Sync bleibt vorhanden.
+        Fehlerfall: Altabktionen bleiben erreichbar."""
+        self.assertFalse(hasattr(self.cli, "github_issues_import"),
+                         "github_issues_import existiert noch")
+        self.assertFalse(hasattr(self.cli, "github_issues"),
+                         "github_issues existiert noch")
+        self.assertTrue(hasattr(self.cli, "github_issues_sync"),
+                        "github_issues_sync fehlt")
 
     def test_sync_pulls_states_and_pushes_open_local_tickets(self):
-        """Vor: lokale Tickets AP1 (offen, ohne GitHub), GH-101 (veralteter
-        Titel, offen) und GH-103 (offen, Issue geschlossen). Aktion:
-        github_issues_sync. Erwartet: GH-101 Zustand aus Labels, GH-103 done,
-        AP1 erhält eine Issuenummer; nichts wird als Markdown geschrieben."""
+        """GH-47 (q9a10d0cf6e7f, Option A): fehlende ``gh_text``-Basislinie
+        mit unterschiedlichen Texten ist ein Konflikt; die lokale Fassung
+        gewinnt und wird gepusht.
+        Vor: lokale Tickets AP1 (offen, ohne GitHub), GH-101 (Titel „Alt“,
+        offen, kein gh_text) und GH-103 (offen, Issue geschlossen); Remote
+        101 trägt „Remote neu“ und in-progress.
+        Aktion: github_issues_sync.
+        Erwartet: GH-101 behält den lokalen Titel, der Konflikt wird in der
+        Meldung gezählt, ein PATCH überträgt den lokalen Titel, der Zustand
+        kommt weiterhin aus den Labels (in-progress), GH-103 wird done, AP1
+        erhält eine Issuenummer; nichts wird als Markdown geschrieben."""
         self.server.issues[:] = [
             issue(101, "Remote neu", labels=["in-progress"]),
             issue(103, "Remote zu", state="closed"),
@@ -515,11 +521,18 @@ class GithubSurfaceTest(SurfaceCase):
         ok, message = self.cli.github_issues_sync("proj")
 
         self.assertTrue(ok, message)
+        self.assertRegex(message, r"(?i)konflikt",
+                         "Der Konflikt wurde nicht gezählt/gemeldet: " + message)
         records = self.tickets()
-        self.assertEqual("Remote neu", records["GH-101"]["title"])
+        self.assertEqual("Alt", records["GH-101"]["title"])
+        self.assertNotEqual("Remote neu", records["GH-101"]["title"])
         self.assertEqual("in-progress", records["GH-101"]["state"])
         self.assertEqual("done", records["GH-103"]["state"])
         self.assertIsNotNone(records["AP1"]["github"])
+        patches = self.server.by_path("PATCH", "/issues/101")
+        self.assertTrue(any(patch["body"].get("title") == "Alt"
+                            for patch in patches),
+                        "Der lokale Titel wurde nicht gepusht: " + repr(patches))
         posts = self.server.by_path("POST", "/issues")
         self.assertEqual(["Lokal offen"], [post["body"].get("title")
                                            for post in posts])
