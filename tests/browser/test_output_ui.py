@@ -2343,7 +2343,7 @@ class AP22OutputBrowserTest(unittest.TestCase):
         return panel
 
     def run_state(self):
-        pill = self.page.locator("[data-nv-run-state]").first
+        pill = self.page.locator("[data-nv-out-main-state]").first
         pill.wait_for(state="visible", timeout=20000)
         state = (pill.get_attribute("data-state") or "").strip().lower()
         text = (pill.inner_text() or "").strip().lower()
@@ -2403,23 +2403,25 @@ class AP22OutputBrowserTest(unittest.TestCase):
 
 
 class OutputPanelTest(AP22OutputBrowserTest):
-    def test_overview_main_and_subagent_cards(self):
+    def test_main_and_two_subagent_cards_show_log_text(self):
         """Vorbedingung: laufender Lauf, zwei laufende Subagenten und ein
         Hauptlog mit Markern inklusive ``<b>not markup</b>``.
 
-        Erwartung: Die Übersicht nennt zwei Subagenten, der Hauptbereich ist
+        Erwartung: Zwei sichtbare Subagenten-Karten, der Hauptbereich ist
         eine Log-Region und zeigt die Zeilen als Text (kein ``<b>``-Element),
         beide Subagenten-Karten existieren mit ihrer Ausgabe.
         """
         self.seed_live()
         self.open_output()
 
-        overview = self.page.locator("[data-nv-out-overview]")
-        overview.wait_for(state="visible", timeout=20000)
-        text = overview.inner_text() or ""
-        self.assertRegex(
-            text, r"(?<!\d)2(?!\d)",
-            "Die Übersicht nennt nicht zwei Subagenten: " + repr(text))
+        cards = self.page.locator("div[data-nv-out-subs] [data-nv-out-sub]")
+        self.wait_until(
+            lambda: cards.count() == 2, timeout=20,
+            message="Es sind nicht zwei Subagenten-Karten vorhanden: "
+                    + str(cards.count()))
+        for index in range(cards.count()):
+            self.assertTrue(cards.nth(index).is_visible(),
+                            f"Subagenten-Karte {index} ist nicht sichtbar")
 
         main = self.page.locator("[data-nv-out-main][role='log']")
         main.wait_for(state="visible", timeout=20000)
@@ -3485,7 +3487,7 @@ class F33OutputBrowserTest(unittest.TestCase):
             state="visible", timeout=25000)
         panel = self.page.locator("section[data-nv-ppanel='output']")
         panel.wait_for(state="visible", timeout=20000)
-        self.page.locator("[data-nv-out-overview]").wait_for(
+        self.page.locator("section[data-nv-out-main-wrap]").wait_for(
             state="visible", timeout=20000)
         return panel
 
@@ -3602,10 +3604,10 @@ class ControlsPlacementTest(F33OutputBrowserTest):
         controls.first.wait_for(state="visible", timeout=20000)
         order = self.page.evaluate(
             """() => {
-              const overview = document.querySelector('[data-nv-out-overview]');
+              const statusLine = document.querySelector('[data-nv-out-summary]');
               const main = document.querySelector('[data-nv-out-main]');
               const steer = document.querySelector('[data-nv-steer]');
-              if (!overview || !main || !steer) return null;
+              if (!statusLine || !main || !steer) return null;
               let block = steer;
               while (block && block !== document.body
                      && !block.querySelector('[data-nv-action="continue"]')) {
@@ -3613,7 +3615,7 @@ class ControlsPlacementTest(F33OutputBrowserTest):
               }
               if (!block || block === document.body) return null;
               return {
-                followsOverview: (overview.compareDocumentPosition(block)
+                followsStatusLine: (statusLine.compareDocumentPosition(block)
                   & Node.DOCUMENT_POSITION_FOLLOWING) !== 0,
                 beforeLog: (block.compareDocumentPosition(main)
                   & Node.DOCUMENT_POSITION_FOLLOWING) !== 0,
@@ -3624,7 +3626,7 @@ class ControlsPlacementTest(F33OutputBrowserTest):
         self.assertIsNotNone(
             order, "Der Steuerblock (Steer/Fortsetzen/Stoppen) wurde nicht "
                    "gefunden")
-        self.assertTrue(order["followsOverview"],
+        self.assertTrue(order["followsStatusLine"],
                         "Der Steuerblock steht nicht unter der Statuszeile")
         self.assertTrue(order["beforeLog"],
                         "Der Steuerblock steht unter dem Protokoll statt "
@@ -3996,7 +3998,7 @@ class F34OutputBrowserTest(unittest.TestCase):
             state="visible", timeout=25000)
         panel = self.page.locator("section[data-nv-ppanel='output']")
         panel.wait_for(state="visible", timeout=20000)
-        self.page.locator("[data-nv-out-overview]").wait_for(
+        self.page.locator("section[data-nv-out-main-wrap]").wait_for(
             state="visible", timeout=20000)
         return panel
 
@@ -4296,48 +4298,83 @@ class MainCardTest(F34OutputBrowserTest):
 
 
 class SubGridTest(F34OutputBrowserTest):
-    def test_two_columns_at_1200px(self):
+    def test_cards_form_two_column_grid_at_1200px(self):
         """Vorbedingung: Viewport ≥ 1200 px, laufende Subagenten A/B.
 
-        Erwartung: ``div[data-nv-out-subs]`` hat ein Grid-Template mit zwei
-        Spalten (``minmax(min(100%, 30rem), 1fr)``,
-        ``getComputedStyle(...).gridTemplateColumns`` meldet zwei Tracks);
-        beide Karten (``[data-nv-out-sub]``) liegen in derselben Zeile
-        (gleiche ``y``-Koordinate im selben ``evaluate``).
+        Erwartung: Hauptkarte und beide Subagenten-Karten liegen im selben
+        Grid; ``gridTemplateColumns`` meldet zwei Spalten. Eine Subkarte
+        teilt die erste Zeile mit der Hauptkarte, die zweite bricht innerhalb
+        der Panelbreite in eine weitere Zeile um.
         """
         self.seed_live()
         self.set_viewport(1200, 1000)
         self.open_output()
         subs = self.page.locator("div[data-nv-out-subs]").first
-        subs.wait_for(state="visible", timeout=20000)
+        subs.wait_for(state="attached", timeout=20000)
         self.wait_until(
             lambda: subs.locator("[data-nv-out-sub]").count() == 2,
             timeout=20,
             message="Nicht beide Subagenten-Karten im Raster")
         metrics = self.page.evaluate(
             """() => {
-              const subs = document.querySelector('div[data-nv-out-subs]');
+              const panel = document.querySelector(
+                "section[data-nv-ppanel='output']");
+              const main = document.querySelector(
+                "section[data-nv-out-main-wrap]");
               const cards = Array.from(
-                subs.querySelectorAll('[data-nv-out-sub]'));
+                document.querySelectorAll('[data-nv-out-sub]'));
+              const gridAncestor = node => {
+                let current = node ? node.parentElement : null;
+                while (current && current !== panel) {
+                  if (getComputedStyle(current).display === 'grid') return current;
+                  current = current.parentElement;
+                }
+                return null;
+              };
+              const grid = gridAncestor(main);
+              const box = node => {
+                const rect = node.getBoundingClientRect();
+                return {x: rect.x, y: rect.y, width: rect.width,
+                        height: rect.height, right: rect.right};
+              };
               return {
-                columns: getComputedStyle(subs)
-                  .gridTemplateColumns.trim().split(/\\s+/).filter(Boolean),
-                boxes: cards.map(node => {
-                  const rect = node.getBoundingClientRect();
-                  return {
-                    y: rect.y, x: rect.x, width: rect.width, height: rect.height,
-                  };
-                }),
+                columns: grid ? getComputedStyle(grid).gridTemplateColumns
+                  .trim().split(/\\s+/).filter(Boolean) : [],
+                shared: !!grid && cards.every(node => gridAncestor(node) === grid),
+                main: box(main),
+                boxes: cards.map(box),
+                panel: box(panel),
               };
             }""")
+        self.assertTrue(
+            metrics["shared"],
+            "Haupt- und Subagenten-Karten teilen kein Raster: "
+            + repr(metrics))
         self.assertGreaterEqual(
             len(metrics["columns"]), 2,
             f"Das Grid-Template hat keine zwei Spalten: {metrics}")
-        self.assertEqual(2, len(metrics["boxes"]), "Karten konnten nicht gemessen werden")
-        self.assertAlmostEqual(
-            metrics["boxes"][0]["y"], metrics["boxes"][1]["y"], delta=1.5,
-            msg="Die Karten sind nicht in derselben Zeile — das Raster "
-                "liefert keine zwei Spalten: " + repr(metrics))
+        self.assertEqual(2, len(metrics["boxes"]),
+                         "Karten konnten nicht gemessen werden")
+        first_row = [box for box in metrics["boxes"]
+                     if abs(box["y"] - metrics["main"]["y"]) <= 8]
+        self.assertGreaterEqual(
+            len(first_row), 1,
+            "Keine Subagenten-Karte teilt die Zeile der Hauptkarte: "
+            + repr(metrics))
+        other_row = [box for box in metrics["boxes"] if box not in first_row]
+        self.assertEqual(1, len(other_row),
+                         "Die zweite Subagenten-Karte bricht nicht um: "
+                         + repr(metrics))
+        self.assertGreater(
+            other_row[0]["y"], metrics["main"]["y"] + 20,
+            "Die zweite Subagenten-Karte liegt nicht in einer weiteren "
+            "Zeile: " + repr(metrics))
+        for label, box in [("Hauptkarte", metrics["main"])] + [
+                (f"Subagentenkarte {index + 1}", box)
+                for index, box in enumerate(metrics["boxes"])]:
+            self.assertLessEqual(
+                box["right"], metrics["panel"]["right"] + 2,
+                f"{label} ragt über den Panelrand hinaus: " + repr(box))
         self.assert_clean_page()
 
     def test_card_structure_and_padding(self):
@@ -4449,20 +4486,20 @@ class ControlsTest(F34OutputBrowserTest):
         self.open_output()
         order = self.page.evaluate(
             """() => {
-              const overview = document.querySelector(
-                '[data-nv-out-overview]');
+              const statusLine = document.querySelector(
+                '[data-nv-out-summary]');
               const controls = document.querySelector('.nv-out-controls');
               const main = document.querySelector('[data-nv-out-main]');
-              if (!overview || !controls || !main) return null;
+              if (!statusLine || !controls || !main) return null;
               return {
-                afterOverview: (overview.compareDocumentPosition(controls)
+                afterStatusLine: (statusLine.compareDocumentPosition(controls)
                   & Node.DOCUMENT_POSITION_FOLLOWING) !== 0,
                 beforeLog: (controls.compareDocumentPosition(main)
                   & Node.DOCUMENT_POSITION_FOLLOWING) !== 0,
               };
             }""")
         self.assertIsNotNone(order, "Der Steuerblock wurde nicht gefunden")
-        self.assertTrue(order["afterOverview"],
+        self.assertTrue(order["afterStatusLine"],
                         "Der Steuerblock steht nicht unter der Statuszeile")
         self.assertTrue(order["beforeLog"],
                         "Der Steuerblock steht unter dem Protokoll")
@@ -4611,6 +4648,461 @@ class PageOverflowTest(F34OutputBrowserTest):
         self.assertLessEqual(
             metrics["docScrollWidth"], metrics["docClientWidth"] + 1,
             f"Die Seite läuft horizontal über: {metrics}")
+        self.assert_clean_page()
+
+
+
+class OutputCardBehaviorTest(F34OutputBrowserTest):
+    """Nova-Ausgabe: Nachführverhalten, Kartenraster, Kartenstil und Statuszeile."""
+
+    MAIN_STAY = "NACHFUEHREN-OBEN-PROTOKOLL"
+    MAIN_LATER = "NACHFUEHREN-SPAETER-PROTOKOLL"
+    MAIN_FOLLOW = "NACHFUEHREN-NACH-BOTTOM-PROTOKOLL"
+    SUB_STAY = "NACHFUEHREN-OBEN-SUBAGENT"
+    SUB_LATER = "NACHFUEHREN-SPAETER-SUBAGENT"
+    SUB_FOLLOW = "NACHFUEHREN-NACH-BOTTOM-SUBAGENT"
+
+    LOG_METRICS_JS = """node => ({
+      scrollTop: node.scrollTop,
+      scrollHeight: node.scrollHeight,
+      clientHeight: node.clientHeight,
+      text: node.textContent || '',
+    })"""
+
+    CARD_LAYOUT_JS = """() => {
+      const panel = document.querySelector("section[data-nv-ppanel='output']");
+      const main = document.querySelector("section[data-nv-out-main-wrap]");
+      const subs = Array.from(document.querySelectorAll("[data-nv-out-sub]"));
+      const box = node => {
+        const rect = node.getBoundingClientRect();
+        return {
+          x: rect.x, y: rect.y, width: rect.width, height: rect.height,
+          right: rect.right, bottom: rect.bottom,
+        };
+      };
+      const container = document.querySelector("[data-nv-out-subs]");
+      const gridAncestor = node => {
+        let current = node ? node.parentElement : null;
+        while (current && current !== panel) {
+          if (getComputedStyle(current).display === 'grid') return current;
+          current = current.parentElement;
+        }
+        return null;
+      };
+      const mainGrid = gridAncestor(main);
+      const subGrids = subs.map(gridAncestor);
+      const grid = {
+        shared: !!mainGrid && subGrids.length > 0
+          && subGrids.every(node => node === mainGrid),
+        columns: mainGrid ? getComputedStyle(mainGrid).gridTemplateColumns
+          .trim().split(/\\s+/).filter(Boolean).length : 0,
+      };
+      return {
+        panel: panel ? box(panel) : null,
+        main: main ? box(main) : null,
+        subs: subs.map(box),
+        container: container ? {
+          box: box(container),
+          scrollWidth: container.scrollWidth,
+          clientWidth: container.clientWidth,
+        } : null,
+        grid: grid,
+        docScrollWidth: document.documentElement.scrollWidth,
+        docClientWidth: document.documentElement.clientWidth,
+      };
+    }"""
+
+    CARD_STYLE_JS = """() => {
+      const inline = node => node ? node.getAttribute('style') || '' : null;
+      const cards = Array.from(document.querySelectorAll("[data-nv-out-sub]"));
+      const probe = document.createElement('div');
+      probe.style.display = 'flex';
+      document.body.append(probe);
+      const tokenGaps = ['--nv-space-1', '--nv-space-2', '--nv-space-3',
+        '--nv-space-4', '--nv-space-5', '--nv-space-6'].map(name => {
+          probe.style.gap = 'var(' + name + ')';
+          return getComputedStyle(probe).gap;
+        });
+      probe.remove();
+      const styleOf = node => {
+        const style = getComputedStyle(node);
+        return {
+          display: style.display,
+          flexWrap: style.flexWrap,
+          alignItems: style.alignItems,
+          gap: style.gap,
+          padding: style.paddingTop,
+          radius: style.borderTopLeftRadius,
+          background: style.backgroundColor,
+          border: style.borderTopColor,
+          overflowY: style.overflowY,
+          whiteSpace: style.whiteSpace,
+        };
+      };
+      const first = cards[0];
+      const firstHead = first ? first.querySelector('.nv-out-sub-head') : null;
+      const firstLog = first ? first.querySelector('pre') : null;
+      return {
+        mainInline: inline(document.querySelector(
+          'section[data-nv-out-main-wrap]')),
+        mainHeadInline: inline(document.querySelector('.nv-out-main-head')),
+        mainLogInline: inline(document.querySelector('pre[data-nv-out-main]')),
+        subsInline: inline(document.querySelector('[data-nv-out-subs]')),
+        cards: cards.map(card => ({
+          card: inline(card),
+          head: inline(card.querySelector('.nv-out-sub-head')),
+          log: inline(card.querySelector('pre')),
+        })),
+        tokenGaps: tokenGaps,
+        mainStyle: styleOf(document.querySelector(
+          'section[data-nv-out-main-wrap]')),
+        mainHeadStyle: styleOf(document.querySelector('.nv-out-main-head')),
+        mainLogStyle: styleOf(document.querySelector('pre[data-nv-out-main]')),
+        cardStyle: first ? styleOf(first) : null,
+        cardHeadStyle: firstHead ? styleOf(firstHead) : null,
+        cardLogStyle: firstLog ? styleOf(firstLog) : null,
+      };
+    }"""
+
+    STATUS_LABEL_JS = """() => {
+      const panel = document.querySelector("section[data-nv-ppanel='output']");
+      if (!panel) return ['Ausgabe-Panel fehlt'];
+      const ownText = node => Array.from(node.childNodes)
+        .filter(child => child.nodeType === Node.TEXT_NODE)
+        .map(child => (child.textContent || '').trim()).join(' ').trim();
+      return Array.from(panel.querySelectorAll('*')).map(ownText).filter(text =>
+        /^Hauptagent:\\s*\\S/.test(text)
+        || /^\\d+\\s*Subagenten$/.test(text)
+        || /^Keine laufenden Subagenten\\.$/.test(text));
+    }"""
+
+    def append_main_line(self, marker):
+        with (self.log_dir / f"{PROJECT}.log").open(
+                "a", encoding="utf-8") as handle:
+            handle.write(marker + "\n")
+
+    def long_output(self, marker):
+        return "\n".join([marker] + [
+            f"Zeile {index:03d} des Subagenten mit fortlaufendem Text."
+            for index in range(60)])
+
+    def log_metrics(self, selector):
+        return self.page.eval_on_selector(selector, self.LOG_METRICS_JS)
+
+    def set_log_scroll(self, selector, offset):
+        self.page.eval_on_selector(
+            selector, "node => { node.scrollTop = %d; }" % offset)
+
+    def log_at_bottom(self, metrics):
+        return metrics["scrollHeight"] - metrics["scrollTop"] \
+            - metrics["clientHeight"] <= 2
+
+    def wait_for_log_marker(self, selector, marker, timeout=25):
+        self.wait_until(
+            lambda: marker in self.log_metrics(selector)["text"],
+            timeout=timeout,
+            message=f"Die neue Protokollzeile {marker!r} kam nicht an")
+
+    def test_main_log_holds_reader_position_until_bottom_is_reached(self):
+        """Vorbedingung: laufender Lauf mit überlangem Hauptprotokoll.
+
+        Aktion: Das Protokoll wird auf eine Position oberhalb des Fußes
+        gescrollt; dann kommt eine neue Zeile per Livestream hinzu. Danach
+        wird ans Ende gescrollt und erneut eine Zeile angehängt.
+
+        Erwartung: Die erste Zeile erscheint, die Scrollposition bleibt
+        unverändert; nach dem Rückkehr zum Fuß folgt das Protokoll der
+        zweiten Zeile automatisch nach unten.
+        """
+        self.seed_live()
+        self.open_output()
+        selector = "pre[data-nv-out-main]"
+        log = self.page.locator(selector).first
+        log.wait_for(state="visible", timeout=20000)
+        self.wait_until(
+            lambda: self.log_metrics(selector)["scrollHeight"]
+            > self.log_metrics(selector)["clientHeight"] + 200,
+            timeout=20, message="Das Hauptprotokoll ist nicht scrollbar")
+
+        self.set_log_scroll(selector, 120)
+        before = self.log_metrics(selector)
+        self.assertGreaterEqual(
+            before["scrollTop"], 100,
+            "Die Testscrollposition im Hauptprotokoll konnte nicht gesetzt "
+            "werden: " + repr(before))
+
+        self.append_main_line(self.MAIN_STAY)
+        self.wait_for_log_marker(selector, self.MAIN_STAY)
+        held = self.log_metrics(selector)
+        self.assertGreater(
+            held["scrollHeight"], before["scrollHeight"],
+            "Das Hauptprotokoll ist nicht gewachsen")
+        self.assertLessEqual(
+            abs(held["scrollTop"] - before["scrollTop"]), 6,
+            "Das Hauptprotokoll hat die Leseposition verlassen: von "
+            f"{before['scrollTop']} auf {held['scrollTop']} px")
+
+        self.set_log_scroll(selector, self.log_metrics(selector)["scrollHeight"])
+        bottom = self.log_metrics(selector)
+        self.assertTrue(self.log_at_bottom(bottom),
+                        "Das Hauptprotokoll steht nicht am Fuß: " + repr(bottom))
+        self.append_main_line(self.MAIN_FOLLOW)
+        self.wait_for_log_marker(selector, self.MAIN_FOLLOW)
+        after = self.log_metrics(selector)
+        self.assertTrue(
+            self.log_at_bottom(after),
+            "Das Hauptprotokoll folgt am Fuß nicht nach: " + repr(after))
+        self.assert_clean_page()
+
+    def test_subagent_log_holds_reader_position_until_bottom_is_reached(self):
+        """Vorbedingung: laufender Subagent A mit überlanger Ausgabe.
+
+        Aktion: Die Karte wird oberhalb des Fußes gescrollt; die
+        Zustandsdatei liefert eine längere Ausgabe. Danach wird ans Ende
+        gescrollt und erneut eine längere Ausgabe geladen.
+
+        Erwartung: Die neue Ausgabe erscheint, die Scrollposition bleibt
+        unverändert; vom Fuß aus folgt die Karte der nächsten Ausgabe.
+        """
+        first = self.long_output(self.SUB_STAY)
+        self.seed_subs([
+            (SUB_A, "testerA", "Auftrag A", first),
+            (SUB_B, "testerB", "Auftrag B", "AUSGABE-B-F34: Subagent B."),
+        ])
+        self.register_run("running")
+        self.write_log(MAIN_MARKER_f34)
+        self.open_output()
+        selector = "[data-nv-out-sub='%s'] pre" % SUB_A
+        log = self.page.locator(selector).first
+        log.wait_for(state="visible", timeout=20000)
+        self.wait_until(
+            lambda: self.log_metrics(selector)["scrollHeight"]
+            > self.log_metrics(selector)["clientHeight"] + 200,
+            timeout=20, message="Das Subagentenprotokoll ist nicht scrollbar")
+
+        self.set_log_scroll(selector, 120)
+        before = self.log_metrics(selector)
+        self.assertGreaterEqual(
+            before["scrollTop"], 100,
+            "Die Testscrollposition im Subagentenprotokoll konnte nicht "
+            "gesetzt werden: " + repr(before))
+
+        longer = self.long_output(self.SUB_STAY) + "\n" + self.SUB_LATER
+        self.seed_subs([
+            (SUB_A, "testerA", "Auftrag A", longer),
+            (SUB_B, "testerB", "Auftrag B", "AUSGABE-B-F34: Subagent B."),
+        ])
+        self.wait_for_log_marker(selector, self.SUB_LATER, timeout=30)
+        held = self.log_metrics(selector)
+        self.assertGreater(
+            held["scrollHeight"], before["scrollHeight"],
+            "Die Subagentenausgabe ist nicht gewachsen")
+        self.assertLessEqual(
+            abs(held["scrollTop"] - before["scrollTop"]), 6,
+            "Das Subagentenprotokoll hat die Leseposition verlassen: von "
+            f"{before['scrollTop']} auf {held['scrollTop']} px")
+
+        self.set_log_scroll(selector, self.log_metrics(selector)["scrollHeight"])
+        bottom = self.log_metrics(selector)
+        self.assertTrue(self.log_at_bottom(bottom),
+                        "Das Subagentenprotokoll steht nicht am Fuß: "
+                        + repr(bottom))
+        longest = longer + "\n" + self.SUB_FOLLOW
+        self.seed_subs([
+            (SUB_A, "testerA", "Auftrag A", longest),
+            (SUB_B, "testerB", "Auftrag B", "AUSGABE-B-F34: Subagent B."),
+        ])
+        self.wait_for_log_marker(selector, self.SUB_FOLLOW, timeout=30)
+        after = self.log_metrics(selector)
+        self.assertTrue(
+            self.log_at_bottom(after),
+            "Das Subagentenprotokoll folgt am Fuß nicht nach: " + repr(after))
+        self.assert_clean_page()
+
+    def test_agent_cards_use_viewport_width_without_horizontal_overflow(self):
+        """Vorbedingung: laufender Lauf mit zwei Subagenten.
+
+        Aktion: Bei 1400, 900 und 400 px Viewport werden Hauptkarte,
+        Subagenten-Karten, Panel und Dokument ausgemessen.
+
+        Erwartung: Haupt- und Subagenten-Karten teilen sich einen gemeinsamen
+        Rastercontainer; alle Karten liegen innerhalb der Panelbreite, das
+        Dokument und der Kartencontainer laufen nicht horizontal über. Auf
+        breiten Viewports teilt die Hauptkarte zusätzlich eine Zeile mit einer
+        Subagenten-Karte und ist schmaler als das gesamte Panel; auf 400 px
+        bleibt alles ohne Überlauf umgebrochen.
+        """
+        self.seed_live()
+        self.open_output()
+        for width in (1400, 900, 400):
+            with self.subTest(viewport=width):
+                self.set_viewport(width, 900)
+                self.open_output()
+                self.wait_until(
+                    lambda: self.card(SUB_A).count() == 1
+                    and self.card(SUB_B).count() == 1,
+                    timeout=20, message="Die Subagenten-Karten fehlen bei "
+                                       f"{width} px")
+                metrics = self.page.evaluate(self.CARD_LAYOUT_JS)
+                self.assertIsNotNone(metrics["panel"])
+                self.assertIsNotNone(metrics["main"])
+                self.assertEqual(2, len(metrics["subs"]))
+                self.assertIsNotNone(metrics["container"])
+                self.assertTrue(
+                    metrics["grid"]["shared"],
+                    f"Haupt- und Subagenten-Karten teilen bei {width} px "
+                    "kein gemeinsames Raster: " + repr(metrics["grid"]))
+                self.assertGreaterEqual(
+                    metrics["grid"]["columns"], 1,
+                    f"Das Raster hat bei {width} px keine Spalte: "
+                    + repr(metrics["grid"]))
+                self.assertLessEqual(
+                    metrics["docScrollWidth"], metrics["docClientWidth"] + 2,
+                    f"Die Seite läuft bei {width} px horizontal über: "
+                    + repr(metrics))
+                self.assertLessEqual(
+                    metrics["container"]["scrollWidth"],
+                    metrics["container"]["clientWidth"] + 2,
+                    f"Der Kartencontainer läuft bei {width} px über: "
+                    + repr(metrics["container"]))
+                for label, box in [("Hauptkarte", metrics["main"])] + [
+                        (f"Subagentenkarte {index + 1}", box)
+                        for index, box in enumerate(metrics["subs"])]:
+                    self.assertGreater(box["width"], 0,
+                                       f"{label} hat keine Breite bei "
+                                       f"{width} px")
+                    self.assertLessEqual(
+                        box["right"], metrics["panel"]["right"] + 2,
+                        f"{label} ragt bei {width} px über den Panelrand "
+                        "hinaus: " + repr(box))
+                if width == 1400:
+                    self.assertLess(
+                        metrics["main"]["width"],
+                        metrics["panel"]["width"] * 0.75,
+                        "Die Hauptkarte belegt bei 1400 px die volle "
+                        "Panelbreite statt eines Rasterplatzes: "
+                        + repr(metrics["main"]))
+                    self.assertTrue(
+                        any(abs(metrics["main"]["y"] - sub["y"]) <= 8
+                            for sub in metrics["subs"]),
+                        "Die Hauptkarte teilt bei 1400 px keine Zeile "
+                        "mit einer Subagenten-Karte: " + repr(metrics))
+        self.assert_clean_page()
+
+    def test_preview_cards_take_their_styling_from_css_classes(self):
+        """Vorbedingung: laufender Lauf mit zwei Subagenten-Karten.
+
+        Aktion: Inline-Styles und berechnete Styles von Hauptkarte,
+        Unterkarten, Köpfen, Logs und Kartencontainer auslesen.
+
+        Erwartung: Karten, Köpfe und Container tragen keine Inline-Styles;
+        Logs haben höchstens das dynamische ``max-height`` inline, während
+        Überlauf und Zeilenumbruch aus CSS kommen. Abstände und Rahmen
+        entsprechen den Design-Tokens und denen der Hauptkarte.
+        """
+        self.seed_live()
+        self.open_output()
+        self.wait_until(
+            lambda: self.card(SUB_A).count() == 1
+            and self.card(SUB_B).count() == 1,
+            timeout=20, message="Die Subagenten-Karten fehlen")
+        styles = self.page.evaluate(self.CARD_STYLE_JS)
+        self.assertEqual(2, len(styles["cards"]))
+        for label in ("mainInline", "mainHeadInline", "subsInline"):
+            self.assertEqual(
+                "", styles[label],
+                f"{label} enthält Inline-Styles: {styles[label]!r}")
+        for index, card in enumerate(styles["cards"]):
+            with self.subTest(card=index):
+                self.assertEqual("", card["card"],
+                                 "Die Karte hat Inline-Styles: " + repr(card))
+                self.assertEqual("", card["head"],
+                                 "Der Kartenkopf hat Inline-Styles: "
+                                 + repr(card))
+                declarations = [
+                    item.strip() for item in card["log"].split(";")
+                    if item.strip()]
+                properties = {item.split(":", 1)[0].strip().lower()
+                              for item in declarations}
+                self.assertLessEqual(
+                    properties, {"max-height"},
+                    "Das Subagentenlog hat statische Inline-Styles: "
+                    + repr(card["log"]))
+        declarations = [
+            item.strip() for item in styles["mainLogInline"].split(";")
+            if item.strip()]
+        properties = {item.split(":", 1)[0].strip().lower()
+                      for item in declarations}
+        self.assertLessEqual(
+            properties, {"max-height"},
+            "Das Hauptprotokoll hat statische Inline-Styles: "
+            + repr(styles["mainLogInline"]))
+
+        self.assertEqual("flex", styles["mainHeadStyle"]["display"])
+        self.assertEqual("wrap", styles["mainHeadStyle"]["flexWrap"])
+        self.assertEqual("center", styles["mainHeadStyle"]["alignItems"])
+        self.assertEqual("flex", styles["cardHeadStyle"]["display"])
+        self.assertEqual("wrap", styles["cardHeadStyle"]["flexWrap"])
+        self.assertEqual("center", styles["cardHeadStyle"]["alignItems"])
+        for label in ("mainHeadStyle", "cardHeadStyle"):
+            self.assertIn(styles[label]["gap"], styles["tokenGaps"],
+                          f"{label} nutzt keinen Abstands-Token: "
+                          + repr(styles[label]))
+        self.assertIn(styles["cardStyle"]["padding"], styles["tokenGaps"],
+                      "Die Karte nutzt keinen Abstands-Token: "
+                      + repr(styles["cardStyle"]))
+        for key in ("radius", "background", "border"):
+            self.assertEqual(
+                styles["mainStyle"][key], styles["cardStyle"][key],
+                f"Die Subagentenkarte weicht bei {key} von .nv-card ab: "
+                + repr(styles))
+        for label in ("mainLogStyle", "cardLogStyle"):
+            self.assertIn(styles[label]["overflowY"], ("auto", "scroll"),
+                          f"{label} scrollt nicht: " + repr(styles[label]))
+            self.assertEqual("pre-wrap", styles[label]["whiteSpace"],
+                             f"{label} bricht Zeilen nicht um: "
+                             + repr(styles[label]))
+        self.assert_clean_page()
+
+    def test_status_line_is_gone_and_run_state_stays_on_cards(self):
+        """Vorbedingung: laufender Lauf mit zwei laufenden Subagenten.
+
+        Aktion: Beschriftungen der alten Zeile unter den Karten suchen;
+        Laufzustand in Hauptkarte und Zusammenfassung lesen.
+
+        Erwartung: Keine Zeile „läuftHauptagent: … Subagenten“ mehr; zwei
+        sichtbare Subagenten-Karten; ``läuft`` in der Hauptkarte und in der
+        Zusammenfassungszeile des Hauptagenten.
+        """
+        self.seed_live()
+        self.open_output()
+        self.wait_until(
+            lambda: self.card(SUB_A).count() == 1
+            and self.card(SUB_B).count() == 1,
+            timeout=20, message="Die Subagenten-Karten fehlen")
+        leftovers = self.page.evaluate(self.STATUS_LABEL_JS)
+        self.assertEqual(
+            [], leftovers,
+            "Die Statuszeile unter den Karten ist noch vorhanden: "
+            + repr(leftovers))
+        for session in (SUB_A, SUB_B):
+            self.assertTrue(self.card(session).is_visible(),
+                            f"Subagenten-Karte {session} ist nicht sichtbar")
+
+        main_state = self.page.locator("[data-nv-out-main-state]").first
+        main_state.wait_for(state="visible", timeout=20000)
+        self.wait_until(
+            lambda: main_state.get_attribute("data-state") == "running"
+            and main_state.inner_text() == "läuft",
+            timeout=20, message="Die Hauptkarte meldet nicht läuft: "
+                                + repr(main_state.inner_text()))
+        summary_state = self.page.locator(
+            "[data-nv-out-summary-row][data-nv-summary-target='main'] "
+            ".nv-pill").first
+        summary_state.wait_for(state="visible", timeout=20000)
+        self.assertEqual(
+            "running", summary_state.get_attribute("data-state"),
+            "Die Zusammenfassung zeigt den Laufzustand nicht")
         self.assert_clean_page()
 
 

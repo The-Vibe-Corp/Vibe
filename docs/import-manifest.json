@@ -1595,6 +1595,15 @@
    ],
    "datum": "2026-11-25",
    "grund": "Nachtrag zum Manifest: die Aenderung der Plattform-Anweisungen in bin/vibe_harness.py aus PR #79 wurde nicht im Manifest erfasst; Groesse und SHA-256 werden nachgezogen."
+  },
+  {
+   "arbeitspaket": "GH-88",
+   "dateien": [
+    "bin/web/nova-output.js",
+    "bin/web/nova.css"
+   ],
+   "datum": "2026-11-25",
+   "grund": "Kleine UI-Verbesserungen der Ausgabe: Autoscroll folgt nur am Log-Ende, gemeinsames responsives Kartenraster fuer Haupt- und Subagentenkarten, CSS-Klassen statt Inline-Styles an den Vorschaukarten, Entfernen der Statuszeile. Groesse und SHA-256 der betroffenen Dateien wurden aktualisiert."
   }
  ],
  "files": [
@@ -1764,9 +1773,9 @@
    "sha256": "892e1813519fc47ec3f65101d6ab087d9557a97d6575da3582300694c5a517e1"
   },
   {
-   "bytes": 37044,
+   "bytes": 37922,
    "path": "bin/web/nova-output.js",
-   "sha256": "cbca5b169f3c5052e50da0910560d7fbcd1b6c42380fe6b925a4f98021f753ab"
+   "sha256": "3b6ef244ff1b10575e9b86ec816b70181f06fbcf0beb82697d7cc3cee458068b"
   },
   {
    "bytes": 121980,
@@ -1784,9 +1793,9 @@
    "sha256": "84ae6329f31c04fcc8b48c552ade8f9d276c283ab81b1babb66f8988b627d8a7"
   },
   {
-   "bytes": 67139,
+   "bytes": 68937,
    "path": "bin/web/nova.css",
-   "sha256": "755c4f1ea24d68ee8e5cba5e2537249880cddaf7ad56b24fb09542fc8535db7c"
+   "sha256": "adda5edaa5839a4a5321eb4f0457e2efe5f3f707930bf431f1a9340bbb42fcad"
   },
   {
    "bytes": 12751,
