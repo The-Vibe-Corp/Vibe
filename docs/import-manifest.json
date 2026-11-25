@@ -12,6 +12,21 @@
    "grund": "Erledigte Tickets verlaesst die Ready-Spalte und erscheint im eigenen responsiven Raster unterhalb von Board bzw. mobiler Liste (Show-done-Schalter, Suche und Typ-Filter bleiben wirksam, Karten nicht ziehbar). Nutzersteuerung fuer in-progress und done entfaellt in Nova-Detail/-Editor und in den klassischen Anlageformularen; /api/ticket action=close wird abgelehnt, WEB_TICKET_STATES ist auf draft/open begrenzt, interne Close-Pfade des Laeufers bleiben erhalten. Nova-Dropdowns folgen genau einem gemeinsamen Select-Stil unter [data-nv-app] select. Nachtrag Audit: Laeufer-Zustaende (in-progress, blocked, waiting-merge) zeigen im Detail nur einen schreibgeschuetzten Hinweis statt Zustandsauswahl; das Erledigt-Raster existiert immer im DOM; Kopien erledigter Karten nutzen alle Eintraege fuer den ID-Vorschlag; der klassische Abschluss-Knopf entfaellt. Groesse und SHA-256 der geaenderten Manifest-Dateien wurden aktualisiert."
   },
   {
+   "arbeitspaket": "GH-89",
+   "dateien": [
+    "bin/vibe_sandbox.py",
+    "docs/features/B4.md",
+    "docs/features/F6.md",
+    "docs/features/F7.md",
+    "docs/import-manifest.json",
+    "install-vibe.sh",
+    "scripts/run-tests-parallel.py",
+    "scripts/setup-vibe.py"
+   ],
+   "datum": "2026-11-25",
+   "grund": "Testfehler aus dem F1-Audit: --yes unterdrueckt jetzt auch die Rueckfragen nach Installationsort, Logverzeichnis und Abhaengigkeiten; eine Installation in ein von profiles.prod abweichendes Ziel laesst die persoenliche Konfiguration unveraendert, sofern --set-default fehlt; Sandbox-Zustand und opencode-Ablage liegen instanzspezifisch unter /dev/shm (vibe-sandbox-<uid>, vsb-<uid>, vibe-opencode-<uid>), wobei die opencode-Ablage in der Sandbox als /tmp/opencode erscheint und der geteilte Host-Ordner nicht mehr beschrieben wird; der install-vibe.sh-Hinweis nennt den funktionierenden Aufruf; der Testlaeufer gibt Modulprozessen DEVNULL als stdin."
+  },
+  {
    "arbeitspaket": "GH-87",
    "dateien": [
     "bin/vibe",
@@ -1714,9 +1729,9 @@
    "sha256": "ef5b91c488574a122f700b83e656809f006b69ecfa24a355ddaddf65ca2e417a"
   },
   {
-   "bytes": 37162,
+   "bytes": 39912,
    "path": "bin/vibe_sandbox.py",
-   "sha256": "5d8d37b3ef92a446fca7679f6f51db2a811a6a0b129869e95338291075d15c5c"
+   "sha256": "c402192b93bb0152d376a1e4306168be8c13dfb49176977105d3008791cc1011"
   },
   {
    "bytes": 11452,
@@ -1824,14 +1839,14 @@
    "sha256": "abdbe9d9b2c0896d6a632a5a8140c38bf7b61e9bf9b64a7cca03bd33a5ea6751"
   },
   {
-   "bytes": 386,
+   "bytes": 404,
    "path": "install-vibe.sh",
-   "sha256": "7f8450dcf34c6b6f94695720954e2072edeb60d69f70b29bb3924882ed6c0f21"
+   "sha256": "9cfa27971f1d08d8f87ff46cefc7d927f49b27e22f2b24a6eade954da4b8a3ec"
   },
   {
-   "bytes": 74330,
+   "bytes": 76965,
    "path": "scripts/setup-vibe.py",
-   "sha256": "ce3b75b60e6f2837f72be831a10b9070e739f9a573ae7148399c56830bea0ce7"
+   "sha256": "ccf77952382b1b7f7498ffc484ded223031a93bf5935b0691a7fae90c77276cd"
   },
   {
    "bytes": 377,

@@ -137,7 +137,7 @@ def sandbox_db_for(base, project):
     bleibt unter dem Basisverzeichnis, solange das Zeichenlimit (AF_UNIX-
     Grenze 108; sicheres Limit 84 gemäß ``STATE_PATH_LIMIT`` der
     Implementierung) respektiert wird; zu lange Pfade weichen
-    auf die feste Kurzform ``/tmp/opencode/vsb/<sha256[:10]>`` aus. Die
+    auf die per-UID-Kurzform ``/dev/shm/vsb-<uid>/<sha256[:10]>`` aus. Die
     Regel steht nur einmal, damit die Fixtur nicht von ihr abdriftet.
     """
     module = load_sandbox_module()
@@ -315,20 +315,24 @@ class SandboxDbPathRuleTest(unittest.TestCase):
     """Der erwartete Sandbox-Datenbankpfad folgt der state_dir-Regel (B5).
 
     Bug B5: Der Zustandspfad bleibt unter 84 Zeichen; zu lange Pfade weichen
-    auf die feste Kurzform ``/tmp/opencode/vsb/<sha256[:10]>`` aus. Der Test
-    prüft die Pfadberechnung der Fixtur ``sandbox_db_for``; die Sitzungs- und
+    auf die per-UID-Kurzform ``/dev/shm/vsb-<uid>/<sha256[:10]>`` aus (GH-89/F1:
+    früher der geteilte Host-Ordner /tmp/opencode). Der Test prüft die
+    Pfadberechnung der Fixtur ``sandbox_db_for``; die Sitzungs- und
     Tokenzählung decken die bestehenden SandboxDatabaseTest-Fälle ab (B1).
 
-    Kein tempfile: Hängt die Basis am Temporärverzeichnis, wird sie von der
-    Umgebung bestimmt und kann beliebig lang werden (rotes /tmp). Beide
-    Basen liegen deshalb fest unter /tmp/opencode: kurz genug für die Formel
-    (Vorbedingung < 84 Zeichen im Zustandspfad) und lang genug für den
-    Rückfall (Basis >= 120 Zeichen). setUp legt sie an, addCleanup räumt ab.
+    Die Basen liegen unter /dev/shm: dort ist auch die Agenten-Sandbox
+    beschreibbar (in ihr ist /tmp nur lesend), der Pfad bleibt kurz genug für
+    die Formel (Vorbedingung: Zustandspfad < 84 Zeichen) und lang genug für
+    den Rückfall (Basis >= 120 Zeichen). Ein äußeres TMPDIR spielt keine
+    Rolle; in den geteilten Host-Ordner /tmp/opencode wird nicht mehr
+    geschrieben. setUp legt beide Basen an, addCleanup räumt sie ab.
     """
 
     def setUp(self):
-        self.short_base = "/tmp/opencode/b5-kurz"
-        self.long_base = "/tmp/opencode/b5-lang-" + "z" * 100
+        # /dev/shm ist auf dem Host und in der Agenten-Sandbox beschreibbar
+        # (dort ist /tmp nur lesend) und kurz genug für die 84er-Regel.
+        self.short_base = "/dev/shm/b5-kurz-" + str(os.getpid())
+        self.long_base = "/dev/shm/b5-lang-" + str(os.getpid()) + "-" + "z" * 100
         self.proj = Path(self.short_base) / "proj"
         os.makedirs(self.short_base, exist_ok=True)
         os.makedirs(self.long_base, exist_ok=True)
@@ -343,9 +347,9 @@ class SandboxDbPathRuleTest(unittest.TestCase):
         module = load_sandbox_module()
         digest = self.digest_of(self.proj)
 
-        # Vorbedingung: die Basen sind bewusst kurz (max. ~40 Zeichen) bzw.
-        # lang (>= 120 Zeichen) und unabhängig vom Temporärverzeichnis.
-        self.assertLessEqual(len(self.short_base), 40)
+        # Vorbedingung: die kurze Basis hängt unter /dev/shm (nicht im
+        # geteilten Host-Ordner) und bleibt unter der 84er-Begrenzung; die
+        # lange Basis überschreitet sie deutlich.
         self.assertGreaterEqual(len(self.long_base), 120)
 
         # Variante "kurz": die gewohnte Formel bleibt unverändert.
@@ -368,12 +372,13 @@ class SandboxDbPathRuleTest(unittest.TestCase):
             " (STATE_PATH_LIMIT) überschreiten")
         path = sandbox_db_for(self.long_base, self.proj)
         # sandbox_db_for liefert den db-Pfad (<state>/data/opencode/db)...
-        expected_db = Path("/tmp/opencode/vsb") / digest / "data" / "opencode" / "opencode.db"
+        expected_state = Path(f"/dev/shm/vsb-{os.getuid()}") / digest
+        expected_db = expected_state / "data" / "opencode" / "opencode.db"
         self.assertEqual(path, expected_db)
-        # ... dessen Zustandsordner ist exakt der feste Kurzpfad mit dem
+        # ... dessen Zustandsordner ist exakt der per-UID-Kurzpfad mit dem
         # SHA-256-Präfix des Projektwegs.
         state = path.parent.parent.parent
-        self.assertEqual(str(state), "/tmp/opencode/vsb/" + digest)
+        self.assertEqual(state, expected_state)
         self.assertFalse(
             str(state).startswith(self.long_base),
             "Rückfallpfad darf die lange Basis nicht enthalten")
