@@ -94,7 +94,7 @@ Rohausgaben sind im Testbericht zitiert und konserviert.
 
 Ergebnisse auf dem Fix-Stand (tatsächlich ausgeführt):
 
-- `python3 -m unittest tests.unit.test_f31_inherited_opencode_password -v`:
+- `python3 -m unittest tests.unit.test_private_server -v`:
   **4/4 OK**.
 - Regression `tests.unit.test_b13_private_server_steering` (9 OK),
   `tests.unit.test_b14_subagent_output_live` (13 OK),

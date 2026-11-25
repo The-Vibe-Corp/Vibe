@@ -82,11 +82,11 @@ Ausgeführte Befehle (Arbeitskopie
 `/var/log/custom/vibe-dev/worktrees/vibe-B7-Owlqs4`, Ausgangscommit
 `8931f7b`):
 
-- `python3 -m unittest tests.unit.test_b7_subagent_permissions -v`
+- `python3 -m unittest tests.unit.test_agent_management -v`
   → Ran 21 tests, OK.
-- `python3 -m unittest tests.unit.test_ap2_opencode_agents tests.unit.test_agent_management tests.unit.test_ap03_agent_management -v`
+- `python3 -m unittest tests.unit.test_agent_management tests.unit.test_agent_management tests.unit.test_agent_management -v`
   → Ran 124 tests, OK.
-- `python3 -m unittest tests.unit.test_f32_subagent_self_spawn tests.unit.test_project_agents tests.unit.test_b1_project_agent_models`
+- `python3 -m unittest tests.unit.test_agent_management tests.unit.test_project_agents tests.unit.test_project_agents`
   → Ran 70 tests, OK.
 - `python3 scripts/check-import-manifest.py` → OK.
 - `bash scripts/verify.sh quick` → Exit 0.

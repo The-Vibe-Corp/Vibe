@@ -165,7 +165,7 @@ dem Arbeitspaket und SPEC.md abgeleitet, vor der Implementierung
 geschrieben und am unveränderten Bestand ausgeführt:
 
 ```
-python3 -m unittest tests.unit.test_b3_merged_waiting -v
+python3 -m unittest tests.unit.test_work_packages -v
 Ran 26 tests … FAILED (failures=15)   # Rotphase am Bestand
 ```
 

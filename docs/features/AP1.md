@@ -144,7 +144,7 @@ bwrap-Argumentliste gebaut wird:
 ### Rot — vor der Umsetzung
 
 ```
-$ python3 -m unittest tests.unit.test_b13_private_server_runner.PreflightWriteDirChangeTest -v
+$ python3 -m unittest tests.unit.test_private_server.PreflightWriteDirChangeTest -v
 Ran 1 test ...
 FAILED (failures=1)
 AssertionError: 2 != 1 : Es wurden nicht zwei Server gestartet (einer je Zielverzeichnis):
@@ -155,7 +155,7 @@ Der einzige Server lief mit `cwd=$P`; der Paketversuch in `$WT` wurde nicht
 berücksichtigt.
 
 ```
-$ python3 -m unittest tests.unit.test_ap1_sandbox_credentials -v
+$ python3 -m unittest tests.unit.test_sandbox -v
 Ran 6 tests ...
 FAILED (failures=2)
 FAIL: test_ak1_schema_and_credentials_are_copied_without_session_data
@@ -170,10 +170,10 @@ unveränderte auth.json-Bindung).
 ### Grün — nach der Umsetzung
 
 ```
-$ python3 -m unittest tests.unit.test_b13_private_server_runner.PreflightWriteDirChangeTest -v
+$ python3 -m unittest tests.unit.test_private_server.PreflightWriteDirChangeTest -v
 Ran 1 test ... OK
 
-$ python3 -m unittest tests.unit.test_ap1_sandbox_credentials -v
+$ python3 -m unittest tests.unit.test_sandbox -v
 Ran 6 tests ... OK
 ```
 Der neue Läufer-Test sieht zwei `listening`-Ereignisse (erst `cwd=$P`, später
@@ -185,13 +185,13 @@ Zugangsdaten, den Upgrade-Pfad, fehlende/alte Quellen und die unveränderte
 Weitere tatsächlich ausgeführte Prüfungen:
 
 - `bash -n bin/vibe-run.sh` → Exit 0.
-- `python3 -m unittest tests.unit.test_b17_sandbox_argv -v` → 4/4 OK.
-- `python3 -m unittest tests.unit.test_b17_sandbox_argv tests.unit.test_import_manifest -v` → 12/12 OK.
+- `python3 -m unittest tests.unit.test_sandbox -v` → 4/4 OK.
+- `python3 -m unittest tests.unit.test_sandbox tests.unit.test_import_manifest -v` → 12/12 OK.
 - `python3 scripts/check-import-manifest.py` → `OK: 58 Dateien stimmen mit docs/import-manifest.json überein.`, Exit 0.
 - `python3 scripts/check-syntax.py` → `OK: 194 Python-, 8 Bash- und 3 JSON-Datei(en) syntaktisch geprüft.`, Exit 0.
 - `python3 scripts/check-no-secrets.py` → `OK: keine Geheimnisse erkannt.`, Exit 0.
-- `python3 -m unittest tests.unit.test_b13_private_server_runner -v` → 10 Tests, 9 OK, 1 Failure (`SandboxPrivateServerTest`, siehe Grenzen).
-- `python3 -m unittest tests.unit.test_b13_private_server_runner tests.unit.test_ap1_sandbox_credentials tests.unit.test_b17_sandbox_argv -v` → 20 Tests, 19 OK, 1 Failure (dasselbe bwrap-Problem). Alle sieben AP1-Zeilen sind `ok`.
+- `python3 -m unittest tests.unit.test_private_server -v` → 10 Tests, 9 OK, 1 Failure (`SandboxPrivateServerTest`, siehe Grenzen).
+- `python3 -m unittest tests.unit.test_private_server tests.unit.test_sandbox tests.unit.test_sandbox -v` → 20 Tests, 19 OK, 1 Failure (dasselbe bwrap-Problem). Alle sieben AP1-Zeilen sind `ok`.
 
 ## Grenzen
 
@@ -226,13 +226,13 @@ erneute unabhängige Prüfung und deren Nachweise.
 
 Folgende Prüfungen wurden auf dem Revalidierungsstand tatsächlich ausgeführt:
 
-- `python3 -m unittest tests.unit.test_ap1_sandbox_credentials -v`:
+- `python3 -m unittest tests.unit.test_sandbox -v`:
   **6/6 Tests OK**.
 - `python3 -m unittest
   tests.unit.test_b13_private_server_runner.PreflightWriteDirChangeTest -v`:
   **1/1 Test OK**; zwei Serverstarts mit Wechsel `$P` → `$WT` und Stop dazwischen.
-- `python3 -m unittest tests.unit.test_b17_sandbox_argv -v`: **4/4 Tests OK**.
-- `python3 -m unittest tests.unit.test_ap1_sandbox_credentials
+- `python3 -m unittest tests.unit.test_sandbox -v`: **4/4 Tests OK**.
+- `python3 -m unittest tests.unit.test_sandbox
   tests.unit.test_b13_private_server_runner tests.unit.test_b17_sandbox_argv -v`:
   **19/20 Tests OK**. Der einzige Fehlschlag bleibt der oben genannte reale
   bwrap-Test wegen fehlender Kernelberechtigung für User-Namespaces; die

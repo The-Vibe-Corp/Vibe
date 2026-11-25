@@ -126,10 +126,10 @@ Unabhängiger Test-Agent (Rotphase vor Implementierung, Grünphase danach;
 Bericht `docs/reviews/AP3-Korbat-test-agent-report.md` mit allen Fällen als
 Vorbedingung/Aktion/Erwartung):
 
-- `python3 -m unittest tests.unit.test_ap3_korbat_issues_backend -v`
+- `python3 -m unittest tests.unit.test_github_issues -v`
   → Rot: Ran 29, FAILED (failures=24, errors=6); Grün: **Ran 32, OK**
   (29 Grundfälle + 3 Fälle aus Review-Runde 1).
-- `python3 -m unittest tests.unit.test_ap3_korbat_surfaces -v`
+- `python3 -m unittest tests.unit.test_github_issues -v`
   → Rot: Ran 23, FAILED (failures=21); Grün: **Ran 25, OK**
   (23 Grundfälle + 2 Fälle aus Review-Runde 1).
 - Gesamt **57/57 grün**, bestätigt vom Test-Agenten nach Integritätsprüfung

@@ -1,8 +1,29 @@
-"""Tests für Installation, Aktualisierung, Rollback und Uninstall (V-018).
+"""Installationslebenszyklus: Update, Deinstallation und Rollback bei leerem Laufregister sowie Isolation.
 
-Alle schreibenden Tests arbeiten ausschließlich in temporären Verzeichnissen.
-Es werden keine Paketmanager, Router oder echten Installationen angefasst.
+Aufruf: python3 -m unittest tests.unit.test_install_lifecycle -v
 """
+
+
+def setUpModule():
+    global setup
+    loader = importlib.machinery.SourceFileLoader("setup_vibe_lifecycle", str(SETUP))
+    spec = importlib.util.spec_from_loader(loader.name, loader)
+    module = importlib.util.module_from_spec(spec)
+    loader.exec_module(module)
+    setup = module
+    # Eindeutiger Modulname: nicht mit test_install_lifecycle.py kollidieren.
+    loader = importlib.machinery.SourceFileLoader("setup_vibe_b4", str(SETUP))
+    spec = importlib.util.spec_from_loader(loader.name, loader)
+    module = importlib.util.module_from_spec(spec)
+    loader.exec_module(module)
+    setup = module
+    loader = importlib.machinery.SourceFileLoader("setup_vibe_b17", str(SETUP))
+    spec = importlib.util.spec_from_loader(loader.name, loader)
+    module = importlib.util.module_from_spec(spec)
+    loader.exec_module(module)
+    setup = module
+
+
 import importlib.machinery
 import importlib.util
 import io
@@ -50,15 +71,6 @@ WEB_FILES = (
 )
 
 setup = None
-
-
-def setUpModule():
-    global setup
-    loader = importlib.machinery.SourceFileLoader("setup_vibe_lifecycle", str(SETUP))
-    spec = importlib.util.spec_from_loader(loader.name, loader)
-    module = importlib.util.module_from_spec(spec)
-    loader.exec_module(module)
-    setup = module
 
 
 def make_kit(root, version="0.18.0"):
@@ -886,6 +898,875 @@ class RunningGuardTest(InstallLifecycleBase):
         self.assertNotEqual(
             (self.toolchain / "bin" / "vibe").read_text(encoding="utf-8"), "ALT\n"
         )
+
+
+# ===========================================================================
+# Installer-Sperre bei leerem Laufregister (``runs.json``)
+# ===========================================================================
+
+import importlib.machinery
+import importlib.util
+import io
+import json
+import os
+import subprocess
+import tempfile
+import unittest
+from pathlib import Path
+
+
+# Muss zum Programmabbild von scripts/setup-vibe.py passen; die Integrationstests
+# installieren damit eine echte (temporäre) Installation.
+
+
+def make_b4_kit(root, version="0.18.0"):
+    """Baut ein minimales Repository-Abbild mit Versionsdatei."""
+    root = Path(root)
+    (root / "bin").mkdir(parents=True)
+    for name in PROGRAM_FILES:
+        (root / "bin" / name).write_text(
+            f"#!/usr/bin/env python3\n# {name}\n", encoding="utf-8"
+        )
+    (root / "bin" / "web").mkdir()
+    for name in WEB_FILES:
+        (root / "bin" / "web" / name).write_text(f"/* {name} */\n", encoding="utf-8")
+    (root / "VERSION").write_text(version + "\n", encoding="utf-8")
+    templates = root / "templates" / "generic" / ".vibe"
+    templates.mkdir(parents=True)
+    (templates / "project.env").write_text("TYPE=generic\n", encoding="utf-8")
+    (root / "templates" / "generic" / "AGENTS.md").write_text(
+        "# generic\n", encoding="utf-8"
+    )
+    (root / "data").mkdir()
+    (root / "data" / "models.json").write_text('{"models": []}\n', encoding="utf-8")
+    return root
+
+
+class RuntimeFixture(unittest.TestCase):
+    """Nur ein temporärer Laufzeitordner; keine Installation nötig."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        self.logs = self.root / "logs"
+        self.logs.mkdir()
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    @property
+    def runs_path(self):
+        return self.logs / "runs.json"
+
+    def write_runs_text(self, text):
+        self.runs_path.write_text(text, encoding="utf-8")
+
+    def write_live_run(self, run_id, state="running"):
+        session = "vibe-" + run_id
+        self.write_runs_text(
+            json.dumps(
+                {
+                    "runs": [
+                        {
+                            "id": run_id,
+                            "state": state,
+                            "session": session,
+                            "project": str(self.root / "proj"),
+                        }
+                    ]
+                }
+            )
+        )
+        return session
+
+    @staticmethod
+    def no_tmux(name):
+        return None
+
+    @staticmethod
+    def fake_tmux(live_sessions=()):
+        """Fake-tmux: nur genannte Sitzungen gelten als vorhanden."""
+        live = set(live_sessions)
+
+        def which(name):
+            return "/fake/tmux" if name == "tmux" else None
+
+        def runner(command, **kwargs):
+            exists = "has-session" in command and command[-1] in live
+            return subprocess.CompletedProcess(command, 0 if exists else 1, "", "")
+
+        return which, runner
+
+
+class EmptyRunStateDirectTest(RuntimeFixture):
+    """Direkte Vertragsprüfung von ``running_installation`` (AK1, AK2, AK4, AK6)."""
+
+    def reasons(self):
+        return setup.running_installation(self.logs, which=self.no_tmux)
+
+    def test_missing_runs_file_is_not_a_block_reason(self):
+        # Bestandsvertrag / Schutzwache: fehlende Datei sperrt nicht.
+        self.assertFalse(self.runs_path.exists())
+        self.assertEqual([], self.reasons())
+
+    def test_empty_runs_file_is_not_a_block_reason(self):
+        # AK1: vorhandene 0-Byte-Datei enthält nachweislich keine Läufe.
+        self.write_runs_text("")
+        self.assertEqual(0, self.runs_path.stat().st_size)
+        self.assertEqual([], self.reasons())
+
+    def test_whitespace_only_runs_file_is_not_a_block_reason(self):
+        # AK2: reiner Leerraum ist wie leer zu behandeln.
+        for content in ("\n", "  \n\t \n"):
+            with self.subTest(content=content):
+                self.write_runs_text(content)
+                self.assertEqual([], self.reasons())
+
+    def test_non_empty_unreadable_runs_file_remains_a_block_reason(self):
+        # AK3: nicht-leerer, kaputter Inhalt sperrt konservativ.
+        self.write_runs_text("{kein json")
+        reasons = self.reasons()
+        self.assertEqual(1, len(reasons))
+        self.assertIn("ist nicht lesbar", reasons[0])
+        self.assertIn(str(self.runs_path), reasons[0])
+
+    def test_oserror_when_reading_the_runs_path_remains_a_block_reason(self):
+        # AK4: ein Verzeichnis anstelle der Datei erzwingt beim Lesen
+        # IsADirectoryError (OSError). Kein chmod, weil Rechteänderungen auf
+        # FUSE/NTFS nicht verlässlich wirken.
+        self.runs_path.mkdir()
+        self.assertTrue(self.runs_path.is_dir())
+        reasons = self.reasons()
+        self.assertEqual(1, len(reasons))
+        self.assertIn("ist nicht lesbar", reasons[0])
+        self.assertIn(str(self.runs_path), reasons[0])
+
+    def test_live_run_with_existing_session_remains_a_block_reason(self):
+        # AK6: running-Eintrag mit existierender tmux-Sitzung sperrt weiterhin.
+        session = self.write_live_run("lauf-live", state="running")
+        which, runner = self.fake_tmux({session})
+        reasons = setup.running_installation(self.logs, runner=runner, which=which)
+        self.assertEqual(1, len(reasons))
+        self.assertIn("lauf-live", reasons[0])
+        self.assertIn("running", reasons[0])
+
+
+class InstallerFixture(RuntimeFixture):
+    """Echte temporäre Installation plus bereinigter CLI-Harness."""
+
+    def setUp(self):
+        super().setUp()
+        self.kit = make_b4_kit(self.root / "kit")
+        self.vibe = self.root / "Vibe"
+        self.toolchain = self.vibe / "_toolchain"
+        self.home = self.root / "home"
+        self.home.mkdir()
+        # Die CLI prüft das Laufregister im Logverzeichnis ``--logs``.
+        self.logs = self.vibe / "_logs"
+
+    def install(self, mode="update", timestamp="20261101-100000"):
+        # ``install_program_files`` erwartet das Installationsziel (Toolchain),
+        # genau wie ``main`` es mit ``--install`` übergibt.
+        return setup.install_program_files(
+            self.kit, self.toolchain, mode=mode, timestamp=timestamp
+        )
+
+    def prepare_update(self):
+        """Bestehende Installation mit klar erkennbarer alter Programmdatei."""
+        self.install(timestamp="20261101-100000")
+        (self.toolchain / "bin" / "vibe").write_text("ALT\n", encoding="utf-8")
+
+    def run_main(self, args, which=None, runner=None):
+        out = io.StringIO()
+        # Bereinigte Umgebung: kein VIBE_INSTALL, kein produktives HOME.
+        environ = {"HOME": str(self.home), "PATH": os.environ.get("PATH", "")}
+        code = setup.main(
+            list(args) + [
+                "--install", str(self.toolchain),
+                "--logs", str(self.vibe / "_logs"),
+            ],
+            output=lambda text="": out.write(str(text) + "\n"),
+            which=which or (lambda name: None),
+            runner=runner or (
+                lambda command, **kwargs: subprocess.CompletedProcess(
+                    command, 1, "", ""
+                )
+            ),
+            platform_info=platform_info(),
+            home=self.home,
+            kit=self.kit,
+            interactive=False,
+            is_root=False,
+            has_sudo=False,
+            environ=environ,
+        )
+        return code, out.getvalue()
+
+    @staticmethod
+    def all_tools(name):
+        return "/fake/" + name
+
+
+class UpdateWithEmptyRunsTest(InstallerFixture):
+    """AK1/AK2/AK3/AK4 aus Sicht des ``--update``-Pfads."""
+
+    def test_update_runs_through_with_an_empty_runs_file(self):
+        self.prepare_update()
+        self.logs.mkdir(parents=True)
+        self.write_runs_text("")
+        self.assertEqual(0, self.runs_path.stat().st_size)
+
+        code, output = self.run_main(
+            ["--yes", "--update", "--vibe", str(self.vibe)],
+            which=self.all_tools,
+        )
+
+        self.assertEqual(0, code, output)
+        self.assertNotIn("wird gerade verwendet", output)
+        self.assertNotIn("nicht lesbar", output)
+        self.assertNotEqual(
+            "ALT\n", (self.toolchain / "bin" / "vibe").read_text(encoding="utf-8")
+        )
+
+    def test_update_runs_through_with_a_whitespace_only_runs_file(self):
+        self.prepare_update()
+        self.logs.mkdir(parents=True)
+        self.write_runs_text("\n")
+
+        code, output = self.run_main(
+            ["--yes", "--update", "--vibe", str(self.vibe)],
+            which=self.all_tools,
+        )
+
+        self.assertEqual(0, code, output)
+        self.assertNotIn("wird gerade verwendet", output)
+        self.assertNotEqual(
+            "ALT\n", (self.toolchain / "bin" / "vibe").read_text(encoding="utf-8")
+        )
+
+    def test_update_still_refuses_a_non_empty_unreadable_runs_file(self):
+        # AK3: Bestandsvertrag RunningGuardTest bleibt ungeschwächt.
+        self.prepare_update()
+        self.logs.mkdir(parents=True)
+        self.write_runs_text("{kein json")
+
+        code, output = self.run_main(
+            ["--yes", "--update", "--vibe", str(self.vibe)],
+            which=self.all_tools,
+        )
+
+        self.assertEqual(1, code, output)
+        self.assertIn("wird gerade verwendet", output)
+        self.assertIn("nicht lesbar", output)
+        self.assertEqual(
+            "ALT\n", (self.toolchain / "bin" / "vibe").read_text(encoding="utf-8")
+        )
+
+    def test_update_still_refuses_when_the_runs_path_is_unreadable(self):
+        # AK4: OSError beim Lesen (hier: Verzeichnis statt Datei).
+        self.prepare_update()
+        self.logs.mkdir(parents=True)
+        self.runs_path.mkdir()
+
+        code, output = self.run_main(
+            ["--yes", "--update", "--vibe", str(self.vibe)],
+            which=self.all_tools,
+        )
+
+        self.assertEqual(1, code, output)
+        self.assertIn("wird gerade verwendet", output)
+        self.assertIn("nicht lesbar", output)
+        self.assertEqual(
+            "ALT\n", (self.toolchain / "bin" / "vibe").read_text(encoding="utf-8")
+        )
+
+    def test_update_still_refuses_a_running_run_with_live_session(self):
+        # AK6: running + existierende tmux-Sitzung sperrt weiterhin.
+        self.prepare_update()
+        self.logs.mkdir(parents=True)
+        session = self.write_live_run("lauf-live", state="running")
+        which, runner = RuntimeFixture.fake_tmux({session})
+
+        code, output = self.run_main(
+            ["--yes", "--update", "--vibe", str(self.vibe)],
+            which=which,
+            runner=runner,
+        )
+
+        self.assertEqual(1, code, output)
+        self.assertIn("wird gerade verwendet", output)
+        self.assertIn("lauf-live", output)
+        self.assertEqual(
+            "ALT\n", (self.toolchain / "bin" / "vibe").read_text(encoding="utf-8")
+        )
+
+    def test_update_still_refuses_a_starting_run_with_live_session(self):
+        # AK6: starting + existierende tmux-Sitzung sperrt weiterhin.
+        self.prepare_update()
+        self.logs.mkdir(parents=True)
+        session = self.write_live_run("lauf-start", state="starting")
+        which, runner = RuntimeFixture.fake_tmux({session})
+
+        code, output = self.run_main(
+            ["--yes", "--update", "--vibe", str(self.vibe)],
+            which=which,
+            runner=runner,
+        )
+
+        self.assertEqual(1, code, output)
+        self.assertIn("wird gerade verwendet", output)
+        self.assertIn("lauf-start", output)
+        self.assertEqual(
+            "ALT\n", (self.toolchain / "bin" / "vibe").read_text(encoding="utf-8")
+        )
+
+
+class UninstallWithEmptyRunsTest(InstallerFixture):
+    """AK5: Uninstall wird durch ein leeres Register nicht blockiert."""
+
+    def test_uninstall_runs_through_with_an_empty_runs_file(self):
+        self.install()
+        self.logs.mkdir(parents=True)
+        self.write_runs_text("")
+
+        code, output = self.run_main(
+            ["--yes", "--uninstall", "--vibe", str(self.vibe)],
+            which=self.all_tools,
+        )
+
+        self.assertEqual(0, code, output)
+        self.assertNotIn("wird gerade verwendet", output)
+        self.assertFalse((self.toolchain / "bin" / "vibe").exists())
+
+    def test_uninstall_still_refuses_a_running_run_with_live_session(self):
+        self.install()
+        self.logs.mkdir(parents=True)
+        session = self.write_live_run("lauf-live", state="running")
+        which, runner = RuntimeFixture.fake_tmux({session})
+
+        code, output = self.run_main(
+            ["--yes", "--uninstall", "--vibe", str(self.vibe)],
+            which=which,
+            runner=runner,
+        )
+
+        self.assertEqual(1, code, output)
+        self.assertIn("wird gerade verwendet", output)
+        self.assertIn("lauf-live", output)
+        self.assertTrue((self.toolchain / "bin" / "vibe").is_file())
+
+
+class RollbackWithEmptyRunsTest(InstallerFixture):
+    """AK5: Rollback wird durch ein leeres Register nicht blockiert."""
+
+    def prepare_rollback(self):
+        self.install(timestamp="20261101-100000")
+        (self.toolchain / "bin" / "vibe").write_text("ALT\n", encoding="utf-8")
+        self.install(timestamp="20261101-180000")
+
+    def test_rollback_runs_through_with_an_empty_runs_file(self):
+        self.prepare_rollback()
+        self.logs.mkdir(parents=True, exist_ok=True)
+        self.write_runs_text("")
+
+        code, output = self.run_main(
+            ["--yes", "--rollback", "--vibe", str(self.vibe)],
+            which=self.all_tools,
+        )
+
+        self.assertEqual(0, code, output)
+        self.assertNotIn("wird gerade verwendet", output)
+        self.assertIn("Rollback", output)
+        self.assertEqual(
+            "ALT\n", (self.toolchain / "bin" / "vibe").read_text(encoding="utf-8")
+        )
+
+    def test_rollback_still_refuses_a_running_run_with_live_session(self):
+        self.prepare_rollback()
+        self.logs.mkdir(parents=True, exist_ok=True)
+        session = self.write_live_run("lauf-live", state="running")
+        which, runner = RuntimeFixture.fake_tmux({session})
+
+        code, output = self.run_main(
+            ["--yes", "--rollback", "--vibe", str(self.vibe)],
+            which=which,
+            runner=runner,
+        )
+
+        self.assertEqual(1, code, output)
+        self.assertIn("wird gerade verwendet", output)
+        self.assertIn("lauf-live", output)
+        self.assertNotEqual(
+            "ALT\n", (self.toolchain / "bin" / "vibe").read_text(encoding="utf-8")
+        )
+
+
+# ===========================================================================
+# Abnahme: Testläufe dürfen die laufende Instanz nicht verändern
+# ===========================================================================
+
+import hashlib
+import importlib.machinery
+import importlib.util
+import io
+import json
+import os
+import subprocess
+import tempfile
+import unittest
+from pathlib import Path
+
+WRAPPER = REPO / "install-vibe.sh"
+
+
+# Variablen, die im Vorfall Produktivpfade trugen. Ein Test darf sie nie aus
+# dem Prozess erben; die Vorfall-Umgebung wird nur als ``environ`` übergeben.
+INCIDENT_KEYS = (
+    "VIBE",
+    "VIBE_PROFILE",
+    "VIBE_INSTALL",
+    "VIBE_STATE",
+    "VIBE_RUNTIME",
+    "VIBE_CONFIG_FILE",
+    "VIBE_AGENTS_DIR",
+)
+
+
+def make_b17_kit(root, version="0.18.0"):
+    """Minimales Kit-Abbild; alle Programmdateien und Vorlagen sind vorhanden."""
+    root = Path(root)
+    (root / "bin").mkdir(parents=True)
+    for name in PROGRAM_FILES:
+        (root / "bin" / name).write_text(
+            "#!/usr/bin/env python3\n# " + name + "\n", encoding="utf-8"
+        )
+    (root / "bin" / "web").mkdir()
+    for name in WEB_FILES:
+        (root / "bin" / "web" / name).write_text("/* " + name + " */\n", encoding="utf-8")
+    (root / "VERSION").write_text(version + "\n", encoding="utf-8")
+    templates = root / "templates" / "generic" / ".vibe"
+    templates.mkdir(parents=True)
+    (templates / "project.env").write_text("TYPE=generic\n", encoding="utf-8")
+    (root / "templates" / "generic" / "AGENTS.md").write_text("# generic\n", encoding="utf-8")
+    (root / "data").mkdir()
+    (root / "data" / "models.json").write_text('{"models": []}\n', encoding="utf-8")
+    return root
+
+
+def essential_which(name):
+    """Alle benötigten Werkzeuge gelten als vorhanden, tmux aber nicht.
+
+    ``tmux`` bleibt absichtlich unsichtbar: ``running_installation`` soll keine
+    Sitzung prüfen und damit keine echte Umgebung des Rechners anfassen.
+    """
+    return None if name == "tmux" else "/fake/" + name
+
+
+def platform_info_for_isolation():
+    return {
+        "os": "linux",
+        "distro": "ubuntu",
+        "family": "debian",
+        "manager": "apt-get",
+        "container": True,
+        "immutable": False,
+        "wsl": False,
+        "wsl_available": False,
+        "npm_available": True,
+        "label": "Test-Container",
+        "release": {},
+    }
+
+
+def snapshot(root):
+    """SHA-256 je Datei relativ zum Wurzelordner."""
+    root = Path(root)
+    digests = {}
+    if not root.exists():
+        return digests
+    for path in sorted(root.rglob("*")):
+        if path.is_file():
+            digests[path.relative_to(root).as_posix()] = hashlib.sha256(
+                path.read_bytes()
+            ).hexdigest()
+    return digests
+
+
+def write_json(path, data):
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, indent=1) + "\n", encoding="utf-8")
+
+
+class B17Base(unittest.TestCase):
+    """Fake-Produktivbereich und ein davon getrennter Temp-Prüfbereich."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+
+        # Fake-Produktivbereich: sieht aus wie die laufende Installation des
+        # Vorfalls, liegt aber vollständig unter tempfile.
+        self.prod_root = self.root / "produktion"
+        self.fake_home = self.prod_root / "home"
+        self.fake_workspace = self.prod_root / "VibeCode"
+        self.fake_install = self.fake_workspace / "_toolchain"
+        # Eigener Laufzeitordner (nicht <workspace>/_logs), damit ein
+        # unveränderter Reuse-Lauf die Fake-Konfiguration nicht neu schreibt.
+        self.fake_runtime = self.prod_root / "runtime"
+        self.fake_config = self.fake_home / ".config" / "vibe" / "config.json"
+        self._make_fake_installation()
+
+        # Prüfbereich: alle schreibenden Soll-Pfade.
+        self.temp_root = self.root / "pruefung"
+        self.temp_root.mkdir()
+
+        self.kit = make_b17_kit(self.root / "kit")
+
+        self.incident_environ = {
+            "HOME": str(self.fake_home),
+            "VIBE": str(self.fake_workspace),
+            "VIBE_INSTALL": str(self.fake_install),
+            "VIBE_STATE": str(self.fake_install),
+            "VIBE_RUNTIME": str(self.fake_runtime),
+            "VIBE_CONFIG_FILE": str(self.fake_config),
+            "PATH": os.environ.get("PATH", ""),
+        }
+
+    def _make_fake_installation(self):
+        (self.fake_install / "bin").mkdir(parents=True)
+        (self.fake_install / "bin" / "vibe").write_text(
+            "#!/bin/sh\necho vibe\n", encoding="utf-8"
+        )
+        write_json(self.fake_install / "harness.json", {"harness": "opencode"})
+        write_json(
+            self.fake_install / "version.json",
+            {"version": "0.1.0", "mode": "update", "source": str(self.fake_install)},
+        )
+        write_json(
+            self.fake_config,
+            {
+                "profiles": {
+                    "prod": {
+                        "workspace": str(self.fake_workspace),
+                        "install": str(self.fake_install),
+                        "state": str(self.fake_install),
+                        "runtime": str(self.fake_runtime),
+                    }
+                }
+            },
+        )
+
+    def runner(self, command, **kwargs):
+        return subprocess.CompletedProcess(command, 1, "", "")
+
+    def run_main(self, args, environ=None, kit=None):
+        out = io.StringIO()
+        code = setup.main(
+            list(args),
+            output=lambda text="": out.write(str(text) + "\n"),
+            which=essential_which,
+            runner=self.runner,
+            platform_info=platform_info_for_isolation(),
+            kit=kit or self.kit,
+            interactive=False,
+            is_root=True,
+            has_sudo=False,
+            environ=self.incident_environ if environ is None else environ,
+        )
+        return code, out.getvalue()
+
+    def clean_environ(self, home):
+        return {"HOME": str(home), "PATH": os.environ.get("PATH", "")}
+
+    def assert_prod_unchanged(self, before):
+        self.assertEqual(before, snapshot(self.prod_root),
+                         "Der Fake-Produktivbereich wurde verändert")
+        self.assertEqual(
+            [], sorted(self.fake_install.glob("backup-*")),
+            "Im Fake-Produktivbereich entstand eine Sicherung",
+        )
+
+
+class MainEnvironTest(B17Base):
+    """AK1: main löst alle Pfade aus dem übergebenen environ auf."""
+
+    def test_dry_run_resolves_defaults_from_the_given_environ(self):
+        home = self.temp_root / "home"
+        workspace = self.temp_root / "Workspace"
+        install = self.temp_root / "toolchain"
+        runtime = self.temp_root / "logs"
+        environ = {
+            "HOME": str(home),
+            "VIBE": str(workspace),
+            "VIBE_INSTALL": str(install),
+            "VIBE_RUNTIME": str(runtime),
+            "PATH": os.environ.get("PATH", ""),
+        }
+
+        code, output = self.run_main(["--yes", "--dry-run"], environ=environ)
+
+        self.assertEqual(code, 0, output)
+        self.assertIn(str(workspace), output)
+        self.assertIn(str(install), output)
+        self.assertIn(str(runtime), output)
+        self.assertIn(
+            str(home / ".config" / "vibe" / "config.json"), output,
+            "Die dry-run-Ausgabe nennt nicht den Konfigurationspfad aus environ",
+        )
+        # Eine Vorschau schreibt nichts.
+        self.assertFalse(workspace.exists(), output)
+        self.assertFalse(install.exists(), output)
+
+    def test_closing_hint_reads_the_given_environ(self):
+        home = self.temp_root / "home"
+        workspace = self.temp_root / "Workspace"
+        install = self.temp_root / "toolchain"
+        runtime = self.temp_root / "logs"
+        other_vibe = self.temp_root / "andere-quelle"
+        environ = {
+            "HOME": str(home),
+            "VIBE": str(other_vibe),
+            "PATH": os.environ.get("PATH", ""),
+        }
+
+        code, output = self.run_main(
+            ["--yes", "--skip-deps", "--no-launcher", "--no-register",
+             "--vibe", str(workspace), "--install", str(install),
+             "--logs", str(runtime)],
+            environ=environ,
+        )
+
+        self.assertEqual(code, 0, output)
+        self.assertIn("Hinweis: VIBE=" + str(other_vibe), output)
+        self.assertFalse(other_vibe.exists(), output)
+
+
+class UpdateGuardTest(B17Base):
+    """AK2: --update auf die laufende Instanz wird ohne --source verweigert."""
+
+    def test_update_on_the_running_instance_is_refused_without_writes(self):
+        before = snapshot(self.prod_root)
+        temp_workspace = self.temp_root / "Arbeitsbereich"
+
+        code, output = self.run_main([
+            "--vibe", str(temp_workspace), "--update", "--yes",
+            "--skip-deps", "--no-launcher", "--no-register",
+        ])
+
+        self.assertEqual(code, 1, output)
+        self.assertIn("--source", output,
+                      "Die Verweigerung muss die autorisierte Quelle nennen")
+        self.assert_prod_unchanged(before)
+        self.assertFalse(temp_workspace.exists(),
+                         "Trotz Verweigerung wurde ein Workspace angelegt")
+
+    def test_update_with_an_explicit_install_on_the_running_instance_is_refused(self):
+        """Review 1/Medium: Ein explizites ``--install`` befreit den Guard nicht.
+
+        Zeigt ``--install`` auf die erkannte laufende Installation, ist das
+        ebenso eine Aktualisierung der laufenden Instanz wie das implizit
+        aufgelöste Ziel. Ohne ``--source`` darf sie nichts schreiben.
+        """
+        before = snapshot(self.prod_root)
+
+        code, output = self.run_main([
+            "--vibe", str(self.fake_workspace), "--install", str(self.fake_install),
+            "--update", "--yes", "--skip-deps", "--no-launcher", "--no-register",
+        ])
+
+        self.assertEqual(code, 1, output)
+        self.assertIn("--source", output,
+                      "Die Verweigerung muss die autorisierte Quelle nennen")
+        self.assert_prod_unchanged(before)
+
+    def test_update_with_an_explicit_install_and_source_is_allowed(self):
+        """Gegenprobe: ``--source`` autorisiert dasselbe explizite Ziel."""
+        kit = make_b17_kit(self.temp_root / "kit-quelle", version="9.9.9")
+
+        code, output = self.run_main([
+            "--vibe", str(self.fake_workspace), "--install", str(self.fake_install),
+            "--update", "--yes", "--skip-deps", "--no-launcher", "--no-register",
+            "--source", str(kit),
+        ])
+
+        self.assertEqual(code, 0, output)
+        recorded = json.loads(
+            (self.fake_install / "version.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(recorded["version"], "9.9.9",
+                         "Das autorisierte Update hat die Installation nicht aktualisiert")
+        self.assertEqual(Path(recorded["source"]), kit.resolve())
+
+    def test_dry_run_on_the_running_instance_is_allowed_and_explains_the_guard(self):
+        before = snapshot(self.prod_root)
+
+        code, output = self.run_main(["--yes", "--dry-run", "--update"])
+
+        self.assertEqual(code, 0, output)
+        self.assertIn("--source", output,
+                      "Auch die Vorschau muss den Guard-Hinweis zeigen")
+        self.assert_prod_unchanged(before)
+
+    def test_reuse_on_the_running_instance_is_not_blocked(self):
+        """``--reuse`` ist keine autorisierte Aktualisierung.
+
+        Der Guard betrifft nur ``--update``. Wiederverwenden darf fehlende
+        Dateien ergänzen, aber keine vorhandenen überschreiben und keine
+        Sicherung anlegen. Die globale Konfiguration bleibt unverändert.
+        """
+        config_before = snapshot(self.fake_home)
+        existing = {}
+        for name in ("bin/vibe", "harness.json", "version.json"):
+            path = self.fake_install / name
+            existing[name] = path.read_bytes()
+
+        code, output = self.run_main([
+            "--reuse", "--yes", "--skip-deps", "--no-launcher", "--no-register",
+            "--vibe", str(self.fake_workspace), "--logs", str(self.fake_runtime),
+        ])
+
+        self.assertEqual(code, 0, output)
+        for name, content in existing.items():
+            self.assertEqual(
+                (self.fake_install / name).read_bytes(), content,
+                "Wiederverwenden hat " + name + " überschrieben",
+            )
+        self.assertEqual(
+            [], sorted(self.fake_install.glob("backup-*")),
+            "Wiederverwenden legte eine Sicherung an",
+        )
+        self.assertEqual(
+            config_before, snapshot(self.fake_home),
+            "Wiederverwenden hat die Konfiguration neu geschrieben",
+        )
+
+
+class IsolatedUpdateTest(B17Base):
+    """AK4/AK5: Ein Test-Update schreibt ausschließlich unter den Temp-Root."""
+
+    def test_test_update_writes_only_into_the_temp_root(self):
+        """AK5: Ein Test--update schreibt ausschließlich in den Temp-Root.
+
+        Die Prüf-Installation simuliert eine bestehende Installation. Nach dem
+        Update liegen Programmdateien, Sicherung, ``version.json`` und die
+        Konfiguration unter dem Temp-Root; der Fake-Produktivbereich bleibt
+        byte-identisch.
+        """
+        before = snapshot(self.prod_root)
+        home = self.temp_root / "home"
+        workspace = self.temp_root / "Workspace"
+        install = self.temp_root / "toolchain"
+        runtime = self.temp_root / "logs"
+        (install / "bin").mkdir(parents=True)
+        (install / "bin" / "vibe").write_text("ALT\n", encoding="utf-8")
+
+        code, output = self.run_main(
+            ["--update", "--yes", "--skip-deps", "--no-launcher",
+             "--no-register", "--vibe", str(workspace),
+             "--install", str(install), "--logs", str(runtime)],
+            environ=self.clean_environ(home),
+        )
+
+        self.assertEqual(code, 0, output)
+        self.assertNotEqual(
+            (install / "bin" / "vibe").read_text(encoding="utf-8"), "ALT\n",
+            "Das Test--update hat die Prüf-Installation nicht aktualisiert",
+        )
+        self.assertTrue((install / "harness.json").is_file(), output)
+        self.assertTrue((install / "version.json").is_file(), output)
+        self.assertTrue(
+            list(install.glob("backup-*")),
+            "Das Update legte keine Sicherung unter dem Temp-Root an",
+        )
+        recorded = json.loads(
+            (install / "version.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(Path(recorded["source"]), self.kit.resolve())
+        config_path = home / ".config" / "vibe" / "config.json"
+        self.assertTrue(config_path.is_file(), output)
+        data = json.loads(config_path.read_text(encoding="utf-8"))
+        prod = data["profiles"]["prod"]
+        self.assertEqual(prod["workspace"], str(workspace))
+        self.assertEqual(prod["install"], str(install))
+        self.assertEqual(prod["runtime"], str(runtime))
+        self.assert_prod_unchanged(before)
+
+    def test_environ_install_target_wins_without_a_cli_option(self):
+        before = snapshot(self.prod_root)
+        home = self.temp_root / "home"
+        workspace = self.temp_root / "EnvironWorkspace"
+        install = self.temp_root / "environ-toolchain"
+        runtime = self.temp_root / "environ-logs"
+        environ = {
+            "HOME": str(home),
+            "VIBE": str(workspace),
+            "VIBE_INSTALL": str(install),
+            "VIBE_RUNTIME": str(runtime),
+            "PATH": os.environ.get("PATH", ""),
+        }
+
+        code, output = self.run_main(
+            ["--yes", "--skip-deps", "--no-launcher", "--no-register"],
+            environ=environ,
+        )
+
+        self.assertEqual(code, 0, output)
+        self.assertTrue((install / "bin" / "vibe").is_file(),
+                        "Das Installationsziel kam nicht aus environ:\n" + output)
+        self.assertFalse(
+            (home / "VibeCode" / "_toolchain").exists(),
+            "Das Standardziel der Prozessumgebung wurde verwendet",
+        )
+        config_path = home / ".config" / "vibe" / "config.json"
+        self.assertTrue(config_path.is_file(), output)
+        data = json.loads(config_path.read_text(encoding="utf-8"))
+        self.assertEqual(data["profiles"]["prod"]["install"], str(install))
+        self.assertEqual(data["profiles"]["prod"]["runtime"], str(runtime))
+        self.assert_prod_unchanged(before)
+
+
+class SourceOptionTest(B17Base):
+    """AK3: --source benennt die autorisierte Quelle ausdrücklich."""
+
+    def test_update_with_an_explicit_source_updates_the_instance(self):
+        kit = make_b17_kit(self.temp_root / "kit-quelle", version="9.9.9")
+
+        code, output = self.run_main([
+            "--update", "--yes", "--skip-deps", "--no-launcher",
+            "--no-register", "--vibe", str(self.fake_workspace),
+            "--source", str(kit),
+        ])
+
+        self.assertEqual(code, 0, output)
+        recorded = json.loads(
+            (self.fake_install / "version.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(recorded["version"], "9.9.9")
+        self.assertEqual(Path(recorded["source"]), kit.resolve(),
+                         "version.json nennt nicht die benannte Quelle")
+
+    def test_source_with_a_broken_directory_changes_nothing(self):
+        before = snapshot(self.prod_root)
+        broken = self.temp_root / "kaputte-quelle"
+        broken.mkdir()
+
+        code, output = self.run_main([
+            "--update", "--yes", "--skip-deps", "--no-launcher",
+            "--no-register", "--vibe", str(self.fake_workspace),
+            "--source", str(broken),
+        ])
+
+        self.assertEqual(code, 1, output)
+        self.assertIn("Unvollständiges Quellverzeichnis", output)
+        self.assert_prod_unchanged(before)
+
+    def test_install_wrapper_names_its_own_source(self):
+        text = WRAPPER.read_text(encoding="utf-8")
+
+        self.assertIn("--source", text)
+        self.assertIn('"$KIT"', text)
 
 
 if __name__ == "__main__":

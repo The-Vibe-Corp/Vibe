@@ -129,8 +129,8 @@ Abschnitt „Fixlauf“):
 
 ### Prüfresultate (tatsächlich ausgeführt)
 
-- `python3 -m unittest tests.unit.test_ap06_github` — 54 Tests, OK.
-- `python3 -m unittest tests.browser.test_ap06_github_ui` — 9 Tests, OK.
+- `python3 -m unittest tests.unit.test_github` — 54 Tests, OK.
+- `python3 -m unittest tests.browser.test_github_ui` — 9 Tests, OK.
 - `python3 -m unittest tests.unit.test_baseline_inventory tests.unit.test_setup_vibe tests.unit.test_install_lifecycle` — OK.
 - `bash scripts/verify.sh quick` — Exit 0 (Manifest, Syntax, Geheimnisprüfung).
 - `bash scripts/verify.sh full` — Exit 5 nur mit paketfremden Abweichungen
