@@ -19,6 +19,8 @@ Lokale Entwicklungszentrale für Projekte, Agenten, Modelle und MCP-Server.
 - `docs/abnahme-bazzite.md` — dokumentierte manuelle Bazzite-Prüfung.
 - `docs/features/<ticket>.md` — fachliche und technische Dokumentation je
   Arbeitspaket; die Zuordnung zu Trilium steht in `docs/trilium-index.md`.
+- `docs/features/README.md` — index of features: current behavior per
+  feature plus per-package records.
 
 ## Ausgangsbasis
 
