@@ -117,6 +117,7 @@ Living documentation: [Agent runs and output](current/runs-output.md)
 - [V-016.md](V-016.md) — test dashboard and opencode lifecycles separately
 - [V-024.md](V-024.md) — detect and clean orphan run entries
 - [V-026.md](V-026.md) — protect runs from foreign tmux cleanup
+- [GH-88.md](GH-88.md) — output view follow mode, responsive card grid, card styling
 
 ### Verification and checks
 

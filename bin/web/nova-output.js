@@ -82,6 +82,60 @@ function nvOutShort(value, max) {
   return text.slice(0, limit - 1) + '…';
 }
 
+/* GH-88: Autoscroll nur am Fuß. Jedes Protokoll merkt sich, ob der Nutzer
+   am aktuellen Ende ist; neue Zeilen folgen nur dann. Programmgesteuerte
+   Scrolls werden über ein Guard-Flag vom Nutzer-Scroll getrennt, damit sie
+   den Folgemodus nicht versehentlich umschalten. */
+var NV_OUT_FOLLOW_THRESHOLD = 24;
+
+function nvOutFollow(log) {
+  var state = {follow: true, guard: false};
+  function atEnd() {
+    return log.scrollTop + log.clientHeight
+      >= log.scrollHeight - NV_OUT_FOLLOW_THRESHOLD;
+  }
+  function releaseGuard() {
+    if (state.guard && typeof window.requestAnimationFrame === 'function') {
+      window.requestAnimationFrame(function () { state.guard = false; });
+    } else {
+      state.guard = false;
+    }
+  }
+  log.addEventListener('scroll', function () {
+    if (state.guard) return;
+    state.follow = atEnd();
+  });
+  /* Neue Karten starten am Ende. Fokus/Expand prüfen die Position neu, statt
+     eine vom Nutzer gewählte Stelle zu verschieben. */
+  state.refresh = function () {
+    state.follow = atEnd();
+    if (!state.follow) return;
+    state.guard = true;
+    log.scrollTop = log.scrollHeight;
+    releaseGuard();
+  };
+  state.write = function (fragment) {
+    /* Vor dem Neuaufbau die aktuelle Position auswerten: so zählt auch ein
+       Nutzer-Scroll, dessen Event noch nicht verarbeitet wurde. */
+    var wasFollow = atEnd();
+    var previousTop = log.scrollTop;
+    state.guard = true;
+    log.replaceChildren(fragment);
+    if (wasFollow) {
+      log.scrollTop = log.scrollHeight;
+    } else {
+      /* replaceChildren setzt scrollTop auf 0 zurück; die Nutzerposition
+         bleibt erhalten (auf den neuen Inhalt begrenzt). */
+      log.scrollTop = Math.min(previousTop,
+        Math.max(0, log.scrollHeight - log.clientHeight));
+    }
+    state.follow = wasFollow;
+    releaseGuard();
+  };
+  log.__nvFollow = state;
+  return state;
+}
+
 var NV_OUTPUT = {
   timer: null,
   stream: null,
@@ -192,12 +246,6 @@ NV.output = {
     }
     makeSummaryRow('main');
 
-    var overview = el('div', {class: 'nv-out-overview', 'data-nv-out-overview': ''});
-    var statePill = el('span', {class: 'nv-pill', 'data-nv-run-state': '', 'data-state': 'stopped'}, tr('gestoppt'));
-    var agentLabel = el('span', {class: 'nv-out-agent'});
-    var countLabel = el('span', {class: 'nv-out-count'});
-    overview.append(statePill, agentLabel, countLabel);
-
     var mainState = el('span', {class: 'nv-pill', 'data-nv-out-main-state': '', 'data-state': 'stopped'}, tr('gestoppt'));
     var mainSessionCode = el('code', {class: 'nv-out-session', 'data-nv-out-session': '', title: ''}, '–');
     var mainFocusText = el('span', {class: 'nv-out-focus-text'}, tr('Fokus'));
@@ -212,20 +260,21 @@ NV.output = {
       el('span', {class: 'nv-out-icon', 'aria-hidden': 'true'}, '↕'), ' ', mainExpandText);
 
     var mainLog = el('pre', {class: 'nv-log nv-out-main', 'data-nv-out-main': '',
-      role: 'log', tabindex: '0', 'aria-label': tr('Hauptagent'),
-      style: 'max-height:60vh; overflow:auto;'});
+      role: 'log', tabindex: '0', 'aria-label': tr('Hauptagent')});
+    var mainFollow = nvOutFollow(mainLog);
     var mainWrap = el('section', {class: 'nv-card nv-out-main-wrap', 'data-nv-out-main-wrap': ''},
-      el('div', {class: 'nv-out-main-head',
-        style: 'display:flex; flex-wrap:wrap; align-items:center; '
-          + 'gap:var(--nv-space-3); margin-bottom:var(--nv-space-3);'},
+      el('div', {class: 'nv-out-main-head'},
         el('b', {}, tr('Hauptagent')), mainState,
         el('span', {class: 'nv-muted'}, tr('Sitzung') + ':'), mainSessionCode,
-        el('span', {style: 'flex:1 1 auto'}), mainExpandButton, mainFocusButton),
+        el('span', {class: 'nv-out-spacer'}), mainExpandButton, mainFocusButton),
       mainLog);
 
-    var subs = el('div', {class: 'nv-out-subs', 'data-nv-out-subs': '',
-      style: 'display:grid; grid-template-columns:repeat(auto-fit, '
-        + 'minmax(min(100%, 30rem), 1fr)); gap:var(--nv-space-4); align-items:start;'});
+    /* GH-88: Haupt- und Subagentenkarten liegen in einem gemeinsamen
+       responsiven Raster. [data-nv-out-subs] bleibt als Container erhalten
+       und nimmt per display:contents direkt am Raster teil. */
+    var cardsGrid = el('div', {class: 'nv-out-cards', 'data-nv-out-cards': ''}, mainWrap);
+    var subs = el('div', {class: 'nv-out-subs', 'data-nv-out-subs': ''});
+    cardsGrid.append(subs);
 
     var resumeBox = el('section', {class: 'nv-card nv-out-resume', 'data-nv-out-resume': '',
       style: 'padding:var(--nv-space-4);'});
@@ -260,7 +309,7 @@ NV.output = {
 
     /* Steuerblock vor dem Log: auch bei langem Protokoll ohne Scrollen da. */
     panelRoot.replaceChildren(el('div', {class: 'nv-out'},
-      summary, overview, controls, mainWrap, resumeBox, subs));
+      summary, controls, cardsGrid, resumeBox));
 
     /* ---------- Fokus/Vergrößern: genau eine Ausgabe ist flächig ---------- */
     function setLogLimit(target) {
@@ -274,6 +323,8 @@ NV.output = {
       log.style.maxHeight = (open || focused) ? 'none' : (target === 'main' ? '60vh' : '40vh');
       button.setAttribute('aria-expanded', open ? 'true' : 'false');
       setTx(text, tr(open ? 'Weniger anzeigen' : 'Alles anzeigen'));
+      var follow = target === 'main' ? mainFollow : (card && card.follow);
+      if (follow && follow.refresh) follow.refresh();
     }
 
     function applyFocus() {
@@ -330,8 +381,7 @@ NV.output = {
     function feedMain(text) {
       if (!text) return;
       mainText = (mainText + text).slice(-120000);
-      mainLog.replaceChildren(nvRenderLog(mainText));
-      mainLog.scrollTop = mainLog.scrollHeight;
+      mainFollow.write(nvRenderLog(mainText));
     }
 
     function streamMain() {
@@ -352,8 +402,6 @@ NV.output = {
     /* ---------- Zustand und Subagenten ---------- */
     function syncMainMeta() {
       var label = tr(running ? 'läuft' : 'gestoppt');
-      statePill.setAttribute('data-state', running ? 'running' : 'stopped');
-      setTx(statePill, label);
       mainState.setAttribute('data-state', running ? 'running' : 'stopped');
       setTx(mainState, label);
 
@@ -405,8 +453,7 @@ NV.output = {
 
     function setCardText(card, text) {
       card.text = String(text || '').slice(-120000);
-      card.log.replaceChildren(nvRenderLog(card.text));
-      card.log.scrollTop = card.log.scrollHeight;
+      card.follow.write(nvRenderLog(card.text));
     }
 
     function syncSubRow(session, entry, status) {
@@ -436,8 +483,8 @@ NV.output = {
         'aria-label': tr('Subagentenprotokoll alles anzeigen')},
         el('span', {class: 'nv-out-icon', 'aria-hidden': 'true'}, '↕'), ' ', expandText);
       var log = el('pre', {class: 'nv-log nv-out-sub-log', role: 'log', tabindex: '0',
-        'aria-label': tr('Subagent') + ': ' + String(entry.agent || ''),
-        style: 'max-height:40vh; overflow:auto;'});
+        'aria-label': tr('Subagent') + ': ' + String(entry.agent || '')});
+      var follow = nvOutFollow(log);
       var subSteer = el('input', {type: 'text', 'data-nv-sub-steer': '',
         placeholder: tr('Anweisung an den Subagenten'),
         'aria-label': tr('Anweisung an den Subagenten')});
@@ -447,20 +494,16 @@ NV.output = {
       var sessionCode = el('code', {class: 'nv-out-sub-session'}, nvOutShort(session));
       sessionCode.title = session;
       var node = el('article', {class: 'nv-card nv-out-sub', 'data-nv-out-sub': session,
-        'data-focus': 'false',
-        style: 'padding:var(--nv-space-4); min-width:0; display:flex; '
-          + 'flex-direction:column; gap:var(--nv-space-3);'},
-        el('div', {class: 'nv-out-sub-head',
-          style: 'display:flex; flex-wrap:wrap; align-items:center; '
-            + 'gap:var(--nv-space-2);'},
+        'data-focus': 'false'},
+        el('div', {class: 'nv-out-sub-head'},
           el('b', {class: 'nv-out-sub-name'}, String(entry.agent || tr('Subagent'))),
           el('span', {class: 'nv-out-sub-role nv-muted'}, String(entry.description || '')),
           status, sessionCode,
-          el('span', {style: 'flex:1 1 auto'}), expandButton, focusButton),
+          el('span', {class: 'nv-out-spacer'}), expandButton, focusButton),
         log, steerRow);
       var card = {node: node, log: log, status: status, focusButton: focusButton,
         focusText: focusText, expandButton: expandButton, expandText: expandText,
-        steerRow: steerRow, text: '', loading: false};
+        steerRow: steerRow, follow: follow, text: '', loading: false};
       cards[session] = card;
       expanded[session] = false;
       makeSummaryRow(session);
@@ -510,11 +553,6 @@ NV.output = {
         var subsRunning = entries.filter(function (entry) {
           return entry && entry.session && entry.status === 'running';
         });
-        countLabel.textContent = String(subsRunning.length) + String(tr(' Subagenten'));
-        agentLabel.textContent = data && data.agent
-          ? String(tr('Hauptagent')) + ': ' + String(data.agent) : '';
-        if (!subsRunning.length) countLabel.textContent = String(tr('Keine laufenden Subagenten.'));
-
         mainSession = String((data && data.session) || '');
         mainModel = String((data && data.model) || '');
         mainAgent = String((data && data.agent) || '');
@@ -679,7 +717,7 @@ NV.views.output = function outputView(context, token) {
       if (NV.stale(token)) return;
       if (String((context && context.tab) || '') !== 'output') return;
       var panel = document.querySelector('section[data-nv-ppanel="output"]');
-      if (!panel || panel.querySelector('[data-nv-out-overview]')) return;
+      if (!panel || panel.querySelector('[data-nv-out-cards]')) return;
       NV.output.render((context && context.name) || '', panel, token);
     });
   };
