@@ -41,7 +41,7 @@ REPO = Path(__file__).resolve().parents[2]
 CLI = REPO / "bin" / "vibe"
 TEMPLATES = REPO / "templates"
 AGENTS = REPO / "AGENTS.md"
-BASELINE_DOC = REPO / "docs" / "verification_baselines.md"
+BASELINE_DOC = REPO / "docs" / "verification-baselines.md"
 
 MARK_START = "<!-- vibe:general-rules -->"
 MARK_END = "<!-- /vibe:general-rules -->"
@@ -343,18 +343,18 @@ class TemplatesWithoutManagedRulesTest(unittest.TestCase):
 class AgentsMdReferenceTest(unittest.TestCase):
     """Acceptance G: the repository AGENTS.md links the real baseline doc."""
 
-    def test_agents_md_references_the_underscore_baseline_document(self):
+    def test_agents_md_references_the_hyphen_baseline_document(self):
         """Precondition: repository ``AGENTS.md`` and ``docs/``.
         Action: inspect the baseline reference.
-        Expected: ``docs/verification_baselines.md`` is named and the broken
-        hyphen variant is gone; the referenced file exists.
-        Failure: the broken path stays or the document is missing.
+        Expected: ``docs/verification-baselines.md`` is named and the older
+        underscore variant is gone; the referenced file exists.
+        Failure: a stale path stays or the document is missing.
         """
         text = AGENTS.read_text(encoding="utf-8")
-        self.assertIn("docs/verification_baselines.md", text)
-        self.assertNotIn("docs/verification-baselines.md", text)
+        self.assertIn("docs/verification-baselines.md", text)
+        self.assertNotIn("docs/verification_baselines.md", text)
         self.assertTrue(BASELINE_DOC.is_file(),
-                        "docs/verification_baselines.md fehlt")
+                        "docs/verification-baselines.md fehlt")
 
 
 def _instruction_paths(node):

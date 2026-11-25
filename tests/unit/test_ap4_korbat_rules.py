@@ -4,13 +4,18 @@ Die Fälle leiten sich aus dem Arbeitspaket AP4-Korbat (TICKETS.md), AP3.md
 §6 und §7 sowie den Design-Entscheidungen 14–16 ab — nicht aus einem
 Implementierungsdiff:
 
-* T-I1: ``SPEC.md`` enthält genau EINEN kanonischen Git-Abschnitt
-  („Git & work-package closing (runner-owned)“, AP3 §6.1). Beide alten
-  „Strictly Enforced“-Blöcke sind ersetzt; ``gh pr merge --squash
-  --delete-branch`` und ``git branch -D`` stehen nicht mehr im
-  Agentenauftrag. Zeile ~330 („Nicht im Umfang“) nennt die Freigabe bzw.
-  ``GITHUB_AUTO_MERGE``. Der Modul-Docstring von ``bin/vibe_github.py``
-  beschreibt das Merge-Verhalten mit ``GITHUB_AUTO_MERGE``.
+* T-I1: Es gibt genau EINE kanonische Quelle für den runner-eigenen
+  Abschluss. ``SPEC.md`` beschreibt das Produktverhalten (GitHub-Modus:
+  Integration vor dem Push, PR als Standard, Auto-Merge nur per Opt-in,
+  Konflikte im Paket-Worktree) und führt keinen eigenen Git-Abschnitt mehr.
+  Die Agentenregeln stehen in der englischen Plattformanweisung
+  (``bin/vibe_harness.py``; Textprüfung in
+  ``tests.unit.test_gh76_platform_instructions``). Beide alten „Strictly
+  Enforced“-Blöcke sind ersetzt; ``gh pr merge --squash --delete-branch``
+  und ``git branch -D`` stehen nicht mehr im Agentenauftrag. Der Abschnitt
+  „Out of scope“ nennt die Freigabe und den konfigurierten Auto-Merge-Opt-in.
+  Der Modul-Docstring von ``bin/vibe_github.py`` beschreibt das
+  Merge-Verhalten mit ``GITHUB_AUTO_MERGE``.
 
 GH-76: Die frühere T-I2-Prüfung des deutschen ``GENERAL_RULES``-Blocks und
 seiner Kopie in den Vorlagen ist entfallen. Der verbindliche Regeltext der
@@ -29,13 +34,27 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
 GITHUB_MODULE = REPO / "bin" / "vibe_github.py"
+HARNESS = REPO / "bin" / "vibe_harness.py"
 SPEC = REPO / "SPEC.md"
 
 OLD_SPEC_HEADINGS = (
     "## Git Workflow & Branch Rules (Strictly Enforced)",
     "## Git&GitHub Workflow & Branch Rules (Strictly Enforced)",
 )
-CANONICAL_SPEC_HEADING = "## Git & work-package closing (runner-owned)"
+
+# Die drei Runner-Merge-Aussagen der englischen SPEC (Abschnitt
+# "Work packages and feedback").
+RUNNER_MERGE_STATEMENTS = (
+    "In GitHub mode, the runner fetches the current integration state and "
+    "merges it into the feature branch before pushing. Conflicts are "
+    "resolved in the package worktree.",
+    "Without auto-merge, the runner opens a PR and waits for manual merge "
+    "and closure confirmation. The worktree remains registered in the "
+    "meantime.",
+    "With auto-merge enabled, the runner may squash-merge the approved PR "
+    "after all gates pass. Final synchronization and cleanup follow "
+    "confirmed merge.",
+)
 
 
 class SpecCanonicalTest(unittest.TestCase):
@@ -55,31 +74,64 @@ class SpecCanonicalTest(unittest.TestCase):
             self.assertNotIn(heading, self.text, heading)
         self.assertNotIn("Strictly Enforced", self.text)
 
-    def test_exactly_one_canonical_git_section_exists(self):
+    def test_spec_has_no_separate_git_section(self):
         """Vorbedingung: ``SPEC.md``.
-        Aktion: den kanonischen Abschnitt aus AP3 §6.1 suchen.
-        Erwartung: genau eine Git-Abschnittsüberschrift, der kanonische Text
-        (deutsche Fassung der SPEC) vorhanden.
-        Fehlerfall: Duplikat oder fehlender Abschnitt.
+        Aktion: Überschriften und die Runner-Merge-Aussagen lesen.
+        Erwartung: keine ``## ``-Überschrift nennt Git; der GitHub-Modus,
+        der PR-Standard und der bestätigte Auto-Merge sind als
+        Produktverhalten formuliert.
+        Fehlerfall: eigener Git-Abschnitt oder fehlende Merge-Aussagen.
         """
         headings = [line for line in self.text.splitlines()
                     if line.startswith("## ") and "Git" in line]
-        self.assertEqual([CANONICAL_SPEC_HEADING], headings, headings)
-        self.assertIn("Der Runner besitzt Worktrees, Branches, Mergebarkeit, "
-                      "Push, PR, Merge und Cleanup.", self.text)
+        self.assertEqual([], headings, headings)
+        for statement in RUNNER_MERGE_STATEMENTS:
+            self.assertIn(statement, self.text)
 
-    def test_canonical_section_describes_pr_only_and_auto_merge(self):
-        """Vorbedingung: kanonischer Abschnitt.
-        Aktion: Aussagen zu ``GITHUB_AUTO_MERGE`` lesen.
-        Erwartung: PR-only ist der Standard (leer/aus), ``"1"`` aktiviert
-        Auto-Merge (squash), der Worktree bleibt bis zum Close registriert.
-        Fehlerfall: Schalter oder Standard fehlen.
+    def test_platform_instructions_own_runner_actions_and_conflict_repair(self):
+        """Vorbedingung: ``bin/vibe_harness.py``.
+        Aktion: die englische Plattformanweisung lesen.
+        Erwartung: der Runner besitzt Worktrees, Branches, Integration, Push,
+        PR und Merge; Konflikte werden im Paket-Worktree fortgesetzt, ohne
+        zweiten Merge, Abort, Rebase oder pauschale Seitenwahl.
+        Fehlerfall: Agentenseitige Git-Aktionen bleiben erlaubt oder der
+        Konfliktweg fehlt.
         """
-        self.assertIn("GITHUB_AUTO_MERGE", self.text)
-        lower = self.text.lower()
-        self.assertIn("pr-only", lower)
-        self.assertIn("auto-merge", lower)
-        self.assertIn("vibe package close", self.text)
+        text = HARNESS.read_text(encoding="utf-8")
+        self.assertIn(
+            "The runner owns worktrees, branches, integration, push, "
+            "PR creation, merge, and cleanup. Do not perform those actions "
+            "yourself.",
+            text,
+        )
+        for fragment in ("continue that merge",
+                         "Do not start another merge, abort",
+                         "rebase",
+                         "choose one side wholesale"):
+            self.assertIn(fragment, text, "Konfliktweg fehlt: %r" % fragment)
+
+    def test_spec_documents_pr_only_default_and_opt_in_auto_merge(self):
+        """Vorbedingung: ``SPEC.md``.
+        Aktion: Aussagen zum Merge-Verhalten lesen.
+        Erwartung: ohne Auto-Merge bleibt der PR manuell und der Worktree
+        registriert; mit Auto-Merge ist der Squash-Merge nach allen Gates
+        erlaubt; „Out of scope“ verlangt den konfigurierten Opt-in.
+        Fehlerfall: Standard oder Opt-in-Bedingung fehlen.
+        """
+        self.assertIn(
+            "Without auto-merge, the runner opens a PR and waits for manual "
+            "merge and closure confirmation.",
+            self.text,
+        )
+        self.assertIn("The worktree remains registered in the meantime.",
+                      self.text)
+        self.assertIn(
+            "With auto-merge enabled, the runner may squash-merge the "
+            "approved PR after all gates pass.",
+            self.text,
+        )
+        self.assertIn("Automatic GitHub merge requires the configured opt-in.",
+                      self.text)
 
     def test_no_agent_side_squash_merge_or_force_delete_remains(self):
         """Vorbedingung: ``SPEC.md``.
@@ -91,33 +143,23 @@ class SpecCanonicalTest(unittest.TestCase):
         self.assertNotIn("gh pr merge --squash --delete-branch", self.text)
         self.assertNotIn("git branch -D", self.text)
 
-    def test_conflict_repair_wording_is_documented(self):
-        """Vorbedingung: kanonischer Abschnitt.
-        Aktion: Anweisung für Merge-Konflikte lesen.
-        Erwartung: ``git merge --continue``, ``--ours``/``--theirs``,
-        „rebase“/„force-push“ werden ausdrücklich behandelt.
-        Fehlerfall: Konfliktweg fehlt.
+    def test_out_of_scope_line_names_authorization_and_auto_merge(self):
+        """Vorbedingung: Abschnitt „Out of scope“.
+        Aktion: die alte deutsche Zeile und die englische Formulierung suchen.
+        Erwartung: Die alte Zeile ohne Freigabebezug ist weg; die englische
+        Zeile nennt die Freigabe und den konfigurierten Auto-Merge-Opt-in.
+        Fehlerfall: unveränderte alte Aussage oder fehlender Opt-in-Bezug.
         """
-        lower = self.text.lower()
-        self.assertIn("git merge --continue", lower)
-        self.assertIn("--ours", lower)
-        self.assertIn("--theirs", lower)
-        self.assertIn("rebase", lower)
-        self.assertIn("force-push", lower)
-
-    def test_out_of_scope_line_names_approval_and_auto_merge(self):
-        """Vorbedingung: Abschnitt „Nicht im Umfang“.
-        Aktion: die alte Zeile und die neue Formulierung suchen.
-        Erwartung: Die alte Zeile ohne Bezug ist weg; die neue nennt
-        Freigabe bzw. ``GITHUB_AUTO_MERGE``.
-        Fehlerfall: unveränderte alte Aussage.
-        """
-        old = "- Automatische Veröffentlichung, Push, Merge oder Release ohne Freigabe."
+        old = ("- Automatische Veröffentlichung, Push, Merge oder Release "
+               "ohne Freigabe.")
         self.assertNotIn(old, self.text)
-        self.assertRegex(
+        self.assertIn(
+            "- Automatic publication, push, merge, or release without "
+            "authorization.",
             self.text,
-            r"Automatische Veröffentlichung, Push, Merge oder Release"
-            r"[\s\S]{0,120}GITHUB_AUTO_MERGE")
+        )
+        self.assertIn("Automatic GitHub merge requires the configured opt-in.",
+                      self.text)
 
     def test_github_module_docstring_describes_auto_merge(self):
         """Vorbedingung: ``bin/vibe_github.py``.

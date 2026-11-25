@@ -12,8 +12,8 @@ Dieses Modul prüft deshalb nur noch:
   (``module``/``class``/``signature``) und ohne Hostnamen, IP-Adressen,
   Geheimnisse oder absolute Pfade (öffentliches Repository).
 * Die Repository-``AGENTS.md`` verweist auf das reale
-  ``docs/verification_baselines.md`` (Unterstrich), nicht auf den früheren
-  kaputten Bindestrich-Pfad.
+  ``docs/verification-baselines.md`` (Bindestrich, seit #79 kanonisch), nicht
+  auf den früheren Unterstrich-Pfad.
 
 Es werden nur Dateien gelesen; keine Modellaufrufe, kein Netz.
 
@@ -29,7 +29,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[2]
 AGENTS = REPO / "AGENTS.md"
 MANIFEST = REPO / "tests" / "verify-baseline.json"
-BASELINE_DOC = REPO / "docs" / "verification_baselines.md"
+BASELINE_DOC = REPO / "docs" / "verification-baselines.md"
 
 ENV_LABEL = "pi-aarch64-py3.14-namespaces"
 
@@ -37,18 +37,18 @@ ENV_LABEL = "pi-aarch64-py3.14-namespaces"
 class BaselineDocumentReferenceTest(unittest.TestCase):
     """GH-76: Der Repository-Verweis nennt die reale Baseline-Datei."""
 
-    def test_agents_file_uses_the_underscore_document(self):
+    def test_agents_file_uses_the_hyphen_document(self):
         """Vorbedingung: ``AGENTS.md`` und ``docs/``.
         Aktion: den Baseline-Verweis prüfen.
-        Erwartung: ``docs/verification_baselines.md`` ist genannt, der
-        Bindestrich-Pfad fehlt und die Datei existiert.
+        Erwartung: ``docs/verification-baselines.md`` ist genannt, der alte
+        Unterstrich-Pfad fehlt und die Datei existiert.
         Fehlerfall: kaputter Verweis oder fehlende Datei.
         """
         text = AGENTS.read_text(encoding="utf-8")
-        self.assertIn("docs/verification_baselines.md", text)
-        self.assertNotIn("docs/verification-baselines.md", text)
+        self.assertIn("docs/verification-baselines.md", text)
+        self.assertNotIn("docs/verification_baselines.md", text)
         self.assertTrue(BASELINE_DOC.is_file(),
-                        "docs/verification_baselines.md fehlt")
+                        "docs/verification-baselines.md fehlt")
 
 
 class CommittedBaselineManifestTest(unittest.TestCase):
