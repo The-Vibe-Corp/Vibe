@@ -13,6 +13,7 @@ import os
 import pathlib
 import shutil
 import subprocess
+import tempfile
 import unittest
 
 WERKZEUGWURZEL = pathlib.Path(__file__).resolve().parents[2]
@@ -57,7 +58,6 @@ BINDESTRICH_MODUL = {"vibe-web.py"}
 
 PYLINT_PRIMAER = "/usr/bin/pylint"
 PRUEF_TIMEOUT_S = 600
-ARTIFAKTORDNER = "/tmp/opencode/f28-test-agent"
 
 
 class F28PylintQualitaet(unittest.TestCase):
@@ -78,10 +78,16 @@ class F28PylintQualitaet(unittest.TestCase):
                 "Prüfungstemplates nicht vorhanden: fehlende Module in bin/: "
                 f"{fehlende}"
             )
-        pathlib.Path(ARTIFAKTORDNER).mkdir(parents=True, exist_ok=True)
+        # GH-89/F1: Artefaktordner unter dem Temporärverzeichnis statt im
+        # geteilten Host-Ordner /tmp/opencode; er wird nach der Klasse
+        # wieder entfernt. Inhalt und PYLINTHOME-Logik bleiben unverändert.
+        cls.artefaktordner = tempfile.mkdtemp(prefix="f28-test-agent-")
+        cls.addClassCleanup(shutil.rmtree, cls.artefaktordner, ignore_errors=True)
         # Keine produktive HOME-Pylint-Konfiguration in die Prüfung ziehen:
         umgebung = dict(os.environ)
-        umgebung["PYLINTHOME"] = os.path.join(ARTIFAKTORDNER, ".pylint-home")
+        umgebung["PYLINTHOME"] = os.path.join(
+            cls.artefaktordner, ".pylint-home"
+        )
         cls.umgebung = umgebung
         cls.befehl = [cls.pylint, "--output-format=json", "-j", "1", *MODULE]
         cls.lauf = subprocess.run(

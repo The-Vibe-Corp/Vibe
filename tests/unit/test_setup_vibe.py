@@ -28,6 +28,7 @@ import contextlib
 import importlib.machinery
 import importlib.util
 import io
+import json
 import os
 import re
 import subprocess
@@ -822,6 +823,256 @@ class CliFlowTest(unittest.TestCase):
         self.assertEqual((toolchain / "vibe").read_text(encoding="utf-8"), "ALT\n")
 
 
+class YesFlagPromptTest(unittest.TestCase):
+    """F1-5: ``--yes`` darf keine Rückfragen mehr auslösen.
+
+    Ursache des 120-s-Timeouts: ``setup-vibe.py`` fragte Installationsort,
+    Logverzeichnis und fehlende Abhängigkeiten ab, sobald stdin ein TTY war —
+    unabhängig von ``--yes``. Im Terminal blockierte das bis zum Testlimit,
+    ohne TTY brach der Lauf mit ``EOFError`` ab. Die Tests rufen ``main()``
+    deshalb mit ``interactive=True`` auf und zeichnen jeden ``input_fn``-Aufruf
+    auf; jede Rückfrage ist hier der Fehler.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        self.kit = make_kit(self.root / "kit")
+        self.vibe = self.root / "Vibe"
+        self.home = self.root / "home"
+        self.home.mkdir()
+        self.platform = platform_info(os_release={"ID": "fedora", "VERSION_ID": "44"})
+        self.calls = []
+        self.prompts = []
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def runner(self, command, **kwargs):
+        self.calls.append((command, kwargs))
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    def run_main(self, args, which=None, extra_paths=True):
+        out = io.StringIO()
+        args = list(args)
+        if extra_paths:
+            args += [
+                "--install", str(self.vibe / "_toolchain"),
+                "--logs", str(self.vibe / "_logs"),
+            ]
+
+        def input_fn(prompt):
+            self.prompts.append(prompt)
+            return ""
+
+        code = setup.main(
+            args,
+            input_fn=input_fn,
+            output=lambda text="": out.write(str(text) + "\n"),
+            which=which,
+            runner=self.runner,
+            platform_info=self.platform,
+            home=self.home,
+            kit=self.kit,
+            interactive=True,
+            is_root=False,
+            has_sudo=True,
+            environ={"HOME": str(self.home), "PATH": os.environ.get("PATH", "")},
+        )
+        return code, out.getvalue()
+
+    def test_yes_does_not_ask_for_install_or_log_directories(self):
+        # Ohne --install/--logs wären Installationsort und Logverzeichnis
+        # genau die beiden Rückfragen, die den Wrapper-Test blockierten.
+        code, output = self.run_main(
+            ["--yes", "--update", "--no-launcher", "--no-register",
+             "--vibe", str(self.vibe)],
+            which=lambda name: "/fake/" + name,
+            extra_paths=False,
+        )
+
+        self.assertEqual(self.prompts, [], "Rückfragen trotz --yes: " + repr(self.prompts))
+        self.assertEqual(code, 0, output)
+        self.assertTrue((self.vibe / "_toolchain" / "bin" / "vibe").is_file())
+
+    def test_yes_with_install_deps_installs_without_asking(self):
+        code, output = self.run_main(
+            ["--yes", "--install-deps", "--no-launcher", "--no-register",
+             "--vibe", str(self.vibe)],
+            which=lambda name: None,
+        )
+
+        self.assertEqual(self.prompts, [], "Rückfragen trotz --yes: " + repr(self.prompts))
+        # opencode bleibt manuell; die übrigen Werkzeuge werden installiert.
+        self.assertEqual(code, 2, output)
+        self.assertEqual(
+            [command for command, _ in self.calls],
+            [["sudo", "dnf", "install", "-y", "git", "tmux", "util-linux", "curl"]],
+        )
+
+    def test_yes_without_install_deps_neither_asks_nor_installs(self):
+        code, output = self.run_main(
+            ["--yes", "--no-launcher", "--no-register", "--vibe", str(self.vibe)],
+            which=lambda name: None,
+        )
+
+        self.assertEqual(self.prompts, [], "Rückfragen trotz --yes: " + repr(self.prompts))
+        self.assertEqual(self.calls, [], "--yes ohne --install-deps darf nichts installieren")
+        self.assertEqual(code, 2, output)
+
+
+class DefaultProfileProtectionTest(unittest.TestCase):
+    """F1-7: Ein eigenes Installationsziel darf ``profiles.prod`` nicht umschreiben.
+
+    Die persönliche Konfiguration gehört der laufenden Installation. Ein Setup
+    in ein anderes Ziel überschrieb ``profiles.prod`` bisher kommentarlos
+    (B17-Lücke). Ohne ``--set-default`` bleibt die Datei deshalb byte-gleich;
+    der Lauf endet erfolgreich und nennt den Ausweg. Ist das Ziel gleich oder
+    fehlt der ``install``-Eintrag, bleibt das bisherige Schreibverhalten.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        self.kit = make_kit(self.root / "kit")
+        self.home = self.root / "home"
+        self.home.mkdir()
+        self.config = self.home / ".config" / "vibe" / "config.json"
+        self.platform = platform_info(os_release={"ID": "fedora", "VERSION_ID": "44"})
+        self.configured_workspace = self.root / "Bestand" / "Workspace"
+        self.configured_install = self.root / "Bestand" / "Toolchain"
+        self.configured_runtime = self.root / "Bestand" / "Logs"
+        self.workspace = self.root / "Neu" / "Workspace"
+        self.install = self.root / "Neu" / "Toolchain"
+        self.logs = self.root / "Neu" / "Logs"
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def seed_config(self, prod):
+        self.config.parent.mkdir(parents=True, exist_ok=True)
+        self.config.write_text(
+            json.dumps({"profiles": {"prod": prod}}, indent=2) + "\n",
+            encoding="utf-8",
+        )
+
+    def seed_existing_installation(self):
+        self.seed_config(
+            {
+                "workspace": str(self.configured_workspace),
+                "install": str(self.configured_install),
+                "runtime": str(self.configured_runtime),
+            }
+        )
+
+    def prod(self):
+        return json.loads(self.config.read_text(encoding="utf-8"))["profiles"]["prod"]
+
+    def run_main(self, *extra):
+        out = io.StringIO()
+        prompts = []
+
+        def input_fn(prompt):
+            prompts.append(prompt)
+            return ""
+
+        code = setup.main(
+            ["--yes", "--update", "--no-launcher", "--no-register",
+             "--vibe", str(self.workspace),
+             "--install", str(self.install),
+             "--logs", str(self.logs), *extra],
+            input_fn=input_fn,
+            output=lambda text="": out.write(str(text) + "\n"),
+            which=lambda name: "/fake/" + name,
+            runner=lambda command, **kwargs: subprocess.CompletedProcess(
+                command, 0, "", ""
+            ),
+            platform_info=self.platform,
+            home=self.home,
+            kit=self.kit,
+            interactive=True,
+            is_root=False,
+            has_sudo=True,
+            environ={"HOME": str(self.home), "PATH": os.environ.get("PATH", "")},
+        )
+        return code, out.getvalue(), prompts
+
+    def test_a_different_install_target_leaves_the_default_profile_untouched(self):
+        self.seed_existing_installation()
+        before = self.config.read_bytes()
+
+        code, output, prompts = self.run_main()
+
+        self.assertEqual(prompts, [], "Rückfragen trotz --yes: " + repr(prompts))
+        self.assertEqual(code, 0, output)
+        self.assertEqual(
+            self.config.read_bytes(), before,
+            "profiles.prod wurde trotz abweichendem Installationsziel umgeschrieben",
+        )
+        # Auch keine Sicherungskopie anlegen: die Datei bleibt unangetastet.
+        self.assertEqual(
+            sorted(path.name for path in self.config.parent.iterdir()),
+            ["config.json"],
+        )
+        self.assertIn("nicht geändert", output)
+        self.assertIn("--set-default", output)
+
+    def test_set_default_repoints_the_default_profile(self):
+        self.seed_existing_installation()
+
+        code, output, _ = self.run_main("--set-default")
+
+        self.assertEqual(code, 0, output)
+        prod = self.prod()
+        self.assertEqual(prod["workspace"], str(self.workspace))
+        self.assertEqual(prod["install"], str(self.install))
+        self.assertEqual(prod["runtime"], str(self.logs))
+
+    def test_the_same_install_target_is_written_as_before(self):
+        self.seed_config(
+            {
+                "workspace": str(self.configured_workspace),
+                "install": str(self.install),
+                "runtime": str(self.configured_runtime),
+            }
+        )
+
+        code, output, _ = self.run_main()
+
+        self.assertEqual(code, 0, output)
+        prod = self.prod()
+        self.assertEqual(prod["workspace"], str(self.workspace))
+        self.assertEqual(prod["install"], str(self.install))
+        self.assertEqual(prod["runtime"], str(self.logs))
+
+    def test_a_profile_without_an_install_key_is_written(self):
+        self.seed_config({"workspace": str(self.configured_workspace)})
+
+        code, output, _ = self.run_main()
+
+        self.assertEqual(code, 0, output)
+        prod = self.prod()
+        self.assertEqual(prod["workspace"], str(self.workspace))
+        self.assertEqual(prod["install"], str(self.install))
+        self.assertEqual(prod["runtime"], str(self.logs))
+
+    def test_dry_run_states_that_the_default_profile_stays_unchanged(self):
+        self.seed_existing_installation()
+        before = self.config.read_bytes()
+
+        code, output, _ = self.run_main("--dry-run")
+
+        self.assertEqual(code, 0, output)
+        self.assertEqual(self.config.read_bytes(), before)
+        flat = " ".join(output.split())
+        self.assertIn("--set-default", flat)
+        self.assertIn(str(self.configured_install), flat)
+        self.assertTrue(
+            "unverändert" in flat or "nicht geändert" in flat,
+            "Vorschau verschweigt die unveränderte Konfiguration:\n" + output,
+        )
+
+
 class WrapperTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -839,7 +1090,8 @@ class WrapperTest(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def test_install_vibe_sh_uses_the_python_setup(self):
+    def wrapper_env(self):
+        """Bereinigte Umgebung: ausschließlich Temp-Pfade, kein Produktiv-VIBE."""
         env = os.environ.copy()
         # B17: Der Wrapper startet den echten Setup. Erbte der Test eine
         # Produktivumgebung, würde install-vibe.sh die reale Installation
@@ -849,6 +1101,11 @@ class WrapperTest(unittest.TestCase):
             "VIBE_RUNTIME", "VIBE_CONFIG_FILE", "VIBE_AGENTS_DIR",
         ):
             env.pop(key, None)
+        # Hermetik: vibe_paths.default_config_path respektiert XDG_CONFIG_HOME
+        # und VIBE_CONFIG_DIR. Geerbte Werte würden die Konfigurationsdatei
+        # außerhalb des Temp-HOME anlegen.
+        env.pop("XDG_CONFIG_HOME", None)
+        env.pop("VIBE_CONFIG_DIR", None)
         env.update(
             {
                 "VIBE": str(self.vibe),
@@ -857,17 +1114,53 @@ class WrapperTest(unittest.TestCase):
             }
         )
         env.pop("VIBE_NO_CONTAINER", None)
-        result = subprocess.run(
-            ["bash", str(WRAPPER)],
-            cwd=str(REPO),
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=120,
-        )
+        return env
+
+    def run_wrapper(self, env, timeout):
+        """Startet den Wrapper ohne stdin und meldet Timeouts mit Kindausgabe."""
+        try:
+            return subprocess.run(
+                ["bash", str(WRAPPER)],
+                cwd=str(REPO),
+                env=env,
+                stdin=subprocess.DEVNULL,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+            )
+        except subprocess.TimeoutExpired as error:
+            partial = "".join(
+                part.decode("utf-8", "replace") if isinstance(part, bytes) else (part or "")
+                for part in (error.stdout, error.stderr)
+            )
+            self.fail(
+                "install-vibe.sh hat blockiert (Zeitlimit "
+                f"{error.timeout} s); bisherige Ausgabe:\n{partial}"
+            )
+
+    def test_install_vibe_sh_uses_the_python_setup(self):
+        # F1-6: stdin ist kein TTY. Sonst fragte setup-vibe.py (trotz --yes)
+        # nach Installationsort und Logverzeichnis und liefe in den Timeout.
+        result = self.run_wrapper(self.wrapper_env(), timeout=120)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertTrue((self.vibe / "_toolchain" / "bin" / "vibe").is_file())
         self.assertTrue((self.home / ".local" / "bin" / "vibe").is_symlink())
+
+    def test_install_vibe_sh_without_vibe_names_the_workspace_parameter(self):
+        # F1-4: Ohne VIBE bricht der Wrapper vor Python ab. Der Hinweis muss
+        # den tatsächlich funktionierenden Aufruf nennen; installiert wird
+        # nichts.
+        env = self.wrapper_env()
+        env.pop("VIBE", None)
+
+        result = self.run_wrapper(env, timeout=30)
+
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn(
+            "VIBE=<workspace> bash install-vibe.sh", result.stderr,
+            result.stdout + result.stderr,
+        )
+        self.assertFalse((self.vibe / "_toolchain").exists())
 
     def test_windows_wrapper_bootstraps_python_and_calls_the_setup(self):
         self.assertTrue(CMD_WRAPPER.is_file())

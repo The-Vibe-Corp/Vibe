@@ -281,13 +281,23 @@ class B13RunnerFixture(unittest.TestCase):
 
         Die Sandbox tearingt ihre Wraps selbst über --die-with-parent ab;
         hier werden nur direkte (nicht sandboxierte) Attrappenprozesse
-        beendet.
+        beendet. Die Zustandswurzeln kommen aus dem geladenen Sandbox-Modul
+        (per-UID unter /dev/shm, GH-89/F1); ein fehlendes Modul fällt auf
+        dieselben per-UID-Pfade zurück.
         """
+        module = load_sandbox_module()
+        roots = []
+        for name in ("SANDBOX_ROOT", "SHORT_STATE_ROOT"):
+            value = getattr(module, name, None)
+            if value:
+                roots.append(str(value) + os.sep)
+        if not roots:
+            uid = os.getuid()
+            roots = [f"/dev/shm/vibe-sandbox-{uid}/", f"/dev/shm/vsb-{uid}/"]
         for entry in read_jsonl(self.serve_record):
             pid = entry.get("pid")
             tmpdir = str(entry.get("tmpdir") or "")
-            sandboxed = tmpdir.startswith("/tmp/opencode/vibe-sandbox/") \
-                or "/vsb/" in tmpdir \
+            sandboxed = any(tmpdir.startswith(root) for root in roots) \
                 or (self.sandbox_root is not None
                     and tmpdir.startswith(str(self.sandbox_root)))
             if (entry.get("event") == "listening"
@@ -596,9 +606,10 @@ class SandboxPrivateServerTest(B13RunnerFixture):
         vibe_sandbox.py --enabled); vibe_sandbox.py liegt in der
         Testinstallation; VIBE_SANDBOX_ROOT zeigt auf eine kontrollierte
         Fixture-Wurzel; Kennwortdatei nichtleer; die Laufzeit und das
-        Projekt sind als Schreibverzeichnisse freigeben und committet; die
-        Beobachtungsdateien liegen unter /tmp/opencode (dort auch in der
-        Sandbox beschreibbar).
+        Projekt sind als Schreibverzeichnisse freigegeben und committet; die
+        Beobachtungsdateien liegen im Laufzeitordner, der als
+        Schreibverzeichnis gebunden ist (Host und Sandbox sehen denselben
+        Pfad).
         Aktion: ``vibe-run.sh <projekt>``.
         Erwartung: Der Lauf meldet „Sandbox: on“; Agentenaufruf mit
         ``--server http://127.0.0.1:<Port>`` statt --standalone; genau ein
@@ -639,17 +650,19 @@ class SandboxPrivateServerTest(B13RunnerFixture):
         # ab, sobald SANDBOX gesetzt ist.
         shutil.copy(REPO / "bin" / "vibe_sandbox.py",
                     self.tool_bin / "vibe_sandbox.py")
-        # Kontrollierte, kurze Sandbox-Wurzel: Der Zustandsordner ist damit
-        # deterministisch berechenbar und hängt nicht vom äußeren TMPDIR
-        # oder vom Nutzerzustand ab.
-        self.sandbox_root = Path("/tmp/opencode") / (
+        # Kontrollierte, kurze Sandbox-Wurzel unter /dev/shm: Der
+        # Zustandsordner ist damit deterministisch berechenbar, hängt nicht
+        # vom äußeren TMPDIR oder vom Nutzerzustand ab und bleibt auch in der
+        # Agenten-Sandbox beschreibbar (dort ist /tmp nur lesend).
+        self.sandbox_root = Path("/dev/shm") / (
             "b13-sbstate-" + str(os.getpid()) + "-" + str(time.time_ns()))
         self.sandbox_root.mkdir(parents=True)
         self.addCleanup(lambda: shutil.rmtree(
             self.sandbox_root, ignore_errors=True))
         # Beobachtungsdateien müssen auch innerhalb der Sandbox beschreibbar
-        # sein: /tmp/opencode ist immer gebunden.
-        observed = Path("/tmp/opencode") / (
+        # sein: der Laufzeitordner ist in den Schreibrechten des Projekts und
+        # wird source==target gebunden.
+        observed = Path(self.runtime) / (
             "b13-obs-" + str(os.getpid()) + "-" + str(time.time_ns()))
         observed.mkdir(parents=True)
         self.addCleanup(lambda: shutil.rmtree(observed, ignore_errors=True))
@@ -702,6 +715,10 @@ class SandboxPrivateServerTest(B13RunnerFixture):
                 os.environ.pop("VIBE_SANDBOX_ROOT", None)
             else:
                 os.environ["VIBE_SANDBOX_ROOT"] = old_root
+        self.assertLess(
+            len(str(expected_state)), 84,
+            "Vorbedingung: Sandbox-Zustandsordner muss unter der 84er-Grenze "
+            "bleiben (" + str(expected_state) + ")")
         self.assertEqual(
             Path(tmpdir), Path(expected_state) / "tmp",
             "Der private Server lief nicht im Zustandsordner der Sandbox "
@@ -1924,8 +1941,7 @@ class SharedServerIgnoresInheritedPasswordTest(unittest.TestCase):
     def setUp(self):
         if shutil.which("tmux") is None:
             raise unittest.SkipTest("tmux ist nicht verfügbar")
-        self.tmp = tempfile.TemporaryDirectory(prefix="f31-server-",
-                                               dir="/tmp/opencode")
+        self.tmp = tempfile.TemporaryDirectory(prefix="f31-server-")
         self.root = Path(self.tmp.name)
         self.addCleanup(self.tmp.cleanup)
         self.home = self.root / "home"

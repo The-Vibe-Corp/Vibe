@@ -112,6 +112,9 @@ def run_module(module, timeout=None):
             encoding="utf-8",
             errors="replace",
             timeout=timeout,
+            # Modulprozesse erben nie ein Terminal — sonst blockiert ein
+            # input()-Prompt in einem TTY-Erbe bis zum Zeitlimit.
+            stdin=subprocess.DEVNULL,
         )
         output = process.stdout
         returncode = process.returncode
