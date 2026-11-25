@@ -14,6 +14,9 @@ web interface.
 - Writes are atomic and use an expected digest, so concurrent changes are
   detected and retried rather than silently merged (`bin/vibe_tickets.py`).
 - States: `draft`, `open`, `in-progress`, `blocked`, `waiting-merge`, `done`.
+  The web interface lets a user set only `draft` and `open`; `in-progress`,
+  `blocked`, `waiting-merge`, and `done` are owned by the runner/GitHub sync
+  (GH-82).
 - Types: `task`, `bug`, `feature`, `feedback`.
 - Automatic IDs: `task` and `feature` share the `AP<n>` counter, `bug` uses
   `B<n>`, `feedback` uses `F<n>`. Allocation retries on collision.
@@ -24,8 +27,8 @@ web interface.
   invariant: a done ticket needs a non-empty `test` plus a `commit` or a
   `github` reference.
 - Done tickets are protected from title/description edits and from deletion.
-  A human may still close a ticket without proof through the explicit
-  `close()` path.
+  The runner closes a ticket after a successful merge; the web ticket API has
+  no manual close path and rejects `action=close` (GH-82).
 - `mark-start`, `mark-blocked`, and `mark-waiting-merge` are idempotent. The
   only automatic transition is `open` → `in-progress` when a package starts.
 
@@ -57,7 +60,9 @@ current.
 - Package helpers in `bin/vibe_packages.py`: `select`, `preflight`, `gate`,
   `status`, `mark-start`, `mark-blocked`, `mark-waiting-merge`, `sync-ticket`.
 - Web: Nova work board at `#/project/<name>/work`; `/api/ticket`,
-  `/api/feedback`, `/api/priority`.
+  `/api/feedback`, `/api/priority`. Completed tickets appear in a grid below
+  the board/list instead of the `ready` column and stay behind the
+  `Show done` toggle (GH-82).
 
 ## Records
 
@@ -68,6 +73,7 @@ current.
 - [F29](../F29.md) — save and follow prioritization
 - [AP11](../AP11.md) — ordering of package processing
 - [GH-48](../GH-48.md) — unified machine-readable ticket store
+- [GH-82](../GH-82.md) — completed tickets below the board and runner-owned states
 - [V-009](../V-009.md) — stable ticket and feedback processing
 - [B1-ticketlogik](../B1-ticketlogik.md) — ticket logic cleanup
 - [worknotes-nachweis-sync](../worknotes-nachweis-sync.md) — writing the

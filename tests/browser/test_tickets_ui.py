@@ -569,13 +569,14 @@ class Gh47IssuesBrowserTest(unittest.TestCase):
         """Vor: AP2 ist Entwurf. Aktion: Arbeit öffnen, Karte AP2 anklicken,
         ``select[data-nv-ticket-state-select]`` auf open setzen und
         ``ticket-state-save`` klicken.
-        Erwartet: Karte zeigt den Entwurf (data-nv-state=Draft); das Select
-        bietet draft|open|in-progress und ist mit draft vorbelegt; nach dem
-        Speichern steht AP2 im Speicher auf open und die Karte auf „offen“."""
+        Erwartet: Karte zeigt den Entwurf (data-nv-state=draft); das Select
+        bietet nur draft|open (in-progress gehört dem Läufer) und ist mit
+        draft vorbelegt; nach dem Speichern steht AP2 im Speicher auf open
+        und die Karte auf „open“."""
         self.open_work()
         card = self.page.locator("article[data-nv-ticket='AP2']")
         card.wait_for(state="visible", timeout=20000)
-        self.assertEqual("Draft", card.get_attribute("data-nv-state"), card.inner_text())
+        self.assertEqual("draft", card.get_attribute("data-nv-state"), card.inner_text())
         self.assertRegex(card.inner_text(), r"(?i)draft|entwurf")
 
         card.click()
@@ -585,7 +586,7 @@ class Gh47IssuesBrowserTest(unittest.TestCase):
         self.assertEqual(1, select.count(), "Zustands-Select fehlt im Detail")
         values = select.locator("option").evaluate_all(
             "els => els.map(e => e.value)")
-        self.assertEqual(["draft", "open", "in-progress"], values)
+        self.assertEqual(["draft", "open"], values)
         self.assertEqual("draft", select.input_value())
 
         select.select_option("open")
@@ -600,26 +601,36 @@ class Gh47IssuesBrowserTest(unittest.TestCase):
             state="visible", timeout=25000)
         card = self.page.locator("article[data-nv-ticket='AP2']")
         card.wait_for(state="visible", timeout=20000)
-        self.assertEqual("offen", card.get_attribute("data-nv-state"))
+        self.assertEqual("open", card.get_attribute("data-nv-state"))
         self.assertEqual([], self.page_errors, self.page_errors)
 
     def test_done_and_blocked_tickets_follow_the_state_contract(self):
         """Vor: B1 blockiert, AP3 erledigt.
         Aktion: B1-Detail öffnen; danach erledigte anzeigen und AP3 öffnen.
-        Erwartet: B1 hat ein Zustands-Select ohne Vorbelegung (blocked ist
-        kein draft/open/in-progress); AP3 hat kein Select/Speichern, sondern
-        den Nachweis-Hinweis."""
+        Erwartet: B1 hat weder Zustands-Select noch Speichern-Knopf, sondern
+        den Läufer-Hinweis (blocked gehört dem Läufer); AP3 hat kein
+        Select/Speichern, sondern den Nachweis-Hinweis."""
         self.open_work()
         blocked = self.page.locator("article[data-nv-feedback-item='B1']")
         blocked.wait_for(state="visible", timeout=20000)
         blocked.click()
         detail = self.page.locator("[data-nv-ticket-detail='B1']")
         detail.wait_for(state="visible", timeout=20000)
-        select = detail.locator("select[data-nv-ticket-state-select]")
-        self.assertEqual(1, select.count(),
-                         "Blockierte Tickets brauchen die Zustandswahl")
-        self.assertEqual("", select.input_value(),
-                         "Blockierte Tickets dürfen keine Vorbelegung haben")
+        self.assertEqual(
+            0, detail.locator("select[data-nv-ticket-state-select]").count(),
+            "Blockierte Tickets dürfen keine Zustandsauswahl anbieten")
+        self.assertEqual(
+            0, detail.locator(
+                "button[data-nv-action='ticket-state-save']").count(),
+            "Blockierte Tickets dürfen keinen Zustand speichern")
+        notice = detail.locator("[data-nv-runner-state-notice]")
+        self.assertEqual(
+            1, notice.count(),
+            "Blockierte Tickets zeigen keinen Läufer-Zustandshinweis")
+        self.assertTrue(notice.first.is_visible(),
+                        "Der Läufer-Zustandshinweis ist nicht sichtbar")
+        self.assertRegex(notice.first.inner_text(), r"(?i)läufer|runner",
+                         "Der Hinweis nennt nicht den Läufer")
 
         # Das Kontext-Panel (nv-context-scrim) liegt über der Arbeitsebene;
         # erst schließen, sonst ist der Erledigt-Umschalter nicht klickbar.
@@ -803,9 +814,10 @@ class TicketDashboardBrowserTest(unittest.TestCase):
     def test_ticket_and_feedback_forms_offer_the_contract_states(self):
         """Vor: bestehender Speicher. Aktion: Detailansicht öffnen.
         Erwartet: Ticket- und Feedback-Formular haben ein Zustandsfeld mit
-        draft/open/in-progress; Voreinstellung ist open.
-        Fehlerfall: kein Zustandsfeld (offline keine Zustände) oder andere
-        Werte."""
+        nur draft/open (in-progress gehört dem Läufer); Voreinstellung
+        ist open.
+        Fehlerfall: kein Zustandsfeld (offline keine Zustände), ein
+        Läufer-Zustand oder andere Werte."""
         self.open_detail()
 
         for form_id in ("ticket-new", "feedback-new"):
@@ -813,7 +825,7 @@ class TicketDashboardBrowserTest(unittest.TestCase):
                 select = self.state_select(form_id)
                 values = select.locator("option").evaluate_all(
                     "els => els.map(e => e.value)")
-                self.assertEqual(["draft", "open", "in-progress"], values)
+                self.assertEqual(["draft", "open"], values)
                 self.assertEqual("open", select.input_value())
 
     def test_create_a_draft_ticket_offline_and_show_its_state(self):

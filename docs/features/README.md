@@ -39,6 +39,7 @@ Living documentation: [Work packages, feedback, and ticket store](current/work-p
 - [F29.md](F29.md) — feedback on AP11 prioritization
 - [F8.md](F8.md) — hide and protect completed feedback items
 - [GH-48.md](GH-48.md) — unified machine-readable ticket store
+- [GH-82.md](GH-82.md) — completed tickets below the board and runner-owned states
 - [V-009.md](V-009.md) — stabilize ticket and feedback processing
 - [worknotes-nachweis-sync.md](worknotes-nachweis-sync.md) — write ticket evidence back without versioning
 

@@ -318,6 +318,9 @@ class BoardTest(AP22WorkBrowserTest):
         Karte sowie Filterleiste und Priorisierung — bleibt erhalten; die
         alte F34-Absence des Boards und die alte Liste sind überholt. Neu
         zu prüfen: Board mit drei Spalten und Rohzustand am Kartenattribut.
+
+        GH-82: Erledigte Tickets gehören nicht in die Ready-Spalte; sie
+        werden in einem eigenen Raster unterhalb des Boards gezeigt.
         """
         self.open_work()
         self.assertEqual(
@@ -363,7 +366,6 @@ class BoardTest(AP22WorkBrowserTest):
             0, filter_bar.locator("button[data-nv-work-state='done']").count(),
             "Der Done-Schnellfilter gibt es nicht mehr")
 
-        # Erledigte einblenden (hideDone startet true), damit AP-104 sitzt.
         self.page.locator("[data-nv-work-hide-done]").first.click()
 
         expected = {
@@ -372,7 +374,6 @@ class BoardTest(AP22WorkBrowserTest):
             "AP-103": ("package", "blocked", "ready"),
             "BUG-7": ("bug", "open", "ready"),
             "FB-1": ("feedback", "open", "ready"),
-            "AP-104": ("package", "done", "ready"),
         }
         for ticket_id, (kind, state, column) in expected.items():
             with self.subTest(ticket=ticket_id):
@@ -397,6 +398,279 @@ class BoardTest(AP22WorkBrowserTest):
                 self.assertIn(
                     ticket_id, article.inner_text(),
                     f"Die Karte {ticket_id} zeigt ihre Kennung nicht")
+        self.assertEqual(
+            0, board.locator("article[data-nv-ticket='AP-104']").count(),
+            "Ein erledigtes Ticket liegt wider Erwarten im Board")
+        self.assert_clean_page()
+
+
+class WorkStateOwnershipTest(AP22WorkBrowserTest):
+    """Zustandshoheit: erledigte Karten außerhalb des Boards, keine
+    Nutzersteuerung für Läufer-Zustände, einheitlicher Dropdown-Stil."""
+
+    def test_completed_tickets_live_in_a_grid_below_the_board(self):
+        """Erledigte Tickets stehen nicht in der Ready-Spalte, sondern in
+        einem sichtbaren Raster unterhalb des Boards.
+
+        Vorbedingung: ein abgeschlossenes Ticket (AP-104) neben offenen.
+        Aktion: Arbeitsansicht öffnen, erledigte Tickets ggf. über den
+        Show-done-Schalter einblenden und die Platzierung der Karte im DOM
+        prüfen. Erwartung: die Karte liegt außerhalb des Boards, folgt ihm
+        im Dokument, ist sichtbar und ihr Container ist ein Raster, das das
+        Board selbst nicht enthält.
+        """
+        self.open_work()
+        board = self.page.locator("div[data-nv-board]").first
+        board.wait_for(state="visible", timeout=20000)
+        toggle = self.page.locator("[data-nv-work-hide-done]")
+        if toggle.count() and self.page.locator(
+                "article[data-nv-ticket='AP-104']").count():
+            toggle.first.click()
+
+        placement = self.page.evaluate("""() => {
+            const board = document.querySelector("div[data-nv-board]");
+            const card = document.querySelector(
+                "article[data-nv-ticket='AP-104']");
+            if (!board || !card) return {board: !!board, card: !!card};
+            let grid = null;
+            for (let node = card.parentElement; node && node !== document.body;
+                 node = node.parentElement) {
+                if (getComputedStyle(node).display === 'grid'
+                    && !node.contains(board)) {
+                    grid = node;
+                    break;
+                }
+            }
+            return {
+                board: true,
+                card: true,
+                inBoard: board.contains(card),
+                afterBoard: !!(board.compareDocumentPosition(card) & 4),
+                gridFound: !!grid,
+                gridContainsCard: grid ? grid.contains(card) : false,
+                gridContainsBoard: grid ? grid.contains(board) : false,
+                visible: !card.hasAttribute('hidden')
+                    && !!card.getClientRects().length,
+            };
+        }""")
+        self.assertTrue(placement["board"] and placement["card"],
+                        "Board oder erledigte Karte fehlt: " + repr(placement))
+        self.assertFalse(placement["inBoard"],
+                         "Die erledigte Karte steht wider Erwarten im Board "
+                         "(Ready-Spalte): " + repr(placement))
+        self.assertTrue(placement["afterBoard"],
+                        "Die erledigte Karte steht nicht unterhalb des Boards: "
+                        + repr(placement))
+        self.assertTrue(placement["gridFound"],
+                        "Die erledigte Karte liegt in keinem Raster: "
+                        + repr(placement))
+        self.assertTrue(placement["gridContainsCard"],
+                        "Das Raster enthält die erledigte Karte nicht: "
+                        + repr(placement))
+        self.assertFalse(placement["gridContainsBoard"],
+                         "Das Erledigt-Raster enthält auch das Board: "
+                         + repr(placement))
+        self.assertTrue(placement["visible"],
+                        "Die erledigte Karte ist im Raster nicht sichtbar: "
+                        + repr(placement))
+        self.assert_clean_page()
+
+    def test_detail_offers_no_control_for_in_progress_or_done(self):
+        """Nur Entwurf/Bereit sind vom Nutzer setzbar.
+
+        Vorbedingung: ein offenes Paket. Aktion: Detail öffnen und alle
+        Zustandssteuerelemente prüfen. Erwartung: die Auswahl bietet weder
+        ``in-progress`` noch ``done``, und es gibt keinen Schließen- oder
+        Paket-abschließen-Knopf (auch nicht unter einem anderen Label).
+        """
+        self.open_work()
+        self.card("AP-101").click()
+        detail = self.page.locator("[data-nv-ticket-detail='AP-101']").first
+        detail.wait_for(state="visible", timeout=20000)
+
+        select = detail.locator("select[data-nv-ticket-state-select]")
+        self.assertEqual(1, select.count(), "Zustandsauswahl fehlt im Detail")
+        values = select.locator("option").evaluate_all(
+            "els => els.map(e => e.value)")
+        self.assertNotIn("in-progress", values,
+                         "Die Auswahl bietet den Läufer-Zustand in-progress")
+        self.assertNotIn("done", values,
+                         "Die Auswahl bietet den Abschluss-Zustand done")
+        self.assertTrue(set(values).issubset({"draft", "open"}),
+                        "Die Auswahl bietet unzulässige Zustände: "
+                        + repr(values))
+        option_labels = " ".join(select.locator("option").all_inner_texts())
+        self.assertNotRegex(
+            option_labels, r"(?i)in progress|in bearbeitung|geschlossen|done",
+            "Ein Optionslabel nennt einen Läufer-Zustand: " + option_labels)
+
+        for action in ("ticket-close", "package-close"):
+            self.assertEqual(
+                0, detail.locator(
+                    f"button[data-nv-action='{action}']").count(),
+                f"Der Schließen-Knopf {action} ist noch im Detail vorhanden")
+        button_labels = " ".join(detail.locator("button").all_inner_texts())
+        self.assertNotRegex(
+            button_labels,
+            r"(?i)schließen|schliessen|abschließen|abschliessen|close|"
+            r"in progress|in bearbeitung",
+            "Ein Detail-Knopf bietet einen Läufer-Zustand an: " + button_labels)
+        self.assert_clean_page()
+
+    def test_detail_status_select_matches_the_shared_dropdown_style(self):
+        """Die Zustandsauswahl im Detail nutzt denselben Stil wie alle
+        anderen Vibe-Dropdowns.
+
+        Vorbedingung: offenes Detail und das reguläre Anlageformular.
+        Aktion: die berechneten Stile beider Selects vergleichen. Erwartung:
+        Rahmen, Innenabstände, Hintergrund, Text und Schrift stimmen überein.
+        """
+        self.open_work()
+        self.card("AP-101").click()
+        detail = self.page.locator("[data-nv-ticket-detail='AP-101']").first
+        detail.wait_for(state="visible", timeout=20000)
+        select = detail.locator("select[data-nv-ticket-state-select]").first
+        select.wait_for(state="visible", timeout=20000)
+        detail_style = select.evaluate("""el => {
+            const style = getComputedStyle(el);
+            const keys = ['borderTopWidth', 'borderRightWidth',
+                'borderBottomWidth', 'borderLeftWidth', 'borderStyle',
+                'borderColor', 'borderRadius', 'paddingTop', 'paddingRight',
+                'paddingBottom', 'paddingLeft', 'backgroundColor', 'color',
+                'fontFamily', 'fontSize', 'fontWeight'];
+            const result = {};
+            keys.forEach(key => { result[key] = style[key]; });
+            return result;
+        }""")
+
+        self.page.keyboard.press("Escape")
+        detail.wait_for(state="hidden", timeout=10000)
+        self.page.locator("[data-nv-action='new-package']").first.click()
+        form = self.page.locator("[data-nv-ticket-form]").first
+        form.wait_for(state="visible", timeout=20000)
+        reference = form.locator("select[data-nv-field='state']").first
+        self.assertEqual(1, reference.count(),
+                         "Der Referenz-Dropdown im Formular fehlt")
+        reference_style = reference.evaluate("""el => {
+            const style = getComputedStyle(el);
+            const keys = ['borderTopWidth', 'borderRightWidth',
+                'borderBottomWidth', 'borderLeftWidth', 'borderStyle',
+                'borderColor', 'borderRadius', 'paddingTop', 'paddingRight',
+                'paddingBottom', 'paddingLeft', 'backgroundColor', 'color',
+                'fontFamily', 'fontSize', 'fontWeight'];
+            const result = {};
+            keys.forEach(key => { result[key] = style[key]; });
+            return result;
+        }""")
+        for key in detail_style:
+            with self.subTest(property=key):
+                self.assertEqual(
+                    reference_style[key], detail_style[key],
+                    "Der Detail-Dropdown weicht bei " + key + " ab: "
+                    + repr(detail_style[key]) + " statt "
+                    + repr(reference_style[key]))
+        self.assert_clean_page()
+
+    def test_runner_owned_states_have_no_editable_state_control(self):
+        """Läufer-Zustände dürfen nicht versehentlich auf open gesetzt
+        werden.
+
+        Vorbedingung: Ticket AP2 in ``in-progress``, ``blocked`` bzw.
+        ``waiting-merge``. Aktion: Detail öffnen und nach Zustandsauswahl/
+        -speichern suchen. Erwartung: es gibt weder
+        ``select[data-nv-ticket-state-select]`` noch ``ticket-state-save``;
+        stattdessen den Läufer-Hinweis; der Speicher bleibt unverändert.
+        Fehlerfall: eine blinde Auswahl sendet einen leeren Wert, den das
+        Backend zu ``open`` normalisiert.
+        """
+        for state in ("in-progress", "blocked", "waiting-merge"):
+            with self.subTest(state=state):
+                self.write_store([
+                    ticket("AP2", "Läuferzustand " + state, state=state),
+                ])
+                self.open_work()
+                self.card("AP2").click()
+                detail = self.page.locator(
+                    "[data-nv-ticket-detail='AP2']").first
+                detail.wait_for(state="visible", timeout=20000)
+
+                self.assertEqual(
+                    0, detail.locator(
+                        "select[data-nv-ticket-state-select]").count(),
+                    "Ein " + state + "-Ticket bietet eine Zustandsauswahl an")
+                self.assertEqual(
+                    0, detail.locator(
+                        "button[data-nv-action='ticket-state-save']").count(),
+                    "Ein " + state + "-Ticket bietet einen "
+                    "Zustands-Speichern-Knopf an")
+                notice = detail.locator("[data-nv-runner-state-notice]")
+                self.assertEqual(
+                    1, notice.count(),
+                    "Ein " + state + "-Ticket zeigt keinen Läufer-Hinweis")
+                self.assertTrue(notice.first.is_visible(),
+                                "Der Läufer-Hinweis ist nicht sichtbar")
+                self.assertEqual(
+                    state, self.records()["AP2"]["state"],
+                    "Das Öffnen des Details hat den Zustand verändert")
+                self.page.keyboard.press("Escape")
+                detail.wait_for(state="hidden", timeout=10000)
+        self.assert_clean_page()
+
+    def test_copying_done_ticket_does_not_suggest_a_used_id(self):
+        """Die Kopie einer erledigten Karte schlägt keine vergebene Kennung
+        vor.
+
+        Vorbedingung: erledigtes AP1 und offenes AP2 im selben Speicher.
+        Aktion: erledigte Karte einblenden, ``ticket-copy`` klicken und den
+        ID-Vorschlag des Editors lesen. Erwartung: der Vorschlag ist keine
+        bereits vergebene Kennung. Fehlerfall: der Vorschlag wäre AP2, weil
+        nur erledigte Einträge als Grundlage dienten.
+        """
+        self.write_store([
+            ticket("AP1", "Erledigt", state="done", commit="abcdef1",
+                   test="test_ap1"),
+            ticket("AP2", "Offen", state="open"),
+        ])
+        self.open_work()
+        toggle = self.page.locator("[data-nv-work-hide-done]")
+        if toggle.count():
+            toggle.first.click()
+        done_card = self.card("AP1")
+        done_card.wait_for(state="visible", timeout=20000)
+        copy = done_card.locator("button[data-nv-action='ticket-copy']")
+        self.assertEqual(1, copy.count(),
+                         "Die erledigte Karte bietet keine Kopie an")
+        copy.first.click()
+
+        editor = self.page.locator("aside[data-nv-ticket-editor]").first
+        editor.wait_for(state="visible", timeout=20000)
+        suggested = editor.locator(
+            "input[data-nv-field='id']").first.input_value()
+        self.assertNotIn(
+            suggested, ("AP1", "AP2"),
+            "Der ID-Vorschlag " + repr(suggested)
+            + " ist eine bereits vergebene Kennung")
+        self.assertEqual("done", self.records()["AP1"]["state"])
+        self.assertEqual("open", self.records()["AP2"]["state"])
+        self.assert_clean_page()
+
+    def test_done_grid_container_exists_without_done_tickets(self):
+        """Das Erledigt-Raster ist als leerer, verborgener Container im DOM,
+        damit ein späterer Sync nach ``done`` ihn direkt befüllen kann.
+
+        Vorbedingung: nur offene Tickets. Aktion: Arbeitsansicht öffnen.
+        Erwartung: ``section[data-nv-work-done-grid]`` existiert genau
+        einmal und ist nicht sichtbar. Fehlerfall: der Container wird erst
+        bei vorhandenen erledigten Tickets erzeugt.
+        """
+        self.write_store([ticket("AP1", "Offen", state="open")])
+        self.open_work()
+        grid = self.page.locator("section[data-nv-work-done-grid]")
+        self.assertEqual(1, grid.count(),
+                         "Der Erledigt-Raster-Container fehlt ohne erledigte "
+                         "Tickets")
+        self.assertFalse(grid.first.is_visible(),
+                         "Der leere Erledigt-Raster ist sichtbar")
         self.assert_clean_page()
 
 
@@ -2044,10 +2318,11 @@ class B1WorkBrowserTest(unittest.TestCase):
         """Vor: AP3 im Zustand draft. Aktion: Detail öffnen, Zustandsauswahl
         auf ``open`` setzen, „Zustand setzen“ klicken.
 
-        Erwartung: die Auswahl bietet draft/open/in-progress; der Speicher
-        steht danach auf ``open`` und die Karte trägt ``data-nv-state=open``.
-        Significance: Option A entfernt nur den automatischen Wechsel; die
-        ausdrückliche Nutzerkontrolle (Bereit/Freigeben) bleibt erhalten.
+        Erwartung: die Auswahl bietet nur draft/open (in-progress und done
+        gehören dem Läufer); der Speicher steht danach auf ``open`` und die
+        Karte trägt ``data-nv-state=open``. Significance: Option A entfernt
+        nur den automatischen Wechsel; die ausdrückliche Nutzerkontrolle
+        (Bereit/Freigeben) bleibt erhalten.
         """
         self.write_store([ticket("AP3", "Manuell bereit", state="draft")])
         self.goto_work()
@@ -2057,10 +2332,10 @@ class B1WorkBrowserTest(unittest.TestCase):
         detail.wait_for(state="visible", timeout=5000)
         select = detail.locator("select[data-nv-ticket-state-select]").first
         self.assertEqual(
-            {"draft", "open", "in-progress"},
+            {"draft", "open"},
             set(select.locator("option").evaluate_all(
                 "els => els.map(e => e.value)")),
-            "Die Zustandsauswahl bietet nicht alle manuellen Zustände")
+            "Die Zustandsauswahl bietet nicht genau die Nutzer-Zustände")
         select.select_option("open")
         detail.locator(
             "button[data-nv-action='ticket-state-save']").first.click()
@@ -2795,51 +3070,42 @@ class GH56WorkBrowserTest(unittest.TestCase):
                          "Das Backend erlaubt unzulässig die Wiedereröffnung")
         self.assertEqual("done", self.read_store()["AP4"]["state"])
 
-    def test_12_close_requires_confirmation(self):
-        """AP9 doppelte Absicherung: Rückfrage; Abbruch ändert nichts.
+    def test_12_no_manual_close_control_in_detail_or_editor(self):
+        """GH-82: Abschließen ist dem Läufer vorbehalten, nicht dem Nutzer.
 
-        Vorbedingung: offenes Ticket AP1. Aktion: close anklicken, Dialog
-        abbrechen, erneut anklicken und bestätigen. Erwartung: Dialog mit
-        klarer Rückfrage; nach Abbruch bleibt der Zustand unverändert (open,
-        B1: der Editor ändert den Zustand nicht mehr); nach Bestätigung
-        state=done und die Karte ist standardmäßig verborgen.
+        Vorbedingung: offenes Ticket AP1. Aktion: Detail und Bearbeiten-
+        Editor öffnen und beide auf Schließen-Steuerelemente prüfen.
+        Erwartung: weder Kontext-Panel noch Editor bieten einen
+        Schließen-/Paket-abschließen-Knopf; der Zustand bleibt ``open``.
         """
         self.write_store([ticket("AP1", "Abschlusskandidat GH56")])
         self.goto_work()
         self.board().wait_for(state="visible", timeout=5000)
         self.card("AP1").locator(
             "button[data-nv-action='ticket-details']").first.click()
-        self.page.locator("[data-nv-ticket-detail='AP1']").first.wait_for(
-            state="visible", timeout=5000)
-        self.dialog_policy = [False, True]
+        detail = self.page.locator("[data-nv-ticket-detail='AP1']").first
+        detail.wait_for(state="visible", timeout=5000)
 
-        def close_button():
-            return self.page.locator(
-                "button[data-nv-action='ticket-close'], "
-                "button[data-nv-action='package-close']").first
+        def assert_no_close(scope):
+            for action in ("ticket-close", "package-close"):
+                self.assertEqual(
+                    0, scope.locator(
+                        f"button[data-nv-action='{action}']").count(),
+                    f"Der Schließen-Knopf {action} ist noch vorhanden")
+            self.assertNotRegex(
+                " ".join(scope.locator("button").all_inner_texts()),
+                r"(?i)schließen|schliessen|abschließen|abschliessen|close",
+                "Ein Knopf bietet manuelles Schließen an")
 
-        if close_button().count() == 0:
-            self.page.locator(
-                "[data-nv-ticket-detail='AP1'] "
-                "button[data-nv-action='ticket-edit']").first.click()
-        close = close_button()
-        close.wait_for(state="visible", timeout=5000)
-        close.click()
-        self.assertEqual(1, len(self.dialogs),
-                         "Schließen fragt nicht per Bestätigungsdialog nach")
-        self.assertTrue(self.dialogs[0].strip(),
-                        "Der Bestätigungsdialog enthält keine Rückfrage")
+        assert_no_close(detail)
+        detail.locator("[data-nv-action='ticket-edit']").first.click()
+        editor = self.editor()
+        editor.wait_for(state="visible", timeout=5000)
+        assert_no_close(editor)
         self.assertEqual("open", self.read_store()["AP1"]["state"],
-                         "Abbrechen der Rückfrage hat trotzdem geschlossen "
-                         "oder der Editor hat den Zustand verändert")
-
-        close_button().click()
-        self.assertEqual(2, len(self.dialogs),
-                         "Der zweite Schließen-Versuch fragt nicht erneut nach")
-        self.wait_until(lambda: self.read_store()["AP1"]["state"] == "done",
-                        message="Bestätigtes Schließen speichert state=done nicht")
-        self.wait_until(lambda: not self.card("AP1").is_visible(),
-                        message="Geschlossene Karte bleibt ohne Toggle sichtbar")
+                         "Das Öffnen von Detail/Editor hat den Zustand "
+                         "verändert")
+        self.assertEqual([], self.page_errors)
 
     def test_13_copy_done_ticket_creates_draft(self):
         """AP10: Kopie eines erledigten Tickets wird neues Draft-Ticket.
@@ -4374,40 +4640,27 @@ class GH67WorkBrowserTest(unittest.TestCase):
                     "Cancel hat den Zustand verändert (B1: der Editor darf "
                     "keinen automatischen Wechsel auslösen)")
 
-    def test_34_close_button_naming_and_confirmation(self):
-        """AP7/B1: destruktiver Close eindeutig benannt, confirm, Abbruch.
+    def test_34_editor_offers_no_manual_close_action(self):
+        """GH-82: auch der Bearbeiten-Editor darf nicht schließen.
 
-        Vorbedingung: offenes Ticket. Aktion: Label prüfen; Close mit
-        abgelehntem und danach bestätigtem Dialog klicken. Erwartung: Label
-        weist auf dauerhaftes Schließen hin; Abbruch ändert nichts (Zustand
-        bleibt open, der Editor löst keinen Wechsel aus); Bestätigung speichert
-        state=done.
+        Vorbedingung: offenes Ticket. Aktion: Editor öffnen und nach
+        Schließen-Knöpfen suchen. Erwartung: weder ``ticket-close`` noch
+        ``package-close`` sind vorhanden; der Zustand bleibt ``open``.
         """
         self.write_store([ticket("AP1", "Abschluss GH67")])
         self.goto_work()
         editor = self.open_ticket_editor("AP1")
-        close = editor.locator("button[data-nv-action='ticket-close']").first
-        self.assertGreaterEqual(close.count(), 1, "Der Close-Button fehlt")
-        label = " ".join(filter(None, [
-            close.inner_text(),
-            close.get_attribute("aria-label") or "",
-            close.get_attribute("title") or ""])).lower()
-        self.assertTrue(
-            any(term in label for term in ("abschließen", "close ticket",
-                                           "dauerhaft", "permanent")),
-            "Der Close-Button ist nicht eindeutig benannt: " + label)
-        self.dialog_policy = [False]
-        close.click()
-        self.wait_until(lambda: len(self.dialogs) == 1,
-                        message="Close fragt nicht per confirm nach")
+        for action in ("ticket-close", "package-close"):
+            self.assertEqual(
+                0, editor.locator(
+                    f"button[data-nv-action='{action}']").count(),
+                f"Der Schließen-Knopf {action} fehlt nicht im Editor")
+        self.assertNotRegex(
+            " ".join(editor.locator("button").all_inner_texts()),
+            r"(?i)schließen|schliessen|abschließen|abschliessen|close",
+            "Der Editor bietet manuelles Schließen an")
         self.assertEqual("open", self.read_store()["AP1"]["state"],
-                         "Der abgebrochene Dialog hat trotzdem geschlossen "
-                         "oder der Editor hat den Zustand verändert")
-        self.dialog_policy = [True]
-        editor = self.open_ticket_editor("AP1") if not self.editor().is_visible() else self.editor()
-        editor.locator("button[data-nv-action='ticket-close']").first.click()
-        self.wait_until(lambda: self.read_store()["AP1"]["state"] == "done",
-                        message="Bestätigtes Close speichert nicht state=done")
+                         "Das Öffnen des Editors hat den Zustand verändert")
 
     # ============================ 9. Editor ändert den Zustand nie (B1/D)
     def test_35_open_editor_from_draft_keeps_draft(self):

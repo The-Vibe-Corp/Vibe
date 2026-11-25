@@ -92,10 +92,12 @@ function nvpRawState(row) {
   return map[state] || '';
 }
 
-/* Board-Spalte eines Rohzustands; done bleibt in Ready, wird aber ausgeblendet. */
+/* Board-Spalte eines Rohzustands; done hat keine Board-Spalte und lebt im
+   Erledigt-Raster unterhalb des Boards (GH-82). */
 function nvpColOfState(state) {
   if (state === 'draft') return 'draft';
   if (state === 'in-progress') return 'running';
+  if (state === 'done') return 'done';
   return 'ready';
 }
 
@@ -328,7 +330,8 @@ function nvpTicketCard(name, token, row, rank, sessions, rows) {
 }
 
 /* Board mit drei Spalten (Entwurf, Bereit, In Umsetzung). Karten liegen genau
-   einmal im DOM; die Spaltenzuordnung kommt aus dem Rohzustand. */
+   einmal im DOM; die Spaltenzuordnung kommt aus dem Rohzustand. Erledigte
+   Tickets liefert der Aufrufer nicht mehr an das Board (GH-82). */
 function nvpWorkBoard(name, token, items, ranks, sessions) {
   var columns = [
     ['draft', tr('Entwurf')],
@@ -372,19 +375,42 @@ function nvpWorkList(name, token, items, ranks, sessions) {
   return list;
 }
 
+/* GH-82: Erledigte Tickets stehen in einem eigenen responsiven Raster
+   unterhalb des Boards bzw. der mobilen Liste. Die Karten bleiben dieselben
+   data-*-Hooks, sind aber nicht ziehbar. */
+function nvpWorkDoneGrid(name, token, items, ranks, sessions, rows) {
+  var cards = el('div', {class: 'nv-work-done-cards',
+    'data-nv-work-done-cards': ''});
+  items.forEach(function (row) {
+    cards.append(nvpTicketCard(name, token, row,
+      ranks[String(row.id || '')], sessions, rows));
+  });
+  return el('section', {class: 'nv-work-done', 'data-nv-work-done-grid': ''},
+    el('h3', {class: 'nv-done-title'}, tr('Abgeschlossen')), cards);
+}
+
+function nvpIsDoneRow(row) {
+  return nvpRawState(row) === 'done';
+}
+
 /* Arbeitsfläche: Priorisierung zuerst, darunter Board (Desktop) oder Liste
-   (Mobile). Es wird genau eine der beiden Varianten gebaut, damit kein
-   verborgenes Board im DOM zurückbleibt. */
+   (Mobile) und danach das Raster der erledigten Tickets. Es wird genau eine
+   der beiden Varianten gebaut, damit kein verborgenes Board im DOM
+   zurückbleibt. */
 function nvpWorkView(name, token, view, items) {
   var priorityView = (view && view.priority) || {};
   var ranks = nvpRankMap(priorityView.order || []);
   var sessions = nvpSessionMap(view);
   var ordered = nvpOrderedItems(view, items);
+  var doneItems = ordered.filter(nvpIsDoneRow);
+  var openItems = ordered.filter(function (row) {
+    return !nvpIsDoneRow(row);
+  });
   var desktop = !!(window.matchMedia
     && window.matchMedia('(min-width: 769px)').matches);
   var surface = desktop
-    ? nvpWorkBoard(name, token, ordered, ranks, sessions)
-    : nvpWorkList(name, token, ordered, ranks, sessions);
+    ? nvpWorkBoard(name, token, openItems, ranks, sessions)
+    : nvpWorkList(name, token, openItems, ranks, sessions);
   var children = [];
   /* GH-67: Die Priorisierungsleiste ist eine mobile Ansicht; auf Desktop
      belegt sie weder Platz noch DOM-Fläche. */
@@ -392,6 +418,8 @@ function nvpWorkView(name, token, view, items) {
     children.push(nvpPriorityStrip(name, token, view, items, surface));
   }
   children.push(surface);
+  children.push(nvpWorkDoneGrid(name, token, doneItems, ranks, sessions,
+    ordered));
   return el('div', {class: 'nv-work-view', 'data-nv-work-view': ''}, children);
 }
 
@@ -517,13 +545,20 @@ function nvpSyncCardActions(name, token, card, state) {
   else actions.append(toggle);
 }
 
-/* Teilaktualisierung nach einem Statuswechsel: Karte bleibt im DOM, nur
-   Zustand, Badge, Aktionen, Spalte und Filter werden nachgezogen. */
+/* Teilaktualisierung nach einem Statuswechsel: Zustand, Badge, Aktionen,
+   Spalte und Filter werden nachgezogen; erledigte Karten wandern in das
+   Erledigt-Raster. */
 function nvpSyncCardState(name, token, card, state) {
   var surface = card.closest('[data-nv-board], [data-nv-work-list]');
   var board = card.closest('[data-nv-board]');
+  var view = card.closest('[data-nv-work-view]');
+  var doneGrid = view
+    ? view.querySelector('[data-nv-work-done-cards]') : null;
   card.setAttribute('data-nv-state', state);
-  if (board) {
+  if (state === 'done' && doneGrid) {
+    card.removeAttribute('draggable');
+    if (card.parentNode !== doneGrid) doneGrid.appendChild(card);
+  } else if (board) {
     var box = board.querySelector(
       'article[data-nv-col="' + nvpColOfState(state) + '"] [data-nv-col-cards]');
     if (box && card.parentNode !== box) box.appendChild(card);
@@ -754,27 +789,34 @@ function nvpOpenTicketDetail(name, token, row, kind) {
       title: tr('Abgeschlossene Einträge bleiben als Nachweis erhalten')},
     tr('Abgeschlossene Einträge bleiben als Nachweis erhalten')));
   } else {
-    var stateSelect = el('select', {'data-nv-ticket-state-select': '',
-      'aria-label': tr('Zustand')});
-    stateSelect.append(el('option', {value: 'draft'}, tr('Entwurf')));
-    stateSelect.append(el('option', {value: 'open'}, tr('Bereit')));
-    stateSelect.append(el('option', {value: 'in-progress'}, tr('In Progress')));
     var rawState = nvpRawState(row);
-    stateSelect.value = rawState;
-    actions.append(stateSelect);
-    actions.append(el('button', {class: 'nv-btn nv-primary', type: 'button',
-      'data-nv-action': 'ticket-state-save', on: {click: function () {
-        var path = kind === 'package' ? '/api/ticket' : '/api/feedback';
-        var nextState = String(stateSelect.value || '');
-        nvpPost(name, path, {action: 'state', id: id,
-          state: nextState}, 'Gespeichert', token)
-          .then(function (result) {
-            if (NV.stale(token) || !result || result.ok === false) return;
-            NV.context.close();
-            var card = nvpFindCard(id);
-            if (card) nvpSyncCardState(name, token, card, nextState);
-          });
-      }}}, tr('Zustand setzen')));
+    if (rawState === 'in-progress' || rawState === 'blocked'
+        || rawState === 'waiting-merge') {
+      actions.append(el('span', {class: 'nv-pill nv-warn',
+        'data-nv-runner-state-notice': '',
+        title: tr('Zustand wird vom Läufer gesetzt')},
+      tr('Zustand wird vom Läufer gesetzt')));
+    } else {
+      var stateSelect = el('select', {'data-nv-ticket-state-select': '',
+        'aria-label': tr('Zustand')});
+      stateSelect.append(el('option', {value: 'draft'}, tr('Entwurf')));
+      stateSelect.append(el('option', {value: 'open'}, tr('Bereit')));
+      stateSelect.value = rawState;
+      actions.append(stateSelect);
+      actions.append(el('button', {class: 'nv-btn nv-primary', type: 'button',
+        'data-nv-action': 'ticket-state-save', on: {click: function () {
+          var path = kind === 'package' ? '/api/ticket' : '/api/feedback';
+          var nextState = String(stateSelect.value || '');
+          nvpPost(name, path, {action: 'state', id: id,
+            state: nextState}, 'Gespeichert', token)
+            .then(function (result) {
+              if (NV.stale(token) || !result || result.ok === false) return;
+              NV.context.close();
+              var card = nvpFindCard(id);
+              if (card) nvpSyncCardState(name, token, card, nextState);
+            });
+        }}}, tr('Zustand setzen')));
+    }
     actions.append(el('button', {class: 'nv-btn nv-secondary', type: 'button',
       'data-nv-action': 'ticket-edit', on: {click: function () {
         nvpOpenTicketForm(name, token, {
@@ -783,10 +825,6 @@ function nvpOpenTicketDetail(name, token, row, kind) {
           state: nvpRawState(row)
         });
       }}}, tr('Bearbeiten')));
-    actions.append(el('button', {class: 'nv-btn nv-ghost', type: 'button',
-      'data-nv-action': 'ticket-close', on: {click: function () {
-        nvpConfirmClose(name, token, id);
-      }}}, tr('Schließen')));
     actions.append(el('button', {class: 'nv-btn nv-danger', type: 'button',
       'data-nv-action': 'ticket-delete', on: {click: function () {
         if (!window.confirm(String(tr('wirklich löschen?')) + ' ' + id)) return;
@@ -798,55 +836,9 @@ function nvpOpenTicketDetail(name, token, row, kind) {
             NV.render();
           });
       }}}, tr('Löschen')));
-    if (kind === 'package'
-        && (row.state === 'BLOCKIERT' || row.state === 'WARTET AUF MERGE')) {
-      actions.append(el('button', {class: 'nv-btn nv-ghost', type: 'button',
-        'data-nv-action': 'package-close', on: {click: function () {
-          nvpShowError(error, '');
-          api('/api/package', {name: name, id: id, action: 'close'}).then(function (result) {
-            if (NV.stale(token)) return;
-            if (result && result.ok === false) {
-              nvpShowError(error, bt(result.message));
-              return;
-            }
-            toast(bt(result && result.message) || tr('Paket abgeschlossen'));
-            NV.context.close();
-            var card = nvpFindCard(id);
-            if (card) nvpSyncCardState(name, token, card, 'done');
-          }).catch(function (e) {
-            if (!NV.stale(token)) nvpShowError(error, String(e && e.message || e));
-          });
-        }}}, tr('Paket abschließen')));
-    }
   }
   body.append(actions, error);
   NV.context.open({title: title, content: body});
-}
-
-/* Schließen mit doppelter Absicherung: klare Rückfrage im Browser und
-   zusätzlich confirm=true im API-Aufruf. */
-function nvpConfirmClose(name, token, id) {
-  var question = String(tr('Ticket {{id}} wirklich schließen?',
-    {id: id}));
-  if (!window.confirm(question)) return;
-  api('/api/ticket', {name: name, action: 'close', id: id, confirm: true})
-    .then(function (result) {
-      if (NV.stale(token)) return;
-      if (!result || result.ok === false) {
-        toast(bt(result && result.message) || tr('Schließen fehlgeschlagen'));
-        return;
-      }
-      toast(bt(result.message) || tr('Ticket geschlossen'));
-      NV.context.close();
-      NV.editView.close();
-      var card = nvpFindCard(id);
-      if (card) nvpSyncCardState(name, token, card, 'done');
-    }).catch(function (error) {
-      if (!NV.stale(token)) {
-        toast(tr('Schließen fehlgeschlagen: ')
-          + String(error && error.message || error));
-      }
-    });
 }
 
 function nvpResumeTicket(name, token, session) {
@@ -976,14 +968,7 @@ function nvpOpenTicketForm(name, token, options) {
       el('button', {class: 'nv-btn nv-ghost', type: 'button',
         'data-nv-action': 'ticket-cancel', on: {click: function () {
           NV.editView.close();
-        }}}, tr('Abbrechen')),
-      editing ? el('button', {class: 'nv-btn nv-ghost', type: 'button',
-        'data-nv-action': 'ticket-close',
-        'aria-label': tr('Schließt das Ticket dauerhaft und setzt es auf erledigt'),
-        title: tr('Schließt das Ticket dauerhaft und setzt es auf erledigt'),
-        on: {click: function () {
-          nvpConfirmClose(name, token, String(idInput.value || ''));
-        }}}, tr('Ticket abschließen')) : null),
+        }}}, tr('Abbrechen'))),
     error);
   /* GH-56: Der Editor öffnet sich über dem Detail-Panel. Dessen Scrim läge
      sonst über dem Formular und würde „Speichern" blockieren. */
@@ -1275,8 +1260,7 @@ function nvpPriorityStrip(name, token, view, items, cards) {
 
 /* Live-Suche, Typ-Chips, Zustands-Chips und „Erledigte anzeigen“ teilen eine
    Sichtbarkeitsfunktion. Zustands-Chips bilden die Board-Spalten ab; der
-   Erledigt-Chip überstimmt den Erledigt-Schalter, damit geschlossene Tickets
-   gezielt auffindbar bleiben. */
+   Erledigt-Schalter steuert die Sichtbarkeit des Rasters unterhalb. */
 function nvpWireWorkFilters(panel, toggle, doneCount, surface) {
   var search = panel.querySelector('input[data-nv-work-search]');
   if (!search) return;
@@ -1293,6 +1277,7 @@ function nvpWireWorkFilters(panel, toggle, doneCount, surface) {
   function chipOf(raw) {
     if (raw === 'draft') return 'draft';
     if (raw === 'in-progress') return 'running';
+    if (raw === 'done') return 'done';
     return 'ready';
   }
   function cardText(card) {
@@ -1328,6 +1313,15 @@ function nvpWireWorkFilters(panel, toggle, doneCount, surface) {
       chip.setAttribute('aria-pressed',
         chip.getAttribute('data-nv-work-state') === state ? 'true' : 'false');
     });
+    var doneGrid = panel.querySelector('[data-nv-work-done-grid]');
+    if (doneGrid) {
+      var visibleDone = Array.prototype.slice.call(
+        doneGrid.querySelectorAll('[data-nv-ticket]')).filter(function (card) {
+          return !card.hasAttribute('hidden');
+        }).length;
+      if (hideDone || !visibleDone) doneGrid.setAttribute('hidden', '');
+      else doneGrid.removeAttribute('hidden');
+    }
     if (surface) nvpRefreshColumns(surface);
   }
   if (surface) surface.__nvApplyFilters = apply;
@@ -2516,6 +2510,8 @@ if (window.VIBE_I18N && typeof VIBE_I18N.extend === 'function') {
       "ohne Nachweis": "no proof",
       "Keine Beschreibung vorhanden.": "No description available.",
       "Abgeschlossene Einträge bleiben als Nachweis erhalten": "Completed entries are kept as evidence",
+      "Abgeschlossen": "Completed",
+      "Zustand wird vom Läufer gesetzt": "Status is set by the runner",
       "Paket abgeschlossen": "Package completed",
       "Keine offenen Einträge": "No open entries",
       "inaktiv": "inactive",
@@ -2613,6 +2609,8 @@ if (window.VIBE_I18N && typeof VIBE_I18N.extend === 'function') {
       "ohne Nachweis": "ohne Nachweis",
       "Keine Beschreibung vorhanden.": "Keine Beschreibung vorhanden.",
       "Abgeschlossene Einträge bleiben als Nachweis erhalten": "Abgeschlossene Einträge bleiben als Nachweis erhalten",
+      "Abgeschlossen": "Abgeschlossen",
+      "Zustand wird vom Läufer gesetzt": "Zustand wird vom Läufer gesetzt",
       "Paket abgeschlossen": "Paket abgeschlossen",
       "Keine offenen Einträge": "Keine offenen Einträge",
       "inaktiv": "inaktiv",

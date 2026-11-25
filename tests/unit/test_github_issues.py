@@ -1915,14 +1915,14 @@ class NovaIssuesSurfaceTest(unittest.TestCase):
     def test_ticket_cards_are_generic_and_actions_live_in_the_detail_panel(self):
         """Vorbedingung: ``nvpTicketCard``/``nvpOpenTicketDetail``.
         Aktion: Karten-Hooks und Aktionen im Kontext-Panel pruefen.
-        Erwartung (F34): Eine Karte bedient alle Typen (``data-nv-kind``,
-        ``data-nv-state``, Paket- oder Feedback-Hook) und oeffnet das
-        Kontext-Panel; dort liegen Bearbeiten/Loeschen sowie „Paket
-        abschliessen“ fuer blockierte/wartende Pakete. Die frueheren
-        Board-Issueaktionen (``issues-state``) sind mit dem Board entfallen;
-        die Issue-Zustands-API bleibt in den Backend-Faellen geprueft.
-        Fehlerfall: Kartenaktionen sind nicht erreichbar oder der
-        Abschluss-Knopf erscheint fuer Feedback.
+        Erwartung (F34, GH-82): Eine Karte bedient alle Typen
+        (``data-nv-kind``, ``data-nv-state``, Paket- oder Feedback-Hook)
+        und oeffnet das Kontext-Panel; dort liegen Bearbeiten/Loeschen,
+        aber kein manueller Abschluss. Die frueheren Board-Issueaktionen
+        (``issues-state``) sind mit dem Board entfallen; die
+        Issue-Zustands-API bleibt in den Backend-Faellen geprueft.
+        Fehlerfall: Kartenaktionen sind nicht erreichbar oder das Detail
+        bietet weiterhin einen Abschluss-Knopf an.
         """
         card = js_region(self.text, "function nvpTicketCard(")
         detail = js_region(self.text, "function nvpOpenTicketDetail(")
@@ -1935,10 +1935,9 @@ class NovaIssuesSurfaceTest(unittest.TestCase):
         self.assertIn("nvpOpenTicketDetail", card)
         self.assertIn("ticket-edit", detail)
         self.assertIn("ticket-delete", detail)
-        self.assertIn("package-close", detail)
-        self.assertRegex(detail, r"kind\s*===\s*'package'")
-        self.assertIn("BLOCKIERT", detail)
-        self.assertIn(WAITING_AP3, detail)
+        self.assertNotIn("ticket-close", detail)
+        self.assertNotIn("package-close", detail)
+        self.assertNotIn("nvpConfirmClose", detail)
         self.assertNotIn("issues-state", self.text,
                          "Board-Issueaktionen gehoeren nicht mehr zur "
                          "integrierten Liste")
@@ -1974,25 +1973,21 @@ class NovaIssuesSurfaceTest(unittest.TestCase):
         self.assertTrue(any("Draft" in line for line in muted_lines),
                         "Draft erhaelt kein nv-muted: " + repr(muted_lines))
 
-    def test_legacy_gh_package_cards_keep_the_package_close_action(self):
+    def test_legacy_gh_package_cards_have_no_manual_close_action(self):
         """Vorbedingung: Paketkarte mit ID ``GH-<n>`` ohne
         ``GitHub: #n``-Zeile (Legacy-Import) im Zustand BLOCKIERT/WARTET.
-        Aktion: Gate der Kartenaktionen im Kontext-Panel pruefen.
-        Erwartung (F34): Der Abschluss haengt nicht an einem GitHub-Verweis,
-        sondern an ``kind === 'package'`` und dem Zustand; Legacy-GH-Bloecke
-        erhalten „Paket abschliessen“ damit weiterhin. Board-Issueaktionen
-        entfallen mit dem Board.
-        Fehlerfall: Legacy-GH-Bloecke lassen sich nicht abschliessen, weil die
-        GitHub-Referenz fehlt.
+        Aktion: Detailregion auf Abschluss-Steuerelemente pruefen.
+        Erwartung (GH-82): Unabhaengig von GitHub-Referenz und Zustand gibt
+        es im Detail keinen „Paket abschliessen“-Knopf; Abschlüsse laufen
+        ausschließlich über den Läufer. Board-Issueaktionen entfallen mit
+        dem Board.
+        Fehlerfall: Legacy-GH-Bloecke bieten weiterhin einen manuellen
+        Abschluss an.
         """
         detail = js_region(self.text, "function nvpOpenTicketDetail(")
         self.assertTrue(detail, "nvpOpenTicketDetail nicht gefunden")
-        self.assertIn("package-close", detail)
-        self.assertRegex(detail, r"kind\s*===\s*'package'")
-        self.assertRegex(detail, r"row\.state\s*===\s*'BLOCKIERT'")
-        self.assertIn(WAITING_AP3, detail)
-        self.assertNotIn("row.github", detail,
-                         "Die Paketaktion haengt noch an einer GitHub-Referenz")
+        self.assertNotIn("package-close", detail)
+        self.assertNotIn("ticket-close", detail)
         self.assertNotIn("issues-state", self.text,
                          "Board-Issueaktionen gehoeren nicht mehr zur "
                          "integrierten Liste")
@@ -2693,17 +2688,18 @@ class TicketStateApiTest(Gh47WebCase):
         self.assertNotIn("in-progress", labels)
 
     def test_state_with_issue_sync_but_no_github_reference_stays_local(self):
-        """Vor: Issues-Sync aktiv, AP1 ohne GitHub-Bezug. Aktion:
-        state=in-progress. Erwartet: ok, lokal in-progress, kein PATCH."""
+        """Vor: Issues-Sync aktiv, AP1 offen ohne GitHub-Bezug. Aktion:
+        state=draft (GH-82: in-progress ist dem Läufer vorbehalten).
+        Erwartet: ok, lokal draft, kein PATCH."""
         self.write_env(GITHUB_ISSUES_ENABLED="1")
         self.write_tickets([ticket_record("AP1", "Offen")])
 
         status, data = self.ticket({"action": "state", "id": "AP1",
-                                    "state": "in-progress"})
+                                    "state": "draft"})
 
         self.assertEqual(200, status, data)
         self.assertTrue(data.get("ok"), data)
-        self.assertEqual("in-progress", self.tickets()["AP1"]["state"])
+        self.assertEqual("draft", self.tickets()["AP1"]["state"])
         self.assertEqual([], self.server.calls("PATCH"))
 
     def test_feedback_state_with_github_reference_patches_labels(self):

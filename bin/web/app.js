@@ -660,7 +660,6 @@ function ticketCard(d,name){const list=el('div',{});const cls=s=>({erledigt:'ok'
    ...(i.description?[el('div',{class:'mut fbdesc'},i.description)]:[]),
    el('div',{class:'bar'},
     ...(i.completed?[el('span',{class:'mut'},tr('abgeschlossen – nicht bearbeitbar'))]:[el('button',{class:'b',on:{click:()=>edit(i,row)}},tr('Bearbeiten'))]),
-    ...(i.state==='BLOCKIERT'||i.state==='WARTET AUF MERGE'?[el('button',{class:'b',type:'button',on:{click:async()=>{const r=await api('/api/package',{name,id:i.id,action:'close'});toast(bt(r.message));if(r.ok)detail(name).catch(showErr)}}},tr('Paket abschließen'))]:[]),
     delBtn(i)));
   return row};
  const draw=()=>{const shown=showDone?d.tickets:pending;
@@ -676,14 +675,14 @@ function ticketCard(d,name){const list=el('div',{});const cls=s=>({erledigt:'ok'
  toggle.addEventListener('click',()=>{showDone=!showDone;draw()});
  draw();
  return el('div',{class:'card',id:'tickets'},el('div',{class:'bar'},el('b',{},tr('Arbeitspakete (')+d.tickets.length+')'),toggle),list)}
-/* GH-48: Zustandsauswahl für Ticket-/Feedback-Formulare. Die Optionswerte
-   sind die Speicherzustände draft/open/in-progress (Labels übersetzt);
+/* GH-48/GH-82: Zustandsauswahl für Ticket-/Feedback-Formulare. Die
+   Optionswerte sind die vom Nutzer setzbaren Speicherzustände draft/open
+   (Labels übersetzt); in-progress und done bleiben dem Läufer vorbehalten.
    Voreinstellung ist open. */
 function ticketStateSelect(){
  const s=el('select',{'aria-label':tr('Zustand')},
   el('option',{value:'draft'},tr('Entwurf')),
-  el('option',{value:'open'},tr('Offen')),
-  el('option',{value:'in-progress'},tr('In Progress')));
+  el('option',{value:'open'},tr('Offen')));
  s.value='open';return s}
 function ticketFormCard(d,name){
  const f={id:el('input',{placeholder:tr('leer lassen: automatisch vergebene ID'),'aria-label':tr('ID des Arbeitspakets')}),t:el('input',{}),b:el('textarea',{rows:3,placeholder:tr('Was soll umgesetzt werden?')}),state:ticketStateSelect()};

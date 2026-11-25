@@ -1,6 +1,17 @@
 {
  "aenderungen": [
   {
+   "arbeitspaket": "GH-82",
+   "dateien": [
+    "bin/vibe-web.py",
+    "bin/web/app.js",
+    "bin/web/nova-project.js",
+    "bin/web/nova.css"
+   ],
+   "datum": "2026-11-25",
+   "grund": "Erledigte Tickets verlaesst die Ready-Spalte und erscheint im eigenen responsiven Raster unterhalb von Board bzw. mobiler Liste (Show-done-Schalter, Suche und Typ-Filter bleiben wirksam, Karten nicht ziehbar). Nutzersteuerung fuer in-progress und done entfaellt in Nova-Detail/-Editor und in den klassischen Anlageformularen; /api/ticket action=close wird abgelehnt, WEB_TICKET_STATES ist auf draft/open begrenzt, interne Close-Pfade des Laeufers bleiben erhalten. Nova-Dropdowns folgen genau einem gemeinsamen Select-Stil unter [data-nv-app] select. Nachtrag Audit: Laeufer-Zustaende (in-progress, blocked, waiting-merge) zeigen im Detail nur einen schreibgeschuetzten Hinweis statt Zustandsauswahl; das Erledigt-Raster existiert immer im DOM; Kopien erledigter Karten nutzen alle Eintraege fuer den ID-Vorschlag; der klassische Abschluss-Knopf entfaellt. Groesse und SHA-256 der geaenderten Manifest-Dateien wurden aktualisiert."
+  },
+  {
    "arbeitspaket": "GH-89",
    "dateien": [
     "bin/vibe_sandbox.py",
@@ -1638,9 +1649,9 @@
    "sha256": "0426227dbd3e179b68d718859be0c7e14a7d5a92b753daba7a2b3140f0e18a07"
   },
   {
-   "bytes": 143045,
+   "bytes": 142652,
    "path": "bin/vibe-web.py",
-   "sha256": "558890f42f1b26717b63f6b371c7e8c23953f0a275c850c4927346ff7c16a6fc"
+   "sha256": "91363cce27b42cf47c543e83260649a28afc6e446cbe965c6a46434fd38aaa06"
   },
   {
    "bytes": 5189,
@@ -1743,9 +1754,9 @@
    "sha256": "baf438e2032b06a478b2a3debe6b62eff104f6d9a105f829013eabfcddf1acd5"
   },
   {
-   "bytes": 153505,
+   "bytes": 153247,
    "path": "bin/web/app.js",
-   "sha256": "a90ea581de9c4f1eea1ffda2b05dcb2a956edb88d465cdbc5728befffefbdd00"
+   "sha256": "c3d04804c88eb99c05a441e1dd206a315ad4dde72517f31e51428e181d9976b3"
   },
   {
    "bytes": 688,
@@ -1793,9 +1804,9 @@
    "sha256": "3b6ef244ff1b10575e9b86ec816b70181f06fbcf0beb82697d7cc3cee458068b"
   },
   {
-   "bytes": 121980,
+   "bytes": 121795,
    "path": "bin/web/nova-project.js",
-   "sha256": "dd46032eeefbb7f1cd8db7b2eac328af66be6615932b82963ddf4bade061e570"
+   "sha256": "384408b0c885250c416bc5237387a04fec69a3307c6cfe2604e7b159cedd7283"
   },
   {
    "bytes": 90883,
@@ -1808,9 +1819,9 @@
    "sha256": "84ae6329f31c04fcc8b48c552ade8f9d276c283ab81b1babb66f8988b627d8a7"
   },
   {
-   "bytes": 68937,
+   "bytes": 69833,
    "path": "bin/web/nova.css",
-   "sha256": "adda5edaa5839a4a5321eb4f0457e2efe5f3f707930bf431f1a9340bbb42fcad"
+   "sha256": "be7fd866ea7e993f6177aa237b3e6fdacdce9bb83ecb389845654943910c2f74"
   },
   {
    "bytes": 12751,

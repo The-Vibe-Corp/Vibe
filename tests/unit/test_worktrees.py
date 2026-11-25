@@ -1268,20 +1268,24 @@ class NovaSurfaceTest(unittest.TestCase):
         self.assertNotIn("worktree_path", sessions,
                          "F34 zeigt den Worktree-Pfad nicht in der Nova-Zeile")
 
-    def test_nova_work_tab_has_a_package_close_action(self):
+    def test_nova_work_tab_has_no_manual_package_close_action(self):
         """Vorbedingung: Arbeiten-Reiter in ``nova-project.js``.
-        Aktion: Aktion und Endpunkt suchen.
-        Erwartung: „Paket abschließen“ ruft ``/api/package`` mit
-        ``action: 'close'``, ``name`` und ``id`` auf; die Aktion hängt an
-        blockierten Tickets.
-        Fehlerfall: blockierte Tickets lassen sich in Nova nicht abschließen.
+        Aktion: Oberflächenquelltext auf Abschluss-Steuerelemente prüfen.
+        Erwartung (GH-82): kein „Paket abschließen“, kein
+        ``package-close``/``ticket-close`` und kein ``/api/package``-Aufruf
+        aus der Oberfläche. Der Endpunkt bleibt im Backend verfügbar und
+        wird dort separat geprüft.
+        Fehlerfall: die Oberfläche bietet weiterhin manuelles Schließen.
         """
-        self.assertIn("Paket abschließen", self.text)
-        self.assertIn("/api/package", self.text)
-        self.assertRegex(self.text, r"action:\s*['\"]close['\"]")
-        self.assertRegex(self.text, r"(?i)blockiert")
-        self.assertIn("WARTET AUF MERGE", self.text,
-                      "Wartende Pakete lassen sich nicht abschließen")
+        self.assertNotIn("Paket abschließen", self.text)
+        self.assertNotIn("package-close", self.text)
+        self.assertNotIn("ticket-close", self.text)
+        self.assertNotIn("/api/package", self.text,
+                         "Die Nova-Oberfläche ruft den Runner-Endpunkt direkt "
+                         "auf")
+        backend = WEB.read_text(encoding="utf-8")
+        self.assertIn("/api/package", backend,
+                      "Der Runner-Endpunkt fehlt im Backend")
 
 
 class WebBackendTextTest(unittest.TestCase):
