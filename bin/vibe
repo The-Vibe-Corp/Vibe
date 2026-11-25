@@ -47,6 +47,7 @@ Aufruf:  vibe                 interaktives Menü
          vibe gates [status] [<schranke> <wert>]  Schranken des Läufers zeigen oder setzen (global oder mit --project <p> je Projekt)
          vibe github <p> [status|token [clear]|link <url>|unlink|branches|fetch|pull|push [branch]|checkout <branch>|test|issues-sync|issues-state <id> <zustand>|pr]  GitHub-Verknüpfung (optional je Projekt); alle Aktionen bewusst, Merge-Request nur mit --confirm; Token wird je Projekt verschlüsselt gespeichert (AP9), test prüft die Verbindungen
          vibe types           verfügbare Projekttypen
+         vibe platform-instructions --directory <ordner>  versteckte Plattform-Regeln für Agentenläufe schreiben
          vibe doctor          Umgebung prüfen
 """
 import os, sys, re, json, math, sqlite3, subprocess, shutil, time, tempfile, shlex, socket, errno, secrets, getpass
@@ -99,74 +100,12 @@ UI_BIND = PATHS.ui_bind
 NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 GENERAL_RULES_MARK = "<!-- vibe:general-rules -->"
 GENERAL_RULES_END = "<!-- /vibe:general-rules -->"
-GENERAL_RULES = """<!-- vibe:general-rules -->
-## Projektordner sauber halten
-
-- Im Projektordner nur Quellcode, Konfiguration, Tests und die vereinbarten Nachweise ablegen.
-- Temporäre Dateien, Protokolle, Sicherungen und Arbeitskopien nach Abschluss des Arbeitspakets entfernen und nicht committen.
-- Laufzeitdaten, persönliche Konfiguration und Geheimnisse gehören nicht ins Repository.
-
-## Ordnung im Git halten
-
-- Änderungen auf einem Feature-Branch umsetzen, nicht direkt auf main, master oder einem geschützten Branch.
-- Jedes abgeschlossene Arbeitspaket als zusammenhängenden Commit sichern; keine Zwischenstände oder fremden Änderungen mitcommitten.
-- Commit-Meldungen sind für Menschen verständlich, auf das Wesentliche reduziert und erläutern das Warum der Änderung.
-- Vor jedem Commit `git status` und den relevanten Diff prüfen und ausschließlich Dateien des eigenen Arbeitspakets stagen.
-- Keine temporären Dateien, Protokolle, Build-Artefakte, Arbeitskopien oder Screenshots ohne Nachweiswert committen.
-- Fremde oder vorbestehende Änderungen nicht löschen, überschreiben, stashen oder mitcommitten.
-- Keine Historie umschreiben, keine Force-Pushes und kein Push ohne ausdrückliche Freigabe.
-- Paket-Branches folgen den Repository-Regeln (`feature/<owner>/<kennung>`); das Muster ist über `PACKAGE_BRANCH_PATTERN` konfigurierbar.
-- Bei aktivierter GitHub-Verknüpfung gilt ein Arbeitspaket erst mit gepushtem Branch und gestelltem Merge-Request als abgeschlossen; ohne Push (und bei aktivierter Verknüpfung Merge-Request) kein Ticketabschluss (`state: done`). Merge nur gemäß `GITHUB_AUTO_MERGE` (Standard aus = PR-only: der Eigentümer mergt und schließt danach mit `vibe package close <projekt> <id>`).
-
-## Ticketabschluss (verbindlich)
-
-- Tickets (Arbeitspakete, Bugs und Feedback) liegen einheitlich und
-  maschinenlesbar im projektlokalen Ticketspeicher (.vibe/tickets.json,
-  Laufzeitstand, nie committen); jedes Ticket hat Typ, Zustand und
-  Nachweisfelder.
-- Der Läufer überträgt das aktuelle Ticket als sichtbare Datei
-  TICKET-<ID>.json in die Arbeitskopie. Nur dort wird es bearbeitet:
-  nach erbrachter Arbeit die Felder state ("done"), commit (Hash) und
-  test (Methode oder Nachweisdatei) ausfüllen; der Runner validiert die
-  Felder und übernimmt den Abschluss in den Ticketspeicher.
-- TICKET-<ID>.json und .vibe/ sind Laufzeitstand: nie committen; die
-  Arbeitskopie muss am Ende sauber sein.
-- Ein Commit allein beweist keine fachliche Erfüllung; das test-Feld
-  nennt die konkrete Prüfmethode oder Nachweisdatei.
-
-## Laufende Instanz nicht verändern (verbindlich)
-
-- Entwicklung, Tests und Verifikation verändern die laufende Instanz nicht: bereinigte VIBE_*-Umgebung, explizite Temp-Pfade und ein Update nur mit autorisierter Quelle (`--source`).
-
-## Effizienz der Prüfungen (verbindlich)
-
-- Die Projektprüfung läuft ausschließlich über die Prüfbefehle des Projekts
-  in .vibe/project.env (VERIFY_QUICK, VERIFY_PACKAGE, VERIFY_FULL): Agenten
-  und Läufer nutzen dieselbe Prüfschnittstelle; Prüfinhalte werden nie selbst
-  zusammengesetzt oder doppelt ausgeführt.
-- Für betroffene Testmodule gilt während der Bearbeitung: gezielte Aufrufe
-  und die Paketprüfung (VERIFY_PACKAGE), nicht die gesamte Suite.
-- Die vollständige Prüfung (VERIFY_FULL) läuft pro Arbeitspaket genau einmal
-  vor der Abnahme; erneut nur nach echten Änderungen an Code oder Tests seit
-  dem letzten Lauf.
-- Der Nachweisumfang der Abnahme wird nicht abgeschwächt: Die Stufen sparen
-  Wiederholungen unveränderter Volläufe, nicht den Nachweis selbst.
-
-## Leitlinien für Coding-Agenten (verbindlich)
-
-- KISS ist verpflichtend: Wähle die einfachste Lösung, die das Problem vollständig löst. Keine spekulativen Abstraktionen, Funktionen oder Optimierungen auf Vorrat und keine Komplexität ohne belegten Bedarf.
-- Clean Code ist der verbindliche Code-Stil: sprechende Namen, kleine Funktionen mit einer klaren Aufgabe, explizite Schnittstellen, keine unnötige Duplizierung und nachvollziehbare Fehlerbehandlung. Verhalten wird durch Tests abgesichert, nicht durch Kommentare.
-- Caching ist eine begründete Performance-Optimierung und nur mit funktionierender Invalidierung zulässig. Jeder Cache braucht einen eindeutigen Schlüssel, eine definierte Lebensdauer und eine benannte Invalidierung (Zeit, Änderungsereignis oder Version). Ohne korrekte Invalidierung wird nicht gecacht. Sicherheits-, Berechtigungs- und Geheimnisdaten werden nicht ungeprüft zwischengespeichert.
-- Diese Leitlinien gelten für alle neuen und bestehenden Projekte unabhängig vom Projekttyp.
-
-## Unabhängiger Test-Agent (verbindlich)
-
-- Tests werden ausschließlich vom Test-Agenten geschrieben, geändert und gelöscht.
-- Coding- und Review-Agent dürfen keine Testdateien anlegen, ändern, löschen oder abschwächen. Sie dürfen die vom Test-Agenten geschriebenen Tests ausführen und deren Ergebnisse melden.
-- Vor der Implementierung fordert der Coding-Agent die Tests beim Test-Agenten an und übergibt Arbeitspaket, Akzeptanzkriterien und den vorgesehenen Testbefehl. Der Test-Agent leitet die Fälle unabhängig aus Arbeitspaket und `SPEC.md` ab, nicht aus dem Implementierungsdiff.
-- Der Test-Agent beschreibt jeden Testfall (Name, Vorbedingung, Aktion, erwartetes Ergebnis), schreibt ihn vor der Implementierung und führt ihn tatsächlich aus. Ein nicht ausgeführter Test ist kein Nachweis.
-- Nur Tests, die nachweislich vom Test-Agenten stammen, zählen für die Abnahme. Vom Coding-Agenten geschriebene oder nachträglich abgeschwächte Tests sind kein Nachweis; der Reviewer weist sie zurück.
-<!-- /vibe:general-rules -->"""
+# GH-76: Die code-gewirkten Vorgaben für laufzeitgesteuerte Agentenarbeit
+# stehen nicht mehr in einer sichtbaren AGENTS.md. Der Läufer schreibt diesen
+# Text in eine versteckte Datei außerhalb jedes Projekts und übergibt sie
+# opencode als zusätzliche `instructions`-Quelle (höhere Priorität als
+# AGENTS.md).
+PLATFORM_INSTRUCTIONS = vibe_harness.PLATFORM_INSTRUCTIONS
 FRONTMATTER_RE = re.compile(r"---[ \t]*\r?\n(.*?)\r?\n---[ \t]*(?:\r?\n|$)", re.S)
 FRONT_KEY_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_-]*):[ \t]*(.*)$")
 AGENT_FIELDS = ("description", "mode", "model", "temperature", "steps")
@@ -1748,21 +1687,9 @@ def cmd_run(name, agent=None, out=None, keep_changes=False, continue_session=Non
     pending = pending_changes(p) if keep_changes else ""
     if pending:
         print(col("y", "Lauf startet trotz nicht committeter Änderungen; sie bleiben unverändert:\n" + pending), file=out)
-    # Die allgemeinen Leitlinien gelten auch für bestehende Projekte. Vor dem
-    # Start wird der verwaltete Regelblock deshalb auf den aktuellen Stand
-    # gebracht; fremde Inhalte außerhalb der Marker bleiben unverändert.
-    # F27: Hat AGENTS.md selbst nicht committete Änderungen, wird sie nicht
-    # überschrieben. Sonst würde ein älterer Regelsatz die Nutzeränderung
-    # verwerfen und der Lauf anschließend am eigenen Schreibzugriff scheitern.
-    if changed_file(p, "AGENTS.md"):
-        print(col("y", "AGENTS.md hat nicht committete Änderungen; die allgemeinen Regeln werden nicht automatisch aktualisiert und bleiben unverändert."), file=out)
-    else:
-        try:
-            rules = ensure_general_rules(p)
-        except (OSError, vibe_storage.StorageError) as error:
-            sys.exit("Allgemeine Regeln in AGENTS.md konnten nicht aktualisiert werden: " + str(error))
-        if rules:
-            print(col("y", "Allgemeine Regeln in AGENTS.md aktualisiert; bitte prüfen und committen."), file=out)
+    # GH-76: AGENTS.md gehört dem Projekt und wird bei einem Lauf weder
+    # angelegt noch verändert. Die verbindlichen Läuferregeln liefert der
+    # Läufer aus einer versteckten Plattformdatei.
     sandbox = sandbox_status(name)
     if sandbox["enabled"]:
         checked = sandbox_check(name)
@@ -2377,43 +2304,6 @@ def ensure_gitignore(project):
     return "appended"
 
 
-def ensure_general_rules(project):
-    """Ergänzt oder aktualisiert die allgemeinen Aufräum-, Git- und Coding-Regeln.
-
-    Vorhandene Inhalte außerhalb des verwalteten Blocks bleiben erhalten. Ein
-    fehlender Marker wird genau einmal am Dateiende ergänzt; ein vorhandener,
-    vollständig abgeschlossener Block wird auf den aktuellen Stand gebracht.
-    Ein unpaariger Marker bleibt unangetastet, damit keine fremden Inhalte
-    überschrieben werden. Symlinks werden nicht verfolgt, damit nichts
-    außerhalb des Projekts geschrieben wird. Liefert "added", "updated" oder
-    False.
-    """
-    path = os.path.join(project, "AGENTS.md")
-    if os.path.islink(path) or not os.path.isfile(path):
-        return False
-    expected = vibe_storage.file_digest(path)
-    try:
-        with open(path, encoding="utf-8") as handle:
-            text = handle.read()
-    except UnicodeDecodeError:
-        # Kein UTF-8: lieber unverändert lassen als ungültige Bytes ersetzen.
-        return False
-    start = text.find(GENERAL_RULES_MARK)
-    if start >= 0:
-        end = text.find(GENERAL_RULES_END, start + len(GENERAL_RULES_MARK))
-        if end < 0:
-            return False
-        end += len(GENERAL_RULES_END)
-        updated = text[:start] + GENERAL_RULES + text[end:]
-        if updated == text:
-            return False
-        _write_text_atomic(path, updated, expected=expected)
-        return "updated"
-    base = text.rstrip("\n")
-    updated = (base + "\n\n" if base else "") + GENERAL_RULES + "\n"
-    _write_text_atomic(path, updated, expected=expected)
-    return "added"
-
 def _agents_file_split(text):
     """Trennt eine AGENTS.md in freie Teile und den verwalteten Block.
 
@@ -2457,12 +2347,13 @@ def agents_file_view(name):
 def agents_file_save(name, before, after, digest):
     """Schreibt die freien Teile der AGENTS.md und behält den Block byte-identisch.
 
-    Der vorhandene Block wird durch den aktuellen ``GENERAL_RULES``-Block
-    ersetzt; ohne vorhandenen Block wird kein Block eingefügt, sondern nur der
-    freie Text geschrieben. Marker in den freien Teilen und unpaarige Marker in
-    der bestehenden Datei werden abgelehnt. Der Digest-Schutz der
-    Speicherschicht verhindert, dass eine zwischenzeitliche fremde Änderung
-    überschrieben wird; bei jeder Ablehnung bleibt die Datei unverändert.
+    GH-76: Ein vorhandener Legacy-Block wird weder ersetzt noch neu erzeugt; er
+    bleibt genau so erhalten, wie er in der Datei steht. Ohne Block werden die
+    freien Teile gemeinsam als ``before + after`` geschrieben. Marker in den
+    freien Teilen und unpaarige Marker in der bestehenden Datei werden
+    abgelehnt. Der Digest-Schutz der Speicherschicht verhindert, dass eine
+    zwischenzeitliche fremde Änderung überschrieben wird; bei jeder Ablehnung
+    bleibt die Datei unverändert.
     """
     project = ppath(name)
     if not isinstance(before, str) or not isinstance(after, str):
@@ -2490,14 +2381,9 @@ def agents_file_save(name, before, after, digest):
             "Die Marker des verwalteten Blocks dürfen nicht in den freien "
             "Teilen stehen.")
     if managed is not None:
-        content = before + GENERAL_RULES + after
+        content = before + managed + after
     else:
-        if before:
-            raise ValueError(
-                "AGENTS.md enthält keinen verwalteten Block; der obere freie "
-                "Teil kann nicht gespeichert werden. Bitte den Text in den "
-                "unteren Teil eintragen.")
-        content = after
+        content = before + after
     vibe_storage.write_text(path, content, expected=digest)
 
 def agents_file_create(name):
@@ -2526,6 +2412,35 @@ def agents_file_create(name):
         raise ValueError("Vorlage für AGENTS.md fehlt: " + template) from error
     vibe_storage.write_text(path, content, expected=vibe_storage.MISSING)
     return "created"
+
+def cmd_platform_instructions(args):
+    """Schreibt den versteckten Plattformtext für Agentenläufe (GH-76).
+
+    Der Text liegt außerhalb jedes Projekts und wird von opencode über die
+    Inline-Konfiguration als zusätzliche ``instructions``-Quelle geladen. Ein
+    vorhandenes Ziel wird byte-identisch neu geschrieben; ein Symlink wird
+    abgelehnt, damit nie eine fremde Datei verändert wird. Die letzte
+    stdout-Zeile ist der absolute Pfad der geschriebenen Datei.
+    """
+    directory = None
+    index = 0
+    while index < len(args):
+        token = args[index]
+        if token == "--directory":
+            if index + 1 >= len(args):
+                sys.exit("Aufruf: vibe platform-instructions --directory <ordner>")
+            directory = args[index + 1]
+            index += 2
+            continue
+        sys.exit("Aufruf: vibe platform-instructions --directory <ordner>")
+    if not directory:
+        sys.exit("Aufruf: vibe platform-instructions --directory <ordner>")
+    try:
+        path = vibe_harness.write_platform_instructions(directory)
+    except (vibe_harness.HarnessError, OSError, vibe_storage.StorageError) as error:
+        sys.exit(str(error))
+    print(path)
+
 
 # AP5 (C5): Relativer Pfad der Test-Agent-Vorlage, wie ``copy_tree`` ihn in
 # ``created`` liefert (``os.path.relpath``). Es wird bewusst kein Test-Agent
@@ -2679,12 +2594,8 @@ def cmd_init(name, typ=None, out=None):
     p = ppath(name); typ = typ or ptype(name)
     if typ not in types(): typ = "generic"
     created = copy_tree(os.path.join(TPL, "common"), p, name) + copy_tree(os.path.join(TPL, typ), p, name)
-    rules = ensure_general_rules(p)
     gitignore = ensure_gitignore(p)
     print(col("g", f"{name}: als '{typ}' vorbereitet.", stream=out) + (" Neu angelegt: " + ", ".join(created) if created else " Nichts zu ergänzen."), file=out)
-    if rules:
-        action = "aktualisiert" if rules == "updated" else "ergänzt"
-        print(f"Allgemeine Regeln in AGENTS.md {action}; vorhandene Inhalte blieben unverändert.", file=out)
     if gitignore:
         action = "angelegt" if gitignore == "created" else "ergänzt"
         print(f".gitignore {action}: .vibe/ wird nicht versioniert; vorhandene Inhalte blieben unverändert.", file=out)
@@ -2725,7 +2636,6 @@ def cmd_new(name, typ, tpl=None, out=None):
     else:
         os.makedirs(p)
     copy_tree(os.path.join(TPL, "common"), p, name); copy_tree(os.path.join(TPL, typ), p, name)
-    ensure_general_rules(p)
     ensure_gitignore(p)
     rc, output = _init_git(p)
     if rc != 0: print(col("y", "Git-Hinweis: " + output, stream=out), file=out)
@@ -2903,10 +2813,6 @@ def _adopt_checked_out_project(project, name):
         + copy_tree(os.path.join(TPL, typ), project, name)
     if created:
         notes.append("Fehlende Vorlagedateien ergänzt: " + ", ".join(created))
-    rules = ensure_general_rules(project)
-    if rules:
-        notes.append("Allgemeine Regeln in AGENTS.md "
-                     + ("aktualisiert" if rules == "updated" else "ergänzt"))
     gitignore = ensure_gitignore(project)
     if gitignore:
         notes.append(".gitignore " + ("angelegt" if gitignore == "created" else "ergänzt")
@@ -6514,6 +6420,7 @@ def main():
                  "gates": lambda: cmd_gates(r),
                  "github": lambda: github_cli(r),
                  "package": lambda: cmd_package_close(r),
+                 "platform-instructions": lambda: cmd_platform_instructions(r),
                  "types": lambda: cmd_types(), "doctor": lambda: cmd_doctor()}
         table[c]()
     except (KeyError, IndexError):

@@ -625,7 +625,6 @@ class CliFixture(unittest.TestCase):
                 self.runtime / (name + ".log")
             ),
             "run_registry": lambda: Registry(),
-            "ensure_general_rules": lambda project: False,
         }
         values.update(overrides)
         return values, calls
@@ -710,54 +709,43 @@ class CliKeepChangesTest(CliFixture):
 # AGENTS.md: verwalteter Block bei Änderungen nicht überschreiben
 # ---------------------------------------------------------------------------
 class AgentsRulesTest(CliFixture):
-    """Verhalten 4: Fremde Änderungen an AGENTS.md bleiben unangetastet."""
+    """Verhalten 4: ``vibe run`` schreibt AGENTS.md nicht mehr (GH-76)."""
 
     def prepare(self):
         (self.project / "AGENTS.md").write_text(OLD_AGENTS, encoding="utf-8")
         support.commit_all(self.project, "AGENTS.md")
 
-    def test_uncommitted_agents_change_is_not_rewritten_and_warns(self):
+    def test_uncommitted_agents_change_is_not_rewritten(self):
         self.prepare()
         changed = OLD_AGENTS.replace(
             "Eigene Regel", "Eigene geänderte Regel"
         )
         (self.project / "AGENTS.md").write_text(changed, encoding="utf-8")
 
-        output, calls, code = self.invoke_run(
-            ensure_general_rules=self.cli.ensure_general_rules
-        )
+        output, calls, code = self.invoke_run()
 
         self.assertIsNone(code, output)
-        self.assertIn("AGENTS.md", output)
-        self.assertRegex(
-            output, r"(?is)warn|nicht aktualisiert|unverändert"
-        )
-        content = (self.project / "AGENTS.md").read_text(encoding="utf-8")
-        self.assertEqual(content, changed)
-        self.assertIn("ALTER REGELSATZ", content)
-        self.assertIn("Eigene geänderte Regel", content)
-        self.assertNotIn(self.cli.GENERAL_RULES, content)
+        self.assertEqual(
+            changed, (self.project / "AGENTS.md").read_text(encoding="utf-8"))
+        self.assertIn("ALTER REGELSATZ", changed)
+        self.assertNotIn("Allgemeine Regeln", output)
         status = support.git(
             self.project, "status", "--porcelain", "--", "AGENTS.md"
         ).stdout
         self.assertIn("M AGENTS.md", status)
         self.assertEqual(len(self.new_session_calls(calls)), 1)
 
-    def test_clean_agents_file_is_still_updated(self):
+    def test_clean_agents_file_is_left_untouched(self):
         self.prepare()
 
-        output, calls, code = self.invoke_run(
-            ensure_general_rules=self.cli.ensure_general_rules
-        )
+        output, calls, code = self.invoke_run()
 
         self.assertIsNone(code, output)
-        self.assertIn("AGENTS.md", output)
-        self.assertRegex(output, r"(?is)aktualisiert")
-        content = (self.project / "AGENTS.md").read_text(encoding="utf-8")
-        self.assertIn(self.cli.GENERAL_RULES, content)
-        self.assertNotIn("ALTER REGELSATZ", content)
+        self.assertEqual(
+            OLD_AGENTS,
+            (self.project / "AGENTS.md").read_text(encoding="utf-8"))
+        self.assertNotIn("Allgemeine Regeln", output)
         self.assertEqual(len(self.new_session_calls(calls)), 1)
-
 
 # ---------------------------------------------------------------------------
 # Web-API: POST /api/run mit keep_changes

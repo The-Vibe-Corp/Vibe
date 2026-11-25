@@ -78,7 +78,7 @@ class ProjectFixture(unittest.TestCase):
             self.templates,
             "generic",
             {
-                "AGENTS.md": "# AGENTS fuer {{NAME}}\n\n" + self.cli.GENERAL_RULES + "\n",
+                "AGENTS.md": "# AGENTS fuer {{NAME}}\n\n",
                 ".vibe/project.env": "TYPE=generic\n",
             },
         )
@@ -252,7 +252,7 @@ class InitTest(ProjectFixture):
         self.assertEqual(own.read_text(encoding="utf-8"), "bleibt\n")
         self.assertEqual(
             (self.project / "AGENTS.md").read_text(encoding="utf-8"),
-            "# AGENTS fuer proj\n\n" + self.cli.GENERAL_RULES + "\n",
+            "# AGENTS fuer proj\n\n",
         )
         self.assertIn("AGENTS.md", output)
 
@@ -275,66 +275,34 @@ class InitTest(ProjectFixture):
         self.assertIn("Nichts zu ergänzen", output)
         self.assertFalse((self.project / ".git").exists())
 
-    def test_init_appends_general_rules_to_an_existing_agents_file(self):
+    def test_init_leaves_an_existing_legacy_rules_block_byte_identical(self):
+        """Vor: Bestands-AGENTS.md mit altem verwaltetem Block. Aktion:
+        ``vibe init``. Erwartet: Datei byte-identisch; kein Update, keine
+        zweite Regelquelle, keine Erfolgsmeldung über allgemeine Regeln."""
+        agents = self.project / "AGENTS.md"
+        original = (
+            "# eigene Regel\n\n"
+            + self.cli.GENERAL_RULES_MARK
+            + "\n## Alt\n- veraltet\n"
+            + self.cli.GENERAL_RULES_END
+            + "\n\n## Eigener Rest\n"
+        )
+        agents.write_text(original, encoding="utf-8")
+
+        output = self.init_project()
+
+        self.assertEqual(original, agents.read_text(encoding="utf-8"))
+        self.assertNotIn("Allgemeine Regeln", output)
+
+    def test_init_does_not_add_a_rules_block_to_an_existing_agents_file(self):
+        """Vor: Bestands-AGENTS.md ohne Marker. Aktion: ``vibe init``.
+        Erwartet: unverändert; kein Block, keine Marker, kein Regeltext."""
         agents = self.project / "AGENTS.md"
         agents.write_text("# eigene Regel\n", encoding="utf-8")
 
-        output = self.init_project()
-
-        text = agents.read_text(encoding="utf-8")
-        self.assertTrue(text.startswith("# eigene Regel\n"))
-        self.assertEqual(text.count(self.cli.GENERAL_RULES_MARK), 1)
-        self.assertIn("Projektordner sauber halten", text)
-        self.assertIn("Allgemeine Regeln in AGENTS.md ergänzt", output)
-
-    def test_init_does_not_duplicate_general_rules(self):
-        self.init_project()
-        agents = self.project / "AGENTS.md"
-        first = agents.read_text(encoding="utf-8")
-
         self.init_project()
 
-        self.assertEqual(agents.read_text(encoding="utf-8"), first)
-        self.assertEqual(first.count(self.cli.GENERAL_RULES_MARK), 1)
-
-    def test_init_updates_an_outdated_managed_rules_block_in_place(self):
-        agents = self.project / "AGENTS.md"
-        agents.write_text(
-            "# eigene Regel\n\n"
-            + self.cli.GENERAL_RULES_MARK
-            + "\n## Alt\n- veraltet\n<!-- /vibe:general-rules -->\n\n## Eigener Rest\n",
-            encoding="utf-8",
-        )
-
-        output = self.init_project()
-
-        text = agents.read_text(encoding="utf-8")
-        self.assertTrue(text.startswith("# eigene Regel\n"))
-        self.assertIn("Projektordner sauber halten", text)
-        self.assertIn("Ordnung im Git halten", text)
-        self.assertNotIn("veraltet", text)
-        self.assertIn("## Eigener Rest\n", text)
-        self.assertEqual(text.count(self.cli.GENERAL_RULES_MARK), 1)
-        self.assertIn("aktualisiert", output)
-
-    def test_init_replaces_an_outdated_rules_block_with_the_coding_guidelines(self):
-        agents = self.project / "AGENTS.md"
-        agents.write_text(
-            "# eigene Regel\n\n"
-            + self.cli.GENERAL_RULES_MARK
-            + "\n## Alt\n- veraltet\n<!-- /vibe:general-rules -->\n\n## Eigener Rest\n",
-            encoding="utf-8",
-        )
-
-        output = self.init_project()
-
-        text = agents.read_text(encoding="utf-8")
-        self.assertTrue(text.startswith("# eigene Regel\n"))
-        self.assertIn("## Eigener Rest\n", text)
-        self.assertNotIn("- veraltet", text)
-        for rule in ("KISS", "Clean Code", "Caching", "Invalidierung"):
-            self.assertIn(rule, text)
-        self.assertIn("aktualisiert", output)
+        self.assertEqual("# eigene Regel\n", agents.read_text(encoding="utf-8"))
 
     def test_init_leaves_an_unpaired_rules_marker_unchanged(self):
         agents = self.project / "AGENTS.md"
@@ -388,7 +356,7 @@ class InitTest(ProjectFixture):
 
         self.assertEqual(
             (self.project / "AGENTS.md").read_text(encoding="utf-8"),
-            "# CUSTOM proj\n\n" + self.cli.GENERAL_RULES + "\n",
+            "# CUSTOM proj\n",
         )
         # Der vorhandene TYPE bleibt erhalten; nur der fehlende TESTER wird
         # ergänzt, damit der Pflicht-Test-Agent auch in bestehenden Projekten
@@ -438,120 +406,8 @@ class InitTest(ProjectFixture):
         self.assertFalse(outside.exists())
 
 
-class TemplateRulesTest(ProjectFixture):
-    # Verbindliche Mindestmerkmale der gestuften Prüfpraxis (F31). Die Tests
-    # legen damit die erwartete Fachlichkeit wörtlich fest; die Umsetzung muss
-    # diese Aussagen in den allgemeinen Regeln und allen Vorlagen führen.
-    # GH-46: Der generische Regelblock nennt die Projektprüfung über die
-    # Befehle aus .vibe/project.env (VERIFY_QUICK/VERIFY_PACKAGE/VERIFY_FULL)
-    # statt einer projektspezifischen Prüfdatei. Die übrigen Merkmale
-    # (betroffene Testmodule, Stufung, genau einmal, Nachweisumfang) bleiben.
-    VERIFY_EFFICIENCY_RULE = (
-        "Effizienz der Prüfungen (verbindlich)",
-        ".vibe/project.env",
-        "VERIFY_QUICK",
-        "VERIFY_PACKAGE",
-        "VERIFY_FULL",
-        "betroffene Testmodule",
-        "Prüfschnittstelle",
-        "genau einmal",
-        "vor der Abnahme",
-        "Änderungen",
-        "Code oder Tests",
-        "Nachweisumfang",
-        "abgeschwächt",
-    )
-
-    def assert_efficiency_rule(self, text, source):
-        for marker in self.VERIFY_EFFICIENCY_RULE:
-            self.assertIn(marker, text, f"{marker!r} fehlt in {source}")
-
-    def test_general_rules_require_tiered_verification(self):
-        rules = self.cli.GENERAL_RULES
-
-        self.assert_efficiency_rule(rules, "GENERAL_RULES")
-        # Während der Arbeit bleibt die Prüfung klein; die vollständige Suite
-        # ist der Abschlussnachweis und wird nicht durch Wiederholungen ersetzt.
-        self.assertIn("während der Bearbeitung", rules)
-
-    def test_all_shipped_project_templates_contain_the_verification_efficiency_rule(self):
-        templates = sorted((REPO / "templates").glob("*/AGENTS.md"))
-        self.assertTrue(templates)
-        for path in templates:
-            text = path.read_text(encoding="utf-8")
-            self.assert_efficiency_rule(text, str(path))
-
-    def test_repository_agents_file_contains_the_verification_efficiency_rule(self):
-        path = REPO / "AGENTS.md"
-        self.assertTrue(
-            path.is_file(),
-            "AGENTS.md fehlt im Repository-Wurzelverzeichnis; die Repository-"
-            "Regeln können nicht geprüft werden.",
-        )
-        text = path.read_text(encoding="utf-8")
-        self.assert_efficiency_rule(text, str(path))
-
-    def test_all_shipped_project_templates_contain_the_cleanup_rules(self):
-        templates = sorted((REPO / "templates").glob("*/AGENTS.md"))
-        self.assertTrue(templates)
-        for path in templates:
-            text = path.read_text(encoding="utf-8")
-            self.assertIn(self.cli.GENERAL_RULES_MARK, text, path)
-            self.assertIn(self.cli.GENERAL_RULES, text, path)
-            for rule in (
-                "Projektordner sauber halten",
-                "Ordnung im Git halten",
-                "Feature-Branch",
-                "git status",
-                "relevanten Diff",
-                "stashen",
-                "Force-Push",
-            ):
-                self.assertIn(rule, text, path)
-
-    def test_general_rules_cover_cleanup_and_git_order(self):
-        rules = self.cli.GENERAL_RULES
-        self.assertIn("Projektordner sauber halten", rules)
-        self.assertIn("Ordnung im Git halten", rules)
-        self.assertIn("Feature-Branch", rules)
-        self.assertIn("git status", rules)
-        self.assertIn("Force-Push", rules)
-
-    def test_all_shipped_project_templates_contain_the_coding_guidelines(self):
-        templates = sorted((REPO / "templates").glob("*/AGENTS.md"))
-        self.assertTrue(templates)
-        for path in templates:
-            text = path.read_text(encoding="utf-8")
-            self.assertIn("Leitlinien für Coding-Agenten", text, path)
-            for rule in ("KISS", "Clean Code", "Caching", "Invalidierung"):
-                self.assertIn(rule, text, path)
-
-    def test_general_rules_require_kiss_clean_code_and_safe_caching(self):
-        rules = self.cli.GENERAL_RULES
-        for rule in (
-            "Leitlinien für Coding-Agenten",
-            "KISS",
-            "Clean Code",
-            "Caching",
-            "Invalidierung",
-            "neuen und bestehenden Projekte",
-        ):
-            self.assertIn(rule, rules)
-
-    def test_repository_agents_file_contains_the_coding_guidelines(self):
-        text = (REPO / "AGENTS.md").read_text(encoding="utf-8")
-        self.assertIn("Leitlinien für Coding-Agenten", text)
-        for rule in ("KISS", "Clean Code", "Caching", "Invalidierung"):
-            self.assertIn(rule, text)
-
-    def test_all_shipped_project_templates_contain_the_test_agent_rule(self):
-        templates = sorted((REPO / "templates").glob("*/AGENTS.md"))
-        self.assertTrue(templates)
-        for path in templates:
-            text = path.read_text(encoding="utf-8")
-            self.assertIn("Unabhängiger Test-Agent (verbindlich)", text, path)
-            for rule in ("TESTER", "test-agent", "ausschließlich", "Reviewer"):
-                self.assertIn(rule, text, path)
+class TemplateFilesTest(ProjectFixture):
+    """Vorlagen ohne den früheren deutschen Regelblock (GH-76)."""
 
     def test_all_shipped_project_templates_configure_the_tester(self):
         envs = sorted((REPO / "templates").glob("*/.vibe/project.env"))
@@ -559,24 +415,6 @@ class TemplateRulesTest(ProjectFixture):
         for path in envs:
             text = path.read_text(encoding="utf-8")
             self.assertIn("TESTER=test-agent", text, path)
-
-    def test_general_rules_require_an_independent_test_agent(self):
-        rules = self.cli.GENERAL_RULES
-        for rule in (
-            "Unabhängiger Test-Agent (verbindlich)",
-            "TESTER",
-            "test-agent",
-            "ausschließlich",
-            "Coding- und Review-Agent",
-            "kein Nachweis",
-        ):
-            self.assertIn(rule, rules)
-
-    def test_repository_agents_file_contains_the_test_agent_rule(self):
-        text = (REPO / "AGENTS.md").read_text(encoding="utf-8")
-        self.assertIn("Unabhängiger Test-Agent (verbindlich)", text)
-        for rule in ("TESTER", "test-agent", "ausschließlich"):
-            self.assertIn(rule, text)
 
     def test_shipped_test_agent_template_is_complete(self):
         path = REPO / "templates" / "common" / ".opencode" / "agents" / "test-agent.md"
@@ -589,22 +427,16 @@ class TemplateRulesTest(ProjectFixture):
         self.assertIn("Produktionscode", text)
         self.cli.agent_validate(text)
 
-    def test_all_shipped_project_templates_have_exactly_one_general_rules_marker(self):
-        # F31: Jede Vorlage darf genau ein oeffnendes und genau ein
-        # schliessendes Markerpaar fuer die allgemeinen Regeln enthalten.
+    def test_all_shipped_project_templates_are_free_of_the_managed_block(self):
+        # GH-76: Der deutsche Pflichtblock lebt nicht mehr in den Vorlagen;
+        # die Runner-Logistik kommt aus dem verborgenen Plattformtext.
         templates = sorted((REPO / "templates").glob("*/AGENTS.md"))
         self.assertTrue(templates)
         for path in templates:
             text = path.read_text(encoding="utf-8")
-            self.assertEqual(
-                text.count(self.cli.GENERAL_RULES_MARK), 1,
-                f"{path}: oeffnender Marker count != 1",
-            )
-            self.assertEqual(
-                text.count(self.cli.GENERAL_RULES_END), 1,
-                f"{path}: schliessender Marker count != 1",
-            )
-
+            self.assertNotIn(self.cli.GENERAL_RULES_MARK, text, path)
+            self.assertNotIn(self.cli.GENERAL_RULES_END, text, path)
+            self.assertNotIn("Projektordner sauber halten", text, path)
 
 if __name__ == "__main__":
     unittest.main()

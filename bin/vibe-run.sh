@@ -324,10 +324,12 @@ esac
 # Ist das bevorzugte Resume-Paket bereits geschlossen, wird es über den
 # --prefer-Hinweis ignoriert; der Lauf wählt dann normal weiter und
 # protokolliert den Rückfall (siehe select_item/Arbeitspaket-Schleife).
-# Harness-Auswahl (AP04): Ohne vibe_harness.py bleibt der bisherige direkte
-# opencode-Pfad erhalten (ältere Installationen und Prüf-Attrappen). Der
-# Zustandsordner enthält harness.json; VIBE_HARNESS überschreibt ihn für
-# genau diesen Lauf.
+# Harness-Auswahl (AP04): Der Zustandsordner enthält harness.json;
+# VIBE_HARNESS überschreibt ihn für genau diesen Lauf. Seit GH-76 bricht ein
+# opencode-Lauf ohne vibe_harness.py fail-closed ab, weil der Läufer darüber
+# die Plattform-Anweisungen schreibt; der unterstützte Installations-/Update-
+# Pfad liefert das Modul immer mit. Ein stiller Lauf ohne den Plattformtext
+# würde die Zustellgarantie verletzen.
 STATE="${VIBE_STATE:-$INSTALL}"
 HARNESS=opencode
 HARNESS_CLI="$BIN/vibe_harness.py"
@@ -937,15 +939,28 @@ cleanup_worktree() {
 # privaten Server übergeben, damit auch vom Orchestrator gestartete Subagenten
 # die Projektmodelle statt ihrer globalen Frontmatter-Modelle verwenden. Pi
 # kennt keine OPENCODE_CONFIG_CONTENT und bleibt unverändert.
-HAS_PROJECT_MODELS=0
+# GH-76: Zusätzlich nennt die Inline-Konfiguration den versteckten Plattformtext
+# als `instructions`-Quelle. Sie wird für jeden opencode-Lauf gesetzt, auch
+# ohne Projektmodelle. Pi erhält sie nicht.
+HAS_INLINE_CONFIG=0
 if [ "$HARNESS" = "opencode" ]; then
-  MERGED_CONFIG="$(python3 - "$P/.vibe/agents.json" <<'PY' 2>>"$LOG"
+  # Der Text liegt im Zustandsordner, also außerhalb jedes Projekts und der
+  # persönlichen opencode-Konfiguration. Die letzte stdout-Zeile ist der Pfad.
+  # GH-76: Der Schreibvorgang läuft über das Harness-Modul, damit der Läufer
+  # nicht von der (in Tests und für FRITZ ersetzbaren) CLI `vibe` abhängt.
+  PLATFORM_INSTRUCTIONS_PATH="$(python3 "$BIN/vibe_harness.py" platform-instructions --directory "$STATE" 2>>"$LOG" | tail -n 1)"
+  if [ -z "$PLATFORM_INSTRUCTIONS_PATH" ] || [ ! -f "$PLATFORM_INSTRUCTIONS_PATH" ]; then
+    echo "ABBRUCH: Die Plattform-Anweisungen konnten nicht geschrieben werden; Details im Protokoll $LOG." | tee -a "$LOG"
+    exit 2
+  fi
+  MERGED_CONFIG="$(python3 - "$P/.vibe/agents.json" "$PLATFORM_INSTRUCTIONS_PATH" <<'PY' 2>>"$LOG"
 import json
 import os
 import re
 import sys
 
 config_path = sys.argv[1]
+platform_path = sys.argv[2]
 
 def fail(message):
     # Verständliche Meldung ohne Konfigurationsinhalte oder Geheimnisse.
@@ -1042,13 +1057,14 @@ def jsonc_to_json(text):
 
 MODEL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/@+-]*$")
 
-# 1) Projektdatei lesen; fehlt sie, gibt es keine Projektmodelle.
+# 1) Projektdatei lesen; fehlt sie, gibt es keine Projektmodelle. Die
+#    Plattformanweisungen werden trotzdem in die Inline-Konfiguration
+#    übernommen.
 try:
     with open(config_path, encoding="utf-8") as handle:
         raw = handle.read()
 except FileNotFoundError:
-    # Nur eine tatsächlich fehlende Datei bedeutet "keine Projektmodelle".
-    sys.exit(0)
+    raw = "{}"
 except OSError:
     fail("Die Agentenauswahl " + config_path + " ist nicht lesbar.")
 
@@ -1108,11 +1124,6 @@ for name in ("general", "explore"):
     else:
         opencode_disabled.append(name)
 
-if not clean and not opencode_models and not opencode_disabled:
-    # Keine wirksamen Projektmodelle und keine Deaktivierungen: bestehende
-    # Konfiguration und Serverwahl bleiben exakt unverändert.
-    sys.exit(0)
-
 # 2) Vorhandene Inline-Konfiguration (JSON/JSONC) semantisch erhalten.
 merged = {}
 existing = os.environ.get("OPENCODE_CONFIG_CONTENT", "")
@@ -1169,19 +1180,32 @@ for name, model in opencode_models.items():
 for name in opencode_disabled:
     set_entry(ensure_map(merged, "agents"), name, "disabled", True)
 
+# GH-76: Der Plattformtext ist eine zusätzliche Instruktionsquelle. Vorhandene
+# Einträge bleiben erhalten; der eigene Pfad wird nur einmal eingetragen.
+instructions = merged.get("instructions")
+if instructions is None:
+    merged["instructions"] = [platform_path]
+elif isinstance(instructions, list):
+    if platform_path not in instructions:
+        merged["instructions"] = instructions + [platform_path]
+else:
+    fail("OPENCODE_CONFIG_CONTENT: 'instructions' muss eine Liste sein.")
+
 print(json.dumps(merged, ensure_ascii=False))
 PY
 )"
   rc=$?
   if [ "$rc" != 0 ]; then
-    echo "ABBRUCH: Projektmodelle konnten nicht angewendet werden; Details im Protokoll $LOG." | tee -a "$LOG"
+    echo "ABBRUCH: Projektmodelle und Plattform-Anweisungen konnten nicht angewendet werden; Details im Protokoll $LOG." | tee -a "$LOG"
     exit 2
   fi
-  if [ -n "$MERGED_CONFIG" ]; then
-    HAS_PROJECT_MODELS=1
-    OPENCODE_CONFIG_CONTENT="$MERGED_CONFIG"
-    export OPENCODE_CONFIG_CONTENT
+  if [ -z "$MERGED_CONFIG" ]; then
+    echo "ABBRUCH: Die Plattform-Anweisungen konnten nicht in die Inline-Konfiguration übernommen werden; Details im Protokoll $LOG." | tee -a "$LOG"
+    exit 2
   fi
+  HAS_INLINE_CONFIG=1
+  OPENCODE_CONFIG_CONTENT="$MERGED_CONFIG"
+  export OPENCODE_CONFIG_CONTENT
 fi
 SERVER_ARGS="--standalone"
 SANDBOX_STATE=off
@@ -1218,7 +1242,7 @@ if [ "$SANDBOX_STATE" = "on" ]; then
     echo "ABBRUCH: Sandbox ist eingeschaltet, aber nicht startbar. Der Agent läuft nicht ohne Sandbox." | tee -a "$LOG"
     exit 2
   fi
-elif [ "$HAS_PROJECT_MODELS" != 1 ] && server_is_up; then SERVER_ARGS="--server http://127.0.0.1:$OPENCODE_PORT"; fi
+elif [ "$HAS_INLINE_CONFIG" != 1 ] && server_is_up; then SERVER_ARGS="--server http://127.0.0.1:$OPENCODE_PORT"; fi
 # B13: In der Sandbox führt ein gemeinsamer Server die Werkzeuge außerhalb der
 # Sandbox aus; dort gilt deshalb immer der private Server. Außerhalb der
 # Sandbox nur, wenn kein gemeinsamer Server erreichbar ist. Pi kennt keinen

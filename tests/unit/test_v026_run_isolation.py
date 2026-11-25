@@ -232,7 +232,6 @@ class RunSessionSocketTest(CliModuleFixture):
             "is_init": lambda name: True,
             "pending_changes": lambda path: "",
             "changed_file": lambda path, name: False,
-            "ensure_general_rules": lambda path: False,
             "sandbox_status": lambda name: {"enabled": False},
             "pause_after_active": lambda name: False,
             "penv": lambda name: {},

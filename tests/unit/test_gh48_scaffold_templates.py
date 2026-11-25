@@ -10,9 +10,8 @@ Geprüft wird:
 * ``ensure_gitignore`` ist idempotent und liefert created/appended/False;
   ``cmd_init`` ergänzt bestehende Dateien ohne Überschreiben.
 * ``templates/common`` enthält kein TICKETS.md/FEEDBACK.md mehr.
-* ``GENERAL_RULES`` in ``bin/vibe`` ist mit dem verwalteten Block aller fünf
-  Vorlagen-AGENTS.md identisch und beschreibt den feldbasierten
-  Ticketabschluss (Abschnitt „Ticketabschluss", kein „kein Häkchen").
+* ``GENERAL_RULES`` gibt es nicht mehr; ``vibe new``/``vibe init`` kopieren
+  die Vorlage ohne eingefügten Regelblock (GH-76).
 * ``vibe_guide`` führt TICKETS.md/FEEDBACK.md nicht mehr als Projektdateien.
 
 Ausschließlich temporäre ``VIBE``-/``HOME``-Pfade; Git-Kommandos laufen in
@@ -174,6 +173,25 @@ class GitignoreTest(ScaffoldCase):
         self.assertIn("Dashboard", result.stdout)
         self.assertNotIn("TICKETS.md", result.stdout)
 
+    def test_cmd_new_copies_the_template_without_a_rules_block(self):
+        """GH-76: ``vibe new`` fügt keinen verwalteten Block mehr ein.
+
+        Vor: leeres VIBE. Aktion: ``vibe new p2 generic``. Erwartet:
+        AGENTS.md entspricht der Typ-Vorlage mit ersetztem Namen und enthält
+        weder Marker noch deutschen Regeltext. Fehlerfall: injizierter Block
+        oder veränderter Vorlageninhalt.
+        """
+        result = self.run_cli("new", "p2", "generic")
+
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        text = (self.root / "p2" / "AGENTS.md").read_text(encoding="utf-8")
+        template = (TEMPLATES / "generic" / "AGENTS.md").read_text(
+            encoding="utf-8")
+        self.assertEqual(template.replace("{{NAME}}", "p2"), text)
+        self.assertNotIn(MARK, text)
+        self.assertNotIn(END, text)
+        self.assertNotIn("Projektordner sauber halten", text)
+
     def test_cmd_init_appends_idempotently_and_mentions_the_gitignore(self):
         """Vor: bestehendes Projekt mit .gitignore ohne .vibe. Aktion:
         vibe init proj zweimal. Erwartet: erster Lauf ergänzt .vibe/ und
@@ -202,13 +220,7 @@ class GitignoreTest(ScaffoldCase):
 
 
 class TemplateTest(unittest.TestCase):
-    """Vorlagen und verwalteter Regelblock."""
-
-    def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(self.tmp.cleanup)
-        self.root = Path(self.tmp.name)
-        (self.root / "home").mkdir()
+    """Vorlagen ohne den früheren deutschen Regelblock (GH-76)."""
 
     def test_common_templates_no_longer_contain_the_markdown_ledgers(self):
         """Vor: templates/common. Aktion: Verzeichnis lesen.
@@ -218,43 +230,18 @@ class TemplateTest(unittest.TestCase):
         self.assertNotIn("TICKETS.md", names)
         self.assertNotIn("FEEDBACK.md", names)
 
-    def block(self, path):
-        text = path.read_text(encoding="utf-8")
-        start = text.find(MARK)
-        end = text.find(END, start + len(MARK)) if start >= 0 else -1
-        self.assertGreaterEqual(start, 0, path)
-        self.assertGreater(end, start, path)
-        return text[start:end + len(END)].strip()
-
-    def test_general_rules_are_identical_in_all_template_agents_files(self):
-        """Vor: GENERAL_RULES aus bin/vibe und fünf Vorlagen-AGENTS.md.
-        Aktion: verwaltete Blöcke extrahieren.
-        Erwartet: alle fünf Blöcke sind untereinander und mit GENERAL_RULES
-        identisch (eine Quelle für alle Projekte)."""
-        cli = cli_module(self.root)
-        expected = cli.GENERAL_RULES.strip()
-        blocks = {kind: self.block(TEMPLATES / kind / "AGENTS.md")
-                  for kind in TEMPLATE_TYPES}
-
-        for kind, block in blocks.items():
-            with self.subTest(kind=kind):
-                self.assertEqual(expected, block)
-
-    def test_general_rules_describe_the_field_based_ticket_close(self):
-        """Vor: GENERAL_RULES. Aktion: Text prüfen.
-        Erwartet: Abschnitt "## Ticketabschluss" mit .vibe/tickets.json,
-        TICKET-<ID>.json, state/commit/test; "kein Häkchen" ist ersetzt."""
-        cli = cli_module(self.root)
-        rules = cli.GENERAL_RULES
-
-        self.assertIn("## Ticketabschluss", rules)
-        self.assertIn(".vibe/tickets.json", rules)
-        self.assertIn("TICKET-<ID>.json", rules)
-        self.assertIn("state", rules)
-        self.assertIn("commit", rules)
-        self.assertIn("test", rules)
-        self.assertNotIn("kein Häkchen", rules)
-
+    def test_templates_carry_no_managed_rules_block(self):
+        """Vor: alle fünf Vorlagen-AGENTS.md. Aktion: Marker zählen.
+        Erwartet: kein Markerpaar und kein deutscher Regeltext; das Gerüst
+        kopiert die Vorlage damit unverändert ohne eingefügten Block."""
+        templates = sorted(TEMPLATES.glob("*/AGENTS.md"))
+        self.assertTrue(templates)
+        for path in templates:
+            with self.subTest(path=str(path)):
+                text = path.read_text(encoding="utf-8")
+                self.assertNotIn(MARK, text)
+                self.assertNotIn(END, text)
+                self.assertNotIn("Projektordner sauber halten", text)
 
 class GuideTest(unittest.TestCase):
     """Projektassistent kennt die alten Ledger nicht mehr."""

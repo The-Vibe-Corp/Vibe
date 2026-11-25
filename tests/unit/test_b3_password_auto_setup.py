@@ -26,6 +26,7 @@ Zustellungslogik selbst werden wirklich mit echten Dateien/Echt-HTTP benutzt.
 
 import base64
 import http.client
+import contextlib
 import importlib.machinery
 import importlib.util
 import json
@@ -275,9 +276,7 @@ class B3RunFixture(unittest.TestCase):
                 with mock.patch.object(
                     self.cli, "sandbox_status", return_value={"enabled": False}
                 ):
-                    with mock.patch.object(
-                        self.cli, "ensure_general_rules", return_value=False
-                    ):
+                    with contextlib.nullcontext():
                         with mock.patch.object(
                             self.cli, "run_registry", return_value=registry
                         ):

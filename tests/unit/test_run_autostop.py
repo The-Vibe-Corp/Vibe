@@ -72,11 +72,10 @@ class RunnerSessionEndTest(unittest.TestCase):
             encoding="utf-8",
         )
         (self.project / "TICKETS.md").write_text("# TICKETS\n", encoding="utf-8")
-        # Der verwaltete Regelblock ist bereits aktuell; sonst würde
-        # ``vibe run`` die Datei ändern und der Preflight den Arbeitsbaum
-        # zu Recht als nicht leer ablehnen.
+        # GH-76: ``vibe run`` schreibt AGENTS.md nicht mehr; eine einfache
+        # Bestandsdatei genügt und bleibt unverändert.
         (self.project / "AGENTS.md").write_text(
-            cli.GENERAL_RULES + "\n", encoding="utf-8"
+            "# Projekt\n", encoding="utf-8"
         )
         support.write_agents(
             self.project / ".opencode" / "agents", "test-agent", "code-reviewer"

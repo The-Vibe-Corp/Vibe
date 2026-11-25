@@ -1593,8 +1593,13 @@ class RunnerFixture(unittest.TestCase):
 
 
 class RunnerControlTest(RunnerFixture):
-    def test_no_effective_entries_keeps_previous_b1_behaviour(self):
-        """Nur Standard-opencode-Einträge (aktiv, kein Modell) sind wirkungslos."""
+    def test_no_effective_entries_still_injects_platform_instructions(self):
+        """GH-76: Auch ohne Modell-Einträge wird der Plattformtext gesetzt.
+
+        Der frühere gemeinsame Server wird nicht wiederverwendet, weil er die
+        Instruktion nicht kennt: der Lauf startet ``--standalone``. Es
+        entstehen keine Agenten-Maps.
+        """
         self.write_opencode()
         shared_port = self.start_shared_server()
 
@@ -1606,16 +1611,19 @@ class RunnerControlTest(RunnerFixture):
         self.assertEqual(result.returncode, 0, detail)
         runs = self.run_calls()
         self.assertEqual(1, len(runs), repr(self.records()))
-        self.assertIsNone(
-            runs[0].get("config"),
-            "Ohne wirksame opencode-Einträge wurde eine Inline-Konfiguration gesetzt")
+        config = self.config_of(runs[0])
+        self.assertNotIn("agent", config)
+        self.assertNotIn("agents", config)
+        instructions = config.get("instructions")
+        self.assertEqual(1, len(instructions), config)
+        path = Path(instructions[0])
+        self.assertTrue(path.is_absolute(), instructions)
+        self.assertTrue(path.is_file(), path)
+        self.assertIn("## Vibe platform instructions",
+                      path.read_text(encoding="utf-8"))
         argv = runs[0]["argv"]
-        self.assertIn("--server", argv, repr(argv))
-        self.assertEqual(
-            argv[argv.index("--server") + 1],
-            "http://127.0.0.1:" + str(shared_port),
-            "Die Serverwahl ohne wirksame opencode-Einträge wurde verändert",
-        )
+        self.assertIn("--standalone", argv, repr(argv))
+        self.assertNotIn("--server", argv, repr(argv))
 
 
 class RunnerOpencodeConfigTest(RunnerFixture):

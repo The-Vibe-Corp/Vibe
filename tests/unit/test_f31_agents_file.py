@@ -5,11 +5,13 @@ aus einer Implementierung. Geprüft werden die geplanten Schnittstellen in
 ``bin/vibe``:
 
 * ``agents_file_view(name)`` — liest AGENTS.md und trennt die freien Teile vom
-  verwalteten Block (``GENERAL_RULES``) samt Digest.
+  verwalteten Bestandsblock samt Digest.
 * ``agents_file_save(name, before, after, digest)`` — schreibt die freien Teile
-  zusammen mit dem byte-identischen verwalteten Block atomar über die
-  Speicherschicht (V-005); überholte Digests und Marker in den freien Teilen
-  werden abgewiesen, ohne die Datei zu verändern.
+  zusammen mit dem byte-identischen vorhandenen Block atomar über die
+  Speicherschicht (V-005); ohne Block werden ``before`` und ``after``
+  gemeinsam geschrieben (GH-76: blockfreie Dateien sind der Normalfall).
+  Überholte Digests und Marker in den freien Teilen werden abgewiesen, ohne
+  die Datei zu verändern.
 * ``agents_file_create(name)`` — legt eine fehlende AGENTS.md aus der
   Typ-Vorlage an, überschreibt niemals eine vorhandene Datei.
 
@@ -19,7 +21,6 @@ Vorlagen; keine produktiven HOME-/VIBE-Konfigurationen, keine Modellaufrufe.
 import importlib.machinery
 import importlib.util
 import os
-import re
 import shutil
 import sys
 import tempfile
@@ -32,12 +33,19 @@ CLI = REPO / "bin" / "vibe"
 
 
 def general_rules():
-    """Der verwaltete Block, wie bin/vibe ihn bei jedem Agentenlauf setzt."""
-    text = CLI.read_text(encoding="utf-8")
-    match = re.search(r'GENERAL_RULES = """(.*?)"""', text, re.DOTALL)
-    if not match:
-        raise RuntimeError("GENERAL_RULES wurde in bin/vibe nicht gefunden")
-    return match.group(1)
+    """Der frühere deutsche Regelblock als Bestands-Fixture (GH-76).
+
+    Der Block wird von ``bin/vibe`` nicht mehr erzeugt. Für die Ansicht und
+    das byte-identische Speichern eines bestehenden Projekts bleibt er aber
+    ein gültiger Bestandsfall; der Test darf ihn deshalb nicht aus einer
+    Produktionskonstante ableiten.
+    """
+    return (
+        "<!-- vibe:general-rules -->\n"
+        "## Altbestand (nicht mehr erzeugt)\n\n"
+        "- Diese Zeile bleibt beim Speichern byte-identisch.\n"
+        "<!-- /vibe:general-rules -->"
+    )
 
 
 BLOCK = general_rules()
@@ -283,6 +291,21 @@ class AgentsFileFixture(unittest.TestCase):
         # Kein Block wurde still eingefügt: die Ansicht bleibt blockfrei.
         self.assertIsNone(self.cli.agents_file_view("proj")["managed"])
 
+    def test_save_without_block_writes_before_and_after(self):
+        """GH-76: Für blockfreie Dateien sind beide Editor-Teile speicherbar."""
+        self.write_agents("Alter Inhalt ohne Marker.\n")
+        view = self.cli.agents_file_view("proj")
+        self.assertIsNone(view["managed"])
+
+        self.cli.agents_file_save(
+            "proj", "Neuer oberer Teil.\n", "Neuer unterer Teil.\n",
+            view["digest"])
+
+        self.assertEqual(
+            "Neuer oberer Teil.\nNeuer unterer Teil.\n", self.read_agents())
+        self.assertNotIn(MARK, self.read_agents())
+        self.assertIsNone(self.cli.agents_file_view("proj")["managed"])
+
     # ---------- AK6: Aus Vorlage anlegen ----------
 
     def test_create_uses_type_template_with_name_replaced(self):
@@ -291,12 +314,17 @@ class AgentsFileFixture(unittest.TestCase):
         text = self.agents_path("webproj").read_text(encoding="utf-8")
         template = (REPO / "templates" / "web" / "AGENTS.md").read_text(encoding="utf-8")
         self.assertEqual(text, template.replace("{{NAME}}", "webproj"))
+        # GH-76: Die Typ-Vorlage trägt keinen verwalteten Block mehr.
+        self.assertNotIn(MARK, text)
+        self.assertNotIn(MARK_END, text)
 
     def test_create_unknown_type_falls_back_to_generic(self):
         self.cli.agents_file_create("fancyproj")
         text = self.agents_path("fancyproj").read_text(encoding="utf-8")
         template = (REPO / "templates" / "generic" / "AGENTS.md").read_text(encoding="utf-8")
         self.assertEqual(text, template.replace("{{NAME}}", "fancyproj"))
+        self.assertNotIn(MARK, text)
+        self.assertNotIn(MARK_END, text)
 
     def test_create_never_overwrites_existing_file(self):
         self.write_agents("Bestehender Inhalt.\n")

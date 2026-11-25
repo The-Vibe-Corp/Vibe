@@ -505,6 +505,60 @@ def _cmd_run(args):
     return 126
 
 
+PLATFORM_INSTRUCTIONS = """## Vibe platform instructions
+
+These rules apply to runner-managed work. User templates and project instructions define how to do the work; they do not replace the runner's handoff requirements.
+
+### Workspace and checks
+
+- Work in the assigned worktree. Preserve unrelated changes. Do not modify the integration checkout, the running installation, or the project's runner settings in `.vibe/project.env`.
+- Use the configured checks. Do not change commands, limits, or results to pass a gate. Report what was actually checked and any failure or omission.
+- Keep secrets, personal configuration, and temporary artifacts out of commits and reports. A test assignment does not authorize extra paid requests or actions against production systems.
+- Prefer the simplest solution that fully meets the requirements. Avoid unrelated changes and speculative abstractions.
+
+### Package evidence and review
+
+- Work on the supplied ticket. Record the acceptance evidence appropriate to the task. The project defines its testing method; a dedicated tester or test-first workflow is not a platform default.
+- Obtain the required independent review. The reviewer returns the report; the coordinating agent saves it to `docs/reviews/<ID>-review-<round>.md`.
+- The final line of the saved report must be exactly `Verdict: PASS` or `Verdict: CHANGES REQUIRED`, in plain text. A heading, bullet, or bold label is not a substitute. Only PASS permits handoff.
+- The coordinator may correct the formatting of an explicit, unambiguous verdict, never the decision. If the verdict is missing or contradictory, ask the reviewer to clarify it.
+
+### Commit and ticket handoff
+
+- The coordinator stages only package changes and required evidence, inspects the staged diff, and commits with a subject starting `<ID>:`. Leave the worktree clean without disturbing unrelated work.
+- After the commit exists, update the runner-supplied `TICKET-<ID>.json` in the worktree: set `state` to `done`, set `commit` to the actual hash, and put the verification evidence in `test`. This file is runtime state: do not stage it or edit the central `.vibe/tickets.json`.
+- This hands the package back to the runner. Do not report it as merged or closed until the runner confirms that state.
+
+### Runner-owned Git operations
+
+- The runner owns worktrees, branches, integration, push, PR creation, merge, and cleanup. Do not perform those actions yourself.
+- If the runner returns an in-progress merge conflict, resolve it in the assigned worktree, stage the resolved files, continue that merge, and validate the resolution. Do not start another merge, abort, rebase, or choose one side wholesale.
+"""
+PLATFORM_INSTRUCTIONS_FILENAME = "platform_instructions.md"
+
+
+def platform_instructions_path(directory):
+    """Zielpfad des versteckten Plattformtexts in ``directory``."""
+    return os.path.abspath(os.path.join(directory, PLATFORM_INSTRUCTIONS_FILENAME))
+
+
+def write_platform_instructions(directory):
+    """Schreibt den Plattformtext atomar und liefert den absoluten Pfad.
+
+    GH-76: Der Text liegt außerhalb jedes Projekts und wird opencode als
+    zusätzliche ``instructions``-Quelle übergeben. Ein vorhandener Pfad wird
+    byte-identisch neu geschrieben; ein Symlink wird abgelehnt, damit nie eine
+    fremde Datei verändert wird.
+    """
+    path = platform_instructions_path(directory)
+    if os.path.islink(path):
+        raise HarnessError(
+            "Plattform-Anweisungen: " + path + " ist ein Symlink und wird nicht verfolgt.")
+    os.makedirs(directory, exist_ok=True)
+    vibe_storage.write_text(path, PLATFORM_INSTRUCTIONS)
+    return path
+
+
 def main(argv=None):
     """Kommandozeileneinstieg; Rückgabe ist der Prozessende-Code."""
     parser = argparse.ArgumentParser(prog="vibe_harness.py")
@@ -548,7 +602,20 @@ def main(argv=None):
     run.add_argument("--json", action="store_true",
                      help="Pi: Ereignisausgabe --mode json ankoppeln")
 
+    platform = sub.add_parser(
+        "platform-instructions",
+        help="versteckte Plattform-Regeln für opencode-Läufe schreiben (GH-76)")
+    platform.add_argument("--directory", required=True)
+
     args = parser.parse_args(argv)
+
+    if args.command == "platform-instructions":
+        try:
+            print(write_platform_instructions(args.directory))
+        except (HarnessError, OSError, vibe_storage.StorageError) as error:
+            print(str(error), file=sys.stderr)
+            return 2
+        return 0
 
     if args.command == "selected":
         try:

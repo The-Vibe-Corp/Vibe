@@ -9,9 +9,10 @@ Geprüft wird die in die Assistent-Ansicht (guideCard) integrierte Karte
 „AGENTS.md — Regeln für Agenten“:
 
 * Die Karte zeigt den aktuellen Inhalt von AGENTS.md (AK1).
-* Der verwaltete Block ist als von vibe verwaltet gekennzeichnet und die Karte
-  erklärt, dass dieser Teil bei jedem Agentenlauf aktualisiert und in der
-  Bearbeitung geschützt ist (AK2).
+* Der verwaltete Bestandsblock ist als von vibe verwaltet gekennzeichnet und
+  die Karte erklärt, dass er nicht mehr bei jedem Agentenlauf aktualisiert,
+  sondern in der Bearbeitung geschützt und byte-identisch erhalten bleibt
+  (AK2, GH-76).
 * Die freien Teile sind über Textareas bearbeitbar; Speichern schreibt die
   Datei, der Block bleibt byte-identisch (AK3).
 * Fehlt AGENTS.md, legt der Button „Aus Vorlage anlegen“ sie aus der
@@ -48,18 +49,22 @@ SHOT = Path(
 
 
 def general_rules():
-    """Der verwaltete Block, wie bin/vibe ihn bei jedem Agentenlauf setzt."""
-    text = (REPO / "bin" / "vibe").read_text(encoding="utf-8")
-    match = re.search(r'GENERAL_RULES = """(.*?)"""', text, re.DOTALL)
-    if not match:
-        raise RuntimeError("GENERAL_RULES wurde in bin/vibe nicht gefunden")
-    return match.group(1)
+    """Ein nicht-kanonischer Bestandsblock (GH-76: wird nicht mehr erzeugt).
+
+    Der Block darf nicht aus einer Produktionskonstante stammen; so fällt
+    jede Normalisierung auf den früheren deutschen Text auf.
+    """
+    return (
+        "<!-- vibe:general-rules -->\n"
+        "## Bestandsregel F31\n\n"
+        "- alter, nicht mehr erzeugter Block\n"
+        "<!-- /vibe:general-rules -->"
+    )
 
 
 BLOCK = general_rules()
 EXPLANATION = re.compile(
-    r"auf den aktuellen Stand gebracht und ist in der Bearbeitung geschützt"
-    r"|it brings the block up to date and protects it from editing")
+    r"bleibt byte-identisch erhalten|preserved byte-identically")
 BEFORE = "Kopfteil-F31\n"
 AFTER = "\nFußteil-F31\n"
 
@@ -241,7 +246,7 @@ class AgentsFileUiTest(unittest.TestCase):
         self.assertEqual(boxes.count(), 2, "vor/after-Textareas fehlen in der Karte")
         self.assertIn("Kopfteil-F31", boxes.nth(0).input_value())
         self.assertIn("Fußteil-F31", boxes.nth(1).input_value())
-        self.assertIn("Ordnung im Git halten", text, "verwalteter Block wird nicht angezeigt")
+        self.assertIn("Bestandsregel F31", text, "verwalteter Block wird nicht angezeigt")
         SHOT.parent.mkdir(parents=True, exist_ok=True)
         card.screenshot(path=str(SHOT))
         self.assertTrue(SHOT.exists() and SHOT.stat().st_size > 0)
@@ -269,6 +274,38 @@ class AgentsFileUiTest(unittest.TestCase):
         )
         text = self.agents_path().read_text(encoding="utf-8")
         self.assertEqual(text, BEFORE + BLOCK + "Fußteil-F31 geändert\n")
+
+    # ---------- AK3b: Blockfreie Datei (GH-76) ----------
+
+    def test_blockless_file_allows_editing_both_parts_and_saves_them(self):
+        """GH-76: Ohne verwalteten Block müssen beide Textareas editierbar sein.
+
+        Vorbedingung: AGENTS.md ohne Marker. Aktion: beide Teile ändern und
+        speichern. Erwartung: ``before`` ist NICHT deaktiviert; die Datei
+        enthält danach ``before + after``. Fehlerfall: die UI deaktiviert den
+        oberen Teil, obwohl blockfreie Dateien der Normalfall sind.
+        """
+        self.agents_path().write_text("Oben-F31\nUnten-F31\n", encoding="utf-8")
+        self.open_guide()
+        card = self.agents_card()
+        card.wait_for()
+        boxes = card.get_by_role("textbox")
+        self.assertEqual(2, boxes.count(), "vor/after-Textareas fehlen")
+        self.assertTrue(boxes.nth(0).is_enabled(),
+                        "Der obere Teil ist bei blockfreier Datei deaktiviert")
+        self.assertTrue(boxes.nth(1).is_enabled(),
+                        "Der untere Teil ist deaktiviert")
+        boxes.nth(0).fill("Neuer oberer Teil F31\n")
+        boxes.nth(1).fill("Neuer unterer Teil F31\n")
+        card.get_by_role("button", name="Save").click()
+        self.wait_until(
+            lambda: "Neuer unterer Teil F31" in self.agents_path().read_text(
+                encoding="utf-8"),
+            message="Speichern hat die blockfreie AGENTS.md nicht aktualisiert",
+        )
+        self.assertEqual(
+            "Neuer oberer Teil F31\nNeuer unterer Teil F31\n",
+            self.agents_path().read_text(encoding="utf-8"))
 
     # ---------- AK6: Aus Vorlage anlegen ----------
 

@@ -306,6 +306,26 @@ class B1RunnerFixture(unittest.TestCase):
             "opencode erhielt keine OPENCODE_CONFIG_CONTENT: " + repr(entry))
         return json.loads(raw)
 
+    def platform_instructions_path(self, config):
+        """GH-76: Die Inline-Konfiguration nennt genau den Plattformtext."""
+        instructions = config.get("instructions")
+        self.assertIsInstance(
+            instructions, list,
+            "OPENCODE_CONFIG_CONTENT enthält keine instructions-Liste: "
+            + json.dumps(config, ensure_ascii=False))
+        self.assertEqual(1, len(instructions), instructions)
+        path = Path(instructions[0])
+        self.assertTrue(path.is_absolute(), instructions)
+        self.assertEqual("platform_instructions.md", path.name)
+        self.assertTrue(path.is_file(), "Plattformtext fehlt: " + str(path))
+        self.assertIn(
+            path.parent.resolve(),
+            {self.runtime.resolve(), self.install.resolve()},
+            "Plattformtext liegt nicht im Laufzeit-/Zustandsordner: " + str(path))
+        text = path.read_text(encoding="utf-8")
+        self.assertIn("## Vibe platform instructions", text)
+        return path
+
     def assert_models(self, config, expected):
         for agent, model in expected.items():
             self.assertEqual(
@@ -421,6 +441,7 @@ class RunnerProjectModelsTest(B1RunnerFixture):
                          + repr(self.records()))
         config = self.config_of(runs[0])
         self.assert_models(config, MODELS)
+        self.platform_instructions_path(config)
 
         argv = runs[0]["argv"]
         self.assertIn("--model", argv, repr(argv))
@@ -459,6 +480,8 @@ class RunnerProjectModelsTest(B1RunnerFixture):
         run_config = self.config_of(runs[0])
         self.assert_models(serve_config, MODELS)
         self.assert_models(run_config, MODELS)
+        self.platform_instructions_path(serve_config)
+        self.platform_instructions_path(run_config)
         self.assertEqual(
             serve_config, run_config,
             "Server und Lauf sehen nicht dieselbe wirksame Konfiguration")
@@ -477,8 +500,16 @@ class SharedServerTest(B1RunnerFixture):
     def shared_url(self, port):
         return "http://127.0.0.1:" + str(port)
 
-    def test_shared_server_is_used_unchanged_without_project_models(self):
-        """Kontrolle: ohne Projektmodelle bleibt die Wiederverwendung erhalten."""
+    def test_shared_server_without_platform_instructions_is_not_reused(self):
+        """GH-76: Ein vorbestehender Server ohne den Plattformtext wird ersetzt.
+
+        Aktion: gemeinsamer Server läuft, keine Projektmodelle, keine
+        Kennwortdatei. Erwartung: ``opencode run --standalone`` (der Lauf
+        startet seinen eigenen Server mit der Inline-Konfiguration); der
+        gemeinsame Server wird nicht kontaktiert und kein privater
+        ``serve``-Prozess gestartet. Fehlerfall: Wiederverwendung eines
+        Servers, der die Plattformanweisungen nicht kennt.
+        """
         shared_port = self.start_shared_server()
 
         result = self.run_runner(
@@ -488,14 +519,12 @@ class SharedServerTest(B1RunnerFixture):
         self.assertEqual(result.returncode, 0, "Läufer bricht ab:\n" + detail)
         runs = self.run_calls()
         self.assertEqual(1, len(runs), repr(self.records()))
-        self.assertEqual(
-            [], self.serve_calls(),
-            "Ohne Projektmodelle startet kein privater Server")
+        self.assertEqual([], self.serve_calls(),
+                         "Ohne Kennwortdatei startet kein privater Server")
         argv = runs[0]["argv"]
-        self.assertIn("--server", argv, repr(argv))
-        self.assertEqual(argv[argv.index("--server") + 1],
-                         self.shared_url(shared_port))
-        self.assertNotIn("--standalone", argv, repr(argv))
+        self.assertIn("--standalone", argv, repr(argv))
+        self.assertNotIn("--server", argv, repr(argv))
+        self.platform_instructions_path(self.config_of(runs[0]))
 
     def test_shared_server_is_not_reused_when_project_models_exist(self):
         """AK: Mit Projektmodellen ohne Kennwortdatei gilt ``--standalone``."""
@@ -575,6 +604,7 @@ class ExistingConfigTest(B1RunnerFixture):
                 config.get(key), EXISTING_CONFIG[key],
                 f"Unbeteiligte Einstellung {key!r} ging verloren")
 
+        self.platform_instructions_path(config)
         fields = resolved_agent_fields(config, "reviewer")
         self.assertEqual(fields.get("description"), "Bestehender Reviewer")
         self.assertEqual(fields.get("temperature"), 0.2)
@@ -695,8 +725,9 @@ class ExistingConfigTest(B1RunnerFixture):
         self.assertEqual(
             resolved_agent_fields(config, "reviewer").get("temperature"), 0.2)
 
-    def test_without_project_models_existing_config_stays_unchanged(self):
-        """Kontrolle: ohne Projektmodelle wird die Inline-Konfiguration nicht angefasst."""
+    def test_existing_config_keys_survive_and_instructions_are_added(self):
+        """GH-76: Ohne Projektmodelle bleiben fremde Schlüssel erhalten; nur
+        die ``instructions``-Liste kommt hinzu, keine Agenten-Map."""
         self.write_project_models({}, aktiv=[])
         existing = {
             "theme": "dark",
@@ -712,10 +743,12 @@ class ExistingConfigTest(B1RunnerFixture):
         self.assertEqual(result.returncode, 0, "Läufer bricht ab:\n" + detail)
         runs = self.run_calls()
         self.assertEqual(1, len(runs), repr(self.records()))
-        self.assertEqual(
-            self.config_of(runs[0]), existing,
-            "Ohne Projektmodelle wurde die vorhandene Konfiguration verändert")
-
+        config = self.config_of(runs[0])
+        for key in ("theme", "agent", "agents"):
+            self.assertEqual(existing[key], config.get(key),
+                             "Bestehender Schlüssel ging verloren: " + key)
+        self.platform_instructions_path(config)
+        self.assertIsNone(effective_model(config, "tester"))
 
 class InvalidConfigurationTest(B1RunnerFixture):
     """AK: Fehlerhafte Konfiguration scheitert vor dem Agentenstart."""
