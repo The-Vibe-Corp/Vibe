@@ -793,7 +793,6 @@ class VerifyTempDirectoryTest(unittest.TestCase):
 class ScreenshotIsolationTest(unittest.TestCase):
     def test_browser_screenshots_honor_the_verify_directory(self):
         modules = {
-            "test_fritz_ui": "F5-fritz.png",
             "test_pause_after_package_ui": "F4-pause.png",
             "test_sandbox_ui": "F7-sandbox.png",
             "test_write_dirs_ui": "F3-schreibrechte.png",

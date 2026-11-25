@@ -947,7 +947,7 @@ if [ "$HARNESS" = "opencode" ]; then
   # Der Text liegt im Zustandsordner, also außerhalb jedes Projekts und der
   # persönlichen opencode-Konfiguration. Die letzte stdout-Zeile ist der Pfad.
   # GH-76: Der Schreibvorgang läuft über das Harness-Modul, damit der Läufer
-  # nicht von der (in Tests und für FRITZ ersetzbaren) CLI `vibe` abhängt.
+  # nicht von der (in Tests ersetzbaren) CLI `vibe` abhängt.
   PLATFORM_INSTRUCTIONS_PATH="$(python3 "$BIN/vibe_harness.py" platform-instructions --directory "$STATE" 2>>"$LOG" | tail -n 1)"
   if [ -z "$PLATFORM_INSTRUCTIONS_PATH" ] || [ ! -f "$PLATFORM_INSTRUCTIONS_PATH" ]; then
     echo "ABBRUCH: Die Plattform-Anweisungen konnten nicht geschrieben werden; Details im Protokoll $LOG." | tee -a "$LOG"
@@ -1856,23 +1856,6 @@ $QUESTION_HINT"
         printf '\a\a\a'; echo "Agent mit Fehler beendet (Fehlerklasse '$CLASS')." | tee -a "$LOG"
         # V-027: Quota- und Anmeldefehler werden im Modus "continue"
         # ausschließlich im Rahmen der Wiederholungslimits erneut versucht.
-        # Sie lösen weder eine automatische Router-Neuverbindung noch eine
-        # manuelle IP-Abfrage aus.
-        if [ "$CLASS" != "quota" ] && [ "$CLASS" != "auth" ]; then
-          # Die Automatik ist standardmäßig aus; 'fritz auto' fordert nur bei
-          # ausdrücklich gespeicherter Automatik eine neue IP an. Ein Lauf wartet
-          # nicht auf eine Eingabe, wenn niemand an einem Terminal sitzt.
-          # F18: Der Projektname geht an die zentrale Steuerung; läuft bereits ein
-          # Reconnect eines anderen Projekts, wird dessen Ergebnis übernommen und
-          # dieser Lauf danach fortgesetzt.
-          FRITZ_OUT="$(VIBE_PROJECT="$P" python3 "$BIN/vibe" fritz auto 2>&1)"; FRITZ_RC=$?
-          if [ -n "$FRITZ_OUT" ]; then printf '%s\n' "$FRITZ_OUT" | tee -a "$LOG"; fi
-          if [ "$FRITZ_RC" = 0 ]; then
-            echo "Zentraler Reconnect abgeschlossen; der Lauf wird nach kurzer Wartezeit fortgesetzt." | tee -a "$LOG"
-            sleep 20
-          elif [ -t 0 ]; then read -r -p "Neue IP manuell anfordern, dann Enter (Strg+C = Abbruch): " _
-          else echo "Keine neue IP angefordert; der Lauf wird fortgesetzt." | tee -a "$LOG"; fi
-        fi
         if [ "$ATTEMPT" -ge "$TRIES_PER_ITEM" ]; then
           echo "Überspringe $ID nach $TRIES_PER_ITEM Versuchen ($MAXR Wiederholungen, Wiederholungslimit erreicht, von Hand prüfen)." | tee -a "$LOG"
           record_block "$ID" "Agentenfehler ($CLASS)"

@@ -4,7 +4,7 @@
  * zeichnet nur denbetroffenen Bereich lokal neu und spiegelt den Tab per
  * history.replaceState in der URL — ohne hashchange und ohne NV.render().
  * Alle Daten stammen aus den echten Endpunkten /api/costs, /api/runs,
- * /api/ui_settings, /api/doctor, /api/paths, /api/fritz und /api/harness.
+ * /api/ui_settings, /api/doctor, /api/paths und /api/harness.
  *
  * DOM nur mit el()/Textknoten; keine innerHTML mit dynamischen Inhalten,
  * keine rohen JSON-Objekte in der Anzeige. Zustände erscheinen als Badges.
@@ -596,25 +596,21 @@ function nvEvalLoadEnvironment(panel, token) {
   var doctor = el('div', {'data-nv-env-doctor': ''});
   var paths = el('div', {'data-nv-paths': ''});
   var harness = el('div', {'data-nv-harness-status': ''});
-  var fritz = el('div', {'data-nv-fritz-status': ''});
   var error = nvEvalErrorBox();
   panel.replaceChildren(
     nvEvalSection(tr('Prüfungen'), doctor),
     nvEvalSection(tr('Aufgelöste Pfade'), paths),
-    nvEvalSection(tr('Harness'), harness),
-    nvEvalSection(tr('Fritzbox'), fritz), error);
+    nvEvalSection(tr('Harness'), harness), error);
 
   Promise.all([
     api('/api/doctor').catch(function () { return []; }),
     api('/api/paths').catch(function () { return {paths: {}}; }),
-    api('/api/fritz').catch(function () { return {}; }),
     api('/api/harness').catch(function () { return {}; })
   ]).then(function (answers) {
     if (NV.stale(token)) return;
     var checks = Array.isArray(answers[0]) ? answers[0] : [];
     var pathMap = (answers[1] && answers[1].paths) || {};
-    var fritzStatus = answers[2] || {};
-    var harnessStatus = answers[3] || {};
+    var harnessStatus = answers[2] || {};
 
     var rows = el('div', {class: 'nv-list'});
     checks.forEach(function (check) {
@@ -652,36 +648,6 @@ function nvEvalLoadEnvironment(panel, token) {
           item.installed ? tr('Installiert') : tr('Nicht installiert'))));
     });
     harness.replaceChildren(harnessRows);
-
-    var result = el('div', {class: 'nv-note', 'data-nv-fritz-result': '', hidden: ''});
-    if (fritzStatus.automation) {
-      var reconnect = el('button', {class: 'nv-btn nv-primary', type: 'button',
-        'data-nv-action': 'fritz-reconnect'}, tr('Neue IP anfordern'));
-      reconnect.addEventListener('click', function () {
-        if (!window.confirm(String(tr(
-          'FRITZ!Box neu verbinden? Die Internetverbindung wird kurz getrennt.')))) return;
-        result.hidden = false;
-        result.replaceChildren(el('span', {class: 'nv-muted'},
-          tr('Reconnect läuft …')));
-        api('/api/fritz', {action: 'reconnect'}).then(function (answer) {
-          result.replaceChildren(
-            el('b', {class: answer && answer.ok ? 'nv-ok' : 'nv-bad'},
-              answer && answer.ok ? tr('Reconnect erfolgreich') : tr('Reconnect fehlgeschlagen')),
-            el('pre', {}, nvEvalText(answer && answer.result && answer.result.output
-              || answer && answer.message || '')));
-        }).catch(function (failure) {
-          result.replaceChildren(el('div', {class: 'nv-bad'},
-            String(failure && failure.message || failure)));
-        });
-      });
-      fritz.replaceChildren(
-        el('p', {}, tr('Automatik: an')),
-        el('div', {class: 'nv-row'}, reconnect), result);
-    } else {
-      fritz.replaceChildren(el('p', {class: 'nv-muted', 'data-nv-fritz-hint': ''},
-        tr('Die Fritzbox-Automatik kann in den Einstellungen aktiviert werden.'),
-        ' ', el('a', {href: '#/settings'}, tr('Einstellungen öffnen'))));
-    }
   }).catch(function (failure) {
     if (!NV.stale(token)) nvEvalFail(error, failure);
   });
@@ -802,16 +768,7 @@ if (window.VIBE_I18N && typeof VIBE_I18N.extend === 'function') {
       'Keine Pfade vorhanden.': 'No paths available.',
       'Auswahl': 'Selection',
       'Installiert': 'Installed',
-      'Nicht installiert': 'Not installed',
-      'Automatik: an': 'Automation: on',
-      'Die Fritzbox-Automatik kann in den Einstellungen aktiviert werden.':
-        'FRITZ!Box automation can be enabled in settings.',
-      'Einstellungen öffnen': 'Open settings',
-      'FRITZ!Box neu verbinden? Die Internetverbindung wird kurz getrennt.':
-        'Reconnect FRITZ!Box? The internet connection will be interrupted briefly.',
-      'Reconnect läuft …': 'Reconnect in progress …',
-      'Reconnect erfolgreich': 'Reconnect successful',
-      'Reconnect fehlgeschlagen': 'Reconnect failed'
+      'Nicht installiert': 'Not installed'
     },
     de: {
       'Kostenübersicht': 'Kostenübersicht',
@@ -866,16 +823,7 @@ if (window.VIBE_I18N && typeof VIBE_I18N.extend === 'function') {
       'Keine Pfade vorhanden.': 'Keine Pfade vorhanden.',
       'Auswahl': 'Auswahl',
       'Installiert': 'Installiert',
-      'Nicht installiert': 'Nicht installiert',
-      'Automatik: an': 'Automatik: an',
-      'Die Fritzbox-Automatik kann in den Einstellungen aktiviert werden.':
-        'Die Fritzbox-Automatik kann in den Einstellungen aktiviert werden.',
-      'Einstellungen öffnen': 'Einstellungen öffnen',
-      'FRITZ!Box neu verbinden? Die Internetverbindung wird kurz getrennt.':
-        'FRITZ!Box neu verbinden? Die Internetverbindung wird kurz getrennt.',
-      'Reconnect läuft …': 'Reconnect läuft …',
-      'Reconnect erfolgreich': 'Reconnect erfolgreich',
-      'Reconnect fehlgeschlagen': 'Reconnect fehlgeschlagen'
+      'Nicht installiert': 'Nicht installiert'
     }
   });
 }
