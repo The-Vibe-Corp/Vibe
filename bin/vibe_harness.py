@@ -527,7 +527,7 @@ These rules apply to runner-managed work. User templates and project instruction
 
 - The coordinator stages only package changes and required evidence, inspects the staged diff, and commits with a subject starting `<ID>:`. Leave the worktree clean without disturbing unrelated work.
 - After the commit exists, update the runner-supplied `TICKET-<ID>.json` in the worktree: set `state` to `done`, set `commit` to the actual hash, and put the verification evidence in `test`. This file is runtime state: do not stage it or edit the central `.vibe/tickets.json`.
-- This hands the package back to the runner. Do not report it as merged or closed until the runner confirms that state.
+- Stop any temporary background processes you started for the task once they are no longer needed. After updating the ticket working copy, give a brief final handoff and end your turn; do not wait for the runner.
 
 ### Runner-owned Git operations
 
