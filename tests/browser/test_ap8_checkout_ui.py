@@ -352,8 +352,8 @@ class CheckoutUiTest(unittest.TestCase):
 
         agents_file = self.workspace / "aushang" / "AGENTS.md"
         self.assertTrue(
-            wait_for_file_content(agents_file, "Projektordner sauber halten"),
-            "AGENTS.md ohne den lokalen Regelblock",
+            wait_for_file_content(agents_file, "# AGENTS fuer"),
+            "AGENTS.md ohne die Vorlage",
         )
 
         # In der Liste auffindbar und geöffnet (Projektansicht im Schaubereich).
@@ -374,7 +374,7 @@ class CheckoutUiTest(unittest.TestCase):
 
     def test_the_clone_api_creates_the_project_and_requires_the_token(self):
         """AK5: POST /api/clone {url, name} -> {ok, message, project}; nur
-        mit gültigem Dashboard-Token; Fehler strukturiert."""
+        mit gültiger Anmeldung (Token oder Session); Fehler strukturiert."""
         # Die API läuft über die geöffnete Oberfläche (Standardursprung);
         # die Seite muss dafür tatsächlich geladen sein.
         self.open_project_list()
@@ -397,11 +397,15 @@ class CheckoutUiTest(unittest.TestCase):
         self.assertIn("project", data)
         self.assertTrue((self.workspace / "karte" / ".vibe" / "project.env").exists())
 
-        # Ohne Token: nichts angelegt, strukturierte Fehler.
+        # Ohne Token: nichts angelegt, strukturierte Fehler. Die geladene
+        # Seite hat über boot() bereits ein Session-Cookie erhalten; das ist
+        # laut SPEC eine gültige Anmeldung. Die Tokenpflicht wird deshalb mit
+        # einer Anfrage ohne jegliche Credentials geprüft.
         without = self.page.evaluate(
             """async () => {
                 const r = await fetch('/api/clone', {
                     method: 'POST',
+                    credentials: 'omit',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({url: '%s', name: 'untersignal'})
                 });

@@ -1548,6 +1548,14 @@
    ],
    "datum": "2026-11-25",
    "grund": "Versteckte Plattform-Anweisungen statt eines sichtbaren AGENTS.md-Regelblocks: bin/vibe_harness.py enthaelt den englischen Plattformtext und schreibt ihn als platform_instructions.md in den Zustandsordner; bin/vibe delegiert das neue Subkommando und entfernt GENERAL_RULES/ensure_general_rules samt Aufrufen; bin/vibe-run.sh uebergibt die Datei jedem opencode-Lauf ueber OPENCODE_CONFIG_CONTENT.instructions und nutzt dafuer den privaten Server. Die fuenf Projektvorlagen verlieren den verwalteten Block. app.js und i18n.js machen blockfreie AGENTS.md-Dateien vollstaendig bearbeitbar und beschreiben die byte-identische Erhaltung eines Legacy-Blocks. Groesse und SHA-256 der betroffenen Dateien wurden aktualisiert."
+  },
+  {
+   "arbeitspaket": "GH-80",
+   "dateien": [
+    "bin/vibe_harness.py"
+   ],
+   "datum": "2026-11-25",
+   "grund": "Nachtrag zum Manifest: die Aenderung der Plattform-Anweisungen in bin/vibe_harness.py aus PR #79 wurde nicht im Manifest erfasst; Groesse und SHA-256 werden nachgezogen."
   }
  ],
  "files": [
@@ -1597,9 +1605,9 @@
    "sha256": "8a9c5b1844b1215a9f75368645aeef771a9dcb1e884824bea9b0538104a197ea"
   },
   {
-   "bytes": 27651,
+   "bytes": 27744,
    "path": "bin/vibe_harness.py",
-   "sha256": "58b0d8cee125b38b7120d10dbe100e9338f5820336f7a1b281acc6638deda21d"
+   "sha256": "58c6a213309438aef2d362218a826588c5cc12077a17c6ec2236dc1989b22d64"
   },
   {
    "bytes": 20540,
@@ -1918,6 +1926,6 @@
   "setup-vibe.cmd",
   "VERSION"
  ],
- "stand": "2026-11-24",
+ "stand": "2026-11-25",
  "version": 1
 }
