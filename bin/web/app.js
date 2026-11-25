@@ -79,9 +79,6 @@ const MESSAGE_PHRASES=[
  ['Verzeichnis ist bereits','Directory is already'],
  ['Verzeichnis ist nicht','Directory is not'],
  ['Projektname ist bereits vergeben:','Project name is already taken:'],
- ['Fritzbox ist nicht konfiguriert:','FRITZ!Box is not configured:'],
- ['Fritzbox-Helfer fehlt:','FRITZ!Box helper missing:'],
- ['Python mit fritzconnection fehlt:','Python with fritzconnection missing:'],
  ['AGENTS.md ist nicht UTF-8 kodiert:','AGENTS.md is not UTF-8 encoded:'],
  ['Prüfsumme fehlt.','Checksum missing.'],
  ['Vorlage für AGENTS.md fehlt:','Template for AGENTS.md missing:'],
@@ -1746,31 +1743,12 @@ function harnessCard(hs){
  drawEntries(hs);
  return card}
 
-async function env(){const token=RENDER_TOKEN;const d=await api('/api/doctor');const f=await api('/api/fritz');const rel=await api('/api/health');const hs=await api('/api/harness');
+async function env(){const token=RENDER_TOKEN;const d=await api('/api/doctor');const rel=await api('/api/health');const hs=await api('/api/harness');
  const origin=rel.release_origin==='installation'?'Installation':rel.release_origin==='quelle'?tr('Quelle'):tr('unbekannt');
  if(renderStale(token))return;
  main.replaceChildren(el('div',{class:'card'},el('b',{},'Release'),el('div',{},tr('Version ')+rel.version+(rel.commit?tr(' · Commit ')+rel.commit:'')+' · '+origin)),
   harnessCard(hs),
-  el('div',{class:'card'},el('b',{},tr('Umgebungsprüfung')),...d.map(c=>el('div',{},el('span',{class:c.ok?'ok':'bad'},c.ok?'OK   ':tr('FEHL ')),bt(c.label),c.ok||!c.hint?null:el('span',{class:'mut'},'  → '+bt(c.hint))))),fritzCard(f))}
-function fritzCard(f){
- const cb=el('input',{type:'checkbox'});cb.checked=!!f.automation;
- const state=el('span',{class:'pill '+(f.automation?'warn':'mut')},tr('Automatik: ')+(f.automation?tr('an'):tr('aus')));
- const ready=el('span',{class:'pill '+(f.ready?'ok':'bad')},f.ready?tr('bereit'):tr('nicht bereit'));
- const resultBox=el('div',{});
- const recon=el('button',{class:'b p'},tr('Jetzt neu verbinden'));
- recon.disabled=!f.ready;
- recon.addEventListener('click',()=>askInline(recon,tr('FRITZ!Box neu verbinden? Die Internetverbindung wird kurz getrennt; alle Geräte im Netz sind betroffen.'),tr('Ja, verbinden'),async()=>{
-  recon.disabled=true;resultBox.replaceChildren(el('div',{class:'mut'},tr('Reconnect läuft … (die FRITZ!Box prüft bis zu drei Minuten auf eine neue IP)')));
-  try{const r=await api('/api/fritz',{action:'reconnect'});
-   resultBox.replaceChildren(el('div',{class:'card '+(r.ok?'':'err')},el('b',{class:r.ok?'ok':'bad'},r.ok?tr('Reconnect erfolgreich'):tr('Reconnect fehlgeschlagen')),
-    el('pre',{style:'white-space:pre-wrap;margin:8px 0 0'},(r.result&&r.result.output)||r.message||'')))}catch(e){resultBox.replaceChildren(el('div',{class:'card err'},String(e&&e.message||e)))}finally{recon.disabled=!f.ready}}));
- return el('div',{class:'card'},el('div',{class:'bar'},el('b',{},tr('Fritzbox-Reconnect')),state,ready,recon),
-  el('div',{class:'mut'},tr('Optionale Altintegration: Nach einem fehlgeschlagenen Agentenlauf kann eine neue Internet-IP angefordert werden (z. B. nach einem Anbieter-Limit). Ein Reconnect trennt die Internetverbindung der FRITZ!Box kurz; das betrifft alle Geräte im Netz. Die Automatik ist standardmäßig aus und greift nur nach einem Fehler, nie während eines laufenden Pakets.')),
-  el('div',{class:'mut'},tr('Konfiguration: ')+f.env+tr(' (nicht im Repository)')+(f.configured?tr(' – vorhanden'):tr(' – fehlt oder unvollständig'))),
-  el('div',{class:'mut'},tr('Helfer: ')+f.script+(f.script_ok?'':tr(' (fehlt)'))+tr(' · Python: ')+(f.python||tr('nicht gefunden'))+(f.python_ok?'':tr(' (nicht ausführbar)'))+tr(' · Voraussetzung: fritzconnection im Python installiert')),
-  el('div',{class:'bar'},el('label',{style:'margin:0'},el('span',{},tr(' Automatik nach fehlgeschlagenem Agentenlauf ')),cb),
-   el('button',{class:'b',on:{click:async()=>{const r=await api('/api/fritz',{action:'automation',enabled:cb.checked});toast(bt(r.message));if(r.ok)env().catch(showErr)}}},tr('Automatik übernehmen'))),
-  resultBox)}
+  el('div',{class:'card'},el('b',{},tr('Umgebungsprüfung')),...d.map(c=>el('div',{},el('span',{class:c.ok?'ok':'bad'},c.ok?'OK   ':tr('FEHL ')),bt(c.label),c.ok||!c.hint?null:el('span',{class:'mut'},'  → '+bt(c.hint))))))}
 window.addEventListener('unhandledrejection',e=>showErr(e.reason));
 /* ---------- AP13: Anmeldung und Karte „Zugriffssicherheit“ ---------- */
 /* AP13: Ohne Token prüft der Start die Berechtigung direkt am Server und

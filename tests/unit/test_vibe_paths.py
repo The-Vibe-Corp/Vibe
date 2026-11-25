@@ -571,7 +571,6 @@ class StatePathUsageTest(unittest.TestCase):
 
         self.assertEqual(vibe.CONF, str(self.state / "vibe.json"))
         self.assertEqual(vibe.PROFILES_FILE, str(self.state / "profiles.json"))
-        self.assertEqual(vibe.FRITZ_SETTINGS, str(self.state / "fritz.json"))
         self.assertEqual(
             vibe.agent_backup_dir("global"), str(self.state / "agent-backups" / "global")
         )

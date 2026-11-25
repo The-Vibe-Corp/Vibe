@@ -1457,8 +1457,6 @@ class H(BaseHTTPRequestHandler):
                 return self._send(200, vibe_services.priority_info(vibe, known(q["name"][0])))
             if u.path == "/api/doctor":
                 return self._send(200, [{"label": a, "ok": b, "hint": c} for a, b, c in vibe.doctor_checks()])
-            if u.path == "/api/fritz":
-                return self._send(200, vibe.fritz_status())
             if u.path == "/api/questions":
                 return self._send(200, {"questions": vibe_questions.open_questions(PATHS.runtime)})
             if u.path == "/api/autonomous":
@@ -2167,25 +2165,6 @@ class H(BaseHTTPRequestHandler):
                     return self._error(409, "conflict", str(e))
                 except ValueError as e:
                     ok, msg = False, str(e)
-            elif u.path == "/api/fritz":
-                act = body.get("action")
-                ok, msg = True, ""
-                try:
-                    if act in ("automation", "on", "off", "set"):
-                        enabled = (act == "on") if act in ("on", "off") else body.get("enabled")
-                        if not isinstance(enabled, bool):
-                            raise ValueError("enabled muss true oder false sein")
-                        vibe.fritz_automation_set(enabled)
-                        msg = "Fritzbox-Automatik " + ("an" if enabled else "aus")
-                    elif act == "reconnect":
-                        result = vibe.fritz_reconnect()
-                        extra["result"] = result
-                        ok, msg = result["ok"], result["message"]
-                    else:
-                        ok, msg = False, "Unbekannte Aktion"
-                except ValueError as e:
-                    ok, msg = False, str(e)
-                extra["fritz"] = vibe.fritz_status()
             elif u.path == "/api/questions":
                 act = body.get("action") or "answer"
                 try:

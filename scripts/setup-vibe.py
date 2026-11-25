@@ -64,7 +64,6 @@ PROGRAM_FILES = (
     "vibe_services.py",
     "vibe_github.py",
     "vibe_issues.py",
-    "fritz-reconnect.py",
 )
 WEB_FILES = (
     "index.html", "styles.css", "app.js", "i18n.js",
@@ -77,7 +76,7 @@ WEB_FILES = (
     # F33: Combobox-Widget und Logo/Favicon (auch als /static/vibe.svg ausgeliefert).
     "nova-widgets.js", "vibe.svg",
 )
-RUNTIME_FILES = ("vibe.json", "models.json", "profiles.json", "fritz.json", "costs.json")
+RUNTIME_FILES = ("vibe.json", "models.json", "profiles.json", "costs.json")
 VERSION_FILE = "VERSION"
 VERSION_META = "version.json"
 BACKUP_META = "backup.json"

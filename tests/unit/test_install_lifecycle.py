@@ -59,7 +59,6 @@ PROGRAM_FILES = (
     "vibe_services.py",
     "vibe_github.py",
     "vibe_issues.py",
-    "fritz-reconnect.py",
 )
 WEB_FILES = (
     "index.html", "styles.css", "app.js", "i18n.js",

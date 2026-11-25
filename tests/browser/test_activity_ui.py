@@ -1689,7 +1689,7 @@ class EnvironmentTest(F34ActivityEvalsBrowserTest):
     def env_text(self):
         parts = []
         for selector in ("[data-nv-env-doctor]", "[data-nv-paths]",
-                         "[data-nv-harness-status]", "[data-nv-fritz-status]"):
+                         "[data-nv-harness-status]"):
             locator = self.page.locator(selector).first
             if locator.count():
                 parts.append(locator.inner_text() or "")
@@ -1735,35 +1735,6 @@ class EnvironmentTest(F34ActivityEvalsBrowserTest):
         text = harness.inner_text() or ""
         self.assertIn("Auswahl", text)
         self.assertEqual(0, harness.locator("[data-nv-action]").count())
-        self.assert_clean_page()
-
-    def test_environment_fritz_automation_toggle(self):
-        """Name: Umgebung — Fritzbox-Automatik Ein/Aus.
-        Vorbedingung: Auswertungen → ``environment``; Fritz-Automatik aus.
-        Aktion 1: Seite laden (Automatik aus). Aktion 2:
-        ``POST /api/fritz {action: automation, enabled: true}``, Seite
-        neu laden.
-        Erwartung 1: ``[data-nv-fritz-hint]`` sichtbar;
-        ``[data-nv-action='fritz-reconnect']`` nicht verfügbar.
-        Erwartung 2: ``[data-nv-action='fritz-reconnect']`` sichtbar;
-        ``[data-nv-fritz-status]`` textet „Automatik: an"."""
-        self.open_evaluations("environment")
-        hint = self.page.locator("[data-nv-fritz-hint]").first
-        hint.wait_for(state="visible", timeout=20000)
-        self.assertEqual(
-            0, self.page.locator("[data-nv-action='fritz-reconnect']").count())
-        status, body = self.post_json(
-            "/api/fritz", {"action": "automation", "enabled": True})
-        self.assertEqual(200, status, "Automatik aktivieren fehlgeschlagen: " + body)
-        self.wait_until(
-            lambda: self.api_json("/api/fritz").get("automation") is True,
-            timeout=20, message="Fritz-Automatik entspricht GET nicht")
-        self.open_evaluations("environment")
-        reconnect = self.page.locator("[data-nv-action='fritz-reconnect']").first
-        reconnect.wait_for(state="visible", timeout=20000)
-        self.assertIn(
-            "Automatik: an",
-            self.page.locator("[data-nv-fritz-status]").first.inner_text() or "")
         self.assert_clean_page()
 
 

@@ -70,7 +70,6 @@ PROGRAM_FILES = (
     # GH-48: Der Ticketspeicher ist ein eigenes Programmodul und gehört in
     # den Installationssatz (bin/vibe importiert es beim Start).
     "vibe_tickets.py",
-    "fritz-reconnect.py",
 )
 WEB_FILES = (
     "index.html", "styles.css", "app.js", "i18n.js",
@@ -382,7 +381,7 @@ class InstallFilesTest(unittest.TestCase):
         (toolchain / "vibe.json").write_text('{"roots": ["/eigenes"]}\n', encoding="utf-8")
         (toolchain / "models.json").write_text('{"models": [{"id": "lokal"}]}\n', encoding="utf-8")
         (toolchain / "profiles.json").write_text('{"profile": {"eigen": true}}\n', encoding="utf-8")
-        (toolchain / "fritz.json").write_text('{"automation": true}\n', encoding="utf-8")
+        (toolchain / "costs.json").write_text('{"rate": 1.25}\n', encoding="utf-8")
         logs = self.vibe / "_logs"
         logs.mkdir()
         (logs / "projekt.log").write_text("lauf\n", encoding="utf-8")
@@ -392,7 +391,7 @@ class InstallFilesTest(unittest.TestCase):
         self.assertEqual((toolchain / "vibe.json").read_text(encoding="utf-8"), '{"roots": ["/eigenes"]}\n')
         self.assertEqual((toolchain / "models.json").read_text(encoding="utf-8"), '{"models": [{"id": "lokal"}]}\n')
         self.assertEqual((toolchain / "profiles.json").read_text(encoding="utf-8"), '{"profile": {"eigen": true}}\n')
-        self.assertEqual((toolchain / "fritz.json").read_text(encoding="utf-8"), '{"automation": true}\n')
+        self.assertEqual((toolchain / "costs.json").read_text(encoding="utf-8"), '{"rate": 1.25}\n')
         self.assertEqual((logs / "projekt.log").read_text(encoding="utf-8"), "lauf\n")
 
     def test_reuse_keeps_existing_programs_and_only_adds_missing_ones(self):

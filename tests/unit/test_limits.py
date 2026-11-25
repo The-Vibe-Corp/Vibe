@@ -36,16 +36,6 @@ INVALID_MARKERS = (
     "invalid",
 )
 
-# Ausgaben, die nur bei einem ausgeführten Reconnect-Pfad entstehen. Die
-# Attrappe selbst meldet „Fritzbox-Automatik ist aus“; auch dieser Text darf
-# nicht erscheinen, weil er einen Aufruf von 'vibe fritz auto' verrät.
-RECONNECT_OUTPUT_MARKERS = (
-    "zentraler reconnect",
-    "neue ip manuell anfordern",
-    "keine neue ip angefordert",
-    "fritzbox-automatik",
-)
-
 
 def assert_continue_hint(test, text):
     """Der Hinweis auf ``continue`` ist mehr als die allgemeine GitHub-Meldung."""
@@ -357,55 +347,45 @@ class RunnerLimitsTest(unittest.TestCase):
         combined = self.log_text().lower()
         assert_continue_hint(self, combined)
 
-    def install_vibe_probe(self):
+    def install_cli_probe(self):
         """Ersetzt die ``vibe``-Attrappe durch eine beobachtende Variante.
 
-        Der Läufer ruft ``$INSTALL/bin/vibe`` ausschließlich für
-        ``fritz auto`` auf. Jeder Aufruf wird mit seinen Argumenten in einer
-        Markierungsdatei festgehalten; eine echte FRITZ!Box wird nie
-        angesprochen. Der Exit-Code 3 entspricht der Attrappe aus
-        ``runner_support`` und löst keinen Wartevorgang aus.
+        Jeder Aufruf des Installations-CLI wird mit seinen Argumenten in einer
+        Markierungsdatei festgehalten. Der Exit-Code 3 entspricht der Attrappe
+        aus ``runner_support`` und löst keinen Wartevorgang aus.
         """
-        marks = self.root / "vibe.calls"
+        marks = self.root / "cli.calls"
         (self.tool_bin / "vibe").write_text(
             "#!/usr/bin/env python3\n"
             "import sys\n"
             f"with open({str(marks)!r}, 'a', encoding='utf-8') as handle:\n"
             "    handle.write(' '.join(sys.argv[1:]) + '\\n')\n"
-            "print('Fritzbox-Automatik ist aus')\n"
             "raise SystemExit(3)\n",
             encoding="utf-8",
         )
         (self.tool_bin / "vibe").chmod(0o755)
         return marks
 
-    def assert_no_router_reconnect(self, result, marks):
-        """Weder Reconnect-Ausgabe noch ein Aufruf von ``fritz auto``."""
-        combined = (result.stdout + result.stderr + self.log_text()).lower()
-        for marker in RECONNECT_OUTPUT_MARKERS:
-            self.assertNotIn(
-                marker,
-                combined,
-                "Quota-/Anmeldefehler dürfen keinen Reconnect auslösen, "
-                f"gefunden: {marker!r}\n{combined}",
-            )
-        lines = (
+    def assert_no_installation_cli_side_effect(self, marks):
+        """Quota-/Anmeldefehler dürfen das Installations-CLI nicht aufrufen."""
+        calls = (
             marks.read_text(encoding="utf-8").splitlines()
             if marks.exists()
             else []
         )
-        self.assertFalse(
-            [line for line in lines if "fritz auto" in line],
-            "Der Läufer hat 'vibe fritz auto' aufgerufen: " + repr(lines),
+        self.assertEqual(
+            [], calls,
+            "Der Läufer hat das Installations-CLI unerwartet aufgerufen: "
+            + repr(calls),
         )
 
-    def assert_continue_without_reconnect(self, mode):
+    def assert_continue_has_no_cli_side_effect(self, mode):
         saved = self.limits("continue")
         self.assertEqual(saved.returncode, 0, saved.stdout + saved.stderr)
         status = self.limits("status")
         self.assertIn("continue", status_line(status), status.stdout)
 
-        marks = self.install_vibe_probe()
+        marks = self.install_cli_probe()
         result = self.run_runner(mode, max_retries=1)
 
         # 1. Der Fehler wird wie bisher im Rahmen des Limits wiederholt.
@@ -417,14 +397,14 @@ class RunnerLimitsTest(unittest.TestCase):
         )
         combined = self.log_text().lower()
         assert_continue_hint(self, combined)
-        # 2./3. Kein Reconnect und kein Aufruf von 'vibe fritz auto'.
-        self.assert_no_router_reconnect(result, marks)
+        # 2. Kein Aufruf des Installations-CLI bei Quota-/Anmeldefehlern.
+        self.assert_no_installation_cli_side_effect(marks)
 
-    def test_continue_quota_does_not_trigger_a_router_reconnect(self):
-        self.assert_continue_without_reconnect("quota")
+    def test_continue_quota_has_no_installation_cli_side_effect(self):
+        self.assert_continue_has_no_cli_side_effect("quota")
 
-    def test_continue_auth_does_not_trigger_a_router_reconnect(self):
-        self.assert_continue_without_reconnect("auth")
+    def test_continue_auth_has_no_installation_cli_side_effect(self):
+        self.assert_continue_has_no_cli_side_effect("auth")
 
     def test_continue_never_repeats_beyond_max_retries(self):
         saved = self.limits("continue")

@@ -23,7 +23,6 @@ BIN = WERKZEUGWURZEL / "bin"
 # das AP13-Modul vibe_ui_config.py, damit auch es in der Baseline gelintet
 # wird (die Ausnahmeliste wird dafür nicht erweitert).
 MODULE = [
-    "fritz-reconnect.py",
     "vibe-web.py",
     "vibe_autonomous.py",
     "vibe_github.py",
@@ -55,7 +54,7 @@ AUSNAHMEN_SYMBOLE = {
     "too-many-lines",
     "line-too-long",
 }
-BINDESTRICH_MODUL = {"fritz-reconnect.py", "vibe-web.py"}
+BINDESTRICH_MODUL = {"vibe-web.py"}
 
 PYLINT_PRIMAER = "/usr/bin/pylint"
 PRUEF_TIMEOUT_S = 600
@@ -112,11 +111,11 @@ class F28PylintQualitaet(unittest.TestCase):
 
         Vorbedingung: pylint vorhanden, 16 Module existieren in bin/, Lauf mit
         derselben Modulliste und Arbeitsverzeichnis wie die Baseline.
-        Aktion: Exit-Code, Befundmenge und Nachweis prüfen, dass beide
-        Bindestrich-Einstiegsdateien (modulbezogener invalid-name) gelintet
-        wurden.
+        Aktion: Exit-Code, Befundmenge und Nachweis prüfen, dass die
+        Bindestrich-Einstiegsdatei (modulbezogener invalid-name) gelintet
+        wurde.
         Erwartet: rc im Befundberbereich (1,2,3,4,8,16,31,32), >= 1 Befund,
-        für beide Einstiegsdateien je ein Modulnamen-invalid-name-Befund.
+        für die Einstiegsdatei einen Modulnamen-invalid-name-Befund.
         Fehlerfall: rc=0 (ergebnisloser Lauf) oder übersprungene
         Einstiegsdateibenachricht → AssertionError.
         """
@@ -130,7 +129,7 @@ class F28PylintQualitaet(unittest.TestCase):
                         f"stderr={self.lauf.stderr[:200]!r}")
         self.assertTrue(self.befunde,
                         "ergebnisloser pylint-Lauf (0 Befundzeilen) — Messung unbrauchbar")
-        for pfad in ("fritz-reconnect.py", "vibe-web.py"):
+        for pfad in ("vibe-web.py",):
             treffer = [
                 b for b in self.befunde
                 if b.get("path") == pfad
@@ -148,7 +147,7 @@ class F28PylintQualitaet(unittest.TestCase):
 
         Vorbedingung: Lauf in setUpClass gesichert (siehe Test oben).
         Aktion: alle Befunde gegen AUSNAHMEN_SYMBOLE und den eingeschränkten
-        invalid-name-Filter (nur Modulnamen der Bindestrich-Einstiegsdateien)
+        invalid-name-Filter (nur Modulnamen der Bindestrich-Einstiegsdatei)
         prüfen.
         Erwartet: Liste der Verletzungen ist leer.
         Fehlerfall: AssertionError mit Kategoriauszählung und bis zu 10

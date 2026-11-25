@@ -16,6 +16,47 @@
    "grund": "Testfehler aus dem F1-Audit: --yes unterdrueckt jetzt auch die Rueckfragen nach Installationsort, Logverzeichnis und Abhaengigkeiten; eine Installation in ein von profiles.prod abweichendes Ziel laesst die persoenliche Konfiguration unveraendert, sofern --set-default fehlt; Sandbox-Zustand und opencode-Ablage liegen instanzspezifisch unter /dev/shm (vibe-sandbox-<uid>, vsb-<uid>, vibe-opencode-<uid>), wobei die opencode-Ablage in der Sandbox als /tmp/opencode erscheint und der geteilte Host-Ordner nicht mehr beschrieben wird; der install-vibe.sh-Hinweis nennt den funktionierenden Aufruf; der Testlaeufer gibt Modulprozessen DEVNULL als stdin."
   },
   {
+   "arbeitspaket": "GH-87",
+   "dateien": [
+    "bin/vibe",
+    "bin/vibe-run.sh",
+    "bin/vibe-web.py",
+    "bin/vibe_paths.py",
+    "bin/web/app.js",
+    "bin/web/i18n.js",
+    "bin/web/nova-evals.js",
+    "scripts/setup-vibe.py",
+    "README.md",
+    "docs/baseline.md",
+    "docs/betrieb.md",
+    "docs/handbuch.md",
+    "docs/trilium-index.md",
+    "docs/features/README.md",
+    "docs/features/V-020.md",
+    "docs/features/current/costs-diagnostics.md",
+    "docs/import-manifest.json",
+    "bin/fritz-reconnect.py",
+    "docs/features/F5.md",
+    "docs/features/F18.md",
+    "docs/features/F5-fritz.png",
+    "tests/browser/test_activity_ui.py",
+    "tests/browser/test_fritz_ui.py",
+    "tests/browser/test_settings_ui.py",
+    "tests/unit/runner_support.py",
+    "tests/unit/test_code_quality.py",
+    "tests/unit/test_fritz_coordination.py",
+    "tests/unit/test_fritz_reconnect.py",
+    "tests/unit/test_install_lifecycle.py",
+    "tests/unit/test_limits.py",
+    "tests/unit/test_run_control.py",
+    "tests/unit/test_setup_vibe.py",
+    "tests/unit/test_verify_script.py",
+    "tests/unit/test_vibe_paths.py"
+   ],
+   "datum": "2026-11-25",
+   "grund": "Entfernt die legacy Router-Reconnect-Altintegration vollständig aus Code, UI und aktiver Dokumentation; die Funktion steht separat als MCP-Server bereit. Ältere Reviews und der Installations-Snapshot bleiben als Nachweis unverändert."
+  },
+  {
    "arbeitspaket": "GH-67",
    "dateien": [
     "bin/vibe-web.py",
@@ -72,7 +113,6 @@
     "bin/vibe",
     "bin/vibe-run.sh",
     "bin/vibe-web.py",
-    "bin/fritz-reconnect.py",
     "install-vibe.sh"
    ],
    "datum": "2026-10-26",
@@ -678,7 +718,6 @@
   {
    "arbeitspaket": "F28",
    "dateien": [
-    "bin/fritz-reconnect.py",
     "bin/vibe-web.py",
     "bin/vibe_autonomous.py",
     "bin/vibe_github.py",
@@ -1571,6 +1610,15 @@
    ],
    "datum": "2026-11-25",
    "grund": "Nachtrag zum Manifest: die Aenderung der Plattform-Anweisungen in bin/vibe_harness.py aus PR #79 wurde nicht im Manifest erfasst; Groesse und SHA-256 werden nachgezogen."
+  },
+  {
+   "arbeitspaket": "GH-88",
+   "dateien": [
+    "bin/web/nova-output.js",
+    "bin/web/nova.css"
+   ],
+   "datum": "2026-11-25",
+   "grund": "Kleine UI-Verbesserungen der Ausgabe: Autoscroll folgt nur am Log-Ende, gemeinsames responsives Kartenraster fuer Haupt- und Subagentenkarten, CSS-Klassen statt Inline-Styles an den Vorschaukarten, Entfernen der Statuszeile. Groesse und SHA-256 der betroffenen Dateien wurden aktualisiert."
   }
  ],
  "files": [
@@ -1580,24 +1628,19 @@
    "sha256": "f5e9382967c9833066a55808829f3750fc8e1181b170cafd222c37048bb49a77"
   },
   {
-   "bytes": 4194,
-   "path": "bin/fritz-reconnect.py",
-   "sha256": "e5ae3183efcb76dace1e0bcbde9993be7afe82d93d7877da9ee39846cf45330a"
-  },
-  {
-   "bytes": 296181,
+   "bytes": 274312,
    "path": "bin/vibe",
-   "sha256": "b2390b5927957a757586bfd78626fafc14bfc348bcc868c85adbce7c0f88be6a"
+   "sha256": "1e2df016e87be00547a440bf0080720c166da80de911fd7801c54bd40fa04b29"
   },
   {
-   "bytes": 88660,
+   "bytes": 87451,
    "path": "bin/vibe-run.sh",
-   "sha256": "edb3334e172a06afe7641608abf84d8236ab97042cbb5dce51519d8915c49dea"
+   "sha256": "0426227dbd3e179b68d718859be0c7e14a7d5a92b753daba7a2b3140f0e18a07"
   },
   {
-   "bytes": 144167,
+   "bytes": 143045,
    "path": "bin/vibe-web.py",
-   "sha256": "e4ce8bd18f2d678b70247c8324b0e1dbc9ba567dfdd87200e57a1c45fb580a66"
+   "sha256": "558890f42f1b26717b63f6b371c7e8c23953f0a275c850c4927346ff7c16a6fc"
   },
   {
    "bytes": 5189,
@@ -1660,9 +1703,9 @@
    "sha256": "614c4adeb3582fb076189533bcbbd8524072a3c888e5a140bdb935e96b5e2348"
   },
   {
-   "bytes": 20789,
+   "bytes": 20773,
    "path": "bin/vibe_paths.py",
-   "sha256": "b7d91c518581dda720e513522f710995c31e0a8eebc7a1132201aa8b7df05cbd"
+   "sha256": "77d5c44562ceff98606c8010331494ab6d4904f561b5fffeaba9472a3e25f08d"
   },
   {
    "bytes": 12346,
@@ -1700,9 +1743,9 @@
    "sha256": "baf438e2032b06a478b2a3debe6b62eff104f6d9a105f829013eabfcddf1acd5"
   },
   {
-   "bytes": 156247,
+   "bytes": 153505,
    "path": "bin/web/app.js",
-   "sha256": "5e4fffe7282496fac84ae84765c3a9b9c2d58d025fef1b7449c3e65fc7a3dd2d"
+   "sha256": "a90ea581de9c4f1eea1ffda2b05dcb2a956edb88d465cdbc5728befffefbdd00"
   },
   {
    "bytes": 688,
@@ -1710,9 +1753,9 @@
    "sha256": "19ea677f5c3dc3579279fd9b5bf7584612967654b8ec0bbde3818576c78b46b5"
   },
   {
-   "bytes": 161559,
+   "bytes": 156804,
    "path": "bin/web/i18n.js",
-   "sha256": "d8230481ed166be5945ebd8ba602283f4b49f3c7cdbed532156312c8d70bfbf2"
+   "sha256": "3a93ecc37bf88a99b5fccd3c4a27896fe4e8c8bc5e6c20a6773a446e857d7d63"
   },
   {
    "bytes": 4214,
@@ -1736,8 +1779,8 @@
   },
   {
    "path": "bin/web/nova-evals.js",
-   "bytes": 35976,
-   "sha256": "96a2db41f959bc5bf663bf30bc8cb603db0233426af4b895dff91599d7c7bfd9"
+   "bytes": 33055,
+   "sha256": "bf9f3750857c64d64e19e31d02ba4cb7e4ef6ecf9f7e942fbac3c188a15b99f5"
   },
   {
    "bytes": 15653,
@@ -1745,9 +1788,9 @@
    "sha256": "892e1813519fc47ec3f65101d6ab087d9557a97d6575da3582300694c5a517e1"
   },
   {
-   "bytes": 37044,
+   "bytes": 37922,
    "path": "bin/web/nova-output.js",
-   "sha256": "cbca5b169f3c5052e50da0910560d7fbcd1b6c42380fe6b925a4f98021f753ab"
+   "sha256": "3b6ef244ff1b10575e9b86ec816b70181f06fbcf0beb82697d7cc3cee458068b"
   },
   {
    "bytes": 121980,
@@ -1765,9 +1808,9 @@
    "sha256": "84ae6329f31c04fcc8b48c552ade8f9d276c283ab81b1babb66f8988b627d8a7"
   },
   {
-   "bytes": 67139,
+   "bytes": 68937,
    "path": "bin/web/nova.css",
-   "sha256": "755c4f1ea24d68ee8e5cba5e2537249880cddaf7ad56b24fb09542fc8535db7c"
+   "sha256": "adda5edaa5839a4a5321eb4f0457e2efe5f3f707930bf431f1a9340bbb42fcad"
   },
   {
    "bytes": 12751,
@@ -1790,9 +1833,9 @@
    "sha256": "9cfa27971f1d08d8f87ff46cefc7d927f49b27e22f2b24a6eade954da4b8a3ec"
   },
   {
-   "bytes": 77005,
+   "bytes": 76965,
    "path": "scripts/setup-vibe.py",
-   "sha256": "65da5523ba9f2b290836e800455d7b66d335263926f6c022ded9a5964fa2eb6e"
+   "sha256": "ccf77952382b1b7f7498ffc484ded223031a93bf5935b0691a7fae90c77276cd"
   },
   {
    "bytes": 377,

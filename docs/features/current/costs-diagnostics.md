@@ -4,7 +4,7 @@ Status: current as of 2026-11-25 (vibe 0.18.0, repository state). Authority: [SP
 History: see the ticket records linked at the end.
 
 Vibe reports token usage and cost from existing harness data. It also exposes
-resolved paths, environment checks, and the optional FritzBox reconnect.
+resolved paths and environment checks.
 
 ## Costs
 
@@ -32,25 +32,14 @@ resolved paths, environment checks, and the optional FritzBox reconnect.
   the selected harness and its version, `/dev/kvm`, `ANDROID_HOME`, acceptance
   files, configured agent roles, the model catalog, and free disk space.
 
-## FritzBox reconnect
-
-- `vibe fritz status|on|off|reconnect` controls an optional automatic reconnect.
-  The setting is stored in `<state>/fritz.json`; credentials come from an
-  external `fritz.env` file and never from the repository.
-- The helper `bin/fritz-reconnect.py` requests a new internet address. Results
-  are shared for a short grace period so several projects do not trigger
-  repeated reconnects (`F18`). The integration is off by default.
-
 ## Entry points
 
-- CLI: `vibe costs`, `vibe paths`, `vibe doctor`, `vibe fritz`.
+- CLI: `vibe costs`, `vibe paths`, `vibe doctor`.
 - HTTP: `/api/costs` for the cost view and price edits.
 - Files: `<install>/costs.json`, `<install>/prices.json`,
-  `<state>/global-prices.json`, `<state>/fritz.json`.
+  `<state>/global-prices.json`.
 
 ## Records
 
 - [B1](../B1.md) — cost table refreshes after each package
-- [F5](../F5.md) — FritzBox reconnect in the UI
 - [F12](../F12.md) — cost calculation per package and project
-- [F18](../F18.md) — central internet reconnect for several projects

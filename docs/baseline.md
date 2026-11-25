@@ -93,11 +93,6 @@ Nur in der aktiven Installation, **nicht** importiert (Laufzeit-/Geheimnisnähe)
 - `config-backups/`, `agent-backups/`, `__pycache__/`
 - `$VIBE/_secrets.env` (Geheimnisse, niemals ins Repository)
 
-`bin/fritz-reconnect.py` lag in V-001 nur in der aktiven Installation. Seit F5
-liegt der Helfer im Repository (`bin/fritz-reconnect.py`), wird von
-`install-vibe.sh` mitinstalliert und ist standardmäßig **nicht** aktiv: Die
-Automatik ist aus, bis sie im Dashboard eingeschaltet wird.
-
 ## 4. Externe Abhängigkeiten
 
 Erhoben aus den Importen (`os`, `sys`, `re`, `json`, `subprocess`, `shutil`,
@@ -114,7 +109,6 @@ Python-Standardbibliothek verwendet; es gibt keine `requirements.txt`, kein
 | tmux | Agentenläufe, Dashboard, opencode-Server | `tmux -V` → 3.8 | vorhanden |
 | flock (util-linux) | `bin/vibe-run.sh` (Durchgangssperre) | `command -v flock` | vorhanden |
 | curl | Health-Checks (`server_health`) | `command -v curl` | vorhanden |
-| fritzconnection (optional) | `bin/fritz-reconnect.py` | nicht in V-001 ausgeführt; F5 prüft nur den Zustand und Attrappen | optional, nur für den Reconnect; Interpreter unter `$VIBE/_toolchain/fritz-venv` oder `~/.venvs/fritz`, sonst meldet das Dashboard „nicht bereit“ |
 | opencode CLI | Modelllisting, Agentenläufe, Serverstart | `opencode --version` → 2.1.4 | vorhanden, Version nicht gegen Adapter geprüft (V-007) |
 | distrobox | Wiedereintritt in den Container (`main()`) | im Container nicht installiert | fehlt im Container; Start erfolgt derzeit direkt |
 | Android CLI, adb, emulator, Java | Android-Vorlage, `vibe emu` | `doctor` meldet OK | vorhanden |
@@ -122,7 +116,6 @@ Python-Standardbibliothek verwendet; es gibt keine `requirements.txt`, kein
 | Docker | Docker-Vorlage | nicht in V-001 ausgeführt | nicht geprüft |
 | Netzwerk Loopback | Dashboard 8787, opencode 4096, MCP-Tests | nicht in V-001 gestartet | nicht geprüft |
 | `~/.config/opencode/` | Agenten, opencode-Konfiguration | gelesen (nur lesend) | vorhanden |
-| `fritzconnection` (optional, eigenes venv) + `~/.config/fritz.env` | `bin/fritz-reconnect.py` (F5) | nicht in V-001; F5 prüft nur mit Attrappen | optional; fehlend wird im Dashboard als „nicht bereit“ gemeldet |
 | `scripts/setup-vibe.py` (F6) | Installation, Werkzeugprüfung, Wiederverwendung | `tests/unit/test_setup_vibe.py` (45 Tests) mit simulierten Plattformen und temporären Zielordnern | vorhanden und automatisiert geprüft (Linux/Container/Windows-Planung); kein echter Paketmanager- oder Windows-Lauf |
 | `install-vibe.sh` (F6) | Kompatibler Linux-Einstieg | Wrapper-Test startet den echten Setup in temporärem `VIBE`/`HOME` | vorhanden und automatisiert geprüft |
 | `setup-vibe.cmd` (F6) | Windows-Einstieg, bootstrappt Python über `winget` | nur statisch geprüft (Datei und Aufruf), kein Windows-Lauf | vorhanden, nicht auf Windows ausgeführt |
@@ -131,7 +124,7 @@ Python-Standardbibliothek verwendet; es gibt keine `requirements.txt`, kein
 
 Der Setup kopiert Programmdateien und Vorlagen, legt den Startbefehl an und
 registriert vorhandene Git-Projekte. Laufzeitdaten (`vibe.json`,
-`models.json`, `profiles.json`, `fritz.json`, `_logs`) und vorhandene
+`models.json`, `profiles.json`, `_logs`) und vorhandene
 `.vibe/project.env` werden nicht überschrieben. `install-vibe.sh` beendet
 anders als der frühere Stand keine laufende Dashboard-Sitzung mehr; ein
 laufendes Dashboard wird erst beim nächsten Start auf den neuen Stand
@@ -165,7 +158,6 @@ Codestelle und die in dieser Sitzung tatsächlich beobachtete Prüfung.
 | CLI | `vibe questions` | vorhanden und automatisiert geprüft | `bin/vibe` (`cmd_questions`); `tests/unit/test_questions.py` prüft die Liste offener Fragen mit nummerierten Vorschlägen |
 | CLI | `vibe answer` | vorhanden und automatisiert geprüft | `bin/vibe` (`cmd_answer`); `tests/unit/test_questions.py` prüft Auswahl- und freie Antwort sowie die Quelle `--by agent`; `tests/unit/test_questions.py` und `tests/browser/test_questions_ui.py` prüfen die Ablehnung einer zweiten Antwort |
 | CLI | `vibe autonomous` | vorhanden und automatisiert geprüft | `bin/vibe` (`cmd_autonomous`); `tests/unit/test_questions.py` prüft Ein/Aus/Status je Projekt, die sofortige Entscheidung im aktiven Modus und den Abbruch eines laufenden Wartens beim Einschalten |
-| CLI | `vibe fritz` | vorhanden und automatisiert geprüft | `bin/vibe:963-1443`; `tests/unit/test_fritz_reconnect.py` prüft Automatik aus/an, Status ohne Zugangsdaten, manuellen Reconnect gegen eine Attrappe, Fehler, Timeout und die Automatiksperre des Läufers; `bin/vibe-run.sh` ruft den Wächter nach einem Agentenfehler auf. F18 ergänzt die zentrale Steuerung mehrerer Projekte (`fritz_coordination`, Sperre und Schonzeit im Zustandsordner); `tests/unit/test_fritz_coordination.py` prüft genau einen Reconnect für gleichzeitige Projekte, Übernahme des Ergebnisses, Wartezeitlimit und den manuellen Reconnect |
 | CLI | `vibe verify` | teilweise vorhanden | `bin/vibe:244-255`; Fehlerfall ohne Prüfbefehl ausgeführt (Exit 1); Rückgabecode des Prüfbefehls wird nicht weitergereicht |
 | CLI | `vibe feedback` | vorhanden, noch nicht geprüft | `bin/vibe:257-274`; interaktiver Schreibvorgang, nicht ausgeführt |
 | CLI | `vibe new` | vorhanden, noch nicht geprüft | `bin/vibe:308-327`; legt Projekt und Git-Repo an, nicht ausgeführt |
@@ -227,12 +219,10 @@ eigenen Test.
 | API | `GET /api/mcp_entry` | vorhanden, noch nicht geprüft | `do_GET`; Transportprüfung zentral in V-004, Fachfunktion nicht ausgeführt |
 | API | `GET /api/types` | vorhanden, noch nicht geprüft | `do_GET`; Transportprüfung zentral in V-004, Fachfunktion nicht ausgeführt |
 | API | `GET /api/doctor` | vorhanden, noch nicht geprüft | `do_GET`; Transportprüfung zentral in V-004, Fachfunktion nicht ausgeführt |
-| API | `GET /api/fritz` | vorhanden und automatisiert geprüft | `do_GET`; `tests/unit/test_fritz_reconnect.py` prüft Status, Tokenpflicht und dass das Passwort nicht in der Antwort steht |
 | API | `GET /api/questions` | vorhanden und automatisiert geprüft | `do_GET`; `tests/unit/test_questions.py` prüft offene Fragen mit Vorschlägen, leere Liste nach der Antwort und die Tokenpflicht (403) |
 | API | `POST /api/questions` | vorhanden und automatisiert geprüft | `do_POST`; `tests/unit/test_questions.py` prüft Auswahl- und freie Antwort, Rückgabe der neuen offenen Liste, Ablehnung ungültiger IDs/Auswahlen, unbekannter Aktionen und einer zweiten Antwort ohne Überschreiben |
 | API | `GET /api/autonomous` | vorhanden und automatisiert geprüft | `do_GET`; `tests/unit/test_questions.py` prüft den Zustand je Projekt, unbekannte Projekte (404) und die Tokenpflicht (403) |
 | API | `POST /api/autonomous` | vorhanden und automatisiert geprüft | `do_POST`; `tests/unit/test_questions.py` prüft Ein- und Ausschalten, die gespeicherte Datei, unbekannte Aktionen (400) und die Tokenpflicht (403) |
-| API | `POST /api/fritz` | vorhanden und automatisiert geprüft | `do_POST`; `tests/unit/test_fritz_reconnect.py` prüft Automatik an/aus, manuellen Reconnect, Fehlerfall, fehlende Konfiguration, unbekannte Aktion und Tokenpflicht |
 | API | `GET /api/server` | vorhanden, noch nicht geprüft | `do_GET`; Transportprüfung zentral in V-004, Fachfunktion nicht ausgeführt |
 | API | `GET /api/harness` | vorhanden und automatisiert geprüft | `do_GET`; `tests/browser/test_ap04_harness_ui.py` öffnet die Umgebungsansicht über das echte Dashboard und prüft den aktiven Harness und die Pi-Einrichtungshinweise; `bin/vibe_harness.py` liefert die Auswahl |
 | API | `POST /api/harness` | vorhanden und automatisiert geprüft | `do_POST`; `tests/browser/test_ap04_harness_ui.py` wechselt den Harness, prüft die gespeicherte Auswahl nach dem Neuladen und den sichtbaren Einrichtungsplan |
@@ -304,9 +294,8 @@ headless) geprüft.
 | UI | `Projektdetail: Struktur` | vorhanden und automatisiert geprüft | `bin/vibe-web.py` `detail`/`detailTabs`/`showDetailTab`; feste Kopfleiste mit Laufzustand und Hauptaktionen, Kennzahlenkacheln und die Register Arbeit, Ausgabe, Assistent und Einstellungen mit ARIA-Verknüpfung und Tastaturbedienung; `tests/browser/test_project_detail_ui.py` prüft Standardbild, Maus- und Tastaturwechsel, Verknüpfung, sichtbare Hauptaktionen, Prüfungsausgabe und die schmale Ansicht (Chromium, headless); Screenshots `docs/features/F13-uebersicht.png` und `docs/features/F13-einstellungen.png` |
 | UI | `Tab Agenten & Modelle` | vorhanden, noch nicht geprüft | `bin/vibe-web.py:292-358`; Agentenliste, Formular, Roh-Editor, Profile; kein Browsertest |
 | UI | `Tab MCP-Tools` | vorhanden, noch nicht geprüft | `bin/vibe-web.py:360-406`; Liste, Formular, Test, Aktivierung; kein Browsertest |
-| UI | `Tab Umgebung` | vorhanden und automatisiert geprüft | `bin/vibe-web.py:548-568`; der Tab lädt Doctor- und Fritzbox-Karte; `tests/browser/test_fritz_ui.py` öffnet ihn (Chromium, headless, isoliertes Dashboard) |
+| UI | `Tab Umgebung` | vorhanden und automatisiert geprüft | `bin/web/nova-evals.js` (`nvEvalLoadEnvironment`); der Tab lädt Prüfungen, Pfade und Harness-Status; `tests/browser/test_activity_ui.py` prüft Doctor-Zeilen, Pfade und Harness-Status (Chromium, headless, isoliertes Dashboard) |
 | UI | `Tab Kosten` | vorhanden und automatisiert geprüft | `bin/vibe-web.py` `costs`/`costDetail`; `tests/browser/test_costs_ui.py` prüft Projektübersicht, Paket-/Modellzeilen, Preiseingabe mit sofortiger Neuberechnung, Persistenz nach Neuladen und die Ablehnung unvollständiger Eingaben (Chromium, headless); Screenshot `docs/features/F12-kosten.png` |
-| UI | `Tab Umgebung: Fritzbox-Reconnect` | vorhanden und automatisiert geprüft | `bin/vibe-web.py:550-568`; `tests/browser/test_fritz_ui.py` zeigt „Automatik: aus“, schaltet die Automatik ein und aus, startet den manuellen Reconnect gegen eine Attrappe und prüft das Ergebnis; Screenshot `docs/features/F5-fritz.png` |
 | UI | `Projektliste: GitHub-Auschecken` | vorhanden und automatisiert geprüft | `bin/web/app.js` (`newForm`); Karte „Neues Projekt“ mit URL-Feld und Knopf „Aus GitHub auschecken“; `tests/browser/test_ap8_checkout_ui.py` prüft Karte, Auschecken mit Öffnen des Projektdetails, Fehlermeldung mit nutzbarer Karte und die Projektleiste (Chromium, headless) |
 | UI | `Kopfzeile opencode Start/Stop` | vorhanden, noch nicht geprüft | `bin/vibe-web.py:242-245`; ruft `POST /api/server`; kein Browsertest |
 | UI | `Kopfzeile Dashboard beenden` | vorhanden, noch nicht geprüft | `bin/vibe-web.py:244`; ruft `POST /api/shutdown`; kein Browsertest |
@@ -406,7 +395,6 @@ reproduzierbar. Dokumentiert fehlen oder sind eingeschränkt:
 | Icon `vibe.svg` | `scripts/vibe.svg`, V-017 | Im Repository und wird mitinstalliert |
 | `vibe-launcher.sh` | `scripts/vibe_starter.py`, V-017 | Ersetzt den alten Launcher; prüft Health, startet Container/Dashboard bei Bedarf und öffnet den Browser |
 | `vibe-secrets.sh`, `_secrets.env` | nur in der aktiven Installation | Geheimnisbereitstellung nicht reproduzierbar; absichtlich nicht importiert |
-| `fritz-reconnect.py` | in V-001 nur in der aktiven Installation | Seit F5 im Repository (`bin/fritz-reconnect.py`) und Teil des Manifests; `install-vibe.sh` kopiert den Helfer. Die Automatik bleibt standardmäßig aus und ist im Dashboard schaltbar. |
 | `vibe-server-debug.sh` | nur in der aktiven Installation | Diagnosehilfe nicht versioniert |
 | `profiles.json` (Laufzeitkopie) | nur in der aktiven Installation; wird sonst aus `DEFAULT_PROFILES` erzeugt | Kein reproduzierbarer Ausgangsstand für Profile |
 | `scripts/verify.sh` (dieses Projekt) | `AGENTS.md`, `README.md`, V-002 | Projektprüfung noch nicht möglich; `.vibe/project.env` enthält `echo TODO` |

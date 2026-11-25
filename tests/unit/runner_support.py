@@ -532,7 +532,6 @@ sys.exit(0)
 '''
 
 FAKE_VIBE = '''#!/usr/bin/env python3
-print("Fritzbox-Automatik ist aus")
 raise SystemExit(3)
 '''
 

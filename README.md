@@ -54,7 +54,7 @@ Der Setup erkennt Ubuntu/Debian, Fedora, Bazzite, Container (Docker/Podman/
 Toolbx/Distrobox) und Windows, prüft die Werkzeuge und bietet fehlende
 Pakete nur mit Zustimmung an. Eine bestehende Installation wird standardmäßig
 wiederverwendet; `--update` ersetzt Programmdateien mit Sicherung. Laufzeitdaten
-(`vibe.json`, `models.json`, `profiles.json`, `fritz.json`, Logverzeichnis) und
+(`vibe.json`, `models.json`, `profiles.json`, Logverzeichnis) und
 vorhandene `.vibe/project.env` werden nie überschrieben.
 
 ### Verzeichnisse: Workspace, Installationsort, Logs
@@ -73,7 +73,7 @@ Workspace darf nicht im Installationsort liegen. Das Logverzeichnis ist weder
 Workspace noch Installationsort und enthält beide nicht. Der Installationsort
 und das Logverzeichnis dürfen innerhalb des Workspace liegen. Der Quellordner
 des Setups ist als Ziel ausgeschlossen. Der Zustand (`vibe.json`,
-`profiles.json`, `fritz.json`, `limits.json`) liegt wie bisher im
+`profiles.json`, `limits.json`) liegt wie bisher im
 Installationsort.
 
 Der Setup trägt die Auswahl nach erfolgreicher Installation in
@@ -94,8 +94,8 @@ Beispiel mit drei getrennten Orten:
 
 Bei einer bestehenden Installation unter `~/VibeCode/_toolchain` genügt es, die
 Vorschläge zu bestätigen; es ändert sich nichts. Wer den Installationsort
-wechselt, muss persönliche Dateien (`vibe.json`, `profiles.json`,
-`fritz.json`) selbst in den neuen Ort kopieren, oder `state` in der
+wechselt, muss persönliche Dateien (`vibe.json`, `profiles.json`)
+selbst in den neuen Ort kopieren, oder `state` in der
 Konfiguration auf den alten Ort setzen.
 
 Der bisherige Einstieg bleibt kompatibel:
@@ -171,7 +171,7 @@ Dateien werden dabei entfernt:
     python3 scripts/setup-vibe.py --yes --rollback --backup backup-20261102-101500 --vibe /pfad/zu/workspace
 
 Uninstall entfernt Programmdateien, Vorlagen und die Versionskennung. Projekte,
-Laufzeitdaten (`vibe.json`, `models.json`, `profiles.json`, `fritz.json`,
+Laufzeitdaten (`vibe.json`, `models.json`, `profiles.json`,
 `costs.json`, Logverzeichnis), Sicherungen und persönliche Konfiguration bleiben
 erhalten:
 

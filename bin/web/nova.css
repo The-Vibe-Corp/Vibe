@@ -1158,6 +1158,70 @@ span[data-nv-prio-badge] {
   overflow-wrap: anywhere;
   max-width: 100%;
 }
+/* GH-88: gemeinsames, responsives Kartenraster für Haupt- und Subagenten.
+   [data-nv-out-subs] bleibt als Container erhalten und nimmt per
+   display:contents direkt am Raster teil, damit alle Karten gemeinsame
+   Spalten und Abstände teilen. */
+.nv-out-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 24rem), 1fr));
+  gap: var(--nv-space-4);
+  align-items: start;
+  min-width: 0;
+}
+.nv-out-subs { display: contents; }
+.nv-out-cards .nv-card {
+  margin-bottom: 0;
+  padding: var(--nv-space-4);
+  min-width: 0;
+}
+/* Live-Vorschaukarten erscheinen ohne Slide-in: bei schnellem Aufbau würden
+   Haupt- und Subkarten sonst für einen Moment versetzt im Raster stehen. */
+html[data-animations="on"] .nv-out-cards .nv-card { animation: none; }
+.nv-out-main-wrap,
+.nv-out-sub {
+  display: flex;
+  flex-direction: column;
+  gap: var(--nv-space-3);
+}
+/* Kopfzeile: dezente Trennung vom Protokoll, kompakt und umbruchfähig. */
+.nv-out-main-head,
+.nv-out-sub-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--nv-space-2);
+  min-width: 0;
+  padding-bottom: var(--nv-space-2);
+  border-bottom: 1px solid var(--nv-border);
+}
+.nv-out-main-head > b,
+.nv-out-sub-head > b {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.nv-out-sub-name { color: var(--nv-text); }
+.nv-out-sub-role {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.nv-out-session,
+.nv-out-sub-session {
+  min-width: 0;
+  max-width: 14rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--nv-muted);
+  font-size: 0.8125rem;
+}
+.nv-out-spacer { flex: 1 1 auto; }
+.nv-out-main { max-height: 60vh; overflow: auto; }
+.nv-out-sub-log { max-height: 40vh; overflow: auto; }
 /* Fokus/Vergrößern: reine Optik, Escape/aria-expanded liegt bei nova-output.js. */
 .nv-out-enlarged {
   position: fixed;

@@ -278,8 +278,7 @@ enthält keine erfundenen Preise.
 - die Releasebasis: Version, Commit und Herkunft der Kennung (Installation oder
   Quelle),
 - die Umgebungsprüfung (`vibe doctor`): Container, Schreibbarkeit, Werkzeuge,
-  opencode-Version, KVM, Android-Umgebung, Prüfdateien, Katalog, freier Platz,
-- den optionalen Fritzbox-Reconnect (standardmäßig aus).
+  opencode-Version, KVM, Android-Umgebung, Prüfdateien, Katalog, freier Platz.
 
 `/api/health` liefert dieselbe Releasekennung ohne Geheimnisse und dient dem
 Starter zur Erkennung einer echten vibe-Instanz.
