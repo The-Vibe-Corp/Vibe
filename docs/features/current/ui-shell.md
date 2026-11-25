@@ -57,6 +57,10 @@ without a static sidebar.
   The binding design contracts are in the
   [GH-56 design notes](../GH-56-design-notes.md).
 
+## Visual style
+
+Since `GH-94`, Nova follows the “Precise Frames × Technical Density” reference stored at [`../style.html`](../style.html): matte light/dark palettes, 1 px frames, radii of 2–6 px, compact control heights, a 4/8/12/16/24/32 px spacing scale, and technical typography (Inter for UI text, JetBrains Mono for technical values). All styling lives in `bin/web/nova.css` and uses `--nv-*` custom properties. Theme and accent selection are unchanged (12 accents, `blue` default, attributes on `html`), and the classic interface keeps its own stylesheet.
+
 ## Verification note
 
 The shell behavior above was checked against `bin/web/nova-core.js`,
@@ -78,4 +82,5 @@ Exact responsive breakpoints and visual styling were not verified here.
 - Language: [AP21](../AP21.md).
 - Work view: [F33](../F33.md), [F34](../F34.md), [GH-56](../GH-56.md),
   [GH-56-design-notes](../GH-56-design-notes.md), [GH-67](../GH-67.md).
+- Visual style: [GH-94](../GH-94.md), [GH-88](../GH-88.md).
 - Foundation: [AP22](../AP22.md).

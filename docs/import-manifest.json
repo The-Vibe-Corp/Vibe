@@ -1630,6 +1630,14 @@
    ],
    "datum": "2026-11-25",
    "grund": "Kleine UI-Verbesserungen der Ausgabe: Autoscroll folgt nur am Log-Ende, gemeinsames responsives Kartenraster fuer Haupt- und Subagentenkarten, CSS-Klassen statt Inline-Styles an den Vorschaukarten, Entfernen der Statuszeile. Groesse und SHA-256 der betroffenen Dateien wurden aktualisiert."
+  },
+  {
+   "arbeitspaket": "GH-94",
+   "dateien": [
+    "bin/web/nova.css"
+   ],
+   "datum": "2026-11-25",
+   "grund": "Neue Oberflaeche auf das Designsystem \"Precise Frames x Technical Density\" umgestellt: der zugelieferte Style-Guide liegt unveraendert als docs/style.html bei (docs ist nicht im Manifest-Scope). Matte, deckende Token-Flaechen statt Glas/Blur/Transparenz, kleine Radien (2/3/4/6 px), 34-px-Controls, 22-px-Badges sowie 42x12-Toggle mit 22-px-Thumb, 11-px-uppercase-Tabellenkoepfe und 2-px-Fokus-Outline mit 1-px-Abstand. Inter/JetBrains-Mono-Stacks ohne Netzanfrage. Alle 12 Akzent-IDs und der Standard blau bleiben; indigo/cyan/green/orange nutzen die gedaempfte Referenzpalette in hell und dunkel. Klassische UI unveraendert. Groesse und SHA-256 von bin/web/nova.css wurden aktualisiert."
   }
  ],
  "files": [
@@ -1819,9 +1827,9 @@
    "sha256": "84ae6329f31c04fcc8b48c552ade8f9d276c283ab81b1babb66f8988b627d8a7"
   },
   {
-   "bytes": 69833,
+   "bytes": 71152,
    "path": "bin/web/nova.css",
-   "sha256": "be7fd866ea7e993f6177aa237b3e6fdacdce9bb83ecb389845654943910c2f74"
+   "sha256": "50bb42b1dfec25932a94d8ee1872fdc5e180eafdd4691d37847f086f1634d9ed"
   },
   {
    "bytes": 12751,

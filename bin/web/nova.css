@@ -7,23 +7,43 @@
 
 /* ---------- Tokens: heller Standard ---------- */
 :root {
-  --nv-font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  --nv-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  --nv-space-1: 0.25rem;
-  --nv-space-2: 0.5rem;
-  --nv-space-3: 0.75rem;
-  --nv-space-4: 1rem;
-  --nv-space-5: 1.5rem;
-  --nv-space-6: 2rem;
-  --nv-radius-sm: 10px;
-  --nv-radius: 10px;
-  --nv-radius-lg: 14px;
-  --nv-border: #d8dee6;
-  --nv-bg: #f5f7fa;
-  --nv-surface: #ffffff;
-  --nv-surface-2: #eef2f7;
-  --nv-text: #1d2430;
-  --nv-muted: #5b6675;
+  /* GH-94: Designsystem "Precise Frames × Technical Density".
+     Inter für UI-Text, JetBrains Mono für technische Werte. Beide Stacks
+     nutzen ausschließlich lokale Schriften; es gibt keine Netzwerkanfrage. */
+  --nv-font: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  --nv-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --nv-space-1: 4px;
+  --nv-space-2: 8px;
+  --nv-space-3: 12px;
+  --nv-space-4: 16px;
+  --nv-space-5: 24px;
+  --nv-space-6: 32px;
+  /* Kleine, technische Radien. Bestehende Namen bleiben die öffentliche API;
+     --nv-radius-md ist ein Alias auf denselben 4-px-Wert wie --nv-radius. */
+  --nv-radius-xs: 2px;
+  --nv-radius-sm: 3px;
+  --nv-radius: 4px;
+  --nv-radius-md: 4px;
+  --nv-radius-lg: 6px;
+  --nv-border-1: 1px;
+  --nv-border-2: 2px;
+  --nv-control-h-sm: 28px;
+  --nv-control-h-md: 34px;
+  --nv-control-h-lg: 40px;
+  /* Matte Flächen der Referenzpalette, hell. */
+  --nv-bg-canvas: #f4f3f0;
+  --nv-bg: #f4f3f0;
+  --nv-surface: #fbfaf8;
+  --nv-surface-2: #eceae6;
+  --nv-bg-raised: #ffffff;
+  --nv-bg-inset: #eceae6;
+  --nv-border: #d8d4cd;
+  --nv-border-strong: #b8b2a8;
+  --nv-divider: #e2ded8;
+  --nv-text: #26241f;
+  --nv-muted: #6b675f;
+  --nv-text-muted: #6b675f;
+  --nv-text-faint: #8d887e;
   --nv-primary: #2457c5;
   --nv-primary-text: #ffffff;
   --nv-primary-hover: #1a45a3;
@@ -33,22 +53,26 @@
   --nv-btn-primary-fg: #ffffff;
   --nv-btn-primary-border: #2457c5;
   --nv-btn-primary-hover: #1a45a3;
-  --nv-danger: #b4232c;
+  --nv-success: #3f7d54;
+  --nv-success-subtle: #e5f0e8;
+  --nv-warning: #8a6a1f;
+  --nv-warning-subtle: #f5eeda;
+  --nv-danger: #a33a32;
+  --nv-danger-subtle: #f6e5e3;
   --nv-danger-text: #ffffff;
-  --nv-warn-bg: #fff1cf;
-  --nv-warn-text: #7a5600;
-  --nv-ok-bg: #dcf3e4;
-  --nv-ok-text: #166534;
-  --nv-info-bg: #e6eefc;
-  --nv-error-bg: #fde8e9;
-  --nv-error-text: #9b1c22;
-  --nv-shadow: 0 2px 8px rgba(20, 32, 55, 0.08);
-  --nv-top-bg: #ffffff;
+  --nv-warn-bg: #f5eeda;
+  --nv-warn-text: #8a6a1f;
+  --nv-ok-bg: #e5f0e8;
+  --nv-ok-text: #3f7d54;
+  --nv-info: #2e6f80;
+  --nv-info-bg: #e2eef2;
+  --nv-error-bg: #f6e5e3;
+  --nv-error-text: #a33a32;
+  --nv-shadow: 0 1px 2px rgba(38, 36, 31, 0.06);
+  --nv-shadow-2: 0 2px 8px rgba(38, 36, 31, 0.08);
+  --nv-top-bg: #fbfaf8;
   --nv-focus: #1d4ed8;
   --nv-speed: 200ms;
-  /* F33: matte Frosted-Glass-Tokens — nur Blur, kein Gloss/Highlight. */
-  --nv-glass-fill: 88%;
-  --nv-glass-blur: 14px;
   --nv-top-h: 4.25rem;
   /* AP22/F19: Farben der Protokoll-Hervorhebung (Semantik wie die klassische
      Ansicht, an die helle Nova-Palette angepasst). */
@@ -91,23 +115,23 @@ html[data-accent="teal"] {
   --nv-focus: #0d9488;
   --nv-accent-soft-bg: #ccfbf1; --nv-accent-soft-fg: #115e59;
 }
-/* cyan: 5.36 / 4.79 / 5.36 / 6.49 : 1 — Fokus 3.68:1. */
+/* cyan: Referenzpalette "Precise Frames" — #2e6f80 / #255d6b / #e2eef2. */
 html[data-accent="cyan"] {
-  --nv-primary: #0e7490; --nv-primary-hover: #155e75;
-  --nv-info-bg: #cffafe; --nv-primary-text: #ffffff;
-  --nv-btn-primary-bg: #0e7490; --nv-btn-primary-fg: #ffffff;
-  --nv-btn-primary-border: #0e7490; --nv-btn-primary-hover: #155e75;
-  --nv-focus: #0891b2;
-  --nv-accent-soft-bg: #cffafe; --nv-accent-soft-fg: #155e75;
+  --nv-primary: #2e6f80; --nv-primary-hover: #255d6b;
+  --nv-info-bg: #e2eef2; --nv-primary-text: #ffffff;
+  --nv-btn-primary-bg: #2e6f80; --nv-btn-primary-fg: #ffffff;
+  --nv-btn-primary-border: #2e6f80; --nv-btn-primary-hover: #255d6b;
+  --nv-focus: #2e6f80;
+  --nv-accent-soft-bg: #e2eef2; --nv-accent-soft-fg: #255d6b;
 }
-/* green: 5.02 / 4.57 / 5.02 / 6.49 : 1 — Fokus 3.30:1. */
+/* green: Referenzpalette "Precise Frames" — #3f7d54 / #346a46 / #e5f0e8. */
 html[data-accent="green"] {
-  --nv-primary: #15803d; --nv-primary-hover: #166534;
-  --nv-info-bg: #dcfce7; --nv-primary-text: #ffffff;
-  --nv-btn-primary-bg: #15803d; --nv-btn-primary-fg: #ffffff;
-  --nv-btn-primary-border: #15803d; --nv-btn-primary-hover: #166534;
-  --nv-focus: #16a34a;
-  --nv-accent-soft-bg: #dcfce7; --nv-accent-soft-fg: #166534;
+  --nv-primary: #3f7d54; --nv-primary-hover: #346a46;
+  --nv-info-bg: #e5f0e8; --nv-primary-text: #ffffff;
+  --nv-btn-primary-bg: #3f7d54; --nv-btn-primary-fg: #ffffff;
+  --nv-btn-primary-border: #3f7d54; --nv-btn-primary-hover: #346a46;
+  --nv-focus: #3f7d54;
+  --nv-accent-soft-bg: #e5f0e8; --nv-accent-soft-fg: #346a46;
 }
 /* lime: 4.99 / 4.60 / hell #bef264 mit #1a2e05 11.19 / 6.52 : 1. */
 html[data-accent="lime"] {
@@ -136,14 +160,14 @@ html[data-accent="amber"] {
   --nv-focus: #d97706;
   --nv-accent-soft-bg: #fef3c7; --nv-accent-soft-fg: #92400e;
 }
-/* orange: 5.18 / 4.52 / 5.18 / 6.38 : 1 — Fokus 3.56:1. */
+/* orange: Referenzpalette "Precise Frames" — #a35a1f / #8a4c1a / #f5e9da. */
 html[data-accent="orange"] {
-  --nv-primary: #c2410c; --nv-primary-hover: #9a3412;
-  --nv-info-bg: #ffedd5; --nv-primary-text: #ffffff;
-  --nv-btn-primary-bg: #c2410c; --nv-btn-primary-fg: #ffffff;
-  --nv-btn-primary-border: #c2410c; --nv-btn-primary-hover: #9a3412;
-  --nv-focus: #ea580c;
-  --nv-accent-soft-bg: #ffedd5; --nv-accent-soft-fg: #9a3412;
+  --nv-primary: #a35a1f; --nv-primary-hover: #8a4c1a;
+  --nv-info-bg: #f5e9da; --nv-primary-text: #ffffff;
+  --nv-btn-primary-bg: #a35a1f; --nv-btn-primary-fg: #ffffff;
+  --nv-btn-primary-border: #a35a1f; --nv-btn-primary-hover: #8a4c1a;
+  --nv-focus: #a35a1f;
+  --nv-accent-soft-bg: #f5e9da; --nv-accent-soft-fg: #8a4c1a;
 }
 /* red: 6.53 / 5.34 / 6.53 / 6.80 : 1 — Fokus 4.83:1. */
 html[data-accent="red"] {
@@ -172,24 +196,31 @@ html[data-accent="violet"] {
   --nv-focus: #7c3aed;
   --nv-accent-soft-bg: #ede9fe; --nv-accent-soft-fg: #5b21b6;
 }
-/* indigo: 7.90 / 6.41 / 7.90 / 8.06 : 1 — Fokus 6.29:1. */
+/* indigo: Referenzpalette "Precise Frames" — #5b5bd6 / #4d4dc4 / #eaeafb. */
 html[data-accent="indigo"] {
-  --nv-primary: #4338ca; --nv-primary-hover: #3730a3;
-  --nv-info-bg: #e0e7ff; --nv-primary-text: #ffffff;
-  --nv-btn-primary-bg: #4338ca; --nv-btn-primary-fg: #ffffff;
-  --nv-btn-primary-border: #4338ca; --nv-btn-primary-hover: #3730a3;
-  --nv-focus: #4f46e5;
-  --nv-accent-soft-bg: #e0e7ff; --nv-accent-soft-fg: #3730a3;
+  --nv-primary: #5b5bd6; --nv-primary-hover: #4d4dc4;
+  --nv-info-bg: #eaeafb; --nv-primary-text: #ffffff;
+  --nv-btn-primary-bg: #5b5bd6; --nv-btn-primary-fg: #ffffff;
+  --nv-btn-primary-border: #5b5bd6; --nv-btn-primary-hover: #4d4dc4;
+  --nv-focus: #5b5bd6;
+  --nv-accent-soft-bg: #eaeafb; --nv-accent-soft-fg: #4d4dc4;
 }
 
 /* ---------- Tokens: dunkel ---------- */
 html[data-theme="dark"] {
-  --nv-border: #3b4655;
-  --nv-bg: #141922;
-  --nv-surface: #1e2530;
-  --nv-surface-2: #273140;
-  --nv-text: #e8edf5;
-  --nv-muted: #a2adc0;
+  --nv-bg-canvas: #161514;
+  --nv-bg: #161514;
+  --nv-surface: #1d1c1a;
+  --nv-surface-2: #141312;
+  --nv-bg-raised: #232220;
+  --nv-bg-inset: #141312;
+  --nv-border: #3b3833;
+  --nv-border-strong: #55504a;
+  --nv-divider: #2c2a27;
+  --nv-text: #e8e5df;
+  --nv-muted: #a29d94;
+  --nv-text-muted: #a29d94;
+  --nv-text-faint: #7d786f;
   --nv-primary: #6f9dff;
   --nv-primary-text: #101624;
   --nv-primary-hover: #8bb2ff;
@@ -199,19 +230,25 @@ html[data-theme="dark"] {
   --nv-btn-primary-fg: #ffffff;
   --nv-btn-primary-border: #3b6fe0;
   --nv-btn-primary-hover: #2f63d6;
-  --nv-danger: #ff7a7f;
-  --nv-danger-text: #2a0d0f;
-  --nv-warn-bg: #4a3a12;
-  --nv-warn-text: #ffe6a1;
-  --nv-ok-bg: #173d29;
-  --nv-ok-text: #a7f3c2;
-  --nv-info-bg: #213354;
-  --nv-error-bg: #4a1c20;
-  --nv-error-text: #ffc9cc;
-  --nv-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
-  --nv-top-bg: #1e2530;
+  --nv-success: #79b591;
+  --nv-success-subtle: #1e2c23;
+  --nv-warning: #c9a35a;
+  --nv-warning-subtle: #2e281b;
+  --nv-danger: #d47a70;
+  --nv-danger-subtle: #32201d;
+  --nv-danger-text: #101018;
+  --nv-warn-bg: #2e281b;
+  --nv-warn-text: #c9a35a;
+  --nv-ok-bg: #1e2c23;
+  --nv-ok-text: #79b591;
+  --nv-info: #7fb0c0;
+  --nv-info-bg: #1b2a30;
+  --nv-error-bg: #32201d;
+  --nv-error-text: #d47a70;
+  --nv-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --nv-shadow-2: 0 2px 10px rgba(0, 0, 0, 0.4);
+  --nv-top-bg: #1d1c1a;
   --nv-focus: #9dbaff;
-  --nv-glass-fill: 90%;
   /* AP22/F19: dunkle Entsprechung der Hervorhebungsfarben. */
   --nv-hl-head: #8ab4f8;
   --nv-hl-tool: #c9a7ff;
@@ -250,23 +287,23 @@ html[data-theme="dark"][data-accent="teal"] {
   --nv-focus: #5eead4;
   --nv-accent-soft-bg: #0c2e2b; --nv-accent-soft-fg: #5eead4;
 }
-/* cyan: 10.63 / 9.06 / 10.29 / 9.24 / 5.36 / 10.29 : 1. */
+/* cyan dunkel: Referenzpalette — #7fb0c0 / #93bfcd / #1b2a30 / #101018. */
 html[data-theme="dark"][data-accent="cyan"] {
-  --nv-primary: #67e8f9; --nv-primary-hover: #a5f3fc;
-  --nv-info-bg: #0b2b33; --nv-primary-text: #083344;
-  --nv-btn-primary-bg: #0e7490; --nv-btn-primary-fg: #ffffff;
-  --nv-btn-primary-border: #0e7490; --nv-btn-primary-hover: #155e75;
-  --nv-focus: #67e8f9;
-  --nv-accent-soft-bg: #0b2b33; --nv-accent-soft-fg: #67e8f9;
+  --nv-primary: #7fb0c0; --nv-primary-hover: #93bfcd;
+  --nv-info-bg: #1b2a30; --nv-primary-text: #101018;
+  --nv-btn-primary-bg: #7fb0c0; --nv-btn-primary-fg: #101018;
+  --nv-btn-primary-border: #7fb0c0; --nv-btn-primary-hover: #93bfcd;
+  --nv-focus: #7fb0c0;
+  --nv-accent-soft-bg: #1b2a30; --nv-accent-soft-fg: #7fb0c0;
 }
-/* green: 10.98 / 9.35 / 10.19 / 10.62 / 5.02 / 10.19 : 1. */
+/* green dunkel: Referenzpalette — #79b591 / #8bc4a1 / #1e2c23 / #101018. */
 html[data-theme="dark"][data-accent="green"] {
-  --nv-primary: #86efac; --nv-primary-hover: #bbf7d0;
-  --nv-info-bg: #12301f; --nv-primary-text: #052e16;
-  --nv-btn-primary-bg: #15803d; --nv-btn-primary-fg: #ffffff;
-  --nv-btn-primary-border: #15803d; --nv-btn-primary-hover: #166534;
-  --nv-focus: #86efac;
-  --nv-accent-soft-bg: #12301f; --nv-accent-soft-fg: #86efac;
+  --nv-primary: #79b591; --nv-primary-hover: #8bc4a1;
+  --nv-info-bg: #1e2c23; --nv-primary-text: #101018;
+  --nv-btn-primary-bg: #79b591; --nv-btn-primary-fg: #101018;
+  --nv-btn-primary-border: #79b591; --nv-btn-primary-hover: #8bc4a1;
+  --nv-focus: #79b591;
+  --nv-accent-soft-bg: #1e2c23; --nv-accent-soft-fg: #79b591;
 }
 /* lime — dunkle Primärtexte auf hellem Akzent: 11.80 / 10.05 / 10.73 /
    11.19 / 4.99 / 10.73 : 1. */
@@ -298,14 +335,14 @@ html[data-theme="dark"][data-accent="amber"] {
   --nv-focus: #fcd34d;
   --nv-accent-soft-bg: #33230a; --nv-accent-soft-fg: #fcd34d;
 }
-/* orange: 9.14 / 7.78 / 9.59 / 10.49 / 5.18 / 9.59 : 1. */
+/* orange dunkel: Referenzpalette — #d0925a / #dba56f / #2e231b / #101018. */
 html[data-theme="dark"][data-accent="orange"] {
-  --nv-primary: #fdba74; --nv-primary-hover: #fed7aa;
-  --nv-info-bg: #341a0c; --nv-primary-text: #2a1206;
-  --nv-btn-primary-bg: #c2410c; --nv-btn-primary-fg: #ffffff;
-  --nv-btn-primary-border: #c2410c; --nv-btn-primary-hover: #9a3412;
-  --nv-focus: #fdba74;
-  --nv-accent-soft-bg: #341a0c; --nv-accent-soft-fg: #fdba74;
+  --nv-primary: #d0925a; --nv-primary-hover: #dba56f;
+  --nv-info-bg: #2e231b; --nv-primary-text: #101018;
+  --nv-btn-primary-bg: #d0925a; --nv-btn-primary-fg: #101018;
+  --nv-btn-primary-border: #d0925a; --nv-btn-primary-hover: #dba56f;
+  --nv-focus: #d0925a;
+  --nv-accent-soft-bg: #2e231b; --nv-accent-soft-fg: #d0925a;
 }
 /* red: 8.12 / 6.92 / 8.88 / 9.72 / 6.53 / 8.88 : 1. */
 html[data-theme="dark"][data-accent="red"] {
@@ -334,14 +371,14 @@ html[data-theme="dark"][data-accent="violet"] {
   --nv-focus: #c4b5fd;
   --nv-accent-soft-bg: #241640; --nv-accent-soft-fg: #c4b5fd;
 }
-/* indigo: 7.73 / 6.59 / 8.21 / 8.02 / 7.90 / 8.21 : 1. */
+/* indigo dunkel: Referenzpalette — #8a8af0 / #9d9df5 / #2a2944 / #101018. */
 html[data-theme="dark"][data-accent="indigo"] {
-  --nv-primary: #a5b4fc; --nv-primary-hover: #c7d2fe;
-  --nv-info-bg: #1c1c3d; --nv-primary-text: #1e1b4b;
-  --nv-btn-primary-bg: #4338ca; --nv-btn-primary-fg: #ffffff;
-  --nv-btn-primary-border: #4338ca; --nv-btn-primary-hover: #3730a3;
-  --nv-focus: #a5b4fc;
-  --nv-accent-soft-bg: #1c1c3d; --nv-accent-soft-fg: #a5b4fc;
+  --nv-primary: #8a8af0; --nv-primary-hover: #9d9df5;
+  --nv-info-bg: #2a2944; --nv-primary-text: #101018;
+  --nv-btn-primary-bg: #8a8af0; --nv-btn-primary-fg: #101018;
+  --nv-btn-primary-border: #8a8af0; --nv-btn-primary-hover: #9d9df5;
+  --nv-focus: #8a8af0;
+  --nv-accent-soft-bg: #2a2944; --nv-accent-soft-fg: #8a8af0;
 }
 
 /* ---------- Grundlagen und Typografie ---------- */
@@ -353,7 +390,7 @@ body {
   background: var(--nv-bg);
   color: var(--nv-text);
   font-family: var(--nv-font);
-  font-size: 15px;
+  font-size: 14px;
   line-height: 1.5;
 }
 [hidden] { display: none !important; }
@@ -373,14 +410,14 @@ code, pre { font-family: var(--nv-mono); }
 .nv-log .hl-think { color: var(--nv-muted); font-style: italic; }
 .nv-log .hl-cmd { color: var(--nv-warn-text); }
 .nv-log .hl-add { color: var(--nv-ok-text); }
-.nv-log .hl-code { color: var(--nv-hl-code); background: var(--nv-hl-code-bg); border-radius: 3px; }
+.nv-log .hl-code { color: var(--nv-hl-code); background: var(--nv-hl-code-bg); border-radius: var(--nv-radius-sm); }
 .nv-log .hl-str { color: var(--nv-hl-str); }
 .nv-log .hl-path { color: var(--nv-hl-path); }
 .nv-log .hl-sha { color: var(--nv-hl-sha); }
 .nv-log .hl-num { color: var(--nv-hl-num); }
 
 a { color: var(--nv-primary); }
-:focus-visible { outline: 2px solid var(--nv-focus); outline-offset: 2px; }
+:focus-visible { outline: 2px solid var(--nv-focus); outline-offset: 1px; }
 
 /* Skip-Link: nur beim Fokussieren sichtbar. */
 .nv-skip {
@@ -481,7 +518,7 @@ img.nv-logo[data-nv-logo] {
   border: 1px solid var(--nv-border);
   border-radius: var(--nv-radius-lg);
   box-shadow: var(--nv-shadow);
-  padding: var(--nv-space-6);
+  padding: var(--nv-space-4);
   margin-bottom: var(--nv-space-4);
 }
 .nv-card-secondary { background: var(--nv-surface-2); box-shadow: none; }
@@ -546,10 +583,11 @@ img.nv-logo[data-nv-logo] {
   width: 76px;
   height: 4px;
   margin-top: var(--nv-space-2);
-  border-radius: 2px;
-  background:
-    repeating-linear-gradient(to right, var(--nv-primary) 0 16px, transparent 16px 20px) left top / calc(var(--nv-step-fill) * 20px) 100% no-repeat,
-    repeating-linear-gradient(to right, var(--nv-border) 0 16px, transparent 16px 20px) left top / 100% 100% no-repeat;
+  border-radius: var(--nv-radius-xs);
+  background: var(--nv-border);
+  /* Fortschritt ohne Gradient: ein inset-Schatten füllt den Track bis zum
+     aktuellen Schritt (4 Schritte à 19 px). */
+  box-shadow: inset calc(var(--nv-step-fill) * 19px) 0 0 var(--nv-primary);
 }
 
 /* ---------- Kompakte Bausteine ---------- */
@@ -561,12 +599,15 @@ img.nv-logo[data-nv-logo] {
 .nv-guide-label { color: var(--nv-primary); font-weight: 600; font-size: 0.875rem; }
 .nv-guide-steps { display: flex; flex-wrap: wrap; gap: var(--nv-space-2); margin-top: var(--nv-space-3); }
 .nv-chip {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
   padding: 0.15rem 0.6rem;
-  border-radius: 999px;
+  border: 1px solid var(--nv-border);
+  border-radius: var(--nv-radius-xs);
   background: var(--nv-info-bg);
   color: var(--nv-text);
   font-size: 0.8125rem;
+  line-height: 1.5;
 }
 .nv-quick { border-style: dashed; }
 .nv-root-row {
@@ -581,7 +622,8 @@ img.nv-logo[data-nv-logo] {
   min-width: 0;
   padding: 0.1rem 0.4rem;
   border-radius: var(--nv-radius-sm);
-  background: var(--nv-surface-2);
+  background: var(--nv-bg-inset);
+  font-family: var(--nv-mono);
   font-size: 0.8125rem;
   /* Standardmäßig einzeilig mit Ellipse; der volle Pfad steht im title.
      anywhere greift nur, falls ein Umbruch unvermeidbar ist. */
@@ -618,31 +660,31 @@ img.nv-logo[data-nv-logo] {
 }
 .nv-skeleton-short { max-width: 18rem; }
 html[data-animations="on"] .nv-skeleton {
-  background: linear-gradient(90deg, var(--nv-surface-2), var(--nv-info-bg), var(--nv-surface-2));
-  background-size: 200% 100%;
-  animation: nv-shimmer 1.8s ease-in-out infinite;
+  background: var(--nv-info-bg);
+  animation: nv-pulse 1.8s ease-in-out infinite;
 }
 
 /* ---------- Formulare ---------- */
 /* GH-82: genau ein Stil für native Dropdowns in ganz Nova. */
 [data-nv-app] select {
   width: 100%;
-  padding: var(--nv-space-2) var(--nv-space-3);
-  border: 1px solid var(--nv-border);
+  height: var(--nv-control-h-md);
+  padding: 0 10px;
+  border: 1px solid var(--nv-border-strong);
   border-radius: var(--nv-radius-sm);
-  background: var(--nv-surface);
+  background: var(--nv-bg-raised);
   color: var(--nv-text);
   font: inherit;
-  font-size: 0.875rem;
+  font-size: 13px;
   font-weight: 600;
 }
 .nv-card label { display: block; margin: var(--nv-space-3) 0 var(--nv-space-1); font-weight: 600; font-size: 0.875rem; }
 .nv-card input:not([type="checkbox"]), .nv-card textarea {
   width: 100%;
   padding: var(--nv-space-2) var(--nv-space-3);
-  border: 1px solid var(--nv-border);
+  border: 1px solid var(--nv-border-strong);
   border-radius: var(--nv-radius-sm);
-  background: var(--nv-surface);
+  background: var(--nv-bg-raised);
   color: var(--nv-text);
   font: inherit;
 }
@@ -657,21 +699,27 @@ html[data-animations="on"] .nv-skeleton {
 }
 
 /* ---------- Buttons ---------- */
+/* Referenzmaß: 34 px Höhe (--control-h-md), 1-px-Rahmen, 3-px-Radius. */
 .nv-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: var(--nv-space-2);
-  padding: var(--nv-space-2) var(--nv-space-4);
-  border: 1px solid var(--nv-border);
+  height: var(--nv-control-h-md);
+  padding: 0 14px;
+  border: 1px solid var(--nv-border-strong);
   border-radius: var(--nv-radius-sm);
-  background: var(--nv-surface-2);
+  background: var(--nv-bg-raised);
   color: var(--nv-text);
   font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
   text-decoration: none;
   cursor: pointer;
 }
 .nv-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+.nv-btn:focus-visible { outline: 2px solid var(--nv-focus); outline-offset: 1px; }
 .nv-btn.nv-primary {
   background: var(--nv-btn-primary-bg);
   color: var(--nv-btn-primary-fg);
@@ -679,30 +727,38 @@ html[data-animations="on"] .nv-skeleton {
   font-weight: 600;
 }
 .nv-btn.nv-primary:hover:not(:disabled) { background: var(--nv-btn-primary-hover); }
-.nv-btn.nv-secondary { background: var(--nv-surface); color: var(--nv-primary); border-color: var(--nv-border); }
+.nv-btn.nv-secondary { background: var(--nv-bg-raised); color: var(--nv-primary); border-color: var(--nv-border-strong); }
 .nv-btn.nv-danger { background: var(--nv-danger); color: var(--nv-danger-text); border-color: var(--nv-danger); }
-.nv-btn.nv-ghost { background: transparent; border-color: transparent; padding: var(--nv-space-2); }
+.nv-btn.nv-ghost { background: transparent; border-color: transparent; color: var(--nv-primary); padding: 0 var(--nv-space-2); }
 .nv-btn.nv-close { padding: 0 var(--nv-space-2); font-size: 1.25rem; }
 
 /* ---------- Pillen, Status und Abzeichen ---------- */
+/* Statusmarken der Referenz: 22 px hoch, 11 px Label, 2-px-Radius. */
 .nv-pill, .nv-badge {
-  display: inline-block;
-  padding: 0.1rem 0.55rem;
-  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid var(--nv-border);
+  border-radius: var(--nv-radius-xs);
   background: var(--nv-surface-2);
   color: var(--nv-muted);
-  font-size: 0.8125rem;
+  font-size: 11px;
   font-weight: 600;
+  line-height: 1;
 }
-.nv-pill[data-state="running"] { background: var(--nv-ok-bg); color: var(--nv-ok-text); }
-.nv-pill[data-state="stopped"] { background: var(--nv-surface-2); }
-.nv-pill.nv-type { background: var(--nv-info-bg); color: var(--nv-primary); }
-.nv-pill.nv-warn { background: var(--nv-warn-bg); color: var(--nv-warn-text); }
+.nv-pill[data-state="running"] { background: var(--nv-ok-bg); color: var(--nv-ok-text); border-color: var(--nv-ok-text); }
+.nv-pill[data-state="stopped"] { background: var(--nv-surface-2); border-color: var(--nv-border); }
+.nv-pill.nv-type { background: var(--nv-info-bg); color: var(--nv-primary); border-color: var(--nv-primary); }
+.nv-pill.nv-warn { background: var(--nv-warn-bg); color: var(--nv-warn-text); border-color: var(--nv-warn-text); }
 .nv-badge {
   min-width: 1.2rem;
+  justify-content: center;
   text-align: center;
   background: var(--nv-danger);
   color: var(--nv-danger-text);
+  border-color: var(--nv-danger);
   margin-left: 0;
 }
 
@@ -766,36 +822,10 @@ html[data-animations="on"] .nv-skeleton {
 .nv-bell-answer { align-self: flex-start; padding: 0 var(--nv-space-2); }
 .nv-bell-empty { margin: var(--nv-space-2) 0; font-size: 0.875rem; }
 
-/* ---------- F33: mattes Frosted Glass ----------
- * Bewusst NUR blur + moderate Translenz (88% hell / 90% dunkel): keine
- * Spiegelung, keine Gloss-Verläufe, keine Highlight-Overlays. Ohne
- * backdrop-filter greift der @supports-Block nicht — die Flächen oben bleiben
- * deckend (--nv-surface). Textkontrast bleibt durch den hohen Deckanteil
- * erhalten.
- */
-@supports ((backdrop-filter: blur(2px)) or (-webkit-backdrop-filter: blur(2px))) {
-  /* Reparatur des Interaktionsdefekts in den erweiterten Einstellungen:
-     backdrop-filter auf jeder .nv-card erzeugt einen composited Layer pro
-     Karte. Beim asynchronen NV.render() nach Aktionen (runs-prune, gates-save)
-     verzögert das den DOM-Austausch gegenueber dem Backend-State; Formular-
-     werte werden dabei verworfen. Karten behalten weiterhin die matte
-     color-mix-Translenz (88 % hell / 90 % dunkel) und die nv-slide-in-Bewegung;
-     der Frosted-Glass-Blur bleibt auf Header, Sidebar, Schublade und Toasts. */
-  .nv-top, .nv-drawer, .nv-toast, .nv-side {
-    background: var(--nv-surface);
-    background: color-mix(in srgb, var(--nv-surface) var(--nv-glass-fill), transparent);
-    -webkit-backdrop-filter: blur(var(--nv-glass-blur));
-    backdrop-filter: blur(var(--nv-glass-blur));
-  }
-  .nv-card {
-    background: var(--nv-surface);
-    background: color-mix(in srgb, var(--nv-surface) var(--nv-glass-fill), transparent);
-  }
-  .nv-card.nv-card-secondary {
-    background: var(--nv-surface-2);
-    background: color-mix(in srgb, var(--nv-surface-2) var(--nv-glass-fill), transparent);
-  }
-}
+/* GH-94: Kein Glas, kein Blur, keine Transparenz auf Nova-Flächen.
+ * Kopfleiste, Schublade, Toast und Karten bleiben matte, vollständig deckende
+ * Token-Flächen. Nur echte Overlay-Dimmer (Menü/Scrim) bleiben halbtransparent,
+ * weil sie den Inhalt dahinter sichtbar abdunkeln müssen. */
 
 /* ---------- Animationen (nur bei data-animations="on") ---------- */
 /* fill-mode "backwards" statt "both": ohne End-Fill bleibt kein animierter
@@ -811,7 +841,7 @@ html[data-animations="on"] .nv-tab:hover { transform: translateY(-1px); }
 html[data-animations="on"] .nv-drawer { animation: nv-fade-in var(--nv-speed) ease-out both; }
 @keyframes nv-slide-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 @keyframes nv-fade-in { from { opacity: 0; } to { opacity: 1; } }
-@keyframes nv-shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+@keyframes nv-pulse { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) {
   html[data-animations="on"] .nv-card,
   html[data-animations="on"] .nv-toast,
@@ -829,7 +859,6 @@ html[data-animations="on"] .nv-drawer { animation: nv-fade-in var(--nv-speed) ea
 @media (max-width: 1023px) {
   .nv-top { padding: var(--nv-space-3) var(--nv-space-4); }
   .nv-main { max-width: 768px; padding: var(--nv-space-5) var(--nv-space-4); }
-  .nv-card { padding: var(--nv-space-5); }
 }
 @media (max-width: 639px) {
   /* Die Navigation wird als Overlay unter der Kopfzeile eingeblendet; die
@@ -867,7 +896,6 @@ html[data-animations="on"] .nv-drawer { animation: nv-fade-in var(--nv-speed) ea
   .nv-nav button[aria-current="page"] { border-left-color: var(--nv-primary); }
   .nv-top-actions { margin-left: auto; gap: 0; }
   .nv-main { padding: var(--nv-space-4) var(--nv-space-3); }
-  .nv-card { padding: var(--nv-space-4); }
   .nv-grid, .nv-tiles, .nv-board { grid-template-columns: 1fr; }
   .nv-toasts { right: var(--nv-space-2); top: calc(var(--nv-top-h) + var(--nv-space-2)); }
 }
@@ -972,7 +1000,7 @@ div[data-nv-agent-tag-filters] { display: flex; flex-wrap: wrap; gap: var(--nv-s
 button[data-nv-tag-filter] {
   padding: 0.3rem 0.7rem;
   border: 1px solid var(--nv-border);
-  border-radius: 999px;
+  border-radius: var(--nv-radius-xs);
   background: var(--nv-surface);
   color: var(--nv-muted);
   font: inherit;
@@ -1079,39 +1107,47 @@ label.nv-switch-row {
 }
 .nv-switch-row .nv-switch-text { display: flex; flex-direction: column; line-height: 1.35; }
 .nv-switch-row .nv-switch-text small { color: var(--nv-muted); font-size: 0.8125rem; }
+/* Technical-Density-Toggle: 42 × 12 px Track, 22 px Thumb.
+   Der aktive Thumb nutzt die Akzentfarbe; die Track-Fläche bleibt matte
+   Inset-Fläche wie in der Referenz. */
 .nv-switch-row input[type="checkbox"] {
   appearance: none;
   -webkit-appearance: none;
   position: relative;
   flex: 0 0 auto;
-  width: 46px;
-  height: 26px;
+  width: 42px;
+  height: 12px;
   margin: 0;
-  border: 1px solid var(--nv-border);
-  border-radius: 999px;
-  background: var(--nv-surface);
+  border: 1px solid var(--nv-border-strong);
+  border-radius: var(--nv-radius-xs);
+  background: var(--nv-bg-inset);
   cursor: pointer;
 }
 .nv-switch-row input[type="checkbox"]::before {
   content: "";
   position: absolute;
-  top: 2px;
+  top: 50%;
   left: 2px;
-  width: 20px;
-  height: 20px;
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--nv-border-strong);
   border-radius: 50%;
-  background: var(--nv-muted);
+  background: var(--nv-bg-raised);
+  box-shadow: var(--nv-shadow);
+  transform: translateY(-50%);
 }
 .nv-switch-row input[type="checkbox"]:checked {
-  background: var(--nv-primary);
-  border-color: var(--nv-primary);
+  background: var(--nv-bg-inset);
+  border-color: var(--nv-border-strong);
 }
 .nv-switch-row input[type="checkbox"]:checked::before {
-  background: #ffffff;
-  transform: translateX(20px);
+  left: 18px;
+  background: var(--nv-primary);
+  border-color: var(--nv-primary);
+  transform: translateY(-50%);
 }
 html[data-animations="on"] .nv-switch-row input[type="checkbox"] { transition: background-color var(--nv-speed) ease, border-color var(--nv-speed) ease; }
-html[data-animations="on"] .nv-switch-row input[type="checkbox"]::before { transition: transform var(--nv-speed) ease, background-color var(--nv-speed) ease; }
+html[data-animations="on"] .nv-switch-row input[type="checkbox"]::before { transition: left var(--nv-speed) ease, background-color var(--nv-speed) ease, border-color var(--nv-speed) ease; }
 /* Klickbare Kosten-/Projektzeilen mit dezentem ▸-Muster. */
 tr.nv-clickable, tr[data-nv-cost-project], tr.nv-cost { cursor: pointer; }
 tr.nv-clickable:hover > td, tr[data-nv-cost-project]:hover > td, tr.nv-cost:hover > td { background: var(--nv-accent-soft-bg); }
@@ -1150,7 +1186,7 @@ button[data-nv-drag-handle] {
   cursor: grab;
 }
 span[data-nv-prio-badge] {
-  padding: 0.1rem 0.5rem; border-radius: 999px;
+  padding: 0.1rem 0.5rem; border-radius: var(--nv-radius-xs);
   background: var(--nv-accent-soft-bg); color: var(--nv-accent-soft-fg);
   font-size: 0.75rem; font-weight: 700;
 }
@@ -1229,6 +1265,7 @@ html[data-animations="on"] .nv-out-cards .nv-card { animation: none; }
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--nv-muted);
+  font-family: var(--nv-mono);
   font-size: 0.8125rem;
 }
 .nv-out-spacer { flex: 1 1 auto; }
@@ -1246,7 +1283,7 @@ html[data-animations="on"] .nv-out-cards .nv-card { animation: none; }
   background: var(--nv-surface);
   border: 1px solid var(--nv-border);
   border-radius: var(--nv-radius-lg);
-  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.38);
+  box-shadow: var(--nv-shadow-2);
 }
 .nv-out-enlarged .nv-log { flex: 1 1 auto; max-height: none; overflow: auto; }
 /* Steuerzeile direkt unter der Statuszeile — ohne Scrollen erreichbar.
@@ -1293,7 +1330,7 @@ html[data-animations="on"] .nv-out-enlarged-open .nv-ppanel {
 span[data-nv-eval-badge], span[data-nv-run-pruneable] {
   display: inline-block;
   padding: 0.1rem 0.5rem;
-  border-radius: 999px;
+  border-radius: var(--nv-radius-xs);
   background: var(--nv-accent-soft-bg);
   color: var(--nv-accent-soft-fg);
   font-size: 0.75rem;
@@ -1382,11 +1419,18 @@ small[data-nv-gate-help] {
 .nv-grid { gap: var(--nv-space-4); }
 .nv-table-wrap { width: 100%; overflow-x: auto; margin-bottom: var(--nv-space-4); }
 .nv-table { width: 100%; border-collapse: collapse; }
-.nv-table th, .nv-table td { padding: var(--nv-space-2) var(--nv-space-3); border-bottom: 1px solid var(--nv-border); text-align: left; vertical-align: top; }
+.nv-table th, .nv-table td { padding: 9px 10px; border-bottom: 1px solid var(--nv-divider); text-align: left; vertical-align: top; }
+.nv-table th {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--nv-text-faint);
+}
 .nv-stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: var(--nv-space-3); margin-bottom: var(--nv-space-4); }
 .nv-stat { padding: var(--nv-space-4); border: 1px solid var(--nv-border); border-radius: var(--nv-radius); background: var(--nv-surface-2); }
 .nv-stat strong { display: block; font-size: 1.5rem; }
-.nv-kind-badge { display: inline-block; padding: 0.1rem 0.55rem; border-radius: 999px; background: var(--nv-surface-2); color: var(--nv-muted); font-size: 0.8125rem; font-weight: 600; }
+.nv-kind-badge { display: inline-block; padding: 0.1rem 0.55rem; border-radius: var(--nv-radius-xs); background: var(--nv-surface-2); color: var(--nv-muted); font-size: 0.8125rem; font-weight: 600; }
 .nv-kind-badge[data-nv-kind="package"] { background: var(--nv-info-bg); color: var(--nv-primary); }
 .nv-kind-badge[data-nv-kind="bug"] { background: var(--nv-error-bg); color: var(--nv-error-text); }
 .nv-kind-badge[data-nv-kind="feedback"] { background: var(--nv-warn-bg); color: var(--nv-warn-text); }
@@ -1498,7 +1542,7 @@ label.nv-field input, label.nv-field select, label.nv-field textarea { max-width
   align-items: center;
   gap: var(--nv-space-2);
   padding: 0.1rem 0.6rem;
-  border-radius: 999px;
+  border-radius: var(--nv-radius-xs);
   background: var(--nv-surface-2);
   color: var(--nv-muted);
   font-size: 0.8125rem;
@@ -1639,7 +1683,7 @@ article[data-nv-ticket].nv-dragging { opacity: 0.4; }
 [data-nv-drop-marker] {
   height: 4px;
   margin: 0;
-  border-radius: 2px;
+  border-radius: var(--nv-radius-xs);
   background: var(--nv-primary);
 }
 [data-nv-board-ghost] {
