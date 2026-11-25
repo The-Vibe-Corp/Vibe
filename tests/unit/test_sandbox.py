@@ -28,6 +28,15 @@ WEB = REPO / "bin" / "vibe-web.py"
 RUNNER = REPO / "bin" / "vibe-run.sh"
 TEMPLATES = REPO / "templates"
 
+# GH-89/F1: Sandbox-Zustand und Host-Ablage der opencode-Daten liegen pro
+# Benutzer unter /dev/shm. Der geteilte Host-Ordner /tmp/opencode wird von
+# vibe nicht mehr angelegt; /tmp/opencode bleibt nur der Pfad INNERHALB der
+# Sandbox. /dev/shm ist auch in der Agenten-Sandbox beschreibbar (dort ist
+# /tmp nur lesend eingebunden) und sein 1777-Sticky-Modus trennt die Nutzer.
+SANDBOX_STATE_ROOT = f"/dev/shm/vibe-sandbox-{os.getuid()}"
+SHORT_STATE_ROOT = f"/dev/shm/vsb-{os.getuid()}"
+OPENCODE_STATE_ROOT = f"/dev/shm/vibe-opencode-{os.getuid()}"
+
 from tests.unit import env_support
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -121,9 +130,12 @@ class SandboxConfigTest(SandboxFixture):
 
         self.assertFalse(status["enabled"])
         self.assertEqual(status["tools"], [])
+        # Die Vorgabe /tmp/opencode (F3, agentensichtbar) wird auf die
+        # per-UID-Host-Ablage abgebildet; der geteilte Host-Ordner selbst
+        # bleibt unangetastet.
         self.assertEqual(
             status["write_dirs"],
-            ["/tmp/opencode", os.path.realpath(self.project)],
+            [os.path.realpath(OPENCODE_STATE_ROOT), os.path.realpath(self.project)],
         )
         self.assertIsNone(status["error"])
 
@@ -197,8 +209,10 @@ class SandboxConfigTest(SandboxFixture):
 
     def test_effective_write_dirs_contain_project_permissions_and_tool_caches(self):
         self.write_env('SANDBOX=on\nSANDBOX_TOOLS="npm python3 gradle"\n')
-        extra = "/tmp/opencode/f7-extra"
-        self.cli.write_dirs_save("proj", [str(self.project), extra])
+        # Zusätzliches Schreibverzeichnis unter dem Temp-Root des Tests statt
+        # im geteilten Host-Ordner /tmp/opencode.
+        extra = self.root / "f7-extra"
+        self.cli.write_dirs_save("proj", [str(self.project), str(extra)])
 
         status = self.sandbox.status(self.project)
 
@@ -213,7 +227,7 @@ class SandboxConfigTest(SandboxFixture):
         ):
             self.assertIn(expected, status["write_dirs"])
         self.assertTrue(
-            status["state_dir"].startswith("/tmp/opencode/vibe-sandbox/")
+            status["state_dir"].startswith(SANDBOX_STATE_ROOT + os.sep)
         )
 
     def test_gradle_user_home_is_writable_when_configured(self):
@@ -279,13 +293,15 @@ class SandboxCommandTest(SandboxFixture):
             argv[argv.index("--bind", argv.index("--tmpfs") + 1):][:2],
             ["--bind", project],
         )
-        for expected in (
-            "/tmp/opencode",
-            os.path.realpath(self.home / ".npm"),
-        ):
-            self.assertIn("--bind", argv)
-            position = argv.index("--bind", argv.index(expected) - 1)
-            self.assertEqual(argv[position:position + 2], ["--bind", expected])
+        # GH-89/F1: Die opencode-Host-Ablage wird als Quelle auf den
+        # Sandbox-Pfad /tmp/opencode gebunden (Quelle != Ziel). Der geteilte
+        # Host-Ordner selbst wird nicht mehr angelegt oder gebunden.
+        pairs = list(zip(argv, argv[1:], argv[2:]))
+        opencode_backing = os.path.realpath(OPENCODE_STATE_ROOT)
+        self.assertIn(("--bind", opencode_backing, "/tmp/opencode"), pairs)
+        self.assertNotIn(("--bind", "/tmp/opencode", "/tmp/opencode"), pairs)
+        npm = os.path.realpath(self.home / ".npm")
+        self.assertIn(("--bind", npm, npm), pairs)
         self.assertIn("XDG_DATA_HOME", argv)
         self.assertIn("XDG_CACHE_HOME", argv)
         self.assertIn("TMPDIR", argv)
@@ -340,10 +356,10 @@ class SandboxCommandTest(SandboxFixture):
     def test_real_sandbox_allows_questions_but_not_the_web_token(self):
         self.assertIsNotNone(shutil.which("bwrap"), "bubblewrap (bwrap) fehlt")
         self.write_env('SANDBOX=on\nSANDBOX_TOOLS="git"\n')
-        # Der Laufzeitordner liegt außerhalb der erlaubten Schreibverzeichnisse
-        # (nicht unter /tmp/opencode), damit der Test wirklich die zusätzliche
-        # Bindung des Rückfrageordners prüft. Das Prüfverzeichnis liegt bewusst
-        # im Repository und wird danach wieder entfernt.
+        # Der Laufzeitordner liegt außerhalb der erlaubten Schreibverzeichnisse,
+        # damit der Test wirklich die zusätzliche Bindung des Rückfrageordners
+        # prüft. Das Prüfverzeichnis liegt bewusst im Repository und wird
+        # danach wieder entfernt.
         runtime = Path(tempfile.mkdtemp(prefix=".f16-sandbox-", dir=str(REPO)))
         self.addCleanup(lambda: shutil.rmtree(runtime, ignore_errors=True))
         token = runtime / "web.token"
@@ -543,7 +559,10 @@ class SandboxCommandTest(SandboxFixture):
     def test_real_sandbox_allows_write_dirs_and_denies_unlisted_paths(self):
         self.assertIsNotNone(shutil.which("bwrap"), "bubblewrap (bwrap) fehlt")
         self.write_env("SANDBOX=on\nSANDBOX_TOOLS=\"git\"\n")
-        allowed = Path("/tmp/opencode") / f"f7-test-{os.getpid()}-{time.time_ns()}"
+        # GH-89/F1: Das erlaubte Zusatzverzeichnis liegt unter dem Temp-Root
+        # des Tests; der geteilte Host-Ordner /tmp/opencode wird nicht mehr
+        # beschrieben.
+        allowed = self.root / f"f7-test-{os.getpid()}-{time.time_ns()}"
         allowed.mkdir(parents=True)
         self.addCleanup(lambda: shutil.rmtree(allowed, ignore_errors=True))
         self.cli.write_dirs_save("proj", [str(self.project), str(allowed)])
@@ -711,11 +730,19 @@ class SandboxRunnerTest(SandboxFixture):
 
     def prepare_runner(self, sandbox_value):
         self.assertIsNotNone(shutil.which("bwrap"), "bubblewrap (bwrap) fehlt")
-        toolbin = Path("/tmp/opencode") / (
+        # GH-89/F1: Der Werkzeugordner liegt unter dem Temp-Root des Tests
+        # statt im geteilten Host-Ordner /tmp/opencode. Über die Schreibrechte
+        # wird er source==target gebunden und ist damit auch in der Sandbox
+        # sichtbar und beschreibbar.
+        toolbin = self.root / (
             "f7-runner-" + str(os.getpid()) + "-" + str(time.time_ns())
         )
         toolbin.mkdir(parents=True)
         self.addCleanup(lambda: shutil.rmtree(toolbin, ignore_errors=True))
+        (self.project / ".vibe" / "permissions.json").write_text(
+            json.dumps({"write_dirs": [str(self.project), str(toolbin)]}),
+            encoding="utf-8",
+        )
 
         args_file = toolbin / "args.txt"
         escape = Path("/var/tmp") / (
@@ -1303,8 +1330,9 @@ from tests.unit import env_support
 # (STATE_PATH_LIMIT); hier gilt dieselbe Schwelle. Pfade über 84 weichen
 # auf die kurze Rückfallform aus.
 LIMIT = 84
-# Fester Kurzpfad (tmpfs) für den Rückfall, wenn der Zustandsort zu lang wäre.
-FALLBACK_ROOT = "/tmp/opencode/vsb"
+# Fester Kurzpfad (tmpfs) für den Rückfall, wenn der Zustandsort zu lang wäre
+# (per-UID, siehe SANDBOX_STATE_ROOT/SHORT_STATE_ROOT oben).
+FALLBACK_ROOT = SHORT_STATE_ROOT
 
 
 class B5Fixture(unittest.TestCase):
@@ -1671,7 +1699,7 @@ class StateDirTest(B5Fixture):
         self.assertTrue(status["enabled"])
         for expected in (
             os.path.realpath(project),
-            "/tmp/opencode",
+            os.path.realpath(OPENCODE_STATE_ROOT),
             status["state_dir"],
         ):
             self.assertIn(expected, status["write_dirs"], expected)
@@ -1746,8 +1774,8 @@ from tests.unit import env_support
 
 # Direkte Einträge dieser beiden Wurzeln werden unmittelbar vor und nach
 # den echten Läufen verglichen; das Aufräumen des state_dir muss den
-# Unterschied vollständig zurücknehmen.
-SANDBOX_ROOTS = ("/tmp/opencode/vibe-sandbox", "/tmp/opencode/vsb")
+# Unterschied vollständig zurücknehmen. Beide Wurzeln sind per-UID.
+SANDBOX_ROOTS = (SANDBOX_STATE_ROOT, SHORT_STATE_ROOT)
 
 
 def setenv_frequencies(argv):
@@ -1782,9 +1810,10 @@ class B4Fixture(unittest.TestCase):
     def setUp(self):
         # Die aktuelle Agentensitzung kennt /tmp und /var/tmp als
         # schreibgeschützt; der Projektbaum wurde wie bei F16 als
-        # Prüfverzeichnis im Repository belegt. Er liegt — anders als
-        # /tmp/opencode — nie in einem als Schreibverzeichnis gebundenen
-        # Baum, damit die Verneinungsfälle von AK5 beobachtbar bleiben.
+        # Prüfverzeichnis im Repository belegt. Er liegt — anders als der
+        # Sandbox-Zustandsordner — nie in einem als Schreibverzeichnis
+        # gebundenen Baum, damit die Verneinungsfälle von AK5 beobachtbar
+        # bleiben.
         self.tmp = tempfile.TemporaryDirectory(prefix=".b4-", dir=str(REPO))
         self.root = Path(self.tmp.name)
         self.project = self.root / "proj"

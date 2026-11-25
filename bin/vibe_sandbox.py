@@ -14,7 +14,11 @@ Die Sandbox begrenzt Schreibzugriffe auf:
 - den Rückfrageordner ``questions`` des Laufzeitordners (F16, nur dieser
   Unterordner; Token, Protokolle und Laufregister bleiben unerreichbar) und
 - die technisch notwendigen Caches für MCP-Laufzeiten,
-- ``/tmp/opencode`` für den opencode-Zustand und
+- die instanzeigene Ablage des opencode-Zustands unter
+  ``/dev/shm/vibe-opencode-<uid>``, die in der Sandbox als
+  ``/tmp/opencode`` erscheint (Quelle != Ziel, weil die opencode-CLI diesen
+  Pfad fest erwartet); den geteilten Host-Ordner ``/tmp/opencode`` legt oder
+  beschreibt vibe nicht mehr und
 - eine sandbox-lokale opencode-Datenbank mit Schema und nur den Zugangsdaten
   (AP1): Quelle ist die Host-DB aus ``$XDG_DATA_HOME/opencode/opencode.db``
   oder ``~/.local/share/opencode/opencode.db`` (jeweils vor dem Setzen des
@@ -37,8 +41,11 @@ Zusätzlich gilt:
 - ``/dev/shm`` ist ohne ausdrückliche Freigabe ein frisches, isoliertes
   tmpfs (kein Zugriff auf das Host-Verzeichnis; Bug B5).
 - Der Zustandsort ist begrenzt und weicht bei zu langen Pfaden auf die kurze
-  tmpfs-Wurzel ``/tmp/opencode/vsb`` aus, damit Werkzeug-Sockets die
-  AF_UNIX-Pfadgrenze (108 Zeichen) nicht erreichen (Bug B5).
+  tmpfs-Wurzel ``/dev/shm/vsb-<uid>`` aus, damit Werkzeug-Sockets die
+  AF_UNIX-Pfadgrenze (108 Zeichen) nicht erreichen (Bug B5). Sandbox-Zustand
+  und opencode-Ablage liegen instanzspezifisch unter ``/dev/shm``; der
+  geteilte Host-Ordner ``/tmp/opencode`` wird weder angelegt noch beschrieben
+  (Audit F1-1 bis F1-3).
 - ``.vibe`` des Projekts bleibt auch im beschreibbaren Projektverzeichnis nur
   lesend, damit ein Agent seine Sandbox-Konfiguration nicht für spätere Läufe
   verändern kann.
@@ -66,9 +73,27 @@ import tempfile
 from contextlib import closing
 from urllib.parse import quote
 
-WRITE_DIRS_DEFAULT = "/tmp/opencode"
-SANDBOX_ROOT = "/tmp/opencode/vibe-sandbox"
-SHORT_STATE_ROOT = "/tmp/opencode/vsb"
+
+def _instance_tag():
+    """Instanzsuffix je Nutzerkennung; trennt geteilte /dev/shm-Wurzeln."""
+    try:
+        return str(os.getuid())
+    except AttributeError:
+        return "0"
+
+
+# Instanzspezifische Wurzeln unter /dev/shm: tmpfs (kurz, wie /tmp), auf dem
+# Host 1777 sticky und damit ohne Eigentümerkollision beschreibbar, und
+# innerhalb einer Agenten-Sandbox frisch und beschreibbar — /tmp selbst ist
+# dort schreibgeschützt und /tmp/opencode kann einem fremden Nutzer gehören
+# (Audit F1-1 bis F1-3). Der opencode-Zustand wird in einem eigenen
+# Host-Ordner gehalten und erscheint in der Sandbox als /tmp/opencode, weil
+# die opencode-CLI diesen Pfad erwartet.
+SANDBOX_OPENCODE_DIR = "/tmp/opencode"
+WRITE_DIRS_DEFAULT = SANDBOX_OPENCODE_DIR
+OPENCODE_STATE_ROOT = "/dev/shm/vibe-opencode-" + _instance_tag()
+SANDBOX_ROOT = "/dev/shm/vibe-sandbox-" + _instance_tag()
+SHORT_STATE_ROOT = "/dev/shm/vsb-" + _instance_tag()
 # Sicherheitsabstand zur AF_UNIX-Grenze von 108 Zeichen (Bug B5, siehe
 # docs/features/B5.md): Zustandspfade bleiben <= 84 Zeichen, damit
 # nachgeschaltete Werkzeugpfade die Grenze nicht erreichen — z. B.
@@ -241,12 +266,12 @@ def state_dir(project):
     Werkzeuge im Lauf legen Sockets (tmux, IPC) unterhalb dieser Pfade an; die
     AF_UNIX-Grenze liegt bei 108 Zeichen. Ist der berechnete Pfad länger als
     die sichere Begrenzung (Bug B5: NTFS-Arbeitsbäume mit langen Pfaden, ein
-    nach oben gesetztes ``VIBE_SANDBOX_ROOT``), weicht die Funktion auf eine
-    kurze tmpfs-Wurzel unter /tmp aus; der SHA-256-Präfix des Projektwegs
-    bleibt als eindeutige Zuordnung erhalten. Die Begrenzung auf 84
-    Zeichen (``STATE_PATH_LIMIT``) hält Sicherheitsabstand zur AF_UNIX-Grenze
-    von 108: auch Nachfolger wie ``TMPDIR`` und der darunter liegende
-    tmux-Socket-Pfad überschreiten die Grenze nicht.
+    nach oben gesetztes ``VIBE_SANDBOX_ROOT``), weicht die Funktion auf die
+    kurze, instanzeigene tmpfs-Wurzel ``SHORT_STATE_ROOT`` aus; der
+    SHA-256-Präfix des Projektwegs bleibt als eindeutige Zuordnung erhalten.
+    Die Begrenzung auf 84 Zeichen (``STATE_PATH_LIMIT``) hält Sicherheitsabstand
+    zur AF_UNIX-Grenze von 108: auch Nachfolger wie ``TMPDIR`` und der darunter
+    liegende tmux-Socket-Pfad überschreiten die Grenze nicht.
     """
     digest = hashlib.sha256(os.path.realpath(project).encode("utf-8")).hexdigest()[:10]
     name = re.sub(r"[^A-Za-z0-9_-]", "_", os.path.basename(os.path.realpath(project)))
@@ -307,6 +332,23 @@ def _cache_dirs(tools):
     return result
 
 
+def _map_opencode_write_dir(directories):
+    """Ersetzt das geteilte Host-Ziel ``/tmp/opencode`` durch die eigene Ablage.
+
+    Die opencode-CLI erwartet in der Sandbox ``/tmp/opencode``; vibe selbst
+    schreibt dort nicht mehr, sondern hält den Zustand instanzspezifisch unter
+    ``OPENCODE_STATE_ROOT`` (Audit F1-1 bis F1-3).
+    """
+    target = normalize_dir(SANDBOX_OPENCODE_DIR)
+    backing = normalize_dir(OPENCODE_STATE_ROOT)
+    result = []
+    for directory in directories:
+        mapped = backing if directory == target else directory
+        if mapped not in result:
+            result.append(mapped)
+    return result
+
+
 def status(project):
     """Beschreibt die Sandbox-Konfiguration, ohne Programme zu starten."""
     project = os.path.realpath(project)
@@ -342,6 +384,7 @@ def status(project):
     else:
         caches = []
         write_dirs = list(permitted)
+    write_dirs = _map_opencode_write_dir(write_dirs)
     bwrap = os.environ.get("VIBE_BWRAP") or shutil.which("bwrap")
     return {
         "project": project,
@@ -643,8 +686,12 @@ def bwrap_argv(project, command, bwrap=None, runtime=None,
         if problem:
             raise ValueError(problem)
     directories = []
+    opencode_target = normalize_dir(SANDBOX_OPENCODE_DIR)
+    opencode_backing = normalize_dir(OPENCODE_STATE_ROOT)
     for value in extra_write_dirs:
         directory = os.path.abspath(os.path.expanduser(str(value)))
+        if os.path.realpath(directory) == opencode_target:
+            directory = opencode_backing
         if directory not in directories:
             directories.append(directory)
     for value in state["write_dirs"]:
@@ -704,7 +751,16 @@ def bwrap_argv(project, command, bwrap=None, runtime=None,
         os.path.abspath(os.path.expanduser(str(chdir))) if chdir else state["project"],
     ]
     for directory in directories:
-        argv += ["--bind", directory, directory]
+        if os.path.realpath(directory) == opencode_backing:
+            # Die opencode-CLI erwartet den festen Pfad /tmp/opencode; die
+            # Quelle liegt aber pro Instanz unter /dev/shm (Quelle != Ziel),
+            # damit kein geteilter Host-Ordner beschrieben wird (F1-1/F1-2).
+            # Listet jemand die Backing-Wurzel selbst als Schreibverzeichnis,
+            # erscheint sie in der Sandbox unter /tmp/opencode (Alias, nicht
+            # an ihrem Host-Pfad).
+            argv += ["--bind", opencode_backing, opencode_target]
+        else:
+            argv += ["--bind", directory, directory]
     # Rückfragen des Agenten (F16): nur der eigene Unterordner ist
     # beschreibbar, nicht der Laufzeitordner mit Token, Protokollen und
     # Laufregister. Die Bindung steht vor dem Schreibschutz von /tmp, weil

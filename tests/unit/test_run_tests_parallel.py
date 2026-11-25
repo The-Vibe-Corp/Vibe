@@ -90,6 +90,16 @@ TEST_LANGSAM = (
     "        time.sleep(30)\n"
 )
 
+# Fixture-Modul für F1-6: Ein Modulprozess mit TTY als stdin ließ
+# setup-vibe.py (trotz --yes) nach Installationsort/Logverzeichnis fragen und
+# lief in den Timeout. Der Läufer muss den Modulen stdin=DEVNULL geben.
+TEST_KEIN_TTY = (
+    "import sys, unittest\n\n"
+    "class KeinTtyTest(unittest.TestCase):\n"
+    "    def test_stdin_ist_kein_terminal(self):\n"
+    "        self.assertFalse(sys.stdin.isatty())\n"
+)
+
 
 class RunTestsParallelTest(unittest.TestCase):
     def setUp(self):
@@ -109,7 +119,7 @@ class RunTestsParallelTest(unittest.TestCase):
         self.write_module("test_b", TEST_B)
         self.write_module("test_c", TEST_C)
 
-    def run_runner(self, *extra, timeout=180, env=None):
+    def run_runner(self, *extra, timeout=180, env=None, stdin=None):
         return subprocess.run(
             [
                 sys.executable,
@@ -123,6 +133,7 @@ class RunTestsParallelTest(unittest.TestCase):
             text=True,
             timeout=timeout,
             env=env,
+            stdin=stdin,
         )
 
     def output(self, result):
@@ -158,6 +169,25 @@ class RunTestsParallelTest(unittest.TestCase):
         self.assertEqual(summary["modules"], 3)
         self.assertEqual(summary["passed"], 3)
         self.assertEqual(summary["failed"], 0)
+
+    def test_module_processes_do_not_inherit_a_terminal_on_stdin(self):
+        # F1-6: Auch wenn der Läufer selbst an einem TTY hängt, dürfen die
+        # Modulprozesse kein TTY als stdin sehen. Sonst fragt setup-vibe.py
+        # (trotz --yes) nach Installationsort/Logverzeichnis und blockiert.
+        try:
+            import pty
+        except ImportError:
+            self.skipTest("pty ist auf dieser Plattform nicht verfügbar")
+        self.write_module("test_tty", TEST_KEIN_TTY)
+        master, slave = pty.openpty()
+        try:
+            result = self.run_runner(stdin=slave)
+        finally:
+            os.close(master)
+            os.close(slave)
+
+        self.assertEqual(result.returncode, 0, self.output(result))
+        self.assertEqual(self.summary(result)["failed"], 0, self.output(result))
 
     def test_default_runs_modules_with_overlapping_execution_windows(self):
         # Deterministischer Parallelitätsnachweis ohne Wanduhrschwelle: Die

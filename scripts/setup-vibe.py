@@ -456,6 +456,35 @@ def validate_logs(value, workspace, install, kit, home):
     return str(logs)
 
 
+def _same_install_target(first, second):
+    """Vergleicht zwei Installationsziele ohne Auflösungszwang."""
+    return Path(first).resolve(strict=False) == Path(second).resolve(strict=False)
+
+
+def _default_profile_install(environ=None):
+    """Installationsziel aus ``profiles.prod`` der persönlichen Konfiguration.
+
+    Fehlt das Profil, der Eintrag oder die ganze Datei, kommt ``None`` zurück.
+    Eine ungültige Datei wird hier ebenfalls zu ``None``; ``save_paths_config``
+    meldet sie im Schreibpfad weiterhin wie bisher.
+    """
+    environ = os.environ if environ is None else environ
+    try:
+        config = vibe_paths.load_config(environ=environ)
+    except vibe_paths.ConfigError:
+        return None
+    profiles = config.get("profiles")
+    if not isinstance(profiles, dict):
+        return None
+    prod = profiles.get("prod")
+    if not isinstance(prod, dict):
+        return None
+    value = prod.get("install")
+    if not isinstance(value, str) or not value.strip():
+        return None
+    return Path(os.path.abspath(os.path.expanduser(value.strip())))
+
+
 def save_paths_config(workspace, install, logs, timestamp=None, environ=None):
     """Trägt Pfade unter profiles.prod der persönlichen Konfiguration ein.
 
@@ -1357,6 +1386,11 @@ def parse_args(argv=None):
     parser.add_argument("--backup", metavar="NAME", help="Sicherung für --rollback (Standard: jüngste)")
     parser.add_argument("--force", action="store_true", help="Aktualisierung trotz laufendem Agentenlauf")
     parser.add_argument("--yes", "-y", action="store_true", help="ohne Rückfragen (Standardwerte verwenden)")
+    parser.add_argument(
+        "--set-default",
+        action="store_true",
+        help="profiles.prod auf dieses Ziel setzen, auch wenn die Konfiguration auf eine andere Installation zeigt",
+    )
     parser.add_argument("--install-deps", action="store_true", help="fehlende Werkzeuge ohne Rückfrage installieren")
     parser.add_argument("--skip-deps", action="store_true", help="keine Werkzeuge installieren oder abfragen")
     parser.add_argument(
@@ -1431,7 +1465,7 @@ def main(argv=None, input_fn=None, output=print, which=None, runner=None,
             raw_install = options.install
         else:
             default_inst = default_install(workspace, environ=environ)
-            if interactive:
+            if interactive and not options.yes:
                 answer = input_fn(
                     f"Installationsort (Programme, Vorlagen, Einstellungen) [{default_inst}]: "
                 ).strip()
@@ -1444,7 +1478,7 @@ def main(argv=None, input_fn=None, output=print, which=None, runner=None,
             raw_logs = options.logs
         else:
             default_log = default_logs(workspace, environ=environ)
-            if interactive:
+            if interactive and not options.yes:
                 answer = input_fn(f"Logverzeichnis (Logs, Laufzeitzustand) [{default_log}]: ").strip()
                 raw_logs = answer or str(default_log)
             else:
@@ -1634,6 +1668,16 @@ def main(argv=None, input_fn=None, output=print, which=None, runner=None,
             output("        -> " + item["hint"])
     installable = [item["name"] for item in missing if item["installable"]]
 
+    # F1-7: Die persönliche Konfiguration gehört der laufenden Installation.
+    # Ein Installationsziel, das von profiles.prod abweicht, lässt sie
+    # unverändert; nur --set-default schreibt den neuen Standard.
+    configured_install = _default_profile_install(environ)
+    keep_default_profile = bool(
+        configured_install
+        and not options.set_default
+        and not _same_install_target(configured_install, target)
+    )
+
     if options.dry_run:
         try:
             plan = build_install_plan(
@@ -1652,7 +1696,14 @@ def main(argv=None, input_fn=None, output=print, which=None, runner=None,
         prefix = privilege_prefix(info, is_root, has_sudo)
         for command in install_commands(info, installable, prefix):
             output("(dry-run) " + " ".join(command))
-        output(f"(dry-run) Konfiguration {vibe_paths.default_config_path(environ)}: profiles.prod.workspace={workspace}, install={target}, runtime={logs_dir}")
+        if keep_default_profile:
+            output(
+                "(dry-run) profiles.prod bleibt unverändert: die Konfiguration "
+                f"zeigt auf die Installation {configured_install}; "
+                "--set-default setzt sie auf dieses Ziel."
+            )
+        else:
+            output(f"(dry-run) Konfiguration {vibe_paths.default_config_path(environ)}: profiles.prod.workspace={workspace}, install={target}, runtime={logs_dir}")
         output(f"(dry-run) Ziel: {target}; Workspace: {workspace}; Logs: {logs_dir}; Modus: {mode}; es wird nichts geändert.")
         return 0
 
@@ -1668,7 +1719,7 @@ def main(argv=None, input_fn=None, output=print, which=None, runner=None,
     dependency_failed = False
     if missing and installable and not options.skip_deps:
         do_install = bool(options.install_deps)
-        if interactive and not options.install_deps:
+        if interactive and not options.yes and not options.install_deps:
             answer = input_fn("Fehlende Abhängigkeiten jetzt installieren? [j/N]: ").strip().lower()
             do_install = answer.startswith("j")
         if do_install:
@@ -1741,7 +1792,20 @@ def main(argv=None, input_fn=None, output=print, which=None, runner=None,
     try:
         for directory in (workspace, logs_dir):
             directory.mkdir(parents=True, exist_ok=True)
-        saved = save_paths_config(workspace, target, logs_dir, timestamp=timestamp, environ=environ)
+        if keep_default_profile:
+            saved = {
+                "path": str(vibe_paths.default_config_path(environ)),
+                "changed": False,
+                "backup": None,
+            }
+            output(
+                "Konfiguration nicht geändert: profiles.prod zeigt auf die "
+                f"Installation {configured_install}. Mit --set-default oder "
+                "über die Umgebungsvariablen VIBE/VIBE_INSTALL/VIBE_RUNTIME "
+                "lässt sie sich auf dieses Ziel umstellen."
+            )
+        else:
+            saved = save_paths_config(workspace, target, logs_dir, timestamp=timestamp, environ=environ)
     except (SetupError, OSError) as error:
         output("FEHLER: " + str(error))
         output(
