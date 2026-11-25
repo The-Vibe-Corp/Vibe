@@ -5,10 +5,17 @@ diese Notizen bleiben als Vertragsnachweis aus der Planungsphase erhalten.
 Referenz: Ticket `TICKET-GH-56.json`; bestehende Modelle: `bin/web/nova-project.js`,
 `bin/web/nova.css`, `bin/web/nova.widgets/editview`.
 
+Hinweis zu GH-82: Die folgenden Abschnitte halten den historischen
+GH-56-Planungsstand fest. Seit GH-82 sind nur noch `draft` und `open` manuell
+setzbar; `ticket-close`, `package-close`, der `done`-Schnellfilter und das
+`draft`-Kontrollkästchen gibt es in der Oberfläche nicht mehr. Maßgeblich ist
+`docs/features/current/work-packages.md`.
+
 ## Zustandsmodell (Backend, unverändert)
 
 `vibe_tickets.STATES`: `draft`, `open`, `in-progress`, `blocked`, `waiting-merge`, `done`.
-Web-Übergänge via `/api/ticket` (`WEB_TICKET_STATES = draft|open|in-progress`).
+Web-Übergänge via `/api/ticket` (historisch `draft|open|in-progress`, seit
+GH-82 nur noch `draft|open`).
 GitHub-Issues mappen lokal `ready → open` (`vibe_issues._local_state_value`).
 
 ## Board-Spalten (Desktop)

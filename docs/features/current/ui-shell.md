@@ -44,7 +44,10 @@ without a static sidebar.
 
 - The project detail has five tabs; the Work tab contains the ticket surface.
   It shows a three-column board on desktop (draft, ready, in progress) and a
-  list on mobile, with shared filter and search controls.
+  list on mobile, with shared filter and search controls. Completed tickets
+  appear in their own grid below it and stay behind the `Show done` toggle;
+  users can set only draft/open, while in-progress and done belong to the
+  runner (`GH-82`). Native dropdowns share one Nova select style.
 - The editor and detail view open in the shared context panel. Status changes,
   prioritization, and drag-and-drop update the ticket store without a full page
   reload. Ticket semantics belong to [Work packages](work-packages.md) (`GH-56`,

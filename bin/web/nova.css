@@ -624,8 +624,20 @@ html[data-animations="on"] .nv-skeleton {
 }
 
 /* ---------- Formulare ---------- */
+/* GH-82: genau ein Stil für native Dropdowns in ganz Nova. */
+[data-nv-app] select {
+  width: 100%;
+  padding: var(--nv-space-2) var(--nv-space-3);
+  border: 1px solid var(--nv-border);
+  border-radius: var(--nv-radius-sm);
+  background: var(--nv-surface);
+  color: var(--nv-text);
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
 .nv-card label { display: block; margin: var(--nv-space-3) 0 var(--nv-space-1); font-weight: 600; font-size: 0.875rem; }
-.nv-card input:not([type="checkbox"]), .nv-card select, .nv-card textarea {
+.nv-card input:not([type="checkbox"]), .nv-card textarea {
   width: 100%;
   padding: var(--nv-space-2) var(--nv-space-3);
   border: 1px solid var(--nv-border);
@@ -1650,6 +1662,26 @@ article[data-nv-ticket].nv-dragging { opacity: 0.4; }
   padding: var(--nv-space-3);
 }
 [data-nv-work-list] .nv-ticket-title { white-space: normal; }
+
+/* GH-82: erledigte Tickets als eigenes Raster unterhalb von Board/Liste. */
+.nv-work-done { margin-bottom: var(--nv-space-4); }
+.nv-done-title {
+  margin: 0 0 var(--nv-space-3);
+  font-size: 0.9375rem;
+  line-height: 1.25;
+}
+[data-nv-work-done-grid][hidden] { display: none; }
+[data-nv-work-done-cards] {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
+  gap: var(--nv-space-3);
+  align-items: start;
+}
+[data-nv-work-done-cards] > article[data-nv-ticket] {
+  margin: 0;
+  padding: var(--nv-space-3);
+  box-shadow: none;
+}
 
 /* GH-56: Der Ticket-Editor ist breiter und beginnt oben (volle Höhe); die
    übrigen Bearbeitungsansichten behalten ihre bisherige Position. */

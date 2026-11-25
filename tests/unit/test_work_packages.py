@@ -1862,12 +1862,13 @@ class TicketApiTest(unittest.TestCase):
         self.assertEqual("feedback", records["F1"]["type"])
 
     # ------------------------------------------------------------ state
-    def test_state_action_allows_draft_open_and_in_progress(self):
-        """Vor: AP1 offen. Aktion: state draft -> open -> in-progress.
-        Erwartet: jeweils ok und der Speicherzustand folgt."""
+    def test_state_action_allows_only_draft_and_open(self):
+        """Vor: AP1 offen. Aktion: state draft -> open.
+        Erwartet: jeweils ok und der Speicherzustand folgt. GH-82:
+        ``in-progress`` ist dem Läufer vorbehalten und wird abgelehnt."""
         self.write_store([api_ticket("AP1", "Titel")])
 
-        for value in ("draft", "open", "in-progress"):
+        for value in ("draft", "open"):
             status, payload = self.post("/api/ticket", {
                 "name": "proj", "action": "state", "id": "AP1",
                 "state": value})
@@ -1875,12 +1876,19 @@ class TicketApiTest(unittest.TestCase):
             self.assertTrue(payload.get("ok"), payload)
             self.assertEqual(value, self.read_store()["AP1"]["state"])
 
+        status, payload = self.post("/api/ticket", {
+            "name": "proj", "action": "state", "id": "AP1",
+            "state": "in-progress"})
+        self.assertIn(status, (200, 400), payload)
+        self.assertFalse(payload.get("ok"), payload)
+        self.assertEqual("open", self.read_store()["AP1"]["state"])
+
     def test_state_action_rejects_runner_and_github_states(self):
-        """Vor: AP1 offen. Aktion: state done/blocked/waiting-merge.
+        """Vor: AP1 offen. Aktion: state in-progress/done/blocked/waiting-merge.
         Erwartet: ok falsch mit Klartext; der Speicher bleibt offen."""
         self.write_store([api_ticket("AP1", "Titel")])
 
-        for value in ("done", "blocked", "waiting-merge"):
+        for value in ("in-progress", "done", "blocked", "waiting-merge"):
             status, payload = self.post("/api/ticket", {
                 "name": "proj", "action": "state", "id": "AP1",
                 "state": value})
@@ -1892,6 +1900,27 @@ class TicketApiTest(unittest.TestCase):
                             or "state" in message.lower()
                             or "zustand" in message.lower(), payload)
             self.assertEqual("open", self.read_store()["AP1"]["state"])
+
+    def test_close_action_is_rejected_and_cannot_set_done(self):
+        """Vor: AP1 offen. Aktion: POST /api/ticket action=close, auch mit
+        confirm=true. Erwartet (GH-82): ok falsch mit Klartext und der
+        Speicherzustand bleibt ``open``. Abschließen ist dem Läufer
+        vorbehalten; ``vibe_tickets.close``/``package_close`` und
+        ``/api/package action=close`` bleiben intern erhalten.
+        """
+        self.write_store([api_ticket("AP1", "Titel")])
+
+        for confirm in (False, True):
+            with self.subTest(confirm=confirm):
+                status, payload = self.post("/api/ticket", {
+                    "name": "proj", "action": "close", "id": "AP1",
+                    "confirm": confirm})
+                self.assertIn(status, (200, 400), payload)
+                self.assertFalse(payload.get("ok"), payload)
+                self.assertTrue(str(payload.get("message") or "").strip())
+                self.assertEqual(
+                    "open", self.read_store()["AP1"]["state"],
+                    "Ein manueller Close hat den Zustand auf done gesetzt")
 
     def test_state_action_rejects_unknown_ticket(self):
         """Vor: leerer Speicher. Aktion: state für X9.
@@ -2936,25 +2965,19 @@ class NovaWaitingSurfaceTest(unittest.TestCase):
         )
         self.assertIn("Wartet auf Merge", self.text)
 
-    def test_nova_offers_package_close_for_blocked_and_waiting_packages(self):
+    def test_nova_detail_has_no_manual_close_action(self):
         """Vorbedingung: ``nvpOpenTicketDetail`` in ``nova-project.js``.
-        Aktion: Bedingung fuer den Abschluss-Button im Kontext-Panel pruefen.
-        Erwartung (F34): Der Button erscheint bei ``BLOCKIERT`` und bei
-        ``WARTET AUF MERGE``, aber nur fuer Pakete (nicht fuer Feedback).
-        Fehlerfall: Wartende Pakete lassen sich nicht ueber die GUI schliessen.
+        Aktion: Detailregion auf Abschluss-Steuerelemente pruefen.
+        Erwartung (GH-82): Es gibt weder ``ticket-close`` noch
+        ``package-close`` und auch keinen Aufruf von ``nvpConfirmClose``.
+        Abschlüsse erfolgen ausschließlich durch den Läufer, nicht durch
+        die Oberfläche.
         """
         region = js_region_waiting(self.text, "function nvpOpenTicketDetail(")
         self.assertTrue(region, "nvpOpenTicketDetail nicht gefunden")
-        condition = (
-            r"row\.state\s*===\s*'BLOCKIERT'[\s\S]{0,200}"
-            r"row\.state\s*===\s*'WARTET AUF MERGE'"
-            r"|row\.state\s*===\s*'WARTET AUF MERGE'[\s\S]{0,200}"
-            r"row\.state\s*===\s*'BLOCKIERT'"
-            r"|\[\s*'BLOCKIERT'\s*,\s*'WARTET AUF MERGE'\s*\]\.includes\("
-        )
-        self.assertRegex(region, condition)
-        self.assertIn("kind === 'package'", region)
-        self.assertIn("package-close", region)
+        self.assertNotIn("ticket-close", region)
+        self.assertNotIn("package-close", region)
+        self.assertNotIn("nvpConfirmClose", region)
 
     def test_nova_waiting_pill_uses_the_warning_colors(self):
         """Vorbedingung: Status-Pille für Wartende in ``nova-project.js``.
@@ -3164,87 +3187,54 @@ def proof_line(commit, name="test_b3_merged_waiting.py"):
 # --------------------------------------------------------------------------
 
 
-# AK5: klassische Oberfläche — „Paket abschließen“
 # --------------------------------------------------------------------------
-class ClassicGuiPackageCloseTest(unittest.TestCase):
-    """AK5: ``app.js`` bietet den Abschluss-Button nur passenden Paketen."""
+# GH-82: klassische Oberfläche ohne manuellen Abschluss; der Runner-Endpunkt
+# /api/package bleibt davon unberührt.
+# --------------------------------------------------------------------------
+class ClassicGuiNoManualCloseTest(unittest.TestCase):
+    """``app.js`` bietet keinen Abschluss-Knopf mehr an."""
 
     def setUp(self):
         self.text = APP_JS.read_text(encoding="utf-8")
         self.tickets = js_region_package_close(self.text, "function ticketCard(")
         self.feedback = js_region_package_close(self.text, "function feedbackCard(")
 
-    def test_classic_ticket_card_offers_package_close_button(self):
-        """AK5. Vorbedingung: ``bin/web/app.js``, Funktion ``ticketCard``.
+    def test_classic_ticket_card_offers_no_package_close_button(self):
+        """GH-82. Vorbedingung: ``bin/web/app.js``, Funktion ``ticketCard``.
         Aktion: Quelltext der Ticketkarte prüfen.
-        Erwartung: Sie enthält den Button „Paket abschließen“.
-        Fehlerfall: In der klassischen Oberfläche fehlt der Abschluss-Button.
+        Erwartung: weder der Button „Paket abschließen“ noch ein
+        ``/api/package``-Aufruf mit ``action: 'close'``.
+        Fehlerfall: die klassische Oberfläche bietet manuelles Schließen an.
         """
         self.assertTrue(self.tickets, "ticketCard nicht gefunden")
-        self.assertIn(CLOSE_LABEL, self.tickets)
+        self.assertNotIn(CLOSE_LABEL, self.tickets)
+        self.assertNotIn("/api/package", self.tickets)
+        self.assertIsNone(
+            re.search(r"action\s*:\s*['\"]close['\"]", self.tickets),
+            "ticketCard sendet weiterhin action=close")
 
-    def test_classic_package_close_posts_to_the_package_endpoint(self):
-        """AK5. Vorbedingung: Abschluss-Button in ``ticketCard``.
-        Aktion: Aufruf von ``/api/package`` prüfen.
-        Erwartung: Der Aufruf sendet ``name``, ``id`` und
-        ``action: 'close'``.
-        Fehlerfall: Der Button ruft einen falschen Endpunkt oder ohne ID auf.
+    def test_classic_views_have_no_state_gated_close_control(self):
+        """GH-82. Vorbedingung: ``ticketCard``/``feedbackCard`` in ``app.js``.
+        Aktion: Zustandsgesteuerte Abschluss-Knöpfe suchen.
+        Erwartung: keine Verknüpfung von ``BLOCKIERT`` oder
+        ``WARTET AUF MERGE`` mit einem Abschluss-Steuerelement in einer der
+        beiden Karten.
+        Fehlerfall: wartende Pakete lassen sich manuell schließen.
         """
-        call = re.search(
-            r"api\(\s*['\"]/api/package['\"]\s*,\s*\{([^}]*)\}",
-            self.tickets,
-        )
-        self.assertIsNotNone(
-            call, "Kein api('/api/package', …)-Aufruf in ticketCard")
-        arguments = call.group(1)
-        self.assertIn("name", arguments, call.group(0))
-        self.assertRegex(arguments, r"id\s*:\s*i\.id|id\b",
-                         call.group(0))
-        self.assertRegex(arguments, r"action\s*:\s*['\"]close['\"]",
-                         call.group(0))
-
-    def test_classic_package_close_is_limited_to_blocked_and_waiting_tickets(self):
-        """AK5. Vorbedingung: ``ticketCard`` in ``app.js``.
-        Aktion: Bedingung für den Abschluss-Button prüfen.
-        Erwartung: Der Button ist an die Zustände ``BLOCKIERT`` und
-        ``WARTET AUF MERGE`` gebunden (echte ``i.state``-Prüfung); damit
-        erscheint er nicht für ``offen``, ``ohne Nachweis`` oder ``erledigt``.
-        Fehlerfall: Der Button erscheint bei jedem Paket oder fehlt bei
-        wartenden Paketen.
-        """
-        conditions = (
-            r"i\.state\s*===?\s*['\"]BLOCKIERT['\"][\s\S]{0,200}"
-            r"i\.state\s*===?\s*['\"]WARTET AUF MERGE['\"]",
-            r"i\.state\s*===?\s*['\"]WARTET AUF MERGE['\"][\s\S]{0,200}"
-            r"i\.state\s*===?\s*['\"]BLOCKIERT['\"]",
-            r"\[\s*['\"]BLOCKIERT['\"]\s*,\s*['\"]WARTET AUF MERGE['\"]\s*\]"
-            r"\.includes\(\s*i\.state\s*\)",
-            r"\[\s*['\"]WARTET AUF MERGE['\"]\s*,\s*['\"]BLOCKIERT['\"]\s*\]"
-            r"\.includes\(\s*i\.state\s*\)",
-        )
-        self.assertTrue(
-            any(re.search(pattern, self.tickets) for pattern in conditions),
-            "Keine Zustandsbindung an BLOCKIERT und WARTET AUF MERGE:\n"
-            + self.tickets,
-        )
-
-    def test_classic_package_close_reports_backend_message_and_refreshes(self):
-        """AK5. Vorbedingung: Abschluss-Button in ``ticketCard``.
-        Aktion: Erfolgs-/Fehlerbehandlung um den Button prüfen.
-        Erwartung: Die Backend-Meldung wird per ``toast`` gezeigt und die
-        Projektansicht bei Erfolg über ``detail(name)`` neu geladen.
-        Fehlerfall: Fehler bleiben unsichtbar oder die Ansicht bleibt veraltet.
-        """
-        position = self.tickets.find(CLOSE_LABEL)
-        self.assertGreaterEqual(position, 0, "Abschluss-Button fehlt")
-        window = self.tickets[max(0, position - 800):position + 300]
-        self.assertIn("/api/package", window)
-        self.assertIn("toast", window)
-        self.assertIn("message", window)
-        self.assertIn("detail(name)", window)
+        for name, region in (("ticketCard", self.tickets),
+                             ("feedbackCard", self.feedback)):
+            with self.subTest(card=name):
+                self.assertTrue(region, name + " nicht gefunden")
+                close_line = [
+                    line for line in region.splitlines()
+                    if CLOSE_LABEL in line or "/api/package" in line
+                ]
+                self.assertEqual([], close_line,
+                                 name + " enthält noch einen Abschluss: "
+                                 + repr(close_line))
 
     def test_classic_feedback_card_offers_no_package_close(self):
-        """AK5. Vorbedingung: ``feedbackCard`` in ``app.js``.
+        """GH-82. Vorbedingung: ``feedbackCard`` in ``app.js``.
         Aktion: Quelltext der Feedback-Karte prüfen.
         Erwartung: Kein „Paket abschließen“-Button und kein
         ``/api/package``-Aufruf.
@@ -3253,6 +3243,17 @@ class ClassicGuiPackageCloseTest(unittest.TestCase):
         self.assertTrue(self.feedback, "feedbackCard nicht gefunden")
         self.assertNotIn(CLOSE_LABEL, self.feedback)
         self.assertNotIn("/api/package", self.feedback)
+
+    def test_package_close_endpoint_remains_for_the_runner(self):
+        """GH-82. Vorbedingung: ``bin/vibe-web.py``.
+        Aktion: Endpunkt und Close-Aktion im Backend suchen.
+        Erwartung: ``/api/package`` mit ``action close`` bleibt vorhanden;
+        nur die Oberflächen-Knöpfe entfallen.
+        Fehlerfall: der Runner verlöre seinen Abschluss-Endpunkt.
+        """
+        backend = WEB.read_text(encoding="utf-8")
+        self.assertIn("/api/package", backend)
+        self.assertRegex(backend, r"act\s*==\s*['\"]close['\"]")
 
 
 # --------------------------------------------------------------------------

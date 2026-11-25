@@ -92,10 +92,10 @@ def write_private(path, text):
     vibe_storage.write_text(path, text, mode=0o600)
 
 
-# GH-48: Über die Oberfläche frei wählbare Zustände. done/blocked/
-# waiting-merge bleiben dem Läufer bzw. GitHub-Sync vorbehalten und werden
-# hier abgelehnt.
-WEB_TICKET_STATES = ("draft", "open", "in-progress")
+# GH-82: Über die Oberfläche frei wählbare Zustände. in-progress, done,
+# blocked und waiting-merge bleiben dem Läufer bzw. GitHub-Sync vorbehalten
+# und werden hier abgelehnt.
+WEB_TICKET_STATES = ("draft", "open")
 
 
 def web_ticket_state(value):
@@ -112,7 +112,7 @@ def web_ticket_state(value):
 
 
 def ticket_set_state(name, tid, state):
-    """Setzt draft/open/in-progress an einem nicht erledigten Ticket.
+    """Setzt draft/open an einem nicht erledigten Ticket.
 
     ``state`` ist bereits durch :func:`web_ticket_state` validiert. Unbekannte
     IDs und erledigte Tickets werden mit verständlicher Meldung abgelehnt
@@ -1878,19 +1878,13 @@ class H(BaseHTTPRequestHandler):
                         ticket_set_state(name, tid, state)
                         ok, msg = True, f"{tid} auf {state} gesetzt"
                     elif act == "close":
-                        # GH-56: Schließen verlangt eine ausdrückliche
-                        # Bestätigung im Request (doppelte Absicherung neben
-                        # dem Dialog der Oberfläche). ``done`` bleibt weiterhin
-                        # dem Close-Pfad vorbehalten; action="state" mit
-                        # state="done" wird unverändert abgelehnt.
-                        tid = (body.get("id") or "").strip()
-                        assert tid, "ID fehlt"
-                        if body.get("confirm") is not True:
-                            raise ValueError(
-                                "Ticket schließen erfordert die Bestätigung "
-                                "confirm: true.")
-                        vibe.vibe_tickets.close(vibe.ppath(name), tid)
-                        ok, msg = True, f"{tid} geschlossen"
+                        # GH-82: Abschließen ist dem Läufer vorbehalten und
+                        # wird nach erfolgreichem Merge gesetzt. Der manuelle
+                        # Web-Pfad bleibt ohne Zustandsänderung.
+                        raise ValueError(
+                            "Ticket schließen ist dem Läufer vorbehalten; "
+                            "der Zustand 'done' wird nur nach erfolgreichem "
+                            "Merge gesetzt.")
                     elif act == "update":
                         tid = (body.get("id") or "").strip()
                         assert tid, "ID fehlt"
