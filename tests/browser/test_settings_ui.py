@@ -44,7 +44,6 @@ FEATURE_IDS = (
 PROJECT_FEATURES = ("github", "writeaccess", "sandbox", "agentsfile",
                     "priority")
 MCP_SECRET = "geheim-MCP-4711"
-FRITZ_SECRET = "geheim-fritz-passwort"
 
 FAKE_OPENCODE = """#!/usr/bin/env bash
 case "$1" in
@@ -73,15 +72,6 @@ case "$1" in
 esac
 exit 2
 """
-
-FAKE_FRITZ_HELPER = '''import json, os
-log = os.environ.get("FAKE_FRITZ_LOG")
-if log:
-    with open(log, "a", encoding="utf-8") as handle:
-        handle.write(json.dumps({"env": os.environ.get("FRITZ_ENV")}) + "\\n")
-print("alte IP: 203.0.113.1")
-print("neue IP: 203.0.113.9")
-'''
 
 MODELS_CATALOG = {
     "schema": 2,
@@ -265,14 +255,6 @@ class AP22AdvancedBrowserTest(unittest.TestCase):
             path.chmod(0o755)
         cls.fake_bin = fake_bin
 
-        cls.helper = cls.root / "fake-fritz.py"
-        cls.helper.write_text(FAKE_FRITZ_HELPER, encoding="utf-8")
-        cls.fritz_env = cls.root / "fritz.env"
-        cls.fritz_env.write_text(
-            "FRITZ_ADDR=192.0.2.1\nFRITZ_USER=testuser\n"
-            "FRITZ_PASS=" + FRITZ_SECRET + "\n", encoding="utf-8")
-        cls.fritz_log = cls.root / "fake-fritz.log"
-
         (cls.install / "models.json").write_text(
             json.dumps(MODELS_CATALOG, ensure_ascii=False), encoding="utf-8")
 
@@ -309,10 +291,6 @@ class AP22AdvancedBrowserTest(unittest.TestCase):
             "VIBE_INSTALL": str(cls.install),
             "VIBE_RUNTIME": str(cls.log_dir),
             "VIBE_OPENCODE_DB": str(cls.db),
-            "VIBE_FRITZ_PYTHON": sys.executable,
-            "VIBE_FRITZ_SCRIPT": str(cls.helper),
-            "VIBE_FRITZ_ENV": str(cls.fritz_env),
-            "FAKE_FRITZ_LOG": str(cls.fritz_log),
             "HOME": str(cls.home),
             "TMPDIR": str(cls.root / "tmp"),
             "TMUX_TMPDIR": str(cls.tmux_dir),
@@ -436,11 +414,10 @@ class AP22AdvancedBrowserTest(unittest.TestCase):
 
     def setUp(self):
         # Zustand, den einzelne Fälle verändern, deterministisch zurücksetzen.
-        for name in ("gates.json", "fritz.json", "harness.json", "costs.json",
+        for name in ("gates.json", "harness.json", "costs.json",
                      "limits.json"):
             (self.state_dir / name).unlink(missing_ok=True)
         (self.install / "costs.json").unlink(missing_ok=True)
-        self.fritz_log.unlink(missing_ok=True)
         self.write_runs()
         self.write_mcp_config()
         (self.state_dir / "profiles.json").write_text(
@@ -468,7 +445,7 @@ class AP22AdvancedBrowserTest(unittest.TestCase):
         self.page.on("dialog", self._on_dialog)
 
     def _on_dialog(self, dialog):
-        # Bestätigungen (Fritz-Reconnect, Löschen) werden angenommen.
+        # Bestätigungen (z. B. Löschen) werden angenommen.
         self.dialogs.append(dialog.type + ": " + dialog.message)
         dialog.accept()
 
@@ -1064,13 +1041,12 @@ class GatesOverrideTest(AP22AdvancedBrowserTest):
 
 class EnvTest(AP22AdvancedBrowserTest):
     def test_env_absent_from_settings(self):
-        """Abwesenheit: Umgebung (Doctor, Fritzbox, Emulator, opencode-Server)
+        """Abwesenheit: Umgebung (Doctor, Emulator, opencode-Server)
         heraus aus den Einstellungen.
 
         Erwartung in den Einstellungen: ``input[data-nv-feature='env']``
         == 0, ``[data-nv-doctor-row]`` == 0, ``[data-nv-server-status]``
-        == 0, ``[data-nv-action='emu-start']`` == 0,
-        ``[data-nv-action='fritz-automation-on']`` == 0. Diese Inhalte
+        == 0, ``[data-nv-action='emu-start']`` == 0. Diese Inhalte
         stehen unter ``#/evaluations`` → ``environment`` (Vertrag F34.md WP3;
         Tiefe: ``tests/browser/test_f34_activity_evals_ui.py``).
         """
@@ -1080,9 +1056,7 @@ class EnvTest(AP22AdvancedBrowserTest):
                 ("input[data-nv-feature='env']", "Feature-Schalter env"),
                 ("[data-nv-doctor-row]", "Doctor-Zeile"),
                 ("[data-nv-server-status]", "opencode-Server-Status"),
-                ("[data-nv-action='emu-start']", "Emulator-Start"),
-                ("[data-nv-action='fritz-automation-on']",
-                 "Fritz-Automatik-Ein")):
+                ("[data-nv-action='emu-start']", "Emulator-Start")):
             with self.subTest(absent=label):
                 self.assertEqual(
                     0, self.page.locator(selector).count(),
@@ -3995,7 +3969,7 @@ class EmptyAreaTest(F34SettingsBrowserTest):
     def test_settings_has_no_evaluations_or_environment_or_ops_areas(self):
         """Vorbedingung: Einstellungen offen.
 
-        Erwartung: keine Auswertungen/Kosten/Run-Register/Umgebung/Fritzbox/
+        Erwartung: keine Auswertungen/Kosten/Run-Register/Umgebung/
         Emulator/opencode-Server in den Einstellungen.
         """
         self.boot()
@@ -4005,7 +3979,6 @@ class EmptyAreaTest(F34SettingsBrowserTest):
             ("[data-nv-cost-projects]", "Kosten-Projektliste"),
             ("[data-nv-run-table]", "Run-Register-Tabelle"),
             ("[data-nv-env-doctor]", "Umgebungs-Checkliste"),
-            ('[data-nv-action="fritz-reconnect"]', "FRITZ-Reconnect-Button"),
             ("[data-nv-emu-result]", "Emulator-Ergebnis"),
             ("[data-nv-server-status]", "opencode-Server-Status"),
             ("[data-nv-ssection='evaluations']", "Auswertungen-Sektion"),

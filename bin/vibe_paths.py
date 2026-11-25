@@ -12,7 +12,7 @@ vibe kennt vier getrennte Rollen von Verzeichnissen:
 * **Laufzeit** (``runtime``) — schreibbare Laufzeitdaten wie Logs, Token,
   Instanzkennung und Pause-Markierungen. Standard ist ``$VIBE/_logs``.
 * **Zustand** (``state``) — schreibbare persönliche Einstellungen und
-  Sicherungen (``vibe.json``, ``profiles.json``, ``fritz.json``,
+  Sicherungen (``vibe.json``, ``profiles.json``,
   ``agent-backups``, ``config-backups``). Standard ist der Installationsordner,
   damit bestehende Installationen ihre Daten unverändert wiederfinden.
 

@@ -37,7 +37,7 @@ runtime remain separate paths (`V-006`).
 
 - `docs/import-manifest.json` lists SHA-256 hashes for the imported program
   files and metadata. `scripts/check-import-manifest.py` verifies them as part
-  of `quick`; the current manifest covers 71 files.
+  of `quick`; the current manifest covers 70 files.
 - `docs/baseline-installation.sha256` is the snapshot of the active
   installation produced with `scripts/active-install.py snapshot`. Its `verify`
   mode checks that the installation still matches; runtime data and caches are

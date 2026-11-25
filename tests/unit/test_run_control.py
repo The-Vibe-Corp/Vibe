@@ -437,16 +437,13 @@ class RunStateAndStopTest(CliFixture):
 
 
 FAKE_VIBE = '''#!/usr/bin/env python3
-import os, sys
-with open(os.environ["VIBE_FAKE_FRITZ"], "a", encoding="utf-8") as handle:
-    handle.write("fritz auto\\n")
-print("Fritzbox-Automatik ist aus")
+import sys
 sys.exit(3)
 '''
 
 
 class RunnerV015Test(unittest.TestCase):
-    """Führt den echten Läufer mit Attrappen für opencode und Router aus."""
+    """Führt den echten Läufer mit Attrappen für opencode aus."""
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -467,7 +464,6 @@ class RunnerV015Test(unittest.TestCase):
         self.fakebin = support.install_fake_tools(self.root)
         self.calls = self.root / "opencode.calls"
         self.counter = self.root / "counter"
-        self.fritz = self.root / "fritz.calls"
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -508,7 +504,6 @@ class RunnerV015Test(unittest.TestCase):
             FAKE_CALLS=str(self.calls),
             FAKE_COUNTER=str(self.counter),
             FAKE_MODE="fail" if opencode_rc else "complete",
-            VIBE_FAKE_FRITZ=str(self.fritz),
             PATH=str(self.fakebin) + os.pathsep + os.environ.get("PATH", ""),
         )
         return subprocess.run(
@@ -802,15 +797,6 @@ class RunsCommandTest(CliFixture):
         self.assertFalse(
             [call for call in self.tmux_calls() if "kill-session" in call]
         )
-
-
-class FritzGateTest(CliFixture):
-    def test_no_router_reconnect_without_an_explicit_automation_setting(self):
-        self.assertFalse(self.cli.fritz_automation())
-        with mock.patch.object(self.cli, "fritz_reconnect") as reconnect:
-            outcome = self.cli.fritz_auto()
-        self.assertFalse(outcome["ran"])
-        reconnect.assert_not_called()
 
 
 # ===========================================================================

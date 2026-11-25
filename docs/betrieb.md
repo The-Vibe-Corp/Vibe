@@ -16,7 +16,7 @@ vibe trennt vier Rollen. Sie dürfen nicht vermischt werden:
 | Quellen | `$VIBE/_toolchain` (installiert) bzw. das Repository (Entwicklung) | laufender Programmcode |
 | Installation | `$VIBE/_toolchain` | Programme, Vorlagen, Prüfskripte, Katalog |
 | Laufzeit | `$VIBE/_logs` | Logs, Token, Instanzkennung, Pause-Markierungen |
-| Zustand | `$VIBE/_toolchain` | `vibe.json`, `profiles.json`, `fritz.json`, `costs.json`, Sicherungen |
+| Zustand | `$VIBE/_toolchain` | `vibe.json`, `profiles.json`, `costs.json`, Sicherungen |
 
 Profile:
 

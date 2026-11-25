@@ -181,8 +181,7 @@ Living documentation: [Costs, environment, and diagnostics](current/costs-diagno
 
 - [B1.md](B1.md) — cost table refreshes after each package
 - [F12.md](F12.md) — cost calculation per package and project
-- [F18.md](F18.md) — central internet reconnect for several projects
-- [F5.md](F5.md) — Fritzbox reconnect in UI
+- [GH-87.md](GH-87.md) — remove the legacy router reconnect integration
 
 ### Dashboard UI shell
 
@@ -232,7 +231,7 @@ The following points were checked against the current implementation while build
 - [`F13.md`](F13.md) describes four project detail tabs; the current UI has five tabs (overview, work, output, assistant/"Beschreibung", settings; `bin/web/nova-project.js`). `docs/handbuch.md` calls the assistant tab "Assistent"; the current UI label is "Beschreibung".
 - [`AP03.md`](AP03.md), [`F17.md`](F17.md), and [`V-010.md`](V-010.md) describe project agent configuration version 2 or 1; the current `PROJECT_AGENTS_VERSION` is 3 (`bin/vibe`).
 - Several historical records name `scripts/verify.py` as the verification entry point (for example [`V-002.md`](V-002.md), [`F31.md`](F31.md), and [`verify-tmux-isolation.md`](verify-tmux-isolation.md)); the canonical engine is `scripts/verify_engine.py`, and `verify.py` is a compatibility shim (the split is documented in [`AP7-Korbat.md`](AP7-Korbat.md)).
-- [`V-001.md`](V-001.md) states 22 import-manifest entries; the current manifest covers 71 files (`docs/import-manifest.json`, which grew over later tickets).
+- [`V-001.md`](V-001.md) states 22 import-manifest entries; the current manifest covers 70 files (`docs/import-manifest.json`, which grew over later tickets).
 - SPEC.md requires auditable logs for security-sensitive actions; no dedicated audit-log implementation was located in the current code (`bin/vibe-web.py`). This remains an open discrepancy and is not documented as behavior.
 
 ## Related documentation
