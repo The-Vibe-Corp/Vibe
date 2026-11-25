@@ -98,9 +98,9 @@ Ausgeführte Befehle (Arbeitskopie
 `/var/log/custom/vibe-dev/worktrees/vibe-B6-iGrKk1`, Ausgangscommit
 `c3d68dd`):
 
-- `python3 -m unittest tests.unit.test_b6_ticket_marker_states`
+- `python3 -m unittest tests.unit.test_work_packages`
   → Ran 56 tests, OK.
-- `python3 -m unittest tests.unit.test_b3_merged_waiting
+- `python3 -m unittest tests.unit.test_work_packages
   tests.unit.test_ap5_korbat_waiting_state tests.unit.test_ap3_korbat_issues_backend
   tests.unit.test_package_gates`
   → Ran 114 tests, OK.

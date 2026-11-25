@@ -166,7 +166,7 @@ genau EINEN Vertragstreffer außerhalb der dokumentierten Baseline —
 PR-only-Vermerk `BLOCKIERT` und wurde vom unabhängigen Test-Agenten auf
 `WARTET AUF MERGE` (plus `assertNotIn("BLOCKIERT")`, also strenger)
 nachgezogen; danach läuft das Modul grün (`env -u GITHUB_AUTO_MERGE
-python3 -m unittest tests.unit.test_b16_runner_wiring` → OK). Alle
+python3 -m unittest tests.unit.test_github_runner` → OK). Alle
 übrigen roten Module sind dokumentierte Baseline (Klassifizierung mit
 Fehlerursachen in §5): Umgebungsfamilie („vibe-web ist nicht erreichbar“,
 bwrap/tmux/Runner-Prozesse), F22-Altschuld (fehlgeschlagene *Modi* durch

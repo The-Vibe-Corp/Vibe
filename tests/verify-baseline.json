@@ -5,79 +5,64 @@
     "pi-aarch64-py3.14-namespaces": {
       "failures": [
         {
-          "module": "tests.unit.test_ap12_github_readiness",
+          "module": "tests.unit.test_repository_hygiene",
           "class": "AssertionError",
-          "signature": "sha256:09cb4dba7d82ddfe68e8345a160daa204a5e47359d3c04f58014d59327b3b793"
+          "signature": "sha256:b453a148a7dbb5cc42ff6f9cf3b82271d4d2b8bf859cdd6c8ce59ca6d04e05e8"
         },
         {
-          "module": "tests.unit.test_ap12_github_readiness",
+          "module": "tests.unit.test_github_issues",
           "class": "AssertionError",
-          "signature": "sha256:b44445e4b279716df69359d0aa4398723ea2c7c875b18e9330d567e744ff4616"
+          "signature": "sha256:02c6cfb04bd82e7af9b7399f409d0fa8ca3f3cc9425901180f4c44f396e70213"
         },
         {
-          "module": "tests.unit.test_ap4_korbat_rules",
+          "module": "tests.unit.test_work_packages",
           "class": "AssertionError",
-          "signature": "sha256:e23e4f067913b115ee04a011b17241cc3e5139cab67c0bf49b0baa72be2316a6"
-        },
-        {
-          "module": "tests.unit.test_ap4_korbat_rules",
-          "class": "AssertionError",
-          "signature": "sha256:7ea99e310d5cdf972e57fd8ceb7b5c60f5ca7b71074613b5c0bcec166216f849"
-        },
-        {
-          "module": "tests.unit.test_ap7_korbat_rules",
-          "class": "AssertionError",
-          "signature": "sha256:977776f78d09d6030aa8f725605ca6469472f6699c0d7d13bd2e1357d6930709"
-        },
-        {
-          "module": "tests.unit.test_ap8_github_checkout",
-          "class": "AssertionError",
-          "signature": "sha256:7a88e3ab18abf7745101d7a341c5ec314f88c4d91f228d49f537742f693c3d13"
-        },
-        {
-          "module": "tests.unit.test_b13_private_server_runner",
-          "class": "AssertionError",
-          "signature": "sha256:6b4d5e86d4f2f0bc301b68b29c2dabb1672925b24eac926a8b5d10f7bf39a632"
-        },
-        {
-          "module": "tests.unit.test_b16_runner_wiring",
-          "class": "AssertionError",
-          "signature": "sha256:0c2a6bec59b9ddee0f95b5d27e168310b0a1cf77db17d4c9f69c66a68d650a2e"
-        },
-        {
-          "module": "tests.unit.test_b17_isolation",
-          "class": "AssertionError",
-          "signature": "sha256:b25d761eeffdd2191fd3ef9eb9b888dca14b62ec61da647d777337f3286eb259"
-        },
-        {
-          "module": "tests.unit.test_b4_install_empty_runs",
-          "class": "setup_vibe_b4.SetupError",
-          "signature": "sha256:9c2e108c3aa7dc4d7908be1deee92ac58c93f6e58a95ba1bad8b8b9eabe0c0dd"
-        },
-        {
-          "module": "tests.unit.test_b4_pi_agent_dir",
-          "class": "AssertionError",
-          "signature": "sha256:85a0f3e4ca1b8785ad4de4509096f463ce2e2c0e398340f3451564b74e1d4ed4"
-        },
-        {
-          "module": "tests.unit.test_b5_sandbox",
-          "class": "AssertionError",
-          "signature": "sha256:12fb01dd727672ff354fa0c13c89ebad35e8e9cecbee77a1bc205f9c8734965d"
-        },
-        {
-          "module": "tests.unit.test_install_lifecycle",
-          "class": "setup_vibe_lifecycle.SetupError",
-          "signature": "sha256:b9e3d8cc42dc0b71fd90b7b634838ea5d5a2cd235eb8518b83dab13a0df6ae2e"
-        },
-        {
-          "module": "tests.unit.test_project_guide",
-          "class": "ValueError",
-          "signature": "sha256:b9124e787ae063d4fcf669591d3650e699d45213fe032648ea7105be5bc481b0"
+          "signature": "sha256:153a4113bdbd7b1d618594bfc310fc6ac9ca2891974f6b230cf38b4060c166f0"
         },
         {
           "module": "tests.unit.test_project_management",
           "class": "FileNotFoundError",
           "signature": "sha256:9c8a9d2f8da2fb1abb52cce4b0fb7247f9eaae582508025a93db0bc5fafe7a0f"
+        },
+        {
+          "module": "tests.unit.test_project_management",
+          "class": "AssertionError",
+          "signature": "sha256:398feb165723e7675c0fe26898e5c04a151964172e7be271028680519267ea04"
+        },
+        {
+          "module": "tests.unit.test_install_lifecycle",
+          "class": "setup_vibe_b17.SetupError",
+          "signature": "sha256:320f89d7703a71488364647af8f3cb831ae3986a7196c5edc2988b6677a103d5"
+        },
+        {
+          "module": "tests.unit.test_install_lifecycle",
+          "class": "AssertionError",
+          "signature": "sha256:083be62f83e3447cd9dd0712f7a7ba00bfd6e4c72eb1a55d99cd228f32e621c7"
+        },
+        {
+          "module": "tests.unit.test_private_server",
+          "class": "AssertionError",
+          "signature": "sha256:7675639a61ae9f422f13554b5dd3cca5651ad885b20aea4cd5d3c77f62f6eef2"
+        },
+        {
+          "module": "tests.unit.test_github_runner",
+          "class": "AssertionError",
+          "signature": "sha256:530eef00e6f7a4e8a706f94cb7b40cd310a39be3710270424f354719ee214b46"
+        },
+        {
+          "module": "tests.unit.test_sandbox",
+          "class": "AssertionError",
+          "signature": "sha256:121910a58264295bbbb8e913d9c6e46de5dd0c4091c43dd672a3a7b53d5d8f39"
+        },
+        {
+          "module": "tests.unit.test_sandbox",
+          "class": "AssertionError",
+          "signature": "sha256:83a82f315cff97b7299ebfadfad22bedeb4f196e920fc102878adeb61886a435"
+        },
+        {
+          "module": "tests.unit.test_project_guide",
+          "class": "ValueError",
+          "signature": "sha256:b9124e787ae063d4fcf669591d3650e699d45213fe032648ea7105be5bc481b0"
         },
         {
           "module": "tests.unit.test_rebuild_profile",
@@ -95,29 +80,14 @@
           "signature": "sha256:af13c6bde2887ebff608bfe9ce295dedeb2286890d9ed0762056695b03331c13"
         },
         {
-          "module": "tests.unit.test_sandbox",
+          "module": "tests.unit.test_release",
           "class": "AssertionError",
-          "signature": "sha256:121910a58264295bbbb8e913d9c6e46de5dd0c4091c43dd672a3a7b53d5d8f39"
-        },
-        {
-          "module": "tests.unit.test_ap12_github_readiness",
-          "class": "AssertionError",
-          "signature": "sha256:70d607fd9b0830d5b9b400a07967460d063a199428769fd080585fed7ea2730c"
-        },
-        {
-          "module": "tests.unit.test_ap3_korbat_surfaces",
-          "class": "AssertionError",
-          "signature": "sha256:da1655baf093424fe20dca321989112ee68f41f164cc199d5ca639f902b4dc5a"
-        },
-        {
-          "module": "tests.unit.test_ap5_korbat_waiting_state",
-          "class": "AssertionError",
-          "signature": "sha256:09ee2c84e6eba0f5cf31ff5832b2a8392c9c8746aca708b1ec83168d9ede5113"
+          "signature": "sha256:ae67d8a0314c9949cd4b35073c5cb5628c0090350b820fa291ea825656280419"
         },
         {
           "module": "tests.unit.test_release",
           "class": "AssertionError",
-          "signature": "sha256:ae67d8a0314c9949cd4b35073c5cb5628c0090350b820fa291ea825656280419"
+          "signature": "sha256:dbe32e8af7a58d58a7179f8d05e2493c6ef5a074767746b7e1ccbfe1011cd9f1"
         }
       ]
     }

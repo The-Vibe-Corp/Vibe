@@ -96,7 +96,7 @@ temporärem HOME und opencode-Attrappe; keine Modellaufrufe.
   38 Failures + 6 Errors. Zwei Test-Setup-Defekte wurden nach Verifikation
   vom Test-Agenten korrigiert (Berichtsnachträge 10 und 10.1); beide
   korrigierten Fälle sind danach grün.
-- `python3 -m unittest tests.unit.test_ap2_opencode_agents -v`
+- `python3 -m unittest tests.unit.test_agent_management -v`
   → `Ran 64 tests … OK` (Exit 0).
 - `python3 -m unittest tests.unit.test_project_write_dirs -v`
   → `Ran 40 tests … OK` (Exit 0; belegt im Test-Agenten-Bericht, Nachtrag 10.1).

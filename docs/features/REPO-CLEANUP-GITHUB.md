@@ -125,7 +125,7 @@ Diese wurden nicht angetastet (keine fremden Änderungen verwerfen):
 - `bash scripts/verify.sh quick` — Exit 0 (nach jedem Eingriff erneut grün).
 - `python3 scripts/check-no-secrets.py` — OK.
 - `python3 scripts/check-import-manifest.py` — OK (57 Dateien stimmen).
-- `python3 -m unittest tests.unit.test_ap12_github_readiness` — 11/11 OK
+- `python3 -m unittest tests.unit.test_repository_hygiene` — 11/11 OK
   (nach der `.gitignore`-Erweiterung erneut bestätigt).
 - `python3 -m py_compile bin/*.py` — OK.
 - `bash scripts/verify.sh full` — 1795 Tests, 16 Fehlschläge + 1 Error.

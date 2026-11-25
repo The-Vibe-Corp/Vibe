@@ -139,7 +139,7 @@ Schutzwachfälle (fehlende Datei, AK3, AK4, AK6) waren bereits grün.
 Grünphase nach Implementierung (Koordinator bestätigt):
 
 ```
-$ python3 -m unittest tests.unit.test_b4_install_empty_runs -v
+$ python3 -m unittest tests.unit.test_install_lifecycle -v
 Ran 16 tests in 0.154s
 
 OK

@@ -156,7 +156,7 @@ Ladeende (`input[data-toggle="unconfigured"]`) und mit harter Assertion
 
 ## Prüfergebnisse
 
-- `python3 -m unittest tests.browser.test_ap7_settings_ui -v` → Ran 7 tests …
+- `python3 -m unittest tests.browser.test_project_ui -v` → Ran 7 tests …
   OK (mehrere aufeinanderfolgende Läufe, reproduzierbar).
 - `bash scripts/verify.sh quick` → Exit 0 (Manifest, Syntax, Geheimnisse).
 - `bash scripts/verify.sh full` → Unit-Discovery: FAILED (failures=19,
