@@ -1,0 +1,604 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vibe UI Style Guide — Precise Frames × Technical Density</title>
+<style>
+:root{
+  --font-sans:"Inter",ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;
+  --font-mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --radius-xs:2px;--radius-sm:3px;--radius-md:4px;--radius-lg:6px;
+  --border-1:1px;--border-2:2px;
+  --control-h-sm:28px;--control-h-md:34px;--control-h-lg:40px;
+  --space-1:4px;--space-2:8px;--space-3:12px;--space-4:16px;--space-5:24px;--space-6:32px;
+}
+body[data-theme="light"]{
+  --bg-canvas:#f4f3f0;--bg-surface:#fbfaf8;--bg-raised:#ffffff;--bg-inset:#eceae6;
+  --border:#d8d4cd;--border-strong:#b8b2a8;--divider:#e2ded8;
+  --text:#26241f;--text-muted:#6b675f;--text-faint:#8d887e;
+  --accent:#5b5bd6;--accent-hover:#4d4dc4;--accent-subtle:#eaeafb;--accent-contrast:#ffffff;
+  --success:#3f7d54;--success-subtle:#e5f0e8;
+  --warning:#8a6a1f;--warning-subtle:#f5eeda;
+  --danger:#a33a32;--danger-subtle:#f6e5e3;
+  --info:#2e6f80;--info-subtle:#e2eef2;
+  --shadow-1:0 1px 2px rgba(38,36,31,.06);--shadow-2:0 2px 8px rgba(38,36,31,.08);
+}
+body[data-theme="dark"]{
+  --bg-canvas:#161514;--bg-surface:#1d1c1a;--bg-raised:#232220;--bg-inset:#141312;
+  --border:#3b3833;--border-strong:#55504a;--divider:#2c2a27;
+  --text:#e8e5df;--text-muted:#a29d94;--text-faint:#7d786f;
+  --accent:#8a8af0;--accent-hover:#9d9df5;--accent-subtle:#2a2944;--accent-contrast:#101018;
+  --success:#79b591;--success-subtle:#1e2c23;
+  --warning:#c9a35a;--warning-subtle:#2e281b;
+  --danger:#d47a70;--danger-subtle:#32201d;
+  --info:#7fb0c0;--info-subtle:#1b2a30;
+  --shadow-1:0 1px 2px rgba(0,0,0,.35);--shadow-2:0 2px 10px rgba(0,0,0,.4);
+}
+body[data-accent="indigo"]{--accent:#5b5bd6;--accent-hover:#4d4dc4;--accent-subtle:#eaeafb;--accent-contrast:#ffffff}
+body[data-accent="cyan"]{--accent:#2e6f80;--accent-hover:#255d6b;--accent-subtle:#e2eef2;--accent-contrast:#ffffff}
+body[data-accent="green"]{--accent:#3f7d54;--accent-hover:#346a46;--accent-subtle:#e5f0e8;--accent-contrast:#ffffff}
+body[data-accent="orange"]{--accent:#a35a1f;--accent-hover:#8a4c1a;--accent-subtle:#f5e9da;--accent-contrast:#ffffff}
+body[data-theme="dark"][data-accent="indigo"]{--accent:#8a8af0;--accent-hover:#9d9df5;--accent-subtle:#2a2944;--accent-contrast:#101018}
+body[data-theme="dark"][data-accent="cyan"]{--accent:#7fb0c0;--accent-hover:#93bfcd;--accent-subtle:#1b2a30;--accent-contrast:#101018}
+body[data-theme="dark"][data-accent="green"]{--accent:#79b591;--accent-hover:#8bc4a1;--accent-subtle:#1e2c23;--accent-contrast:#101018}
+body[data-theme="dark"][data-accent="orange"]{--accent:#d0925a;--accent-hover:#dba56f;--accent-subtle:#2e231b;--accent-contrast:#101018}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg-canvas);color:var(--text);font-family:var(--font-sans);font-size:14px;line-height:1.5}
+main{max-width:1080px;margin:0 auto;padding:40px 24px 80px}
+h1,h2,h3{line-height:1.2;margin:0 0 12px}
+h1{font-size:30px;letter-spacing:-.02em}
+h2{font-size:21px;margin-top:44px;padding-bottom:8px;border-bottom:1px solid var(--divider)}
+h3{font-size:16px;margin-top:28px}
+p{margin:0 0 12px;color:var(--text-muted)}
+code,pre{font-family:var(--font-mono);font-size:12.5px}
+pre{background:var(--bg-inset);border:1px solid var(--border);border-radius:var(--radius-md);padding:14px;overflow:auto;color:var(--text)}
+.card{background:var(--bg-surface);border:1px solid var(--border);border-radius:var(--radius-md);padding:20px;box-shadow:var(--shadow-1)}
+.demo{display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin:14px 0}
+.btn{display:inline-flex;align-items:center;gap:8px;height:var(--control-h-md);padding:0 14px;border-radius:var(--radius-sm);border:1px solid var(--border-strong);background:var(--bg-raised);color:var(--text);font-weight:600;font-size:13px;cursor:pointer}
+.btn:hover{background:var(--bg-inset)}
+.btn-primary{background:var(--accent);border-color:var(--accent);color:var(--accent-contrast)}
+.btn-primary:hover{background:var(--accent-hover)}
+.btn-ghost{background:transparent;border-color:transparent;color:var(--accent)}
+.input,.select,.combobox-input{height:var(--control-h-md);width:260px;padding:0 10px;border:1px solid var(--border-strong);border-radius:var(--radius-sm);background:var(--bg-raised);color:var(--text);font:inherit}
+.input:focus,.select:focus,.combobox-input:focus{outline:2px solid var(--accent);outline-offset:1px}
+.select{appearance:none;background-image:linear-gradient(45deg,transparent 50%,var(--text-muted) 50%),linear-gradient(135deg,var(--text-muted) 50%,transparent 50%);background-position:calc(100% - 16px) 15px,calc(100% - 11px) 15px;background-size:5px 5px;background-repeat:no-repeat;padding-right:30px}
+.select option{background:var(--bg-raised);color:var(--text);border-radius:var(--radius-sm)}
+.combobox{position:relative;width:260px}
+.combobox-input{width:100%;padding-right:32px}
+.combobox-chevron{position:absolute;right:10px;top:50%;transform:translateY(-50%);width:12px;height:12px;border-right:1.5px solid var(--text-muted);border-bottom:1.5px solid var(--text-muted);transform:translateY(-70%) rotate(45deg)}
+.combobox-list{position:absolute;z-index:10;top:calc(100% + 4px);left:0;width:100%;max-height:180px;overflow:auto;background:var(--bg-raised);border:1px solid var(--border-strong);border-radius:var(--radius-sm);box-shadow:var(--shadow-2);padding:4px}
+.combobox-option{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 10px;border-radius:var(--radius-xs);font-size:13px;cursor:pointer;color:var(--text)}
+.combobox-option:hover,.combobox-option[aria-selected="true"]{background:var(--accent-subtle);color:var(--accent)}
+.combobox-option .meta{font-family:var(--font-mono);font-size:11px;color:var(--text-faint)}
+.badge{display:inline-flex;align-items:center;gap:6px;height:22px;padding:0 8px;border-radius:var(--radius-xs);border:1px solid var(--border);font-size:11px;font-weight:600}
+.badge-running{color:var(--success);background:var(--success-subtle);border-color:var(--success)}
+.badge-error{color:var(--danger);background:var(--danger-subtle);border-color:var(--danger)}
+.badge-ready{color:var(--info);background:var(--info-subtle);border-color:var(--info)}
+.progress{width:280px;height:8px;background:var(--bg-inset);border:1px solid var(--border);border-radius:var(--radius-xs);overflow:hidden}
+.progress-bar{width:64%;height:100%;background:var(--accent)}
+.switch{position:relative;width:42px;height:12px;border:1px solid var(--border-strong);border-radius:var(--radius-xs);background:var(--bg-inset);cursor:pointer}
+.switch-thumb{position:absolute;top:50%;left:2px;width:22px;height:22px;border-radius:50%;background:var(--bg-raised);border:1px solid var(--border-strong);transform:translateY(-50%);box-shadow:var(--shadow-1);transition:left .16s ease}
+.switch[data-checked="true"]{background:var(--bg-inset);border-color:var(--border-strong)}
+.switch[data-checked="true"] .switch-thumb{left:18px;background:var(--accent);border-color:var(--accent)}
+.scroll{height:120px;width:280px;overflow:auto;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg-raised);padding:10px}
+.scroll::-webkit-scrollbar{width:10px}
+.scroll::-webkit-scrollbar-track{background:var(--bg-inset);border-left:1px solid var(--divider)}
+.scroll::-webkit-scrollbar-thumb{background:var(--border-strong);border:2px solid var(--bg-inset);border-radius:var(--radius-xs)}
+.scroll::-webkit-scrollbar-thumb:hover{background:var(--text-faint)}
+table{width:100%;border-collapse:collapse;margin:12px 0;font-size:13px}
+th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--divider)}
+th{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-faint)}
+</style>
+</head>
+<body data-theme="light" data-accent="indigo">
+<main>
+<h1>Vibe UI Style Guide</h1>
+<p>Designsystem: <strong>Precise Frames × Technical Density</strong>. Lokale Entwicklungszentrale für Projekte, Agenten, Modelle und MCP-Server.</p>
+<div class="card">
+<h2 style="margin-top:0">Theme und Akzentfarbe</h2>
+<div class="demo">
+<button class="btn" onclick="document.body.dataset.theme='light'">Light</button>
+<button class="btn" onclick="document.body.dataset.theme='dark'">Dark</button>
+<button class="btn" onclick="document.body.dataset.accent='indigo'">Indigo</button>
+<button class="btn" onclick="document.body.dataset.accent='cyan'">Cyan</button>
+<button class="btn" onclick="document.body.dataset.accent='green'">Grün</button>
+<button class="btn" onclick="document.body.dataset.accent='orange'">Orange</button>
+</div>
+</div>
+<h2>1. Designprinzip</h2>
+<p>Technische, ruhige und informationsdichte Oberfläche. Klare Rahmen, kleine Radien, matte Flächen und monospace Akzente. Akzentfarben markieren Interaktion und Status, definieren aber nicht die gesamte Identität.</p>
+<ul>
+<li>Sichtbare 1-px-Rahmen für Module, Inputs, Buttons und Karten.</li>
+<li>Kleine Radien: 2 bis 6 px; keine Pill- oder großen Card-Formen.</li>
+<li>Matte Flächen und dezente Schatten; kein Glas, Blur oder Transparenz.</li>
+<li>Technische Beschriftungen, Status-Badges, Tabellen und monospace Werte.</li>
+<li>Light und Dark sind gleichwertige Themes mit identischem Layout.</li>
+</ul>
+<h2>2. Farbtoken</h2>
+<p>Alle Farben ausschließlich über CSS Custom Properties verwenden. Keine Hexwerte direkt in Komponenten-CSS.</p>
+<pre><code>body[data-theme="light"] {
+  --bg-canvas: #f4f3f0;
+  --bg-surface: #fbfaf8;
+  --bg-raised: #ffffff;
+  --bg-inset: #eceae6;
+  --border: #d8d4cd;
+  --border-strong: #b8b2a8;
+  --divider: #e2ded8;
+  --text: #26241f;
+  --text-muted: #6b675f;
+  --text-faint: #8d887e;
+  --success: #3f7d54;
+  --success-subtle: #e5f0e8;
+  --warning: #8a6a1f;
+  --warning-subtle: #f5eeda;
+  --danger: #a33a32;
+  --danger-subtle: #f6e5e3;
+  --info: #2e6f80;
+  --info-subtle: #e2eef2;
+}
+
+body[data-theme="dark"] {
+  --bg-canvas: #161514;
+  --bg-surface: #1d1c1a;
+  --bg-raised: #232220;
+  --bg-inset: #141312;
+  --border: #3b3833;
+  --border-strong: #55504a;
+  --divider: #2c2a27;
+  --text: #e8e5df;
+  --text-muted: #a29d94;
+  --text-faint: #7d786f;
+  --success: #79b591;
+  --success-subtle: #1e2c23;
+  --warning: #c9a35a;
+  --warning-subtle: #2e281b;
+  --danger: #d47a70;
+  --danger-subtle: #32201d;
+  --info: #7fb0c0;
+  --info-subtle: #1b2a30;
+}</code></pre>
+<h3>Akzentfarben</h3>
+<p>Indigo ist Standard. Cyan, Grün und Orange sind austauschbare Akzentoptionen. Die Akzentfarbe wird über ein einzelnes Token gesteuert.</p>
+<pre><code>body[data-accent="indigo"] {
+  --accent: #5b5bd6;
+  --accent-hover: #4d4dc4;
+  --accent-subtle: #eaeafb;
+  --accent-contrast: #ffffff;
+}
+body[data-accent="cyan"] {
+  --accent: #2e6f80;
+  --accent-hover: #255d6b;
+  --accent-subtle: #e2eef2;
+  --accent-contrast: #ffffff;
+}
+body[data-accent="green"] {
+  --accent: #3f7d54;
+  --accent-hover: #346a46;
+  --accent-subtle: #e5f0e8;
+  --accent-contrast: #ffffff;
+}
+body[data-accent="orange"] {
+  --accent: #a35a1f;
+  --accent-hover: #8a4c1a;
+  --accent-subtle: #f5e9da;
+  --accent-contrast: #ffffff;
+}
+
+/* Dark-Mode-Entsprechungen */
+body[data-theme="dark"][data-accent="indigo"] {
+  --accent: #8a8af0; --accent-hover: #9d9df5; --accent-subtle: #2a2944; --accent-contrast: #101018;
+}
+body[data-theme="dark"][data-accent="cyan"] {
+  --accent: #7fb0c0; --accent-hover: #93bfcd; --accent-subtle: #1b2a30; --accent-contrast: #101018;
+}
+body[data-theme="dark"][data-accent="green"] {
+  --accent: #79b591; --accent-hover: #8bc4a1; --accent-subtle: #1e2c23; --accent-contrast: #101018;
+}
+body[data-theme="dark"][data-accent="orange"] {
+  --accent: #d0925a; --accent-hover: #dba56f; --accent-subtle: #2e231b; --accent-contrast: #101018;
+}</code></pre>
+<h2>3. Typografie</h2>
+<p>Inter für UI-Text, JetBrains Mono für Code, IDs, Pfade, Logs, Versionen, Ports und technische Metadaten.</p>
+<pre><code>&lt;link rel="preconnect" href="https://fonts.googleapis.com"&gt;
+&lt;link rel="preconnect" href="https://fonts.gstatic.com" crossorigin&gt;
+&lt;link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet"&gt;</code></pre>
+<pre><code>:root {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+body { font-family: var(--font-sans); font-size: 14px; line-height: 1.5; }
+.text-display { font-size: 24px; font-weight: 700; letter-spacing: -0.02em; }
+.text-title { font-size: 18px; font-weight: 650; letter-spacing: -0.01em; }
+.text-heading { font-size: 15px; font-weight: 600; }
+.text-body { font-size: 14px; font-weight: 400; }
+.text-small { font-size: 12.5px; color: var(--text-muted); }
+.text-label { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--text-faint); }
+.text-mono { font-family: var(--font-mono); font-size: 12.5px; }</code></pre>
+<h2>4. Iconografie</h2>
+<p>Lucide als einzige Icon-Bibliothek. 16 px in kompakten Elementen, 18 px in Navigation oder Karten-Headern. Strichstärke 1.75 px, currentColor, keine gefüllten Icons.</p>
+<pre><code>&lt;script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"&gt;&lt;/script&gt;
+&lt;i data-lucide="folder"&gt;&lt;/i&gt;
+&lt;i data-lucide="bot"&gt;&lt;/i&gt;
+&lt;i data-lucide="cpu"&gt;&lt;/i&gt;
+&lt;i data-lucide="server"&gt;&lt;/i&gt;
+&lt;i data-lucide="settings"&gt;&lt;/i&gt;
+&lt;i data-lucide="search"&gt;&lt;/i&gt;
+&lt;i data-lucide="plus"&gt;&lt;/i&gt;
+&lt;i data-lucide="play"&gt;&lt;/i&gt;
+&lt;i data-lucide="square"&gt;&lt;/i&gt;
+&lt;i data-lucide="refresh-cw"&gt;&lt;/i&gt;
+&lt;i data-lucide="terminal"&gt;&lt;/i&gt;
+&lt;i data-lucide="check"&gt;&lt;/i&gt;
+&lt;i data-lucide="alert-triangle"&gt;&lt;/i&gt;
+&lt;i data-lucide="info"&gt;&lt;/i&gt;
+&lt;script&gt;lucide.createIcons();&lt;/script&gt;</code></pre>
+<pre><code>.icon { width: 16px; height: 16px; stroke-width: 1.75; color: currentColor; }
+.icon-lg { width: 18px; height: 18px; }</code></pre>
+<h2>5. Layout und Abstände</h2>
+<pre><code>:root {
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+
+  --radius-xs: 2px;
+  --radius-sm: 3px;
+  --radius-md: 4px;
+  --radius-lg: 6px;
+
+  --control-h-sm: 28px;
+  --control-h-md: 34px;
+  --control-h-lg: 40px;
+
+  --border-1: 1px;
+  --border-2: 2px;
+}</code></pre>
+<table>
+<tr><th>Kontext</th><th>Regel</th></tr>
+<tr><td>Innerhalb eines Controls</td><td>8 px horizontal, 4 px vertikal</td></tr>
+<tr><td>Zwischen Formfeldern</td><td>12 px</td></tr>
+<tr><td>Zwischen Karten</td><td>12 px</td></tr>
+<tr><td>Karten-Innenabstand</td><td>16 px</td></tr>
+<tr><td>Seitenabstand</td><td>24 px</td></tr>
+<tr><td>Modulabstand</td><td>16 px, mit 1-px-Trennlinie</td></tr>
+</table>
+<h2>6. Standardmodule</h2>
+<h3>Button</h3>
+<div class="demo">
+<button class="btn btn-primary">Starten</button>
+<button class="btn">Abbrechen</button>
+<button class="btn btn-ghost">Details</button>
+</div>
+<pre><code>.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: var(--control-h-md);
+  padding: 0 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg-raised);
+  color: var(--text);
+  font: 600 13px/1 var(--font-sans);
+  cursor: pointer;
+}
+.btn:hover { background: var(--bg-inset); }
+.btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-contrast);
+}
+.btn-primary:hover { background: var(--accent-hover); }
+.btn-ghost { background: transparent; border-color: transparent; color: var(--accent); }</code></pre>
+<h3>Select</h3>
+<div class="demo">
+<select class="select"><option>Lokales Modell</option><option>Remote-Modell</option></select>
+</div>
+<pre><code>.select {
+  height: var(--control-h-md);
+  width: 260px;
+  padding: 0 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg-raised);
+  color: var(--text);
+  font: 400 13px/1 var(--font-sans);
+  appearance: none;
+}
+.select:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* Die Optionen erhalten denselben kleinen Radius
+   wie alle anderen Elemente. Native Dropdowns haben
+   plattformabhängige Grenzen; für volle Kontrolle
+   wird die Combobox verwendet. */
+.select option {
+  background: var(--bg-raised);
+  color: var(--text);
+  border-radius: var(--radius-sm);
+}</code></pre>
+<h3>Combobox</h3>
+<div class="demo">
+<div class="combobox">
+<input class="combobox-input" placeholder="Modell suchen" aria-expanded="true" aria-controls="model-list" role="combobox">
+<span class="combobox-chevron"></span>
+<div class="combobox-list" id="model-list" role="listbox">
+<div class="combobox-option" role="option" aria-selected="true">Llama 3.1 8B <span class="meta">local</span></div>
+<div class="combobox-option" role="option">Qwen 2.5 7B <span class="meta">local</span></div>
+<div class="combobox-option" role="option">GPT-4o mini <span class="meta">remote</span></div>
+</div>
+</div>
+</div>
+<pre><code>&lt;div class="combobox"&gt;
+  &lt;input class="combobox-input" placeholder="Modell suchen"
+         role="combobox" aria-expanded="true"
+         aria-controls="model-list"&gt;
+  &lt;span class="combobox-chevron"&gt;&lt;/span&gt;
+
+  &lt;div class="combobox-list" id="model-list" role="listbox"&gt;
+    &lt;div class="combobox-option" role="option" aria-selected="true"&gt;
+      Llama 3.1 8B &lt;span class="meta"&gt;local&lt;/span&gt;
+    &lt;/div&gt;
+    &lt;div class="combobox-option" role="option"&gt;
+      Qwen 2.5 7B &lt;span class="meta"&gt;local&lt;/span&gt;
+    &lt;/div&gt;
+    &lt;div class="combobox-option" role="option"&gt;
+      GPT-4o mini &lt;span class="meta"&gt;remote&lt;/span&gt;
+    &lt;/div&gt;
+  &lt;/div&gt;
+&lt;/div&gt;
+
+.combobox { position: relative; width: 260px; }
+
+.combobox-input {
+  width: 100%;
+  height: var(--control-h-md);
+  padding: 0 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg-raised);
+  color: var(--text);
+  font: 400 13px/1 var(--font-sans);
+}
+.combobox-input:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.combobox-list {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  width: 100%;
+  max-height: 180px;
+  overflow: auto;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-2);
+  padding: 4px;
+  z-index: 10;
+}
+
+.combobox-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: var(--radius-xs);
+  font: 400 13px/1 var(--font-sans);
+  color: var(--text);
+  cursor: pointer;
+}
+.combobox-option:hover,
+.combobox-option[aria-selected="true"] {
+  background: var(--accent-subtle);
+  color: var(--accent);
+}
+.combobox-option .meta {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-faint);
+}</code></pre>
+<h3>Toggle</h3>
+<div class="demo">
+<button class="switch" data-checked="true" aria-checked="true" role="switch"><span class="switch-thumb"></span></button>
+<span>Auto-Start</span>
+</div>
+<pre><code>/* Technical-Density-Toggle:
+   Track-Höhe um 40% reduziert.
+   Thumb-Größe bleibt unverändert.
+   Aktiver Thumb verwendet die Akzentfarbe. */
+.switch {
+  position: relative;
+  width: 42px;
+  height: 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-xs);
+  background: var(--bg-inset);
+  cursor: pointer;
+}
+.switch-thumb {
+  position: absolute;
+  top: 50%;
+  left: 2px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-strong);
+  transform: translateY(-50%);
+  box-shadow: var(--shadow-1);
+  transition: left .16s ease;
+}
+.switch[data-checked="true"] {
+  background: var(--bg-inset);
+  border-color: var(--border-strong);
+}
+.switch[data-checked="true"] .switch-thumb {
+  left: 18px;
+  background: var(--accent);
+  border-color: var(--accent);
+}</code></pre>
+<h3>Progress</h3>
+<div class="demo"><div class="progress"><div class="progress-bar"></div></div><span class="text-mono">64%</span></div>
+<pre><code>.progress {
+  width: 280px;
+  height: 8px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  overflow: hidden;
+}
+.progress-bar { height: 100%; background: var(--accent); }</code></pre>
+<h3>Status-Badges</h3>
+<div class="demo">
+<span class="badge badge-running">Läuft</span>
+<span class="badge badge-error">Fehler</span>
+<span class="badge badge-ready">Bereit</span>
+</div>
+<pre><code>.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  font: 600 11px/1 var(--font-sans);
+}
+.badge-running { color: var(--success); background: var(--success-subtle); border-color: var(--success); }
+.badge-error { color: var(--danger); background: var(--danger-subtle); border-color: var(--danger); }
+.badge-ready { color: var(--info); background: var(--info-subtle); border-color: var(--info); }</code></pre>
+<h3>Scrollbar</h3>
+<div class="scroll"><p>Logzeile 1</p><p>Logzeile 2</p><p>Logzeile 3</p><p>Logzeile 4</p><p>Logzeile 5</p><p>Logzeile 6</p><p>Logzeile 7</p></div>
+<pre><code>.scroll {
+  height: 120px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-raised);
+}
+.scroll::-webkit-scrollbar { width: 10px; }
+.scroll::-webkit-scrollbar-track {
+  background: var(--bg-inset);
+  border-left: 1px solid var(--divider);
+}
+.scroll::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border: 2px solid var(--bg-inset);
+  border-radius: var(--radius-xs);
+}
+.scroll::-webkit-scrollbar-thumb:hover { background: var(--text-faint); }</code></pre>
+<h3>HTML-Standardmodul: Formular</h3>
+<pre><code>&lt;form class="vibe-form"&gt;
+  &lt;label class="text-label" for="project"&gt;Projektname&lt;/label&gt;
+  &lt;input id="project" class="input" type="text" placeholder="Mein Projekt"&gt;
+
+  &lt;label class="text-label" for="model"&gt;Modell&lt;/label&gt;
+  &lt;select id="model" class="select"&gt;
+    &lt;option&gt;Lokales Modell&lt;/option&gt;
+    &lt;option&gt;Remote-Modell&lt;/option&gt;
+  &lt;/select&gt;
+
+  &lt;div class="form-row"&gt;
+    &lt;button type="submit" class="btn btn-primary"&gt;Starten&lt;/button&gt;
+    &lt;button type="button" class="btn"&gt;Abbrechen&lt;/button&gt;
+  &lt;/div&gt;
+&lt;/form&gt;
+
+.vibe-form { display: grid; gap: var(--space-3); max-width: 320px; }
+.form-row { display: flex; gap: var(--space-2); }</code></pre>
+<h3>HTML-Standardmodul: Karte</h3>
+<pre><code>&lt;article class="vibe-card"&gt;
+  &lt;header class="vibe-card-header"&gt;
+    &lt;h3 class="text-heading"&gt;Agent&lt;/h3&gt;
+    &lt;span class="badge badge-running"&gt;Läuft&lt;/span&gt;
+  &lt;/header&gt;
+  &lt;div class="progress"&gt;&lt;div class="progress-bar"&gt;&lt;/div&gt;&lt;/div&gt;
+  &lt;p class="text-mono"&gt;model: local-7b&lt;/p&gt;
+&lt;/article&gt;
+
+.vibe-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+  box-shadow: var(--shadow-1);
+}
+.vibe-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--space-3);
+}</code></pre>
+<h3>HTML-Standardmodul: Terminal</h3>
+<pre><code>&lt;section class="vibe-terminal"&gt;
+  &lt;header&gt;Logs&lt;/header&gt;
+  &lt;pre&gt;[12:04:11] agent started&lt;/pre&gt;
+  &lt;pre&gt;[12:04:14] mcp server connected&lt;/pre&gt;
+&lt;/section&gt;
+
+.vibe-terminal {
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.vibe-terminal header {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--divider);
+  font: 600 11px/1 var(--font-sans);
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--text-faint);
+}
+.vibe-terminal pre {
+  margin: 0;
+  padding: 10px;
+  font: 400 12.5px/1.5 var(--font-mono);
+  color: var(--text);
+}</code></pre>
+<h2>7. Verwendungsvorgaben</h2>
+<ul>
+<li>Verwende ausschließlich die definierten Design-Tokens; keine Hardcoded-Farben, Radien, Abstände oder Schatten.</li>
+<li>Light und Dark müssen über <code>data-theme="light|dark"</code> funktionieren und identische Layoutmaße besitzen.</li>
+<li>Die Akzentfarbe muss über <code>data-accent="indigo|cyan|green|orange"</code> wechselbar sein.</li>
+<li>Primäraktionen: maximal ein Primary Button pro sichtbarem Aktionsbereich.</li>
+<li>Rot ausschließlich für Fehler, Gefahr und destruktive Aktionen.</li>
+<li>Grün ausschließlich für Erfolg, laufende Prozesse und positive Status.</li>
+<li>Cyan für informative Status und neutrale technische Hervorhebungen.</li>
+<li>Orange nur für Warnungen, laufende Änderungen oder Aufmerksamkeitsstatus.</li>
+<li>Icons erhalten immer <code>currentColor</code>; keine farbigen Icon-Flächen.</li>
+<li>Monospace nur für technische Werte, Logs, IDs, Pfade, Ports, Versionen und Code.</li>
+<li>Keine Transparenz, kein Backdrop-Blur, keine Gradienten und keine großen Schatten.</li>
+<li>Fokuszustände sind Pflicht: 2-px-Akzent-Outline mit 1-px-Abstand.</li>
+</ul>
+</main>
+<script>
+document.querySelectorAll('.switch').forEach(s=>{
+  s.addEventListener('click',()=>{
+    const on=s.dataset.checked==='true';
+    s.dataset.checked=on?'false':'true';
+    s.setAttribute('aria-checked',s.dataset.checked);
+  });
+});
+document.querySelectorAll('.combobox-option').forEach(o=>{
+  o.addEventListener('click',()=>{
+    document.querySelectorAll('.combobox-option').forEach(x=>x.removeAttribute('aria-selected'));
+    o.setAttribute('aria-selected','true');
+    const input=o.closest('.combobox').querySelector('.combobox-input');
+    input.value=o.textContent.trim();
+  });
+});
+</script>
+</body>
+</html>
