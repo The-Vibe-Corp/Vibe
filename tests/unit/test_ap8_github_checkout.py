@@ -16,7 +16,7 @@ Geprüfte fachliche Schnittstellen:
   URL-Prüfung über ``vibe_github.parse_remote_url``; Name aus Parameter oder
   URL; Ziel ``VIBE/<name>``; danach lokale Übernahme von project.env
   (verwaltete Schlüssel durch lokale Vorlagewerte ersetzt), AGENTS.md
-  (verwalteter Regelblock auf lokalen Stand), Test-Agent, fehlende
+  (vorhandene Datei bleibt byte-identisch, fehlende kommt aus der Vorlage), Test-Agent, fehlende
   Vorlagedateien; Agenten-Neumapping in ``.vibe/agents.json``; Projekt ist
   direkt in der Projektliste auffindbar; origin zeigt auf die ausgecheckte
   Adresse; github.com-URLs setzen GITHUB_REPO/GITHUB_ENABLED.
@@ -68,6 +68,16 @@ LOKALE_SANDBOX = "aus"
 LOKALE_QUICK = "echo lokal-quick"
 LOKALE_PAKET = "echo lokal-paket"
 LOKALE_FULL = "echo lokal-full"
+
+# GH-76: Ein bereits vorhandener Bestandsblock bleibt beim Übernehmen
+# byte-identisch; es wird kein neuer Block erzeugt.
+LEGACY_AGENTS = (
+    "# Repo-Regel\n\n"
+    "<!-- vibe:general-rules -->\n"
+    "## Alt\n- veraltet\n"
+    "<!-- /vibe:general-rules -->\n\n"
+    "## Eigener Rest\n"
+)
 TEST_AGENT_TEMPLATE = "LOKALER-PRUEFAGENT-STAND-4711\n"
 TICKETS_TEMPLATE = "# TICKETS-LUECKE-A-LDOK\n"
 FEEDBACK_TEMPLATE = "# FEEDBACK-LUECKE-A-LDOK\n"
@@ -207,7 +217,7 @@ class StorageFixture(unittest.TestCase):
             ".opencode/agents/test-agent.md": TEST_AGENT_TEMPLATE,
         })
         write_template(templates, "generic", {
-            "AGENTS.md": "# AGENTS fuer {{NAME}}\n\n" + self.cli.GENERAL_RULES + "\n",
+            "AGENTS.md": "# AGENTS fuer {{NAME}}\n\n",
             ".vibe/project.env": (
                 "TYPE=generic\n"
                 "REVIEWER=" + LOKALE_REVIEWER + "\n"
@@ -361,13 +371,7 @@ class LocalAdoptionTest(StorageFixture):
                 "modelle": {"fremd": "x/fremd", "tester": "opencode/behalt"},
             }),
             ".opencode/agents/test-agent.md": "# Mitgelieferter V99\n",
-            "AGENTS.md": (
-                "# Repo-Regel\n\n"
-                + self.cli.GENERAL_RULES_MARK
-                + "\n## Alt\n- veraltet\n"
-                + self.cli.GENERAL_RULES_END
-                + "\n\n## Eigener Rest\n"
-            ),
+            "AGENTS.md": LEGACY_AGENTS,
             "FEEDBACK.md": "# Eigenes Feedback\n",
         })
 
@@ -460,28 +464,26 @@ class LocalAdoptionTest(StorageFixture):
         self.assertEqual(values.get("GITHUB_REPO") or "", "")
         self.assertIsNone(values.get("GITHUB_ENABLED"))
 
-    def test_the_managed_rules_block_is_brought_to_the_local_state(self):
+    def test_an_existing_legacy_rules_block_is_left_byte_identical(self):
         url = self.full_remote()
 
         found, _summary = self.checkout(url)
 
         text = (self.workspace / found / "AGENTS.md").read_text(encoding="utf-8")
-        self.assertTrue(text.startswith("# Repo-Regel\n"))
-        self.assertIn("## Eigener Rest\n", text)
-        self.assertNotIn("- veraltet", text)
-        for rule in ("KISS", "Clean Code", "Caching", "Invalidierung"):
-            self.assertIn(rule, text)
-        self.assertEqual(text.count(self.cli.GENERAL_RULES_MARK), 1)
+        self.assertEqual(
+            LEGACY_AGENTS, text,
+            "Die Übernahme hat einen bestehenden AGENTS.md-Block verändert")
 
-    def test_a_missing_agents_file_is_created_with_the_rules(self):
+    def test_a_missing_agents_file_is_created_from_the_block_free_template(self):
         url = self.seed_bare("ohne-regeln", {"README.md": "Inhalt\n"})
 
         found, _summary = self.checkout(url)
 
         text = (self.workspace / found / "AGENTS.md").read_text(encoding="utf-8")
-        self.assertEqual(text.count(self.cli.GENERAL_RULES_MARK), 1)
-        self.assertEqual(text.count(self.cli.GENERAL_RULES_END), 1)
-        self.assertIn("Projektordner sauber halten", text)
+        self.assertEqual("# AGENTS fuer " + found + "\n\n", text)
+        self.assertNotIn(self.cli.GENERAL_RULES_MARK, text)
+        self.assertNotIn(self.cli.GENERAL_RULES_END, text)
+        self.assertNotIn("Projektordner sauber halten", text)
 
     def test_missing_template_files_are_added_and_own_content_survives(self):
         url = self.full_remote()
@@ -656,7 +658,7 @@ class ErrorCaseTest(StorageFixture):
         Projekt zurück; die Meldung benennt die Ursache."""
         url = self.seed_bare("scheiteruebernahme", {"README.md": "scheitert\n"})
 
-        with mock.patch.object(self.cli, "ensure_general_rules",
+        with mock.patch.object(self.cli, "copy_tree",
                                side_effect=OSError("gesperrt")):
             exception = self.expect_error(url)
 

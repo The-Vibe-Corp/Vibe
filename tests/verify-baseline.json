@@ -20,6 +20,11 @@
           "signature": "sha256:e23e4f067913b115ee04a011b17241cc3e5139cab67c0bf49b0baa72be2316a6"
         },
         {
+          "module": "tests.unit.test_ap4_korbat_rules",
+          "class": "AssertionError",
+          "signature": "sha256:7ea99e310d5cdf972e57fd8ceb7b5c60f5ca7b71074613b5c0bcec166216f849"
+        },
+        {
           "module": "tests.unit.test_ap7_korbat_rules",
           "class": "AssertionError",
           "signature": "sha256:977776f78d09d6030aa8f725605ca6469472f6699c0d7d13bd2e1357d6930709"

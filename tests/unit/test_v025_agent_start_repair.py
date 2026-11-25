@@ -355,7 +355,7 @@ class AgentStartRepairFixture(unittest.TestCase):
             )
         )
         stack.enter_context(
-            mock.patch.object(self.cli, "ensure_general_rules", return_value=False)
+            mock.patch.object(self.cli, "changed_file", return_value=False)
         )
         stack.enter_context(
             mock.patch.object(

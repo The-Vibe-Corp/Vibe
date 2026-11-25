@@ -50,11 +50,21 @@ def commit_all(project, message="Ausgangsstand"):
 
 
 def install_runner(install):
-    """Kopiert Läufer und benötigte Module in eine Testinstallation."""
+    """Kopiert Läufer und benötigte Module in eine Testinstallation.
+
+    GH-76: ``vibe-run.sh`` ruft das Subkommando ``platform-instructions``
+    über ``bin/vibe_harness.py`` auf (nicht über ``bin/vibe``, weil viele
+    Läufertests den CLI-Einstieg als Attrappe ersetzen). Die Testinstallation
+    braucht deshalb genau die bisherigen Läufermodule plus ``vibe_harness.py``
+    und dessen Import ``vibe_opencode.py``. ``vibe_keys.py`` bleibt bewusst
+    draußen: Sein Vorhandensein aktiviert im Läufer den Key-Sync, der für den
+    Pi-Harness nicht unterstützt ist; die ältere Installation ohne dieses
+    Modul ist der dokumentierte, getestete Zustand. Die optionalen Module
+    ``vibe_limits*.py`` und ``vibe_gates*.py`` bleiben wie bei HEAD Glob-Kopien,
+    damit ältere Stände ohne sie unverändert lauffähig bleiben.
+    """
     bin_dir = install / "bin"
     bin_dir.mkdir(parents=True, exist_ok=True)
-    # F22 braucht zusätzlich die F16-Module für Rückfragen und den autonomen
-    # Modus sowie die gemeinsame Storage-Schicht, die beide importieren.
     for name in (
         "vibe-run.sh",
         "vibe_runs.py",
@@ -66,6 +76,10 @@ def install_runner(install):
         # Modul würde das Subkommando in jeder Fake-Toolchain mit
         # SystemExit(1) fehlschlagen und alle Läufer-Tests blockieren.
         "vibe_github.py",
+        # GH-76: Der Läufer erzeugt die Plattformanweisungen über dieses
+        # Modul; es importiert vibe_opencode.
+        "vibe_harness.py",
+        "vibe_opencode.py",
     ):
         shutil.copy(BIN / name, bin_dir / name)
     # GH-48: Der Läufer transportiert und synchronisiert Tickets über den

@@ -1478,8 +1478,8 @@ class SettingsTabTest(F33ProjectBrowserTest):
         Aktion: Freien Teil davor ändern und speichern.
         Erwartung: POST ``/api/agents_file`` mit ``action:"save"``,
         ``before``, ``after`` und nichtleerem ``digest``; Toast; die Datei
-        enthält den neuen Text, der verwaltete Block wird auf die kanonischen
-        Regeln normalisiert (Bestandsverhalten, siehe F31).
+        enthält den neuen Text und der vorhandene (nicht-kanonische)
+        Bestandsblock bleibt byte-identisch — keine Normalisierung (GH-76).
         """
         self.open_settings()
         section = self.section("agentsfile")
@@ -1517,16 +1517,14 @@ class SettingsTabTest(F33ProjectBrowserTest):
             in str(data.get("before") or ""),
             message="Der geänderte freie Teil ist nicht gespeichert")
         text = (self.project / "AGENTS.md").read_text(encoding="utf-8")
-        # F33: der verwaltete Block wird beim Speichern auf die kanonischen
-        # GENERAL_RULES normalisiert (Bestandsverhalten seit F31, bin/vibe
-        # agents_file_save) — der Fixture-Platzhalter bleibt nicht erhalten.
+        # GH-76: Der vorhandene Bestandsblock bleibt byte-identisch; der
+        # frühere deutsche Regeltext wird nicht mehr eingesetzt.
         self.assertIn("<!-- vibe:general-rules -->", text,
-                      "Der kanonische verwaltete Block fehlt nach dem Speichern")
-        self.assertIn("## Projektordner sauber halten", text,
-                      "Der kanonische Regeln-Inhalt fehlt nach dem Speichern")
-        self.assertNotIn(
-            "Verwaltete Regel 4711", text,
-            "Der Fixture-Platzhalter wurde nicht auf GENERAL_RULES normalisiert")
+                      "Der Bestandsblock-Marker fehlt nach dem Speichern")
+        self.assertIn("Verwaltete Regel 4711", text,
+                      "Der Bestandsblock wurde verändert")
+        self.assertNotIn("## Projektordner sauber halten", text,
+                         "Der frühere deutsche Regeltext wurde eingesetzt")
         self.assert_clean_page()
 
     def test_global_agents_hint_is_readonly(self):

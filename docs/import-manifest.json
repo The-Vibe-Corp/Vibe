@@ -1531,6 +1531,23 @@
    ],
    "datum": "2026-11-24",
    "grund": "B1 Ticketlogik: genau ein Tickettyp-Feld (feature/bug/feedback) statt doppelter Kategorie/Tickettyp ohne 'Paket'; Editor aendert nie den Zustand (nur explizite Wechsel); Anlage einheitlich ueber /api/ticket action=add mit type (verbunden: Issue zuerst, GH-<n>); Laeufer mark_start/mark-start (open -> in-progress, idempotent, nicht blockierend) mit GitHub-Label-Sync; feature teilt den AP-Auto-ID-Zaehler"
+  },
+  {
+   "arbeitspaket": "GH-76",
+   "dateien": [
+    "bin/vibe",
+    "bin/vibe_harness.py",
+    "bin/vibe-run.sh",
+    "bin/web/app.js",
+    "bin/web/i18n.js",
+    "templates/android/AGENTS.md",
+    "templates/docker/AGENTS.md",
+    "templates/generic/AGENTS.md",
+    "templates/rebuild/AGENTS.md",
+    "templates/web/AGENTS.md"
+   ],
+   "datum": "2026-11-25",
+   "grund": "Versteckte Plattform-Anweisungen statt eines sichtbaren AGENTS.md-Regelblocks: bin/vibe_harness.py enthaelt den englischen Plattformtext und schreibt ihn als platform_instructions.md in den Zustandsordner; bin/vibe delegiert das neue Subkommando und entfernt GENERAL_RULES/ensure_general_rules samt Aufrufen; bin/vibe-run.sh uebergibt die Datei jedem opencode-Lauf ueber OPENCODE_CONFIG_CONTENT.instructions und nutzt dafuer den privaten Server. Die fuenf Projektvorlagen verlieren den verwalteten Block. app.js und i18n.js machen blockfreie AGENTS.md-Dateien vollstaendig bearbeitbar und beschreiben die byte-identische Erhaltung eines Legacy-Blocks. Groesse und SHA-256 der betroffenen Dateien wurden aktualisiert."
   }
  ],
  "files": [
@@ -1545,14 +1562,14 @@
    "sha256": "e5ae3183efcb76dace1e0bcbde9993be7afe82d93d7877da9ee39846cf45330a"
   },
   {
-   "bytes": 303166,
+   "bytes": 296181,
    "path": "bin/vibe",
-   "sha256": "b5a4acccc4535e5c70fefa1bde98211cba967e101ec6fbc99474aaff2f920180"
+   "sha256": "b2390b5927957a757586bfd78626fafc14bfc348bcc868c85adbce7c0f88be6a"
   },
   {
-   "bytes": 87086,
+   "bytes": 88660,
    "path": "bin/vibe-run.sh",
-   "sha256": "bb859deee0074e52988814bee381d2e7317cbadeb5ad162ef9b226c5c05d5465"
+   "sha256": "edb3334e172a06afe7641608abf84d8236ab97042cbb5dce51519d8915c49dea"
   },
   {
    "bytes": 144167,
@@ -1580,9 +1597,9 @@
    "sha256": "8a9c5b1844b1215a9f75368645aeef771a9dcb1e884824bea9b0538104a197ea"
   },
   {
-   "bytes": 23512,
+   "bytes": 27651,
    "path": "bin/vibe_harness.py",
-   "sha256": "30f0394d2ac58458ecf607159c6041ebe19d4aef73e4878a510db3902bd11670"
+   "sha256": "58b0d8cee125b38b7120d10dbe100e9338f5820336f7a1b281acc6638deda21d"
   },
   {
    "bytes": 20540,
@@ -1660,9 +1677,9 @@
    "sha256": "baf438e2032b06a478b2a3debe6b62eff104f6d9a105f829013eabfcddf1acd5"
   },
   {
-   "bytes": 156310,
+   "bytes": 156247,
    "path": "bin/web/app.js",
-   "sha256": "057a81f9fadea55ca94d0572482a540b8a45101d5aae8b531d76a5dab59f8d52"
+   "sha256": "5e4fffe7282496fac84ae84765c3a9b9c2d58d025fef1b7449c3e65fc7a3dd2d"
   },
   {
    "bytes": 688,
@@ -1670,9 +1687,9 @@
    "sha256": "19ea677f5c3dc3579279fd9b5bf7584612967654b8ec0bbde3818576c78b46b5"
   },
   {
-   "bytes": 161758,
+   "bytes": 161559,
    "path": "bin/web/i18n.js",
-   "sha256": "8ee3177f805017f01db5f12580d41469ae1b100e215ca1f7b7a87b4c3ea5c2c1"
+   "sha256": "d8230481ed166be5945ebd8ba602283f4b49f3c7cdbed532156312c8d70bfbf2"
   },
   {
    "bytes": 4214,
@@ -1765,9 +1782,9 @@
    "sha256": "b45ed5e95c842e67dbecf165bb6096ec9c513cc431ede7442cd4bbad9ed0e806"
   },
   {
-   "bytes": 6620,
+   "bytes": 958,
    "path": "templates/android/AGENTS.md",
-   "sha256": "0a1b2d0b03c5ceda660996bffd624065837f0936f39377d64bc334cdd4c2eae5"
+   "sha256": "cad6aa1030e801cfdaeb25daccf90e6633728f8844c35a3ff3409d91192638fa"
   },
   {
    "bytes": 522,
@@ -1795,9 +1812,9 @@
    "sha256": "da366d196e69282f922723f0a0755f9cfe167d1dd210737668df0d8b76b71b8a"
   },
   {
-   "bytes": 6234,
+   "bytes": 572,
    "path": "templates/docker/AGENTS.md",
-   "sha256": "8e8f93c2c7e5532cc8bd2be51feb5cf3556dca3992e865b5778222e690745b66"
+   "sha256": "301463bb243a18ae97923bd29ded6affe914037c8944ee65e03e39ccedcb1b56"
   },
   {
    "bytes": 354,
@@ -1805,9 +1822,9 @@
    "sha256": "63c0ebab49aa870ae5e5f731890cce3f0ce2859364152c00b64cb89e3e6d9ae5"
   },
   {
-   "bytes": 5919,
+   "bytes": 257,
    "path": "templates/generic/AGENTS.md",
-   "sha256": "165c9ce1f39d168df026e028b9084edb3ce5eedbdd52121cf9c02efd9eb026be"
+   "sha256": "7d2d4688da0a03636adc2255ee18957d84300dd1c425c48cb90f8017334745e3"
   },
   {
    "bytes": 670,
@@ -1860,9 +1877,9 @@
    "sha256": "db8026a75dd2f358a771be9e2fc2fd4ba88c6180f026078552c3259e5156360f"
   },
   {
-   "bytes": 9564,
+   "bytes": 3902,
    "path": "templates/rebuild/AGENTS.md",
-   "sha256": "4edcbeb85050698c164463688b66e2e274bf9eef6b770b903c169831cb46221e"
+   "sha256": "319a355c129dd996e0132222dddf15b4b8948d7973166a66feff8a06f56e0837"
   },
   {
    "bytes": 1675,
@@ -1885,9 +1902,9 @@
    "sha256": "84b60ea398f9969f924239023adf52eaa48410db66b3c7bcf9c6cc75fe624af4"
   },
   {
-   "bytes": 6284,
+   "bytes": 622,
    "path": "templates/web/AGENTS.md",
-   "sha256": "845e6f80abba00f8e507b36077b2e001a2f93df7371f9e042177929b71aec8fb"
+   "sha256": "250c63bccf5cacdeccce7b4dead7d31beb563001a08bd029acdb770f0ddae019"
   }
  ],
  "hinweis": "SHA-256 der übernommenen Programmdateien. Beabsichtigte Änderungen an diesen Dateien sind nur zulässig, wenn dieser Eintrag im selben Arbeitspaket aktualisiert und begründet wird. Laufzeitdaten, Sicherungen und Geheimnisse sind nicht Bestandteil des Imports.",

@@ -16,8 +16,10 @@ independent of any implementation diff. Covered interface contract:
 * CLI ``vibe github <project> status|link|unlink|fetch|pull|issues-sync|pr``
   (GH-47: das getrennte ``issues``/``issues-import`` entfällt) where ``pr``
   without --confirm must not push and must not call the API.
-* Rules: GENERAL_RULES and all templates/*/AGENTS.md state that commit
-  messages stay human readable (für Menschen) and essential (Wesentliche).
+* Rules: Die früheren deutschen Commit-Regeln in ``GENERAL_RULES`` und den
+  Vorlagen sind mit GH-76 entfallen; der Commit-Vertrag der Plattform
+  (``<ID>:``-Betreff) wird in
+  ``tests.unit.test_gh76_platform_instructions`` geprüft.
 
 No real network calls (github.com is never contacted), no productive
 $VIBE/_toolchain paths, no secrets; git runs only inside temporary
@@ -773,31 +775,11 @@ class CliGithubTest(ProjectFixture):
         self.assertEqual(git_out(self.project, "rev-parse", "HEAD"), head_before)
 
 
-# -------------------------------------------------------------- Commit message rule
-class CommitMessageRuleTest(ProjectFixture):
-    """AP6: commits stay human readable and reduced to the essentials."""
-
-    PHRASES = ("Commit-Meldungen", "für Menschen", "Wesentliche")
-
-    @staticmethod
-    def git_section(text):
-        return text.split("## Ordnung im Git halten", 1)[1].split("\n## ", 1)[0]
-
-    def test_general_rules_demand_human_readable_essential_commit_messages(self):
-        section = self.git_section(self.cli.GENERAL_RULES)
-        for phrase in ("Commit-Meldungen", "für Menschen", "Wesentliche"):
-            self.assertIn(phrase, section, f"fehlende Regel: {phrase}")
-
-    def test_all_shipped_templates_contain_the_same_commit_rule(self):
-        templates = sorted((REPO / "templates").glob("*/AGENTS.md"))
-        self.assertTrue(templates)
-        for path in templates:
-            with self.subTest(path=str(path)):
-                text = path.read_text(encoding="utf-8")
-                self.assertIn(self.cli.GENERAL_RULES, text, path)
-                section = self.git_section(text)
-                for phrase in ("Commit-Meldungen", "für Menschen", "Wesentliche"):
-                    self.assertIn(phrase, section, path)
+# GH-76: Die früheren deutschen Commit-Regeln (GENERAL_RULES/Vorlagen) sind
+# durch die englischen Plattformanweisungen ersetzt. Deren Commit-Vertrag
+# (``<ID>:``-Betreff) wird in
+# ``tests.unit.test_gh76_platform_instructions`` geprüft; hier bleibt der
+# GitHub-spezifische Commit-Pfad unverändert.
 
 
 # ------------------------------------------------- Review round 1 (new cases)

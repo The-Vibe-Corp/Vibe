@@ -224,26 +224,28 @@ mehr in den Einstellungen, sondern unter „Auswertungen“.
 
 Jedes Projekt hat eine `AGENTS.md`. Sie entsteht beim Anlegen aus der Vorlage
 des Projekttyps (`templates/<typ>/AGENTS.md`, bei unbekannten Typen
-`templates/generic`). Darin stehen projektspezifische Hinweise und ein von vibe
-verwalteter Block mit den gemeinsamen Regeln für Projektordner, Git-Ordnung,
-Coding-Leitlinien und den unabhängigen Test-Agenten.
+`templates/generic`). Darin stehen ausschließlich projektspezifische Hinweise.
 
-Den verwalteten Block bringt vibe bei jedem Agentenlauf auf den aktuellen
-Stand. Inhalte außerhalb des Blocks bleiben dabei erhalten; nicht committete
-Änderungen werden vor einem Lauf gemäß F27 geschützt.
+Die verbindlichen Regeln für laufzeitgesteuerte Agentenarbeit (Arbeitskopie,
+Prüfungen, Nachweise, Review, Ticketabschluss und Git-Operationen des Läufers)
+liefert vibe getrennt: Der Läufer schreibt sie bei jedem opencode-Lauf als
+versteckte Datei `platform_instructions.md` in den Zustandsordner und übergibt
+sie opencode als zusätzliche `instructions`-Quelle. Sie liegen außerhalb jedes
+Projekts und der persönlichen opencode-Konfiguration und haben höhere Priorität
+als eine `AGENTS.md`. `vibe init`, `vibe new` und `vibe clone` ergänzen in
+`AGENTS.md` keinen Regelblock; vorhandene Dateien bleiben unverändert.
 
 Im Projektdetail unter „Einstellungen“ steht die Karte „AGENTS.md“ als erster
 Bereich und zeigt den Inhalt:
 
-- Die beiden Textfelder enthalten die freien Teile vor und nach dem
-  verwalteten Block. Sie lassen sich bearbeiten; „Speichern“ schreibt die
-  Datei.
-- Der verwaltete Block steht schreibgeschützt zwischen den Textfeldern. Er
-  wird nicht über die Oberfläche geändert, weil der nächste Agentenlauf ihn
-  ohnehin ersetzt.
+- Die beiden Textfelder enthalten die freien Teile vor und nach einem noch
+  vorhandenen Legacy-Block. Beide Teile sind immer bearbeitbar; „Speichern“
+  schreibt die Datei.
+- Ein Legacy-Block (`<!-- vibe:general-rules -->` bis
+  `<!-- /vibe:general-rules -->`) aus älteren Projekten bleibt beim Speichern
+  byte-identisch erhalten und wird nicht über die Oberfläche geändert. Neue
+  Dateien enthalten keinen solchen Block.
 - Fehlt die Datei, legt „Aus Vorlage anlegen“ sie aus der Typvorlage an.
-- Eine obere Textarea bleibt leer und ist deaktiviert, solange die Datei keinen
-  verwalteten Block enthält.
 
 ## MCP-Server
 

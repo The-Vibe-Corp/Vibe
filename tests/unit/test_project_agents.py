@@ -526,26 +526,23 @@ class RunSelectionTest(ProjectAgentsFixture):
                                 self.cli.cmd_run("proj", "vibe-agent")
         return registry, fake_run
 
-    def test_cmd_run_updates_the_managed_rules_of_an_existing_project(self):
+    def test_cmd_run_leaves_an_existing_legacy_rules_block_untouched(self):
+        """GH-76: Der Laufstart aktualisiert keinen AGENTS.md-Block mehr."""
         self.write_global()
         agents = self.project / "AGENTS.md"
-        agents.write_text(
+        original = (
             "# eigene Regel\n\n"
             + self.cli.GENERAL_RULES_MARK
-            + "\n## Alt\n- veraltet\n<!-- /vibe:general-rules -->\n\n## Eigener Rest\n",
-            encoding="utf-8",
+            + "\n## Alt\n- veraltet\n<!-- /vibe:general-rules -->\n\n## Eigener Rest\n"
         )
+        agents.write_text(original, encoding="utf-8")
 
         self.run_with_mocks()
 
-        text = agents.read_text(encoding="utf-8")
-        self.assertTrue(text.startswith("# eigene Regel\n"))
-        self.assertIn("## Eigener Rest\n", text)
-        self.assertNotIn("- veraltet", text)
-        for rule in ("KISS", "Clean Code", "Caching", "Invalidierung"):
-            self.assertIn(rule, text)
+        self.assertEqual(original, agents.read_text(encoding="utf-8"))
 
-    def test_cmd_run_adds_the_rules_block_to_an_existing_project_without_one(self):
+    def test_cmd_run_does_not_add_a_rules_block_to_a_project_without_one(self):
+        """GH-76: Ohne vorhandenen Block wird keiner eingefügt."""
         self.write_global()
         agents = self.project / "AGENTS.md"
         agents.write_text("# eigene Regel\n", encoding="utf-8")
@@ -553,25 +550,8 @@ class RunSelectionTest(ProjectAgentsFixture):
         self.run_with_mocks()
 
         text = agents.read_text(encoding="utf-8")
-        self.assertTrue(text.startswith("# eigene Regel\n"))
-        self.assertEqual(text.count(self.cli.GENERAL_RULES_MARK), 1)
-        for rule in ("KISS", "Clean Code", "Caching", "Invalidierung"):
-            self.assertIn(rule, text)
-
-    def test_cmd_run_aborts_when_the_general_rules_cannot_be_updated(self):
-        self.write_global()
-
-        with mock.patch.object(self.cli, "tmux_has", return_value=False):
-            with mock.patch.object(self.cli, "is_init", return_value=True):
-                with mock.patch.object(
-                    self.cli, "ensure_general_rules", side_effect=OSError("gesperrt")
-                ):
-                    with mock.patch.object(self.cli, "run") as runner:
-                        with self.assertRaises(SystemExit) as caught:
-                            self.cli.cmd_run("proj", "tester")
-
-        self.assertIn("konnten nicht aktualisiert werden", str(caught.exception.code))
-        runner.assert_not_called()
+        self.assertEqual("# eigene Regel\n", text)
+        self.assertNotIn(self.cli.GENERAL_RULES_MARK, text)
 
     def test_cmd_run_does_not_create_a_hardcoded_test_agent(self):
         """35233ff: Der Laufstart legt keinen Test-Agenten und kein TESTER an.

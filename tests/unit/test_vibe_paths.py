@@ -774,10 +774,16 @@ class RunnerPathsTest(unittest.TestCase):
         self.assertIn("Keine offenen Arbeitspakete mehr.", completed.stdout)
         self.assertTrue((self.runtime / "proj.log").is_file())
         self.assertFalse((self.root / "_logs").exists())
-        self.assertIn(
-            "http://127.0.0.1:4198/global/health",
-            self.curl_log.read_text(encoding="utf-8"),
-        )
+        # GH-76: Mit Inline-Konfiguration prüft der Läufer keinen
+        # vorbestehenden gemeinsamen Server mehr (sonst käme die
+        # Plattformanweisung dort nicht an). Der Text liegt im konfigurierten
+        # Zustandsordner; das belegt denselben Pfad wie zuvor der curl-Aufruf.
+        platform_file = self.install / "platform_instructions.md"
+        self.assertTrue(
+            platform_file.is_file(),
+            "Plattformanweisungen fehlen im konfigurierten Zustandsordner")
+        self.assertIn("## Vibe platform instructions",
+                      platform_file.read_text(encoding="utf-8"))
 
 
 class UiSessionTest(unittest.TestCase):

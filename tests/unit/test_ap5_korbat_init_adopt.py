@@ -92,9 +92,7 @@ class InitAdoptFixture(unittest.TestCase):
             self.templates,
             "generic",
             {
-                "AGENTS.md": "# AGENTS fuer {{NAME}}\n\n"
-                + self.cli.GENERAL_RULES
-                + "\n",
+                "AGENTS.md": "# AGENTS fuer {{NAME}}\n\n",
                 ".vibe/project.env": "TYPE=generic\n",
             },
         )

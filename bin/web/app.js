@@ -601,9 +601,10 @@ function drawGuide(g,name){
    const r=await api('/api/guide',{name,action:'save',answers,replace});toast(bt(r.message));if(r.ok)detail(name).catch(showErr)}}},tr('Antworten speichern und Dateien anlegen'))));
  out.push(agentsFileCard(name));
  return out}
-/* F31: AGENTS.md ansehen und in den freien Teilen bearbeiten. Der von vibe
-   verwaltete Block wird schreibgeschützt dargestellt; die Karte lädt nach
-   dem Speichern bzw. Anlegen ihren Inhalt neu. */
+/* F31: AGENTS.md ansehen und in den freien Teilen bearbeiten. Ein noch
+   vorhandener Legacy-Block wird schreibgeschützt dargestellt und bleibt
+   beim Speichern byte-identisch; die Karte lädt nach dem Speichern bzw.
+   Anlegen ihren Inhalt neu. */
 function agentsFileCard(name){
  const body=el('div',{},el('span',{class:'mut'},tr('Lade AGENTS.md …')));
  const load=async()=>{const v=await api('/api/agents_file?name='+encodeURIComponent(name));body.replaceChildren(...drawAgentsFile(v,name,load))};
@@ -612,7 +613,6 @@ function agentsFileCard(name){
 function drawAgentsFile(v,name,reload){
  const before=el('textarea',{rows:5,'aria-label':tr('AGENTS.md: freier Teil vor dem verwalteten Block'),placeholder:tr('Freier Text vor dem verwalteten Block')});
  before.value=v.before||'';
- if(v.managed===null){before.disabled=true;before.placeholder=tr('Kein verwalteter Block vorhanden; dieser Teil bleibt leer.')}
  const after=el('textarea',{rows:5,'aria-label':tr('AGENTS.md: freier Teil nach dem verwalteten Block'),placeholder:tr('Freier Text nach dem verwalteten Block')});
  after.value=v.after||'';
  const save=el('button',{class:'b p',type:'button',on:{click:async()=>{
@@ -622,7 +622,7 @@ function drawAgentsFile(v,name,reload){
   try{const r=await api('/api/agents_file',{name,action:'create'});toast(bt(r.message));if(r.ok)await reload()}
   catch(e){toast(tr('AGENTS.md nicht angelegt: ')+String(e&&e.message||e))}}}},tr('Aus Vorlage anlegen'));
  const out=[el('b',{},tr('AGENTS.md — Regeln für Agenten')),
-  el('div',{class:'mut'},tr('Die Datei entsteht aus der Vorlage des Projekttyps. Den folgenden verwalteten Block aktualisiert vibe bei jedem Agentenlauf; er wird dabei auf den aktuellen Stand gebracht und ist in der Bearbeitung geschützt. Nicht committete Änderungen bleiben beim Aktualisieren erhalten.')),
+   el('div',{class:'mut'},tr('Die Datei entsteht aus der Vorlage des Projekttyps. Ein vorhandener verwalteter Block wird nicht mehr bei jedem Agentenlauf auf den aktuellen Stand gebracht und ist in der Bearbeitung geschützt; er bleibt byte-identisch erhalten. Nicht committete Änderungen bleiben beim Speichern erhalten.')),
   el('div',{class:'mut'},v.exists?tr('Freier Teil vor dem verwalteten Block:'):tr('Die Datei fehlt noch. „Aus Vorlage anlegen“ erzeugt sie aus der Typvorlage.')),
   before,
   v.managed!==null?el('pre',{},v.managed):el('div',{class:'mut'},tr('Kein verwalteter Block vorhanden.')),
