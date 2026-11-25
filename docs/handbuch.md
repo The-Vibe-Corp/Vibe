@@ -316,3 +316,5 @@ Wunschzustand. Das CLI `vibe harness use` bleibt unverändert.
 - `docs/abnahme-bazzite.md` — dokumentierte manuelle Bazzite-Prüfung.
 - `docs/features/V-020.md` — fachliche und technische Dokumentation dieses
   Arbeitspakets.
+- `docs/features/README.md` — Index der Feature-Dokumentation: aktuelles
+  Verhalten je Feature und die Nachweise je Arbeitspaket.
