@@ -207,6 +207,15 @@ class RunnerSubagentStateTest(RunnerFixture):
     """Erfasste Subagenten in der Zustandsdatei (Grundlage der Subagentenansicht)."""
 
     def test_state_file_records_completed_and_running_subagents(self):
+        """Abschluss in history[], der laufende Subagent bleibt aktiv.
+
+        Vorbedingung: Läufer mit einem abgeschlossenen und einem laufenden
+        Subagenten. Erwartung: Die aktive Liste enthält nur den laufenden
+        Eintrag; der abgeschlossene Eintrag bleibt mit Agent, Beschreibung,
+        Prompt, Ausgabe und Zeitstempeln in ``history[]`` und im Protokoll
+        erhalten. Fehlerfall: Der abgeschlossene Eintrag bleibt aktiv oder
+        seine Ausgabe geht verloren.
+        """
         self.run_runner(subagents=True)
 
         state = self.read_state()
@@ -216,15 +225,27 @@ class RunnerSubagentStateTest(RunnerFixture):
         )
         entries = state.get("subagents")
         self.assertIsInstance(entries, list, f"subagents keine Liste: {state}")
-        self.assertEqual(2, len(entries), f"Falsche Anzahl erfasster Subagenten: {state}")
-
-        completed, running = entries
-
         self.assertEqual(
-            completed.get("session"),
-            CHILD_SESSION,
-            f"Sub-Session fehlt oder falsch: {completed}",
+            1, len(entries),
+            "Nur der laufende Subagent darf in der aktiven Liste stehen: "
+            + json.dumps(state, ensure_ascii=False))
+
+        running = entries[0]
+        self.assertEqual(
+            "running", running.get("status"), f"Status bei laufendem Subagenten: {running}"
         )
+        self.assertEqual("general", running.get("agent"), f"Agent fehlt: {running}")
+        self.assertIsInstance(
+            running.get("ended", 0), int, f"Ended muss numerisch sein (0 erlaubt): {running}"
+        )
+
+        completed = next(
+            (item for item in (state.get("history") or [])
+             if item.get("session") == CHILD_SESSION), None)
+        self.assertIsNotNone(
+            completed,
+            "Der abgeschlossene Subagent fehlt in history[]: "
+            + json.dumps(state, ensure_ascii=False))
         self.assertEqual("general", completed.get("agent"), f"Agent fehlt: {completed}")
         self.assertEqual(
             "Testzusammenfassung",
@@ -248,14 +269,9 @@ class RunnerSubagentStateTest(RunnerFixture):
         self.assertIsInstance(
             completed.get("ended"), int, f"Ended muss numerisch sein: {completed}"
         )
-
-        self.assertEqual(
-            "running", running.get("status"), f"Status bei laufendem Subagenten: {running}"
-        )
-        self.assertEqual("general", running.get("agent"), f"Agent fehlt: {running}")
-        self.assertIsInstance(
-            running.get("ended", 0), int, f"Ended muss numerisch sein (0 erlaubt): {running}"
-        )
+        self.assertIn(
+            FAKE_COMPLETED_TEXT, self.log_text(),
+            "Die historische Ausgabe fehlt im Laufprotokoll")
 
 
 # ===========================================================================
@@ -970,9 +986,11 @@ class LiveChildCaptureTest(StreamRelayFixture):
 
         Vorbedingung: ses_kind_a und ses_kind_b laufen aus dem Ereignisstrom.
         Aktion: task/completed-Ereignis der Hauptsession mit Kind A.
-        Erwartung: A completed mit ended ungleich 0, B weiter running mit
+        Erwartung: A verlässt die aktive Liste und liegt mit ended ungleich 0
+        sowie seiner Ausgabe in ``history[]``; B bleibt aktiv mit running und
         ended 0; Hauptsession unverändert.
-        Fehlerfall: Abschluss ignoriert, falsches Kind oder beide beendet.
+        Fehlerfall: Abschluss ignoriert, falsches Kind entfernt, Ausgabe
+        verloren oder beide beendet.
         """
         self.establish_main()
         self.feed([relay_text_event(CHILD_A, "A-läuft"),
@@ -980,13 +998,21 @@ class LiveChildCaptureTest(StreamRelayFixture):
 
         self.feed([completed_task_event(MAIN_SESSION_b11, CHILD_A, "FERTIG-A")])
 
-        entry_a = self.entry(CHILD_A)
+        self.assertIsNone(
+            self.entry(CHILD_A),
+            "Kind A blieb nach Abschluss in der aktiven Liste: "
+            + json.dumps(self.state(), ensure_ascii=False))
+        finished_a = next(
+            (item for item in (self.state().get("history") or [])
+             if item.get("session") == CHILD_A), None)
+        self.assertIsNotNone(
+            finished_a, "Der abgeschlossene Eintrag fehlt in history[]")
+        self.assertEqual("completed", finished_a.get("status"), finished_a)
+        self.assertNotEqual(0, finished_a.get("ended"), finished_a)
+        self.assertIn("FERTIG-A", str(finished_a.get("output") or ""), finished_a)
+
         entry_b = self.entry(CHILD_B)
-        self.assertIsNotNone(entry_a, "Kind A fehlt")
         self.assertIsNotNone(entry_b, "Kind B fehlt")
-        self.assertEqual("completed", entry_a.get("status"),
-                         f"Kind A wurde nicht abgeschlossen: {entry_a}")
-        self.assertNotEqual(0, entry_a.get("ended"), entry_a)
         self.assertEqual("running", entry_b.get("status"),
                          f"Kind B wurde fälschlich beendet: {entry_b}")
         self.assertEqual(0, entry_b.get("ended"), entry_b)
@@ -1053,10 +1079,11 @@ class BoundedStateTest(StreamRelayFixture):
         Vorbedingung: Hauptsession erfasst.
         Aktion: 60 Kinder mit je 3 000 Zeichen Ausgabe abschließen, danach
         ein laufendes Kind.
-        Erwartung: höchstens 50 Einträge, Datei unter 256 KiB, laufendes
-        Kind vorhanden.
+        Erwartung: Die aktive Liste enthält nur das laufende Kind, ``history[]``
+        bleibt begrenzt und bewahrt abgeschlossene Kinder, die Datei bleibt
+        unter 256 KiB.
         Fehlerfall: unbegrenztes Wachstum oder Verlust des laufenden
-        Eintrags.
+        Eintrags bzw. der Historie.
         """
         self.establish_main()
         payload = "K" * 3000
@@ -1070,10 +1097,19 @@ class BoundedStateTest(StreamRelayFixture):
 
         state = self.state()
         entries = state["subagents"]
+        self.assertEqual(
+            [RUNNING_C], [item.get("session") for item in entries],
+            "Abgeschlossene Kinder gehören nicht mehr in die aktive Liste: "
+            + json.dumps([item.get("session") for item in entries]))
         self.assertLessEqual(
             len(entries), 50,
-            f"Die Zustandsdatei hält {len(entries)} Einträge und wächst "
+            f"Die aktive Liste hält {len(entries)} Einträge und wächst "
             f"unbegrenzt: {sorted(item.get('session') for item in entries)[:5]} …")
+        history = state.get("history") or []
+        self.assertTrue(history, "Abgeschlossene Kinder fehlen in history[]")
+        self.assertLessEqual(
+            len(history), 60,
+            "Die Historie wächst unbegrenzt: %d Einträge" % len(history))
         size = self.state_path.stat().st_size
         self.assertLess(
             size, 256 * 1024,
@@ -1112,7 +1148,7 @@ class AttemptContextTest(StreamRelayFixture):
         return emitted
 
     def test_attempt_pins_the_first_session_and_takes_others_as_children(self):
-        """Mit attempt: erstes Ereignis pinnt, Kinder werden erfasst.
+        """Mit attempt: erstes Ereignis pinnt, alte Kinder weichen dem Versuch.
 
         Vorbedingung: leerer Zustand.
         Aktion: Strom 1 (``attempt=True``) mit erstem Ereignis
@@ -1121,11 +1157,14 @@ class AttemptContextTest(StreamRelayFixture):
         Erwartung: Nach Strom 1 ist ses_versuch_eins die Hauptsession und
         ses_kind_a ein laufender Eintrag mit Ausgabe; nach Strom 2 ist
         ses_versuch_zwei die Hauptsession, ohne dass dafür ein Kind-Eintrag
-        entsteht; das erfasste Kind bleibt erhalten.
+        entsteht. Das Kind des vorherigen Tickets gehört nicht mehr zur
+        aktiven Liste (die Zustandsdatei wird nicht als Ticket-übergreifende
+        Aktivliste benutzt); seine Ausgabe bleibt im Protokoll erhalten.
         Fehlerfall: Das Kind wird als Hauptsession übernommen, das Kind
-        fehlt, oder der zweite Versuch wird als Kind erfasst.
+        fehlt nach Strom 1, der zweite Versuch wird als Kind erfasst, oder
+        das alte Kind bleibt als aktiver Eintrag im Zustand.
         """
-        self.feed_attempt([
+        emitted_1 = self.feed_attempt([
             relay_text_event(self.VERSUCH_1, "Versuch eins"),
             relay_text_event(CHILD_A, "Kind arbeitet"),
         ])
@@ -1142,7 +1181,8 @@ class AttemptContextTest(StreamRelayFixture):
         self.assertEqual("running", entry.get("status"), entry)
         self.assertIn("Kind arbeitet", str(entry.get("output") or ""), entry)
 
-        self.feed_attempt([relay_text_event(self.VERSUCH_2, "Versuch zwei")])
+        emitted_2 = self.feed_attempt(
+            [relay_text_event(self.VERSUCH_2, "Versuch zwei")])
 
         state = self.state()
         self.assertEqual(
@@ -1154,10 +1194,14 @@ class AttemptContextTest(StreamRelayFixture):
             self.VERSUCH_2, sessions,
             "Die neue Hauptsession wurde fälschlich als Kind erfasst: "
             + json.dumps(sessions, ensure_ascii=False))
-        self.assertIn(
+        self.assertNotIn(
             CHILD_A, sessions,
-            "Das zuvor erfasste Kind ging beim Versuchswechsel verloren: "
+            "Das Kind des vorherigen Tickets wurde beim Versuchswechsel "
+            "nicht aus der aktiven Liste entfernt: "
             + json.dumps(sessions, ensure_ascii=False))
+        self.assertIn(
+            "Kind arbeitet", "\n".join(emitted_1 + emitted_2),
+            "Die historische Ausgabe des früheren Kindes ging verloren")
 
 
 class OutputBudgetTest(StreamRelayFixture):
@@ -1181,12 +1225,12 @@ class OutputBudgetTest(StreamRelayFixture):
         Aktion: mehrere Kind-Ereignisse mit zusammen deutlich über 64 KiB
         Ausgabe; das erste enthält ANFANG-4711, das letzte ENDE-4711;
         danach Abschluss mit leerer Ergebnis-Ausgabe.
-        Erwartung: Die gespeicherte Ausgabe bleibt auf 64 KiB begrenzt,
-        der Anfang ist verworfen, das Ende erhalten; die Zustandsdatei
-        bleibt unter 256 KiB; nach dem Abschluss gilt die Begrenzung
-        weiterhin und der Eintrag ist ``completed``.
-        Fehlerfall: Unbegrenztes Wachstum des ``output``-Felds oder
-        Verlust des Endes.
+        Erwartung: Die Ausgabe des abgeschlossenen Eintrags bleibt in
+        ``history[]`` und im Protokoll auf 64 KiB begrenzt, der Anfang ist
+        verworfen, das Ende erhalten; die Zustandsdatei bleibt unter
+        256 KiB; der Eintrag ist nicht mehr aktiv.
+        Fehlerfall: Unbegrenztes Wachstum des ``output``-Felds, Verlust des
+        Endes oder ein aktiv gebliebener abgeschlossener Eintrag.
         """
         self.establish_main()
 
@@ -1202,12 +1246,18 @@ class OutputBudgetTest(StreamRelayFixture):
         events.append(relay_text_event(MAIN_SESSION_b11, "Haupt fertig"))
         events.append(relay_text_event(CHILD_A, "ENDE-4711"))
         events.append(completed_task_event(MAIN_SESSION_b11, CHILD_A, ""))
-        self.feed(events)
+        emitted = self.feed(events)
 
-        entry = self.entry(CHILD_A)
-        self.assertIsNotNone(entry, "Das Kind wurde nicht erfasst")
-        self.assertEqual("completed", entry.get("status"), entry)
-        output = str(entry.get("output") or "")
+        self.assertIsNone(
+            self.entry(CHILD_A),
+            "Das abgeschlossene Kind blieb in der aktiven Liste")
+        finished = next(
+            (item for item in (self.state().get("history") or [])
+             if item.get("session") == CHILD_A), None)
+        self.assertIsNotNone(
+            finished, "Der abgeschlossene Eintrag fehlt in history[]")
+        self.assertEqual("completed", finished.get("status"), finished)
+        output = str(finished.get("output") or "")
         size = len(output.encode("utf-8"))
         self.assertLessEqual(
             size, self.TAIL_BUDGET,
@@ -1219,6 +1269,9 @@ class OutputBudgetTest(StreamRelayFixture):
         self.assertIn(
             "ENDE-4711", output,
             "Das Ende der Ausgabe ging verloren:\n" + output[-200:])
+        self.assertIn(
+            "ENDE-4711", "\n".join(emitted),
+            "Das Ende fehlt im Protokoll als zweite Historiestelle")
         state_size = self.state_path.stat().st_size
         self.assertLess(
             state_size, 256 * 1024,
@@ -1461,14 +1514,16 @@ class SyncLegacyBehaviorTest(TranslateFixture):
     """AK2: Synchrones und Alt-Verhalten ändert sich nicht."""
 
     def test_alt_metadata_without_status_stays_completed(self):
-        """AK2: Alt-Form ohne Statusfeld bleibt completed.
+        """AK2: Alt-Form ohne Statusfeld bleibt completed und wird archiviert.
 
         Vorbedingung: Hauptsession erfasst; opencode ≤ 2.2.6-Form.
         Aktion: task-Ereignis, ``state.status="completed"``, Metadaten
         ``{"metadata": {"sessionID": ses_kind_a}}`` ohne Statusfeld.
-        Erwartung: Eintrag status "completed" mit ended > 0; Zeile meldet
+        Erwartung: Kein aktiver Eintrag; ``history[]`` enthält den Eintrag
+        mit status "completed", ended > 0 und Ausgabe; Zeile meldet
         "— completed".
-        Fehlerfall: Der Eintrag wird laufend gehalten oder endet nie.
+        Fehlerfall: Der Eintrag wird laufend gehalten, bleibt aktiv oder
+        die Ausgabe geht verloren.
         """
         self.establish_main()
 
@@ -1476,12 +1531,19 @@ class SyncLegacyBehaviorTest(TranslateFixture):
             MAIN_SESSION_b12, CHILD_A, {"metadata": {"sessionID": CHILD_A}},
             status="completed", output="FERTIG-A")])
 
-        entry = self.entry(CHILD_A)
-        self.assertIsNotNone(entry, "Kein Eintrag für die Kind-Session")
+        self.assertIsNone(
+            self.entry(CHILD_A),
+            "Der abgeschlossene Eintrag blieb aktiv: "
+            + json.dumps(self.state, ensure_ascii=False))
+        entry = next(
+            (item for item in (self.state.get("history") or [])
+             if item.get("session") == CHILD_A), None)
+        self.assertIsNotNone(entry, "Kein Eintrag in history[] für die Kind-Session")
         self.assertEqual("completed", entry.get("status"), entry)
         self.assertNotEqual(0, entry.get("ended"),
                             "Ein abgeschlossener Eintrag braucht ended: "
                             + json.dumps(entry, ensure_ascii=False))
+        self.assertIn("FERTIG-A", str(entry.get("output") or ""), entry)
         self.assertIn(
             f"[Subagent] {AGENT}: {DESCRIPTION} — completed", lines, lines)
 
@@ -1492,9 +1554,10 @@ class SyncLegacyBehaviorTest(TranslateFixture):
         Aktion: task-Ereignis mit flachen Metadaten
         ``{"sessionID": ses_kind_a, "status": "completed"}`` und
         ``state.status="completed"``.
-        Erwartung: Eintrag status "completed" mit ended > 0.
-        Fehlerfall: Die Metadaten werden ignoriert oder der Eintrag bleibt
-        fälschlich laufend.
+        Erwartung: Kein aktiver Eintrag; ``history[]`` trägt status
+        "completed" mit ended > 0 und der Ausgabe.
+        Fehlerfall: Die Metadaten werden ignoriert, der Eintrag bleibt
+        fälschlich aktiv oder die Ausgabe geht verloren.
         """
         self.establish_main()
 
@@ -1503,10 +1566,17 @@ class SyncLegacyBehaviorTest(TranslateFixture):
             {"sessionID": CHILD_A, "status": "completed"},
             status="completed", output="FERTIG-A")])
 
-        entry = self.entry(CHILD_A)
-        self.assertIsNotNone(entry, "Kein Eintrag für die Kind-Session")
+        self.assertIsNone(
+            self.entry(CHILD_A),
+            "Der abgeschlossene Eintrag blieb aktiv: "
+            + json.dumps(self.state, ensure_ascii=False))
+        entry = next(
+            (item for item in (self.state.get("history") or [])
+             if item.get("session") == CHILD_A), None)
+        self.assertIsNotNone(entry, "Kein Eintrag in history[] für die Kind-Session")
         self.assertEqual("completed", entry.get("status"), entry)
         self.assertNotEqual(0, entry.get("ended"), entry)
+        self.assertIn("FERTIG-A", str(entry.get("output") or ""), entry)
 
     def test_metadata_without_known_status_falls_back_to_tool_state(self):
         """AK2/Fehlerfall: Unbekannter oder fehlender Status → state.status.
@@ -1515,30 +1585,42 @@ class SyncLegacyBehaviorTest(TranslateFixture):
         Aktion: Erst flache Metadaten ohne Statusfeld, dann mit unbekanntem
         Statuswert "wartet-auf-freigabe"; beide mit
         ``state.status="completed"``.
-        Erwartung: Beide Male Eintrag status "completed" mit ended > 0; kein
-        laufender Eintrag.
+        Erwartung: Beide Einträge sind nicht mehr aktiv und liegen in
+        ``history[]`` mit status "completed", ended > 0 und ihrer Ausgabe.
         Fehlerfall: Ein unbekannter Statuswert hält den Eintrag künstlich
-        am Laufen.
+        aktiv oder ein Eintrag verliert seine Ausgabe.
         """
         self.establish_main()
 
         self.feed([subagent_task_event(
             MAIN_SESSION_b12, CHILD_A, {"sessionID": CHILD_A},
             status="completed", output="FERTIG-A")])
-        entry = self.entry(CHILD_A)
+        self.assertIsNone(self.entry(CHILD_A))
+        entry = next(
+            (item for item in (self.state.get("history") or [])
+             if item.get("session") == CHILD_A), None)
+        self.assertIsNotNone(entry, "Kein Eintrag in history[] für ses_kind_a")
         self.assertEqual("completed", entry.get("status"), entry)
         self.assertNotEqual(0, entry.get("ended"), entry)
+        self.assertIn("FERTIG-A", str(entry.get("output") or ""), entry)
 
         self.feed([subagent_task_event(
             MAIN_SESSION_b12, CHILD_B,
             {"sessionID": CHILD_B, "status": "wartet-auf-freigabe"},
             status="completed", output="FERTIG-B")])
-        entry_b = self.entry(CHILD_B)
-        self.assertIsNotNone(entry_b, "Kein Eintrag für ses_kind_b")
+        self.assertIsNone(self.entry(CHILD_B))
+        entry_b = next(
+            (item for item in (self.state.get("history") or [])
+             if item.get("session") == CHILD_B), None)
+        self.assertIsNotNone(entry_b, "Kein Eintrag in history[] für ses_kind_b")
         self.assertEqual("completed", entry_b.get("status"), entry_b)
         self.assertNotEqual(0, entry_b.get("ended"), entry_b)
-        self.assertEqual("completed", self.entry(CHILD_A).get("status"),
-                         "Der erste Eintrag wurde verändert")
+        self.assertIn("FERTIG-B", str(entry_b.get("output") or ""), entry_b)
+        self.assertEqual(
+            "completed", next(
+                (item for item in (self.state.get("history") or [])
+                 if item.get("session") == CHILD_A), {}).get("status"),
+            "Der erste Eintrag wurde verändert")
 
 
 class RevivalTest(TranslateFixture):
@@ -1549,14 +1631,15 @@ class RevivalTest(TranslateFixture):
 
         Vorbedingung: Hauptsession erfasst; ses_kind_a über das Alt-Form-
         task-Ereignis abgeschlossen, ses_kind_b (anderes Kind) ebenfalls
-        abgeschlossen.
+        abgeschlossen. Beide liegen danach in ``history[]``, nicht mehr in
+        der aktiven Liste.
         Aktion: Danach text-, reasoning- und tool_use-Ereignisse von
         ses_kind_a.
-        Erwartung: ses_kind_a ist wieder status "running" mit ended 0; die
-        Ausgabe enthält den alten Abschluss-Text und die neuen Teilausgaben;
-        ses_kind_b bleibt unverändert "completed".
-        Fehlerfall: Der Eintrag bleibt abgeschlossen (Aktueller Fehler), die
-        Ausgabe geht verloren oder ses_kind_b wird mitbelebt.
+        Erwartung: ses_kind_a ist wieder aktiv mit status "running" und ended
+        0; die Ausgabe enthält den alten Abschluss-Text und die neuen
+        Teilausgaben; ses_kind_b bleibt in history[] und wird nicht aktiv.
+        Fehlerfall: Der Eintrag bleibt abgeschlossen, die Ausgabe geht
+        verloren oder ses_kind_b wird mitbelebt.
         """
         self.establish_main()
         self.feed([
@@ -1567,8 +1650,21 @@ class RevivalTest(TranslateFixture):
                 MAIN_SESSION_b12, CHILD_B, {"metadata": {"sessionID": CHILD_B}},
                 status="completed", output="ABSCHLUSS-B-4711"),
         ])
-        self.assertEqual("completed", self.entry(CHILD_A).get("status"))
-        self.assertEqual("completed", self.entry(CHILD_B).get("status"))
+        self.assertIsNone(
+            self.entry(CHILD_A),
+            "Kind A blieb nach Abschluss aktiv: "
+            + json.dumps(self.state, ensure_ascii=False))
+        self.assertIsNone(
+            self.entry(CHILD_B),
+            "Kind B blieb nach Abschluss aktiv: "
+            + json.dumps(self.state, ensure_ascii=False))
+        history = {item.get("session"): item
+                   for item in (self.state.get("history") or [])}
+        self.assertEqual(
+            "completed", history.get(CHILD_A, {}).get("status"), history)
+        self.assertEqual(
+            "completed", history.get(CHILD_B, {}).get("status"), history)
+        self.assertIn("ABSCHLUSS-A-4711", str(history.get(CHILD_A, {}).get("output") or ""))
 
         self.feed([
             background_text_event(CHILD_A, "NACHLESE-4711"),
@@ -1580,10 +1676,14 @@ class RevivalTest(TranslateFixture):
         ])
 
         entry_a = self.entry(CHILD_A)
+        self.assertIsNotNone(
+            entry_a,
+            "Der archivierte Eintrag wurde durch Kind-Ereignisse nicht "
+            "wiederhergestellt: " + json.dumps(self.state, ensure_ascii=False))
         self.assertEqual(
             "running", entry_a.get("status"),
-            "Der abgeschlossene Eintrag wurde durch Kind-Ereignisse nicht "
-            "wiederbelebt: " + json.dumps(entry_a, ensure_ascii=False))
+            "Der Eintrag wurde durch Kind-Ereignisse nicht wiederbelebt: "
+            + json.dumps(entry_a, ensure_ascii=False))
         self.assertEqual(0, entry_a.get("ended"),
                          "Der wiederbelebte Eintrag darf kein ended haben: "
                          + json.dumps(entry_a, ensure_ascii=False))
@@ -1593,12 +1693,16 @@ class RevivalTest(TranslateFixture):
                          "[Werkzeug] bash", "git status"):
             self.assertIn(expected, output,
                           f"Ausgabeteil {expected!r} fehlt:\n{output[-300:]}")
-        entry_b = self.entry(CHILD_B)
-        self.assertEqual(
-            "completed", entry_b.get("status"),
-            "Das unbelebte Kind wurde fälschlich verändert: "
-            + json.dumps(entry_b, ensure_ascii=False))
-        self.assertNotEqual(0, entry_b.get("ended"), entry_b)
+        self.assertIsNone(
+            self.entry(CHILD_B),
+            "Das unbelebte Kind wurde fälschlich reaktiviert: "
+            + json.dumps(self.state, ensure_ascii=False))
+        history_b = next(
+            (item for item in (self.state.get("history") or [])
+             if item.get("session") == CHILD_B), {})
+        self.assertEqual("completed", history_b.get("status"), history_b)
+        self.assertNotEqual(0, history_b.get("ended"), history_b)
+        self.assertIn("ABSCHLUSS-B-4711", str(history_b.get("output") or ""))
 
 
 # ---------------------------------------------------------------------------
@@ -1982,15 +2086,18 @@ class DashboardDowngradeTest(DashboardFixture):
 
     def test_dashboard_downgrades_running_entry_when_child_is_known_and_inactive(
             self):
-        """AK4a: Bekannte, inaktive Kind-Session → completed.
+        """AK4a: Bekannte, inaktive Kind-Session verlässt die aktive Liste.
 
         Vorbedingung: laufender Registereintrag; Zustandsdatei mit
         Hauptsession und laufendem Eintrag ses_kind_a; opencode-Attrappe
         meldet ses_kind_a in /api/session (parentID = Hauptsession) und NICHT
         in /api/session/active.
         Aktion: GET /api/subagents.
-        Erwartung: Der Eintrag erscheint mit status "completed".
-        Fehlerfall: Der Eintrag bleibt "running" (Aktueller Fehler).
+        Erwartung: Der Eintrag steht nicht mehr als aktiv in der Liste, ist
+        aber in der Zustandsdatei als Verlauf erhalten (kein erfundener
+        Abschluss, kein Verlust der Ausgabe).
+        Fehlerfall: Der Eintrag bleibt als aktiv sichtbar oder sein Verlauf
+        verschwindet aus der Zustandsdatei.
         """
         self.password_private()
         self.register_run("running")
@@ -2002,13 +2109,17 @@ class DashboardDowngradeTest(DashboardFixture):
         matching = [entry for entry in entries
                     if entry.get("session") == CHILD_A]
         self.assertEqual(
-            1, len(matching),
-            "Der Eintrag der Kind-Session fehlt in der Liste: "
-            + json.dumps(entries, ensure_ascii=False))
-        self.assertEqual(
-            "completed", matching[0].get("status"),
-            "Der Hintergrund-Subagent wurde nach Serverlage nicht "
-            "herabgestuft: " + json.dumps(matching[0], ensure_ascii=False))
+            [], matching,
+            "Der nach Serverlage beendete Subagent steht noch in der "
+            "aktiven Liste: " + json.dumps(entries, ensure_ascii=False))
+        raw_state = (self.log_dir / "proj.log.state.json").read_text(
+            encoding="utf-8")
+        self.assertIn(
+            CHILD_A, raw_state,
+            "Der Verlauf des Subagenten wurde aus der Zustandsdatei entfernt")
+        self.assertIn(
+            "B12-LIVE-AUSGABE", raw_state,
+            "Die historische Ausgabe ging beim Entfernen verloren")
 
     def test_dashboard_keeps_running_entry_when_child_is_active(self):
         """AK4b: Aktive Kind-Session bleibt running.

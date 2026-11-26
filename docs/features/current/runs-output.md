@@ -59,11 +59,26 @@ A run executes a work package through the selected harness in tmux and is record
   entry, and mailbox in the right-side panel; answers are inline and require no
   page reload (`F16`). Autonomous mode lets the agent decide and document it.
 - `task`/`subagent` events from opencode are captured per child session into
-  `<log>.state.json`, with a 64 KiB output tail per entry and at most 50
-  entries (`B11`, `B12`).
-- `/api/subagents` returns the compact list, `/api/subagent-output` the fuller
-  output, and `/api/stream` the live events. `/api/steer` sends an instruction
-  to the opencode session prompt using Basic Auth (`F19`).
+  `<log>.state.json`, with a 64 KiB output tail per entry (`B11`, `B12`).
+- The state file keeps the lifecycle apart (GH-104): `subagents` is the
+  active list only, while `history` holds retired entries with their output.
+  Both lists are bounded; the history keeps the newest 50 entries.
+- A subagent leaves the active list at its own terminal event
+  (`completed`, `error`, `failed`, `cancelled`, `canceled`), including
+  opencode background subagents whose metadata status ends the run and Pi
+  `tool_execution_end` events. The retired entry moves to `history`
+  immediately, so other concurrent subagents stay active. At the start of a
+  new attempt in the same run, any leftover active entry from an earlier
+  ticket is retired first; entries created within the current attempt are
+  untouched.
+- Later events of a retired child session revive that entry from `history`
+  (`status=running`, `ended=0`) with its accumulated output intact. Sibling
+  entries are not revived. Emitted log lines are never removed.
+- `/api/subagents` returns only active entries; `/api/subagent-output`
+  returns the fuller output and also finds retired entries in `history` so
+  their stored output stays retrievable. `/api/steer` sends an instruction to
+  the opencode session prompt using Basic Auth (`F19`) and keeps resolving
+  captured subagent sessions. `/api/stream` carries the live events.
 
 ## Output view
 
@@ -106,7 +121,7 @@ agent name and run state remain visible in the summary rows and the main card.
   [AP20](../AP20.md), [B11](../B11.md), [B12](../B12.md), [B13](../B13.md),
   [B14](../B14.md), [B20](../B20.md), [F19](../F19.md), [F24](../F24.md),
   [F30](../F30.md), [F32](../F32.md), [GH-88](../GH-88.md),
-  [GH-100](../GH-100.md).
+  [GH-100](../GH-100.md), [GH-104](../GH-104.md).
 - Run registry, sessions, and questions: [V-015](../V-015.md),
   [V-016](../V-016.md), [V-024](../V-024.md), [V-026](../V-026.md),
   [F10](../F10.md), [AP19](../AP19.md), [F16](../F16.md),

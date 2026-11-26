@@ -467,11 +467,22 @@ def live_subagent_output(session, name=None):
 
 
 def subagents_of(name):
-    """Hauptsession und erfasste Subagenten aus Zustandsdatei und Server."""
+    """Hauptsession und aktive Subagenten aus Zustandsdatei und Server.
+
+    GH-104: Die Zustandsdatei führt in ``subagents`` nur noch aktive Einträge;
+    beendete Einträge liegen in ``history``. Defensiv werden terminale
+    Statuswerte auch hier aus der aktiven Liste ausgefiltert. Meldet der
+    Server eine bekannte Kind-Session als nicht mehr aktiv, verschwindet sie
+    aus der aktiven Liste; ihr Eintrag samt Ausgabe bleibt in der
+    Zustandsdatei erhalten (kein Schreiben aus dem Webprozess).
+    """
     path = vibe_runs.subagent_state_path(vibe.logpath(name))
     state = vibe_runs.load_subagent_state(path)
     session = state.get("session") or ""
-    entries = [public_subagent(entry) for entry in state.get("subagents") or []]
+    entries = [
+        public_subagent(entry) for entry in state.get("subagents") or []
+        if entry.get("status") not in vibe_runs.SUBAGENT_FINISHED
+    ]
     if session:
         for live in live_subagents(session, name):
             existing = next(
@@ -479,7 +490,8 @@ def subagents_of(name):
                 None,
             )
             if existing is None:
-                entries.append(live)
+                if live.get("status") == "running":
+                    entries.append(live)
                 continue
             if not existing.get("agent") and live.get("agent"):
                 existing["agent"] = live["agent"]
@@ -488,16 +500,52 @@ def subagents_of(name):
             if live.get("status") == "running":
                 existing["status"] = "running"
                 existing["ended"] = 0
-            elif existing.get("status") == "running":
-                # B12: Der Server kennt die Kind-Session, führt sie aber nicht
-                # als aktiv — ein festgehaltenes "running" ist damit beendet.
-                # In der Sandbox liefert der Läufer keine Kind-Ereignisse; dort
-                # beendet erst die B11-Regel „kein aktiver Lauf → leere Liste“
-                # den Eintrag, nicht eine erfundene Serverlage.
-                existing["status"] = "completed"
-                if live.get("ended"):
-                    existing["ended"] = live["ended"]
+            else:
+                # B12/GH-104: Der Server kennt die Kind-Session, führt sie aber
+                # nicht als aktiv — ein festgehaltenes "running" ist damit
+                # beendet. Ein beendeter Subagent gehört nicht in die aktive
+                # Liste; sein Verlauf bleibt in der Zustandsdatei.
+                entries.remove(existing)
     return {"session": session, "subagents": entries}
+
+
+def subagent_state(name):
+    """Roher Subagenten-Zustand des Projekts (aktiv und Verlauf)."""
+    return vibe_runs.load_subagent_state(
+        vibe_runs.subagent_state_path(vibe.logpath(name)))
+
+
+def subagent_records(name):
+    """Alle erfassten Subagenten-Einträge: aktive, alte terminale, Verlauf."""
+    state = subagent_state(name)
+    records = []
+    for item in (state.get("subagents") or []) + (state.get("history") or []):
+        if isinstance(item, dict):
+            records.append(item)
+    return records
+
+
+def find_subagent_record(name, session):
+    """Findet einen Subagenten für Ausgabe/Steuerung, aktiv oder im Verlauf.
+
+    GH-104: Beendete Einträge stehen nur noch in ``history``. Damit ihre
+    Ausgabe über ``/api/subagent-output`` abrufbar bleibt und eine
+    zielgenaue Anweisung weiterhin aufgelöst werden kann, fällt die Suche auf
+    die erfassten Einträge zurück, wenn kein aktiver Eintrag passt.
+    """
+    if not session:
+        return None
+    active = subagents_of(name)
+    entry = next(
+        (item for item in active["subagents"] if item.get("session") == session),
+        None,
+    )
+    if entry is not None:
+        return entry
+    for item in subagent_records(name):
+        if item.get("session") == session:
+            return public_subagent(item)
+    return None
 
 
 def run_is_active(name):
@@ -643,14 +691,19 @@ def steer_project(name, text, session=None):
         return False, "Kein aktiver Lauf: Eine Zusatzanweisung ist nur während der Ausführung möglich."
     state = subagents_of(name)
     target = state.get("session") or ""
+    records = subagent_records(name)
     if session:
         # AP14: Zielgenaue Zustellung an Haupt- oder Subagentensession des
-        # aktiven Laufs. Fremde Sessions werden nie beliefert.
+        # aktiven Laufs. Fremde Sessions werden nie beliefert. GH-104: Auch
+        # ein beendeter Subagent bleibt als erfasste Session im Verlauf
+        # adressierbar, damit zielgenaue Anweisungen nicht plötzlich brechen.
         session = str(session).strip()
         tracked_sessions = {
             entry.get("session") for entry in state.get("subagents") or []
             if entry.get("session")
         }
+        tracked_sessions.update(
+            item.get("session") for item in records if item.get("session"))
         if session == target or session in tracked_sessions:
             target = session
         else:
@@ -672,8 +725,8 @@ def steer_project(name, text, session=None):
     marker = " ".join(text.split())
     # Protokollmarker und Rückmeldung nennen das Ziel (Reviewrunde 1).
     agent = next(
-        (entry.get("agent") for entry in state.get("subagents") or []
-         if entry.get("session") == target),
+        (item.get("agent") for item in records
+         if item.get("session") == target and item.get("agent")),
         "",
     )
     label = f"{agent} ({target})" if agent else target
@@ -1390,12 +1443,10 @@ class H(BaseHTTPRequestHandler):
             if u.path == "/api/subagent-output":
                 n = known(q["name"][0])
                 session = q.get("session", [""])[0]
-                state = subagents_of(n)
-                entry = next(
-                    (item for item in state["subagents"]
-                     if session and item.get("session") == session),
-                    None,
-                )
+                # GH-104: Beendete Einträge liegen im Verlauf. Die Suche findet
+                # aktive und beendete Einträge, damit deren Ausgabe abrufbar
+                # bleibt.
+                entry = find_subagent_record(n, session)
                 if entry is None:
                     return self._send(200, {
                         "ok": False,

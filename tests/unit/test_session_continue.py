@@ -616,10 +616,14 @@ class TranslateSessionTest(unittest.TestCase):
         RUNS_MODULE.translate_event(subagent_event("ses_attempt1"), state)
 
         self.assertEqual("ses_attempt1", state["session"], state)
-        entries = state["subagents"]
-        self.assertEqual(1, len(entries), f"Subagenten unvollständig: {state}")
-        self.assertEqual("ses_child", entries[0].get("session"), entries)
-        self.assertEqual("completed", entries[0].get("status"), entries)
+        # Der abgeschlossene Subagent gehört nicht in die aktive Liste, seine
+        # Erfassung überlebt den Sessionswechsel aber in history[].
+        self.assertEqual([], state["subagents"], state)
+        history = state.get("history") or []
+        self.assertEqual(1, len(history), f"Subagenten unvollständig: {state}")
+        self.assertEqual("ses_child", history[0].get("session"), history)
+        self.assertEqual("completed", history[0].get("status"), history)
+        self.assertIn("PONG", str(history[0].get("output") or ""), history)
         bad = [line for line in lines if line.lstrip().startswith("{")]
         self.assertEqual(
             [], bad, "Roh-JSON geduldet: " + repr(bad)
