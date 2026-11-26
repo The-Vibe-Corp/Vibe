@@ -942,7 +942,10 @@ cleanup_worktree() {
 # GH-76: Zusätzlich nennt die Inline-Konfiguration den versteckten Plattformtext
 # als `instructions`-Quelle. Sie wird für jeden opencode-Lauf gesetzt, auch
 # ohne Projektmodelle. Pi erhält sie nicht.
-HAS_INLINE_CONFIG=0
+# GH-96: Ob wirksame Projektkonfiguration vorliegt (Modelle oder opencode-
+# Einträge, auch nur deaktivierte), meldet das Merge-Skript über eine
+# Flag-Datei. Sie steuert die Serverwahl (B1/B13), nicht die Inline-Konfiguration.
+HAS_PROJECT_MODELS=0
 if [ "$HARNESS" = "opencode" ]; then
   # Der Text liegt im Zustandsordner, also außerhalb jedes Projekts und der
   # persönlichen opencode-Konfiguration. Die letzte stdout-Zeile ist der Pfad.
@@ -953,7 +956,9 @@ if [ "$HARNESS" = "opencode" ]; then
     echo "ABBRUCH: Die Plattform-Anweisungen konnten nicht geschrieben werden; Details im Protokoll $LOG." | tee -a "$LOG"
     exit 2
   fi
-  MERGED_CONFIG="$(python3 - "$P/.vibe/agents.json" "$PLATFORM_INSTRUCTIONS_PATH" <<'PY' 2>>"$LOG"
+  PROJECT_MODELS_FLAG="$LOG.projektmodelle"
+  rm -f -- "$PROJECT_MODELS_FLAG"
+  MERGED_CONFIG="$(python3 - "$P/.vibe/agents.json" "$PLATFORM_INSTRUCTIONS_PATH" "$PROJECT_MODELS_FLAG" <<'PY' 2>>"$LOG"
 import json
 import os
 import re
@@ -1124,6 +1129,16 @@ for name in ("general", "explore"):
     else:
         opencode_disabled.append(name)
 
+# GH-96: Wirksame Projektkonfiguration (auch nur deaktivierte opencode-Einträge)
+# wird für die Serverwahl vermerkt. Die Inline-Konfiguration wird unabhängig
+# davon für jeden opencode-Lauf gesetzt.
+if clean or opencode_models or opencode_disabled:
+    try:
+        with open(sys.argv[3], "w", encoding="utf-8") as handle:
+            handle.write("1\n")
+    except OSError:
+        fail("Die wirksame Projektkonfiguration konnte nicht vermerkt werden.")
+
 # 2) Vorhandene Inline-Konfiguration (JSON/JSONC) semantisch erhalten.
 merged = {}
 existing = os.environ.get("OPENCODE_CONFIG_CONTENT", "")
@@ -1203,7 +1218,11 @@ PY
     echo "ABBRUCH: Die Plattform-Anweisungen konnten nicht in die Inline-Konfiguration übernommen werden; Details im Protokoll $LOG." | tee -a "$LOG"
     exit 2
   fi
-  HAS_INLINE_CONFIG=1
+  HAS_PROJECT_MODELS=0
+  if [ -s "$PROJECT_MODELS_FLAG" ]; then
+    HAS_PROJECT_MODELS=1
+  fi
+  rm -f -- "$PROJECT_MODELS_FLAG"
   OPENCODE_CONFIG_CONTENT="$MERGED_CONFIG"
   export OPENCODE_CONFIG_CONTENT
 fi
@@ -1242,11 +1261,18 @@ if [ "$SANDBOX_STATE" = "on" ]; then
     echo "ABBRUCH: Sandbox ist eingeschaltet, aber nicht startbar. Der Agent läuft nicht ohne Sandbox." | tee -a "$LOG"
     exit 2
   fi
-elif [ "$HAS_INLINE_CONFIG" != 1 ] && server_is_up; then SERVER_ARGS="--server http://127.0.0.1:$OPENCODE_PORT"; fi
+elif [ "$HAS_PROJECT_MODELS" != 1 ] && [ "$HAS_SERVER_PASSWORD" = 1 ] && server_is_up; then
+  # B13/AK9 (GH-96): Ohne wirksame Projektkonfiguration behält ein erreichbarer
+  # gemeinsamer Server das bisherige Ziel. Nur mit nichtleerem Kennwort ist eine
+  # authentifizierte Verbindung möglich; ohne Kennwort bliebe es
+  # `--standalone`, weil der Lauf sich nicht anmelden könnte.
+  SERVER_ARGS="--server http://127.0.0.1:$OPENCODE_PORT"
+fi
 # B13: In der Sandbox führt ein gemeinsamer Server die Werkzeuge außerhalb der
 # Sandbox aus; dort gilt deshalb immer der private Server. Außerhalb der
-# Sandbox nur, wenn kein gemeinsamer Server erreichbar ist. Pi kennt keinen
-# privaten opencode-Server und bleibt unverändert.
+# Sandbox nur, wenn kein gemeinsamer Server erreichbar ist oder die wirksame
+# Projektkonfiguration ihn ausschließt (GH-96). Pi kennt keinen privaten
+# opencode-Server und bleibt unverändert.
 if [ "$HARNESS" = "opencode" ] && [ "$HAS_SERVER_PASSWORD" = 1 ]; then
   if [ "$SANDBOX_STATE" = "on" ] || [ "$SERVER_ARGS" = "--standalone" ]; then
     PRIVATE_SERVER=1

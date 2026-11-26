@@ -3927,9 +3927,12 @@ class RunnerControlTest(RunnerFixture):
     def test_no_effective_entries_still_injects_platform_instructions(self):
         """GH-76: Auch ohne Modell-Einträge wird der Plattformtext gesetzt.
 
-        Der frühere gemeinsame Server wird nicht wiederverwendet, weil er die
-        Instruktion nicht kennt: der Lauf startet ``--standalone``. Es
-        entstehen keine Agenten-Maps.
+        Es entstehen keine Agenten-Maps. Die fehlende Kennwortdatei trennt
+        hier den gemeinsamen Server ab: ohne Anmeldung startet der Lauf
+        ``--standalone``. Historisch (GH-76) wurde der gemeinsame Server
+        zusätzlich deshalb nicht wiederverwendet, weil er die Instruktion
+        nicht kennt; GH-96 adressiert ihn wieder, wenn keine wirksame
+        Projektkonfiguration vorliegt.
         """
         self.write_opencode()
         shared_port = self.start_shared_server()
@@ -4065,6 +4068,57 @@ class RunnerOpencodeConfigTest(RunnerFixture):
         self.assertNotIn("http://127.0.0.1:" + str(shared_port), argv)
         self.assertEqual(effective_model(self.config_of(runs[0]), "general"),
                          "free/general")
+
+    def test_shared_server_is_not_reused_when_opencode_agents_are_merely_disabled(self):
+        """GH-96: Auch nur deaktivierte opencode-Agenten sperren den gemeinsamen Server.
+
+        Vorbedingung: ``.vibe/agents.json`` enthält keine ``modelle``, aber
+        ``opencode.general``/``opencode.explore`` mit ``aktiv: false``; im
+        Laufzeitordner liegt eine nichtleere Kennwortdatei; ein gemeinsamer
+        Server ist am Port aus ``VIBE_OPENCODE_PORT`` erreichbar.
+        Aktion: ``vibe-run.sh <projekt>``.
+        Erwartung: Der Lauf adressiert den privaten Server (genau ein
+        ``serve``, ``--server`` auf dessen Port, kein ``--standalone``); der
+        erreichbare gemeinsame Server wird nicht wiederverwendet, weil die
+        Projektkonfiguration opencode-Agenten steuert.
+        Fehlerfall: Die Projektkonfiguration gilt fälschlich als „leer“, und
+        der Lauf adressiert den gemeinsamen Server.
+        Hinweis: Bei GH-76 ist der Fall grün, weil der Läufer den Zweig für
+        den gemeinsamen Server unabhängig von der Projektkonfiguration sperrt
+        (AK9 ist dort rot). Der Fall pinnt die Wiederherstellung: nur ohne
+        wirksame Projektkonfiguration darf der gemeinsame Server adressiert
+        werden.
+        """
+        self.write_opencode(
+            general={"aktiv": False, "modell": ""},
+            explore={"aktiv": False, "modell": ""},
+        )
+        self.runtime.mkdir(parents=True, exist_ok=True)
+        password_file = self.runtime / "opencode.password"
+        password_file.write_text("gh96-deaktiviert-4711", encoding="utf-8")
+        password_file.chmod(0o600)
+        shared_port = self.start_shared_server()
+
+        result = self.run_runner(
+            "tester", extra_env={"VIBE_OPENCODE_PORT": str(shared_port)}
+        )
+
+        detail = result.stdout + result.stderr + self.log_text()
+        self.assertEqual(result.returncode, 0, detail)
+        runs = self.run_calls()
+        self.assertEqual(1, len(runs), repr(self.records()))
+        self.assertEqual(
+            1, len(self.serve_calls()),
+            "Mit Projektkonfiguration startet genau ein privater Server: "
+            + repr(self.records()))
+        argv = runs[0]["argv"]
+        self.assertIn("--server", argv, repr(argv))
+        self.assertNotIn("--standalone", argv, repr(argv))
+        self.assertNotEqual(
+            argv[argv.index("--server") + 1],
+            "http://127.0.0.1:" + str(shared_port),
+            "Der gemeinsame Server wurde trotz Projektkonfiguration "
+            "wiederverwendet")
 
 
 class RunnerInvalidConfigTest(RunnerFixture):
