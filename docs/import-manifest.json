@@ -1,6 +1,15 @@
 {
  "aenderungen": [
   {
+   "arbeitspaket": "GH-104",
+   "dateien": [
+    "bin/vibe_runs.py",
+    "bin/vibe-web.py"
+   ],
+   "datum": "2026-11-26",
+   "grund": "Subagenten-Lebenszyklus der Ausgabeansicht an der Wurzel korrigiert: Beendete Subagenten (completed, error, failed, cancelled, canceled) verlassen die aktive Liste sofort und wandern in einen begrenzten Verlauf (50 Eintraege) mit erhaltener Ausgabe; ein neuer Versuch im selben Lauf raeumt uebrige aktive Eintraege vor dem Ereignisstrom ab. Spaetere Ereignisse derselben Kind-Session holen ihren Verlaufseintrag samt Ausgabe zurueck; Geschwister bleiben unberuehrt. /api/subagents liefert nur aktive Eintraege, /api/subagent-output und /api/steer finden auch beendete Eintraege im Verlauf. Groesse und SHA-256 der geaenderten Manifest-Dateien wurden aktualisiert."
+  },
+  {
    "arbeitspaket": "GH-101",
    "dateien": [
     "bin/vibe",
@@ -1705,9 +1714,9 @@
    "sha256": "23588a9de03f879521465062645aeb692a53a676a5ef9ece02e7d68485a2c769"
   },
   {
-   "bytes": 143361,
+   "bytes": 145346,
    "path": "bin/vibe-web.py",
-   "sha256": "3cf2972f4d2d4b9bc84780b0c307ca0cd66300ceb777bf5dc990313c0d4cf809"
+   "sha256": "b01cefdad6641d4a81e7d7e5989d3dba41b4158df1a8a9f9b7c5e066250e6840"
   },
   {
    "bytes": 5189,
@@ -1780,9 +1789,9 @@
    "sha256": "00d99010d08373dc3e75b41a640cb6341ebcb0e0e2fc19e17e020158ae3d5525"
   },
   {
-   "bytes": 74203,
+   "bytes": 81134,
    "path": "bin/vibe_runs.py",
-   "sha256": "42fb469d3f0eb391c8b3f8a824414a74bbbdc7ae1455b6849269db0d84fbb4ce"
+   "sha256": "0214c5136b693053816be7feb78dfc4694def56f931946318e9d52793fa73020"
   },
   {
    "bytes": 39912,

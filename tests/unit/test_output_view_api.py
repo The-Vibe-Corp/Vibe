@@ -451,19 +451,25 @@ class SubagentsEndpointTest(ApiFixture):
         self.assertIn("subagents", data, raw)
 
     def test_subagents_reports_state_file_entries(self):
-        """B11-Anpassung: /api/subagents liefert nur Einträge des aktuellen
-        Laufs. Der Test registriert deshalb einen laufenden Lauf und setzt
-        die Startzeiten der erfassten Einträge hinter den Laufbeginn; die
-        Feldsemantik (Session, Agent, Beschreibung, Status, Ausgabe) bleibt
-        die der F19-Regression."""
+        """Nur aktive Einträge in der Liste; der Verlauf bleibt erhalten.
+
+        Der Test registriert einen laufenden Lauf und setzt die Startzeiten
+        der Einträge hinter den Laufbeginn. Erwartung: Der abgeschlossene
+        Eintrag steht nicht in der aktiven Liste; Agent, Beschreibung, Status
+        und Ausgabe bleiben in ``history[]`` der Zustandsdatei erhalten.
+        Fehlerfall: Der abgeschlossene Eintrag erscheint als aktiv oder sein
+        Verlauf geht verloren.
+        """
         self.start_active_run()
         base_started = int(time.time()) + 5
+        finished = {**STATE_FILE["subagents"][0], "started": base_started + 5}
         state = {
             "session": MAIN_SESSION,
             "subagents": [
-                {**STATE_FILE["subagents"][0], "started": base_started + 5},
+                finished,
                 {**STATE_FILE["subagents"][1], "started": base_started},
             ],
+            "history": [finished],
         }
         self.write_state(state)
         status, data, raw = self.request("GET", "/api/subagents?name=proj")
@@ -473,19 +479,27 @@ class SubagentsEndpointTest(ApiFixture):
         self.assertEqual(data.get("session"), MAIN_SESSION, raw)
         entries = data.get("subagents")
         self.assertIsInstance(entries, list, raw)
-        self.assertEqual(len(entries), 2, f"beide erfassten Subagenten fehlen: {raw}")
+        self.assertEqual(
+            1, len(entries),
+            "Nur der laufende Subagent darf in der aktiven Liste stehen: " + raw)
         by_session = {entry.get("session"): entry for entry in entries}
-        completed = by_session.get(CHILD_SESSION)
+        self.assertNotIn(CHILD_SESSION, by_session, raw)
         running = by_session.get(CHILD_RUNNING)
-        self.assertIsNotNone(completed, f"erfasster abgeschlossener Eintrag fehlt: {raw}")
         self.assertIsNotNone(running, f"erfasster laufender Eintrag fehlt: {raw}")
-        self.assertEqual(completed.get("agent"), "general", raw)
-        self.assertEqual(completed.get("description"), "Testzusammenfassung", raw)
-        self.assertEqual(completed.get("status"), "completed", raw)
-        self.assertIn("PONG", str(completed.get("output") or ""), raw)
         self.assertEqual(running.get("status"), "running", raw)
         self.assertEqual(running.get("agent"), "general", raw)
         self.assertEqual(running.get("description"), "Sammlung läuft", raw)
+
+        preserved = json.loads(
+            (self.root / "_logs" / "proj.log.state.json").read_text(
+                encoding="utf-8"))
+        history = [item for item in (preserved.get("history") or [])
+                   if item.get("session") == CHILD_SESSION]
+        self.assertEqual(1, len(history), "Verlaufseintrag fehlt: " + raw)
+        self.assertEqual("general", history[0].get("agent"), raw)
+        self.assertEqual("Testzusammenfassung", history[0].get("description"), raw)
+        self.assertEqual("completed", history[0].get("status"), raw)
+        self.assertIn("PONG", str(history[0].get("output") or ""), raw)
 
     def test_subagents_reports_empty_without_state_file(self):
         status, data, raw = self.request("GET", "/api/subagents?name=proj")
@@ -2256,14 +2270,17 @@ class RunTimeFilterTest(B11ApiFixture):
                         encoding="utf-8")
 
     def test_unreadable_run_start_delivers_all_state_entries(self):
-        """Ohne lesbare Startzeit erscheinen alle Einträge (fail-open).
+        """Ohne lesbare Startzeit erscheinen alle aktiven Einträge (fail-open).
 
         Vorbedingung: laufender Registereintrag mit defekter
         ``started``-Zeit; Zustandsdatei mit einem Eintrag eines früheren
-        Standes und einem Eintrag des Laufs.
+        Standes und einem Eintrag des Laufs. Der frühere Eintrag ist
+        abgeschlossen und gehört nicht in die aktive Liste.
         Aktion: GET /api/subagents.
-        Erwartung: Beide Einträge werden geliefert.
-        Fehlerfall: Stille leere Liste oder Ausfall der Anfrage.
+        Erwartung: Der aktive Eintrag wird trotz defekter Startzeit geliefert,
+        der abgeschlossene nicht.
+        Fehlerfall: Stille leere Liste oder ein abgeschlossener Eintrag als
+        aktiv.
         """
         self.register_run("running")
         self.corrupt_run_start()
@@ -2286,8 +2303,8 @@ class RunTimeFilterTest(B11ApiFixture):
         sessions = [entry.get("session")
                     for entry in (data or {}).get("subagents") or []]
         self.assertEqual(
-            {"ses_alt", "ses_aktuell"}, set(sessions),
-            "Fail-open verletzt: gelieferte Sessions %r (%s)"
+            {"ses_aktuell"}, set(sessions),
+            "Fail-open verletzt oder abgeschlossener Eintrag aktiv: %r (%s)"
             % (sessions, raw))
 
     def test_entry_with_unknown_start_stays_visible_during_a_run(self):

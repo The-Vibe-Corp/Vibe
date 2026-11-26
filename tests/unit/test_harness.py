@@ -1068,9 +1068,9 @@ class PiSubagentCaptureTest(PiTranslateFixture):
 
     # 3. Name: test_pi_task_end_records_text_output_and_completed_status [AK3]
     #    Vorbedingung: laufender task-Eintrag. Aktion: end mit result
-    #    (zwei Text-Blöcke), isError false. Erwartung: status "completed",
-    #    Ausgabe = Blocktexte zeilenweise mit \n verbunden ("PONG\n
-    #    Zweitzeile"), ended numerisch und ungleich 0.
+    #    (zwei Text-Blöcke), isError false. Erwartung: kein aktiver Eintrag;
+    #    history[] hält status "completed", Ausgabe = Blocktexte zeilenweise
+    #    mit \n verbunden ("PONG\nZweitzeile"), ended numerisch und ungleich 0.
     def test_pi_task_end_records_text_output_and_completed_status(self):
         self.translate(pi_task_events()[0])
         end = pi_task_events()[2]
@@ -1078,9 +1078,15 @@ class PiSubagentCaptureTest(PiTranslateFixture):
         _lines, changed = self.translate(end)
 
         self.assertTrue(changed, "Der Abschluss muss als Änderung gelten")
-        entries = self.state["subagents"]
-        self.assertEqual(1, len(entries), f"Kein Doppeltab: {entries}")
-        entry = entries[0]
+        self.assertEqual(
+            [], self.state["subagents"],
+            "Der abgeschlossene Eintrag darf nicht aktiv bleiben")
+        history = self.state.get("history") or []
+        self.assertEqual(
+            1, len(history), f"Kein Doppeltab in der Historie: {history}")
+        entry = next(
+            (item for item in history if item.get("session") == TOOL_CALL), None)
+        self.assertIsNotNone(entry, "Kein Historieseintrag für den task: " + str(history))
         self.assertIn("PONG\nZweitzeile", str(entry.get("output")))
         self.assertEqual("completed", entry.get("status"))
         self.assertIsInstance(entry.get("ended"), int)
@@ -1088,7 +1094,8 @@ class PiSubagentCaptureTest(PiTranslateFixture):
 
     # 4. Name: test_pi_failed_task_marks_error_status [AK3]
     #    Vorbedingung: laufender task-Eintrag. Aktion: end mit isError
-    #    true. Erwartung: status "error", ended gesetzt.
+    #    true. Erwartung: kein aktiver Eintrag; history[] hält status "error"
+    #    und ended gesetzt.
     def test_pi_failed_task_marks_error_status(self):
         self.translate(pi_task_events()[0])
         end = {"type": "tool_execution_end", "toolCallId": TOOL_CALL,
@@ -1097,7 +1104,13 @@ class PiSubagentCaptureTest(PiTranslateFixture):
 
         self.translate(end)
 
-        entry = self.state["subagents"][0]
+        self.assertEqual(
+            [], self.state["subagents"],
+            "Der fehlgeschlagene Eintrag darf nicht aktiv bleiben")
+        history = self.state.get("history") or []
+        entry = next(
+            (item for item in history if item.get("session") == TOOL_CALL), None)
+        self.assertIsNotNone(entry, "Kein Historieseintrag für den Fehler: " + str(history))
         self.assertEqual(
             "error", entry.get("status"),
             f"isError muss den Fehlerstatus setzen: {entry}")
@@ -1105,7 +1118,8 @@ class PiSubagentCaptureTest(PiTranslateFixture):
 
     # 5. Name: test_pi_subagent_tool_alias_is_captured_too [AK3]
     #    Vorbedingung: leerer Zustand. Aktion: toolName "subagent".
-    #    Erwartung: wie "task"; kein zweiter Eintrag bei Start/Ende.
+    #    Erwartung: wie "task"; kein zweiter Eintrag bei Start/Ende, der
+    #    abgeschlossene Eintrag liegt in history[].
     def test_pi_subagent_tool_alias_is_captured_too(self):
         start = {"type": "tool_execution_start", "toolCallId": TOOL_CALL,
                  "toolName": "subagent",
@@ -1117,11 +1131,15 @@ class PiSubagentCaptureTest(PiTranslateFixture):
         self.translate(start)
         self.translate(end)
 
-        entries = self.state["subagents"]
-        self.assertEqual(1, len(entries), f"Alias darf keinen Doppeltab geben: {entries}")
-        self.assertEqual("review", entries[0].get("agent"))
-        self.assertEqual("completed", entries[0].get("status"))
-        self.assertIn("FERTIG", str(entries[0].get("output")))
+        self.assertEqual(
+            [], self.state["subagents"],
+            "Der abgeschlossene Alias-Eintrag darf nicht aktiv bleiben")
+        history = self.state.get("history") or []
+        self.assertEqual(
+            1, len(history), f"Alias darf keinen Doppeltab geben: {history}")
+        self.assertEqual("review", history[0].get("agent"))
+        self.assertEqual("completed", history[0].get("status"))
+        self.assertIn("FERTIG", str(history[0].get("output")))
 
     # 6. Name: test_pi_plain_tool_execution_invents_no_entries [AK3]
     #    Vorbedingung: leerer Zustand. Aktion: bash falls start/update/end.
@@ -1171,9 +1189,9 @@ class PiStreamFormTest(unittest.TestCase):
     # 3. Name: test_stream_recognizes_pi_stream_and_translates_all_events
     #    [AK1] Vorbedingung: keine Zustandsdatei. Aktion: vollständiges
     #    Pi-Szenario (Session, Text/Denken, bash, task). Erwartung: alle
-    #    Ereignisse als Klartextzeilen, kein Roh-JSON, kein erfundener Text; die
-    #    Zustandsdatei enthält den erfassten Eintrag und keinen
-    #    ephemere Sessionschlüssel.
+    #    Ereignisse als Klartextzeilen, kein Roh-JSON, kein erfundener Text;
+    #    der abgeschlossene task-Eintrag liegt in history[] statt in der
+    #    aktiven Liste, und der ephemere Sessionschlüssel fehlt.
     def test_stream_recognizes_pi_stream_and_translates_all_events(self):
         payload = "\n".join(
             pi_events() + "\n".join(map(json.dumps, pi_task_events())).splitlines()
@@ -1201,12 +1219,16 @@ class PiStreamFormTest(unittest.TestCase):
         )
 
         state = vibe_runs.load_subagent_state(self.state_path)
-        entries = state["subagents"]
         self.assertEqual(
-            1, len(entries), f"Genau der task-Eintrag erfasst: {state}")
-        self.assertEqual(TOOL_CALL, entries[0].get("session"))
-        self.assertEqual("completed", entries[0].get("status"))
-        self.assertEqual("PONG\nZweitzeile", entries[0].get("output"))
+            [], state["subagents"],
+            "Der abgeschlossene task darf nicht aktiv bleiben: " + str(state))
+        history = state.get("history") or []
+        self.assertEqual(
+            1, len(history), f"Genau der task-Eintrag in history[]: {state}")
+        entry = history[0]
+        self.assertEqual(TOOL_CALL, entry.get("session"))
+        self.assertEqual("completed", entry.get("status"))
+        self.assertEqual("PONG\nZweitzeile", entry.get("output"))
         self.assertEqual(
             "", state["session"],
             "Die ephemere Pi-Session darf nie als Hauptsession landen")
@@ -1273,7 +1295,7 @@ class OpencodeRegressionTest(PiStreamFormTest):
     #    Szenario über den automatisch erkennenden Stream. Erwartung:
     #    byte-gleiche Protokollzeilen zur bisherigen Übersetzung (Liste
     #    zeilengleich identisch) und die erfasste Sessionsdatei mit
-    #    Hauptsession und Ausbildung.
+    #    Hauptsession und dem abgeschlossenen Subagenten in history[].
     def test_stream_opencode_events_byte_identical(self):
         lines = self.stream(self.OPENCODE_EVENTS)
 
@@ -1284,9 +1306,12 @@ class OpencodeRegressionTest(PiStreamFormTest):
         )
         state = vibe_runs.load_subagent_state(self.state_path)
         self.assertEqual("ses_main", state["session"])
-        entries = state["subagents"]
-        self.assertEqual(1, len(entries))
-        entry = entries[0]
+        self.assertEqual(
+            [], state["subagents"],
+            "Der abgeschlossene Subagent darf nicht aktiv bleiben: " + str(state))
+        history = state.get("history") or []
+        self.assertEqual(1, len(history))
+        entry = history[0]
         self.assertEqual({
             "session": "ses_child",
             "agent": "general",
@@ -1489,28 +1514,39 @@ class PiSubagentApiTest(PiSubagentApiFixture):
     # 1. Name: test_pi_captured_subagent_appears_in_ui_api [AK3]
     #    Vorbedingung: Pi-Szenario vom echten Übersetzungsfilter in die
     #    Zustandsdatei erfasst. Aktion: GET /api/subagents?name=proj.
-    #    Erwartung: 200/ok; der Tab-Eintrag erscheint mit session ==
-    #    toolCallId, status "completed", Agent und Beschreibung sowie
-    #    erfasster Ausgabe.
+    #    Erwartung: 200/ok; der abgeschlossene Tab-Eintrag steht nicht in der
+    #    aktiven Liste, bleibt aber mit session == toolCallId, status
+    #    "completed", Agent, Beschreibung und Ausgabe in history[] erhalten;
+    #    /api/subagent-output liefert die Ausgabe weiterhin.
     def test_pi_captured_subagent_appears_in_ui_api(self):
         self.call_pi_run()
 
         status, data, raw = self.get("/api/subagents?name=proj")
         self.assertEqual(status, 200, raw)
         self.assertTrue(isinstance(data, dict) and data.get("ok"), raw)
-        entries = data.get("subagents") or []
         self.assertEqual(
-            1, len(entries), f"Genau der erfasste Eintrag: {raw}")
-        entry = entries[0]
-        self.assertEqual(TOOL_CALL, entry.get("session"), raw)
-        self.assertEqual("completed", entry.get("status"), raw)
-        self.assertEqual("general", entry.get("agent"), raw)
-        self.assertEqual("Testzusammenfassung", entry.get("description"), raw)
-        self.assertIn("PONG", str(entry.get("output") or ""), raw)
+            [], data.get("subagents") or [],
+            "Der abgeschlossene Pi-Subagent darf nicht aktiv gemeldet werden: " + raw)
         self.assertEqual(
             "", data.get("session", ""),
             "Die ephemere Pi-Session darf der API nicht als erfasste "
             "Hauptsitzung gemeldet werden: " + raw)
+
+        state = vibe_runs.load_subagent_state(str(self.state_path()))
+        history = [item for item in (state.get("history") or [])
+                   if item.get("session") == TOOL_CALL]
+        self.assertEqual(1, len(history), "Verlaufseintrag fehlt: " + raw)
+        entry = history[0]
+        self.assertEqual("completed", entry.get("status"), entry)
+        self.assertEqual("general", entry.get("agent"), entry)
+        self.assertEqual("Testzusammenfassung", entry.get("description"), entry)
+        self.assertIn("PONG", str(entry.get("output") or ""), entry)
+
+        status, detail, detail_raw = self.get(
+            "/api/subagent-output?name=proj&session=" + TOOL_CALL)
+        self.assertEqual(200, status, detail_raw)
+        self.assertTrue(isinstance(detail, dict) and detail.get("ok"), detail_raw)
+        self.assertIn("PONG", str(detail.get("text") or ""), detail_raw)
 
     # 2. Name: test_pi_subagent_output_served_by_ui_api [AK3]
     #    Vorbedingung: wie 1. Aktion: GET /api/subagent-output mit der
@@ -1846,11 +1882,12 @@ class PiRunnerSuccessfulRunTest(PiRunnerFixture):
 
     # 2. Name: test_pi_runner_state_file_captures_subagent_and_no_session
     #    [AK5/AK3] Vorbedingung: wie 1. Aktion: Läufer ausführen und
-    #    Zustandsdatei lesen. Erwartung: Der task-Eintrag ist erfasst
-    #    (session == toolCallId als Tab-Schlüssel, agent, description,
-    #    prompt, status "completed", Ausgabe "PONG\nZweitzeile", started/
-    #    ended numerisch); die Hauptsession im Zustand bleibt leer (die
-    #    ephemere Pi-Kennung darf F25-Ketten nicht fälschen).
+    #    Zustandsdatei lesen. Erwartung: Der abgeschlossene task-Eintrag liegt
+    #    in history[] (session == toolCallId als Tab-Schlüssel, agent,
+    #    description, prompt, status "completed", Ausgabe "PONG\nZweitzeile",
+    #    started/ended numerisch) und nicht in der aktiven Liste; die
+    #    Hauptsession im Zustand bleibt leer (die ephemere Pi-Kennung darf
+    #    F25-Ketten nicht fälschen).
     #    Fehlerfall: Zustandsdatei fehlt oder Eintrag falsch.
     def test_pi_runner_state_file_captures_subagent_and_no_session(self):
         self.run_and_expect_finished()
@@ -1863,9 +1900,12 @@ class PiRunnerSuccessfulRunTest(PiRunnerFixture):
             "Die ephemere Pi-Session darf nicht als Hauptsession "
             "erfasst werden: " + json.dumps(state, ensure_ascii=False),
         )
-        entries = state.get("subagents") or []
-        self.assertEqual(1, len(entries), f"Genau der task-Eintrag: {state}")
-        entry = entries[0]
+        self.assertEqual(
+            [], state.get("subagents") or [],
+            "Der abgeschlossene task darf nicht aktiv bleiben: " + str(state))
+        history = state.get("history") or []
+        self.assertEqual(1, len(history), f"Genau der task-Eintrag in history[]: {state}")
+        entry = history[0]
         self.assertEqual(TOOL_CALL, entry.get("session"), entry)
         self.assertEqual("general", entry.get("agent"), entry)
         self.assertEqual("Testzusammenfassung", entry.get("description"), entry)

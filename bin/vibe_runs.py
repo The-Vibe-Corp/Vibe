@@ -147,6 +147,10 @@ SUBAGENT_TOOLS = ("task", "subagent")
 # als MAX_SUBAGENTS gleichzeitig laufenden Einträgen können die ältesten
 # laufenden verdrängt werden.
 MAX_SUBAGENTS = 50
+# GH-104: Beendete Einträge verlassen die aktive Liste und wandern in einen
+# begrenzten Verlauf. Der Verlauf hält die Ausgabe für /api/subagent-output
+# und /api/steer bereit; die ältesten Einträge fallen zuerst heraus.
+MAX_SUBAGENT_HISTORY = 50
 # B11: Auch die Ausgabe je Eintrag braucht ein Budget. Gespeichert wird nur
 # der jüngste Tail; das begrenzt Zustandsdatei, Schreib-/fsync-Kosten und die
 # Listenantwort. Die volle Live-Ausgabe liefert /api/subagent-output.
@@ -191,33 +195,49 @@ def subagent_state_path(log_path):
 
 
 def load_subagent_state(path):
-    """Liest die Zustandsdatei; fehlende oder defekte Daten sind ein leerer Zustand."""
+    """Liest die Zustandsdatei; fehlende oder defekte Daten sind ein leerer Zustand.
+
+    GH-104: ``subagents`` ist die aktive Liste; ``history`` hält beendete
+    Einträge samt Ausgabe. Beide Listen werden unverändert übernommen und erst
+    beim Speichern begrenzt.
+    """
     try:
         with open(path, encoding="utf-8") as handle:
             data = json.load(handle)
     except (OSError, ValueError):
-        return {"session": "", "subagents": []}
+        return {"session": "", "subagents": [], "history": []}
     if not isinstance(data, dict):
-        return {"session": "", "subagents": []}
+        return {"session": "", "subagents": [], "history": []}
     session = data.get("session") if isinstance(data.get("session"), str) else ""
     entries = [
         dict(item) for item in data.get("subagents") or []
         if isinstance(item, dict)
     ]
-    return {"session": session, "subagents": entries}
+    history = [
+        dict(item) for item in data.get("history") or []
+        if isinstance(item, dict)
+    ]
+    return {"session": session, "subagents": entries, "history": history}
 
 
 def save_subagent_state(path, state):
-    """Schreibt den Subagenten-Zustand atomar; nur der Läufer schreibt hier."""
+    """Schreibt den Subagenten-Zustand atomar; nur der Läufer schreibt hier.
+
+    GH-104: Aktive Liste und Verlauf werden getrennt begrenzt. Der Verlauf
+    behält die jüngsten Einträge; ältere fallen zuerst heraus.
+    """
     entries = state.get("subagents")
     if isinstance(entries, list):
         _trim_subagent_entries(entries)
+    history = state.get("history")
+    if isinstance(history, list):
+        _trim_subagent_history(history)
     text = json.dumps(state, ensure_ascii=False, indent=1) + "\n"
     _atomic_write(path, text)
 
 
 def _trim_subagent_entries(entries):
-    """Begrenzt die Einträge auf MAX_SUBAGENTS; laufende bleiben bevorzugt."""
+    """Begrenzt die aktive Liste auf MAX_SUBAGENTS; laufende bleiben bevorzugt."""
     if len(entries) <= MAX_SUBAGENTS:
         return
     running = [item for item in entries
@@ -227,6 +247,103 @@ def _trim_subagent_entries(entries):
     room = max(0, MAX_SUBAGENTS - len(running))
     kept = running + (finished[-room:] if room else [])
     entries[:] = kept[-MAX_SUBAGENTS:]
+
+
+def _trim_subagent_history(history):
+    """Begrenzt den Verlauf auf MAX_SUBAGENT_HISTORY; die ältesten fallen heraus."""
+    if len(history) > MAX_SUBAGENT_HISTORY:
+        del history[:len(history) - MAX_SUBAGENT_HISTORY]
+
+
+def _history_entries(state):
+    """Liefert die Verlaufsliste; fehlende oder defekte Werte werden ersetzt."""
+    history = state.get("history")
+    if not isinstance(history, list):
+        history = []
+        state["history"] = history
+    return history
+
+
+def _history_entry(state, session):
+    """Findet den Verlaufseintrag einer beendeten Kind-Session."""
+    if not session:
+        return None
+    for item in _history_entries(state):
+        if isinstance(item, dict) and item.get("session") == session:
+            return item
+    return None
+
+
+def _retire_subagent(state, entry, status="", now=None):
+    """Verschiebt einen aktiven Eintrag in den begrenzten Verlauf (GH-104).
+
+    Der Eintrag verlässt die aktive Liste sofort. Ein Abschlussstatus bekommt
+    ein ``ended``; ein bereits vorhandener Verlaufseintrag derselben Session
+    wird ersetzt, damit keine Dubletten entstehen. Die Ausgabe bleibt erhalten.
+    """
+    if not isinstance(entry, dict):
+        return None
+    session = str(entry.get("session") or "")
+    entries = state.get("subagents")
+    if isinstance(entries, list):
+        for index, item in enumerate(entries):
+            if item is entry or (session and isinstance(item, dict)
+                                 and item.get("session") == session):
+                del entries[index]
+                break
+    if status and entry.get("status") not in SUBAGENT_FINISHED:
+        entry["status"] = status
+    if entry.get("status") in SUBAGENT_FINISHED and not entry.get("ended"):
+        entry["ended"] = int(time.time()) if now is None else int(now)
+    history = _history_entries(state)
+    if session:
+        history[:] = [
+            item for item in history
+            if not (isinstance(item, dict) and item.get("session") == session)
+        ]
+    record = dict(entry)
+    history.append(record)
+    _trim_subagent_history(history)
+    return record
+
+
+def _revive_subagent(state, entry):
+    """Holt einen Verlaufseintrag zurück in die aktive Liste (B12/GH-104).
+
+    Nur Ereignisse der konkreten Kind-Session lösen das aus. Status und
+    ``ended`` werden auf einen laufenden Eintrag gesetzt; die gesammelte
+    Ausgabe bleibt unangetastet.
+    """
+    if not isinstance(entry, dict):
+        return None
+    session = str(entry.get("session") or "")
+    history = _history_entries(state)
+    history[:] = [
+        item for item in history
+        if item is not entry and not (session and isinstance(item, dict)
+                                      and item.get("session") == session)
+    ]
+    entry["status"] = "running"
+    entry["ended"] = 0
+    state.setdefault("subagents", []).append(entry)
+    return entry
+
+
+def _retire_active_for_attempt(state):
+    """Räumt vor einem neuen Versuch alle übrigen aktiven Einträge ab.
+
+    GH-104: Mehrere Tickets laufen nacheinander im selben Lauf. Ein noch als
+    laufend gespeichertes Kind des vorherigen Tickets darf nicht in den neuen
+    Versuch hineinragen. Innerhalb des Versuchs neu angelegte Einträge bleiben
+    unberührt, weil der Aufruf vor dem Ereignisstrom erfolgt.
+    """
+    entries = state.get("subagents")
+    if not isinstance(entries, list) or not entries:
+        return False
+    now = int(time.time())
+    for entry in list(entries):
+        _retire_subagent(state, entry, status="cancelled", now=now)
+    return True
 
 
 def _subagent_session(part, tool_state=None):
@@ -316,6 +433,29 @@ def _child_event_lines(event):
     return [f"[Werkzeug] {tool} — {status}" + (": " + detail if detail else "")]
 
 
+def _known_subagent_session(state, session):
+    """Ist ``session`` eine bereits erfasste Kind-Session (aktiv oder Verlauf)?"""
+    if not session:
+        return False
+    for entry in list(state.get("subagents") or []) + list(_history_entries(state)):
+        if isinstance(entry, dict) and entry.get("session") == session:
+            return True
+    return False
+
+
+def _locate_subagent(state, session, agent="", description=""):
+    """Findet einen Eintrag aktiv oder im Verlauf.
+
+    Rückgabe: ``(entry, retired)``. ``retired`` ist True, wenn der Eintrag aus
+    dem Verlauf stammt; der Aufrufer entscheidet, ob er wiederbelebt oder nur
+    aktualisiert wird.
+    """
+    entry = _subagent_entry(state, session, agent, description)
+    if entry is not None:
+        return entry, False
+    return _history_entry(state, session), True
+
+
 def _capture_child_event(event, state, session):
     """Erfasst ein Ereignis einer fremden Session als laufenden Subagenten.
 
@@ -324,11 +464,16 @@ def _capture_child_event(event, state, session):
     jede unbekannte Kind-Session einen laufenden Eintrag an und sammelt deren
     Ausgabe. Der Abschluss kommt weiterhin über das ``task``-Ereignis der
     Hauptsession.
+
+    GH-104: Ereignisse einer bereits beendeten Kind-Session holen deren
+    Verlaufseintrag zurück in die aktive Liste, statt einen leeren Eintrag
+    anzulegen. Nur diese eine Session wird wiederbelebt; Geschwister bleiben
+    im Verlauf.
     """
     lines = _child_event_lines(event)
     if not lines:
         return [], False
-    entry = _subagent_entry(state, session, "", "")
+    entry, retired = _locate_subagent(state, session, "", "")
     if entry is None:
         entry = {
             "session": session,
@@ -341,6 +486,8 @@ def _capture_child_event(event, state, session):
             "output": "",
         }
         state["subagents"].append(entry)
+    elif retired:
+        _revive_subagent(state, entry)
     if entry.get("status") in SUBAGENT_FINISHED:
         # B12: Lebende Kind-Ereignisse beweisen, dass der Eintrag weiterläuft;
         # ein früher gemeldeter Abschluss war voreilig. Das ist die
@@ -396,12 +543,11 @@ def translate_event(event, state, run=None):
             return _capture_child_event(event, state, session)
     if (not isinstance(run, dict) and isinstance(session, str) and session
             and known_session and session != known_session
-            and any(item.get("session") == session
-                    for item in state["subagents"])):
-        # B12: Eine bereits erfasste Kind-Session bleibt ein Subagent; ihre
-        # späteren Ereignisse beleben den Eintrag wieder, statt die
-        # Hauptsession zu ersetzen. F25 „zuletzt gewinnt“ gilt nur für
-        # unbekannte Sessions.
+            and _known_subagent_session(state, session)):
+        # B12/GH-104: Eine bereits erfasste Kind-Session bleibt ein Subagent;
+        # ihre späteren Ereignisse beleben den Eintrag wieder (auch aus dem
+        # Verlauf), statt die Hauptsession zu ersetzen. F25 „zuletzt gewinnt“
+        # gilt nur für unbekannte Sessions.
         return _capture_child_event(event, state, session)
     if isinstance(session, str) and session and session != known_session:
         state["session"] = session
@@ -456,7 +602,7 @@ def translate_event(event, state, run=None):
     # bekannten Metadatenstatus gilt wie bisher der Werkzeugzustand.
     status = _subagent_metadata_status(part, tool_state) or status
     now = int(time.time())
-    entry = _subagent_entry(state, child_session, agent, description)
+    entry, retired = _locate_subagent(state, child_session, agent, description)
     if entry is None:
         entry = {
             "session": child_session,
@@ -469,6 +615,7 @@ def translate_event(event, state, run=None):
             "output": "",
         }
         state["subagents"].append(entry)
+        retired = False
         changed = True
     for key, value in (
         ("session", child_session), ("agent", agent),
@@ -489,6 +636,17 @@ def translate_event(event, state, run=None):
         changed = True
     if not isinstance(entry.get("started"), int):
         entry["started"] = now
+        changed = True
+    if status in SUBAGENT_FINISHED:
+        # GH-104: Ein abgeschlossener Subagent verlässt die aktive Liste sofort.
+        # Stammt der Eintrag bereits aus dem Verlauf, bleibt er dort und wird
+        # nur aktualisiert (keine Dublette).
+        if not retired:
+            _retire_subagent(state, entry, now=now)
+        changed = True
+    elif retired:
+        # B12/GH-104: Ein laufender task-Status holt den Verlaufseintrag zurück.
+        _revive_subagent(state, entry)
         changed = True
 
     lines = [f"[Subagent] {agent or '?'}: {description or '(ohne Beschreibung)'} — {status}"]
@@ -561,10 +719,12 @@ def _pi_tool_lines(event, state, mode):
     if mode == "start":
         line = f"[Werkzeug] {tool} — läuft" + (": " + detail if detail else "")
         if tool in SUBAGENT_TOOLS:
-            entry = _subagent_entry(state, tool_call, "", "")
+            entry, retired = _locate_subagent(state, tool_call, "", "")
             if entry is None:
                 entry = _pi_new_entry(tool_call, inputs, now)
                 state["subagents"].append(entry)
+            elif retired:
+                _revive_subagent(state, entry)
             for key, value in (
                 ("session", tool_call), ("agent", str(inputs.get("agent") or "")),
                 ("description", str(inputs.get("description") or "")),
@@ -584,10 +744,13 @@ def _pi_tool_lines(event, state, mode):
     if mode == "update":
         if tool not in SUBAGENT_TOOLS:
             return [], False
-        entry = _subagent_entry(state, tool_call, "", "")
+        entry, retired = _locate_subagent(state, tool_call, "", "")
         if entry is None:
             entry = _pi_new_entry(tool_call, inputs, now)
             state["subagents"].append(entry)
+        elif retired:
+            # GH-104: Ein Fortschrittsereignis beweist, dass der Lauf weitergeht.
+            _revive_subagent(state, entry)
         text = _pi_result_text(event.get("partialResult"))
         if text and entry.get("output") != text:
             entry["output"] = output_tail(text, MAX_SUBAGENT_OUTPUT_BYTES)
@@ -597,20 +760,24 @@ def _pi_tool_lines(event, state, mode):
     line = f"[Werkzeug] {tool} — " + ("Fehler" if failed else "abgeschlossen")
     if tool not in SUBAGENT_TOOLS:
         return [line], False
-    entry = _subagent_entry(state, tool_call, "", "")
+    entry, retired = _locate_subagent(state, tool_call, "", "")
     if entry is None:
         entry = _pi_new_entry(tool_call, inputs, now)
         state["subagents"].append(entry)
+        retired = False
     ending = ("error" if failed else "completed")
     if entry.get("status") != ending:
         entry["status"] = ending
     text = _pi_result_text(event.get("result"))
     if text and entry.get("output") != text:
         entry["output"] = output_tail(text, MAX_SUBAGENT_OUTPUT_BYTES)
-    if isinstance(entry.get("ended"), int) and entry.get("ended") != now:
-        entry["ended"] = now
+    entry["ended"] = now
     if not isinstance(entry.get("started"), int):
         entry["started"] = now
+    # GH-104: Pi-Abschluss (completed/error) verlässt die aktive Liste sofort.
+    # Ein bereits beendeter Eintrag bleibt im Verlauf und wird nur aktualisiert.
+    if not retired:
+        _retire_subagent(state, entry, now=now)
     return [line], True
 
 
@@ -701,6 +868,12 @@ def stream_events(stdin, emit, state_path, attempt=False, sessions=None,
     ändern ``state["session"]`` nicht und erzeugen darum nie einen Eintrag.
     """
     state = load_subagent_state(state_path)
+    # GH-104: Jeder Versuch startet mit einer leeren aktiven Liste. Ein noch
+    # als laufend gespeichertes Kind eines vorherigen Tickets wandert in den
+    # Verlauf und kann nicht in den neuen Versuch hineinragen. Einträge, die
+    # erst in diesem Strom entstehen, bleiben unberührt.
+    if attempt and _retire_active_for_attempt(state):
+        save_subagent_state(state_path, state)
     run = {"attempt": bool(attempt), "main": "", "saw_main": False,
            "unknown": {}}
     # --sessions ist der Dateipfad <laufzeit>/sessions.json; die Registry
