@@ -1,6 +1,6 @@
 # Installation
 
-Vibe is a locally operated development hub for AI-assisted software projects. Installation separates project source code, the installed application, and runtime data. [cite:1]
+Vibe is a locally operated development hub for AI-assisted software projects. Installation separates project source code, the installed application, and runtime data.
 
 ## Prerequisites
 
@@ -9,11 +9,11 @@ Vibe is a locally operated development hub for AI-assisted software projects. In
 - Optional: Docker, Podman, Toolbx, or Distrobox
 - Optional: Git
 
-Vibe determines actual support through diagnostics. It checks the operating system, containers, Python version, and optional tools. Missing optional components must not silently break core functionality. [cite:1]
+Vibe determines actual support through diagnostics. It checks the operating system, containers, Python version, and optional tools. Missing optional components must not silently break core functionality.
 
 ## Set the workspace
 
-`$VIBE` identifies the **workspace**, not the Vibe source repository. It is where Vibe stores managed runtime data, settings, logs, backups, and status records. [cite:1]
+`$VIBE` identifies the **workspace**, not the Vibe source repository. It is where Vibe stores managed runtime data, settings, logs, backups, and status records.
 
 Example:
 
@@ -46,18 +46,18 @@ cd Vibe
 
 ## Container environments
 
-Vibe supports operation in container environments. Diagnostics detect host/container mismatches, check write permissions, port availability, and required programs, and provide concrete, copyable remediation steps. [cite:1]
+Vibe supports operation in container environments. Diagnostics detect host/container mismatches, check write permissions, port availability, and required programs, and provide concrete, copyable remediation steps.
 
 ## Updates and rollback
 
-Updates and rollbacks must preserve personal settings. Uninstallation must not remove projects or, by default, user data. [cite:1]
+Updates and rollbacks must preserve personal settings. Uninstallation must not remove projects or, by default, user data.
 
 Important rules:
 
 - Test changes to Vibe separately before updating the running installation.
 - Do not overwrite the production instance during an agent run.
 - Preserve existing `_toolchain` and `_logs` data during adoption.
-- Do not replace personal configuration with shipped defaults. [cite:1]
+- Do not replace personal configuration with shipped defaults.
 
 ## After installation
 
@@ -67,4 +67,4 @@ Important rules:
 4. Configure agents, models, and MCP servers as needed.
 5. Create your first work package.
 
-Removing a development directory from Vibe does not delete project files. Scanning a directory also does not run builds, installations, or project commands. [cite:1]
+Removing a development directory from Vibe does not delete project files. Scanning a directory also does not run builds, installations, or project commands.
