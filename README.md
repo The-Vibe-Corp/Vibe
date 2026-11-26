@@ -25,9 +25,9 @@ Vibe verbindet Projekte, Agenten, Modelle, MCP-Server, Ausführungen, Verifikati
 
 Vibe ist ein **lokaler Development Hub** für KI-assistierte Softwareprojekte. Statt Agenten, Modelle, MCP-Server, Tickets, Logs und Verifikation über viele getrennte Werkzeuge zu verwalten, bündelt Vibe diese Bausteine in einer übersichtlichen Arbeitsumgebung.
 
-Vibe ist dabei **kein AI Harness**: Es arbeitet mit austauschbaren, externen Harnesses über isolierte Ausführungs- und Konfigurationsschnittstellen. OpenCode ist ein unterstützter Harness. [cite:1]
+Vibe ist dabei **kein AI Harness**: Es arbeitet mit austauschbaren, externen Harnesses über isolierte Ausführungs- und Konfigurationsschnittstellen. OpenCode ist ein unterstützter Harness.
 
-Die Anwendung richtet sich insbesondere an Consultants, Product Owner, Project Manager und alle, die zuverlässige Software entwickeln möchten, ohne selbst tief in der Entwicklungstechnik zu stecken. Nutzer beschreiben Ziele, Anforderungen und Feedback; technische Konfiguration, Agent-Runs und Verifikation bleiben sichtbar und kontrollierbar. [cite:1]
+Die Anwendung richtet sich insbesondere an Consultants, Product Owner, Project Manager und alle, die zuverlässige Software entwickeln möchten, ohne selbst tief in der Entwicklungstechnik zu stecken. Nutzer beschreiben Ziele, Anforderungen und Feedback; technische Konfiguration, Agent-Runs und Verifikation bleiben sichtbar und kontrollierbar.
 
 ## Features
 
@@ -43,7 +43,7 @@ Die Anwendung richtet sich insbesondere an Consultants, Product Owner, Project M
 | **Diagnose** | Betriebssystem, Container, Python-Version, Ports, Schreibrechte und optionale Tools prüfen. |
 | **Lokal first** | Quellcode, Installation und Laufzeitdaten bleiben getrennt; Nutzer behalten Kontrolle über lokale Daten, Zugangsdaten und Projektquellen. |
 
-Diese Funktionalitäten folgen der verbindlichen Produktspezifikation in [`SPEC.md`](./SPEC.md). [cite:1]
+Diese Funktionalitäten folgen der verbindlichen Produktspezifikation in [`SPEC.md`](./SPEC.md).
 
 ## Schnellstart
 
@@ -54,7 +54,7 @@ Diese Funktionalitäten folgen der verbindlichen Produktspezifikation in [`SPEC.
 - Optional: Docker, Podman, Toolbx oder Distrobox für containerisierte Umgebungen
 - Optional: Git für projektbezogene Workflows
 
-Vibe erkennt die tatsächliche Umgebung über Diagnostics und unterscheidet dabei zwischen zwingenden Anwendungsvoraussetzungen und optionalen Projektwerkzeugen. Fehlende optionale Komponenten dürfen die Kernfunktion nicht still beschädigen. [cite:1]
+Vibe erkennt die tatsächliche Umgebung über Diagnostics und unterscheidet dabei zwischen zwingenden Anwendungsvoraussetzungen und optionalen Projektwerkzeugen. Fehlende optionale Komponenten dürfen die Kernfunktion nicht still beschädigen.
 
 ### Installation unter Linux
 
@@ -78,7 +78,7 @@ Details zu Pfaden, Workspace, Containern und Update-Verhalten findest du in [doc
 
 ### Dashboard öffnen
 
-Nach dem Start öffnest du das lokale Vibe-Dashboard im Browser. Vibe bindet den Webserver standardmäßig an `loopback`; ein explizit konfigurierter Netzwerk-Bind muss eine IP-Adresse sein, kein DNS-Hostname. [cite:1]
+Nach dem Start öffnest du das lokale Vibe-Dashboard im Browser. Vibe bindet den Webserver standardmäßig an `loopback`; ein explizit konfigurierter Netzwerk-Bind muss eine IP-Adresse sein, kein DNS-Hostname.
 
 ## Dokumentation
 
@@ -96,7 +96,7 @@ Nach dem Start öffnest du das lokale Vibe-Dashboard im Browser. Vibe bindet den
 
 ## Architektur
 
-Vibe trennt bewusst **Quellcode**, **Installation** und **Laufzeitdaten**. Ein Update einer dieser Ebenen darf die anderen nicht überschreiben. [cite:1]
+Vibe trennt bewusst **Quellcode**, **Installation** und **Laufzeitdaten**. Ein Update einer dieser Ebenen darf die anderen nicht überschreiben.
 
 ```text
 Projektquellen  ──►  Vibe Workspace  ──►  Agent Runs  ──►  Verifikation  ──►  Integration
@@ -119,7 +119,7 @@ Zentrale Begriffe:
 | **Dashboard** | Die Vibe-Webanwendung |
 | **Runner** | Der von Vibe verwaltete Prozess für Work Packages, Git-Workspaces, Verifikation und Abschlussaktionen |
 
-Die Definitionen stammen aus der Produktspezifikation. [cite:1]
+Die Definitionen stammen aus der Produktspezifikation.
 
 ## Workflows
 
@@ -132,11 +132,11 @@ Vibe koordiniert den Weg von einer Idee bis zur integrierten Änderung:
 5. **Ergebnis prüfen** — Live-Logs, Verifikationslogs und Nachweise einsehen.
 6. **Integration abschließen** — Lokal mergen oder, sofern konfiguriert, einen GitHub-Pull-Request erstellen.
 
-Ein Commit allein beweist keine Akzeptanz: Der Abschluss eines Work Packages erfordert erfüllte Akzeptanzkriterien und geeignete Nachweise. [cite:1]
+Ein Commit allein beweist keine Akzeptanz: Der Abschluss eines Work Packages erfordert erfüllte Akzeptanzkriterien und geeignete Nachweise.
 
 ## Sicherheit und Datenhoheit
 
-Vibe ist lokal ausgerichtet. Der Webserver bindet sich standardmäßig an Loopback, authentifizierte mutating API-Anfragen sind erforderlich, und Tokens dürfen weder in Access-Logs noch in Fehlermeldungen erscheinen. [cite:1]
+Vibe ist lokal ausgerichtet. Der Webserver bindet sich standardmäßig an Loopback, authentifizierte mutating API-Anfragen sind erforderlich, und Tokens dürfen weder in Access-Logs noch in Fehlermeldungen erscheinen.
 
 Wichtige Grundsätze:
 
@@ -147,7 +147,7 @@ Wichtige Grundsätze:
 - Dateien werden atomar geschrieben; gleichzeitige Änderungen werden erkannt.
 - API-Keys, Tokens, globale Konfigurationen oder persönliche Agenten werden niemals automatisch zu Git hinzugefügt.
 
-Details findest du in [docs/SECURITY.md](docs/SECURITY.md) und [`SECURITY.md`](./SECURITY.md). [cite:1]
+Details findest du in [docs/SECURITY.md](docs/SECURITY.md) und [`SECURITY.md`](./SECURITY.md).
 
 ## Projektstruktur
 
@@ -178,9 +178,9 @@ git clone https://github.com/The-Vibe-Corp/Vibe.git
 cd Vibe
 ```
 
-Vibe verfolgt einen inkrementellen Decoupling-Ansatz: CLI und Web-API bleiben schlank, Domänenlogik wird in gemeinsame Services ausgelagert, Dateizugriff liegt hinter testbaren Storage-Funktionen und statische Frontend-Dateien sind vom Python-Code getrennt. [cite:1]
+Vibe verfolgt einen inkrementellen Decoupling-Ansatz: CLI und Web-API bleiben schlank, Domänenlogik wird in gemeinsame Services ausgelagert, Dateizugriff liegt hinter testbaren Storage-Funktionen und statische Frontend-Dateien sind vom Python-Code getrennt.
 
-Qualität wird durch Unit-Tests für Domänenlogik, Integrations-Tests für API, Storage und Prozess-Adapter sowie Browser-Tests für zentrale Workflows gesichert. Mocks ersetzen dabei keine Browser- oder System-Akzeptanztests. [cite:1]
+Qualität wird durch Unit-Tests für Domänenlogik, Integrations-Tests für API, Storage und Prozess-Adapter sowie Browser-Tests für zentrale Workflows gesichert. Mocks ersetzen dabei keine Browser- oder System-Akzeptanztests.
 
 Details findest du in [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) und [`CONTRIBUTING.md`](./CONTRIBUTING.md).
 
