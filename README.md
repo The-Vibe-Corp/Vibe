@@ -1,216 +1,223 @@
-# vibe
+<div align="center">
 
-Lokale Entwicklungszentrale für Projekte, Agenten, Modelle und MCP-Server.
+# Vibe
 
-## Projektgrundlagen
+**Die lokale Entwicklungszentrale für deine Vibe-Coding-Projekte.**
 
-- SPEC.md: Produktumfang und verbindliche Anforderungen.
-- TICKETS.md: priorisierte Arbeitspakete.
-- AGENTS.md: Regeln für Implementierung, Tests und Review.
-- FEEDBACK.md: neue Fehler und Nutzerbeobachtungen.
-- docs/import-manifest.json: unverändert importierte Programmdateien.
+Verwalte Projekte, KI-Agenten, Modelle und MCP-Server an einem Ort — lokal, schnell und ohne dich zwischen Tools und Terminals zu verlieren.
 
-## Dokumentation
+[![GitHub release](https://img.shields.io/github/v/release/The-Vibe-Corp/Vibe?style=flat-square)](https://github.com/The-Vibe-Corp/Vibe/releases)
+[![License](https://img.shields.io/github/license/The-Vibe-Corp/Vibe?style=flat-square)](./LICENSE)
+[![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20Windows-blue?style=flat-square)](#installation)
+[![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen?style=flat-square)](./CONTRIBUTING.md)
 
-- `docs/handbuch.md` — Bedienung der Oberfläche und der CLI.
-- `docs/betrieb.md` — Pfade, Prozesse, Diagnose, Installation und Release.
-- `docs/grenzen.md` — bekannte Grenzen und nicht zugesagte Funktionen.
-- `docs/checkliste.md` — Abnahmecheckliste mit Versionen und Ergebnissen.
-- `docs/abnahme-bazzite.md` — dokumentierte manuelle Bazzite-Prüfung.
-- `docs/features/<ticket>.md` — fachliche und technische Dokumentation je
-  Arbeitspaket; die Zuordnung zu Trilium steht in `docs/trilium-index.md`.
-- `docs/features/README.md` — index of features: current behavior per
-  feature plus per-package records.
+[Features](#features) ·
+[Schnellstart](#schnellstart) ·
+[Installation](#installation) ·
+[Dokumentation](#dokumentation) ·
+[Beitragen](#beitragen)
 
-## Ausgangsbasis
+</div>
 
-Der Quellcode wurde aus der funktionierenden lokalen Installation übernommen.
-Die Bestandsaufnahme und reproduzierbare Testumgebung sind die ersten Tickets.
+---
 
-## Entwicklung
+## Warum Vibe?
 
-Im Distrobox-Container android-dev.
-Nicht direkt an der produktiven Installation unter _toolchain entwickeln.
-Bis V-006 existiert, keine ungeprüften Dev-Starts mit produktiven HOME-/VIBE-Pfaden.
+Vibe-Coding bedeutet, mit KI-Agenten schnell Ideen in funktionierende Software zu übersetzen. Dabei entstehen jedoch schnell viele parallele Projekte, unterschiedliche Modelle, Agenten-Konfigurationen und MCP-Server.
 
-## Tests
+**Vibe bringt Struktur in dieses Chaos.**
 
-V-002 richtet folgende Kommandos ein:
+Es ist eine lokale Steuerzentrale, mit der du Projekte und deren KI-Umgebung übersichtlich organisierst — ohne deine Arbeit aus der Kommandozeile oder deinem Editor herauszureißen.
 
-    bash scripts/verify.sh quick
-    bash scripts/verify.sh full
+## Features
+
+- **Projektzentrale** — Verwalte mehrere Vibe-Coding-Projekte zentral an einem Ort.
+- **Agenten-Verwaltung** — Konfiguriere und organisiere KI-Agenten pro Projekt.
+- **Modell-Katalog** — Verwalte verfügbare Modelle und deren Einstellungen.
+- **MCP-Server-Integration** — Verbinde und verwalte Model Context Protocol Server für deine Agenten.
+- **Profile** — Erstelle wiederverwendbare Konfigurationsprofile für unterschiedliche Arbeitsweisen.
+- **Lokal first** — Deine Projekte, Konfigurationen und Laufzeitdaten bleiben auf deinem Rechner.
+- **Plattformübergreifend** — Unterstützung für Linux-Distributionen, Container-Umgebungen und Windows.
+
+## Architektur
+
+Vibe organisiert deine lokale Entwicklungsumgebung um vier zentrale Bausteine:
+
+| Baustein | Zweck |
+|---|---|
+| **Projects** | Zentrale Verwaltung deiner Vibe-Coding-Projekte |
+| **Agents** | Konfiguration und Verwaltung deiner KI-Agenten |
+| **Models** | Übersicht und Verwaltung verfügbarer Modelle |
+| **MCP Servers** | Anbindung und Verwaltung von MCP-Servern |
+
+Projektspezifische Daten werden lokal im jeweiligen `.vibe`-Verzeichnis abgelegt. Globale Laufzeitdaten wie `vibe.json`, `models.json`, `profiles.json` und `fritz.json` werden zentral verwaltet.
+
+## Schnellstart
+
+### Voraussetzungen
+
+- Linux, Windows oder eine Container-Umgebung wie Docker, Podman, Toolbx oder Distrobox
+- Git
+- <!-- TODO: Weitere konkrete Voraussetzungen ergänzen, z. B. Node.js, Python, Go oder eine bestimmte CLI -->
+
+### Installation
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/The-Vibe-Corp/Vibe/dev/install-vibe.sh | bash
+```
+
+Der Installer erkennt automatisch deine Umgebung — einschließlich Ubuntu/Debian, Fedora, Bazzite, Docker, Podman, Toolbx, Distrobox und Windows. Fehlende Werkzeuge werden nur nach deiner Zustimmung installiert. Eine bereits vorhandene Vibe-Installation wird standardmäßig wiederverwendet.
+
+### Vibe aktualisieren
+
+```bash
+vibe --update
+```
+
+Das ersetzt die Programmdateien und erstellt dabei ein Backup der bisherigen Installation.
+
+### Erstes Projekt starten
+
+```bash
+# TODO: Tatsächlichen CLI-Befehl ergänzen
+vibe init
+```
+
+Danach öffnest du Vibe und legst dein erstes Projekt, einen Agenten sowie optional einen MCP-Server an.
+
+<!-- TODO: Optional Screenshot oder GIF einfügen -->
+
+![Vibe Overview](docs/assets/overview.png)
 
 ## Installation
 
-Universeller, interaktiver Setup (Linux, Container, Windows):
+### Linux
 
-    python3 scripts/setup-vibe.py
+Der empfohlene Weg ist das Installationsskript:
 
-Unter Windows:
-
-    setup-vibe.cmd
-
-Der Setup erkennt Ubuntu/Debian, Fedora, Bazzite, Container (Docker/Podman/
-Toolbx/Distrobox) und Windows, prüft die Werkzeuge und bietet fehlende
-Pakete nur mit Zustimmung an. Eine bestehende Installation wird standardmäßig
-wiederverwendet; `--update` ersetzt Programmdateien mit Sicherung. Laufzeitdaten
-(`vibe.json`, `models.json`, `profiles.json`, Logverzeichnis) und
-vorhandene `.vibe/project.env` werden nie überschrieben.
-
-### Verzeichnisse: Workspace, Installationsort, Logs
-
-Der Setup fragt drei Orte getrennt ab. Jeder Ort lässt sich einzeln wählen;
-die Vorschläge entsprechen der bisherigen Anordnung unter `~/VibeCode`.
-
-| Rolle | Inhalt | Option | Umgebungsvariable | Standard |
-|---|---|---|---|---|
-| Workspace | Projektordner (Git-Repositories) | `--vibe` oder `--workspace` | `VIBE` | `~/VibeCode` |
-| Installationsort | Programme, Vorlagen, Versionskennung, Sicherungen, persönliche Einstellungen | `--install` | `VIBE_INSTALL` | `<Workspace>/_toolchain` |
-| Logverzeichnis | Logs, `runs.json`, Laufzeitzustand | `--logs` | `VIBE_RUNTIME` | `<Workspace>/_logs` |
-
-Regeln: Installationsort und Workspace dürfen nicht identisch sein, und der
-Workspace darf nicht im Installationsort liegen. Das Logverzeichnis ist weder
-Workspace noch Installationsort und enthält beide nicht. Der Installationsort
-und das Logverzeichnis dürfen innerhalb des Workspace liegen. Der Quellordner
-des Setups ist als Ziel ausgeschlossen. Der Zustand (`vibe.json`,
-`profiles.json`, `limits.json`) liegt wie bisher im
-Installationsort.
-
-Der Setup trägt die Auswahl nach erfolgreicher Installation in
-`~/.config/vibe/config.json` unter `profiles.prod` ein (`workspace`, `install`
-und nur bei abweichendem Ort `runtime`). Andere Einstellungen der Datei bleiben
-erhalten; eine vorhandene Datei wird vorher als `config.json.bak-<Zeitstempel>`
-gesichert, eine ungültige Datei wird nicht verändert. Umgebungsvariablen haben
-Vorrang vor der Konfiguration; weicht eine gesetzte Variable ab, weist der
-Setup darauf hin. Das Dev-Profil bleibt davon unberührt. Die Priorität der
-Konfiguration beschreibt `docs/betrieb.md`.
-
-Beispiel mit drei getrennten Orten:
-
-    python3 scripts/setup-vibe.py \
-        --vibe ~/projects \
-        --install ~/.local/share/vibe \
-        --logs ~/.local/state/vibe
-
-Bei einer bestehenden Installation unter `~/VibeCode/_toolchain` genügt es, die
-Vorschläge zu bestätigen; es ändert sich nichts. Wer den Installationsort
-wechselt, muss persönliche Dateien (`vibe.json`, `profiles.json`)
-selbst in den neuen Ort kopieren, oder `state` in der
-Konfiguration auf den alten Ort setzen.
-
-Der bisherige Einstieg bleibt kompatibel:
-
-    VIBE=/pfad/zu/VibeCode bash install-vibe.sh
-
-Nicht-interaktive Varianten und Vorschau:
-
-    python3 scripts/setup-vibe.py --yes --vibe /pfad/zu/workspace
-    python3 scripts/setup-vibe.py --yes --vibe /pfad/zu/workspace --install /pfad/zu/install --logs /pfad/zu/logs
-    python3 scripts/setup-vibe.py --dry-run --vibe /pfad/zu/workspace
-    python3 scripts/setup-vibe.py --yes --install-deps --vibe /pfad/zu/workspace
-
-### Harness wählen (opencode oder Pi)
-
-Der Coding-Harness führt die Arbeitspakete aus. Standard ist opencode; seit
-AP04 ist Pi als erster alternativer Harness verfügbar. Die Auswahl lässt sich
-beim Setup, über die CLI und in der Oberfläche ändern:
-
-```
-python3 scripts/setup-vibe.py --harness pi
-vibe harness status
-vibe harness use pi
-vibe harness setup pi
+```bash
+curl -fsSL https://raw.githubusercontent.com/The-Vibe-Corp/Vibe/dev/install-vibe.sh | bash
 ```
 
-Ohne gespeicherte Auswahl bleibt opencode der Standard. `vibe harness setup`
-zeigt den offiziellen Bezug und den Installationsbefehl; Pi benötigt Node.js
-22.19 oder neuer. In der Oberfläche steht die Auswahl in der Ansicht
-„Umgebung“. Grenzen und die geprüften Pi-Aufrufe beschreibt
-`docs/compatibility.md`.
+Unterstützte Umgebungen:
 
-### Limitverhalten (global)
+- Ubuntu und Debian
+- Fedora
+- Bazzite
+- Docker
+- Podman
+- Toolbx
+- Distrobox
 
-Quota- und Anmeldefehler halten einen Agentenlauf standardmäßig sofort an.
-Das Verhalten gilt global für alle Projekte und lässt sich ausdrücklich
-ändern:
+### Windows
 
+<!-- TODO: Windows-Installationsanleitung ergänzen, z. B. PowerShell-Befehl oder Download-Link -->
+
+```powershell
+# TODO: Windows-Installer oder PowerShell-Befehl
 ```
-vibe limits status
-vibe limits continue
-vibe limits stop
+
+### Manuelle Installation
+
+<!-- TODO: Manuelle Installation ergänzen, falls unterstützt -->
+
+```bash
+git clone https://github.com/The-Vibe-Corp/Vibe.git
+cd Vibe
+# TODO: Build- und Installationsbefehle ergänzen
 ```
 
-`stop` ist die Voreinstellung (auch ohne Einstellungsdatei). `continue`
-behandelt Quota- und Anmeldefehler wie wiederholbare Fehler im Rahmen der
-vorhandenen Wiederholungslimits und protokolliert einen Hinweis; es werden
-keine Dienstlimits umgangen und keine unbegrenzten Wiederholungen gestartet.
-Die Einstellung liegt in `<Zustand>/limits.json`; eine defekte Datei wird
-gemeldet und wie `stop` ausgelegt.
+## Konfiguration
 
-### Vorschau, Update, Rollback und Uninstall
+Vibe speichert seine Konfiguration lokal und trennt globale Einstellungen von projektspezifischen Daten.
 
-Die Vorschau zeigt Workspace, Installationsort, Logverzeichnis, die geplante
-Konfigurationsänderung, die Version und jede Datei mit Aktion (`+` neu,
-`~` sichern und ersetzen, `=` unverändert) und schreibt nichts:
+| Datei / Verzeichnis | Zweck |
+|---|---|
+| `vibe.json` | Zentrale Laufzeit- und Anwendungskonfiguration |
+| `models.json` | Verfügbare Modelle und deren Konfiguration |
+| `profiles.json` | Wiederverwendbare Arbeits- und Agentenprofile |
+| `fritz.json` | Projektspezifische bzw. integrationsbezogene Konfiguration |
+| `.vibe/` | Lokale, projektspezifische Vibe-Daten |
+| Log-Verzeichnis | Diagnose- und Laufzeitprotokolle |
 
-    python3 scripts/setup-vibe.py --dry-run --vibe /pfad/zu/workspace
+## Dokumentation
 
-Ein Update sichert ersetzte Programmdateien und geänderte Nutzervorlagen unter
-`<Installationsort>/backup-<Zeitstempel>/` und schreibt die Versionskennung nach
-`<Installationsort>/version.json`. Solange ein Agentenlauf (`runs.json` im Logverzeichnis) oder eine
-Dashboard-Sitzung dieser Installation läuft, verweigert der Setup das Update; `--force` hebt die
-Sperre nur nach ausdrücklicher Entscheidung auf:
+- [Installation](#installation)
+- [Konfiguration](#konfiguration)
+- [Agenten einrichten](#agenten-einrichten)
+- [MCP-Server verbinden](#mcp-server-verbinden)
+- [Beitragen](#beitragen)
 
-    python3 scripts/setup-vibe.py --yes --update --vibe /pfad/zu/workspace
-    python3 scripts/setup-vibe.py --yes --update --force --vibe /pfad/zu/workspace
+<!-- TODO: Links zu docs/, wiki oder Website ergänzen -->
 
-Ein Rollback stellt die jüngste Sicherung wieder her; neu hinzugekommene
-Dateien werden dabei entfernt:
+## Projektstruktur
 
-    python3 scripts/setup-vibe.py --yes --rollback --vibe /pfad/zu/workspace
-    python3 scripts/setup-vibe.py --yes --rollback --backup backup-20261102-101500 --vibe /pfad/zu/workspace
+```text
+Vibe/
+├── .github/              # CI, Templates und Repository-Konfiguration
+├── install-vibe.sh       # Plattformübergreifender Installer
+├── README.md
+├── LICENSE
+└── # TODO: Tatsächliche Quellcode-Struktur ergänzen
+```
 
-Uninstall entfernt Programmdateien, Vorlagen und die Versionskennung. Projekte,
-Laufzeitdaten (`vibe.json`, `models.json`, `profiles.json`,
-`costs.json`, Logverzeichnis), Sicherungen und persönliche Konfiguration bleiben
-erhalten:
+## Entwicklung
 
-    python3 scripts/setup-vibe.py --yes --uninstall --vibe /pfad/zu/workspace
+### Repository klonen
 
-Die Quellversion steht in `VERSION`, der zuletzt installierte Stand in
-`<Installationsort>/version.json` (Version, Commit, Zeitpunkt, Modus, Quelle). Der
-Setup meldet beides in der Vorschau und nach der Installation; fehlt `VERSION`,
-lautet die Angabe ausdrücklich `unbekannt` statt geraten.
+```bash
+git clone https://github.com/The-Vibe-Corp/Vibe.git
+cd Vibe
+```
 
-Rollback, Uninstall und Update fragen dieselben drei Orte ab (oder lesen sie aus
-Optionen und Konfiguration); `--install` und `--logs` sind dafür ebenfalls
-gültig. Unter Windows liegt `vibe.cmd` im Installationsort.
+### Abhängigkeiten installieren
 
-Windows kann die vibe-Dateien und die Oberfläche installieren. Agentenläufe
-benötigen `tmux` und `flock` und damit WSL2 oder Docker; der Setup weist darauf
-hin.
+```bash
+# TODO: Installationsbefehl ergänzen
+```
 
-## Erster Auftrag
+### Entwicklung starten
 
-V-001 aus TICKETS.md bearbeiten.
-Danach V-002, bevor funktionale Änderungen begonnen werden.
+```bash
+# TODO: Dev-Server bzw. lokalen Start ergänzen
+```
+
+### Tests ausführen
+
+```bash
+# TODO: Testbefehl ergänzen
+```
+
+## Beitragen
+
+Beiträge sind willkommen — ob Bugfix, neue Integration, Dokumentation oder Verbesserung der Developer Experience.
+
+1. Forke das Repository
+2. Erstelle einen Feature-Branch: `git checkout -b feature/mein-feature`
+3. Nimm deine Änderungen vor
+4. Teste sie lokal
+5. Erstelle einen Pull Request
+
+Bitte halte Pull Requests fokussiert und beschreibe klar, welches Problem sie lösen.
+
+## Support
+
+- **Bugs und Feature-Wünsche:** [GitHub Issues](https://github.com/The-Vibe-Corp/Vibe/issues)
+- **Diskussionen:** <!-- TODO: GitHub Discussions oder Community-Link ergänzen -->
+- **Sicherheitsmeldungen:** Bitte keine Sicherheitsprobleme öffentlich in Issues melden. Kontaktiere das Maintainer-Team direkt.
 
 ## Lizenz
 
-Dieses Projekt ist unter der GNU Affero General Public License Version 3
-(AGPL-3.0-only) veröffentlicht. Der vollständige, unveränderte kanonische
-Lizenztext und die Projekt-Attribution stehen in `LICENSE`.
+<!-- TODO: Lizenz ergänzen, z. B. MIT, Apache-2.0 oder AGPL-3.0 -->
 
-Privatnutzung und AGPL-konforme Nutzung kostenlos; proprietär bzw. kommerzielle Nutzung ohne AGPL-Pflichten erfordert eine kommerzielle Lizenz.
+```text
+TODO: LICENSE einfügen
+```
 
-Wir stellen die Software Privatpersonen und allen, die die Copyleft-Pflichten
-der AGPLv3 akzeptieren, kostenlos bereit (siehe `LICENSE`). Unternehmen, die
-sie proprietär bzw. ohne Copyleft-Offenlegung nutzen wollen, kaufen eine
-separate kommerzielle Lizenz von uns.
+---
 
-## Mitwirken und Lizenz
+<div align="center">
 
-Beiträge: siehe `CONTRIBUTING.md`, Verhaltensregeln in
-`CODE_OF_CONDUCT.md`. Sicherheitsmeldungen bitte nicht öffentlich — siehe
-`SECURITY.md`. Die Lizenzierung folgt dem Dual-Licensing-Modell oben; der
-vollständige Lizenztext steht in `LICENSE`.
+**Vibe** — Projektmangement für dein Vibe Coding.
+
+</div>
