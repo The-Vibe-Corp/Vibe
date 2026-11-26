@@ -1,6 +1,16 @@
 {
  "aenderungen": [
   {
+   "arbeitspaket": "GH-108",
+   "dateien": [
+    "bin/web/nova-project.js",
+    "bin/web/nova.css",
+    "bin/web/i18n.js"
+   ],
+   "datum": "2026-11-26",
+   "grund": "Projektdetail-UX: 'Arbeit starten' bleibt gesperrt, solange ein Lauf aktiv ist (Poll und Klick-Waechter); Pruef- und Vollpruefknopf wandern in ein eingeklapptes 'Weitere Aktionen'-Menue; Paket/Bug/Feedback-Aktionen ziehen dauerhaft in die Headerzeile; Schnellfilter stehen ueber der schmaleren Suche, der Erledigt-Schalter direkt daneben; Ticketformularfelder fuellen die Seitenleiste und Ticketbeschreibungen werden mit dem sicheren Markdown-Renderer dargestellt; Fortsetzen auf In-Progress-Karten ist gesperrt, solange eine Projektsitzung laeuft; In-Progress-Tickets lassen sich per Karte, Drag-and-drop und Detailauswahl nach Entwurf oder Bereit zurueckstufen. Groesse und SHA-256 der geaenderten Manifest-Dateien wurden aktualisiert."
+  },
+  {
    "arbeitspaket": "GH-104",
    "dateien": [
     "bin/vibe_runs.py",
@@ -1829,9 +1839,9 @@
    "sha256": "19ea677f5c3dc3579279fd9b5bf7584612967654b8ec0bbde3818576c78b46b5"
   },
   {
-   "bytes": 157368,
+   "bytes": 157987,
    "path": "bin/web/i18n.js",
-   "sha256": "6a6ca944ea2f803a06fea549363cd2117960bd8fbb1908b37e27c5980314a6c7"
+   "sha256": "50339b69b8f1763b1afeb028a28406852d4ee3f02ba01a2cb81aaf561b5c2717"
   },
   {
    "bytes": 4214,
@@ -1869,9 +1879,9 @@
    "sha256": "6b93d852db7be168694470fd1e842a089fa33f1eaf89e1fc643e025ddaddb292"
   },
   {
-   "bytes": 124285,
+   "bytes": 130441,
    "path": "bin/web/nova-project.js",
-   "sha256": "8dd4c1c60e5d6caf4df2717e6c39413b7a817eabcacd733d443bf801936b7c5f"
+   "sha256": "69c9ffb66e526d688907138c222b7ef9e6f884bf71e74aae22c821651e594860"
   },
   {
    "bytes": 93384,
@@ -1884,9 +1894,9 @@
    "sha256": "84ae6329f31c04fcc8b48c552ade8f9d276c283ab81b1babb66f8988b627d8a7"
   },
   {
-   "bytes": 75351,
+   "bytes": 76705,
    "path": "bin/web/nova.css",
-   "sha256": "88e45719b05e1ed4b063480ae195866449e68e067eaece7120887e32bef1d7c8"  },
+   "sha256": "634bc5cdca556b0392130cf5e8b35ed274a47cd5aa6e808df2871452a3da11e6"  },
   {
    "bytes": 12751,
    "path": "bin/web/styles.css",

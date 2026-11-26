@@ -332,13 +332,21 @@ class BoardTest(AP22WorkBrowserTest):
             self.assertEqual(
                 1, board.locator(f"article[data-nv-col='{column}']").count(),
                 f"Die Board-Spalte {column} fehlt")
-        # Ordnung: Aktionsleiste → Filterleiste → Board. GH-67: die
-        # Priorisierungsansicht liegt auf Desktop nicht im DOM; die
-        # Reihenfolge-Prüfung für den Strip erfolgt in den PriorityTest-
-        # Fällen bzw. in test_gh67_work_ui.py (mobil).
+        # GH-108: Die Aktionen stehen im Header, nicht mehr in einer
+        # Aktionsleiste der Work-Ansicht. Der Header liegt vor der
+        # Filterleiste; danach folgt das Board. GH-67: die Priorisierungs-
+        # ansicht liegt auf Desktop nicht im DOM; die Reihenfolge-Prüfung
+        # für den Strip erfolgt in den PriorityTest-Fällen bzw. in
+        # test_gh67_work_ui.py (mobil).
         self.assertTrue(
-            self._follows("[data-nv-action='new-package']", "[data-nv-filter-bar]"),
-            "Die Aktionsleiste steht nicht vor der Filterleiste")
+            self._follows(
+                "[data-nv-hero] [data-nv-action='new-package']",
+                "[data-nv-filter-bar]"),
+            "Die Header-Aktion steht nicht vor der Filterleiste")
+        self.assertEqual(
+            0, self.page.locator(
+                "section[data-nv-ppanel='work'] div.nv-work-actions").count(),
+            "Die entfernte Work-Aktionsleiste existiert noch")
         filter_bar = self.page.locator("[data-nv-filter-bar]").first
         filter_bar.wait_for(state="visible", timeout=20000)
         self.assertEqual(
@@ -349,14 +357,19 @@ class BoardTest(AP22WorkBrowserTest):
                 1, filter_bar.locator(
                     f"button[data-nv-work-kind='{kind}']").count(),
                 f"Der Chip data-nv-work-kind='{kind}' fehlt in der Filterleiste")
-        # GH-67: „Show done“ ist ein eigenständiger Schalter außerhalb der
-        # Filterleiste, und der Done-Schnellfilter entfällt.
+        # GH-108: „Show done“ steht direkt rechts neben der Suche in der
+        # Filterleiste; der Done-Schnellfilter entfällt weiterhin (GH-67).
         self.assertEqual(
-            0, filter_bar.locator("[data-nv-work-hide-done]").count(),
-            "Show-done liegt wider Erwarten in der Filterleiste")
-        self.assertEqual(
-            1, self.page.locator("button[data-nv-work-hide-done]").count(),
-            "Der Knopf [data-nv-work-hide-done] fehlt")
+            1, filter_bar.locator("[data-nv-work-hide-done]").count(),
+            "Show-done fehlt in der Filterleiste")
+        self.assertTrue(
+            self.page.evaluate("""() => {
+              const btn = document.querySelector(
+                'button[data-nv-work-hide-done]');
+              const prev = btn && btn.previousElementSibling;
+              return !!prev && prev.hasAttribute('data-nv-search');
+            }"""),
+            "Show-done steht nicht direkt rechts neben der Suche")
         for state in ("draft", "ready", "running"):
             self.assertEqual(
                 1, filter_bar.locator(
@@ -571,19 +584,17 @@ class WorkStateOwnershipTest(AP22WorkBrowserTest):
                     + repr(reference_style[key]))
         self.assert_clean_page()
 
-    def test_runner_owned_states_have_no_editable_state_control(self):
-        """Läufer-Zustände dürfen nicht versehentlich auf open gesetzt
-        werden.
+    def test_runner_owned_blocked_and_waiting_states_have_no_control(self):
+        """Blockierte und wartende Tickets bleiben ohne Zustandsauswahl.
 
-        Vorbedingung: Ticket AP2 in ``in-progress``, ``blocked`` bzw.
-        ``waiting-merge``. Aktion: Detail öffnen und nach Zustandsauswahl/
-        -speichern suchen. Erwartung: es gibt weder
-        ``select[data-nv-ticket-state-select]`` noch ``ticket-state-save``;
-        stattdessen den Läufer-Hinweis; der Speicher bleibt unverändert.
+        GH-108 erlaubt ausdrücklich nur, ``in-progress`` über das Detail
+        zurückzusetzen. Für ``blocked`` und ``waiting-merge`` gilt weiterhin:
+        keine Zustandsauswahl und kein Speichern-Knopf, sondern der
+        Läufer-Hinweis; der Speicher bleibt beim Öffnen unverändert.
         Fehlerfall: eine blinde Auswahl sendet einen leeren Wert, den das
         Backend zu ``open`` normalisiert.
         """
-        for state in ("in-progress", "blocked", "waiting-merge"):
+        for state in ("blocked", "waiting-merge"):
             with self.subTest(state=state):
                 self.write_store([
                     ticket("AP2", "Läuferzustand " + state, state=state),
@@ -614,6 +625,42 @@ class WorkStateOwnershipTest(AP22WorkBrowserTest):
                     "Das Öffnen des Details hat den Zustand verändert")
                 self.page.keyboard.press("Escape")
                 detail.wait_for(state="hidden", timeout=10000)
+        self.assert_clean_page()
+
+    def test_detail_can_move_an_in_progress_ticket_back_to_draft(self):
+        """GH-108 hebt die GH-82-Sperre für In Progress im Detail auf.
+
+        Vorbedingung: Ticket AP2 in ``in-progress``. Aktion: Detail öffnen,
+        ``draft`` wählen und speichern. Erwartung: Die Auswahl bietet draft
+        und open, der Speicher wechselt nach draft und die Karte erscheint
+        in der Entwurf-Spalte. Blockiert/wartend bleiben dagegen geschützt.
+        """
+        self.write_store([ticket("AP2", "In Arbeit", state="in-progress")])
+        self.open_work()
+        self.card("AP2").click()
+        detail = self.page.locator("[data-nv-ticket-detail='AP2']").first
+        detail.wait_for(state="visible", timeout=20000)
+
+        select = detail.locator("select[data-nv-ticket-state-select]")
+        self.assertEqual(
+            1, select.count(), "In Progress bietet keine Zustandsauswahl an")
+        self.assertEqual(
+            0, detail.locator("[data-nv-runner-state-notice]").count(),
+            "In Progress zeigt trotz Zustandsauswahl den Läufer-Hinweis")
+        values = select.locator("option").evaluate_all(
+            "els => els.map(e => e.value)")
+        self.assertIn("draft", values)
+        self.assertIn("open", values)
+        select.select_option("draft")
+        detail.locator(
+            "button[data-nv-action='ticket-state-save']").click()
+
+        self.wait_until(
+            lambda: self.records()["AP2"]["state"] == "draft",
+            message="Der Zustandswechsel aus In Progress wurde nicht gespeichert")
+        self.wait_until(
+            lambda: self.card("AP2").get_attribute("data-nv-state") == "draft",
+            message="Die Karte zeigt nach dem Wechsel nicht den Entwurfszustand")
         self.assert_clean_page()
 
     def test_copying_done_ticket_does_not_suggest_a_used_id(self):
@@ -4421,12 +4468,12 @@ class GH67WorkBrowserTest(unittest.TestCase):
                          "Die vergebene ID ist ungültig")
 
     # ================================================ 6. Filterleiste
-    def test_26_hide_done_outside_filter_bar_and_effective(self):
-        """AP5: „Show done“ außerhalb der Filterleiste, aber wirksam.
+    def test_26_hide_done_next_to_search_and_effective(self):
+        """GH-108: „Show done“ direkt rechts neben der Suche und wirksam.
 
         Vorbedingung: ein done-Ticket. Aktion: Work öffnen, Show-done klicken.
-        Erwartung: der Button liegt nicht in ``[data-nv-filter-bar]``, sondern
-        direkt in der Work-Sektion; done ist standardmäßig verborgen und danach
+        Erwartung: der Button liegt in ``[data-nv-filter-bar]`` unmittelbar
+        nach dem Suchfeld; done ist standardmäßig verborgen und danach
         sichtbar.
         """
         self.write_store([
@@ -4435,17 +4482,21 @@ class GH67WorkBrowserTest(unittest.TestCase):
         placement = self.page.evaluate("""() => {
           const btn = document.querySelector('button[data-nv-work-hide-done]');
           if (!btn) return {present: false};
+          const prev = btn.previousElementSibling;
           return {
             present: true,
             inFilterBar: !!btn.closest('[data-nv-filter-bar]'),
-            inWork: !!btn.closest("section[data-nv-ppanel='work']")
+            inWork: !!btn.closest("section[data-nv-ppanel='work']"),
+            afterSearch: !!prev && prev.hasAttribute('data-nv-search')
           };
         }""")
         self.assertTrue(placement["present"], "Show-done fehlt")
-        self.assertFalse(placement["inFilterBar"],
-                         "Show-done liegt innerhalb der Filterleiste")
+        self.assertTrue(placement["inFilterBar"],
+                        "Show-done fehlt in der Filterleiste")
         self.assertTrue(placement["inWork"],
                         "Show-done liegt außerhalb der Work-Sektion")
+        self.assertTrue(placement["afterSearch"],
+                        "Show-done steht nicht direkt neben der Suche")
         self.wait_until(lambda: not self.card("AP4").is_visible(),
                         message="done ist nicht standardmäßig verborgen")
         self.show_done()
@@ -4472,11 +4523,12 @@ class GH67WorkBrowserTest(unittest.TestCase):
             "button[data-nv-work-hide-done]").count(), 1,
             "Der eigenständige Show-done-Schalter fehlt")
 
-    def test_28_filter_bar_alignment_desktop(self):
-        """AP5: Suche und Schnellfilter auf Desktop vertikal bündig.
+    def test_28_quick_filters_above_search_desktop(self):
+        """GH-108: Schnellfilter stehen über der Suche, nicht nebeneinander.
 
-        Vorbedingung: 1500x1100. Erwartung: ``div[data-nv-search]`` und
-        ``[data-nv-work-kinds]`` teilen eine Kante (±4px), überlappen nicht.
+        Vorbedingung: 1500x1100. Erwartung: ``[data-nv-work-kinds]`` liegt
+        vollständig über ``div[data-nv-search]``; die beiden Gruppen
+        überlappen sich nicht.
         """
         self.write_store([ticket("AP1", "Ready")])
         self.goto_work()
@@ -4493,13 +4545,13 @@ class GH67WorkBrowserTest(unittest.TestCase):
         self.assertIsNotNone(boxes["search"], "Die Suchleiste fehlt")
         self.assertIsNotNone(boxes["kinds"], "Die Schnellfiltergruppe fehlt")
         search, kinds = boxes["search"], boxes["kinds"]
-        aligned = (abs(search["top"] - kinds["top"]) <= 4
-                   or abs(search["bottom"] - kinds["bottom"]) <= 4)
-        self.assertTrue(aligned,
-                        "Suche und Schnellfilter sind nicht bündig: " + repr(boxes))
-        overlap = not (search["right"] <= kinds["left"]
-                       or kinds["right"] <= search["left"])
-        self.assertFalse(overlap, "Suche und Schnellfilter überlappen sich")
+        self.assertLessEqual(
+            kinds["bottom"], search["top"] + 4,
+            "Die Schnellfilter stehen nicht über der Suche: " + repr(boxes))
+        overlap_y = not (kinds["bottom"] <= search["top"]
+                         or search["bottom"] <= kinds["top"])
+        self.assertFalse(overlap_y,
+                         "Suche und Schnellfilter überlappen sich")
 
     def test_29_filter_bar_no_overlap_or_overflow_mobile(self):
         """AP5: auf 600px kein horizontaler Überlauf, keine Überlappung.

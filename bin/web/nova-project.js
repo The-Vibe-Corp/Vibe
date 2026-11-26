@@ -54,6 +54,28 @@ function nvpText(node) {
   return node ? String(node.textContent || '') : '';
 }
 
+/* GH-108: Ticketbeschreibungen im Detail als Markdown zeigen. Der Renderer
+   aus nova-settings.js baut ausschließlich DOM-Knoten (kein innerHTML);
+   fehlt er, bleibt der reine Text als Rückfall erhalten. */
+function nvpMarkdownBlock(text) {
+  var content = String(text == null ? '' : text);
+  /* Eigene Klasse: `.nv-ticket-desc` ist in Karten auf 7,5rem gekürzt; die
+     Detailseitenleiste zeigt die vollständige Beschreibung. */
+  var body = el('div', {class: 'nv-ticket-detail-desc',
+    'data-nv-ticket-description': ''});
+  if (!content) {
+    body.append(el('p', {class: 'nv-muted'}, tr('Keine Beschreibung vorhanden.')));
+    return body;
+  }
+  var rendered = null;
+  if (typeof nvMarkdown === 'function') {
+    try { rendered = nvMarkdown(content); } catch (error) { rendered = null; }
+  }
+  if (rendered) body.append(rendered);
+  else body.append(el('p', {}, content));
+  return body;
+}
+
 /* ---------- F34: gemeinsame Bausteine der Projektansicht ---------- */
 
 /* Freundliche relative Zeit für Sitzungszeilen. */
@@ -220,7 +242,7 @@ function nvpSuggestId(rows, prefix) {
 
 /* ---------- Held + Lauf-Pille ---------- */
 
-function nvpStartRunPoll(name, token, pill, stopButton) {
+function nvpStartRunPoll(name, token, pill, stopButton, runButton, baseBusy) {
   if (nvpRunTimer) { clearInterval(nvpRunTimer); nvpRunTimer = null; }
   var update = async function () {
     if (NV.stale(token)) {
@@ -235,10 +257,59 @@ function nvpStartRunPoll(name, token, pill, stopButton) {
       pill.setAttribute('data-state', running ? 'running' : 'stopped');
       pill.textContent = String(running ? tr('läuft') : tr('gestoppt'));
       if (stopButton) stopButton.hidden = !running;
+      /* GH-108: Ein aktiver Lauf sperrt „Arbeit starten“; die Sperre hängt am
+         Zustand, nicht nur am Attribut, damit ein Klick nie doppelt startet. */
+      if (runButton) {
+        runButton.disabled = running;
+        setAttrTx(runButton, 'title', running
+          ? 'Ein Lauf ist bereits aktiv' : 'Startet die Arbeit am Projekt');
+      }
+      nvpSetResumeBusy(running || !!baseBusy);
     } catch (error) { /* Poll darf kurzzeitige Fehler ignorieren. */ }
   };
   update();
   nvpRunTimer = setInterval(update, 4000);
+}
+
+/* GH-108: Läuft für dieses Projekt bereits eine Agentensitzung? Die API
+   liefert ``running`` und je Eintrag ``state``/``state_label``; beides wird
+   berücksichtigt, damit die Fortsetzen-Knöpfe nicht doppelt starten. */
+function nvpSessionsBusy(payload) {
+  var data = payload || {};
+  if (data.running) return true;
+  var flat = data.sessions || data.entries || [];
+  var bySession = {};
+  flat.forEach(function (row) {
+    var session = String(row && (row.session || row.id || row.name) || '');
+    if (session && !bySession[session]) bySession[session] = row;
+  });
+  function live(row) {
+    var entry = typeof row === 'string' ? (bySession[row] || {}) : (row || {});
+    var state = String(entry.state || entry.status || '');
+    return state === 'starting' || state === 'running';
+  }
+  var packages = data.packages || [];
+  for (var index = 0; index < packages.length; index += 1) {
+    var rows = (packages[index] && packages[index].sessions) || [];
+    for (var inner = 0; inner < rows.length; inner += 1) {
+      if (live(rows[inner])) return true;
+    }
+  }
+  return flat.some(live);
+}
+
+/* GH-108: Fortsetzen der In-Progress-Karten sperren, solange eine Sitzung
+   dieses Projekts läuft. Die vorhandene Laufabfrage ruft das nach jedem Poll. */
+function nvpSetResumeBusy(busy) {
+  document.querySelectorAll(
+    'article[data-nv-ticket][data-nv-state="in-progress"] '
+    + '[data-nv-action="ticket-resume"]').forEach(function (button) {
+    button.disabled = !!busy;
+    var card = button.closest('article[data-nv-ticket]');
+    var hasSession = !!(card && card.hasAttribute('data-nv-session'));
+    setAttrTx(button, 'title', busy ? 'Eine Sitzung läuft bereits'
+      : hasSession ? 'Sitzung fortsetzen' : 'Keine Sitzung zum Fortsetzen');
+  });
 }
 
 function nvpPost(name, path, body, successKey, token) {
@@ -258,7 +329,7 @@ function nvpPost(name, path, body, successKey, token) {
 /* Eine Karte für Board und mobile Liste. Titel zuerst, Status-Badge nur bei
    Bedarf, danach die Aktionen. Die Karte trägt den Rohzustand als
    data-nv-state, damit Filter und Spaltenzuordnung eindeutig sind. */
-function nvpTicketCard(name, token, row, rank, sessions, rows) {
+function nvpTicketCard(name, token, row, rank, sessions, rows, sessionBusy) {
   var id = String(row.id || '');
   var kind = nvpRowKind(row);
   var raw = nvpRawState(row);
@@ -285,11 +356,21 @@ function nvpTicketCard(name, token, row, rank, sessions, rows) {
     }}}, tr('Details')));
 
   if (raw === 'in-progress' || raw === 'blocked' || raw === 'waiting-merge') {
-    actions.append(el('button', {class: 'nv-btn nv-ghost nv-compact',
+    var resumeButton = el('button', {class: 'nv-btn nv-ghost nv-compact',
       type: 'button', 'data-nv-action': 'ticket-resume',
       title: session ? tr('Sitzung fortsetzen') : tr('Keine Sitzung zum Fortsetzen'),
-      on: {click: function () { nvpResumeTicket(name, token, session); }}},
-    tr('Fortsetzen')));
+      on: {click: function () {
+        if (resumeButton.disabled) return;
+        nvpResumeTicket(name, token, session);
+      }}},
+    tr('Fortsetzen'));
+    /* GH-108: In Progress ist gesperrt, solange eine Sitzung dieses Projekts
+       läuft; der Handler prüft zusätzlich, damit kein Doppelstart entsteht. */
+    if (raw === 'in-progress' && sessionBusy) {
+      resumeButton.disabled = true;
+      setAttrTx(resumeButton, 'title', 'Eine Sitzung läuft bereits');
+    }
+    actions.append(resumeButton);
   }
   if (raw === 'draft') {
     actions.append(el('button', {class: 'nv-btn nv-ghost nv-compact',
@@ -304,6 +385,14 @@ function nvpTicketCard(name, token, row, rank, sessions, rows) {
       title: tr('Zieht das Ticket zurück in die Planung'),
       on: {click: function () { nvpMoveTicketState(name, token, card, 'draft'); }}},
     tr('Zurück in Planung')));
+  }
+  /* GH-108: In Progress darf wieder nach Entwurf oder Bereit; beide Ziele
+     stehen als eigene Knöpfe an der Karte. */
+  if (raw === 'in-progress') {
+    actions.append(nvpStateToggle(name, token, card, 'open', tr('Freigeben'),
+      tr('Gibt das Ticket für die Umsetzung frei')));
+    actions.append(nvpStateToggle(name, token, card, 'draft',
+      tr('Zurück in Planung'), tr('Zieht das Ticket zurück in die Planung')));
   }
   /* Tastaturalternative zur vertikalen DnD-Reihenfolge. */
   actions.append(el('button', {class: 'nv-btn nv-ghost nv-compact',
@@ -340,7 +429,7 @@ function nvpTicketCard(name, token, row, rank, sessions, rows) {
 /* Board mit drei Spalten (Entwurf, Bereit, In Umsetzung). Karten liegen genau
    einmal im DOM; die Spaltenzuordnung kommt aus dem Rohzustand. Erledigte
    Tickets liefert der Aufrufer nicht mehr an das Board (GH-82). */
-function nvpWorkBoard(name, token, items, ranks, sessions) {
+function nvpWorkBoard(name, token, items, ranks, sessions, sessionBusy) {
   var columns = [
     ['draft', tr('Entwurf')],
     ['ready', tr('Bereit zur Implementierung')],
@@ -361,7 +450,7 @@ function nvpWorkBoard(name, token, items, ranks, sessions) {
   });
   items.forEach(function (row) {
     var card = nvpTicketCard(name, token, row, ranks[String(row.id || '')],
-      sessions, items);
+      sessions, items, sessionBusy);
     card.setAttribute('draggable', 'true');
     boxes[nvpColOfState(nvpRawState(row))].append(card);
   });
@@ -371,11 +460,11 @@ function nvpWorkBoard(name, token, items, ranks, sessions) {
 }
 
 /* Mobile Liste mit denselben Karten; Touch-Ziele kommen aus dem CSS. */
-function nvpWorkList(name, token, items, ranks, sessions) {
+function nvpWorkList(name, token, items, ranks, sessions, sessionBusy) {
   var list = el('div', {class: 'nv-work-list', 'data-nv-work-list': ''});
   items.forEach(function (row) {
     list.append(nvpTicketCard(name, token, row,
-      ranks[String(row.id || '')], sessions, items));
+      ranks[String(row.id || '')], sessions, items, sessionBusy));
   });
   if (!items.length) {
     list.append(el('p', {class: 'nv-muted'}, tr('Keine Einträge')));
@@ -386,12 +475,12 @@ function nvpWorkList(name, token, items, ranks, sessions) {
 /* GH-82: Erledigte Tickets stehen in einem eigenen responsiven Raster
    unterhalb des Boards bzw. der mobilen Liste. Die Karten bleiben dieselben
    data-*-Hooks, sind aber nicht ziehbar. */
-function nvpWorkDoneGrid(name, token, items, ranks, sessions, rows) {
+function nvpWorkDoneGrid(name, token, items, ranks, sessions, rows, sessionBusy) {
   var cards = el('div', {class: 'nv-work-done-cards',
     'data-nv-work-done-cards': ''});
   items.forEach(function (row) {
     cards.append(nvpTicketCard(name, token, row,
-      ranks[String(row.id || '')], sessions, rows));
+      ranks[String(row.id || '')], sessions, rows, sessionBusy));
   });
   return el('section', {class: 'nv-work-done', 'data-nv-work-done-grid': ''},
     el('h3', {class: 'nv-done-title'}, tr('Abgeschlossen')), cards);
@@ -409,6 +498,7 @@ function nvpWorkView(name, token, view, items) {
   var priorityView = (view && view.priority) || {};
   var ranks = nvpRankMap(priorityView.order || []);
   var sessions = nvpSessionMap(view);
+  var sessionBusy = nvpSessionsBusy(view && view.sessions);
   var ordered = nvpOrderedItems(view, items);
   var doneItems = ordered.filter(nvpIsDoneRow);
   var openItems = ordered.filter(function (row) {
@@ -417,8 +507,8 @@ function nvpWorkView(name, token, view, items) {
   var desktop = !!(window.matchMedia
     && window.matchMedia('(min-width: 769px)').matches);
   var surface = desktop
-    ? nvpWorkBoard(name, token, openItems, ranks, sessions)
-    : nvpWorkList(name, token, openItems, ranks, sessions);
+    ? nvpWorkBoard(name, token, openItems, ranks, sessions, sessionBusy)
+    : nvpWorkList(name, token, openItems, ranks, sessions, sessionBusy);
   var children = [];
   /* GH-67: Die Priorisierungsleiste ist eine mobile Ansicht; auf Desktop
      belegt sie weder Platz noch DOM-Fläche. */
@@ -427,7 +517,7 @@ function nvpWorkView(name, token, view, items) {
   }
   children.push(surface);
   children.push(nvpWorkDoneGrid(name, token, doneItems, ranks, sessions,
-    ordered));
+    ordered, sessionBusy));
   return el('div', {class: 'nv-work-view', 'data-nv-work-view': ''}, children);
 }
 
@@ -538,19 +628,30 @@ function nvpSyncCardActions(name, token, card, state) {
   var actions = card.querySelector('.nv-ticket-actions');
   if (!actions) return;
   actions.querySelectorAll(
-    '[data-nv-action="ticket-ready"], [data-nv-action="ticket-draft"]')
+    '[data-nv-action="ticket-ready"], [data-nv-action="ticket-draft"], '
+    + '[data-nv-action="ticket-resume"]')
     .forEach(function (button) { button.remove(); });
-  var toggle = state === 'draft'
-    ? nvpStateToggle(name, token, card, 'open', tr('Freigeben'),
-      tr('Gibt das Ticket für die Umsetzung frei'))
-    : state === 'open'
-      ? nvpStateToggle(name, token, card, 'draft', tr('Zurück in Planung'),
-        tr('Zieht das Ticket zurück in die Planung'))
-      : null;
-  if (!toggle) return;
+  /* GH-108: Entwurf/Bereit behalten ihren einen Umschalter; In Progress
+     bietet beide Rückwege (Entwurf und Bereit) an. */
+  var toggles = [];
+  if (state === 'draft') {
+    toggles.push(nvpStateToggle(name, token, card, 'open', tr('Freigeben'),
+      tr('Gibt das Ticket für die Umsetzung frei')));
+  } else if (state === 'open') {
+    toggles.push(nvpStateToggle(name, token, card, 'draft',
+      tr('Zurück in Planung'), tr('Zieht das Ticket zurück in die Planung')));
+  } else if (state === 'in-progress') {
+    toggles.push(nvpStateToggle(name, token, card, 'open', tr('Freigeben'),
+      tr('Gibt das Ticket für die Umsetzung frei')));
+    toggles.push(nvpStateToggle(name, token, card, 'draft',
+      tr('Zurück in Planung'), tr('Zieht das Ticket zurück in die Planung')));
+  }
+  if (!toggles.length) return;
   var anchor = actions.querySelector('[data-nv-action="priority-up"]');
-  if (anchor) actions.insertBefore(toggle, anchor);
-  else actions.append(toggle);
+  toggles.forEach(function (toggle) {
+    if (anchor) actions.insertBefore(toggle, anchor);
+    else actions.append(toggle);
+  });
 }
 
 /* Teilaktualisierung nach einem Statuswechsel: Zustand, Badge, Aktionen,
@@ -691,7 +792,11 @@ function nvpWireBoardDnD(board, name, token) {
     var targetCol = column.getAttribute('data-nv-col');
     var allowed = drag.sourceCol === targetCol
       || (drag.sourceCol === 'draft' && targetCol === 'ready')
-      || (drag.sourceCol === 'ready' && targetCol === 'draft');
+      || (drag.sourceCol === 'ready' && targetCol === 'draft')
+      /* GH-108: In Progress darf zurück nach Entwurf oder Bereit; andere
+         Zielspalten bleiben dem Läufer vorbehalten. */
+      || (drag.sourceCol === 'running'
+          && (targetCol === 'draft' || targetCol === 'ready'));
     if (!allowed) {
       if (drag.marker) drag.marker.remove();
       drag.marker = null;
@@ -790,7 +895,7 @@ function nvpOpenTicketDetail(name, token, row, kind) {
       el('span', {class: 'nv-pill nv-state'}, nvpStateLabel(row.state))),
     el('h3', {}, title),
     el('p', {class: 'nv-muted'}, el('code', {}, id)),
-    el('p', {}, String(row.description || tr('Keine Beschreibung vorhanden.'))));
+    nvpMarkdownBlock(row.description));
   var actions = el('div', {class: 'nv-row nv-ticket-detail-actions'});
   if (done) {
     actions.append(el('span', {class: 'nv-pill nv-warn', 'data-nv-done-notice': '',
@@ -798,18 +903,19 @@ function nvpOpenTicketDetail(name, token, row, kind) {
     tr('Abgeschlossene Einträge bleiben als Nachweis erhalten')));
   } else {
     var rawState = nvpRawState(row);
-    if (rawState === 'in-progress' || rawState === 'blocked'
-        || rawState === 'waiting-merge') {
+    if (rawState === 'blocked' || rawState === 'waiting-merge') {
       actions.append(el('span', {class: 'nv-pill nv-warn',
         'data-nv-runner-state-notice': '',
         title: tr('Zustand wird vom Läufer gesetzt')},
       tr('Zustand wird vom Läufer gesetzt')));
     } else {
+      /* GH-108: Auch In Progress bietet hier die freigegebenen Zielzustände
+         Entwurf/Bereit an; der Startwert ist der Rückweg nach Entwurf. */
       var stateSelect = el('select', {'data-nv-ticket-state-select': '',
         'aria-label': tr('Zustand')});
       stateSelect.append(el('option', {value: 'draft'}, tr('Entwurf')));
       stateSelect.append(el('option', {value: 'open'}, tr('Bereit')));
-      stateSelect.value = rawState;
+      stateSelect.value = rawState === 'open' ? 'open' : 'draft';
       actions.append(stateSelect);
       actions.append(el('button', {class: 'nv-btn nv-primary', type: 'button',
         'data-nv-action': 'ticket-state-save', on: {click: function () {
@@ -2148,23 +2254,41 @@ NV.views.project = async function project(context, token) {
         .then(function () { if (!NV.stale(token)) NV.render(); });
     }}}, tr('Stoppen'));
 
+  /* GH-108: Die Arbeitsaktionen ziehen in den Held um; sie brauchen die
+     Ticketlisten für Kennungsvorschläge, die erst nach dem Laden gefüllt
+     werden. Die Variablen stehen deshalb schon vor dem synchronen Aufbau. */
+  var tickets = [];
+  var feedback = [];
+  var runButton = nvpButton(tr('Arbeit starten'), 'run', function () {
+    if (runButton.disabled) return;
+    nvpPost(name, '/api/run', {}, 'Gestartet', token)
+      .then(function () { if (!NV.stale(token)) NV.render(); });
+  }, 'nv-primary');
+  /* Solange der Laufzustand unbekannt ist, bleibt der Knopf gesperrt: ein
+     schneller Klick darf keinen zweiten Lauf starten. */
+  runButton.setAttribute('data-nv-run-start', '');
+  runButton.disabled = true;
+  setAttrTx(runButton, 'title', 'Ein Lauf ist bereits aktiv');
+  var moreActions = el('details', {class: 'nv-more-actions',
+    'data-nv-more-actions': ''},
+  el('summary', {class: 'nv-btn nv-secondary nv-compact nv-more-summary'},
+    tr('Weitere Aktionen')),
+  el('div', {class: 'nv-more-menu'},
+    nvpButton(tr('Prüfen'), 'verify', function () {
+      nvpPost(name, '/api/verify', {mode: 'quick'}, 'Prüfung gestartet', token);
+    }),
+    el('button', {class: 'nv-btn', type: 'button', 'data-nv-verify': 'full',
+      on: {click: function () {
+        nvpPost(name, '/api/verify', {mode: 'full'}, 'Vollprüfung gestartet', token);
+      }}}, tr('Vollprüfung'))));
+
   var heroRow;
   var hero = el('section', {class: 'nv-card nv-hero', 'data-nv-hero': ''},
     heroRow = el('div', {class: 'nv-row'},
       el('h2', {class: 'nv-page-title', 'data-nv-project-title': ''}, name),
       pill, branch, typeBadge),
     el('div', {class: 'nv-row nv-hero-actions'},
-      nvpButton(tr('Arbeit starten'), 'run', function () {
-        nvpPost(name, '/api/run', {}, 'Gestartet', token)
-          .then(function () { if (!NV.stale(token)) NV.render(); });
-      }, 'nv-primary'),
-      nvpButton(tr('Prüfen'), 'verify', function () {
-        nvpPost(name, '/api/verify', {mode: 'quick'}, 'Prüfung gestartet', token);
-      }),
-      el('button', {class: 'nv-btn', type: 'button', 'data-nv-verify': 'full',
-        on: {click: function () {
-          nvpPost(name, '/api/verify', {mode: 'full'}, 'Vollprüfung gestartet', token);
-        }}}, tr('Vollprüfung')),
+      runButton,
       nvpButton(tr('Pause anfordern'), 'pause', function () {
         nvpPost(name, '/api/pause', {action: 'request'}, 'Pause', token)
           .then(function (result) {
@@ -2172,7 +2296,20 @@ NV.views.project = async function project(context, token) {
             nvpSyncPauseBadge(true);
           });
       }),
-      stopButton));
+      stopButton,
+      moreActions,
+      nvpButton(tr('Paket anlegen'), 'new-package', function () {
+        nvpOpenTicketForm(name, token, {mode: 'package', type: 'feature',
+          rows: tickets});
+      }, 'nv-primary'),
+      nvpButton(tr('Bug melden'), 'new-bug', function () {
+        nvpOpenTicketForm(name, token, {mode: 'bug', type: 'bug',
+          rows: feedback});
+      }),
+      nvpButton(tr('Feedback geben'), 'new-feedback', function () {
+        nvpOpenTicketForm(name, token, {mode: 'feedback', type: 'feedback',
+          rows: feedback});
+      })));
 
   function nvpSyncPauseBadge(active) {
     var badge = hero.querySelector('[data-nv-pause-badge]');
@@ -2283,11 +2420,15 @@ NV.views.project = async function project(context, token) {
     typeBadge.removeAttribute('hidden');
   }
   nvpSyncPauseBadge(!!data.pause_after);
-  nvpStartRunPoll(name, token, pill, stopButton);
+  runButton.disabled = running;
+  setAttrTx(runButton, 'title', running
+    ? 'Ein Lauf ist bereits aktiv' : 'Startet die Arbeit am Projekt');
+  var sessionsBusy = nvpSessionsBusy(view.sessions);
+  nvpStartRunPoll(name, token, pill, stopButton, runButton, sessionsBusy);
 
   /* ---- Überblick: Autonom-Karte, Kacheln, Zustand, Sitzungen ---- */
-  var tickets = data.tickets || [];
-  var feedback = data.feedback || [];
+  tickets = data.tickets || [];
+  feedback = data.feedback || [];
   var allItems = tickets.concat(feedback.map(function (row) {
     return Object.assign({}, row, {__feedback: true});
   }));
@@ -2451,22 +2592,7 @@ NV.views.project = async function project(context, token) {
   });
   panels.overview.append(sessionBox);
 
-  /* ---- Arbeit: Aktionsleiste → Filter → Priorisierung → Board/Liste ---- */
-  var newRow = el('div', {class: 'nv-row nv-work-actions'},
-    nvpButton(tr('Paket anlegen'), 'new-package', function () {
-      nvpOpenTicketForm(name, token, {mode: 'package', type: 'feature',
-        rows: tickets});
-    }, 'nv-primary'),
-    nvpButton(tr('Bug melden'), 'new-bug', function () {
-      nvpOpenTicketForm(name, token, {mode: 'bug', type: 'bug',
-        rows: feedback});
-    }),
-    nvpButton(tr('Feedback geben'), 'new-feedback', function () {
-      nvpOpenTicketForm(name, token, {mode: 'feedback', type: 'feedback',
-        rows: feedback});
-    }));
-  panels.work.append(newRow);
-
+  /* ---- Arbeit: Filter (Schnellfilter über Suche) → Priorisierung → Board ---- */
   var hideDoneButton = el('button', {class: 'nv-btn nv-secondary nv-compact',
     type: 'button', 'data-nv-work-hide-done': '', 'aria-pressed': 'true'},
   tr('Erledigte anzeigen') + ' (' + String(nvpCount(tickets, 'erledigt')) + ')');
@@ -2491,17 +2617,18 @@ NV.views.project = async function project(context, token) {
         type: 'button', 'data-nv-work-state': def[0],
         'aria-pressed': 'false'}, def[1]));
     });
-  panels.work.append(NV.filterBar(
+  /* GH-108: Schnellfilter stehen als eigene Zeile über der Suche; der
+     Erledigt-Schalter sitzt direkt rechts neben dem Suchfeld. */
+  var chipRow = el('div', {class: 'nv-row nv-work-chips'}, kindChips, stateChips);
+  var searchRow = el('div', {class: 'nv-row nv-work-search-row'},
     NV.search({input: searchInput, placeholder: tr('Arbeitspakete suchen')}),
-    kindChips, stateChips));
-  /* GH-67: „Erledigte anzeigen“ ist ein eigener Schalter außerhalb der
-     Schnellfilter; der frühere Closed-Chip entfällt. */
-  panels.work.append(el('div', {class: 'nv-work-show-done',
-    'data-nv-work-show-done': ''}, hideDoneButton));
+    hideDoneButton);
+  panels.work.append(NV.filterBar(chipRow, searchRow));
 
   var workView = nvpWorkView(name, token, view, allItems);
   panels.work.append(workView);
   var surface = workView.querySelector('[data-nv-board], [data-nv-work-list]');
+  nvpSetResumeBusy(running || nvpSessionsBusy(view.sessions));
 
   var backToTop = el('button', {class: 'nv-btn nv-back-to-top', type: 'button',
     'data-nv-back-to-top': '', hidden: '', title: tr('Zurück zum Listenanfang')},

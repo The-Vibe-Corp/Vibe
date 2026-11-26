@@ -14,9 +14,12 @@ web interface.
 - Writes are atomic and use an expected digest, so concurrent changes are
   detected and retried rather than silently merged (`bin/vibe_tickets.py`).
 - States: `draft`, `open`, `in-progress`, `blocked`, `waiting-merge`, `done`.
-  The web interface lets a user set only `draft` and `open`; `in-progress`,
-  `blocked`, `waiting-merge`, and `done` are owned by the runner/GitHub sync
-  (GH-82).
+  The web interface lets a user set only the targets `draft` and `open`,
+  including moving an `in-progress` ticket back from the In Progress column by
+  card button, drag-and-drop, or the detail sidebar. `blocked`,
+  `waiting-merge`, and `done` stay owned by the runner/GitHub sync
+  (GH-82; GH-108 supersedes the earlier UI restriction for the `in-progress`
+  source state).
 - Types: `task`, `bug`, `feature`, `feedback`.
 - Automatic IDs: `task` and `feature` share the `AP<n>` counter, `bug` uses
   `B<n>`, `feedback` uses `F<n>`. Allocation retries on collision.
@@ -62,7 +65,9 @@ current.
 - Web: Nova work board at `#/project/<name>/work`; `/api/ticket`,
   `/api/feedback`, `/api/priority`. Completed tickets appear in a grid below
   the board/list instead of the `ready` column and stay behind the
-  `Show done` toggle (GH-82).
+  `Show done` toggle (GH-82). The `Show done` toggle now sits directly to the
+  right of the search field; quick filters are in a row above the search
+  (GH-108).
 
 ## Records
 
@@ -78,3 +83,4 @@ current.
 - [B1-ticketlogik](../B1-ticketlogik.md) — ticket logic cleanup
 - [worknotes-nachweis-sync](../worknotes-nachweis-sync.md) — writing the
   ticket proof back without versioning it
+- [GH-108](../GH-108.md) — project detail controls and In Progress return paths

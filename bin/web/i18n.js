@@ -2259,6 +2259,22 @@
     }
   });
 
+  /* GH-108 — Kopfzeile, Prüfmenü und gesperrte Fortsetzen-Knöpfe. */
+  extend({
+    en: {
+      "Weitere Aktionen": "More actions",
+      "Ein Lauf ist bereits aktiv": "A run is already active",
+      "Startet die Arbeit am Projekt": "Starts work on the project",
+      "Eine Sitzung läuft bereits": "A session is already running"
+    },
+    de: {
+      "Weitere Aktionen": "Weitere Aktionen",
+      "Ein Lauf ist bereits aktiv": "Ein Lauf ist bereits aktiv",
+      "Startet die Arbeit am Projekt": "Startet die Arbeit am Projekt",
+      "Eine Sitzung läuft bereits": "Eine Sitzung läuft bereits"
+    }
+  });
+
   global.VIBE_I18N = api;
   global.I18N = api;
   applyLang(lang);

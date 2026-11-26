@@ -2473,6 +2473,7 @@ from pathlib import Path
 
 RUNNER = REPO / "bin" / "vibe-run.sh"
 NOVA = REPO / "bin" / "web" / "nova-project.js"
+NOVA_CSS = REPO / "bin" / "web" / "nova.css"
 APP_JS = REPO / "bin" / "web" / "app.js"
 I18N = REPO / "bin" / "web" / "i18n.js"
 
@@ -2549,6 +2550,37 @@ def js_region_waiting(text, marker, fallback=6000):
     if end < 0:
         end = start + fallback
     return text[start:end]
+
+
+def js_between(text, start, end=None):
+    """Quelltextabschnitt zwischen zwei Markern (leer bei fehlendem Start)."""
+    first = text.find(start)
+    if first < 0:
+        return ""
+    last = text.find(end, first + len(start)) if end else len(text)
+    return text[first:last if last >= 0 else len(text)]
+
+
+def js_calls(text, marker):
+    """Alle Aufrufe ``marker(...)`` mit ausgeglichenen Klammern."""
+    calls = []
+    cursor = 0
+    while True:
+        first = text.find(marker, cursor)
+        if first < 0:
+            return calls
+        depth = 0
+        index = first + len(marker) - 1
+        while index < len(text):
+            if text[index] == '(':
+                depth += 1
+            elif text[index] == ')':
+                depth -= 1
+                if depth == 0:
+                    break
+            index += 1
+        calls.append(text[first:index + 1])
+        cursor = index + 1
 
 
 # GH-48: `is_waiting_merge`/`sync_proof` (Markdown-Marker) sind entfernt.
@@ -3030,6 +3062,306 @@ class NovaWaitingSurfaceTest(unittest.TestCase):
             r'"Wartet auf Merge"\s*:\s*"Waiting for merge"',
             "Englischer Eintrag muss unverändert bleiben",
         )
+
+
+class NovaProjectDetailControlsTest(unittest.TestCase):
+    """GH-108: Steuerung und Anordnung der Projektdetail-Oberfläche.
+
+    Die Prüfung liest die ausgelieferten Nova-Quelldateien. Sie deckt die
+    strukturellen und Zustands-Verträge ab, ohne einen Live-Server oder ein
+    Modell zu starten; die sichtbare Bedienung bleibt den Browser-Tests
+    vorbehalten.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.js = NOVA.read_text(encoding="utf-8")
+        cls.css = NOVA_CSS.read_text(encoding="utf-8")
+        cls.view = js_between(cls.js, "NV.views.project =", "function nvpOpenTicketDetail(")
+        cls.hero = js_between(cls.js, "var hero = el('section'", "var tabBar = el(")
+        cls.work = js_between(cls.js, "/* ---- Arbeit", "/* ---- Output")
+        cls.card = js_region_waiting(cls.js, "function nvpTicketCard(")
+        cls.detail = js_region_waiting(cls.js, "function nvpOpenTicketDetail(")
+        cls.dnd = js_region_waiting(cls.js, "function nvpWireBoardDnD(")
+
+    def filter_bars(self):
+        return js_calls(self.work, "NV.filterBar(")
+
+    def test_start_working_button_is_disabled_while_a_run_is_active(self):
+        """Der Start-Button des Headers folgt dem Laufzustand des Projekts.
+
+        Vorbedingung: ``nova-project.js`` mit ``nv-hero`` und ``run``-Aktion.
+        Erwartung: Der Button erhält einen ``disabled``-Zustand aus dem
+        Laufzustand. Ein aktiver Lauf schaltet ihn aus; der native Disabled-
+        Zustand verhindert den Klick. Fehlerfall: Der Button bleibt während
+        eines Laufs klickbar.
+        """
+        self.assertIn("data-nv-hero", self.hero, "Header-Zeile nv-hero fehlt")
+        self.assertRegex(
+            self.view, r"nvpButton\([^;]{0,160}'run'",
+            "Start-Button (Aktion run) fehlt in der Projektansicht")
+        self.assertTrue(
+            "runButton" in self.hero or "'run'" in self.hero,
+            "Der Start-Button ist nicht in der Header-Zeile eingehängt")
+        coupled = [
+            line.strip() for line in self.js.splitlines()
+            if re.search(r"\.disabled\s*=", line) and "running" in line
+        ]
+        self.assertTrue(
+            coupled,
+            "Der Start-Button wird nicht an den Laufzustand 'running' gekoppelt")
+
+    def test_check_and_full_verification_are_in_an_actions_dropdown(self):
+        """Prüfaktionen sind erreichbar, aber nicht in der Hauptleiste.
+
+        Vorbedingung: Header-Zeile der Projektansicht. Erwartung: ``Prüfen``
+        und ``Vollprüfung`` stehen in einem ``details``-Dropdown mit
+        ``summary`` („Weitere Aktionen“ o. ä.) statt als primäre Knöpfe.
+        Fehlerfall: Eine der Aktionen ist weiterhin prominent sichtbar oder
+        ganz verschwunden.
+        """
+        self.assertRegex(
+            self.view, r"el\('details'",
+            "Keine Dropdown-Gruppe im Header vorhanden")
+        details_pos = self.view.index("el('details'")
+        dropdown = self.view[details_pos:]
+        self.assertRegex(
+            dropdown, r"el\('summary'", "Das Dropdown hat keine Überschrift")
+        self.assertRegex(
+            dropdown, r"(?i)aktionen|actions|weitere|more",
+            "Das Dropdown ist nicht als „Weitere Aktionen“ beschriftet")
+        for marker, label in (("'verify'", "Prüfen"),
+                              ("'data-nv-verify': 'full'", "Vollprüfung")):
+            position = self.view.find(marker)
+            self.assertGreater(
+                position, details_pos,
+                label + " steht außerhalb des Aktions-Dropdowns")
+        self.assertTrue(
+            "moreActions" in self.hero or "'verify'" in self.hero,
+            "Das Aktions-Dropdown ist nicht im Header eingehängt")
+
+    def test_new_ticket_actions_live_in_the_header_on_every_tab(self):
+        """Paket anlegen, Bug melden und Feedback geben hängen am Header.
+
+        Vorbedingung: Nova-Projektansicht mit Registerkarten. Erwartung: Die
+        drei Aktionen werden im ``nv-hero`` aufgebaut und nicht mehr in der
+        Work-Ansicht; der Header wird außerhalb der Panels eingehängt und ist
+        damit in jedem Register sichtbar.
+        Fehlerfall: Eine Aktion fehlt oder ist weiterhin an den Work-Tab
+        gebunden.
+        """
+        for hook in ("new-package", "new-bug", "new-feedback"):
+            with self.subTest(action=hook):
+                self.assertIn(
+                    "'" + hook + "'", self.hero,
+                    hook + " fehlt in der Header-Zeile")
+                self.assertNotIn(
+                    "'" + hook + "'", self.work,
+                    hook + " ist noch in der Work-Ansicht verdrahtet")
+        self.assertRegex(
+            self.js, r"replaceChildren\(\s*hero\s*,",
+            "Der Header liegt nicht außerhalb der Register-Panels")
+
+    def test_quick_filters_precede_search_and_search_is_not_full_width(self):
+        """Schnellfilter stehen über der Suche; die Suche bleibt schmal.
+
+        Vorbedingung: Work-Ansicht und ``nova.css``. Erwartung: Die Chips
+        werden vor dem Suchfeld in eine Filterleiste gegeben; das Suchfeld
+        wächst nicht auf die gesamte verfügbare Breite.
+        Fehlerfall: Die Suche steht vor den Filtern oder nimmt die volle
+        Breite ein.
+        """
+        bars = self.filter_bars()
+        self.assertTrue(bars, "Keine Filterleiste in der Work-Ansicht")
+        bar = bars[0]
+        if "chipRow" in bar and "searchRow" in bar:
+            self.assertLess(
+                bar.index("chipRow"), bar.index("searchRow"),
+                "Die Schnellfilter stehen nicht über der Suche")
+            chip_definition = js_between(
+                self.work, "var chipRow =", "var searchRow =")
+            search_definition = js_between(
+                self.work, "var searchRow =", "panels.work.append")
+        else:
+            chip_definition = bar
+            search_definition = bar
+            self.assertLess(
+                bar.index("kindChips"), bar.index("NV.search("),
+                "In der Filterleiste kommt die Suche vor den Chips")
+        self.assertIn(
+            "kindChips", chip_definition, "Schnellfilter fehlen in der Filterleiste")
+        self.assertIn(
+            "stateChips", chip_definition, "Zustandsfilter fehlen")
+        self.assertIn(
+            "NV.search(", search_definition, "Suchfeld fehlt in der Filterleiste")
+
+        search_rules = re.findall(
+            r"[^{}]*(?:\[data-nv-search\]|\.nv-search)[^{}]*\{[^}]*\}",
+            self.css)
+        self.assertTrue(search_rules, "Keine Breitenregel für die Suche vorhanden")
+        self.assertTrue(
+            any(re.search(
+                r"flex(?:-grow)?\s*:\s*(?:0\b|none\b|initial\b)"
+                r"|(?<![-\w])width\s*:\s*(?:auto\b|max-content|fit-content"
+                r"|min-content|(?!100%)[\d.]+(?:px|rem|em|ch))", rule)
+                for rule in search_rules),
+            "Die Suche nimmt weiterhin die gesamte Breite ein")
+
+    def test_ticket_sidebar_fields_are_full_width_and_description_is_formatted(self):
+        """Ticket-Seitenleiste: volle Felder, formatierter Ansichtstext.
+
+        Vorbedingung: Ticket-Editor und Detailansicht in ``nova-project.js``
+        sowie ``nova.css``. Erwartung: Formularfelder der Seitenleiste nutzen
+        die verfügbare Breite; die Ticketbeschreibung wird im Ansichtsmodus
+        durch einen Markdown-Renderer aufgebaut statt als Rohtext.
+        Fehlerfall: Felder bleiben schmal oder Zeilenumbrüche/Codeblöcke
+        gehen verloren. Der Detail-Wrapper darf außerdem nicht die
+        Kartenklasse ``nv-ticket-desc`` tragen, die ihn auf 7,5rem kürzt.
+        """
+        field_rules = re.findall(
+            r"[^{}]*label\.nv-field[^{}]*\{[^}]*\}", self.css)
+        full_width = [
+            rule for rule in field_rules
+            if re.search(r"\b(?:input|select|textarea)\b", rule)
+            and re.search(r"width\s*:\s*100%", rule)
+            and not re.search(r"max-width\s*:\s*32rem", rule)
+        ]
+        self.assertTrue(
+            full_width,
+            "Die Felder der Ticket-Seitenleiste nutzen nicht die volle Breite")
+
+        self.assertRegex(
+            self.detail,
+            r"(?:nvp?Markdown(?:Block)?|NV\.markdown|renderMarkdown"
+            r"|formatDescription|descriptionNodes|markdown)\s*\(",
+            "Der Tickettext wird nicht formatiert gerendert")
+        self.assertIn("row.description", self.detail)
+        self.assertRegex(
+            self.js, r"function\s+nvp?Markdown\w*\s*\([\s\S]{0,2500}"
+            r"(?:nvMarkdown\s*\(|el\('pre'|el\('code')",
+            "Der Markdown-Renderer erzeugt keine formatierten Blöcke")
+        self.assertNotRegex(
+            self.detail,
+            r"el\('p'\s*,\s*\{\s*\}\s*,\s*String\(\s*row\.description",
+            "Die Beschreibung wird weiterhin als Rohtext angezeigt")
+
+        wrapper = js_region_waiting(self.js, "function nvpMarkdownBlock(")
+        self.assertTrue(wrapper, "Der Detail-Wrapper für die Beschreibung fehlt")
+        self.assertIn(
+            "'data-nv-ticket-description'", wrapper,
+            "Der Detail-Wrapper hat keinen data-nv-ticket-description-Hook")
+        hook_position = wrapper.index("'data-nv-ticket-description'")
+        class_match = re.search(r"class:\s*'([^']*)'", wrapper[:hook_position])
+        self.assertIsNotNone(
+            class_match, "Der Detail-Wrapper hat keine Klassenangabe")
+        self.assertNotIn(
+            "nv-ticket-desc", class_match.group(1).split(),
+            "Die Detailbeschreibung trägt die kürzende Klasse nv-ticket-desc")
+
+    def test_continue_button_is_disabled_while_a_session_is_running(self):
+        """Fortsetzen ist bei aktiver Sitzung deaktiviert.
+
+        Vorbedingung: Ticketkarte in ``In Progress`` mit Sitzungszuordnung.
+        Erwartung: Der ``ticket-resume``-Button erhält einen Disabled-Zustand,
+        wenn eine Sitzung läuft; ohne Sitzung bleibt er bedienbar. Der
+        Endpunkt wird weiterhin nur mit einer Kennung aufgerufen.
+        Fehlerfall: Eine laufende Sitzung kann erneut fortgesetzt werden.
+        """
+        start = self.card.find("'ticket-resume'")
+        self.assertGreater(start, -1, "Fortsetzen-Button fehlt auf der Karte")
+        resume = self.card[start:start + 800]
+        self.assertRegex(
+            resume,
+            r"disabled\s*:\s*(?:!!\s*(?:busy|session\w*)|Boolean\(\s*(?:busy|session)"
+            r"|(?:busy|session\w*)\s*[!=]=\s*['\"])"
+            r"|\.disabled\s*=\s*(?:!!?\s*(?:busy|session\w*)|true)"
+            r"|toggleAttribute\(\s*['\"]disabled['\"]\s*,\s*"
+            r"(?:!!\s*(?:busy|session\w*)|Boolean\(\s*(?:busy|session))"
+            r"|\bif\s*\([^)]*(?:busy|session\w*)[^)]*\)\s*\{[^}]*disabled",
+            "Der Fortsetzen-Button wird nicht an eine aktive Sitzung gekoppelt")
+        self.assertRegex(
+            resume, r"if\s*\([^)]*\.disabled\s*\)",
+            "Ein Klick auf einen deaktivierten Button wird nicht abgefangen")
+        resume_function = js_region_waiting(self.js, "function nvpResumeTicket(")
+        self.assertIn(
+            "if (!session)", resume_function,
+            "Ohne Sitzung darf kein Fortsetzen-Aufruf gehen")
+
+    def test_in_progress_tickets_can_be_moved_back_and_state_is_settable(self):
+        """In Progress darf zurück; geschützte Zustände bleiben geschützt.
+
+        Vorbedingung: Board mit Drag & Drop und Ticket-Detail. Erwartung:
+        Ziehen von ``running`` nach ``draft`` und ``ready`` ist erlaubt; das
+        Detail bietet für ``in-progress`` eine Zustandsauswahl mit draft/open,
+        für ``blocked``/``waiting-merge`` dagegen nur den Läufer-Hinweis.
+        Fehlerfall: Die GH-82-Sperre gilt weiter für In Progress oder ein
+        Läufer-Zustand wird versehentlich manuell gesetzt.
+        """
+        allowed_start = self.dnd.find("var allowed =")
+        self.assertGreater(allowed_start, -1, "Keine DnD-Regel gefunden")
+        allowed = self.dnd[allowed_start:]
+        allowed = allowed[:allowed.index("if (!allowed)")]
+        running_pos = allowed.find("sourceCol === 'running'")
+        self.assertGreater(
+            running_pos, -1,
+            "In Progress ist als Drag & Drop-Quelle nicht freigegeben")
+        running_branch = allowed[running_pos:running_pos + 250]
+        for target in ("draft", "ready"):
+            with self.subTest(target=target):
+                self.assertIn(
+                    "'" + target + "'", running_branch,
+                    "Ziehen von In Progress nach " + target + " ist gesperrt")
+        self.assertNotRegex(
+            allowed, r"sourceCol\s*===\s*'(?:blocked|done|waiting-merge)'",
+            "Ein geschützter Zustand darf nicht als DnD-Quelle freigegeben werden")
+
+        notice_start = self.detail.find("if (done)")
+        select_start = self.detail.find("var stateSelect")
+        self.assertGreater(notice_start, -1, "Detailzustände fehlen")
+        notice = self.detail[notice_start:select_start if select_start > notice_start
+                             else notice_start + 700]
+        self.assertNotIn(
+            "'in-progress'", notice,
+            "In Progress bleibt ohne Zustandsauswahl im Detail")
+        self.assertIn("'blocked'", notice, "Blockiert muss geschützt bleiben")
+        self.assertIn("'waiting-merge'", notice,
+                      "Wartend muss geschützt bleiben")
+        self.assertNotRegex(
+            self.js,
+            r"rawState\s*===\s*'in-progress'[\s\S]{0,300}"
+            r"data-nv-runner-state-notice",
+            "In Progress zeigt weiterhin den Läufer-Hinweis")
+        self.assertRegex(self.js, r"'data-nv-ticket-state-select'")
+        self.assertRegex(self.js, r"value:\s*'draft'[\s\S]{0,200}value:\s*'open'",
+                         "Zurücksetzen auf Entwurf/Bereit fehlt im Detail")
+
+    def test_show_done_button_is_directly_after_the_search_input(self):
+        """„Erledigte anzeigen“ steht rechts neben der Suche.
+
+        Vorbedingung: Filterleiste der Work-Ansicht. Erwartung: Der Umschalter
+        ist in derselben Leiste unmittelbar nach dem Suchfeld eingehängt;
+        Schnellfilter dürfen nicht dazwischen stehen.
+        Fehlerfall: Der Umschalter bleibt ein eigenes Element unter der Leiste.
+        """
+        if "var searchRow =" in self.work:
+            bar = js_between(self.work, "var searchRow =", "panels.work.append")
+        else:
+            search_bars = [call for call in self.filter_bars()
+                           if "NV.search(" in call]
+            self.assertTrue(search_bars, "Suchfeld fehlt in der Filterleiste")
+            bar = search_bars[0]
+        self.assertIn(
+            "hideDoneButton", bar,
+            "„Erledigte anzeigen“ ist nicht neben der Suche eingehängt")
+        search_pos = bar.index("NV.search(")
+        done_pos = bar.index("hideDoneButton")
+        self.assertLess(search_pos, done_pos,
+                        "Der Umschalter steht links der Suche")
+        between = bar[search_pos:done_pos]
+        self.assertNotIn("kindChips", between,
+                         "Ein Schnellfilter steht zwischen Suche und Umschalter")
+        self.assertNotIn("stateChips", between,
+                         "Ein Schnellfilter steht zwischen Suche und Umschalter")
 
 
 class ClassicWaitingSurfaceTest(unittest.TestCase):
