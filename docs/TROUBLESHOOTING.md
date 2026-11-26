@@ -1,6 +1,6 @@
 # Troubleshooting
 
-Vibe provides diagnostics to detect problems early and provide concrete, copyable remediation steps. [cite:1]
+Vibe provides diagnostics to detect problems early and provide concrete, copyable remediation steps.
 
 ## Review diagnostics
 
@@ -11,9 +11,9 @@ Diagnostics distinguish:
 - Host/container mismatches
 - Write permissions
 - Port availability
-- Required programs [cite:1]
+- Required programs
 
-Missing optional components must not silently break core functionality. [cite:1]
+Missing optional components must not silently break core functionality.
 
 ## Common issues
 
@@ -28,21 +28,21 @@ Missing optional components must not silently break core functionality. [cite:1]
 
 ## Logs
 
-Vibe provides live logs and separate verification logs. These help you trace agent runs, verification, and failures independently. [cite:1]
+Vibe provides live logs and separate verification logs. These help you trace agent runs, verification, and failures independently.
 
 ## Agent runs
 
 - Quota and login failures stop a run immediately.
 - Retry limits apply only to other, repeatable error classes.
-- External signals such as `HUP`, `TERM`, or `INT` produce a trace, a log entry, and an update to the run registry state. [cite:1]
+- External signals such as `HUP`, `TERM`, or `INT` produce a trace, a log entry, and an update to the run registry state.
 
 ## MCP errors
 
-A successful connection check does not establish that an agent may use every listed tool. Agent-specific permissions must be visible or traceable. [cite:1]
+A successful connection check does not establish that an agent may use every listed tool. Agent-specific permissions must be visible or traceable.
 
 ## Safe troubleshooting
 
 - Test changes in a separate instance before touching the production installation.
 - Do not update the running instance during an agent run.
 - Create a backup before migration or risky changes.
-- Do not share tokens, API keys, or other secrets in issues, logs, or screenshots. [cite:1]
+- Do not share tokens, API keys, or other secrets in issues, logs, or screenshots.
