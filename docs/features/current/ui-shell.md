@@ -77,6 +77,11 @@ without a static sidebar.
 
 Since `GH-94`, Nova follows the “Precise Frames × Technical Density” reference stored at [`../style.html`](../style.html): matte light/dark palettes, 1 px frames, radii of 2–6 px, compact control heights, a 4/8/12/16/24/32 px spacing scale, and technical typography (Inter for UI text, JetBrains Mono for technical values). All styling lives in `bin/web/nova.css` and uses `--nv-*` custom properties. Theme and accent selection are unchanged (12 accents, `blue` default, attributes on `html`), and the classic interface keeps its own stylesheet.
 
+The agents list applies the same header alignment to its title, search field
+and "New Agent" action, and its cards use a flex column so Edit/Delete stay on a
+common bottom line across cards of different content height (`GH-109`; details
+in [Agents, models, and profiles](agents-models.md)).
+
 ## Verification note
 
 The shell behavior above was checked against `bin/web/nova-core.js`,

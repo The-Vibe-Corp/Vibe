@@ -14,6 +14,14 @@ History: see the ticket records linked at the end.
   fields are preserved. Invalid input is rejected before writing and leaves the
   existing file unchanged.
 - Every save writes a backup; `vibe agent backups`/`restore` list and restore them.
+- In the dashboard's restore confirmation, all backups of the agent are listed
+  newest-first in a labelled selector and the chosen backup is restored; the
+  selector refreshes when the confirmation opens and is disabled when no backup
+  exists (`GH-109`).
+- The agents list keeps title, search and "New Agent" on one alignment line and
+  places Edit/Delete at a common bottom offset on every card. Project
+  assignments in the editor render one row per project with a visible project
+  name, an "Assign" checkbox label and the model override (`GH-109`).
 
 ### AGENTS.md files
 
@@ -92,5 +100,6 @@ current `PROJECT_AGENTS_VERSION` is 3.
 - [F21](../F21.md) — release UI agents; [F26](../F26.md) — no version blocking
 - [F31](../F31.md) — edit free AGENTS.md parts; [GH-76](../GH-76.md) — hidden platform instructions
 - [GH-101](../GH-101.md) — AGENTS.md settings rework, scoped backups, managed block removed
+- [GH-109](../GH-109.md) — agents list/header/card layout, restore version selection, project assignment rows
 - [V-010](../V-010.md) — complete agent management; [V-011](../V-011.md) — evidence-based catalog
 - [V-025](../V-025.md) — invalid start agent in the project selection

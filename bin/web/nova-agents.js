@@ -77,7 +77,7 @@ NV.views.agents = async function agents(context, token) {
        sichtbar, bevor die API-Antwort eintrifft. Ohne diesen Rahmen greift
        ein Test (oder ein Nutzer) in einen noch leeren Views-Container. */
     main.replaceChildren(
-      el('div', {class: 'nv-toolbar'},
+      el('div', {class: 'nv-toolbar nv-agents-toolbar'},
         el('h2', {class: 'nv-page-title'}, tr('Agenten')),
         el('button', {class: 'nv-btn nv-primary', type: 'button',
           'data-nv-action': 'agent-new', on: {click: function () {
@@ -139,7 +139,7 @@ function nvAgentList(data, token, wanted) {
       searchQuery = String(value || '');
       renderList();
     }});
-  var toolbar = el('div', {class: 'nv-toolbar'},
+  var toolbar = el('div', {class: 'nv-toolbar nv-agents-toolbar'},
     el('h2', {class: 'nv-page-title'}, tr('Agenten')),
     el('div', {'data-nv-agent-search': ''}, searchBox),
     el('button', {class: 'nv-btn nv-primary', type: 'button',
@@ -301,7 +301,7 @@ function nvAgentList(data, token, wanted) {
       el('div', {class: 'nv-row nv-muted'},
         el('span', {}, tr('Modell') + ': '),
         el('span', {}, String(row.model || '—'))),
-      el('div', {class: 'nv-row'},
+      el('div', {class: 'nv-row nv-agent-actions'},
         el('button', {class: 'nv-btn nv-primary', type: 'button',
           'data-nv-action': 'agent-edit', on: {click: function () {
             NV.navigate(editRoute);
@@ -591,12 +591,6 @@ function nvAgentWizard(data, token, onCancel) {
 
 /* ---------- Ein-Seiten-Editor (2j/2k) ---------- */
 
-function nvAgentBackupName(loaded) {
-  var backups = loaded && loaded.backups;
-  if (!backups || !backups.length) return '';
-  return String(backups[0] || '');
-}
-
 async function nvAgentEditor(name, scope, data, token) {
   var main = document.getElementById('nv-main');
   var projects = data.projects || [];
@@ -682,8 +676,7 @@ async function nvAgentEditor(name, scope, data, token) {
     var listNode = assignmentsDetails.querySelector('[data-nv-assignments-list]');
     listNode.replaceChildren();
     assignmentRows.forEach(function (row) {
-      listNode.append(row.toggle);
-      listNode.append(row.model);
+      listNode.append(row.node);
     });
   }
   async function loadAssignments() {
@@ -702,7 +695,8 @@ async function nvAgentEditor(name, scope, data, token) {
           return item.name === name;
         }) || {};
         var toggle = el('input', {type: 'checkbox', 'data-nv-assign': project,
-          'aria-label': tr('Agent in Projekt') + ': ' + name + ' · ' + project});
+          'aria-label': tr('Agent in Projekt') + ': ' + name + ' · ' + project
+            + ' – ' + tr('Zugewiesen')});
         toggle.checked = !!row.selected;
         if (agentRow.is_vibe) {
           // Der Vibe-Agent ist in jedem Projekt zwingend aktiv (API-Regel).
@@ -716,7 +710,15 @@ async function nvAgentEditor(name, scope, data, token) {
         var override = NV.modelCombobox(overrideValues, row.override || '',
           {field: 'model', blank: tr('— Modell des Agentens verwenden —')});
         override.setAttribute('data-nv-assign-model', project);
-        assignmentRows.push({project: project, toggle: toggle, model: override});
+        /* Eine Zeile je Projekt: sichtbarer Projektname, beschrifteter
+           Schalter und Modell-Override bleiben zusammen. */
+        var toggleLabel = el('label', {class: 'nv-assign-toggle'},
+          toggle, el('span', {}, tr('Zugewiesen')));
+        var projectName = el('span', {class: 'nv-assign-project'}, project);
+        var assignmentRow = el('div', {'data-nv-assign-row': project},
+          projectName, toggleLabel, override);
+        assignmentRows.push({project: project, toggle: toggle, model: override,
+          node: assignmentRow});
       });
       renderAssignments();
     } catch (error) {
@@ -814,13 +816,21 @@ async function nvAgentEditor(name, scope, data, token) {
     if (deleteConfirm) deleteConfirm.hidden = which !== 'delete';
   }
 
-  restoreConfirm = el('div', {class: 'nv-confirm', 'data-nv-confirm': '', hidden: ''},
-    el('span', {class: 'nv-muted', 'data-nv-backup-info': ''},
-      tr('Letzte Sicherung: {{name}}', {name: nvAgentBackupName(loaded)})),
-    el('p', {class: 'nv-muted'}, tr('Die neueste Sicherung wiederherstellen? Der aktuelle Stand wird vorher gesichert.')),
-    el('button', {class: 'nv-btn nv-primary', type: 'button', on: {click: async function () {
+  var restoreInfo = el('span', {class: 'nv-muted', 'data-nv-backup-info': ''});
+  var restoreOrder = el('p', {class: 'nv-muted nv-restore-order'},
+    tr('Neueste zuerst'));
+  var restoreVersion = el('select', {'data-nv-restore-version': '',
+    'aria-label': tr('Sicherung auswählen')});
+  var restoreConfirmButton = el('button', {class: 'nv-btn nv-primary', type: 'button',
+    on: {click: async function () {
+      var backup = restoreVersion.value;
+      if (!backup) {
+        nvAgentError(errorBox, tr('Keine Sicherung ausgewählt.'));
+        return;
+      }
       try {
-        var result = await api('/api/agent', {action: 'restore', scope: scope, name: name});
+        var result = await api('/api/agent', {action: 'restore', scope: scope,
+          name: name, backup: backup});
         if (!result.ok) { nvAgentError(errorBox, nvAgentMessage(result)); return; }
         toast(bt(result.message) || tr('Sicherung wiederhergestellt'));
         if (!NV.stale(token)) NV.render();
@@ -828,7 +838,53 @@ async function nvAgentEditor(name, scope, data, token) {
         nvAgentError(errorBox, tr('Wiederherstellen fehlgeschlagen: ')
           + String(error && error.message || error));
       }
-    }}}, tr('Ja, wiederhergestellt')));
+    }}}, tr('Ja, wiederhergestellt'));
+
+  function setRestoreBackups(backups) {
+    var restoreBackups = (backups || []).map(function (backup) {
+      return String(backup);
+    });
+    restoreVersion.replaceChildren();
+    restoreBackups.forEach(function (backup) {
+      restoreVersion.append(el('option', {value: backup}, backup));
+    });
+    if (restoreBackups.length) {
+      restoreVersion.value = restoreBackups[0];
+      restoreVersion.disabled = false;
+    } else {
+      restoreVersion.disabled = true;
+    }
+    restoreConfirmButton.disabled = !restoreBackups.length;
+    setTx(restoreInfo, restoreBackups.length
+      ? tr('Letzte Sicherung: {{name}}', {name: restoreBackups[0]})
+      : tr('Noch keine Sicherung vorhanden.'));
+    restoreOrder.hidden = !restoreBackups.length;
+  }
+
+  /* Beim Öffnen der Bestätigung die Sicherungsliste frisch lesen: Sicherungen,
+     die seit dem Laden des Editors entstanden sind, müssen auswählbar sein. */
+  async function openRestore() {
+    try {
+      var fresh = await api('/api/agent?scope=' + encodeURIComponent(scope)
+        + '&name=' + encodeURIComponent(name));
+      if (NV.stale(token)) return;
+      setRestoreBackups(fresh.backups || []);
+    } catch (error) {
+      /* Ohne frische Antwort bleibt die zuletzt bekannte Auswahl nutzbar. */
+    }
+    if (NV.stale(token)) return;
+    showConfirm('restore');
+  }
+
+  restoreConfirm = el('div', {class: 'nv-confirm', 'data-nv-confirm': '', hidden: ''},
+    restoreInfo,
+    el('label', {class: 'nv-restore-version'},
+      el('span', {}, tr('Sicherung auswählen')),
+      restoreVersion),
+    restoreOrder,
+    el('p', {class: 'nv-muted'}, tr('Die gewählte Sicherung wiederherstellen? Der aktuelle Stand wird vorher gesichert.')),
+    restoreConfirmButton);
+  setRestoreBackups(loaded.backups || []);
 
   var targets = projects.filter(function (project) { return project !== 'global'; });
   var copyTarget = nvAgentSelect(['global'].concat(targets), targets[0] || 'global', null);
@@ -870,7 +926,7 @@ async function nvAgentEditor(name, scope, data, token) {
     }}}, tr('Ja, löschen')));
 
   var restoreButton = el('button', {class: 'nv-btn', type: 'button',
-    'data-nv-action': 'agent-restore', on: {click: function () { showConfirm('restore'); }}},
+    'data-nv-action': 'agent-restore', on: {click: openRestore}},
     tr('Sicherung wiederherstellen'));
   var copyButton = el('button', {class: 'nv-btn', type: 'button',
     'data-nv-action': 'agent-copy', on: {click: function () { showConfirm('copy'); }}},

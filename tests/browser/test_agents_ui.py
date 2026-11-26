@@ -6,6 +6,7 @@ Aufruf: python3 -m unittest tests.browser.test_agents_ui -v
 
 import json
 import os
+import re
 import signal
 import socket
 import subprocess
@@ -1653,6 +1654,111 @@ class ListTest(Ap22AgentsBrowserTest):
             "Die defekte Agentendatei ist nicht als ungültig markiert: "
             + card.inner_text())
 
+    @staticmethod
+    def _vertical_center(box):
+        """Mittelpunkt einer bounding_box auf der y-Achse."""
+        return box["y"] + box["height"] / 2.0
+
+    def test_header_search_and_new_agent_share_a_vertical_center(self):
+        """Vorbedingung: Agentenliste ``#/agents`` mit Suchleiste und
+        „Neuer Agent“-Knopf in der Kopfzeile.
+
+        Aktion: Die Positionen von Titel, Sucheingabe und Neuanlage-Knopf
+        messen. Erwartung: Alle drei Elemente liegen auf einer gemeinsamen
+        optischen Mittelachse (vertikal zentriert), und die horizontalen
+        Abstände zwischen Titel→Suche und Suche→Knopf sind gleich groß
+        (konsistentes, ausgewogenes Padding). Die TN tolerieren 4 px.
+        """
+        self.open_agents()
+        search = self.page.locator("input[data-nv-agent-search]")
+        search.wait_for(state="visible", timeout=20000)
+        title = self.page.locator(".nv-toolbar h2.nv-page-title")
+        new_btn = self.page.locator("[data-nv-action='agent-new']")
+        search_box = self.page.locator("[data-nv-search]")
+        boxes = {
+            "title": title.bounding_box(),
+            "search": search.bounding_box(),
+            "new": new_btn.bounding_box(),
+            "searchWrap": search_box.bounding_box(),
+        }
+        for name, box in boxes.items():
+            self.assertIsNotNone(box, f"{name} hat keine messbare Position")
+        center_title = self._vertical_center(boxes["title"])
+        center_search = self._vertical_center(boxes["search"])
+        center_new = self._vertical_center(boxes["new"])
+        self.assertLessEqual(
+            abs(center_search - center_new), 4,
+            "Suchleiste und 'Neuer Agent' sind nicht vertikal ausgerichtet: "
+            f"Suche-Mitte {center_search}, Knopf-Mitte {center_new}")
+        self.assertLessEqual(
+            abs(center_title - center_new), 4,
+            "Titel und 'Neuer Agent' sind nicht vertikal ausgerichtet: "
+            f"Titel-Mitte {center_title}, Knopf-Mitte {center_new}")
+        gap_title_search = (boxes["searchWrap"]["x"]
+                            - (boxes["title"]["x"] + boxes["title"]["width"]))
+        gap_search_new = (boxes["new"]["x"]
+                          - (boxes["searchWrap"]["x"]
+                             + boxes["searchWrap"]["width"]))
+        self.assertLessEqual(
+            abs(gap_title_search - gap_search_new), 4,
+            "Die Abstände in der Kopfzeile sind ungleichmäßig: "
+            f"Titel→Suche {gap_title_search}, Suche→Knopf {gap_search_new}")
+        self.assert_clean_page()
+
+    def test_agent_card_action_buttons_are_bottom_aligned_across_cards(self):
+        """Vorbedingung: Agentenliste mit mindestens zwei Karten
+        unterschiedlicher Inhaltshöhe (u. a. ``vibe-agent`` mit extra Chip).
+
+        Aktion: Die Positionen von Bearbeiten/Löschen auf jeder Karte
+        messen. Erwartung: Auf jeder Karte liegen beide Knöpfe auf derselben
+        Zeile, und über alle Karten hinweg auf identischer vertikaler
+        Position und mit identischem Abstand zum Kartenunterrand — unabhängig
+        von der Höhe des Karteninhalts. Toleranz 3 px.
+        """
+        self.open_agents()
+        cards = self.page.locator("[data-nv-agent-list] article[data-nv-agent]")
+        cards.first.wait_for(state="visible", timeout=20000)
+        # Die Karten-Einblendanimation verschiebt die Messwerte um einige px;
+        # für die Geometriemessung wird sie abgeschaltet (CSS-Hook aus nova.css).
+        self.page.evaluate(
+            "() => document.documentElement.setAttribute('data-animations','off')")
+        self.page.wait_for_timeout(150)
+        self.assertGreaterEqual(
+            cards.count(), 2,
+            "Es gibt weniger als zwei Karten — die Ausrichtung ist nicht prüfbar")
+        button_y = []
+        bottom_gaps = []
+        for index in range(cards.count()):
+            card = cards.nth(index)
+            card_box = card.bounding_box()
+            edit_box = card.locator(
+                "[data-nv-action='agent-edit']").bounding_box()
+            delete_box = card.locator(
+                "[data-nv-action='agent-delete']").bounding_box()
+            self.assertIsNotNone(edit_box, "Bearbeiten-Knopf ohne Position")
+            self.assertIsNotNone(delete_box, "Löschen-Knopf ohne Position")
+            self.assertIsNotNone(card_box, "Karte ohne Position")
+            self.assertLessEqual(
+                abs(edit_box["y"] - delete_box["y"]), 3,
+                f"Bearbeiten und Löschen stehen auf Karte {index} nicht auf "
+                "einer Zeile")
+            button_y.append(edit_box["y"])
+            bottom_gaps.append((card_box["y"] + card_box["height"])
+                               - (edit_box["y"] + edit_box["height"]))
+        self.assertLessEqual(
+            max(button_y) - min(button_y), 3,
+            "Die Aktionsknöpfe liegen nicht auf derselben Höhe über allen "
+            f"Karten: {button_y}")
+        self.assertLessEqual(
+            max(bottom_gaps) - min(bottom_gaps), 3,
+            "Der Abstand der Knöpfe zum Kartenunterrand ist nicht "
+            f"einheitlich: {bottom_gaps}")
+        self.assertLessEqual(
+            max(bottom_gaps), 30,
+            "Die Aktionsknöpfe sind nicht am unteren Kartenrand ausgerichtet: "
+            f"{bottom_gaps}")
+        self.assert_clean_page()
+
 
 class WizardCreateTest(Ap22AgentsBrowserTest):
     def test_wizard_has_four_steps_and_the_role_catalog(self):
@@ -2029,6 +2135,94 @@ class StructuredEditorTest(Ap22AgentsBrowserTest):
             "Der Editor zeigt nach der Wiederherstellung nicht den "
             "Sicherungsstand")
 
+    @staticmethod
+    def _backup_option_index(values, backup_name):
+        """Findet die Option, die zu einer konkreten Sicherungsdatei gehört.
+
+        Der Vertrag übergibt die Sicherungsnamen aus ``GET /api/agent`` als
+        Optionswerte; als Fallback werden auch Datesnamen ohne ``.md`` und
+        Teiltreffer akzeptiert.
+        """
+        stem = backup_name[:-3] if backup_name.endswith(".md") else backup_name
+        for index, value in enumerate(values):
+            if value == backup_name or value == stem:
+                return index
+        for index, value in enumerate(values):
+            if stem in value or backup_name in value:
+                return index
+        return None
+
+    def test_restore_selects_an_older_backup_and_restores_that_version(self):
+        """Vorbedingung: Agent ``tester``. Zwei Speichervorgänge erzeugen zwei
+        Sicherungen: die älteste enthält den Ursprung („Globaler Agent“), die
+        neueste den Zwischenstand („Zwischenstand“); aktuell ist „Aktuell“.
+
+        Aktion: ``agent-restore`` öffnen, in der Versionsauswahl bewusst die
+        ÄLTESTE Sicherung wählen und bestätigen. Erwartung: Die Bestätigung
+        bietet eine Auswahl mit mindestens zwei Versionen; genau die gewählte
+        (ältere) Version wird wiederhergestellt — nicht die neueste. Der
+        Ursprung steht wieder in der Datei, der Zwischenstand ist verschwunden.
+        """
+        self.open_editor("tester")
+        editor = self.page.locator("[data-nv-agent-editor]")
+        field = editor.locator("input[data-nv-field='description']")
+        target = self.agents_dir / "tester.md"
+
+        field.fill("Zwischenstand")
+        editor.locator("[data-nv-action='agent-save']").click()
+        self.wait_until(
+            lambda: "Zwischenstand" in target.read_text(encoding="utf-8"),
+            timeout=20000,
+            message="Der Zwischenstand wurde nicht gespeichert")
+
+        field.fill("Aktuell")
+        editor.locator("[data-nv-action='agent-save']").click()
+        self.wait_until(
+            lambda: "Aktuell" in target.read_text(encoding="utf-8"),
+            timeout=20000,
+            message="Der aktuelle Stand wurde nicht gespeichert")
+
+        backups = self.backup_files()
+        self.assertGreaterEqual(
+            len(backups), 2, "Es wurden nicht mindestens zwei Sicherungen angelegt")
+        oldest = backups[0]
+        self.assertIn("Globaler Agent", oldest.read_text(encoding="utf-8"))
+
+        # Der Editor lädt die Sicherungsliste beim Öffnen. Nach den zwei
+        # Speichervorgängen neu öffnen, damit die Auswahl beide Versionen
+        # anbietet (wie beim Rückkehr eines Nutzers in den Dialog).
+        self.open_editor("tester")
+        editor = self.page.locator("[data-nv-agent-editor]")
+        editor.locator("[data-nv-action='agent-restore']").click()
+        confirm = editor.locator("[data-nv-confirm]:visible")
+        confirm.wait_for(state="visible", timeout=15000)
+        chooser = confirm.locator("select")
+        self.assertEqual(
+            1, chooser.count(),
+            "Die Restore-Bestätigung bietet keine Versionsauswahl (select) an")
+        values = chooser.locator("option").evaluate_all(
+            "nodes => nodes.map(node => node.value)")
+        self.assertGreaterEqual(
+            len(values), 2,
+            "Die Versionsauswahl bietet weniger als zwei Versionen an: "
+            + repr(values))
+        index = self._backup_option_index(values, oldest.name)
+        self.assertIsNotNone(
+            index,
+            "Die älteste Sicherung ist in der Versionsauswahl nicht "
+            f"auswählbar: {oldest.name} nicht in {values}")
+        chooser.select_option(index=index)
+        self.assertTrue(
+            self.click_confirm_if_shown(confirm),
+            "Die Restore-Bestätigung hat keinen Ja-Knopf")
+        self.wait_until(
+            lambda: ("Globaler Agent" in target.read_text(encoding="utf-8")
+                     and "Zwischenstand" not in target.read_text(encoding="utf-8")),
+            timeout=20000,
+            message="Die ausgewählte ältere Sicherung wurde nicht "
+                    "wiederhergestellt (stattdessen wurde die neueste "
+                    "verwendet)")
+
     def test_copy_creates_a_copy_that_appears_in_the_list(self):
         """Vorbedingung: Agent ``tester`` (global).
 
@@ -2164,6 +2358,108 @@ class AssignmentTest(Ap22AgentsBrowserTest):
         self.assertEqual(
             "opencode/test-modell", override.get_attribute("data-nv-value"),
             "Nach dem Reload fehlt die Modellüberschreibung")
+
+    def test_assignment_checkbox_has_an_explicit_assign_label(self):
+        """Vorbedingung: Editor ``tester``, Projektzuordnungen aufgeklappt.
+
+        Aktion: Die barrierefreie Beschriftung des Projekt-Schalters prüfen.
+        Erwartung: Die Checkbox besitzt einen zugänglichen Namen, der klar
+        macht, wofür sie steht — „Assign“ bzw. „Zugewiesen“ (oder eine
+        gleichbedeutende, explizite Beschriftung). Ein bloßer Intername wie
+        „Agent in Projekt: tester · proj“ genügt nicht.
+        """
+        self.open_editor("tester")
+        editor = self.page.locator("[data-nv-agent-editor]")
+        details = editor.locator("details[data-nv-assignments]")
+        details.locator("summary").click()
+        toggle = editor.locator("[data-nv-assign='proj']")
+        toggle.wait_for(state="visible", timeout=15000)
+
+        labeled = editor.get_by_role(
+            "checkbox", name=re.compile(r"assign|zugewiesen", re.IGNORECASE))
+        self.assertGreaterEqual(
+            labeled.count(), 1,
+            "Keine Projekt-Checkbox hat eine ausdrückliche "
+            "'Assign'/'Zugewiesen'-Beschriftung; zugängliche Namen: "
+            + repr([editor.locator("[data-nv-assign]").nth(i).get_attribute(
+                "aria-label")
+                for i in range(editor.locator("[data-nv-assign]").count())]))
+        matches_proj = any(
+            labeled.nth(index).get_attribute("data-nv-assign") == "proj"
+            for index in range(labeled.count()))
+        self.assertTrue(
+            matches_proj,
+            "Der Projekt-Schalter von 'proj' trägt keine explizite "
+            "'Assign'/'Zugewiesen'-Beschriftung")
+
+
+class AssignmentLayoutTest(Ap22AgentsBrowserTest):
+    """Zwei Projekte, um „eine Zeile pro Projekt“ wirklich zu prüfen."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.zweitprojekt = cls.root / "zweitprojekt"
+        (cls.zweitprojekt / ".vibe").mkdir(parents=True)
+        (cls.zweitprojekt / ".vibe" / "project.env").write_text(
+            "TYPE=generic\nAGENT=tester\n", encoding="utf-8")
+        (cls.zweitprojekt / ".opencode" / "agents").mkdir(
+            parents=True, exist_ok=True)
+
+    def test_each_project_renders_exactly_one_assignment_row_with_visible_name(self):
+        """Vorbedingung: zwei Projekte ``proj`` und ``zweitprojekt``; Editor
+        ``tester`` mit aufgeklappten Projektzuordnungen.
+
+        Aktion: Die Zuordnungszeilen im DOM untersuchen. Erwartung: Genau eine
+        Zeile pro Projekt; diese Zeile enthält genau eine Checkbox und die
+        zugehörige Modell-Auswahl; der Projektname ist in der Zeile sichtbar.
+        Checkbox und Modell dürfen nicht als getrennte Geschwister in einer
+        gemeinsamen Liste landen.
+        """
+        self.open_editor("tester")
+        editor = self.page.locator("[data-nv-agent-editor]")
+        details = editor.locator("details[data-nv-assignments]")
+        details.locator("summary").click()
+        list_node = editor.locator("[data-nv-assignments-list]")
+        self.wait_until(
+            lambda: editor.locator("[data-nv-assign]").count() >= 2,
+            timeout=15,
+            message="Es wurden nicht die Schalter beider Projekte geladen")
+        info = list_node.evaluate("""(node) => {
+          return Array.from(node.querySelectorAll('[data-nv-assign]')).map(cb => {
+            const project = cb.getAttribute('data-nv-assign');
+            const model = node.querySelector(
+              '[data-nv-assign-model="' + project + '"]');
+            const row = cb.closest('[data-nv-assign-row]') || cb.parentElement;
+            return {
+              project: project,
+              rowText: row ? row.textContent.trim() : '',
+              checkboxesInRow: row
+                ? row.querySelectorAll('[data-nv-assign]').length : -1,
+              modelInRow: !!(row && model && row.contains(model))
+            };
+          });
+        }""")
+        self.assertEqual(
+            2, len(info),
+            "Es wird nicht genau eine Zeile pro Projekt erzeugt: " + repr(info))
+        self.assertEqual(
+            {"proj", "zweitprojekt"}, {row["project"] for row in info},
+            "Die Zeilen decken nicht beide Projekte ab: " + repr(info))
+        for row in info:
+            self.assertEqual(
+                1, row["checkboxesInRow"],
+                f"Projekt {row['project']!r} hat nicht genau eine eigene Zeile: "
+                + repr(info))
+            self.assertTrue(
+                row["modelInRow"],
+                f"Die Modell-Auswahl von {row['project']!r} steht nicht in "
+                "derselben Zeile wie die Checkbox: " + repr(info))
+            self.assertIn(
+                row["project"], row["rowText"],
+                f"Der Projektname {row['project']!r} ist nicht sichtbar: "
+                + repr(info))
+        self.assert_clean_page()
 
 
 class ProjectScopeTest(Ap22AgentsBrowserTest):
