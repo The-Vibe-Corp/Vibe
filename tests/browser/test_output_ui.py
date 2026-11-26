@@ -3764,6 +3764,81 @@ PKG_ID = "F34-Ticket-4711"
 SES_RESUME = "ses_f34_resume"
 MAIN_MARKER_f34 = "HAUPT-F34: Hauptagent schreibt sein Protokoll."
 
+# GH-100 layout probes: read geometry and computed styles so tests describe
+# behavior instead of a particular DOM structure.
+RESPONSIVE_LAYOUT_JS = """() => {
+  const panel = document.querySelector("section[data-nv-ppanel='output']");
+  if (!panel) return null;
+  const box = node => {
+    if (!node) return null;
+    const r = node.getBoundingClientRect();
+    return {x: r.x, y: r.y, width: r.width, height: r.height,
+            right: r.right, bottom: r.bottom};
+  };
+  const gridAncestor = node => {
+    let current = node ? node.parentElement : null;
+    while (current && current !== panel) {
+      if (getComputedStyle(current).display === 'grid') return current;
+      current = current.parentElement;
+    }
+    return null;
+  };
+  const summary = panel.querySelector('[data-nv-out-summary]');
+  const rows = summary
+    ? Array.from(summary.querySelectorAll('[data-nv-out-summary-row]')) : [];
+  const main = panel.querySelector('section[data-nv-out-main-wrap]');
+  const subs = Array.from(panel.querySelectorAll('[data-nv-out-sub]'));
+  const subGrids = subs.map(node => gridAncestor(node));
+  const shared = subGrids.length > 0 && subGrids.every(node =>
+    !!node && node === subGrids[0]);
+  const pre = node => node ? node.querySelector('pre') : null;
+  return {
+    panel: box(panel),
+    summary: summary ? {
+      box: box(summary),
+      display: getComputedStyle(summary).display,
+      template: getComputedStyle(summary).gridTemplateColumns,
+      columns: getComputedStyle(summary).gridTemplateColumns.trim()
+        .split(/\\s+/).filter(Boolean).length,
+      overflowX: getComputedStyle(summary).overflowX,
+      scrollWidth: summary.scrollWidth,
+      clientWidth: summary.clientWidth,
+      rows: rows.map(box),
+    } : null,
+    main: box(main),
+    subs: subs.map(node => ({
+      box: box(node),
+      grid: gridAncestor(node) ? box(gridAncestor(node)) : null,
+      scrollWidth: node.scrollWidth,
+      clientWidth: node.clientWidth,
+      logWhiteSpace: pre(node) ? getComputedStyle(pre(node)).whiteSpace : '',
+      logScrollWidth: pre(node) ? pre(node).scrollWidth : 0,
+      logClientWidth: pre(node) ? pre(node).clientWidth : 0,
+    })),
+    grid: {
+      shared: shared,
+      box: shared ? box(subGrids[0]) : null,
+    },
+    docScrollWidth: document.documentElement.scrollWidth,
+    docClientWidth: document.documentElement.clientWidth,
+  };
+}"""
+
+WINDOW_HEIGHT_JS = """(selector) => {
+  const node = document.querySelector(selector);
+  if (!node) return null;
+  const style = getComputedStyle(node);
+  return {
+    height: node.getBoundingClientRect().height,
+    overflowY: style.overflowY,
+    whiteSpace: style.whiteSpace,
+    scrollHeight: node.scrollHeight,
+    clientHeight: node.clientHeight,
+    scrollWidth: node.scrollWidth,
+    clientWidth: node.clientWidth,
+  };
+}"""
+
 
 class F34FakeOpenCodeHandler(BaseHTTPRequestHandler):
     """opencode-Attrappe: liefert keine Agentennachrichten."""
@@ -4022,34 +4097,32 @@ class F34OutputBrowserTest(unittest.TestCase):
         return self.page.locator(
             f"[data-nv-out-summary-row][data-nv-summary-target='{target}']").first
 
+    def responsive_layout(self):
+        return self.page.evaluate(RESPONSIVE_LAYOUT_JS)
+
+    def window_height(self, selector):
+        return self.page.evaluate(WINDOW_HEIGHT_JS, selector)
+
+    def assert_fixed_window(self, selector, label):
+        """Jedes Ausgabefenster: feste Höhe, eigener Vertikal-Scroll, Umbruch."""
+        metrics = self.window_height(selector)
+        self.assertIsNotNone(metrics, f"{label} wurde nicht gefunden")
+        self.assertGreater(metrics["height"], 80,
+                           f"{label} hat keine nutzbare Fensterhöhe: {metrics!r}")
+        self.assertIn(metrics["overflowY"], ("auto", "scroll"),
+                      f"{label} scrollt nicht vertikal: {metrics!r}")
+        self.assertIn(metrics["whiteSpace"], ("pre-wrap", "break-spaces"),
+                      f"{label} bricht Zeilen nicht um: {metrics!r}")
+        self.assertLessEqual(metrics["scrollWidth"], metrics["clientWidth"] + 2,
+                             f"{label} läuft horizontal über: {metrics!r}")
+        return metrics
+
     def visible_in_viewport(self, node):
         box = node.bounding_box()
         if box is None:
             return False
         height = self.page.evaluate("() => window.innerHeight")
         return box["y"] >= -1 and box["y"] + box["height"] <= height + 1
-
-    def parse_limit(self, node, viewport, factor, label):
-        """Inline-``max-height`` (px/vh) gegen ``factor * viewport`` prüfen."""
-        metrics = node.evaluate(
-            "node => ({inline: node.style.maxHeight || '',"
-            " overflow: getComputedStyle(node).overflowX})")
-        match = re.match(r"^(-?[\d.]+)(px|vh)$", metrics["inline"] or "")
-        self.assertIsNotNone(
-            match, f"Inline-Max-Height fehlt ({label}): {metrics!r}")
-        value = float(match.group(1))
-        if match.group(2) == "vh":
-            self.assertLessEqual(value / 100 * viewport,
-                                 viewport * factor + 1,
-                                 f"{label}: max-height {metrics['inline']} "
-                                 f"überschreitet {factor * 100:.0f}vh")
-        else:
-            self.assertLessEqual(value, viewport * factor + 1,
-                                 f"{label}: max-height {metrics['inline']} "
-                                 f"überschreitet {factor * 100:.0f}vh")
-        self.assertIn(metrics["overflow"], ("auto", "scroll"),
-                      f"{label}: kein eigenes Scroll (overflow: "
-                      f"{metrics['overflow']})")
 
     def assert_clean_page(self):
         self.assertEqual(
@@ -4155,12 +4228,17 @@ class SummaryTest(F34OutputBrowserTest):
 
 
 class SummaryOverflowTest(F34OutputBrowserTest):
-    def test_summary_scrolls_horizontally_not_the_page(self):
-        """Vorbedingung: 6 laufende Subagenten (a..f).
+    def test_summary_is_a_responsive_grid_without_horizontal_overflow(self):
+        """Vorbedingung: 6 laufende Subagenten (a..f) und Hauptagent.
 
-        Erwartung: ``div[data-nv-out-summary]`` scrollt horizontal
-        (``overflow-x`` auto/scroll); die Seite läuft nicht horizontal über
-        (``documentElement.scrollWidth <= clientWidth + 2``).
+        Aktion: Die kompakte Uebersicht wird bei 1400, 900, 600 und 400 px
+        ausgemessen.
+
+        Erwartung: ``[data-nv-out-summary]`` ist ein responsives Raster: mehrere
+        Spalten auf breiten Ansichten, eine Spalte unter der Lesbarkeitsgrenze,
+        monotone Spaltenreduktion beim Schmalerwerden, Zeilen und Dokument
+        bleiben ohne horizontalen Ueberlauf. Die Summary-Zeilen fokussieren
+        weiterhin ihre Karten (separat in ``SummaryTest`` geprueft).
         """
         subs = [
             (session, f"tester{name.upper()}", f"Auftrag {name}",
@@ -4173,25 +4251,63 @@ class SummaryOverflowTest(F34OutputBrowserTest):
         self.register_run("running")
         self.write_log(MAIN_MARKER_f34)
         self.open_output()
-        summary = self.page.locator("div[data-nv-out-summary]").first
-        summary.wait_for(state="visible", timeout=20000)
-        self.wait_until(
-            lambda: summary.locator("[data-nv-out-summary-row]").count() >= 7,
-            timeout=20, message="Nicht alle Zusammenfassungszeilen geladen")
-        metrics = self.page.evaluate(
-            """() => ({
-              overflowX: getComputedStyle(
-                document.querySelector('[data-nv-out-summary]')).overflowX,
-              docScrollWidth: document.documentElement.scrollWidth,
-              docClientWidth: document.documentElement.clientWidth,
-            })""")
-        self.assertIn(metrics["overflowX"], ("auto", "scroll"),
-                      f"Die Summen scrollt nicht horizontal: {metrics}")
-        self.assertLessEqual(
-            metrics["docScrollWidth"], metrics["docClientWidth"] + 2,
-            f"Die Seite läuft horizontal über: {metrics}")
+        columns = []
+        for width in (1400, 900, 600, 400):
+            with self.subTest(viewport=width):
+                self.set_viewport(width, 1000)
+                self.open_output()
+                summary = self.page.locator("div[data-nv-out-summary]").first
+                summary.wait_for(state="visible", timeout=20000)
+                self.wait_until(
+                    lambda: summary.locator(
+                        "[data-nv-out-summary-row]").count() >= 7
+                    and all(self.card(session).count() == 1
+                            for session in (SUB_A, SUB_B, SUB_C,
+                                            SUB_D, SUB_E, SUB_F)),
+                    timeout=20,
+                    message="Uebersicht oder Karten bei "
+                            f"{width} px unvollstaendig")
+                layout = self.responsive_layout()
+                data = layout["summary"]
+                self.assertIsNotNone(data, "Die Uebersicht fehlt im DOM")
+                columns.append(data["columns"])
+                self.assertEqual(
+                    "grid", data["display"],
+                    f"Die Uebersicht ist kein responsives Raster bei "
+                    f"{width} px: display={data['display']!r}, "
+                    f"template={data['template']!r}")
+                self.assertGreaterEqual(
+                    data["columns"], 1,
+                    f"Die Uebersicht hat keine Spalte bei {width} px: {data!r}")
+                self.assertLessEqual(
+                    data["scrollWidth"], data["clientWidth"] + 2,
+                    f"Die Uebersicht scrollt horizontal bei {width} px: "
+                    + repr(data))
+                self.assertLessEqual(
+                    layout["docScrollWidth"], layout["docClientWidth"] + 2,
+                    f"Die Seite scrollt horizontal bei {width} px: "
+                    + repr(layout))
+                self.assertEqual(7, len(data["rows"]),
+                                 f"Zeilen fehlen bei {width} px")
+                for row in data["rows"]:
+                    self.assertGreater(row["width"], 0)
+                    self.assertLessEqual(
+                        row["right"], layout["panel"]["right"] + 2,
+                        f"Eine Zeile ragt bei {width} px ueber das Panel "
+                        "hinaus: " + repr(row))
+        self.assertGreater(
+            columns[0], 1,
+            f"Die Uebersicht nutzt auf breiten Ansichten nur eine Spalte: "
+            f"{columns}")
+        for wider, narrower in zip(columns, columns[1:]):
+            self.assertLessEqual(
+                narrower, wider,
+                f"Die Spaltenzahl steigt beim Schmalerwerden: {columns}")
+        self.assertEqual(
+            1, columns[-1],
+            f"Unter der Mindestbreite bleibt die Uebersicht mehrspaltig: "
+            f"{columns}")
         self.assert_clean_page()
-
 
 class MainCardTest(F34OutputBrowserTest):
     def test_main_card_structure(self):
@@ -4201,8 +4317,9 @@ class MainCardTest(F34OutputBrowserTest):
         Zustand ``läuft``, Sitzung ``ses_f34_main``; Fokus-Knopf
         ``button[data-nv-action="out-focus"]`` mit Icon (``.nv-out-icon``)
         UND sichtbarem Text (``Fokus``), ``aria-expanded="false"``; Log
-        ``pre[data-nv-out-main]`` mit ``max-height <= 60vh`` und eigenem
-        Scroll (``overflowX`` auto/scroll); ``button[data-nv-log-expand][data-nv-log-target=
+        ``pre[data-nv-out-main]`` mit fester, an das Bildschirmlayout
+        angepasster Höhe und internem vertikalen Scroll;
+        ``button[data-nv-log-expand][data-nv-log-target=
         "main"]`` sichtbar, ``aria-expanded="false"``, Text ``Alles anzeigen``.
         """
         self.seed_live()
@@ -4238,8 +4355,7 @@ class MainCardTest(F34OutputBrowserTest):
 
         log = main_wrap.locator("pre[data-nv-out-main]").first
         log.wait_for(state="visible", timeout=20000)
-        self.parse_limit(log, self.page.evaluate("() => window.innerHeight"),
-                         0.6, "Hauptprotokoll")
+        self.assert_fixed_window("pre[data-nv-out-main]", "Hauptprotokoll")
 
         expand = main_wrap.locator(
             "button[data-nv-log-expand][data-nv-log-target='main']").first
@@ -4298,83 +4414,120 @@ class MainCardTest(F34OutputBrowserTest):
 
 
 class SubGridTest(F34OutputBrowserTest):
-    def test_cards_form_two_column_grid_at_1200px(self):
-        """Vorbedingung: Viewport ≥ 1200 px, laufende Subagenten A/B.
+    def test_main_card_owns_full_width_row_above_subagent_grid(self):
+        """Vorbedingung: Viewport 1200 px, zwei laufende Subagenten A/B.
 
-        Erwartung: Hauptkarte und beide Subagenten-Karten liegen im selben
-        Grid; ``gridTemplateColumns`` meldet zwei Spalten. Eine Subkarte
-        teilt die erste Zeile mit der Hauptkarte, die zweite bricht innerhalb
-        der Panelbreite in eine weitere Zeile um.
+        Erwartung: Das Main-Agentenfenster steht oben in einer eigenen Zeile
+        und spannt die verfuegbare Breite; darunter liegen ausschliesslich die
+        Subagentenfenster in einem gemeinsamen Raster. Kein Sub teilt die Zeile
+        des Mainfensters, keine Karte ragt ueber das Panel hinaus.
         """
         self.seed_live()
         self.set_viewport(1200, 1000)
         self.open_output()
-        subs = self.page.locator("div[data-nv-out-subs]").first
-        subs.wait_for(state="attached", timeout=20000)
         self.wait_until(
-            lambda: subs.locator("[data-nv-out-sub]").count() == 2,
-            timeout=20,
-            message="Nicht beide Subagenten-Karten im Raster")
-        metrics = self.page.evaluate(
-            """() => {
-              const panel = document.querySelector(
-                "section[data-nv-ppanel='output']");
-              const main = document.querySelector(
-                "section[data-nv-out-main-wrap]");
-              const cards = Array.from(
-                document.querySelectorAll('[data-nv-out-sub]'));
-              const gridAncestor = node => {
-                let current = node ? node.parentElement : null;
-                while (current && current !== panel) {
-                  if (getComputedStyle(current).display === 'grid') return current;
-                  current = current.parentElement;
-                }
-                return null;
-              };
-              const grid = gridAncestor(main);
-              const box = node => {
-                const rect = node.getBoundingClientRect();
-                return {x: rect.x, y: rect.y, width: rect.width,
-                        height: rect.height, right: rect.right};
-              };
-              return {
-                columns: grid ? getComputedStyle(grid).gridTemplateColumns
-                  .trim().split(/\\s+/).filter(Boolean) : [],
-                shared: !!grid && cards.every(node => gridAncestor(node) === grid),
-                main: box(main),
-                boxes: cards.map(box),
-                panel: box(panel),
-              };
-            }""")
+            lambda: self.card(SUB_A).count() == 1
+            and self.card(SUB_B).count() == 1,
+            timeout=20, message="Die Subagenten-Karten fehlen im Raster")
+        layout = self.responsive_layout()
+        main = layout["main"]
+        panel = layout["panel"]
+        self.assertIsNotNone(main, "Die Hauptkarte fehlt")
+        self.assertIsNotNone(panel, "Das Ausgabepanel fehlt")
+        self.assertGreaterEqual(
+            main["width"], panel["width"] * 0.85,
+            "Das Main-Agentenfenster nutzt nicht die verfuegbare Breite: "
+            + repr(layout))
         self.assertTrue(
-            metrics["shared"],
-            "Haupt- und Subagenten-Karten teilen kein Raster: "
-            + repr(metrics))
+            layout["grid"]["shared"],
+            "Die Subagentenfenster teilen kein gemeinsames Raster: "
+            + repr(layout["grid"]))
+        self.assertIsNotNone(
+            layout["grid"]["box"], "Das Subagentenraster wurde nicht gefunden")
         self.assertGreaterEqual(
-            len(metrics["columns"]), 2,
-            f"Das Grid-Template hat keine zwei Spalten: {metrics}")
-        self.assertEqual(2, len(metrics["boxes"]),
-                         "Karten konnten nicht gemessen werden")
-        first_row = [box for box in metrics["boxes"]
-                     if abs(box["y"] - metrics["main"]["y"]) <= 8]
-        self.assertGreaterEqual(
-            len(first_row), 1,
-            "Keine Subagenten-Karte teilt die Zeile der Hauptkarte: "
-            + repr(metrics))
-        other_row = [box for box in metrics["boxes"] if box not in first_row]
-        self.assertEqual(1, len(other_row),
-                         "Die zweite Subagenten-Karte bricht nicht um: "
-                         + repr(metrics))
+            layout["grid"]["box"]["width"], panel["width"] * 0.85,
+            "Das Subagentenraster nutzt nicht die verfuegbare Breite: "
+            + repr(layout["grid"]))
         self.assertGreater(
-            other_row[0]["y"], metrics["main"]["y"] + 20,
-            "Die zweite Subagenten-Karte liegt nicht in einer weiteren "
-            "Zeile: " + repr(metrics))
-        for label, box in [("Hauptkarte", metrics["main"])] + [
-                (f"Subagentenkarte {index + 1}", box)
-                for index, box in enumerate(metrics["boxes"])]:
+            len({round(sub["box"]["x"]) for sub in layout["subs"]}), 1,
+            "Die Subagenten stehen bei 1200 px nicht im Raster: "
+            + repr(layout["subs"]))
+        for index, sub in enumerate(layout["subs"]):
+            self.assertGreaterEqual(
+                sub["box"]["y"], main["bottom"] - 2,
+                f"Subagentenfenster {index + 1} teilt die Zeile des "
+                "Main-Agentenfensters: " + repr(layout))
             self.assertLessEqual(
-                box["right"], metrics["panel"]["right"] + 2,
-                f"{label} ragt über den Panelrand hinaus: " + repr(box))
+                sub["box"]["right"], panel["right"] + 2,
+                f"Subagentenfenster {index + 1} ragt ueber den Panelrand "
+                "hinaus: " + repr(sub))
+        self.assertLessEqual(
+            layout["docScrollWidth"], layout["docClientWidth"] + 2,
+            "Die Seite laeuft horizontal ueber: " + repr(layout))
+        self.assert_clean_page()
+
+    def test_subagent_grid_reduces_columns_and_wraps_below_minimum(self):
+        """Vorbedingung: sechs laufende Subagenten, Hauptagent.
+
+        Aktion: Das Raster wird bei 1400, 900 und 400 px ausgemessen.
+
+        Erwartung: Die Subagentenfenster liegen stets unter dem Mainfenster in
+        einem Raster ohne horizontalen Ueberlauf. Die Spaltenzahl sinkt beim
+        Schmalerwerden; unter der Lesbarkeitsgrenze bleibt eine Spalte und der
+        Inhalt bricht innerhalb der Fenster um.
+        """
+        names = ["a", "b", "c", "d", "e", "f"]
+        sessions = [SUB_A, SUB_B, SUB_C, SUB_D, SUB_E, SUB_F]
+        subs = [
+            (session, f"tester{name.upper()}", f"Auftrag {name}",
+             f"AUSGABE-{name}-F34: Subagent arbeitet.")
+            for name, session in zip(names, sessions)
+        ]
+        self.seed_subs(subs)
+        self.register_run("running")
+        self.write_log(MAIN_MARKER_f34)
+        self.open_output()
+        columns = []
+        for width in (1400, 900, 400):
+            with self.subTest(viewport=width):
+                self.set_viewport(width, 1000)
+                self.open_output()
+                self.wait_until(
+                    lambda: all(self.card(session).count() == 1
+                                for session in sessions),
+                    timeout=20,
+                    message=f"Nicht alle Subagenten bei {width} px vorhanden")
+                layout = self.responsive_layout()
+                self.assertTrue(layout["grid"]["shared"],
+                                f"Kein gemeinsames Subraster bei {width} px")
+                self.assertIsNotNone(layout["main"])
+                for sub in layout["subs"]:
+                    self.assertGreaterEqual(
+                        sub["box"]["y"], layout["main"]["bottom"] - 2,
+                        f"Ein Sub teilt bei {width} px die Mainzeile")
+                    self.assertLessEqual(
+                        sub["box"]["right"], layout["panel"]["right"] + 2,
+                        f"Ein Sub ragt bei {width} px ueber das Panel hinaus")
+                    self.assertLessEqual(
+                        sub["scrollWidth"], sub["clientWidth"] + 2,
+                        f"Eine Subkarte scrollt bei {width} px horizontal")
+                    self.assertIn(
+                        sub["logWhiteSpace"], ("pre-wrap", "break-spaces"),
+                        f"Der Sublog bricht bei {width} px nicht um")
+                    self.assertLessEqual(
+                        sub["logScrollWidth"], sub["logClientWidth"] + 2,
+                        f"Der Sublog laeuft bei {width} px horizontal ueber")
+                self.assertLessEqual(
+                    layout["docScrollWidth"], layout["docClientWidth"] + 2,
+                    f"Die Seite scrollt bei {width} px horizontal")
+                columns.append(len({round(sub["box"]["x"])
+                                    for sub in layout["subs"]}))
+        self.assertGreater(
+            columns[0], columns[-1],
+            f"Die Spaltenzahl bleibt beim Schmalerwerden gleich: {columns}")
+        self.assertEqual(1, columns[-1],
+                         f"Unter der Mindestbreite gibt es keine "
+                         f"Einzelspalte: {columns}")
         self.assert_clean_page()
 
     def test_card_structure_and_padding(self):
@@ -4384,14 +4537,14 @@ class SubGridTest(F34OutputBrowserTest):
         Agent/Beschreibung (``span.nv-out-sub-role``), Zustand
         (``data-state="running"``, Text ``läuft``), Sitzung (``code.nv-out-
         sub-session``), Fokus-Knopf (``button[data-nv-sub-focus]``
-        sichtbar), Log (``pre`` in der Karte: ``max-height <= 40vh`` mit
-        eigenem Scroll), eigener Aufklappen-Knopf (``button[data-nv-log-
+        sichtbar), Log (``pre`` in der Karte: feste, an das Bildschirmlayout
+        angepasste Höhe mit internem vertikalen Scroll), eigener
+        Aufklappen-Knopf (``button[data-nv-log-
         expand][data-nv-log-target=...]``), einheitliche Innenabstände
         (alle vier Seiten gleich, > 0).
         """
         self.seed_live()
         self.open_output()
-        viewport = self.page.evaluate("() => window.innerHeight")
         for session, agent, description in (
                 (SUB_A, "testerA", "Auftrag A"),
                 (SUB_B, "testerB", "Auftrag B")):
@@ -4413,8 +4566,8 @@ class SubGridTest(F34OutputBrowserTest):
                     1, card.locator("button[data-nv-sub-focus]").count())
                 focus = card.locator("button[data-nv-sub-focus]").first
                 self.assertTrue(focus.is_visible())
-                self.parse_limit(
-                    card.locator("pre").first, viewport, 0.4,
+                self.assert_fixed_window(
+                    f"[data-nv-out-sub='{session}'] pre",
                     f"Subagentenprotokoll {session}")
                 self.assertEqual(
                     1,
@@ -4922,15 +5075,14 @@ class OutputCardBehaviorTest(F34OutputBrowserTest):
     def test_agent_cards_use_viewport_width_without_horizontal_overflow(self):
         """Vorbedingung: laufender Lauf mit zwei Subagenten.
 
-        Aktion: Bei 1400, 900 und 400 px Viewport werden Hauptkarte,
-        Subagenten-Karten, Panel und Dokument ausgemessen.
+        Aktion: Bei 1400, 900 und 400 px werden Mainfenster, Subfenster,
+        Raster, Panel und Dokument ausgemessen.
 
-        Erwartung: Haupt- und Subagenten-Karten teilen sich einen gemeinsamen
-        Rastercontainer; alle Karten liegen innerhalb der Panelbreite, das
-        Dokument und der Kartencontainer laufen nicht horizontal über. Auf
-        breiten Viewports teilt die Hauptkarte zusätzlich eine Zeile mit einer
-        Subagenten-Karte und ist schmaler als das gesamte Panel; auf 400 px
-        bleibt alles ohne Überlauf umgebrochen.
+        Erwartung: Das Mainfenster steht in einer eigenen Zeile ueber der
+        gesamten verfuegbaren Breite; alle Subfenster liegen darunter in einem
+        gemeinsamen Raster. Bei jeder Breite bleibt alles innerhalb des
+        Panels; das Dokument und das Raster erzeugen keine horizontale
+        Scrollleiste, und auch bei 400 px behalten die Fenster Breite.
         """
         self.seed_live()
         self.open_output()
@@ -4941,52 +5093,157 @@ class OutputCardBehaviorTest(F34OutputBrowserTest):
                 self.wait_until(
                     lambda: self.card(SUB_A).count() == 1
                     and self.card(SUB_B).count() == 1,
-                    timeout=20, message="Die Subagenten-Karten fehlen bei "
-                                       f"{width} px")
-                metrics = self.page.evaluate(self.CARD_LAYOUT_JS)
-                self.assertIsNotNone(metrics["panel"])
-                self.assertIsNotNone(metrics["main"])
-                self.assertEqual(2, len(metrics["subs"]))
-                self.assertIsNotNone(metrics["container"])
+                    timeout=20,
+                    message="Die Subagenten-Karten fehlen bei "
+                            f"{width} px")
+                layout = self.responsive_layout()
+                self.assertIsNotNone(layout["main"],
+                                     f"Mainfenster fehlt bei {width} px")
+                self.assertEqual(2, len(layout["subs"]),
+                                 f"Subfenster fehlen bei {width} px")
                 self.assertTrue(
-                    metrics["grid"]["shared"],
-                    f"Haupt- und Subagenten-Karten teilen bei {width} px "
-                    "kein gemeinsames Raster: " + repr(metrics["grid"]))
+                    layout["grid"]["shared"],
+                    f"Die Subfenster teilen bei {width} px kein Raster")
                 self.assertGreaterEqual(
-                    metrics["grid"]["columns"], 1,
-                    f"Das Raster hat bei {width} px keine Spalte: "
-                    + repr(metrics["grid"]))
-                self.assertLessEqual(
-                    metrics["docScrollWidth"], metrics["docClientWidth"] + 2,
-                    f"Die Seite läuft bei {width} px horizontal über: "
-                    + repr(metrics))
-                self.assertLessEqual(
-                    metrics["container"]["scrollWidth"],
-                    metrics["container"]["clientWidth"] + 2,
-                    f"Der Kartencontainer läuft bei {width} px über: "
-                    + repr(metrics["container"]))
-                for label, box in [("Hauptkarte", metrics["main"])] + [
-                        (f"Subagentenkarte {index + 1}", box)
-                        for index, box in enumerate(metrics["subs"])]:
-                    self.assertGreater(box["width"], 0,
-                                       f"{label} hat keine Breite bei "
-                                       f"{width} px")
+                    layout["main"]["width"], layout["panel"]["width"] * 0.85,
+                    f"Das Mainfenster nutzt bei {width} px nicht die "
+                    "verfuegbare Breite: " + repr(layout["main"]))
+                for sub in layout["subs"]:
+                    self.assertGreater(sub["box"]["width"], 0)
+                    self.assertGreaterEqual(
+                        sub["box"]["y"], layout["main"]["bottom"] - 2,
+                        f"Ein Subfenster teilt bei {width} px die Mainzeile")
                     self.assertLessEqual(
-                        box["right"], metrics["panel"]["right"] + 2,
-                        f"{label} ragt bei {width} px über den Panelrand "
-                        "hinaus: " + repr(box))
-                if width == 1400:
-                    self.assertLess(
-                        metrics["main"]["width"],
-                        metrics["panel"]["width"] * 0.75,
-                        "Die Hauptkarte belegt bei 1400 px die volle "
-                        "Panelbreite statt eines Rasterplatzes: "
-                        + repr(metrics["main"]))
-                    self.assertTrue(
-                        any(abs(metrics["main"]["y"] - sub["y"]) <= 8
-                            for sub in metrics["subs"]),
-                        "Die Hauptkarte teilt bei 1400 px keine Zeile "
-                        "mit einer Subagenten-Karte: " + repr(metrics))
+                        sub["box"]["right"], layout["panel"]["right"] + 2,
+                        f"Ein Subfenster ragt bei {width} px ueber das "
+                        "Panel hinaus")
+                self.assertLessEqual(
+                    layout["docScrollWidth"], layout["docClientWidth"] + 2,
+                    f"Die Seite laeuft bei {width} px horizontal ueber")
+        self.assert_clean_page()
+
+    def test_main_output_window_has_fixed_height_when_output_grows(self):
+        """Vorbedingung: laufender Lauf mit kurzem Hauptprotokoll.
+
+        Aktion: Weitere 60 Zeilen werden per Livestream angehaengt; die
+        Fensterhoehe wird vorher und nachher gemessen.
+
+        Erwartung: Das Hauptausgabefenster behaelteine feste Hoehe, waehrend
+        sein Inhalt waechst (scrollHeight steigt); es scrollt vertikal im
+        Fenster statt Hoehe oder Seite wachsen zu lassen.
+        """
+        short = "KURZ-FESTE-HOEHE-HAUPT-4711"
+        marker = "WACHS-FESTE-HOEHE-HAUPT-4711"
+        self.register_run("running")
+        self.write_log(*([short] + [
+            f"Zeile {index:02d} mit kurzem Hauptprotokoll."
+            for index in range(1, 8)]))
+        self.seed_subs([])
+        self.open_output()
+        selector = "pre[data-nv-out-main]"
+        self.page.locator(selector).first.wait_for(
+            state="visible", timeout=20000)
+        self.wait_for_log_marker(selector, short)
+        self.page.wait_for_timeout(300)
+        before = self.window_height(selector)
+        self.assertIsNotNone(before)
+        self.assertGreater(before["height"], 80)
+
+        with (self.log_dir / f"{PROJECT}.log").open(
+                "a", encoding="utf-8") as handle:
+            handle.write(marker + "\n")
+            for index in range(60):
+                handle.write(
+                    f"Zeile {index:02d} des nachgeladenen Hauptprotokolls "
+                    "mit fortlaufendem Text.\n")
+        self.wait_for_log_marker(selector, marker)
+        self.page.wait_for_timeout(300)
+        after = self.window_height(selector)
+        self.assertGreater(
+            after["scrollHeight"], before["scrollHeight"] + 100,
+            "Das Hauptprotokoll ist nicht gewachsen: " + repr(after))
+        self.assertLessEqual(
+            abs(after["height"] - before["height"]), 2,
+            "Das Hauptausgabefenster ist mit der Ausgabe gewachsen: "
+            f"{before['height']} -> {after['height']} px")
+        self.assertIn(after["overflowY"], ("auto", "scroll"),
+                      "Das Hauptausgabefenster scrollt nicht intern")
+        self.assert_clean_page()
+
+    def test_subagent_output_window_has_fixed_height_when_output_grows(self):
+        """Vorbedingung: laufender Subagent A mit kurzer Ausgabe.
+
+        Aktion: Die Zustandsdatei liefert eine deutlich laengere Ausgabe;
+        die Fensterhoehe wird vorher und nachher gemessen.
+
+        Erwartung: Das Subagentenfenster behaelteine feste Hoehe, waehrend der
+        Inhalt waechst; lange Ausgaben bleiben intern vertikal scrollbar.
+        """
+        short = "KURZ-FESTE-HOEHE-SUB-4711"
+        marker = "WACHS-FESTE-HOEHE-SUB-4711"
+        first = "\n".join([short] + [
+            f"Zeile {index:02d} mit kurzer Subausgabe."
+            for index in range(1, 8)])
+        self.seed_subs([
+            (SUB_A, "testerA", "Auftrag A", first),
+            (SUB_B, "testerB", "Auftrag B", "AUSGABE-B-F34: Subagent B."),
+        ])
+        self.register_run("running")
+        self.write_log(MAIN_MARKER_f34)
+        self.open_output()
+        selector = "[data-nv-out-sub='%s'] pre" % SUB_A
+        self.page.locator(selector).first.wait_for(
+            state="visible", timeout=20000)
+        self.wait_for_log_marker(selector, short)
+        self.page.wait_for_timeout(300)
+        before = self.window_height(selector)
+        self.assertIsNotNone(before)
+
+        longer = first + "\n" + self.long_output(marker)
+        self.seed_subs([
+            (SUB_A, "testerA", "Auftrag A", longer),
+            (SUB_B, "testerB", "Auftrag B", "AUSGABE-B-F34: Subagent B."),
+        ])
+        self.wait_for_log_marker(selector, marker, timeout=30)
+        self.page.wait_for_timeout(300)
+        after = self.window_height(selector)
+        self.assertGreater(
+            after["scrollHeight"], before["scrollHeight"] + 100,
+            "Die Subagentenausgabe ist nicht gewachsen: " + repr(after))
+        self.assertLessEqual(
+            abs(after["height"] - before["height"]), 2,
+            "Das Subagentenfenster ist mit der Ausgabe gewachsen: "
+            f"{before['height']} -> {after['height']} px")
+        self.assertIn(after["overflowY"], ("auto", "scroll"),
+                      "Das Subagentenfenster scrollt nicht intern")
+        self.assert_clean_page()
+
+    def test_long_output_scrolls_inside_each_output_window(self):
+        """Vorbedingung: laufender Lauf mit langem Haupt- und Subprotokoll.
+
+        Erwartung: Main- und Subagentenfenster haben eine nutzbare feste
+        Hoehe, ueberlaufenden Inhalt, einen eigenen Vertikal-Scroll und keinen
+        horizontalen Ueberlauf. Die Fensterhoehe bleibt im Viewport.
+        """
+        self.seed_subs([
+            (SUB_A, "testerA", "Auftrag A", self.long_output("SUB-FEST-A")),
+            (SUB_B, "testerB", "Auftrag B", self.long_output("SUB-FEST-B")),
+        ])
+        self.register_run("running")
+        self.write_log(MAIN_MARKER_f34)
+        self.open_output()
+        self.wait_for_log_marker("pre[data-nv-out-main]", MAIN_MARKER_f34)
+        for label, selector in (
+                ("Hauptausgabefenster", "pre[data-nv-out-main]"),
+                ("Subagentenfenster A", "[data-nv-out-sub='%s'] pre" % SUB_A),
+                ("Subagentenfenster B", "[data-nv-out-sub='%s'] pre" % SUB_B)):
+            with self.subTest(window=label):
+                self.assert_fixed_window(selector, label)
+                metrics = self.window_height(selector)
+                self.assertGreater(
+                    metrics["scrollHeight"], metrics["clientHeight"] + 4,
+                    f"{label} hat keinen ueberlaufenden Inhalt: "
+                    + repr(metrics))
         self.assert_clean_page()
 
     def test_preview_cards_take_their_styling_from_css_classes(self):
@@ -5025,7 +5282,7 @@ class OutputCardBehaviorTest(F34OutputBrowserTest):
                 properties = {item.split(":", 1)[0].strip().lower()
                               for item in declarations}
                 self.assertLessEqual(
-                    properties, {"max-height"},
+                    properties, {"height", "max-height"},
                     "Das Subagentenlog hat statische Inline-Styles: "
                     + repr(card["log"]))
         declarations = [
@@ -5034,7 +5291,7 @@ class OutputCardBehaviorTest(F34OutputBrowserTest):
         properties = {item.split(":", 1)[0].strip().lower()
                       for item in declarations}
         self.assertLessEqual(
-            properties, {"max-height"},
+            properties, {"height", "max-height"},
             "Das Hauptprotokoll hat statische Inline-Styles: "
             + repr(styles["mainLogInline"]))
 

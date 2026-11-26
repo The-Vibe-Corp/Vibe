@@ -212,14 +212,12 @@ NV.output = {
 
     /* ---------- DOM (rein deklarativ, keine Protokoll-innerHTML) ---------- */
 
-    /* F34: Die Zusammenfassung scrollt horizontal, nicht die Seite. Jede Zeile
-       ist ein Knopf, der die passende Ausgabe fokussiert und anscrollt. */
+    /* F34/GH-100: Die Zusammenfassung ist ein umbruchfähiges Raster (CSS).
+       Jede Zeile ist ein Knopf, der die passende Ausgabe fokussiert und
+       anscrollt. */
     var summary = el('div', {
       class: 'nv-out-summary', 'data-nv-out-summary': '', role: 'group',
-      'aria-label': tr('Zusammenfassung'),
-      style: 'display:flex; flex-wrap:nowrap; gap:var(--nv-space-3); '
-        + 'overflow-x:auto; overflow-y:hidden; max-width:100%; '
-        + 'padding-bottom:var(--nv-space-2);'
+      'aria-label': tr('Zusammenfassung')
     });
 
     function makeSummaryRow(target) {
@@ -230,10 +228,7 @@ NV.output = {
       var session = el('code', {class: 'nv-out-sum-session', title: ''}, '–');
       var row = el('button', {
         class: 'nv-out-summary-row', type: 'button', 'data-nv-out-summary-row': '',
-        'data-nv-summary-target': target, 'data-focus': 'false',
-        style: 'flex:0 0 auto; display:flex; flex-wrap:nowrap; align-items:center; '
-          + 'gap:var(--nv-space-2); padding:var(--nv-space-2) var(--nv-space-3); '
-          + 'text-align:left; max-width:min(38rem,86vw); min-width:0;'
+        'data-nv-summary-target': target, 'data-focus': 'false'
       }, name, role, state,
         el('span', {class: 'nv-muted'}, tr('Modell') + ': '), model,
         el('span', {class: 'nv-muted'}, tr('Sitzung') + ': '), session);
@@ -269,9 +264,10 @@ NV.output = {
         el('span', {class: 'nv-out-spacer'}), mainExpandButton, mainFocusButton),
       mainLog);
 
-    /* GH-88: Haupt- und Subagentenkarten liegen in einem gemeinsamen
-       responsiven Raster. [data-nv-out-subs] bleibt als Container erhalten
-       und nimmt per display:contents direkt am Raster teil. */
+    /* GH-88/GH-100: Haupt- und Subagentenkarten liegen in einem gemeinsamen
+       responsiven Raster. Die Hauptkarte(n) belegen je eine volle Zeile,
+       [data-nv-out-subs] bleibt als Container erhalten und nimmt per
+       display:contents direkt am Raster teil. */
     var cardsGrid = el('div', {class: 'nv-out-cards', 'data-nv-out-cards': ''}, mainWrap);
     var subs = el('div', {class: 'nv-out-subs', 'data-nv-out-subs': ''});
     cardsGrid.append(subs);
@@ -320,7 +316,9 @@ NV.output = {
       if (!log || !button || !text) return;
       var open = !!expanded[target];
       var focused = focusTarget === target;
-      log.style.maxHeight = (open || focused) ? 'none' : (target === 'main' ? '60vh' : '40vh');
+      /* GH-100: Die feste Höhe kommt aus CSS. Nur der ausdrücklich
+         aufgeklappte oder fokussierte Zustand hebt sie auf. */
+      log.classList.toggle('nv-out-log-open', open || focused);
       button.setAttribute('aria-expanded', open ? 'true' : 'false');
       setTx(text, tr(open ? 'Weniger anzeigen' : 'Alles anzeigen'));
       var follow = target === 'main' ? mainFollow : (card && card.follow);
