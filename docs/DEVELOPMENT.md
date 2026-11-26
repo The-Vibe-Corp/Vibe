@@ -1,6 +1,6 @@
 # Development
 
-Vibe is developed incrementally. The existing source code is the starting point; a complete rewrite requires an explicitly approved migration ticket. [cite:1]
+Vibe is developed incrementally. The existing source code is the starting point; a complete rewrite requires an explicitly approved migration ticket.
 
 ## Clone the repository
 
@@ -11,7 +11,7 @@ cd Vibe
 
 ## Target structure
 
-The target structure separates the application, web interface, data, templates, scripts, tests, and documentation. [cite:1]
+The target structure separates the application, web interface, data, templates, scripts, tests, and documentation.
 
 ```text
 bin/
@@ -34,7 +34,7 @@ docs/
 - Put file access behind testable repository and storage functions.
 - Return structured results from business logic rather than capturing stdout.
 - Keep static frontend files separate from Python code.
-- Importing modules must not start servers, containers, or programs. [cite:1]
+- Importing modules must not start servers, containers, or programs.
 
 ## Testing
 
@@ -46,15 +46,15 @@ Vibe uses three test layers:
 | **Integration tests** | APIs, storage, and process adapters |
 | **Browser tests** | Core workflows |
 
-Mocks alone do not replace browser or system acceptance checks. Tests use temporary directories and dedicated ports, not personal projects or production configuration. [cite:1]
+Mocks alone do not replace browser or system acceptance checks. Tests use temporary directories and dedicated ports, not personal projects or production configuration.
 
 ## Quality criteria
 
-Every ticket requires functional and technical evidence and an independent review. Changed testable behavior must be demonstrated by suitable tests. [cite:1]
+Every ticket requires functional and technical evidence and an independent review. Changed testable behavior must be demonstrated by suitable tests.
 
-Existing tests are sufficient if they were run and demonstrate the criterion. For changes without meaningful runtime behavior, an appropriate alternative check is documented. [cite:1]
+Existing tests are sufficient if they were run and demonstrate the criterion. For changes without meaningful runtime behavior, an appropriate alternative check is documented.
 
-Verification records state the command, result, and limits of the evidence. [cite:1]
+Verification records state the command, result, and limits of the evidence.
 
 ## Locked decisions
 
@@ -64,8 +64,8 @@ Verification records state the command, result, and limits of the evidence. [cit
 - Decouple features incrementally.
 - Keep runtime data and secrets out of the repository.
 - Mark unverified model information as unknown.
-- Address security and data-integrity defects before convenience features. [cite:1]
+- Address security and data-integrity defects before convenience features.
 
 ## Contributing
 
-Contributions follow the guidelines in [`CONTRIBUTING.md`](../CONTRIBUTING.md). Keep pull requests focused, describe the problem being solved, and provide suitable tests or evidence. [cite:1]
+Contributions follow the guidelines in [`CONTRIBUTING.md`](../CONTRIBUTING.md). Keep pull requests focused, describe the problem being solved, and provide suitable tests or evidence.
