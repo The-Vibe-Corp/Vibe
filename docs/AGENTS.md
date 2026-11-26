@@ -1,61 +1,61 @@
-# Agenten
+# Agents
 
-Vibe verwaltet globale und projektspezifische KI-Agenten. Ein **globaler Agent** ist für alle Projekte verfügbar, ein **Project Agent** nur innerhalb eines einzelnen Projekts. [cite:1]
+Vibe manages global and project-specific AI agents. A **global agent** is available to all projects, while a **project agent** is available only within a single project.
 
-## Agenten verwalten
+## Managing agents
 
-Im Dashboard kannst du Agenten:
+In the dashboard, you can:
 
-- auflisten und filtern
-- erstellen
-- anzeigen
-- bearbeiten
-- kopieren
-- löschen
+- List and filter agents
+- Create agents
+- View agents
+- Edit agents
+- Copy agents
+- Delete agents
 
-Die Bearbeitung umfasst Beschreibung, Modus, Modell, Berechtigungen und Prompt — entweder über strukturierte Felder oder als Rohtext. [cite:1]
+Editing covers description, mode, model, permissions, and prompt, either through structured fields or raw text.
 
-## Konfigurationsregeln
+## Configuration rules
 
-- Ungültige Eingaben verändern die bestehende Agent-Datei nicht.
-- Namenskonflikte und Agent Shadowing werden sichtbar gemacht.
-- Unbekannte Felder werden möglichst erhalten.
-- Vor Änderungen werden Konfigurations-Backups erstellt und eine Wiederherstellung unterstützt. [cite:1]
+- Invalid input leaves the existing agent file unchanged.
+- Naming conflicts and agent shadowing are made visible.
+- Unknown fields are preserved wherever possible.
+- Configurations are backed up before changes, and restoration is supported.
 
-## Rollen statt fester Namen
+## Roles instead of fixed names
 
-Vibe-Logik darf nicht von hartkodierten Agent-Namen abhängen. Coder und Reviewer werden über konfigurierbare Rollen zugewiesen. [cite:1]
+Vibe logic must not depend on hard-coded agent names. Coders and reviewers are assigned through configurable roles.
 
-| Rolle | Typischer Zweck |
+| Role | Typical purpose |
 |---|---|
-| **Coder** | Implementiert ein Work Package |
-| **Reviewer** | Prüft Ergebnis, Nachweise und technische Qualität |
+| **Coder** | Implements a work package |
+| **Reviewer** | Reviews the result, evidence, and technical quality |
 
-## Modelle zuweisen
+## Assigning models
 
-Agenten können Modelle aus verfügbaren Providern verwenden. Vibe unterscheidet dabei zwischen einem gelisteten Modell und einem Modell, für das der Nutzer tatsächlich autorisiert ist. [cite:1]
+Agents can use models from available providers. Vibe distinguishes between a listed model and a model the user is actually authorized to use.
 
-- Credentials gehören nicht in Agent-Dateien oder das Repository.
-- Paid-Testanfragen erfordern vorherigen Hinweis und Zustimmung.
-- Modell-IDs und Fähigkeiten werden nicht erfunden. [cite:1]
+- Credentials do not belong in agent files or this repository.
+- Paid test requests require prior notice and consent.
+- Model IDs and capabilities are not invented.
 
-Details zu Modellen und Modellprofilen findest du in [docs/MODELS.md](docs/MODELS.md).
+See [docs/MODELS.md](docs/MODELS.md) for model and model-profile details.
 
-## Agent Runs
+## Agent runs
 
-Ein **Agent Run** ist die Ausführung eines Work Packages über einen von Vibe unterstützten Harness. Vibe ist selbst kein AI Harness, sondern arbeitet mit externen, austauschbaren Harnesses über isolierte Ausführungs- und Konfigurationsschnittstellen. OpenCode ist ein unterstützter Harness. [cite:1]
+An **agent run** is the execution of a work package through a harness supported by Vibe. Vibe is not itself an AI harness; it works with external, interchangeable harnesses through isolated execution and configuration interfaces. OpenCode is a supported harness.
 
-Agent Runs können gestartet, beobachtet, angehängt und selektiv gestoppt werden. Das Dashboard zeigt Projekt, Agent, Startzeit, Session und aktuelles Work Package. [cite:1]
+Agent runs can be started, observed, attached to, and selectively stopped. The dashboard shows the project, agent, start time, session, and current work package.
 
-## Parallele Runs
+## Concurrent runs
 
-Vibe unterstützt gleichzeitige Runs für unterschiedliche Projekte, ohne dass identische oder normalisierte Namen kollidieren. Live-Logs und separate Verifikationslogs sind verfügbar. [cite:1]
+Vibe supports concurrent runs for different projects without collisions between identical or normalized names. Live logs and separate verification logs are available.
 
-## Stoppen und Abschluss
+## Stopping and completion
 
-- Das Schließen eines Browser-Tabs stoppt weder Vibe noch einen Agent Run.
-- Ein erneutes Öffnen des Dashboards zeigt weiterhin laufende Sessions.
-- Ein explizites Beenden über das Dashboard stoppt Vibe und seine verwalteten Agent Runs.
-- Das Stoppen des Harness ist eine separate Aktion. [cite:1]
+- Closing a browser tab does not stop Vibe or an agent run.
+- Reopening the dashboard shows sessions that are still running.
+- Explicitly quitting from the dashboard stops Vibe and its managed agent runs.
+- Stopping the harness is a separate action.
 
-Vibe stoppt ausschließlich Prozesse, die eindeutig als Vibe-verwaltet identifiziert werden können. [cite:1]
+Vibe stops only processes that can be identified as Vibe-managed.

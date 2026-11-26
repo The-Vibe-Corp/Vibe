@@ -1,66 +1,66 @@
-# MCP-Server
+# MCP servers
 
-Ein **MCP server** ist ein Dienst, der Tools über das Model Context Protocol bereitstellt. Vibe verwaltet globale und projektspezifische MCP-Server zentral. [cite:1]
+An **MCP server** is a service that provides tools through the Model Context Protocol. Vibe manages global and project-specific MCP servers centrally.
 
-## Verwaltung
+## Management
 
-Für MCP-Server kannst du:
+For MCP servers, you can:
 
-- Server auflisten
-- erstellen
-- bearbeiten
-- löschen
-- aktivieren
-- deaktivieren [cite:1]
+- List servers
+- Create servers
+- Edit servers
+- Delete servers
+- Enable servers
+- Disable servers
 
-## Lokale Server
+## Local servers
 
-Für lokale MCP-Server verwaltet Vibe:
+For local MCP servers, Vibe manages:
 
-- Executable
-- Argumentliste
-- Umgebungsvariablen [cite:1]
+- The executable
+- The argument list
+- Environment variables
 
-## Remote Server
+## Remote servers
 
-Für remote MCP-Server verwaltet Vibe:
+For remote MCP servers, Vibe manages:
 
-- URL
+- The URL
 - Headers
-- unterstützte Authentifizierung [cite:1]
+- Supported authentication
 
-## Konfigurationsschutz
+## Configuration protection
 
-Vibe dokumentiert die tatsächlichen Konfigurationsdateien und deren Precedence. Unbekannte Einstellungen und Kommentare werden möglichst erhalten. [cite:1]
+Vibe documents the actual configuration files and their precedence. Unknown settings and comments are preserved wherever possible.
 
-Wenn eine Bearbeitung eine Datei nicht originalgetreu erhalten kann, stoppt Vibe oder fordert die Zustimmung zu einer konkreten Änderungsvorschau an. Daten werden niemals still verworfen. [cite:1]
+If an edit cannot preserve a file faithfully, Vibe stops or requests approval for a concrete change preview. Data is never silently discarded.
 
 ## Secrets
 
-Secrets werden maskiert, aber ihre Werte bleiben beim Speichern erhalten. Sie werden weder in Antworten, Fehlermeldungen, Command-Anzeigen noch Logs offengelegt. [cite:1]
+Secrets are masked, but their values are preserved when saving. They are not exposed in responses, errors, command displays, or logs.
 
-## Verbindungstests
+## Connection checks
 
-Vor einem Verbindungstest erklärt Vibe, dass dieser Programme starten oder Netzwerkverbindungen öffnen kann. Ein Connectivity Check ist nicht garantiert side-effect free. [cite:1]
+Before a connection check, Vibe explains that it may start programs or open network connections. A connectivity check is not guaranteed to be side-effect free.
 
-Der Test prüft `initialize` und `tools/list`, zeigt die Server-Identität sowie verfügbare Tools und ruft funktionale Tools nicht automatisch auf. [cite:1]
+The check calls `initialize` and `tools/list`, displays the server identity and available tools, and does not automatically invoke functional tools.
 
-## Fehlerklassen
+## Error classes
 
-Vibe unterscheidet unter anderem:
+Vibe distinguishes:
 
-- Fehlende Executables
+- Missing executables
 - Timeouts
-- DNS- und TLS-Fehler
-- HTTP-Fehler
-- Authentifizierungsfehler
-- Protokollfehler
-- Ungültige Konfiguration [cite:1]
+- DNS and TLS errors
+- HTTP errors
+- Authentication failures
+- Protocol failures
+- Invalid configuration
 
-Unterstützte Transports werden explizit angezeigt. Ein nicht unterstützter Transport bedeutet nicht, dass der Server defekt ist. [cite:1]
+Supported transports are displayed explicitly. An unsupported transport does not mean that the server is defective.
 
-## Ressourcenschutz
+## Resource protection
 
-Verbindungstests begrenzen Ausführungszeit, Output und Ressourcennutzung. Testprozesse und ihre Kinder werden zuverlässig gestoppt. [cite:1]
+Connection checks limit execution time, output, and resource use. Test processes and their children are reliably stopped.
 
-Ein erfolgreicher Verbindungstest bedeutet nicht, dass ein Agent jedes gelistete Tool verwenden darf. Agent-spezifische Berechtigungen müssen sichtbar oder nachvollziehbar sein. [cite:1]
+A successful connection check does not establish that an agent may use every listed tool. Agent-specific permissions must be visible or traceable.

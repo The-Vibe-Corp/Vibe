@@ -1,17 +1,17 @@
-# Entwicklung
+# Development
 
-Vibe wird inkrementell weiterentwickelt. Der bestehende Quellcode ist Ausgangspunkt; ein vollständiger Rewrite erfordert ein explizit genehmigtes Migration Ticket. [cite:1]
+Vibe is developed incrementally. The existing source code is the starting point; a complete rewrite requires an explicitly approved migration ticket.
 
-## Repository klonen
+## Clone the repository
 
 ```bash
 git clone https://github.com/The-Vibe-Corp/Vibe.git
 cd Vibe
 ```
 
-## Zielstruktur
+## Target structure
 
-Die angestrebte Struktur trennt Anwendung, Web-Oberfläche, Daten, Templates, Skripte, Tests und Dokumentation. [cite:1]
+The target structure separates the application, web interface, data, templates, scripts, tests, and documentation.
 
 ```text
 bin/
@@ -27,45 +27,45 @@ docs/
 .vibe/
 ```
 
-## Architekturprinzipien
+## Architecture principles
 
-- CLI und Web-API bleiben schlank.
-- Domänen-Services werden für Projekte, Agenten, Profile und MCP geteilt.
-- Dateizugriff liegt hinter testbaren Repository- und Storage-Funktionen.
-- Business Logic liefert strukturierte Ergebnisse statt stdout zu capturen.
-- Statische Frontend-Dateien sind vom Python-Code getrennt.
-- Das Importieren von Modulen darf keine Server, Container oder Programme starten. [cite:1]
+- Keep the CLI and web API thin.
+- Share domain services for projects, agents, profiles, and MCP.
+- Put file access behind testable repository and storage functions.
+- Return structured results from business logic rather than capturing stdout.
+- Keep static frontend files separate from Python code.
+- Importing modules must not start servers, containers, or programs.
 
-## Tests
+## Testing
 
-Vibe verwendet drei Testebenen:
+Vibe uses three test layers:
 
-| Testart | Zweck |
+| Test type | Purpose |
 |---|---|
-| **Unit tests** | Domänenlogik und Validierung |
-| **Integration tests** | API, Storage und Prozess-Adapter |
-| **Browser tests** | Zentrale Workflows |
+| **Unit tests** | Domain logic and validation |
+| **Integration tests** | APIs, storage, and process adapters |
+| **Browser tests** | Core workflows |
 
-Mocks ersetzen keine Browser- oder System-Akzeptanztests. Tests verwenden temporäre Verzeichnisse und dedizierte Ports, nicht persönliche Projekte oder Produktionskonfiguration. [cite:1]
+Mocks alone do not replace browser or system acceptance checks. Tests use temporary directories and dedicated ports, not personal projects or production configuration.
 
-## Qualitätskriterien
+## Quality criteria
 
-Jedes Ticket benötigt funktionale und technische Nachweise sowie ein unabhängiges Review. Geändertes testbares Verhalten muss durch geeignete Tests demonstriert werden. [cite:1]
+Every ticket requires functional and technical evidence and an independent review. Changed testable behavior must be demonstrated by suitable tests.
 
-Bestehende Tests genügen, wenn sie ausgeführt wurden und das Kriterium belegen. Für Änderungen ohne relevantes Laufzeitverhalten wird ein angemessener alternativer Check dokumentiert. [cite:1]
+Existing tests are sufficient if they were run and demonstrate the criterion. For changes without meaningful runtime behavior, an appropriate alternative check is documented.
 
-Verifikationsrecords dokumentieren Command, Ergebnis und Grenzen des Nachweises. [cite:1]
+Verification records state the command, result, and limits of the evidence.
 
-## Locked Decisions
+## Locked decisions
 
-- Bestehenden Quellcode importieren, nicht regenerieren.
-- Funktionalität nicht als complete markieren, bevor sie verifiziert wurde.
-- Lokale Web-Anwendung und CLI beibehalten.
-- Features inkrementell entkoppeln.
-- Runtime-Daten und Secrets aus dem Repository halten.
-- Unverifizierte Modellinformationen als unknown markieren.
-- Security- und Data-Integrity-Defekte vor Convenience-Features addressieren. [cite:1]
+- Import the existing source; do not regenerate it.
+- Do not mark functionality complete before it has been verified.
+- Retain the local web application and CLI.
+- Decouple features incrementally.
+- Keep runtime data and secrets out of the repository.
+- Mark unverified model information as unknown.
+- Address security and data-integrity defects before convenience features.
 
-## Beitragen
+## Contributing
 
-Beiträge folgen den Richtlinien in [`CONTRIBUTING.md`](../CONTRIBUTING.md). Bitte halte Pull Requests fokussiert, beschreibe das gelöste Problem und liefere geeignete Tests beziehungsweise Nachweise. [cite:1]
+Contributions follow the guidelines in [`CONTRIBUTING.md`](../CONTRIBUTING.md). Keep pull requests focused, describe the problem being solved, and provide suitable tests or evidence.

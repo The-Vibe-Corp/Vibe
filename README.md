@@ -2,9 +2,9 @@
 
 # Vibe
 
-**Die lokale Entwicklungszentrale für KI-gestützte Softwareprojekte.**
+**The local development hub for AI-assisted software projects.**
 
-Vibe verbindet Projekte, Agenten, Modelle, MCP-Server, Ausführungen, Verifikation und Diagnose in einer lokal betriebenen Web-Oberfläche und CLI.
+Vibe brings projects, agents, models, MCP servers, agent runs, verification, and diagnostics together in a locally hosted web interface and CLI.
 
 [![License](https://img.shields.io/github/license/The-Vibe-Corp/Vibe?style=flat-square)](./LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20Windows%20%7C%20macOS-blue?style=flat-square)](docs/INSTALLATION.md)
@@ -12,201 +12,201 @@ Vibe verbindet Projekte, Agenten, Modelle, MCP-Server, Ausführungen, Verifikati
 [![Security](https://img.shields.io/badge/security-policy-available-informational?style=flat-square)](./SECURITY.md)
 
 [Features](#features) ·
-[Schnellstart](#schnellstart) ·
-[Dokumentation](#dokumentation) ·
-[Architektur](#architektur) ·
-[Beitragen](#beitragen)
+[Quick start](#quick-start) ·
+[Documentation](#documentation) ·
+[Architecture](#architecture) ·
+[Contributing](#contributing)
 
 </div>
 
 ---
 
-## Was ist Vibe?
+## What is Vibe?
 
-Vibe ist ein **lokaler Development Hub** für KI-assistierte Softwareprojekte. Statt Agenten, Modelle, MCP-Server, Tickets, Logs und Verifikation über viele getrennte Werkzeuge zu verwalten, bündelt Vibe diese Bausteine in einer übersichtlichen Arbeitsumgebung.
+Vibe is a **local development hub** for AI-assisted software projects. Instead of managing agents, models, MCP servers, tickets, logs, and verification across separate tools, Vibe brings these building blocks into one organized workspace.
 
-Vibe ist dabei **kein AI Harness**: Es arbeitet mit austauschbaren, externen Harnesses über isolierte Ausführungs- und Konfigurationsschnittstellen. OpenCode ist ein unterstützter Harness.
+Vibe is **not an AI harness**. It works with external, interchangeable harnesses through isolated execution and configuration interfaces. OpenCode is a supported harness.
 
-Die Anwendung richtet sich insbesondere an Consultants, Product Owner, Project Manager und alle, die zuverlässige Software entwickeln möchten, ohne selbst tief in der Entwicklungstechnik zu stecken. Nutzer beschreiben Ziele, Anforderungen und Feedback; technische Konfiguration, Agent-Runs und Verifikation bleiben sichtbar und kontrollierbar.
+Vibe is designed for consultants, product owners, project managers, and anyone who wants to build reliable software without needing deep development expertise. Users describe goals, requirements, and feedback, while technical configuration, agent runs, and verification remain visible and controllable.
 
 ## Features
 
-| Bereich | Was Vibe bietet |
+| Area | What Vibe provides |
 |---|---|
-| **Projekte** | Entwicklungverzeichnisse verwalten, Projekte über Git-Metadaten oder Vibe-Konfiguration erkennen, Status, Branch, Änderungen, offene Tickets und letzten Commit anzeigen. |
-| **Work Packages** | Tickets, Bugs, Feedback und Arbeitspakete lokal verwalten — inklusive Status, Akzeptanzkriterien, Nachweisen und Integration. |
-| **Agenten** | Globale und projektspezifische Agenten erstellen, bearbeiten, kopieren, löschen und über Rollen zuweisen. |
-| **Modelle** | Modelle verschiedener Provider verwalten, bewerten und in Modellprofilen rollenbasiert zuordnen. |
-| **MCP-Server** | Lokale und remote MCP-Server verwalten, Verbindungen prüfen und verfügbare Tools anzeigen. |
-| **Agent Runs** | Läufe starten, beobachten, Logs einsehen, gezielt stoppen und mehrere Projekte parallel betreiben. |
-| **Verifikation** | Paket- und Integrationsverifikation als separate Gates konfigurieren und Nachweise dokumentieren. |
-| **Diagnose** | Betriebssystem, Container, Python-Version, Ports, Schreibrechte und optionale Tools prüfen. |
-| **Lokal first** | Quellcode, Installation und Laufzeitdaten bleiben getrennt; Nutzer behalten Kontrolle über lokale Daten, Zugangsdaten und Projektquellen. |
+| **Projects** | Manage development directories, recognize projects through Git metadata or Vibe configuration, and show status, branch, changes, open work packages, run status, and the latest commit. |
+| **Work packages** | Manage tickets, bugs, feedback, and work packages locally, including status, acceptance criteria, evidence, and integration. |
+| **Agents** | Create, edit, copy, and delete global and project-specific agents, and assign them through configurable roles. |
+| **Models** | Manage and assess models from multiple providers and assign them to roles through model profiles. |
+| **MCP servers** | Manage local and remote MCP servers, test connections, and inspect available tools. |
+| **Agent runs** | Start, observe, attach to, selectively stop, and run agents concurrently across projects. |
+| **Verification** | Configure package and integration verification as separate gates and document supporting evidence. |
+| **Diagnostics** | Check operating system, containers, Python version, ports, write permissions, and optional tools. |
+| **Local first** | Source code, installation, and runtime data remain separate; users retain control of local data, credentials, and project sources. |
 
-Diese Funktionalitäten folgen der verbindlichen Produktspezifikation in [`SPEC.md`](./SPEC.md).
+These capabilities follow the binding product specification in [`SPEC.md`](./SPEC.md).
 
-## Schnellstart
+## Quick start
 
-### Voraussetzungen
+### Prerequisites
 
-- Python-Umgebung
-- Linux, Windows oder macOS
-- Optional: Docker, Podman, Toolbx oder Distrobox für containerisierte Umgebungen
-- Optional: Git für projektbezogene Workflows
+- A Python environment
+- Linux, Windows, or macOS
+- Optional: Docker, Podman, Toolbx, or Distrobox for containerized environments
+- Optional: Git for project-related workflows
 
-Vibe erkennt die tatsächliche Umgebung über Diagnostics und unterscheidet dabei zwischen zwingenden Anwendungsvoraussetzungen und optionalen Projektwerkzeugen. Fehlende optionale Komponenten dürfen die Kernfunktion nicht still beschädigen.
+Vibe determines actual support through diagnostics. It distinguishes mandatory application prerequisites from optional project tools; missing optional components must not silently break core functionality.
 
-### Installation unter Linux
+### Install on Linux
 
-Der Linux-Einstiegspunkt ist `install-vibe.sh`. Er setzt voraus, dass die Umgebungsvariable `VIBE` auf deinen Vibe-Workspace zeigt, und ruft das plattformübergreifende Setup `scripts/setup-vibe.py` auf. [cite:2]
+The Linux entry point is `install-vibe.sh`. It requires the `VIBE` environment variable to point to your Vibe workspace and invokes the cross-platform setup script, `scripts/setup-vibe.py`. [cite:2]
 
 ```bash
-VIBE=/pfad/zu/deinem/vibe-workspace bash install-vibe.sh
+VIBE=/path/to/your/vibe-workspace bash install-vibe.sh
 ```
 
-Das Skript installiert bzw. aktualisiert Vibe ohne Rückfragen und verwendet das aktuelle Repository als Quelle. [cite:2]
+The script installs or updates Vibe without prompts and uses the current repository as its source. [cite:2]
 
-### Installation unter Windows
+### Install on Windows
 
-Für Windows befindet sich ein eigener Einstiegspunkt im Repository:
+Vibe includes a dedicated Windows entry point:
 
 ```powershell
 .\setup-vibe.cmd
 ```
 
-Details zu Pfaden, Workspace, Containern und Update-Verhalten findest du in [docs/INSTALLATION.md](docs/INSTALLATION.md).
+For workspace paths, containers, updates, and rollback behavior, see [docs/INSTALLATION.md](docs/INSTALLATION.md).
 
-### Dashboard öffnen
+### Open the dashboard
 
-Nach dem Start öffnest du das lokale Vibe-Dashboard im Browser. Vibe bindet den Webserver standardmäßig an `loopback`; ein explizit konfigurierter Netzwerk-Bind muss eine IP-Adresse sein, kein DNS-Hostname.
+After starting Vibe, open the local dashboard in your browser. By default, the web server binds to loopback; an explicitly configured network bind address must be an IP literal, not a DNS hostname.
 
-## Dokumentation
+## Documentation
 
-| Dokument | Inhalt |
+| Document | Contents |
 |---|---|
-| [Installation](docs/INSTALLATION.md) | Installation, Update, Workspace, Windows, Linux und Container |
-| [Konfiguration](docs/CONFIGURATION.md) | Workspace, Laufzeitdaten, Projekte, Profile und Migration |
-| [Agenten](docs/AGENTS.md) | Globale und projektbezogene Agenten, Rollen, Berechtigungen und Prompts |
-| [Modelle](docs/MODELS.md) | Provider, Modellprofile, Kosten, Verfügbarkeit und Bewertungsgrundsätze |
-| [MCP-Server](docs/MCP.md) | Lokale und remote MCP-Server, Verbindungstests, Transporte und Sicherheit |
-| [Workflows](docs/WORKFLOWS.md) | Tickets, Work Packages, Agent Runs, Verifikation und Integration |
-| [Entwicklung](docs/DEVELOPMENT.md) | Repository-Struktur, Tests, Qualitätskriterien und Contributions |
-| [Sicherheit](docs/SECURITY.md) | Lokale Datenhoheit, Authentifizierung, Secrets, Sandbox und Auditing |
-| [Troubleshooting](docs/TROUBLESHOOTING.md) | Diagnose, häufige Fehler, Logs und sichere Fehlerbehebung |
+| [Installation](docs/INSTALLATION.md) | Installation, updates, workspace, Windows, Linux, and containers |
+| [Configuration](docs/CONFIGURATION.md) | Workspace, runtime data, projects, profiles, and migration |
+| [Agents](docs/AGENTS.md) | Global and project agents, roles, permissions, prompts, and runs |
+| [Models](docs/MODELS.md) | Providers, model profiles, pricing, availability, and assessment principles |
+| [MCP servers](docs/MCP.md) | Local and remote MCP servers, connection checks, transports, and secrets |
+| [Workflows](docs/WORKFLOWS.md) | Tickets, work packages, agent runs, verification, and integration |
+| [Development](docs/DEVELOPMENT.md) | Repository structure, tests, quality criteria, and contributions |
+| [Security](docs/SECURITY.md) | Local data ownership, authentication, secrets, sandboxing, and auditing |
+| [Troubleshooting](docs/TROUBLESHOOTING.md) | Diagnostics, common issues, logs, and safe remediation |
 
-## Architektur
+## Architecture
 
-Vibe trennt bewusst **Quellcode**, **Installation** und **Laufzeitdaten**. Ein Update einer dieser Ebenen darf die anderen nicht überschreiben.
+Vibe deliberately separates **project source code**, **installation**, and **runtime data**. Updating one layer must not overwrite the others.
 
 ```text
-Projektquellen  ──►  Vibe Workspace  ──►  Agent Runs  ──►  Verifikation  ──►  Integration
-       │                  │                  │                 │                  │
-       └── Git / Dateien  └── Konfiguration   └── Harness       └── Nachweise      └── Merge / PR
+Project sources ──► Vibe workspace ──► Agent runs ──► Verification ──► Integration
+       │                 │                │                │                 │
+       └── Git / files   └── Configuration └── Harness      └── Evidence      └── Merge / PR
 ```
 
-Zentrale Begriffe:
+Core concepts:
 
-| Begriff | Bedeutung |
+| Term | Meaning |
 |---|---|
-| **Project source** | Quellcode im Git-Repository |
-| **Installation** | Die deployed, ausführbare Vibe-Anwendung |
-| **Runtime data** | Einstellungen, Logs, Tokens, Backups und Statusdaten |
-| **Global agent** | Ein für alle Projekte verfügbarer Agent |
-| **Project agent** | Ein Agent, der nur innerhalb eines Projekts verfügbar ist |
-| **MCP server** | Ein Dienst, der Tools über MCP bereitstellt |
-| **Model profile** | Eine Zuordnung von Modellen zu Rollen |
-| **Agent run** | Die Ausführung eines Work Packages über einen unterstützten Harness |
-| **Dashboard** | Die Vibe-Webanwendung |
-| **Runner** | Der von Vibe verwaltete Prozess für Work Packages, Git-Workspaces, Verifikation und Abschlussaktionen |
+| **Project source** | Source code in a Git repository |
+| **Installation** | The deployed, executable Vibe application |
+| **Runtime data** | Settings, logs, tokens, backups, and status records |
+| **Global agent** | An agent available to all projects |
+| **Project agent** | An agent available only within one project |
+| **MCP server** | A service that provides tools through MCP |
+| **Model profile** | A mapping of models to roles |
+| **Agent run** | Execution of a work package through a harness supported by Vibe |
+| **Dashboard** | The Vibe web application |
+| **Runner** | The Vibe-managed process that coordinates work packages, Git workspaces, verification, and closing actions |
 
-Die Definitionen stammen aus der Produktspezifikation.
+These definitions come from the product specification.
 
 ## Workflows
 
-Vibe koordiniert den Weg von einer Idee bis zur integrierten Änderung:
+Vibe coordinates the path from an idea to an integrated change:
 
-1. **Projekt registrieren** — Entwicklungverzeichnis hinzufügen oder vorhandenes Projekt erkennen.
-2. **Anforderung erfassen** — Feedback, Bug oder Work Package anlegen.
-3. **Agent auswählen** — Geeigneten Coder- und Reviewer-Agenten über Rollen zuweisen.
-4. **Ausführung starten** — Den Agent Run über einen unterstützten Harness starten.
-5. **Ergebnis prüfen** — Live-Logs, Verifikationslogs und Nachweise einsehen.
-6. **Integration abschließen** — Lokal mergen oder, sofern konfiguriert, einen GitHub-Pull-Request erstellen.
+1. **Register a project** — Add a development directory or recognize an existing project.
+2. **Capture a requirement** — Create feedback, a bug report, or a work package.
+3. **Select agents** — Assign appropriate coder and reviewer agents through roles.
+4. **Start execution** — Run the work package through a supported harness.
+5. **Review the result** — Inspect live logs, verification logs, and supporting evidence.
+6. **Complete integration** — Merge locally or create a GitHub pull request when configured.
 
-Ein Commit allein beweist keine Akzeptanz: Der Abschluss eines Work Packages erfordert erfüllte Akzeptanzkriterien und geeignete Nachweise.
+A commit alone does not prove acceptance: completing a work package requires satisfied acceptance criteria and appropriate supporting evidence.
 
-## Sicherheit und Datenhoheit
+## Security and data ownership
 
-Vibe ist lokal ausgerichtet. Der Webserver bindet sich standardmäßig an Loopback, authentifizierte mutating API-Anfragen sind erforderlich, und Tokens dürfen weder in Access-Logs noch in Fehlermeldungen erscheinen.
+Vibe is local-first. The web server binds to loopback by default, authenticated mutating API requests are required, and tokens must never appear in access logs or error messages.
 
-Wichtige Grundsätze:
+Key principles:
 
-- Nutzer behalten Kontrolle über lokale Daten, Zugangsdaten und Projektquellen.
-- Sicherheitsrelevante Aktionen sind sichtbar, begrenzt und in auditierbaren Logs nachvollziehbar.
-- Credentials gehören weder in Agent-Dateien noch in dieses Repository.
-- Projekt-Check-Commands und MCP-Programme werden als trusted-code execution behandelt.
-- Dateien werden atomar geschrieben; gleichzeitige Änderungen werden erkannt.
-- API-Keys, Tokens, globale Konfigurationen oder persönliche Agenten werden niemals automatisch zu Git hinzugefügt.
+- Users retain control of local data, credentials, and project source code.
+- Security-sensitive actions are visible, subject to limits, and recorded in auditable logs.
+- Credentials do not belong in agent files or this repository.
+- Project check commands and MCP programs are treated as trusted-code execution.
+- Files are written atomically, and concurrent changes are detected.
+- API keys, tokens, global configurations, and personal agents are never automatically added to Git.
 
-Details findest du in [docs/SECURITY.md](docs/SECURITY.md) und [`SECURITY.md`](./SECURITY.md).
+See [docs/SECURITY.md](docs/SECURITY.md) and [`SECURITY.md`](./SECURITY.md) for details.
 
-## Projektstruktur
+## Project structure
 
 ```text
 Vibe/
-├── .github/               # GitHub-Konfiguration und Workflows
-├── bin/                   # Ausführbare Einstiegspunkte
-├── data/                  # Statische bzw. mitgelieferte Daten
-├── docs/                  # Projekt- und Nutzerdokumentation
-├── scripts/               # Setup, Wartung und Hilfsskripte
-├── templates/             # Projekt- und Konfigurationsvorlagen
-├── tests/                 # Unit-, Integrations- und Browser-Tests
-├── install-vibe.sh        # Linux-Einstiegspunkt für Installation und Update
-├── setup-vibe.cmd         # Windows-Einstiegspunkt
-├── SPEC.md                # Verbindliche Produktspezifikation
-├── CONTRIBUTING.md        # Beitragsrichtlinien
-├── SECURITY.md            # Sicherheitsrichtlinie
-├── CODE_OF_CONDUCT.md     # Verhaltenskodex
-└── LICENSE                # Lizenz einschließlich kommerzieller Ausnahme
+├── .github/               # GitHub configuration and workflows
+├── bin/                   # Executable entry points
+├── data/                  # Static or bundled data
+├── docs/                  # Project and user documentation
+├── scripts/               # Setup, maintenance, and helper scripts
+├── templates/             # Project and configuration templates
+├── tests/                 # Unit, integration, and browser tests
+├── install-vibe.sh        # Linux entry point for installation and updates
+├── setup-vibe.cmd         # Windows entry point
+├── SPEC.md                # Binding product specification
+├── CONTRIBUTING.md        # Contribution guidelines
+├── SECURITY.md            # Security policy
+├── CODE_OF_CONDUCT.md     # Code of conduct
+└── LICENSE                # License, including the commercial-use exception
 ```
 
-Die Struktur entspricht dem aktuellen Repository-Bestand. [cite:0]
+This structure reflects the current repository contents. [cite:0]
 
-## Entwicklung
+## Development
 
 ```bash
 git clone https://github.com/The-Vibe-Corp/Vibe.git
 cd Vibe
 ```
 
-Vibe verfolgt einen inkrementellen Decoupling-Ansatz: CLI und Web-API bleiben schlank, Domänenlogik wird in gemeinsame Services ausgelagert, Dateizugriff liegt hinter testbaren Storage-Funktionen und statische Frontend-Dateien sind vom Python-Code getrennt.
+Vibe follows an incremental decoupling approach: the CLI and web API remain thin, domain logic is shared through services, file access is placed behind testable storage functions, and static frontend files remain separate from Python code.
 
-Qualität wird durch Unit-Tests für Domänenlogik, Integrations-Tests für API, Storage und Prozess-Adapter sowie Browser-Tests für zentrale Workflows gesichert. Mocks ersetzen dabei keine Browser- oder System-Akzeptanztests.
+Quality is supported by unit tests for domain logic, integration tests for APIs, storage, and process adapters, and browser tests for core workflows. Mocks do not replace browser or system acceptance checks.
 
-Details findest du in [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) und [`CONTRIBUTING.md`](./CONTRIBUTING.md).
+See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) and [`CONTRIBUTING.md`](./CONTRIBUTING.md) for details.
 
-## Beitragen
+## Contributing
 
-Beiträge sind willkommen. Bitte halte Änderungen fokussiert, beschreibe das gelöste Problem klar und liefere geeignete funktionale sowie technische Nachweise.
+Contributions are welcome. Keep changes focused, clearly describe the problem they solve, and provide appropriate functional and technical evidence.
 
-1. Forke das Repository.
-2. Erstelle einen Branch: `git checkout -b feature/mein-feature`.
-3. Implementiere die Änderung inklusive passender Tests.
-4. Führe relevante Tests und Verifikation aus.
-5. Öffne einen Pull Request mit klarer Beschreibung und Nachweisen.
+1. Fork the repository.
+2. Create a branch: `git checkout -b feature/my-feature`.
+3. Implement the change, including suitable tests.
+4. Run the relevant tests and verification.
+5. Open a pull request with a clear description and evidence.
 
-Die vollständigen Richtlinien findest du in [`CONTRIBUTING.md`](./CONTRIBUTING.md) und [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
+See [`CONTRIBUTING.md`](./CONTRIBUTING.md) and [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for the full guidelines.
 
 ## Support
 
-- **Bugs und Feature-Wünsche:** [GitHub Issues](https://github.com/The-Vibe-Corp/Vibe/issues)
-- **Sicherheitsmeldungen:** Siehe [`SECURITY.md`](./SECURITY.md)
-- **Verhaltenskodex:** [`CODE_OF_CONDUCT.md`](./CODE_OF_CONDUCT.md)
+- **Bugs and feature requests:** [GitHub Issues](https://github.com/The-Vibe-Corp/Vibe/issues)
+- **Security reports:** See [`SECURITY.md`](./SECURITY.md)
+- **Code of conduct:** [`CODE_OF_CONDUCT.md`](./CODE_OF_CONDUCT.md)
 
-## Lizenz
+## License
 
-Vibe steht unter der in [`LICENSE`](./LICENSE) enthaltenen Lizenz.
+Vibe is licensed under the terms contained in [`LICENSE`](./LICENSE).
 
-Die Lizenzdatei bleibt unverändert und enthält die bestehende Ausnahme für kommerzielle Nutzung. Für den verbindlichen Lizenztext sowie die genauen Bedingungen und Grenzen dieser Ausnahme siehe ausschließlich [`LICENSE`](./LICENSE).
+The license file remains unchanged and includes the existing exception for commercial use. For the binding license text and the exact terms and limits of that exception, see [`LICENSE`](./LICENSE).
 
 ---
 
