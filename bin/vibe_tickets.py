@@ -34,6 +34,11 @@ TICKET_FILE_TEMPLATE = "TICKET-{id}.json"             # Arbeitskopie, sichtbar
 _ID_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_-]*[0-9]+$")
 _COMMIT_RE = re.compile(r"^[0-9a-f]{7,40}$")
 _PRIORITY_RE = re.compile(r"^P[0-8]$")
+# GH-99: Harness-Session-Kennungen werden nur unverändert übernommen, wenn sie
+# aus dem engen Zeichenvorrat bestehen; alles andere wird abgelehnt.
+_SESSION_ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+_MONTH_RE = re.compile(r"^\d{4}-\d{2}$")
+COSTS_VERSION = 1
 
 _STATE_LABELS = {
     "done": "erledigt",
@@ -112,6 +117,291 @@ def save(project, tickets, expected=None):
             "Ticketspeicher-Konflikt beim Schreiben: " + str(error)) from None
 
 
+def _session_id(value):
+    """Validierte Session-Kennung; ``ValueError`` bei ungültiger Form."""
+    text = str(value) if isinstance(value, str) else ""
+    if not text or not _SESSION_ID_RE.fullmatch(text):
+        raise ValueError("Ungültige Session-Kennung: " + repr(value))
+    return text
+
+
+def _package_id(value):
+    """Paket-Kennung aus einem Aufruf; leer/ungültig wird abgelehnt."""
+    text = str(value or "").strip()
+    if not text:
+        raise ValueError("Paket-Kennung fehlt")
+    return text
+
+
+def _session_list(raw):
+    """Bereinigte Session-Liste eines Tickets (ungültige Einträge entfallen)."""
+    if not isinstance(raw, list):
+        return []
+    result = []
+    for value in raw:
+        if isinstance(value, str) and _SESSION_ID_RE.fullmatch(value):
+            if value not in result:
+                result.append(value)
+    return result
+
+
+def _int_tokens(value):
+    """Nichtnegative Ganzzahl; kaputte Werte zählen als 0."""
+    try:
+        number = int(value)
+    except (TypeError, ValueError, OverflowError):
+        return 0
+    return number if number > 0 else 0
+
+
+def _normalize_usage(usage):
+    """Prüft den Verbrauch einer Session und liefert eine tiefe Kopie.
+
+    Pflicht ist ``models``: Modell → ``{agent, input, cached_input, output}``.
+    Der optionale Monat ``YYYY-MM`` bleibt erhalten und versorgt später die
+    Monatsbuckets der Kostenübersicht (GH-99).
+    """
+    if not isinstance(usage, dict):
+        raise ValueError("Verbrauch muss ein Objekt sein")
+    models = usage.get("models")
+    if not isinstance(models, dict):
+        raise ValueError("Verbrauch braucht ein models-Objekt")
+    normalized = {}
+    for model, entry in models.items():
+        model = str(model or "").strip()
+        if not model:
+            raise ValueError("Modellname fehlt im Verbrauch")
+        if not isinstance(entry, dict):
+            raise ValueError("Verbrauchseintrag muss ein Objekt sein: " + model)
+        normalized[model] = {
+            "agent": str(entry.get("agent") or ""),
+            "input": _int_tokens(entry.get("input")),
+            "cached_input": _int_tokens(entry.get("cached_input")),
+            "output": _int_tokens(entry.get("output")),
+        }
+    out = {"models": normalized}
+    month = usage.get("month")
+    if month is not None:
+        month = str(month).strip()
+        if not _MONTH_RE.fullmatch(month):
+            raise ValueError("Ungültiger Monat im Verbrauch: " + repr(month))
+        out["month"] = month
+    return out
+
+
+def _normalize_costs(raw):
+    """Kostenstruktur eines Tickets lesen; Unbekanntes bleibt unangetastet.
+
+    Liefert ``{"version": 1, "sessions": {sid: usage}}``. Defekte Einträge
+    werden verworfen, nicht in gültige Werte umgedeutet.
+    """
+    data = raw if isinstance(raw, dict) else {}
+    sessions = data.get("sessions") if isinstance(data, dict) else None
+    out_sessions = {}
+    if isinstance(sessions, dict):
+        for sid, usage in sessions.items():
+            if not isinstance(sid, str) or not _SESSION_ID_RE.fullmatch(sid):
+                continue
+            try:
+                out_sessions[sid] = _normalize_usage(usage)
+            except ValueError:
+                continue
+    out = {"version": COSTS_VERSION, "sessions": out_sessions}
+    months = data.get("months") if isinstance(data, dict) else None
+    if isinstance(months, dict):
+        out_months = {}
+        for sid, month in months.items():
+            if (isinstance(sid, str) and _SESSION_ID_RE.fullmatch(sid)
+                    and isinstance(month, str) and _MONTH_RE.fullmatch(month)):
+                out_months[sid] = month
+        if out_months:
+            out["months"] = out_months
+    return out
+
+
+def _session_owner(project, session_id):
+    """Erster Besitzer einer Session: ``(projekt_realpfad, paket_id)``.
+
+    Die Suche ist bewusst lesend und begrenzt: das Projekt selbst und seine
+    unmittelbaren Geschwisterordner (sowie optional die Kinder von ``VIBE``).
+    Fremde Ticketspeicher werden nie geschrieben.
+    """
+    target = os.path.realpath(os.path.abspath(str(project)))
+    candidates = [target]
+    parents = [os.path.dirname(target)]
+    vibe_root = (os.environ.get("VIBE") or "").strip()
+    if vibe_root:
+        parents.append(os.path.abspath(os.path.expanduser(vibe_root)))
+    seen = {target}
+    for parent in parents:
+        try:
+            names = sorted(os.listdir(parent))
+        except OSError:
+            continue
+        for name in names:
+            path = os.path.join(parent, name)
+            if not os.path.isdir(path):
+                continue
+            real = os.path.realpath(path)
+            if real in seen:
+                continue
+            seen.add(real)
+            if os.path.isfile(store_path(real)):
+                candidates.append(real)
+    for root in candidates:
+        try:
+            tickets = load(root)
+        except (OSError, ValueError):
+            continue
+        for record in tickets:
+            if session_id in _session_list(record.get("sessions")):
+                return os.path.realpath(root), str(record.get("id") or "")
+    return None
+
+
+def _mutate_record(project, tid, change):
+    """Ändert genau einen Datensatz atomar und kollisionssicher.
+
+    ``change(record)`` liefert den geänderten Datensatz. Unbekannte Felder
+    und Dokumenteigenschaften bleiben erhalten; ``updated`` wird gesetzt.
+    """
+    tid = str(tid or "").strip()
+    for _ in range(20):
+        snapshot = vibe_storage.read_snapshot(store_path(project))
+        tickets = _tickets_from_snapshot(snapshot)
+        record = find(tickets, tid)
+        if record is None:
+            raise ValueError("Ticket nicht gefunden im Ticketspeicher: " + tid)
+        updated = change(dict(record))
+        updated["updated"] = _now_utc()
+        expected = snapshot.digest if snapshot.exists else vibe_storage.MISSING
+        try:
+            save(project,
+                 [updated if item.get("id") == tid else item
+                  for item in tickets], expected=expected)
+            return updated
+        except TicketStoreConflict:
+            continue
+    raise TicketStoreConflict(
+        "Ticketspeicher wurde gleichzeitig geändert; bitte erneut versuchen.")
+
+
+def sessions_of(record):
+    """Gespeicherte Session-Zuordnungen eines Pakets (nie aus dem Titel)."""
+    return _session_list((record or {}).get("sessions"))
+
+
+def attach_session(project, package_id, session_id):
+    """Ordnet eine Session genau einem Paket dieses Projekts zu.
+
+    Die Kennung wird validiert, das Paket muss im Projekt liegen, und eine
+    Session darf nie einem zweiten Paket oder einem anderen Projekt gehören.
+    Wiederholtes Anhängen ist idempotent. Liefert die neue Liste.
+    """
+    sid = _session_id(session_id)
+    pid = _package_id(package_id)
+    owner = _session_owner(project, sid)
+    project_real = os.path.realpath(os.path.abspath(str(project)))
+    if owner is not None and owner != (project_real, pid):
+        raise ValueError(
+            "Session " + sid + " gehört bereits zu Paket " + (owner[1] or "?")
+            + " in " + owner[0])
+
+    def change(record):
+        sessions = _session_list(record.get("sessions"))
+        if sid not in sessions:
+            sessions.append(sid)
+        record["sessions"] = sessions
+        return record
+
+    updated = _mutate_record(project, pid, change)
+    return sessions_of(updated)
+
+
+def replace_sessions(project_dir, package_id, session_id):
+    """Setzt die aktive Session eines Pakets und ersetzt frühere Zuordnungen.
+
+    Anders als ``clear_sessions`` + ``attach_session`` wird zuerst geprüft und
+    erst danach in einem einzigen atomaren Schreibvorgang ersetzt. Eine
+    ungültige Kennung, ein fremdes Paket oder eine bereits anderweitig
+    vergebene Session lässt die bestehende Zuordnung daher unberührt. Der
+    Stream-Filter nutzt weiterhin ``attach_session`` und sammelt mehrere
+    Sessions; diese Funktion ist ausschließlich für die CLI gedacht.
+    """
+    sid = _session_id(session_id)
+    pid = _package_id(package_id)
+    # Paket muss im eigenen Projekt liegen (Mitgliedschaft vor dem Schreiben).
+    if find(load(project_dir), pid) is None:
+        raise ValueError("Paket nicht gefunden im Ticketspeicher: " + pid)
+    # Globale Alleinbesitzership: die Session darf keinem anderen Paket und
+    # keinem anderen Projekt gehören (das eigene Paket ist idempotent).
+    owner = _session_owner(project_dir, sid)
+    project_real = os.path.realpath(os.path.abspath(str(project_dir)))
+    if owner is not None and owner != (project_real, pid):
+        raise ValueError(
+            "Session " + sid + " gehört bereits zu Paket " + (owner[1] or "?")
+            + " in " + owner[0])
+
+    def change(record):
+        record["sessions"] = [sid]
+        return record
+
+    updated = _mutate_record(project_dir, pid, change)
+    return sessions_of(updated)
+
+
+def clear_sessions(project, package_id):
+    """Entfernt nur die Session-Zuordnungen eines Pakets; Kosten bleiben."""
+    pid = _package_id(package_id)
+
+    def change(record):
+        record["sessions"] = []
+        return record
+
+    updated = _mutate_record(project, pid, change)
+    return sessions_of(updated)
+
+
+def resume_session(project, package_id):
+    """Erste gespeicherte Session des Pakets oder ``""`` (deterministisch)."""
+    pid = _package_id(package_id)
+    record = find(load(project), pid)
+    if record is None:
+        return ""
+    sessions = sessions_of(record)
+    return sessions[0] if sessions else ""
+
+
+def usage_of(record):
+    """Persistierte Kosten eines Pakets als ``{version, sessions, [months]}``."""
+    return _normalize_costs((record or {}).get("costs"))
+
+
+def record_usage(project, package_id, session_id, usage):
+    """Speichert den Verbrauch einer Session am Paket (Überschreiben).
+
+    Ein erneuter Flush ersetzt den Eintrag dieser Session und addiert ihn nie.
+    Der optionale Monat im Verbrauch wird mitgespeichert; fehlt er, hält das
+    Paket den Aufzeichnungsmonat als Rückfall für die Monatsbuckets fest.
+    """
+    sid = _session_id(session_id)
+    pid = _package_id(package_id)
+    normalized = _normalize_usage(usage)
+
+    def change(record):
+        costs = _normalize_costs(record.get("costs"))
+        costs["version"] = COSTS_VERSION
+        costs["sessions"][sid] = normalized
+        months = dict(costs.get("months") or {})
+        months[sid] = normalized.get("month") or _now_utc()[:7]
+        costs["months"] = months
+        record["costs"] = costs
+        return record
+
+    _mutate_record(project, pid, change)
+    return normalized
+
+
 def normalize(record, require_done_proof=True):
     """Setzt Defaults und validiert ein Ticket; liefert ein neues Dict.
 
@@ -182,6 +472,13 @@ def normalize(record, require_done_proof=True):
         if not isinstance(dep, str) or not _ID_RE.match(dep):
             raise ValueError("Ungültige Abhängigkeits-ID: " + repr(dep))
     out["dependencies"] = list(dependencies)
+
+    # GH-99: Neue Paketfelder werden nur bereinigt, wenn sie vorhanden sind;
+    # fremde Schlüssel bleiben unangetastet.
+    if "sessions" in out:
+        out["sessions"] = _session_list(out.get("sessions"))
+    if "costs" in out:
+        out["costs"] = _normalize_costs(out.get("costs"))
 
     if state == "done" and require_done_proof:
         has_test = bool(out["test"])

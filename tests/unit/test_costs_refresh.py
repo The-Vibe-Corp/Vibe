@@ -1,18 +1,19 @@
-"""B1: Die Kostentabelle muss nach jedem Arbeitspaket aktuell sein.
+"""Kosten aktuell und richtig zugeordnet — nach dem Flush-Contract von GH-99.
 
-Das Ticket nennt zwei Ausprägungen desselben Fehlers:
+Die Kostenübersicht wird ausschließlich aus den persistierten Kosten der
+Arbeitspakete gespeist. Der opencode-Datenbankleser wird nur noch beim Spülen
+(``vibe sessions finish-package``) benutzt; die Zuordnung erfolgt über die am
+Paket gespeicherte Session-Zuordnung, nicht über Pfade oder Anzeigenamen.
 
-* Die Tabelle aktualisiert sich nur träge, weil das Dashboard die Kosten nicht
-  von selbst neu liest.
-* Bei manchen Projekten erscheinen gar keine Werte, weil deren
-  opencode-Sitzungen unter einem gleichwertigen Alternativpfad liegen
-  (beobachtet: Container-Alias ``/run/host/var/mnt/...`` gegenüber
-  ``/var/mnt/...``). OpenCode führt dazu die Tabelle ``project`` mit dem
-  kanonischen Pfad in ``worktree``; ``session.project_id`` verweist darauf.
+Geprüft werden hier:
 
-Geprüft werden hier die Datenebene (Zuordnung über den kanonischen
-Projektpfad und frisches Lesen nach neuen Sitzungsdaten). Die automatische
-Aktualisierung der Oberfläche prüft ``tests/browser/test_costs_refresh_ui.py``.
+* frische, persistierte Kosten je Paket und Ausschluss fremder Kosten;
+* der Datenbankleser im Flush-Pfad, einschließlich Alternativpfaden
+  (``/run/host/...``) und der Sandbox-Datenbank eines Projekts;
+* die Pfadregel der Sandbox-Datenbank als Grundlage der Flush-Fixtur.
+
+Die automatische Aktualisierung der Oberfläche prüft
+``tests/browser/test_costs_refresh_ui.py``.
 """
 import hashlib
 import importlib.machinery
@@ -21,13 +22,20 @@ import json
 import os
 import shutil
 import sqlite3
+import subprocess
+import sys
 import unittest
 from pathlib import Path
 
-from tests.unit.test_costs import CostFixture, DDL_V2, add_message, make_db
+from tests.unit.test_costs import (
+    CostFixture, DDL_V2, add_message, add_session, make_db, record_usage,
+    write_tickets,
+)
 
 REPO = Path(__file__).resolve().parents[2]
-SANDBOX = REPO / "bin" / "vibe_sandbox.py"
+BIN = REPO / "bin"
+CLI = BIN / "vibe"
+SANDBOX = BIN / "vibe_sandbox.py"
 
 PROJECT_DDL = """
 CREATE TABLE `project` (
@@ -64,62 +72,52 @@ def insert_session(con, session_id, directory, title, project_id="proj-id",
 
 
 class AliasDirectoryTest(CostFixture):
-    """Sitzungen unter einem gleichwertigen Alternativpfad."""
+    """Persistierte Kosten werden unabhängig vom Sitzungspfad zugeordnet.
 
-    def create_db(self):
-        con = make_db(self.db)
-        con.executescript(PROJECT_DDL)
-        con.execute(
-            "insert into project (id, worktree, time_created, time_updated)"
-            " values (?, ?, ?, ?)",
-            ("proj-id", str(self.proj), 1, 1),
-        )
-        con.commit()
-        return con
+    Früher musste die Übersicht den Alias ``/run/host/...`` eines Projektpfads
+    auflösen. Heute ist die gespeicherte Paketzuordnung maßgeblich; die
+    Assertion „Sitzung gehört zum richtigen Paket“ bleibt erhalten, wird aber
+    über ``record_usage`` am Paket statt über den DB-Pfad gespeist.
+    """
 
     def test_session_under_equivalent_mount_alias_belongs_to_the_project(self):
-        con = self.create_db()
         alias = "/run/host" + str(self.proj)
-        insert_session(con, "ses_alias", alias, "proj F1")
-        add_message(con, "ses_alias", "coding-agent", "model-a", 1000, 100, 0, 500)
-        con.commit()
-        con.close()
+        self.record_usage("F1", "ses_alias", input_tokens=1000,
+                          output_tokens=100, cached_input=500)
+        # Der Alias ist nur noch Kontext des Harness-Laufs, keine Kostenquelle.
+        self.assertTrue(alias.startswith("/run/host"))
 
         data = self.cli.costs_project("proj")
 
         self.assertEqual(data["sessions"], 1)
         self.assertEqual(
-            data["total"]["tokens"], {"input": 1500, "cached": 500, "output": 100}
+            data["total"]["tokens"], {"input": 1000, "cached": 500, "output": 100}
         )
         self.assertEqual([p["id"] for p in data["packages"]], ["F1"])
 
-    def test_alias_does_not_attribute_unrelated_sessions(self):
-        con = self.create_db()
-        insert_session(con, "ses_foreign", "/run/host/irgendwo/aussen", "proj F1",
-                       project_id="foreign-id")
-        add_message(con, "ses_foreign", "coding-agent", "model-a", 999, 10, 0, 0)
-        con.commit()
-        con.close()
-
+    def test_unrelated_session_costs_are_not_attributed(self):
+        # Früher: fremde Sitzung unter einem Alias. Heute: fremde Kosten
+        # gehören zu einem anderen Paket und dürfen nicht hier auftauchen.
+        record_usage(self.proj, "F2", "ses_foreign", input_tokens=999,
+                     output_tokens=10)
         data = self.cli.costs_project("proj")
+        ids = [p["id"] for p in data["packages"]]
 
-        self.assertEqual(data["sessions"], 0)
-        self.assertEqual(data["total"]["tokens"], {"input": 0, "cached": 0, "output": 0})
+        # Nur Pakete mit eigenen Kostendaten erscheinen. F1 hat keinen
+        # Verbrauch und darf die fremden Kosten nicht erben.
+        self.assertNotIn("F1", ids, "Fremde Kosten wurden F1 zugeordnet")
+        self.assertEqual(
+            data["total"]["tokens"], {"input": 999, "cached": 0, "output": 10}
+        )
+        other = {p["id"]: p for p in data["packages"]}["F2"]
+        self.assertEqual(other["tokens"], {"input": 999, "cached": 0, "output": 10})
 
     def test_new_session_data_is_visible_on_the_next_read(self):
-        con = self.create_db()
-        insert_session(con, "ses_a", self.proj, "proj F1")
-        add_message(con, "ses_a", "coding-agent", "model-a", 100, 10, 0, 0)
-        con.commit()
-
+        self.record_usage("F1", "ses_a", input_tokens=100, output_tokens=10)
         first = self.cli.costs_project("proj")
         self.assertEqual(first["total"]["tokens"], {"input": 100, "cached": 0, "output": 10})
 
-        insert_session(con, "ses_b", self.proj, "proj F2")
-        add_message(con, "ses_b", "coding-agent", "model-a", 200, 20, 0, 0)
-        con.commit()
-        con.close()
-
+        self.record_usage("F2", "ses_b", input_tokens=200, output_tokens=20)
         second = self.cli.costs_project("proj")
         self.assertEqual(
             second["total"]["tokens"], {"input": 300, "cached": 0, "output": 30}
@@ -154,11 +152,87 @@ def sandbox_db_for(base, project):
 
 
 class SandboxDatabaseTest(CostFixture):
-    """opencode-Sitzungen aus dem Sandbox-Zustand eines Projekts.
+    """Persistierte Kosten eines Projekts, unabhängig vom Sandbox-Zustand.
 
-    Ein Lauf in der Sandbox setzt ``XDG_DATA_HOME`` auf ein eigenes
-    Zustandsverzeichnis. Dessen opencode-Datenbank liegt deshalb nicht am
-    primären Ort; ihre Sitzungen fehlten bisher in der Kostentabelle.
+    Ein Sandbox-Lauf setzte früher ``XDG_DATA_HOME`` auf ein eigenes
+    Zustandsverzeichnis, dessen Datenbank separat gelesen werden musste.
+    Heute zählt der gespeicherte Verbrauch am Paket; die Datenbank wird nur
+    noch beim Flush gelesen (siehe ``CostFlushReaderTest``).
+    """
+
+    def test_costs_of_a_sandbox_session_are_counted(self):
+        self.record_usage("F1", "ses_sandbox", input_tokens=400,
+                          output_tokens=40)
+
+        data = self.cli.costs_project("proj")
+
+        self.assertEqual(data["sessions"], 1)
+        self.assertEqual(
+            data["total"]["tokens"], {"input": 400, "cached": 0, "output": 40}
+        )
+        self.assertEqual([p["id"] for p in data["packages"]], ["F1"])
+
+    def test_alias_session_belongs_to_the_recorded_package(self):
+        self.record_usage("F1", "ses_alias", input_tokens=700, output_tokens=70)
+
+        data = self.cli.costs_project("proj")
+
+        self.assertEqual(data["sessions"], 1)
+        self.assertEqual(
+            data["total"]["tokens"], {"input": 700, "cached": 0, "output": 70}
+        )
+        self.assertEqual([p["id"] for p in data["packages"]], ["F1"])
+
+    def test_costs_of_other_projects_are_not_counted(self):
+        foreign = self.root / "foreign"
+        (foreign / ".vibe").mkdir(parents=True)
+        (foreign / ".vibe" / "project.env").write_text("TYPE=generic\n", encoding="utf-8")
+        write_tickets(foreign, [{"id": "F9", "title": "Fremd", "type": "feedback"}])
+        self.record_usage("F1", "ses_own", input_tokens=100, output_tokens=10)
+        record_usage(foreign, "F9", "ses_foreign", input_tokens=999,
+                     output_tokens=99)
+
+        data = self.cli.costs_project("proj")
+
+        self.assertEqual(data["sessions"], 1)
+        self.assertEqual(
+            data["total"]["tokens"], {"input": 100, "cached": 0, "output": 10}
+        )
+
+    def test_repeated_record_of_one_session_is_counted_once(self):
+        self.record_usage("F1", "ses_dup", input_tokens=100, output_tokens=10)
+        self.record_usage("F1", "ses_dup", input_tokens=999, output_tokens=99)
+
+        data = self.cli.costs_project("proj")
+
+        self.assertEqual(data["sessions"], 1)
+        self.assertEqual(
+            data["total"]["tokens"], {"input": 999, "cached": 0, "output": 99},
+            "Ein erneuter Flush darf die Session nicht doppelt zählen",
+        )
+
+    def test_new_session_costs_are_visible_on_the_next_read(self):
+        first = self.cli.costs_project("proj")
+        self.assertEqual(first["sessions"], 0)
+
+        self.record_usage("F2", "ses_later", input_tokens=200, output_tokens=20)
+        second = self.cli.costs_project("proj")
+
+        self.assertEqual(second["sessions"], 1)
+        self.assertEqual(
+            second["total"]["tokens"], {"input": 200, "cached": 0, "output": 20}
+        )
+        self.assertEqual([p["id"] for p in second["packages"]], ["F2"])
+
+
+
+class CostFlushReaderTest(CostFixture):
+    """Der opencode-Datenbankleser im Flush-Pfad ``vibe sessions finish-package``.
+
+    Die früheren Datenbankprüfungen der Kostenübersicht sind hierher
+    verlagert: Nur noch beim Spülen liest Vibe die Datenbank, und zwar
+    schreibgeschützt. Die gespülten Werte landen als persistierte Kosten am
+    Arbeitspaket und sind anschließend unabhängig von der Datenbank.
     """
 
     def setUp(self):
@@ -175,111 +249,205 @@ class SandboxDatabaseTest(CostFixture):
             os.environ["VIBE_SANDBOX_ROOT"] = self.old_sandbox_root
         super().tearDown()
 
+    # ---------- fixture helpers ----------
+
     def make_sandbox_db(self, project=None):
         path = sandbox_db_for(self.sandbox_root, project or self.proj)
         path.parent.mkdir(parents=True, exist_ok=True)
         return make_db(path)
 
-    def empty_primary_db(self):
-        make_db(self.db).close()
+    def attach(self, session_id, package_id="F1"):
+        """Verknüpft die Session wie ``attach_session`` am Paket (roh)."""
+        path = self.proj / ".vibe" / "tickets.json"
+        doc = json.loads(path.read_text(encoding="utf-8"))
+        for record in doc["tickets"]:
+            if record.get("id") == package_id:
+                sessions = record.setdefault("sessions", [])
+                if session_id not in sessions:
+                    sessions.append(session_id)
+        path.write_text(json.dumps(doc, ensure_ascii=False, indent=1) + "\n",
+                        encoding="utf-8")
 
-    def test_sessions_in_the_project_sandbox_database_are_counted(self):
-        self.empty_primary_db()
+    def run_finish_package(self, package_id="F1"):
+        env = os.environ.copy()
+        env.update({
+            "VIBE": str(self.root),
+            "VIBE_NO_CONTAINER": "1",
+            "HOME": str(self.root / "home"),
+            "VIBE_INSTALL": str(self.root / "_toolchain"),
+            "VIBE_RUNTIME": str(self.root / "_logs"),
+            "VIBE_STATE": str(self.root / "_state"),
+            "VIBE_OPENCODE_DB": str(self.db),
+            "PYTHONDONTWRITEBYTECODE": "1",
+        })
+        return subprocess.run(
+            [sys.executable, str(CLI), "sessions", "finish-package",
+             "proj", package_id],
+            cwd=str(self.root), env=env, stdin=subprocess.DEVNULL,
+            capture_output=True, text=True, timeout=90,
+        )
+
+    def usage_of(self, session_id, package_id="F1"):
+        path = self.proj / ".vibe" / "tickets.json"
+        doc = json.loads(path.read_text(encoding="utf-8"))
+        record = next(item for item in doc["tickets"] if item["id"] == package_id)
+        costs = record.get("costs") or {}
+        return (costs.get("sessions") or {}).get(session_id)
+
+    def tokens_of(self, session_id, package_id="F1"):
+        usage = self.usage_of(session_id, package_id) or {}
+        models = usage.get("models") or {}
+        tokens = {"input": 0, "cached": 0, "output": 0}
+        for entry in models.values():
+            for field, key in (("input", "input"),
+                               ("cached", "cached_input"),
+                               ("output", "output")):
+                tokens[field] += entry.get(key, 0)
+        return tokens
+
+    def assert_db_untouched(self):
+        before = (self.db.stat().st_size, self.db.stat().st_mtime_ns)
+        self.assertFalse(Path(str(self.db) + "-wal").exists())
+        self.assertFalse(Path(str(self.db) + "-shm").exists())
+        return before
+
+    def assert_db_still_untouched(self, before):
+        self.assertEqual(before, (self.db.stat().st_size,
+                                  self.db.stat().st_mtime_ns))
+        self.assertFalse(Path(str(self.db) + "-wal").exists())
+        self.assertFalse(Path(str(self.db) + "-shm").exists())
+
+    # ---------- tests ----------
+
+    def test_session_under_mount_alias_is_flushed_and_db_stays_read_only(self):
+        con = make_db(self.db)
+        con.executescript(PROJECT_DDL)
+        con.execute(
+            "insert into project (id, worktree, time_created, time_updated)"
+            " values (?, ?, ?, ?)", ("proj-id", str(self.proj), 1, 1))
+        alias = "/run/host" + str(self.proj)
+        insert_session(con, "ses_alias", alias, "proj F1")
+        add_message(con, "ses_alias", "coding-agent", "model-a", 1000, 100, 0, 500)
+        con.commit()
+        con.close()
+        self.attach("ses_alias")
+        before = self.assert_db_untouched()
+
+        result = self.run_finish_package()
+
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assert_db_still_untouched(before)
+        self.assertEqual({"input": 1500, "cached": 500, "output": 100},
+                         self.tokens_of("ses_alias"))
+
+    def test_sandbox_database_session_is_flushed(self):
+        make_db(self.db).close()
         sandbox = self.make_sandbox_db()
         insert_session(sandbox, "ses_sandbox", self.proj, "proj F1")
-        add_message(sandbox, "ses_sandbox", "coding-agent", "model-a", 400, 40, 0, 0)
+        add_message(sandbox, "ses_sandbox", "coding-agent", "model-a", 400, 40)
         sandbox.commit()
         sandbox.close()
+        self.attach("ses_sandbox")
 
-        data = self.cli.costs_project("proj")
+        result = self.run_finish_package()
 
-        self.assertEqual(data["available"], True)
-        self.assertEqual(data["sessions"], 1)
-        self.assertEqual(
-            data["total"]["tokens"], {"input": 400, "cached": 0, "output": 40}
-        )
-        self.assertEqual([p["id"] for p in data["packages"]], ["F1"])
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertEqual({"input": 400, "cached": 0, "output": 40},
+                         self.tokens_of("ses_sandbox"))
 
-    def test_sandbox_alias_session_uses_the_project_table_of_that_database(self):
-        self.empty_primary_db()
-        alias = "/run/host" + str(self.proj)
-        sandbox = self.make_sandbox_db()
-        sandbox.executescript(PROJECT_DDL)
-        sandbox.execute(
-            "insert into project (id, worktree, time_created, time_updated)"
-            " values (?, ?, ?, ?)",
-            ("sandbox-proj-id", str(self.proj), 1, 1),
-        )
-        insert_session(sandbox, "ses_alias", alias, "proj F1",
-                       project_id="sandbox-proj-id")
-        add_message(sandbox, "ses_alias", "coding-agent", "model-a", 700, 70, 0, 0)
-        sandbox.commit()
-        sandbox.close()
-
-        data = self.cli.costs_project("proj")
-
-        self.assertEqual(data["sessions"], 1)
-        self.assertEqual(
-            data["total"]["tokens"], {"input": 700, "cached": 0, "output": 70}
-        )
-
-    def test_sessions_of_other_projects_in_the_sandbox_are_not_counted(self):
-        self.empty_primary_db()
+    def test_foreign_sandbox_session_is_not_flushed(self):
+        make_db(self.db).close()
         foreign = self.root / "foreign"
         sandbox = self.make_sandbox_db()
         insert_session(sandbox, "ses_own", self.proj, "proj F1")
-        add_message(sandbox, "ses_own", "coding-agent", "model-a", 100, 10, 0, 0)
+        add_message(sandbox, "ses_own", "coding-agent", "model-a", 100, 10)
         insert_session(sandbox, "ses_foreign", foreign, "fremd F9")
-        add_message(sandbox, "ses_foreign", "coding-agent", "model-a", 999, 99, 0, 0)
+        add_message(sandbox, "ses_foreign", "coding-agent", "model-a", 999, 99)
         sandbox.commit()
         sandbox.close()
+        self.attach("ses_own")
 
-        data = self.cli.costs_project("proj")
+        result = self.run_finish_package()
 
-        self.assertEqual(data["sessions"], 1)
-        self.assertEqual(
-            data["total"]["tokens"], {"input": 100, "cached": 0, "output": 10}
-        )
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertEqual({"input": 100, "cached": 0, "output": 10},
+                         self.tokens_of("ses_own"))
+        self.assertIsNone(self.usage_of("ses_foreign"))
 
-    def test_duplicate_session_id_in_both_databases_is_counted_once(self):
+    def test_duplicate_session_in_both_databases_is_flushed_once(self):
         con = make_db(self.db)
         insert_session(con, "ses_dup", self.proj, "proj F1")
-        add_message(con, "ses_dup", "coding-agent", "model-a", 100, 10, 0, 0)
+        add_message(con, "ses_dup", "coding-agent", "model-a", 100, 10)
         con.commit()
         con.close()
-
         sandbox = self.make_sandbox_db()
         insert_session(sandbox, "ses_dup", self.proj, "proj F1")
-        add_message(sandbox, "ses_dup", "coding-agent", "model-a", 999, 99, 0, 0)
+        add_message(sandbox, "ses_dup", "coding-agent", "model-a", 999, 99)
         sandbox.commit()
         sandbox.close()
+        self.attach("ses_dup")
 
-        data = self.cli.costs_project("proj")
+        result = self.run_finish_package()
 
-        self.assertEqual(data["sessions"], 1)
-        self.assertEqual(
-            data["total"]["tokens"], {"input": 100, "cached": 0, "output": 10}
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertEqual({"input": 100, "cached": 0, "output": 10},
+                         self.tokens_of("ses_dup"),
+                         "Dieselbe Session wurde aus beiden Datenbanken addiert")
+
+    def test_legacy_schema_session_is_flushed(self):
+        con = make_db(self.db, schema="v1")
+        add_session(con, "ses_a", self.proj, "proj F1", schema="v1")
+        add_message(con, "ses_a", "coding-agent", "model-a", 1000, 100, 10, 500,
+                    schema="v1")
+        add_message(con, "ses_a", "coding-agent", "model-a", 0, 0, 0, 0,
+                    schema="v1", role="user", seq=2)
+        con.commit()
+        con.close()
+        self.attach("ses_a")
+
+        result = self.run_finish_package()
+
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertEqual({"input": 1500, "cached": 500, "output": 110},
+                         self.tokens_of("ses_a"))
+
+    def test_session_stored_totals_are_flushed_without_messages(self):
+        con = make_db(self.db)
+        add_session(con, "ses_a", self.proj, "proj F1")
+        con.execute(
+            "update session_v2 set tokens_input=100, tokens_output=20,"
+            " tokens_reasoning=5, tokens_cache_read=50, agent='coding-agent',"
+            " model=? where id='ses_a'",
+            (json.dumps({"id": "model-a", "providerID": "opencode"}),),
         )
+        con.commit()
+        con.close()
+        self.attach("ses_a")
 
-    def test_new_sandbox_session_is_visible_on_the_next_read(self):
-        self.empty_primary_db()
+        result = self.run_finish_package()
 
-        first = self.cli.costs_project("proj")
-        self.assertEqual(first["sessions"], 0)
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertEqual({"input": 150, "cached": 50, "output": 25},
+                         self.tokens_of("ses_a"))
+        self.assertIn("opencode/model-a",
+                      (self.usage_of("ses_a") or {}).get("models") or {})
+
+    def test_new_sandbox_session_is_flushed_on_the_next_finish(self):
+        make_db(self.db).close()
+        self.assertIsNone(self.usage_of("ses_later"))
 
         sandbox = self.make_sandbox_db()
         insert_session(sandbox, "ses_later", self.proj, "proj F2")
-        add_message(sandbox, "ses_later", "coding-agent", "model-a", 200, 20, 0, 0)
+        add_message(sandbox, "ses_later", "coding-agent", "model-a", 200, 20)
         sandbox.commit()
         sandbox.close()
+        self.attach("ses_later", package_id="F2")
 
-        second = self.cli.costs_project("proj")
-        self.assertEqual(second["sessions"], 1)
-        self.assertEqual(
-            second["total"]["tokens"], {"input": 200, "cached": 0, "output": 20}
-        )
-        self.assertEqual([p["id"] for p in second["packages"]], ["F2"])
+        result = self.run_finish_package("F2")
 
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertEqual({"input": 200, "cached": 0, "output": 20},
+                         self.tokens_of("ses_later", package_id="F2"))
 
 
 _SANDBOX_MODULE = None

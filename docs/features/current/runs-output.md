@@ -17,6 +17,11 @@ A run executes a work package through the selected harness in tmux and is record
 - `<runtime>/sessions.json` records harness sessions with a default limit of 5,
   a maximum of 100, and per-project overrides; `<runtime>/worktrees.json` tracks
   package worktrees, with a lock file serializing writes.
+- The work package is the owner of a session assignment: valid harness session
+  IDs are stored in `sessions` on the package record in
+  `<project>/.vibe/tickets.json`, never derived from a display name. A session
+  belongs to exactly one package of exactly one project; multiple sessions per
+  package are allowed (GH-99).
 
 ## Control
 
@@ -34,11 +39,18 @@ A run executes a work package through the selected harness in tmux and is record
   does the same on demand and never kills a session.
 - An external `HUP`, `TERM`, or `INT` is logged with the signal and leaves an
   `ended` registry state.
-- Quota and login failures stop the run by default. The global setting
-  `vibe limits stop|continue` in `<state>/limits.json` applies to all projects;
-  a missing or invalid value means `stop`.
+- Quota and login failures always stop the run immediately. The former global
+  `vibe limits stop|continue` setting was removed; a legacy `limits.json` is
+  ignored and cannot change run behaviour (GH-99).
 - `vibe sessions resume <project> --session <id> | --last | --aborted` starts a
   run with the recorded harness session after validating the ID (`AP19`, `F25`).
+- A run without an explicit resume request reuses the stored session of its
+  work package when one exists (`vibe sessions for-package`). A new session is
+  created only when no stored session can be continued or a restart was
+  requested explicitly (GH-99).
+- On successful completion of a work package, its usage is flushed to persisted
+  package costs first, then all assigned sessions and their assignments are
+  removed. Pause, abort and failed runs never trigger this cleanup (GH-99).
 
 ## Questions and subagents
 
@@ -68,8 +80,9 @@ card.
 
 ## Entry points
 
-- CLI: `vibe run`, `attach`, `logs`, `stop`, `pause`, `runs`, `sessions`,
-  `ask`, `answer`, `questions`.
+- CLI: `vibe run`, `attach`, `logs`, `stop`, `pause`, `runs`, `sessions`
+  (including `attach`, `for-package`, `finish-package`, `migrate`), `ask`,
+  `answer`, `questions`.
 - HTTP: `/api/run`, `/api/stop`, `/api/run-state`, `/api/subagents`,
   `/api/subagent-output`, `/api/steer`, `/api/questions`, `/api/sessions`, `/api/stream`.
 - Files: `<runtime>/runs.json`, `<runtime>/sessions.json`,
@@ -83,4 +96,5 @@ card.
   [F30](../F30.md), [F32](../F32.md), [GH-88](../GH-88.md).
 - Run registry, sessions, and questions: [V-015](../V-015.md),
   [V-016](../V-016.md), [V-024](../V-024.md), [V-026](../V-026.md),
-  [F10](../F10.md), [AP19](../AP19.md), [F16](../F16.md).
+  [F10](../F10.md), [AP19](../AP19.md), [F16](../F16.md),
+  [GH-99](../GH-99.md).

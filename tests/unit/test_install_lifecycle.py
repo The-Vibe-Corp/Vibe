@@ -54,8 +54,10 @@ PROGRAM_FILES = (
     "vibe_questions.py",
     "vibe_autonomous.py",
     "vibe_harness.py",
-    "vibe_limits.py",
     "vibe_gates.py",
+    # GH-99: Nachfolger des entfernten vibe_limits.py (Reihenfolge wie in
+    # scripts/setup-vibe.py: gates vor usage).
+    "vibe_usage.py",
     "vibe_services.py",
     "vibe_github.py",
     "vibe_issues.py",

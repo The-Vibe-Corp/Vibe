@@ -68,7 +68,7 @@ Die Kopfzeile hat fünf Bereiche:
 | Agenten | globale und projektbezogene Agenten, Modellkatalog, Profile |
 | Aktivität | laufende und beendete Läufe, offene Rückfragen |
 | Auswertungen | Kosten, Laufregister, Umgebung |
-| Einstellungen | globale AGENTS.md, Darstellung, Zugriff, Laufverhalten, Schranken, Modelle, Profile, MCP, Harness |
+| Einstellungen | globale AGENTS.md, Darstellung, Zugriff, Schranken, Modelle, Profile, MCP, Harness |
 
 Eine statische Seitenleiste gibt es nicht. Ergänzende Inhalte – etwa das
 Postfach der Rückfragen, ein Bearbeitungsformular oder der Preis-Editor –
@@ -110,7 +110,7 @@ Das Detail gliedert sich in fünf Register:
 
 | Register | Inhalt |
 | --- | --- |
-| Überblick | autonomer Modus, Kacheln zum Zustand, letztes Arbeitspaket, Sitzungen mit Fortsetzen |
+| Überblick | autonomer Modus, Kacheln zum Zustand, letztes Arbeitspaket, Sitzungen je Arbeitspaket mit Fortsetzen |
 | Arbeit | Pakete, Bugs und Feedback in einer filterbaren Liste, Priorisierung |
 | Ausgabe | Live-Log, Agentenübersicht, Fokus, Fortsetzen, Stoppen |
 | Assistent | fachliche Schritte für ein neues Projekt, Entwurf von SPEC und Agenten |
@@ -195,7 +195,6 @@ gliedern sich in zehn Bereiche:
 | Darstellung | Akzentfarbe (Farbmuster mit Vorschau), Sprache, Währung und Kurs |
 | Zugriffssicherheit | Anmeldung, Token und Kennwort |
 | Funktionen | optionale Funktionsschalter |
-| Laufverhalten | was ein neuer Lauf tut: fortsetzen oder stoppen |
 | Schranken | Werte global oder je Projekt, mit Herkunft und Abweichung |
 | Modelle | Katalog, Preise und Quellen, aufklappbar |
 | Profile | Rollen je Profil, anwenden mit Vorschau |
@@ -269,7 +268,12 @@ Anteil am Gesamtbetrag. Fehlt ein Preis, markiert die Zeile „Preis fehlt“ un
 verlinkt in den Preis-Editor. Die Währung (EUR/USD samt Umrechnungskurs) wird
 unter „Einstellungen → Darstellung“ gewählt. Unbekannte Preise bleiben
 unbekannt; eingegebene Preise überschreiben sie nachvollziehbar. Der Katalog
-enthält keine erfundenen Preise.
+enthält keine erfundenen Preise. Die Werte stammen aus den gespeicherten
+Kosten der Arbeitspakete; mehrere Sitzungen eines Pakets werden zusammengefasst.
+Nach erfolgreichem Abschluss eines Pakets bleiben seine Kosten erhalten, auch
+wenn die zugehörigen Sitzungen entfernt wurden. Nicht eindeutig zuzuordnende
+Altdaten übernimmt `vibe sessions migrate <Projekt>` nicht; die Ausgabe nennt
+die betroffenen Sitzungskennungen.
 
 ## Umgebung und Release
 

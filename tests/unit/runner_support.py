@@ -59,9 +59,10 @@ def install_runner(install):
     und dessen Import ``vibe_opencode.py``. ``vibe_keys.py`` bleibt bewusst
     draußen: Sein Vorhandensein aktiviert im Läufer den Key-Sync, der für den
     Pi-Harness nicht unterstützt ist; die ältere Installation ohne dieses
-    Modul ist der dokumentierte, getestete Zustand. Die optionalen Module
-    ``vibe_limits*.py`` und ``vibe_gates*.py`` bleiben wie bei HEAD Glob-Kopien,
-    damit ältere Stände ohne sie unverändert lauffähig bleiben.
+    Modul ist der dokumentierte, getestete Zustand. ``vibe_usage.py`` wird
+    kopiert, damit die Läuferprüfung von ``sessions finish-package`` den
+    Kostenleser in der Testinstallation findet; ``vibe_gates*.py`` bleibt wie
+    bei HEAD eine Glob-Kopie, damit ältere Stände ohne sie lauffähig bleiben.
     """
     bin_dir = install / "bin"
     bin_dir.mkdir(parents=True, exist_ok=True)
@@ -88,10 +89,11 @@ def install_runner(install):
     tickets = BIN / "vibe_tickets.py"
     if tickets.is_file():
         shutil.copy(tickets, bin_dir / tickets.name)
-    # V-027: Das Limitverhalten kann als eigenes Modul vorliegen. Ältere
-    # Stände ohne dieses Modul bleiben unverändert lauffähig.
-    for source in sorted(BIN.glob("vibe_limits*.py")):
-        shutil.copy(source, bin_dir / source.name)
+    # GH-99: Der Kostenleser für ``sessions finish-package`` liegt als eigenes
+    # Modul vor und muss in der Testinstallation verfügbar sein.
+    usage = BIN / "vibe_usage.py"
+    if usage.is_file():
+        shutil.copy(usage, bin_dir / usage.name)
     # AP10: Die Schrankeneinstellungen liegen als eigenes Modul vor. Auch
     # hier bleiben ältere Stände ohne dieses Modul unverändert lauffähig.
     for source in sorted(BIN.glob("vibe_gates*.py")):

@@ -587,5 +587,89 @@ class SessionsContinueTest(Ap19SessionsApiFixture):
             + "\n".join(commands))
 
 
+class PackageContextTest(Ap19SessionsApiFixture):
+    """Sessions are shown in the context of their stored package assignment.
+
+    The ``packages`` array of ``GET /api/sessions`` is built from the saved
+    assignments on the packages, not from a session's display name. A cleaned
+    session disappears from every view.
+    """
+
+    def seed_tickets(self, records):
+        store = self.project / ".vibe" / "tickets.json"
+        store.parent.mkdir(parents=True, exist_ok=True)
+        store.write_text(
+            json.dumps({"version": 1, "tickets": records},
+                       ensure_ascii=False, indent=1) + "\n",
+            encoding="utf-8",
+        )
+
+    def ticket(self, tid, sessions):
+        return {
+            "id": tid, "title": tid, "type": "task", "state": "open",
+            "description": "", "github": None, "pr_url": "", "commit": "",
+            "test": "", "blocked_reason": "", "waiting_note": "",
+            "priority": "", "dependencies": [], "sessions": sessions,
+        }
+
+    def packages_of(self, data):
+        return {item["id"]: item for item in (data or {}).get("packages", [])}
+
+    def test_packages_array_is_built_from_stored_assignments(self):
+        self.seed_tickets([self.ticket("AP1", ["ses_a"]),
+                           self.ticket("AP2", ["ses_b"])])
+        self.seed_sessions([
+            self.session("ses_a", first=100, last=200),
+            self.session("ses_b", first=100, last=100),
+        ])
+
+        status, data, raw = self.get_sessions()
+
+        self.assertEqual(200, status, raw)
+        packages = self.packages_of(data)
+        self.assertTrue(packages, "Die Antwort enthält keine packages: " + raw)
+        for tid in ("AP1", "AP2"):
+            self.assertIn(tid, packages, raw)
+            self.assertIn("title", packages[tid], raw)
+            self.assertIsInstance(packages[tid].get("sessions"), list, raw)
+        self.assertEqual(["ses_a"], packages["AP1"]["sessions"], raw)
+        self.assertEqual(["ses_b"], packages["AP2"]["sessions"], raw)
+
+    def test_package_context_never_guesses_by_display_name(self):
+        """A session named after AP1 is assigned to AP2; the stored assignment
+        wins over the title."""
+        self.seed_tickets([self.ticket("AP1", []),
+                           self.ticket("AP2", ["ses_x"])])
+        self.seed_sessions([self.session("ses_x", name="AP1")])
+
+        status, data, raw = self.get_sessions()
+
+        self.assertEqual(200, status, raw)
+        packages = self.packages_of(data)
+        self.assertEqual([], packages["AP1"]["sessions"], raw)
+        self.assertEqual(["ses_x"], packages["AP2"]["sessions"], raw)
+
+    def test_cleaned_session_appears_in_no_view(self):
+        self.seed_tickets([self.ticket("AP1", ["ses_a"])])
+        self.seed_sessions([self.session("ses_a")])
+
+        # Successful completion: remove the assignment and forget the session.
+        store = self.project / ".vibe" / "tickets.json"
+        doc = json.loads(store.read_text(encoding="utf-8"))
+        doc["tickets"][0]["sessions"] = []
+        store.write_text(json.dumps(doc, ensure_ascii=False, indent=1) + "\n",
+                         encoding="utf-8")
+        (self.runtime / "sessions.json").write_text(
+            json.dumps({"limit": 5, "sessions": []}) + "\n", encoding="utf-8")
+
+        status, data, raw = self.get_sessions()
+
+        self.assertEqual(200, status, raw)
+        self.assertNotIn("ses_a", self.session_ids(data), raw)
+        packages = self.packages_of(data)
+        self.assertTrue(packages, raw)
+        self.assertEqual([], packages["AP1"]["sessions"], raw)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -3,7 +3,7 @@
 Status: current as of 2026-11-25 (vibe 0.18.0, repository state). Authority: [SPEC.md](../../../SPEC.md).
 History: see the ticket records linked at the end.
 
-Vibe reports token usage and cost from existing harness data. It also exposes
+Vibe reports token usage and cost persisted on work packages. It also exposes
 resolved paths and environment checks.
 
 ## Costs
@@ -11,8 +11,17 @@ resolved paths and environment checks.
 - `vibe costs [project]` shows sessions, input tokens, cached input, output
   tokens, and cost per package and as a total. Without a project it shows one
   row per project. The view is read-only and makes no model calls (`F12`).
-- Usage is read from the opencode session database opened read-only. Sessions
-  are assigned to a package by matching their title against the package catalog.
+- The source of the overview is the persisted `costs` record on each work
+  package in `<project>/.vibe/tickets.json`; it no longer depends on live
+  harness sessions. Usage of every session that ran for a package is summed
+  into that package, and the per-session entries are overwritten, not added,
+  when a package is processed again (GH-99).
+- On successful package completion, usage is read from the opencode database
+  (opened read-only, primary plus mounted/sandbox databases) and flushed to the
+  package before its session assignments are removed. Pause, abort and failed
+  runs do not flush or clean up. Migration adopts only unambiguous legacy
+  assignments; unmapped legacy sessions are reported by `vibe sessions migrate`
+  and are not guessed into a package (GH-99).
 - Prices are per 1 million tokens in EUR in the CLI. Precedence is project user
   prices, global user prices, system prices, then the catalog's free/unknown
   classification. Unknown prices are shown explicitly and counted as 0.
@@ -36,10 +45,12 @@ resolved paths and environment checks.
 
 - CLI: `vibe costs`, `vibe paths`, `vibe doctor`.
 - HTTP: `/api/costs` for the cost view and price edits.
-- Files: `<install>/costs.json`, `<install>/prices.json`,
+- Files: `<project>/.vibe/tickets.json` (persisted package costs),
+  `<install>/costs.json`, `<install>/prices.json`,
   `<state>/global-prices.json`.
 
 ## Records
 
 - [B1](../B1.md) — cost table refreshes after each package
 - [F12](../F12.md) — cost calculation per package and project
+- [GH-99](../GH-99.md) — persisted per-package costs and session ownership

@@ -10,7 +10,6 @@ var NV_SETTINGS_SECTIONS = [
   ['appearance', 'Darstellung', 'Farben, Sprache und Anzeige der Preise.'],
   ['access', 'Zugriffssicherheit', 'Anmeldung und Netzwerk des Dashboards.'],
   ['features', 'Funktionen', 'Technische Bereiche ein- oder ausblenden.'],
-  ['limits', 'Laufverhalten', 'Wie neue Agentenläufe mit bestehenden Sitzungen umgehen.'],
   ['gates', 'Schranken', 'Qualitäts-Schranken global und je Projekt setzen.'],
   ['models', 'Modelle', 'Modelle des aktiven Harness und ihre Details.'],
   ['profiles', 'Profile', 'Modellzuordnungen je Rolle verwalten und anwenden.'],
@@ -20,7 +19,7 @@ var NV_SETTINGS_SECTIONS = [
 
 /* Diese Sektionen gehören zu schaltbaren Funktionen. */
 var NV_SETTINGS_FEATURED = {
-  limits: true, gates: true, models: true, profiles: true, mcp: true, harness: true
+  gates: true, models: true, profiles: true, mcp: true, harness: true
 };
 
 var NV_SETTINGS_ACCENTS = [
@@ -41,7 +40,7 @@ var NV_SETTINGS_ACCENTS = [
 var NV_SETTINGS_FEATURE_GROUPS = [
   {title: 'Git & Code', ids: ['github', 'agentsfile', 'writeaccess']},
   {title: 'Modelle & Agenten-Extras', ids: ['models', 'profiles', 'mcp', 'harness']},
-  {title: 'Laufverhalten', ids: ['limits', 'gates', 'sandbox', 'priority']}
+  {title: 'Schranken & Steuerung', ids: ['gates', 'sandbox', 'priority']}
 ];
 
 var NV_SETTINGS_FEATURE_HELP = {
@@ -52,7 +51,6 @@ var NV_SETTINGS_FEATURE_HELP = {
   profiles: 'Gespeicherte Profile ansehen und übernehmen.',
   mcp: 'Zusätzliche MCP-Werkzeuge verwalten.',
   harness: 'Harness-Status und Auswahl anzeigen.',
-  limits: 'Fortsetzen oder Stopp für neue Läufe festlegen.',
   gates: 'Qualitäts-Schranken global und je Projekt setzen.',
   sandbox: 'Sandbox-Optionen für Projekte anzeigen.',
   priority: 'Arbeitspakete nach Wichtigkeit sortieren.'
@@ -190,7 +188,6 @@ NV.views.settings = async function settings(context, token) {
     'appearance': function () { return fillAppearance(sections.appearance, token); },
     'access': function () { fillAccess(sections.access, token); },
     'features': function () { fillFeatures(sections.features); },
-    'limits': function () { return fillLimits(sections.limits, token); },
     'gates': function () { return fillGates(sections.gates, token); },
     'models': function () { fillModels(sections.models, agentsData, token); },
     'profiles': function () { fillProfiles(sections.profiles, agentsData, token); },
@@ -742,49 +739,7 @@ function fillFeatures(section) {
 }
 
 /* ------------------------------------------------------------------------- */
-/* 5. Laufverhalten                                                           */
-/* ------------------------------------------------------------------------- */
-
-async function fillLimits(section, token) {
-  var limits;
-  try { limits = await api('/api/limits') || {mode: 'stop'}; }
-  catch (error) { limits = {mode: 'stop'}; }
-  if (NV.stale(token)) return;
-  var mode = limits.mode === 'continue' ? 'continue' : 'stop';
-
-  var box = el('input', {type: 'checkbox', 'data-nv-limits-mode': '',
-    'aria-label': tr('Fortsetzen')});
-  box.checked = mode === 'continue';
-  var switchRow = el('label', {class: 'label.nv-switch-row'}, box,
-    el('span', {class: 'nv-switch-text'},
-      el('strong', {}, tr('Fortsetzen')),
-      el('small', {}, tr('An = bestehende Sitzung fortsetzen, aus = neue Läufe stoppen.'))));
-
-  box.addEventListener('change', async function () {
-    var next = box.checked ? 'continue' : 'stop';
-    try {
-      var answer = await api('/api/limits', {action: next});
-      if (answer && answer.ok === false) {
-        box.checked = !box.checked;
-        settingsError(error, nvBackend(answer.message) || tr('Aktion fehlgeschlagen'));
-        return;
-      }
-      toast(nvBackend(answer && answer.message)
-        || tr(next === 'continue' ? 'Fortsetzen' : 'Stopp'));
-    } catch (failure) {
-      box.checked = !box.checked;
-      settingsError(error, String(failure && failure.message || failure));
-    }
-  });
-
-  var error = settingsErrorBox();
-  section.append(el('p', {class: 'nv-muted', 'data-nv-limits-help': ''},
-    tr('Fortsetzen lässt neue Läufe an einer vorhandenen Sitzung weiterarbeiten; Stopp beendet neue Läufe, ohne eine Sitzung fortzusetzen. Die Wahl gilt nur für neue Läufe.')),
-    switchRow, error);
-}
-
-/* ------------------------------------------------------------------------- */
-/* 6. Schranken                                                               */
+/* 5. Schranken                                                               */
 /* ------------------------------------------------------------------------- */
 
 function gateOriginText(origin) {
@@ -1775,7 +1730,6 @@ var NV_SETTINGS_TEXTS = {
   'Farben, Sprache und Anzeige der Preise.': 'Colours, language and price display.',
   'Anmeldung und Netzwerk des Dashboards.': 'Dashboard sign-in and network.',
   'Technische Bereiche ein- oder ausblenden.': 'Show or hide technical areas.',
-  'Wie neue Agentenläufe mit bestehenden Sitzungen umgehen.': 'How new agent runs deal with existing sessions.',
   'Qualitäts-Schranken global und je Projekt setzen.': 'Set quality guards globally and per project.',
   'Modelle des aktiven Harness und ihre Details.': 'Models of the active harness and their details.',
   'Modellzuordnungen je Rolle verwalten und anwenden.': 'Manage and apply model assignments per role.',
@@ -1785,7 +1739,6 @@ var NV_SETTINGS_TEXTS = {
   'Darstellung': 'Appearance',
   'Zugriffssicherheit': 'Access security',
   'Funktionen': 'Features',
-  'Laufverhalten': 'Run behaviour',
   'Schranken': 'Guards',
   'Modelle': 'Models',
   'Profile': 'Profile',
@@ -1872,7 +1825,7 @@ var NV_SETTINGS_TEXTS = {
   'Ein neustartpflichtiger Wert wurde gespeichert.': 'A value requiring a restart was saved.',
   'Git & Code': 'Git & code',
   'Modelle & Agenten-Extras': 'Models & agent extras',
-  'Laufverhalten (Schalter)': 'Run behaviour (switch)',
+  'Schranken & Steuerung': 'Guards & control',
   'Technische Bereiche sind standardmäßig ausgeblendet.': 'Technical areas are hidden by default.',
   'GitHub verbinden und Projekte von dort auschecken.': 'Connect GitHub and check out projects from there.',
   'Die AGENTS.md eines Projekts bearbeiten.': 'Edit a project\'s AGENTS.md.',
@@ -1881,16 +1834,9 @@ var NV_SETTINGS_TEXTS = {
   'Gespeicherte Profile ansehen und übernehmen.': 'View and apply saved profiles.',
   'Zusätzliche MCP-Werkzeuge verwalten.': 'Manage additional MCP tools.',
   'Harness-Status und Auswahl anzeigen.': 'Show harness status and selection.',
-  'Fortsetzen oder Stopp für neue Läufe festlegen.': 'Set continue or stop for new runs.',
   'Qualitäts-Schranken global und je Projekt setzen.': 'Set quality guards globally and per project.',
   'Sandbox-Optionen für Projekte anzeigen.': 'Show sandbox options for projects.',
   'Arbeitspakete nach Wichtigkeit sortieren.': 'Sort work packages by priority.',
-  'Fortsetzen': 'Continue',
-  'Stopp': 'Stop',
-  'An = bestehende Sitzung fortsetzen, aus = neue Läufe stoppen.':
-    'On = continue an existing session, off = stop new runs.',
-  'Fortsetzen lässt neue Läufe an einer vorhandenen Sitzung weiterarbeiten; Stopp beendet neue Läufe, ohne eine Sitzung fortzusetzen. Die Wahl gilt nur für neue Läufe.':
-    'Continue (Fortsetzen) lets new runs carry on in an existing session; stop (Stopp) ends new runs without resuming a session. The choice applies only to new runs.',
   'Schranke': 'Guard',
   'Wirkung': 'Effect',
   'Wert': 'Value',

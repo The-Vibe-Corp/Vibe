@@ -150,8 +150,8 @@ Previous user confirmation establishes basic usability, not full conformity with
 - Retry and iteration limits are configurable. An iteration limit is not a spending budget and must not be labeled as one.
 - An external signal (`HUP`, `TERM`, or `INT`) must not end a run without a trace. Record the signal, a log entry, and the run registry state.
 - On startup, mark orphaned `running` entries for the current project as externally terminated. Leave other projects, active sessions, and sessions whose state cannot be determined unchanged. Never terminate another project's session.
-- By default, quota and login failures stop a run immediately. The explicit global setting `vibe limits stop|continue`, stored in `<state>/limits.json`, applies to all projects.
-- With `continue`, handle the failure within the existing retry limits and log a notice. A missing or invalid setting means `stop` and must be reported. Quota and login failures never trigger a router reconnection or manual IP lookup.
+- Quota and login failures stop a run immediately. Retry limits apply only to other, repeatable error classes; a legacy `<state>/limits.json` is ignored and has no effect on runs. GH-99 supersedes the former global `vibe limits stop|continue` setting.
+- Quota and login failures never trigger a router reconnection or manual IP lookup.
 
 ### Closing the application
 

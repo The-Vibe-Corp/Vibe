@@ -543,6 +543,21 @@ img.nv-logo[data-nv-logo] {
   align-items: start;
 }
 .nv-row { display: flex; align-items: center; flex-wrap: wrap; gap: var(--nv-space-2); margin-bottom: var(--nv-space-2); }
+/* GH-99: Sitzungen stehen unter der Überschrift ihres Arbeitspakets. Die
+   technische Session-ID bleibt sichtbar, aber nachrangig und gekürzt. */
+.nv-session-group { margin-bottom: var(--nv-space-3); }
+.nv-session-group:last-child { margin-bottom: 0; }
+.nv-session-group-head {
+  font-size: 0.875rem; font-weight: 600; color: var(--nv-text);
+  padding-bottom: var(--nv-space-1);
+  border-bottom: 1px solid var(--nv-border);
+  margin-bottom: var(--nv-space-2);
+}
+.nv-session-row { margin-bottom: var(--nv-space-1); }
+.nv-session-id {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 /* Ein langer Name kürzt sich mit Ellipse; die Badges bleiben rechts auf einer
    Zeile und drücken sich gegenseitig nicht um. */
 .nv-agent .nv-row:first-child { flex-wrap: nowrap; }

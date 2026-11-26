@@ -1641,6 +1641,79 @@ class CostsTest(F34ActivityEvalsBrowserTest):
             hidden.rename(self.db)
 
 
+    def test_costs_show_persisted_package_aggregation_without_live_sessions(self):
+        """GH-99: Kostenübersicht aus persistierten Paketkosten.
+
+        Vorbedingung: ``/api/costs`` liefert persistierte Paketkosten, bei
+        denen zwei Sitzungen desselben Pakets bereits zu einem Paketwert
+        zusammengeführt wurden; ``total.sessions`` ist 0 (keine live
+        Sitzungen mehr). Simuliert per API-Route, ohne Modellaufrufe.
+
+        Erwartung: Die Zusammenfassung zeigt den gespeicherten Kostenwert,
+        obwohl keine Sitzungen mehr existieren; die aufklappbare Paketzeile
+        nennt das Paket und den aggregierten Wert aus beiden Sitzungen.
+        """
+        tokens = {"input": 800000, "cached": 400000, "output": 200000}
+        package = {
+            "id": "F34-TEST", "title": "WP zum Test", "month": "2026-11",
+            "sessions": 2, "tokens": tokens, "cost": 0.042,
+            "models": [{"price_source": "system"}],
+        }
+        detail = {
+            "available": True, "project": PROJECT,
+            "packages": [package],
+            "total": {"tokens": tokens, "cost": 0.042, "sessions": 2},
+            "monthly": [{"month": "2026-11", "sessions": 2,
+                         "tokens": tokens, "cost": 0.042}],
+            "user_prices": {}, "global_prices": {},
+        }
+        overview = {
+            "available": True, "currency": "EUR",
+            "projects": [{"name": PROJECT, "packages": 1, "sessions": 0,
+                          "tokens": tokens, "cost": 0.042, "monthly": []}],
+            "total": {"tokens": tokens, "cost": 0.042, "sessions": 0},
+            "monthly": [], "global_prices": {},
+        }
+
+        def handle_costs(route):
+            body = detail if "name=" in route.request.url else overview
+            route.fulfill(status=200, content_type="application/json",
+                          body=json.dumps(body, ensure_ascii=False))
+
+        self.page.route("**/api/costs*", handle_costs)
+        self.post_json("/api/ui_settings", {"currency": "EUR", "usd_rate": 1.0})
+        self.open_evaluations("costs")
+
+        # Keine live Sitzungen, aber der persistierte Kostenwert ist sichtbar.
+        sessions_stat = self.page.locator(
+            "[data-nv-cost-stat='total-sessions'] strong").first
+        sessions_stat.wait_for(state="visible", timeout=20000)
+        self.assertEqual("0", self.digits(sessions_stat.inner_text()))
+        cost_stat = self.page.locator(
+            "[data-nv-cost-stat='total-cost'] strong").first
+        self.assertIn("0,0420", cost_stat.inner_text())
+
+        # Detail: das Paket trägt die aus zwei Sitzungen zusammengefassten
+        # Werte, obwohl keine einzelne Sitzung mehr vorliegt.
+        self.page.locator(
+            "[data-nv-cost-projects] [data-nv-cost-expand]").first.click()
+        self.wait_until(
+            lambda: self.page.locator(
+                "table[data-nv-cost-packages] tr").count() >= 2,
+            timeout=25, message="Die Pakettabelle lädt nicht")
+        row = self.page.locator(
+            "table[data-nv-cost-packages] tr", has_text="F34-TEST").first
+        self.assertEqual(1, row.count(),
+                         "Die aggregierte Paketzeile F34-TEST fehlt")
+        cells = [cell.inner_text().strip() for cell in row.locator("td").all()]
+        self.assertIn("F34-TEST", cells, cells)
+        self.assertIn("2", cells, "Die aggregierte Sitzungszahl fehlt: " + repr(cells))
+        self.assertTrue(
+            any("0,0420" in cell for cell in cells),
+            "Der persistierte Paketkostenwert fehlt: " + repr(cells))
+        self.assert_clean_page()
+
+
 class RunsTableTest(F34ActivityEvalsBrowserTest):
     def test_runs_table_cleanup_removes_finished_run(self):
         """Name: Läufe — Register, Filter, Cleanup.

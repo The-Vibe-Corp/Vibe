@@ -114,6 +114,7 @@ Living documentation: [Agent runs and output](current/runs-output.md)
 - [F25.md](F25.md) — session continuation on retry
 - [F30.md](F30.md) — live, large, resizable subagent view
 - [F32.md](F32.md) — subagent parallelism as opt-in
+- [GH-99.md](GH-99.md) — package-owned sessions, resume and cleanup
 - [V-015.md](V-015.md) — decouple agent runs and project checks
 - [V-016.md](V-016.md) — test dashboard and opencode lifecycles separately
 - [V-024.md](V-024.md) — detect and clean orphan run entries
@@ -184,6 +185,7 @@ Living documentation: [Costs, environment, and diagnostics](current/costs-diagno
 - [B1.md](B1.md) — cost table refreshes after each package
 - [F12.md](F12.md) — cost calculation per package and project
 - [GH-87.md](GH-87.md) — remove the legacy router reconnect integration
+- [GH-99.md](GH-99.md) — persisted per-package costs independent of sessions
 
 ### Dashboard UI shell
 
@@ -200,6 +202,7 @@ Living documentation: [Dashboard UI shell](current/ui-shell.md)
 - [GH-56-design-notes.md](GH-56-design-notes.md) — design contracts for work view
 - [GH-57.md](GH-57.md) — settings UI rework
 - [GH-67.md](GH-67.md) — shared sidebar and work cleanup
+- [GH-99.md](GH-99.md) — package-grouped session display; "Run behaviour" removed
 
 ### Cross-cutting and internal work
 

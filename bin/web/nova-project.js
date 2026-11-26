@@ -128,16 +128,24 @@ function nvpOrderedItems(view, items) {
   return result;
 }
 
-/* Paket-ID → Sitzungs-ID für den Resume-Knopf der Karten. */
+/* Paket-ID → Sitzungs-ID für den Resume-Knopf der Karten. GH-99 nutzt die
+   dauerhaft am Paket gespeicherte Zuordnung (``packages``), wenn die API sie
+   liefert; die flache ``sessions``-Liste bleibt als Rückfall erhalten. */
 function nvpSessionMap(view) {
-  var rows = (view && view.sessions
-    && (view.sessions.sessions || view.sessions.entries)) || [];
+  var payload = (view && view.sessions) || {};
   var map = {};
-  rows.forEach(function (row) {
-    var packageId = String(row && row.package_id || '');
+  function add(entry, packageId) {
+    var row = typeof entry === 'string' ? {session: entry} : entry;
+    var id = String(packageId != null ? packageId : row && row.package_id || '');
     var session = String(row && (row.session || row.id || row.name) || '');
-    if (packageId && session && !map[packageId]) map[packageId] = session;
+    if (id && session && !map[id]) map[id] = session;
+  }
+  (payload.packages || []).forEach(function (pkg) {
+    var packageId = String(pkg && pkg.id || '');
+    (pkg && pkg.sessions || []).forEach(function (row) { add(row, packageId); });
   });
+  var rows = payload.sessions || payload.entries || [];
+  rows.forEach(function (row) { add(row); });
   return map;
 }
 
@@ -2349,29 +2357,28 @@ NV.views.project = async function project(context, token) {
     el('h3', {}, tr('Sitzungen')),
     el('div', {'data-nv-sessions': ''}));
   var sessionList = sessionBox.querySelector('[data-nv-sessions]');
-  var sessionRows = (view.sessions && (view.sessions.sessions || view.sessions.entries)) || [];
-  if (!sessionRows.length) {
-    sessionList.append(el('p', {class: 'nv-muted'}, tr('Keine Sitzungen vorhanden')));
-  }
-  sessionRows.forEach(function (row) {
-    var session = String(row.session || row.id || row.name || '');
-    var packageId = String(row.package_id || '');
+
+  function nvpPackageTitle(packageId) {
     var related = allItems.filter(function (item) {
       return String(item && item.id || '') === packageId;
     })[0];
-    var packageText = packageId
-      ? packageId + (related ? ' · ' + String(related.title || '') : '')
-      : tr('Ohne Paket');
+    return String(related && related.title || '');
+  }
+
+  /* Eine Sitzungszeile bleibt kompakt: Agent, Zustand und relative Zeit
+     tragen die Orientierung, die technische ID steht nachrangig und
+     gekürzt darunter. Der Tooltip nennt die vollständige Session. */
+  function nvpSessionLine(row) {
+    var session = String(row.session || row.id || row.name || '');
     var resume = nvpButton(tr('Fortsetzen'), 'session-resume', function () {
       nvpPost(name, '/api/sessions', {action: 'continue', session: session},
         'Sitzung fortgesetzt', token);
     }, 'nv-compact');
     resume.setAttribute('title', tr('Setzt diese Sitzung fort'));
-    var line = el('div', {class: 'nv-row nv-session-row',
+    return el('div', {class: 'nv-row nv-session-row',
       style: 'display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr) '
-        + 'minmax(0,1fr) minmax(0,1fr) auto;gap:var(--nv-space-2, 8px);'
+        + 'minmax(0,1fr) auto;gap:var(--nv-space-2, 8px);'
         + 'align-items:center;width:100%;'},
-      el('span', {'data-nv-session-attach': '', style: 'min-width:0;'}, packageText),
       el('span', {class: 'nv-muted', style: 'min-width:0;'},
         String(row.agent || '-')),
       el('span', {class: 'nv-pill nv-session-state'},
@@ -2381,7 +2388,67 @@ NV.views.project = async function project(context, token) {
       el('code', {class: 'nv-session-id', title: session,
         style: 'grid-column:1/-1;font-size:.75rem;color:var(--nv-muted);'},
       nvpShortId(session, 12)));
-    sessionList.append(line);
+  }
+
+  /* GH-99: Sitzungen erscheinen im Kontext ihres Arbeitspakets. Bevorzugt
+     nutzt die Ansicht das ``packages``-Feld mit der dauerhaft gespeicherten
+     Zuordnung; fehlt es, gruppiert sie die flache Liste lokal nach
+     ``package_id``. Sitzungen ohne gültige Paketzuordnung erscheinen nicht. */
+  var sessionGroups = [];
+  var sessionPayload = view.sessions || {};
+  var flatRows = sessionPayload.sessions || sessionPayload.entries || [];
+  var flatById = {};
+  flatRows.forEach(function (row) {
+    var session = String(row && (row.session || row.id || row.name) || '');
+    if (session && !flatById[session]) flatById[session] = row;
+  });
+  /* Das Backend darf in ``packages.sessions`` entweder vollständige Zeilen
+     oder nur die Session-IDs liefern; beides wird auf eine Zeile abgebildet. */
+  function nvpSessionRow(entry) {
+    if (typeof entry === 'string') return flatById[entry] || {session: entry};
+    return entry || {};
+  }
+  if (Array.isArray(sessionPayload.packages) && sessionPayload.packages.length) {
+    sessionPayload.packages.forEach(function (pkg) {
+      var packageId = String(pkg && pkg.id || '');
+      var packageRows = (pkg && pkg.sessions) || [];
+      if (!packageId || !packageRows.length) return;
+      sessionGroups.push({
+        package_id: packageId,
+        title: String(pkg.title || '') || nvpPackageTitle(packageId),
+        rows: packageRows.map(nvpSessionRow)
+      });
+    });
+  } else {
+    var byPackage = {};
+    flatRows.forEach(function (row) {
+      var packageId = String(row && row.package_id || '');
+      if (!packageId) return;
+      if (!byPackage[packageId]) {
+        byPackage[packageId] = {
+          package_id: packageId,
+          title: nvpPackageTitle(packageId),
+          rows: []
+        };
+        sessionGroups.push(byPackage[packageId]);
+      }
+      byPackage[packageId].rows.push(row);
+    });
+  }
+
+  if (!sessionGroups.length) {
+    sessionList.append(el('p', {class: 'nv-muted'}, tr('Keine Sitzungen vorhanden')));
+  }
+  sessionGroups.forEach(function (group) {
+    var packageText = group.package_id
+      + (group.title ? ' · ' + group.title : '');
+    var groupRows = el('div', {class: 'nv-session-rows'});
+    group.rows.forEach(function (row) { groupRows.append(nvpSessionLine(row)); });
+    sessionList.append(el('div', {class: 'nv-session-group',
+      'data-nv-session-group': group.package_id},
+      el('div', {class: 'nv-session-group-head'},
+        el('span', {'data-nv-session-attach': ''}, packageText)),
+      groupRows));
   });
   panels.overview.append(sessionBox);
 
