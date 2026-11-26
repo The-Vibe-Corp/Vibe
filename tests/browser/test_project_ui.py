@@ -3634,11 +3634,14 @@ class OverviewTest(F34ProjectBrowserTest):
         """Vorbedingung: ``sessions.json`` mit drei Session-Zeilen
         (package_id F1/F1/F7, Agent tester/helper/tester).
 
-        Erwartung: Zeilen in ``div[data-nv-sessions]`` nennen Paketkennung +
-        Titel (aus package_id), Agent, Zustand, relative Zeit; die technische
-        ID steht nur in ``code.nv-session-id`` (gekürzt, ``title`` voll);
-        ``button[data-nv-action="session-resume"]`` rechts in einer Spalte
-        mit gleicher x-Position.
+        Erwartung: ``div[data-nv-sessions]`` nennt die Paketkennungen und
+        Titel (GH-99: als Gruppenüberschriften, nicht zwingend pro Zeile).
+        Jede Sitzung hat eine Zeile mit Agent, Zustand und relativer Zeit;
+        die technische ID steht nur in ``code.nv-session-id`` (gekürzt,
+        ``title`` voll); ``button[data-nv-action="session-resume"]`` rechts
+        in einer Spalte mit gleicher x-Position. Die Zeilen werden über die
+        volle Session-ID zugeordnet, damit die Gruppier-Reihenfolge irrelevant
+        ist.
         """
         self.open_overview()
         rows = self.page.locator("div[data-nv-sessions] div.nv-session-row")
@@ -3646,49 +3649,62 @@ class OverviewTest(F34ProjectBrowserTest):
         self.assertGreaterEqual(rows.count(), 3,
                                 "Vorbedingung: drei Session-Zeilen, "
                                 "erhalten: " + repr(rows.count()))
+        container_text = self.page.locator(
+            "div[data-nv-sessions]").inner_text() or ""
+        for package_id, title in EXPECTED_TITLES.items():
+            self.assertIn(
+                package_id, container_text,
+                f"Paketkennung {package_id} fehlt in der Sitzungskarte: "
+                + repr(container_text))
+            self.assertIn(
+                title, container_text,
+                f"Pakettitel {title} fehlt in der Sitzungskarte: "
+                + repr(container_text))
         api_rows = {
             str(row.get("session") or ""): row
             for row in self.sessions_rows()}
-        for index, (session, agent, package_id, age, state) in enumerate(
-                SESSION_ROWS):
-            row = rows.nth(index)
+        by_session = {}
+        for row in rows.all():
+            code = row.locator("code.nv-session-id")
+            if code.count():
+                by_session[code.first.get_attribute("title")] = row
+        for session, agent, package_id, age, state in SESSION_ROWS:
+            row = by_session.get(session)
+            self.assertIsNotNone(row, f"Zeile für {session} fehlt")
             text = row.inner_text() or ""
-            self.assertIn(package_id, text,
-                          f"Zeile {index}: Paketkennung {package_id} fehlt: "
-                          + repr(text))
-            title = EXPECTED_TITLES[package_id]
-            self.assertIn(title, text,
-                          f"Zeile {index}: Pakettitel {title} fehlt: " + repr(text))
             self.assertIn(agent, text,
-                          f"Zeile {index}: Agent {agent} fehlt: " + repr(text))
+                          f"Agent {agent} fehlt für {session}: " + repr(text))
             self.assertRegex(
-                text, re.compile(r"(?i)(\d+\s*(min|stunde)|gerade eben|just now)",
+                text, re.compile(r"(\d+\s*(min|stunde)|gerade eben|just now)",
                                  re.I),
-                f"Zeile {index}: keine relative Zeit angezeigt: " + repr(text))
+                f"Session {session}: keine relative Zeit angezeigt: "
+                + repr(text))
             state_label = api_rows.get(session, {}).get("state_label") or ""
             if state_label:
                 self.assertIn(state_label, text,
-                              f"Zeile {index}: Zustand {state_label} fehlt: "
+                              f"Zustand {state_label} fehlt für {session}: "
                               + repr(text))
-            self.assertNotIn(session, text,
-                             f"Zeile {index}: die technische Session-ID steht "
-                             "im Zeilentext: " + repr(text))
+            self.assertNotIn(
+                session, text,
+                f"Session {session}: die technische Session-ID steht im "
+                "Zeilentext: " + repr(text))
             code = row.locator("code.nv-session-id")
             self.assertEqual(1, code.count(),
-                             f"Zeile {index}: code.nv-session-id fehlt")
-            self.assertEqual(session, code.first.get_attribute("title"),
-                             f"Zeile {index}: der title der Session-ID ist nicht voll")
+                             f"Session {session}: code.nv-session-id fehlt")
+            self.assertEqual(
+                session, code.first.get_attribute("title"),
+                f"Session {session}: der title der Session-ID ist nicht voll")
             self.assertLess(
                 len(code.first.inner_text() or ""), len(session),
-                f"Zeile {index}: die technische ID ist nicht gekürzt")
+                f"Session {session}: die technische ID ist nicht gekürzt")
             resume = row.locator("button[data-nv-action='session-resume']")
-            self.assertEqual(1, resume.count(),
-                             f"Zeile {index}: button[data-nv-action=session-resume] "
-                             "fehlt")
+            self.assertEqual(
+                1, resume.count(),
+                f"Session {session}: button[data-nv-action=session-resume] fehlt")
             self.assertRegex(
                 resume.first.inner_text() or "",
                 re.compile(r"forsetz|resume|continue", re.I),
-                f"Zeile {index}: Der Fortsetzen-Knopf hat kein Label")
+                f"Session {session}: Der Fortsetzen-Knopf hat kein Label")
         resumes = self.page.locator("button[data-nv-action='session-resume']")
         xs = [resume.bounding_box()["x"] for resume in resumes.all()]
         self.assertTrue(
@@ -3709,6 +3725,133 @@ class OverviewTest(F34ProjectBrowserTest):
             0, self.page.locator("section[data-nv-ppanel='overview'] "
                                  "[data-nv-session-limit]").count(),
             "Das Session-Limit ist im Überblick sichtbar (wurde WP3 eingeführt)")
+        self.assert_clean_page()
+
+
+class SessionGroupingUiTest(F34ProjectBrowserTest):
+    """GH-99: Sitzungen stehen im Kontext ihres Arbeitspakets.
+
+    Die Gruppierung kommt aus dem ``packages``-Feld von
+    ``GET /api/sessions?name=`` (dauerhafte Zuordnung), nicht aus der
+    flachen ``sessions``-Liste. Der Test stubt die API bewusst mit einer
+    flachen Liste in *ungruppierter* Reihenfolge: die alte Oberfläche zeigt
+    genau diese Reihenfolge und besteht den Test nicht; die neue Oberfläche
+    muss nach Paket gruppieren.
+    """
+
+    ALPHA = "ses_group_alpha_0123456789abcdef"
+    ALPHA2 = "ses_group_alpha2_0123456789abcdef"
+    BETA = "ses_group_beta_0123456789abcdef"
+
+    def _grouped_payload(self):
+        now = int(time.time())
+
+        def row(session, agent, package_id, state, age):
+            return {
+                "session": session,
+                "project": os.path.realpath(str(self.project)),
+                "name": PROJECT,
+                "run_id": "",
+                "agent": agent,
+                "harness": "opencode",
+                "worktree_path": "",
+                "package_id": package_id,
+                "branch": "main",
+                "first_seen": now - age - 10,
+                "last_seen": now - age,
+                "state": state,
+                "state_label": state,
+            }
+
+        alpha = row(self.ALPHA, "alpha-agent", "F1", "running", 60)
+        alpha2 = row(self.ALPHA2, "alpha-agent", "F1", "stopped", 120)
+        beta = row(self.BETA, "beta-agent", "F7", "running", 30)
+        return {
+            "ok": True,
+            "running": False,
+            "resume_supported": True,
+            "limit": 5,
+            # Bewusst ungruppiert: F7 zuerst, obwohl F1 in ``packages``
+            # zuerst kommt. Nur die neue Oberfläche nutzt ``packages``.
+            "sessions": [beta, alpha, alpha2],
+            "packages": [
+                {"id": "F1", "title": "Erstes Paket",
+                 "sessions": [alpha, alpha2]},
+                {"id": "F7", "title": "Dritte Überprüfung",
+                 "sessions": [beta]},
+            ],
+        }
+
+    def test_sessions_grouped_by_package_with_full_id_tooltip(self):
+        """Vorbedingung: /api/sessions liefert zwei Pakete mit drei Sitzungen.
+
+        Erwartung: Die Sitzungskarte zeigt die Pakettitel in der
+        ``packages``-Reihenfolge (F1 vor F7); die Sitzungen eines Pakets
+        stehen hinter dessen Titel und vor dem nächsten Pakettitel. Jede
+        Session-ID erscheint als gekürztes ``code.nv-session-id`` mit
+        vollständiger ID im ``title``; der Fortsetzen-Knopf bleibt je
+        Sitzung erhalten und sendet die volle ID.
+        """
+        payload = self._grouped_payload()
+        self.page.route(
+            "**/api/sessions*",
+            lambda route: route.fulfill(
+                status=200, content_type="application/json",
+                body=json.dumps(payload, ensure_ascii=False)))
+
+        self.open_overview()
+        container = self.page.locator("div[data-nv-sessions]")
+        container.first.wait_for(state="visible", timeout=20000)
+        text = container.inner_text() or ""
+
+        # Pakete in der Reihenfolge des ``packages``-Feldes, nicht der
+        # flachen (hier umgekehrten) sessions-Liste.
+        pos_f1 = text.index("Erstes Paket")
+        pos_f7 = text.index("Dritte Überprüfung")
+        self.assertLess(pos_f1, pos_f7,
+                        "Die Pakete sind nicht nach ``packages`` gruppiert: "
+                        + repr(text))
+        self.assertLess(pos_f1, text.index("alpha-agent"),
+                        "alpha-agent steht nicht unter F1: " + repr(text))
+        self.assertLess(text.index("alpha-agent"), pos_f7,
+                        "F1-Sitzungen stehen nicht vor F7: " + repr(text))
+        self.assertLess(pos_f7, text.index("beta-agent"),
+                        "beta-agent steht nicht unter F7: " + repr(text))
+
+        codes = container.locator("code.nv-session-id")
+        self.assertEqual(3, codes.count(),
+                         "Nicht alle Sitzungen zeigen eine code.nv-session-id")
+        by_full = {}
+        for code in codes.all():
+            by_full[code.get_attribute("title")] = code
+        for full in (self.ALPHA, self.ALPHA2, self.BETA):
+            self.assertIn(full, by_full,
+                          f"Der Tooltip für {full} fehlt: "
+                          + repr(list(by_full)))
+            code = by_full[full]
+            self.assertLess(len(code.inner_text() or ""), len(full),
+                            f"Die Session-ID {full} ist nicht gekürzt")
+            self.assertEqual(
+                full, code.get_attribute("title"),
+                "Der Tooltip zeigt nicht den vollständigen Session-Namen")
+
+        resumes = container.locator("button[data-nv-action='session-resume']")
+        self.assertEqual(3, resumes.count(),
+                         "Der Fortsetzen-Knopf fehlt für mindestens eine "
+                         "Sitzung")
+        # Fortsetzen sendet weiterhin die *volle* ID, nicht die Kurzform.
+        first_resume = resumes.first
+        row = first_resume.locator(
+            "xpath=ancestor::*[contains(@class, 'nv-session-row')][1]")
+        expected_session = row.locator("code.nv-session-id").first.get_attribute(
+            "title")
+        first_resume.click()
+        self.wait_until(
+            lambda: any(
+                p.get("session") == expected_session
+                for p in self.posts_to("/api/sessions")),
+            message="Fortsetzen sendet nicht die vollständige Session-ID: "
+                    + repr(self.posts_to("/api/sessions")))
         self.assert_clean_page()
 
 

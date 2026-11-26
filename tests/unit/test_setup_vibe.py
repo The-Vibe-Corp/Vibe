@@ -62,7 +62,6 @@ PROGRAM_FILES = (
     # abbilden, sonst bricht make_kit() mit „Quellverzeichnis unvollständig“ ab.
     "vibe_keys.py",
     "vibe_harness.py",
-    "vibe_limits.py",
     "vibe_gates.py",
     "vibe_services.py",
     "vibe_github.py",
@@ -70,6 +69,9 @@ PROGRAM_FILES = (
     # GH-48: Der Ticketspeicher ist ein eigenes Programmodul und gehört in
     # den Installationssatz (bin/vibe importiert es beim Start).
     "vibe_tickets.py",
+    # GH-99: Nachfolger des entfernten vibe_limits.py; Reihenfolge wie in
+    # scripts/setup-vibe.py (direkt nach vibe_tickets.py).
+    "vibe_usage.py",
 )
 WEB_FILES = (
     "index.html", "styles.css", "app.js", "i18n.js",

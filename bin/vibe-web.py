@@ -42,7 +42,6 @@ import vibe_github  # pylint: disable=wrong-import-position
 import vibe_packages  # pylint: disable=wrong-import-position
 import vibe_issues  # pylint: disable=wrong-import-position
 import vibe_services  # pylint: disable=wrong-import-position
-import vibe_limits  # pylint: disable=wrong-import-position
 import vibe_gates  # pylint: disable=wrong-import-position
 
 try:
@@ -743,6 +742,30 @@ def session_resume_supported():
     return bool(vibe_harness.supports(selected, "continue"))
 
 
+def sessions_packages(project):
+    """GH-99: Paketkontext aus den gespeicherten Session-Zuordnungen.
+
+    Maßgeblich ist allein ``sessions`` am Paketdatensatz, nie der Anzeigename
+    einer Session. Jedes Paket erscheint, auch wenn seine Liste leer ist; eine
+    bereinigte Session taucht damit in keiner Ansicht mehr auf.
+    """
+    try:
+        records = vibe.vibe_tickets.load(project)
+    except (OSError, ValueError):
+        records = []
+    packages = []
+    for record in records:
+        pid = str(record.get("id") or "")
+        if not pid:
+            continue
+        packages.append({
+            "id": pid,
+            "title": str(record.get("title") or ""),
+            "sessions": vibe.vibe_tickets.sessions_of(record),
+        })
+    return packages
+
+
 def reload_ui_data():
     """Lädt ui.json nach einer security-Aktion neu; Erfolg als boolescher Wert.
 
@@ -823,11 +846,10 @@ def known_scope(s):
 
 
 # ---------- AP22: Paritäts-Endpunkte über den bestehenden Diensten ----------
-# Die neuen Endpunkte lesen und schreiben ausschließlich über vibe_limits,
-# vibe_gates, das Laufregister und die bestehende Projekt-/Emulatorlogik. Sie
-# ändern kein bestehendes Verhalten; Fachfehler kommen als 200 {"ok": false,
-# "message": …} zurück (wie /api/ticket), damit die neue UI sie einheitlich
-# behandeln kann.
+# Die neuen Endpunkte lesen und schreiben ausschließlich über vibe_gates, das
+# Laufregister und die bestehende Projekt-/Emulatorlogik. Sie ändern kein
+# bestehendes Verhalten; Fachfehler kommen als 200 {"ok": false, "message": …}
+# zurück (wie /api/ticket), damit die neue UI sie einheitlich behandeln kann.
 
 def _currency_view():
     """F34: Anzeigewährung und Umrechnung, ohne Zugriffsgeheimnisse."""
@@ -844,28 +866,6 @@ def _currency_view():
         "currency": cleaned.get("currency", vibe_ui_config.DEFAULT_CURRENCY),
         "usd_rate": cleaned.get("usd_rate", vibe_ui_config.DEFAULT_USD_RATE),
     }
-
-
-def _limits_view():
-    """AP22: wirksames Limitverhalten (global, ohne Projekt)."""
-    mode, problem = vibe_limits.load(PATHS.state)
-    return {
-        "ok": True,
-        "mode": mode,
-        "problem": problem or None,
-        "lines": [vibe_limits.describe(PATHS.state)],
-    }
-
-
-def _limits_set(action):
-    """AP22: Limitverhalten speichern; unbekannte Aktion schreibt nichts."""
-    if action not in vibe_limits.MODES:
-        return {"ok": False, "message": "Unbekannte Aktion"}
-    try:
-        vibe_limits.save(PATHS.state, action)
-    except (ValueError, OSError) as error:
-        return {"ok": False, "message": str(error)}
-    return _limits_view()
 
 
 def _gate_value(key, raw):
@@ -1335,12 +1335,22 @@ class H(BaseHTTPRequestHandler):
                 entries = vibe_runs.session_overview(
                     PATHS.runtime, project=vibe.ppath(n), limit=limit,
                     text=q.get("text", [""])[0] or None)
+                packages = sessions_packages(vibe.ppath(n))
+                # GH-99: Nur Sessions mit einer gespeicherten Paketzuordnung
+                # erscheinen in der Liste. Ohne Ticketspeicher (z. B. in einer
+                # alten Installation) bleibt die Liste unverändert.
+                if packages:
+                    assigned = {sid for package in packages
+                                for sid in package["sessions"]}
+                    entries = [entry for entry in entries
+                               if entry.get("session") in assigned]
                 return self._send(200, {
                     "ok": True,
                     "running": run_is_active(n),
                     "resume_supported": session_resume_supported(),
                     "limit": int(effective),
                     "sessions": entries,
+                    "packages": packages,
                 })
             if u.path == "/api/subagents":
                 n = known(q["name"][0])
@@ -1470,8 +1480,6 @@ class H(BaseHTTPRequestHandler):
                 return self._send(200, data)
             # AP22: neue Paritäts-Endpunkte. Sie liegen hinter derselben
             # Tokenpflicht wie alle übrigen /api-Lesendzugriffe.
-            if u.path == "/api/limits":
-                return self._send(200, _limits_view())
             if u.path == "/api/gates":
                 name = q.get("name", [""])[0]
                 if name:
@@ -1616,10 +1624,8 @@ class H(BaseHTTPRequestHandler):
         # als 200 {"ok": false, "message": …} geliefert (Vertrag der neuen UI),
         # ohne den Generic-Pfad darunter zu verändern (dort bedeutet ok:false
         # weiterhin HTTP 400).
-        if u.path in ("/api/limits", "/api/gates", "/api/runs", "/api/emu", "/api/package"):
-            if u.path == "/api/limits":
-                result = _limits_set(body.get("action"))
-            elif u.path == "/api/gates":
+        if u.path in ("/api/gates", "/api/runs", "/api/emu", "/api/package"):
+            if u.path == "/api/gates":
                 if "values" in body:
                     result = _gates_batch_set(
                         body.get("project") or None, body.get("values"))

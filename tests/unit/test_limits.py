@@ -1,15 +1,13 @@
-"""Limits: CLI- und Läufer-Grenzen.
+"""Run behaviour: the removed global limit mode must not influence runs.
+
+The former ``vibe limits stop|continue`` setting (German "Laufverhalten") was
+removed completely. A stale ``limits.json`` must be harmless: quota and login
+failures always stop the run immediately, regardless of the file's content.
 
 Aufruf: python3 -m unittest tests.unit.test_limits -v
 """
 
-
-# ===========================================================================
-# Unabhängige Abnahme: Globales Limitverhalten ausdrücklich einstellen
-# ===========================================================================
-
 import os
-import re
 import subprocess
 import sys
 import tempfile
@@ -19,31 +17,10 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[2]
 BIN = REPO / "bin"
 CLI = BIN / "vibe"
-# Erlaubt einen Lauf gegen eine Kopie des Läufers (z. B. für die belegte
-# Rotphase), ohne die Produktionsdatei zu verändern. Ohne die Variable gilt
-# unverändert der Läufer des Repositories.
-RUNNER = Path(os.environ.get("VIBE_TEST_RUNNER") or (BIN / "vibe-run.sh"))
+RUNNER = BIN / "vibe-run.sh"
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import runner_support as support
-
-INVALID_MARKERS = (
-    "ungültig",
-    "unlesbar",
-    "defekt",
-    "beschädigt",
-    "kein gültiges",
-    "invalid",
-)
-
-
-def assert_continue_hint(test, text):
-    """Der Hinweis auf ``continue`` ist mehr als die allgemeine GitHub-Meldung."""
-    hints = [line for line in text.splitlines() if "hinweis" in line]
-    test.assertTrue(hints, text)
-    test.assertTrue(
-        any("limit" in line or "continue" in line for line in hints), hints
-    )
+import runner_support as support  # noqa: E402
 
 
 def isolated_env(root, home, state, install, runtime):
@@ -74,26 +51,8 @@ def isolated_env(root, home, state, install, runtime):
     return env
 
 
-def status_line(result):
-    """Die Zeile mit dem wirksamen Wert, ohne die allgemeine Aufrufhilfe.
-
-    Eine reine Hilfeausgabe enthält keinen wirksamen Wert. Eine echte
-    Statuszeile darf jedes Format haben, solange sie ``stop`` oder
-    ``continue`` nennt.
-    """
-    output = result.stdout
-    lowered_output = output.lower()
-    if "aufruf:" in lowered_output or "usage:" in lowered_output:
-        return ""
-    for line in output.splitlines():
-        lowered = line.strip().lower()
-        if re.search(r"\b(stop|continue)\b", lowered):
-            return lowered
-    return ""
-
-
-class LimitsCliTest(unittest.TestCase):
-    """``vibe limits`` liest und schreibt die globale Einstellung."""
+class LimitsRemovalTest(unittest.TestCase):
+    """The CLI no longer offers the removed setting or writes its file."""
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -120,69 +79,25 @@ class LimitsCliTest(unittest.TestCase):
             timeout=60,
         )
 
-    def test_status_without_a_file_reports_stop(self):
-        result = self.run_cli("limits", "status")
+    def test_limits_continue_does_not_create_a_config_file(self):
+        self.run_cli("limits", "continue")
 
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("stop", status_line(result), result.stdout)
-        self.assertNotIn("continue", status_line(result), result.stdout)
-
-    def test_limits_without_argument_shows_status(self):
-        result = self.run_cli("limits")
-
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("stop", status_line(result), result.stdout)
-
-    def test_stop_is_persisted_and_reported(self):
-        result = self.run_cli("limits", "stop")
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertTrue(
-            (self.state / "limits.json").is_file(),
-            "Die globale Einstellung gehört nach <Zustand>/limits.json",
+        self.assertFalse(
+            (self.state / "limits.json").exists(),
+            "Der entfernte Modus wurde weiterhin persistiert",
         )
 
-        status = self.run_cli("limits", "status")
-        self.assertEqual(status.returncode, 0, status.stdout + status.stderr)
-        self.assertIn("stop", status_line(status), status.stdout)
+    def test_limits_stop_does_not_create_a_config_file(self):
+        self.run_cli("limits", "stop")
 
-    def test_continue_is_persisted_and_reported(self):
-        result = self.run_cli("limits", "continue")
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertTrue(
-            (self.state / "limits.json").is_file(),
-            "Die globale Einstellung gehört nach <Zustand>/limits.json",
+        self.assertFalse(
+            (self.state / "limits.json").exists(),
+            "Der entfernte Modus wurde weiterhin persistiert",
         )
-
-        status = self.run_cli("limits", "status")
-        self.assertEqual(status.returncode, 0, status.stdout + status.stderr)
-        self.assertIn("continue", status_line(status), status.stdout)
-
-    def test_unknown_argument_is_rejected(self):
-        result = self.run_cli("limits", "kaputt")
-
-        self.assertNotEqual(
-            result.returncode, 0, result.stdout + result.stderr
-        )
-        self.assertIn(
-            "limit", (result.stdout + result.stderr).lower(), result.stdout
-        )
-
-    def test_invalid_file_is_reported_and_not_continue(self):
-        (self.state / "limits.json").write_text("{ kein json\n", encoding="utf-8")
-
-        result = self.run_cli("limits", "status")
-
-        combined = (result.stdout + result.stderr).lower()
-        self.assertTrue(
-            any(marker in combined for marker in INVALID_MARKERS), combined
-        )
-        self.assertIn("limit", combined, combined)
-        if result.returncode == 0:
-            self.assertNotIn("continue", status_line(result), result.stdout)
 
 
 class RunnerLimitsTest(unittest.TestCase):
-    """Der Läufer wendet ``stop`` und ``continue`` auf Quota/Auth an."""
+    """Quota/auth always stop immediately, even with a stale limits.json."""
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -221,23 +136,10 @@ class RunnerLimitsTest(unittest.TestCase):
         )
         support.commit_all(self.project, "Ausgangsstand")
 
-    def base_env(self):
-        return isolated_env(
+    def runner_env(self, fake_mode):
+        env = isolated_env(
             self.root, self.home, self.state, self.install, self.runtime
         )
-
-    def limits(self, *args):
-        return subprocess.run(
-            [sys.executable, str(CLI), "limits", *args],
-            cwd=str(self.root),
-            env=self.base_env(),
-            capture_output=True,
-            text=True,
-            timeout=60,
-        )
-
-    def runner_env(self, fake_mode):
-        env = self.base_env()
         fakebin = support.install_fake_tools(self.root)
         env.update(
             {
@@ -253,7 +155,7 @@ class RunnerLimitsTest(unittest.TestCase):
         )
         return env
 
-    def run_runner(self, fake_mode, max_retries):
+    def run_runner(self, fake_mode, max_retries=2):
         self.write_project(max_retries)
         return subprocess.run(
             ["bash", str(RUNNER), str(self.project)],
@@ -275,11 +177,11 @@ class RunnerLimitsTest(unittest.TestCase):
         return path.read_text(encoding="utf-8") if path.exists() else ""
 
     def assert_blocked_immediately(self, mode):
-        result = self.run_runner(mode, max_retries=2)
+        result = self.run_runner(mode)
 
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertEqual(len(self.call_lines()), 1, self.call_lines())
-        combined = self.log_text().lower()
+        combined = (self.log_text() + result.stdout).lower()
         self.assertIn("blockiert", combined, combined)
         if mode == "quota":
             self.assertTrue(
@@ -293,154 +195,36 @@ class RunnerLimitsTest(unittest.TestCase):
                 combined,
             )
 
-    def use_stop(self):
-        saved = self.limits("stop")
-        self.assertEqual(saved.returncode, 0, saved.stdout + saved.stderr)
-        status = self.limits("status")
-        self.assertIn("stop", status_line(status), status.stdout)
+    def write_limits(self, text):
+        (self.state / "limits.json").write_text(text, encoding="utf-8")
 
-    def test_default_stop_blocks_quota_immediately(self):
+    def test_default_quota_blocks_immediately(self):
         self.assertFalse((self.state / "limits.json").exists())
-
         self.assert_blocked_immediately("quota")
 
-    def test_default_stop_blocks_auth_immediately(self):
+    def test_default_auth_blocks_immediately(self):
         self.assertFalse((self.state / "limits.json").exists())
-
         self.assert_blocked_immediately("auth")
 
-    def test_stop_setting_blocks_quota_immediately(self):
-        self.use_stop()
-
+    def test_stale_continue_does_not_change_quota_behaviour(self):
+        self.write_limits('{"mode": "continue"}\n')
         self.assert_blocked_immediately("quota")
 
-    def test_stop_setting_blocks_auth_immediately(self):
-        self.use_stop()
-
+    def test_stale_continue_does_not_change_auth_behaviour(self):
+        self.write_limits('{"mode": "continue"}\n')
         self.assert_blocked_immediately("auth")
 
-    def test_continue_retries_quota_within_the_limit_and_logs_a_hint(self):
-        saved = self.limits("continue")
-        self.assertEqual(saved.returncode, 0, saved.stdout + saved.stderr)
-        status = self.limits("status")
-        self.assertIn("continue", status_line(status), status.stdout)
+    def test_stale_stop_does_not_change_quota_behaviour(self):
+        self.write_limits('{"mode": "stop"}\n')
+        self.assert_blocked_immediately("quota")
 
-        result = self.run_runner("quota", max_retries=1)
+    def test_malformed_limits_file_is_harmless_for_quota(self):
+        self.write_limits("{ kaputt\n")
+        self.assert_blocked_immediately("quota")
 
-        self.assertEqual(len(self.call_lines()), 2, self.call_lines())
-        combined = self.log_text().lower()
-        assert_continue_hint(self, combined)
-        self.assertTrue(
-            "quota" in combined or "kontingent" in combined, combined
-        )
-        self.assertNotIn("blockiert: quota", combined, combined)
-
-    def test_continue_retries_auth_within_the_limit_and_logs_a_hint(self):
-        saved = self.limits("continue")
-        self.assertEqual(saved.returncode, 0, saved.stdout + saved.stderr)
-        status = self.limits("status")
-        self.assertIn("continue", status_line(status), status.stdout)
-
-        result = self.run_runner("auth", max_retries=1)
-
-        self.assertEqual(len(self.call_lines()), 2, self.call_lines())
-        combined = self.log_text().lower()
-        assert_continue_hint(self, combined)
-
-    def install_cli_probe(self):
-        """Ersetzt die ``vibe``-Attrappe durch eine beobachtende Variante.
-
-        Jeder Aufruf des Installations-CLI wird mit seinen Argumenten in einer
-        Markierungsdatei festgehalten. Der Exit-Code 3 entspricht der Attrappe
-        aus ``runner_support`` und löst keinen Wartevorgang aus.
-        """
-        marks = self.root / "cli.calls"
-        (self.tool_bin / "vibe").write_text(
-            "#!/usr/bin/env python3\n"
-            "import sys\n"
-            f"with open({str(marks)!r}, 'a', encoding='utf-8') as handle:\n"
-            "    handle.write(' '.join(sys.argv[1:]) + '\\n')\n"
-            "raise SystemExit(3)\n",
-            encoding="utf-8",
-        )
-        (self.tool_bin / "vibe").chmod(0o755)
-        return marks
-
-    def assert_no_installation_cli_side_effect(self, marks):
-        """Quota-/Anmeldefehler dürfen das Installations-CLI nicht aufrufen."""
-        calls = (
-            marks.read_text(encoding="utf-8").splitlines()
-            if marks.exists()
-            else []
-        )
-        self.assertEqual(
-            [], calls,
-            "Der Läufer hat das Installations-CLI unerwartet aufgerufen: "
-            + repr(calls),
-        )
-
-    def assert_continue_has_no_cli_side_effect(self, mode):
-        saved = self.limits("continue")
-        self.assertEqual(saved.returncode, 0, saved.stdout + saved.stderr)
-        status = self.limits("status")
-        self.assertIn("continue", status_line(status), status.stdout)
-
-        marks = self.install_cli_probe()
-        result = self.run_runner(mode, max_retries=1)
-
-        # 1. Der Fehler wird wie bisher im Rahmen des Limits wiederholt.
-        self.assertEqual(
-            len(self.call_lines()),
-            2,
-            "MAX_RETRIES=1 erlaubt genau zwei Versuche: "
-            + repr(self.call_lines()),
-        )
-        combined = self.log_text().lower()
-        assert_continue_hint(self, combined)
-        # 2. Kein Aufruf des Installations-CLI bei Quota-/Anmeldefehlern.
-        self.assert_no_installation_cli_side_effect(marks)
-
-    def test_continue_quota_has_no_installation_cli_side_effect(self):
-        self.assert_continue_has_no_cli_side_effect("quota")
-
-    def test_continue_auth_has_no_installation_cli_side_effect(self):
-        self.assert_continue_has_no_cli_side_effect("auth")
-
-    def test_continue_never_repeats_beyond_max_retries(self):
-        saved = self.limits("continue")
-        self.assertEqual(saved.returncode, 0, saved.stdout + saved.stderr)
-        status = self.limits("status")
-        self.assertEqual(status.returncode, 0, status.stdout + status.stderr)
-        self.assertIn("continue", status_line(status), status.stdout)
-
-        result = self.run_runner("quota", max_retries=1)
-
-        self.assertEqual(
-            len(self.call_lines()),
-            2,
-            "MAX_RETRIES=1 erlaubt genau zwei Versuche: "
-            + repr(self.call_lines()),
-        )
-        self.assertLessEqual(len(self.call_lines()), 2, result.stdout)
-
-    def test_invalid_file_is_reported_and_blocks_instead_of_continuing(self):
-        (self.state / "limits.json").write_text(
-            "{ kaputt\n", encoding="utf-8"
-        )
-
-        result = self.run_runner("quota", max_retries=2)
-
-        self.assertLessEqual(
-            len(self.call_lines()),
-            1,
-            "Eine defekte Einstellung darf nicht still als continue gelten: "
-            + repr(self.call_lines()),
-        )
-        combined = (result.stdout + result.stderr + self.log_text()).lower()
-        self.assertTrue(
-            any(marker in combined for marker in INVALID_MARKERS), combined
-        )
-        self.assertIn("limit", combined, combined)
+    def test_malformed_limits_file_is_harmless_for_auth(self):
+        self.write_limits("kein json\n")
+        self.assert_blocked_immediately("auth")
 
 
 if __name__ == "__main__":

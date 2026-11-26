@@ -36,9 +36,9 @@ The gate reads `TICKET-<ID>.json` and requires:
 
 ## Failure handling
 
-- Quota and authentication failures stop the run immediately by default. The
-  global setting `vibe limits stop|continue` (`<state>/limits.json`) can make
-  them retryable within the existing limits, with a log notice.
+- Quota and authentication failures always stop the run immediately. The
+  former global `vibe limits stop|continue` setting was removed; a legacy
+  `<state>/limits.json` is ignored and cannot change run behaviour (GH-99).
 - Network and other tool failures are retried up to `MAX_RETRIES`.
 - Gate repair rounds are limited by `GATE_REPAIR_ROUNDS`; an exhausted budget
   blocks or skips the package instead of looping forever.
@@ -77,4 +77,5 @@ AP05.md's branch pattern and `TICKETS.md` gate are historical; the worktree, tic
 - [B5](../B5.md) — closing on conflict; [B6-statusmarken](../B6-statusmarken.md) — status markers
 - [B9](../B9.md) — repairing blocked packages; [F4](../F4.md) — stop after current package
 - [F22](../F22.md) — questions on failed preflight; [F27](../F27.md) — resume despite changes; [GH-58](../GH-58.md) — autonomous setting honored
-- [V-022](../V-022.md) — Git order rule; [V-023](../V-023.md) — merged packages recognized; [V-027](../V-027.md) — limit behavior configurable
+- [V-022](../V-022.md) — Git order rule; [V-023](../V-023.md) — merged packages recognized; [V-027](../V-027.md) — former limit behavior (removed by GH-99)
+- [GH-99](../GH-99.md) — package-owned sessions and costs; run-behaviour removal

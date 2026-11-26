@@ -346,19 +346,9 @@ if [ -f "$HARNESS_CLI" ]; then
       ;;
   esac
 fi
-# V-027: Globales Limitverhalten. Ohne Datei und bei defekter Einstellung gilt
-# "stop"; "continue" behandelt Quota- und Anmeldefehler wie wiederholbare
-# Fehler im Rahmen der vorhandenen Wiederholungslimits. Die Meldung einer
-# defekten Datei landet im Laufprotokoll, nie still als "continue".
-LIMIT_MODE="stop"
-LIMITS_CLI="$BIN/vibe_limits.py"
-if [ -f "$LIMITS_CLI" ]; then
-  LIMIT_MODE="$(python3 "$LIMITS_CLI" mode --state "$STATE" 2>>"$LOG" || true)"
-fi
-case "$LIMIT_MODE" in
-  stop|continue) ;;
-  *) LIMIT_MODE="stop" ;;
-esac
+# GH-99: Das frühere globale Limitverhalten ("Run behaviour") ist entfernt.
+# Quota- und Anmeldefehler halten den Lauf immer sofort an; eine alte
+# limits.json wird nicht mehr gelesen und hat keine Wirkung.
 # AP10: Wirksame Schrankeneinstellungen. Ohne Modul bleiben alle Werte leer
 # und der Läufer nutzt die bisherigen Voreinstellungen. Meldungen zu defekten
 # Werten gehen ins Laufprotokoll; defekte Schranken gelten konservativ als
@@ -1508,6 +1498,20 @@ finish_closed_package() {
     echo "BLOCKIERT: $BLOCK_REASON" | tee -a "$LOG"
     return 1
   fi
+  # GH-99: Nur der Erfolgspfad spült zuerst den Verbrauch der am Paket
+  # gespeicherten Sessions und bereinigt danach die Zuordnungen. Der
+  # Registereintrag der Hauptsession bleibt mit seinem Endzustand erhalten.
+  # Ein Fehler blockiert, statt Kosten stillschweigend zu verlieren.
+  if [ -f "$RUNS_PY" ]; then
+    if ! python3 "$RUNS_PY" sessions-finish-package \
+        --keep-registry --runtime "$RUNTIME" --project "$P" --id "$ID" \
+        >>"$LOG" 2>&1; then
+      BLOCK_REASON="Kosten/Sessions für $ID konnten nicht abgeschlossen werden."
+      record_block "$ID" "$BLOCK_REASON"
+      echo "BLOCKIERT: $BLOCK_REASON" | tee -a "$LOG"
+      return 1
+    fi
+  fi
   cleanup_worktree
   if [ -f "$RUNS_PY" ]; then
     python3 "$RUNS_PY" worktree-unregister --runtime "$RUNTIME" --project "$P" --id "$ID" >>"$LOG" 2>&1 || true
@@ -1680,7 +1684,17 @@ $QUESTION_HINT"
   # befehl) beginnt auch jedes folgende Paket desselben Laufs in derselben
   # Session (Fortsetzungskette); der erste Versuch erhält --session. Ohne
   # diese Anforderung bleibt es beim F25-Verhalten.
+  # GH-99: Ohne ausdrückliche Fortsetzung wird eine am Paket gespeicherte,
+  # fortsetzbare Session bevorzugt. Gibt es keine, startet ein neuer Lauf.
   RESUME_SESSION="$CONTINUE_SESSION"
+  if [ -z "$RESUME_SESSION" ] && [ "$HARNESS" != "pi" ] && [ -f "$RUNS_PY" ]; then
+    STORED_SESSION="$(python3 "$RUNS_PY" sessions-resume \
+        --project "$P" --id "$ID" 2>>"$LOG" || true)"
+    case "$STORED_SESSION" in
+      *[!A-Za-z0-9_-]*) STORED_SESSION="" ;;
+    esac
+    [ -n "$STORED_SESSION" ] && RESUME_SESSION="$STORED_SESSION"
+  fi
   if [ -n "$RESUME_SESSION" ] && [ "$HARNESS" != "pi" ]; then
     echo "Fortsetzung in Session $RESUME_SESSION" | tee -a "$LOG"
   fi
@@ -1863,25 +1877,21 @@ $QUESTION_HINT"
     CLASS="$(python3 "$PACKAGES_PY" classify --exit-code "$RC" --log "$LOG" --since "$LOG_START_LINE" 2>>"$LOG")"
     case "$CLASS" in
       quota|auth)
-        # V-027: Das globale Limitverhalten entscheidet. "stop" ist die
-        # Voreinstellung und hält sofort an; "continue" behandelt den Fehler
-        # wie einen wiederholbaren Fehler im Rahmen der Wiederholungslimits.
-        if [ "$LIMIT_MODE" != "continue" ]; then
-          if [ "$CLASS" = "quota" ]; then
-            BLOCK_REASON="Quota/Kontingent bei $ID; der Lauf hält sofort an."
-          else
-            BLOCK_REASON="Anmeldung/Autorisierung bei $ID fehlgeschlagen; der Lauf hält sofort an."
-          fi
-          record_block "$ID" "$BLOCK_REASON"
-          echo "BLOCKIERT: $BLOCK_REASON" | tee -a "$LOG"
-          STOP=1; break
+        # GH-99: Quota- und Anmeldefehler halten den Lauf immer sofort an.
+        if [ "$CLASS" = "quota" ]; then
+          BLOCK_REASON="Quota/Kontingent bei $ID; der Lauf hält sofort an."
+        else
+          BLOCK_REASON="Anmeldung/Autorisierung bei $ID fehlgeschlagen; der Lauf hält sofort an."
         fi
-        echo "HINWEIS: Limitverhalten 'continue' — $CLASS bei $ID wird wie ein wiederholbarer Fehler behandelt." | tee -a "$LOG"
-        ;&
+        record_block "$ID" "$BLOCK_REASON"
+        echo "BLOCKIERT: $BLOCK_REASON" | tee -a "$LOG"
+        STOP=1; break
+        ;;
       *)
         printf '\a\a\a'; echo "Agent mit Fehler beendet (Fehlerklasse '$CLASS')." | tee -a "$LOG"
-        # V-027: Quota- und Anmeldefehler werden im Modus "continue"
-        # ausschließlich im Rahmen der Wiederholungslimits erneut versucht.
+        # Quota- und Anmeldefehler sind oben bereits sofort angehalten; hier
+        # werden nur wiederholbare Fehler im Rahmen der Wiederholungslimits
+        # erneut versucht.
         if [ "$ATTEMPT" -ge "$TRIES_PER_ITEM" ]; then
           echo "Überspringe $ID nach $TRIES_PER_ITEM Versuchen ($MAXR Wiederholungen, Wiederholungslimit erreicht, von Hand prüfen)." | tee -a "$LOG"
           record_block "$ID" "Agentenfehler ($CLASS)"

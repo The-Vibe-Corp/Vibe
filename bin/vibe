@@ -54,7 +54,7 @@ import urllib.parse
 
 if __name__ == "__main__": sys.modules["vibe"] = sys.modules[__name__]
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
-import vibe_storage, vibe_paths, vibe_opencode, vibe_models, vibe_runs, vibe_questions, vibe_autonomous, vibe_harness, vibe_github, vibe_packages, vibe_issues, vibe_limits, vibe_keys, vibe_tickets
+import vibe_storage, vibe_paths, vibe_opencode, vibe_models, vibe_runs, vibe_questions, vibe_autonomous, vibe_harness, vibe_github, vibe_packages, vibe_issues, vibe_keys, vibe_tickets
 try:  # AP10: Ältere Installationen ohne vibe_gates.py dürfen weiterhin starten.
     import vibe_gates
 except ImportError:  # pragma: no cover - unvollständige Installation
@@ -1476,9 +1476,78 @@ def cmd_sessions(args):
         action, rest = "list", list(args)
     usage = ("vibe sessions [list] [--limit N] [--project NAME] [suchtext]\n"
              "       vibe sessions limit [N]\n"
-             "       vibe sessions resume <projekt> (--session ID | --last | --aborted)")
-    if action not in ("list", "limit", "resume"):
+             "       vibe sessions resume <projekt> (--session ID | --last | --aborted)\n"
+             "       vibe sessions attach <projekt> <paket> <session>\n"
+             "       vibe sessions for-package <projekt> <paket>\n"
+             "       vibe sessions finish-package <projekt> <paket>\n"
+             "       vibe sessions migrate <projekt>")
+    if action not in ("list", "limit", "resume", "attach", "for-package",
+                      "finish-package", "migrate"):
         sys.exit(usage)
+
+    if action in ("attach", "for-package", "finish-package"):
+        expected = 3 if action == "attach" else 2
+        if len(rest) != expected:
+            sys.exit(usage)
+        name, pid = rest[0], rest[1]
+        project = ppath(name)
+        try:
+            if action == "attach":
+                # Die CLI setzt die aktive Session des Pakets: eine frühere
+                # Zuordnung wird erst nach vollständiger Prüfung durch die neue
+                # ersetzt. Der Stream-Filter nutzt dagegen attach_session direkt
+                # und sammelt mehrere.
+                sessions = vibe_tickets.replace_sessions(project, pid, rest[2])
+                print("Session " + rest[2] + " ist Paket " + pid
+                      + " zugeordnet.")
+                for session in sessions:
+                    print(session)
+            elif action == "for-package":
+                sessions = vibe_tickets.sessions_of(
+                    vibe_tickets.find(vibe_tickets.load(project), pid) or {})
+                if not sessions:
+                    print("Keine Sessions für Paket " + pid + ".")
+                for session in sessions:
+                    print(session)
+            else:
+                sessions = vibe_runs.finish_package(project, pid, LOGS)
+                print("Paket " + pid + " abgeschlossen; "
+                      + str(len(sessions)) + " Session(s) bereinigt.")
+        except ValueError as error:
+            sys.exit(str(error))
+        return
+
+    if action == "migrate":
+        if len(rest) != 1:
+            sys.exit(usage)
+        name = rest[0]
+        project = ppath(name)
+        project_real = os.path.realpath(project)
+        adopted, skipped = [], []
+        for entry in vibe_runs.SessionRegistry(LOGS).all():
+            session = str(entry.get("session") or "")
+            pid = str(entry.get("package_id") or "")
+            owner = os.path.realpath(str(entry.get("project") or ""))
+            if owner != project_real or not pid:
+                skipped.append(session)
+                continue
+            record = vibe_tickets.find(vibe_tickets.load(project), pid)
+            if record is None:
+                skipped.append(session)
+                continue
+            try:
+                vibe_tickets.attach_session(project, pid, session)
+            except (OSError, ValueError):
+                skipped.append(session)
+                continue
+            adopted.append(session)
+        for session in adopted:
+            print("Übernommen: " + session)
+        for session in skipped:
+            print("Nicht übernommen (mehrdeutig oder fremd): " + session)
+        print(f"Migration: {len(adopted)} übernommen, "
+              f"{len(skipped)} nicht übernommen.")
+        return
 
     if action == "limit":
         if len(rest) > 1:
@@ -1656,6 +1725,13 @@ def package_close(name, pid):
         project, path, pid, require_commit=False)
     if not changed:
         return False, "Nachweis nicht übernehmbar: " + sync_message
+    # GH-99: Erfolgreicher Abschluss spült zuerst die Kosten, dann werden die
+    # Paket-Sessions bereinigt und vergessen. Scheitert das Spülen, bleibt
+    # alles erhalten.
+    try:
+        vibe_runs.finish_package(project, pid, LOGS)
+    except (OSError, ValueError) as error:
+        return False, "Kosten/Sessions nicht abschließbar: " + str(error)
     # Cleanup: Arbeitskopie, Branch (ggf. -D nach Squash-Merge), Registry,
     # Sessions. Reihenfolge wie T-G4: erst Worktree, dann Branch-Prüfung.
     vibe_github.git(project, "worktree", "remove", "--force", path)
@@ -4236,16 +4312,6 @@ def _int_tokens(value):
     return number if number > 0 else 0
 
 
-def opencode_db_path():
-    """Pfad der opencode-Sitzungsdatenbank (nur lesend verwendet)."""
-    explicit = (os.environ.get("VIBE_OPENCODE_DB") or "").strip()
-    if explicit:
-        return os.path.abspath(os.path.expanduser(explicit))
-    base = os.environ.get("XDG_DATA_HOME") or os.path.join(
-        os.path.expanduser("~"), ".local", "share")
-    return os.path.join(base, "opencode", "opencode.db")
-
-
 def package_catalog(name):
     """Bekannte Paket-IDs mit Kurztitel aus dem Ticketspeicher.
 
@@ -4285,29 +4351,6 @@ def package_for_title(title, ids):
         if best is None or key < best[0]:
             best = (key, pid)
     return best[1] if best else ""
-
-
-def _model_id(provider, ident):
-    provider = str(provider or "").strip()
-    ident = str(ident or "").strip()
-    if not ident:
-        return "unbekannt"
-    return ident if ("/" in ident or not provider) else provider + "/" + ident
-
-
-def _model_from_session(value):
-    """Modell einer Sitzungszeile; opencode speichert es als JSON-Text."""
-    if isinstance(value, dict):
-        return _model_id(value.get("providerID"), value.get("id"))
-    if not isinstance(value, str) or not value.strip():
-        return "unbekannt"
-    text = value.strip()
-    if text.startswith("{"):
-        try:
-            return _model_from_session(json.loads(text))
-        except ValueError:
-            return "unbekannt"
-    return text
 
 
 def _normalize_price(price):
@@ -4528,316 +4571,68 @@ def _cost_of(tokens, price):
             + tokens["output"] / COSTS_UNIT_TOKENS * price["output"])
 
 
-def _json1_available(conn):
-    try:
-        conn.execute("select json_extract('{\"a\": 1}', '$.a')").fetchone()
-        return True
-    except sqlite3.Error:
-        return False
+
+def _session_month(usage, costs, session_id):
+    """Monat einer Session: gespeicherter Monat, sonst Flush-Zeitpunkt."""
+    month = usage.get("month") if isinstance(usage, dict) else None
+    if isinstance(month, str) and re.fullmatch(r"\d{4}-\d{2}", month):
+        return month
+    months = costs.get("months") if isinstance(costs, dict) else None
+    if isinstance(months, dict):
+        fallback = months.get(session_id)
+        if isinstance(fallback, str) and re.fullmatch(r"\d{4}-\d{2}", fallback):
+            return fallback
+    return ""
 
 
-def _open_sessions_db(path):
-    """Öffnet die Datenbank ausschließlich lesend (kein Anlegen, kein Schreiben)."""
-    uri = "file:" + urllib.parse.quote(os.path.abspath(path), safe="/") + "?mode=ro"
-    conn = sqlite3.connect(uri, uri=True, timeout=10)
-    conn.row_factory = sqlite3.Row
-    return conn
+def _project_stats(name, tickets, user_prices, system_prices, catalog):
+    """Paket- und Modellstatistik aus den persistierten Paketkosten (GH-99).
 
-
-def _db_schema(conn):
-    names = {row[0] for row in conn.execute(
-        "select name from sqlite_master where type='table'")}
-    if {"session_v2", "session_message"} <= names:
-        return "v2"
-    if {"session", "message"} <= names:
-        return "v1"
-    return None
-
-
-def _read_sessions(conn, schema):
-    table = "session_v2" if schema == "v2" else "session"
-    sql = ("select id, project_id, parent_id, directory, title, agent, model,"
-           " tokens_input, tokens_output, tokens_reasoning, tokens_cache_read,"
-           f" time_created from {table}")
-    return [dict(row) for row in conn.execute(sql)]
-
-
-def _opencode_project_directories(conn):
-    """Kanonische Verzeichnisse je opencode-Projekt, sofern die Tabelle existiert.
-
-    opencode legt Sitzungen je nach Startumgebung unter unterschiedlichen, aber
-    gleichwertigen Pfaden ab (beobachtet: Container-Alias ``/run/host/...``
-    gegenüber dem Hostpfad). Die Tabelle ``project`` führt den kanonischen Pfad
-    in ``worktree``; ``session.project_id`` verweist darauf. Zusätzliche
-    Verzeichnisse aus ``project_directory`` und ``worktree`` werden
-    mitgenommen. Fehlt eine Tabelle, bleibt die Zuordnung unverändert.
+    Die opencode-Datenbank ist keine Quelle der Übersicht mehr; sie wird nur
+    beim Spülen gelesen. Ein Paket erscheint, sobald es gespeicherten Verbrauch
+    besitzt. Monatsbuckets kommen aus dem gespeicherten Session-Monat, sonst
+    aus dem beim Spülen festgehaltenen Rückfallmonat.
     """
-    aliases = {}
-    queries = (
-        "select id, worktree from project",
-        "select project_id, directory from project_directory",
-        "select project_id, directory from worktree",
-    )
-    for sql in queries:
-        try:
-            rows = conn.execute(sql).fetchall()
-        except sqlite3.Error:
-            continue
-        for project_id, directory in rows:
-            key = str(project_id or "")
-            value = str(directory or "")
-            if not key or not value:
-                continue
-            known = aliases.setdefault(key, [])
-            if value not in known:
-                known.append(value)
-    return aliases
-
-
-def _usage_add(usage, agent, model, input_tokens, output_tokens, reasoning, cached):
-    key = (agent or "unbekannt", model or "unbekannt")
-    entry = usage.setdefault(key, _zero_tokens())
-    entry["input"] += input_tokens + cached
-    entry["cached"] += cached
-    entry["output"] += output_tokens + reasoning
-
-
-def _message_usage(conn, schema, session_id, json1=True):
-    """Tokenverbrauch je Agent und Modell aus den Assistenten-Nachrichten.
-
-    Liefert ``None``, wenn keine verwertbaren Nachrichten vorliegen; dann
-    gelten die in der Sitzung gespeicherten Summen.
-    """
-    if schema == "v2":
-        sql = ("select json_extract(data,'$.agent'), json_extract(data,'$.mode'),"
-               " json_extract(data,'$.model.providerID'), json_extract(data,'$.model.id'),"
-               " coalesce(json_extract(data,'$.tokens.input'),0),"
-               " coalesce(json_extract(data,'$.tokens.output'),0),"
-               " coalesce(json_extract(data,'$.tokens.reasoning'),0),"
-               " coalesce(json_extract(data,'$.tokens.cache.read'),0)"
-               " from session_message where session_id=? and type='assistant'"
-               " and json_valid(data)")
-        params = (session_id,)
-    else:
-        sql = ("select json_extract(data,'$.agent'), json_extract(data,'$.mode'),"
-               " json_extract(data,'$.providerID'), json_extract(data,'$.modelID'),"
-               " coalesce(json_extract(data,'$.tokens.input'),0),"
-               " coalesce(json_extract(data,'$.tokens.output'),0),"
-               " coalesce(json_extract(data,'$.tokens.reasoning'),0),"
-               " coalesce(json_extract(data,'$.tokens.cache.read'),0)"
-               " from message where session_id=? and json_valid(data)"
-               " and json_extract(data,'$.role')='assistant'")
-        params = (session_id,)
-    usage = {}
-    for row in conn.execute(sql, params):
-        agent = row[0] or row[1]
-        model = _model_id(row[2], row[3])
-        _usage_add(usage, agent, model, _int_tokens(row[4]), _int_tokens(row[5]),
-                   _int_tokens(row[6]), _int_tokens(row[7]))
-    if not usage:
-        return None
-    if not any(value["input"] or value["output"] for value in usage.values()):
-        return None
-    return usage
-
-
-def _message_usage_python(conn, schema, session_id):
-    """Ersatzweg ohne JSON1: Nachrichten in Python auswerten."""
-    if schema == "v2":
-        rows = conn.execute(
-            "select data from session_message where session_id=? and type='assistant'",
-            (session_id,))
-        assistant_only = True
-    else:
-        rows = conn.execute("select data from message where session_id=?", (session_id,))
-        assistant_only = False
-    usage = {}
-    for row in rows:
-        try:
-            data = json.loads(row[0])
-        except (TypeError, ValueError):
-            continue
-        if not isinstance(data, dict):
-            continue
-        if not assistant_only and data.get("role") != "assistant":
-            continue
-        tokens = data.get("tokens")
-        if not isinstance(tokens, dict):
-            continue
-        model = data.get("model")
-        if isinstance(model, dict):
-            name = _model_id(model.get("providerID"), model.get("id"))
-        else:
-            name = _model_id(data.get("providerID"), data.get("modelID"))
-        cache = tokens.get("cache") if isinstance(tokens.get("cache"), dict) else {}
-        _usage_add(usage, data.get("agent") or data.get("mode"), name,
-                   _int_tokens(tokens.get("input")), _int_tokens(tokens.get("output")),
-                   _int_tokens(tokens.get("reasoning")), _int_tokens(cache.get("read")))
-    if not usage:
-        return None
-    if not any(value["input"] or value["output"] for value in usage.values()):
-        return None
-    return usage
-
-
-def _session_usage(row):
-    """Rückfall auf die in der Sitzung gespeicherten Summen."""
-    cached = _int_tokens(row.get("tokens_cache_read"))
-    usage = {}
-    _usage_add(usage, row.get("agent"), _model_from_session(row.get("model")),
-               _int_tokens(row.get("tokens_input")), _int_tokens(row.get("tokens_output")),
-               _int_tokens(row.get("tokens_reasoning")), cached)
-    return usage
-
-
-def _project_for_directory(directory, ordered):
-    """Längster passender Projektpfad; Sitzungen außerhalb bleiben unberücksichtigt."""
-    if not directory:
-        return None
-    try:
-        target = os.path.realpath(str(directory))
-    except OSError:
-        target = str(directory)
-    for name, root in ordered:
-        if target == root or target.startswith(root + os.sep):
-            return name
-    return None
-
-
-def _project_sandbox_db(project):
-    """opencode-Datenbank im Sandbox-Zustand eines Projekts, falls vorhanden.
-
-    Ein Lauf in der Sandbox setzt ``XDG_DATA_HOME`` auf ein eigenes
-    Zustandsverzeichnis. Diese Datenbank liegt deshalb nicht am primären Ort
-    und muss zusätzlich gelesen werden, sonst fehlen ihre Sitzungen.
-    """
-    try:
-        import vibe_sandbox
-        state = vibe_sandbox.state_dir(project)
-    except (ImportError, OSError, ValueError):
-        return ""
-    return os.path.join(state, "data", "opencode", "opencode.db")
-
-
-def _opencode_db_candidates(projects, primary):
-    """Primäre opencode-Datenbank und Sandbox-Datenbanken der Projekte.
-
-    Jede Datei wird nur einmal gelesen; die Reihenfolge beginnt mit der
-    primären Datenbank. Fehlende Sandbox-Datenbanken werden übersprungen.
-    """
-    paths, seen = [], set()
-    for path in [primary] + [_project_sandbox_db(root) for root in projects.values()]:
-        if not path:
-            continue
-        try:
-            key = os.path.realpath(path)
-        except OSError:
-            key = path
-        if key in seen:
-            continue
-        seen.add(key)
-        paths.append(path)
-    return paths
-
-
-def _collect(projects):
-    """Liest alle Sitzungen einmal und ordnet sie den Projekten zu.
-
-    ``projects`` ist eine Zuordnung Name -> realer Projektpfad. Gelesen wird
-    die primäre opencode-Datenbank und jede vorhandene Sandbox-Datenbank eines
-    Projekts. Sitzungen werden über ihre ID einmal gezählt. Liefert
-    ``available``, ``message``, ``db``, ``by_id`` und ``sessions``
-    (Name -> Liste aus ``(Sitzungszeile, Verbrauch)``).
-    """
-    path = opencode_db_path()
-    result = {"available": False, "message": "", "db": path, "by_id": {},
-              "sessions": {name: [] for name in projects}}
-    ordered = sorted(projects.items(), key=lambda item: len(item[1]), reverse=True)
-    messages, seen_sessions = [], set()
-    for db_path in _opencode_db_candidates(projects, path):
-        if not os.path.exists(db_path):
-            if db_path == path:
-                messages.append("opencode-Datenbank nicht gefunden: " + path
-                                + " (noch kein Agentenlauf?)")
-            continue
-        conn = None
-        try:
-            conn = _open_sessions_db(db_path)
-            schema = _db_schema(conn)
-            if schema is None:
-                messages.append("Unbekanntes Schema in der opencode-Datenbank: " + db_path)
-                continue
-            rows = _read_sessions(conn, schema)
-            json1 = _json1_available(conn)
-            project_dirs = _opencode_project_directories(conn)
-            for row in rows:
-                result["by_id"].setdefault(row["id"], row)
-            for row in rows:
-                if row["id"] in seen_sessions:
-                    continue
-                name = _project_for_directory(row.get("directory"), ordered)
-                if name is None:
-                    for directory in project_dirs.get(str(row.get("project_id") or ""), ()):
-                        name = _project_for_directory(directory, ordered)
-                        if name is not None:
-                            break
-                if name is None:
-                    continue
-                if json1:
-                    usage = _message_usage(conn, schema, row["id"])
-                else:
-                    usage = _message_usage_python(conn, schema, row["id"])
-                result["sessions"][name].append((row, usage or _session_usage(row)))
-                seen_sessions.add(row["id"])
-            result["available"] = True
-        except (sqlite3.Error, OSError) as error:
-            messages.append(f"opencode-Datenbank nicht lesbar ({db_path}): {error}")
-        finally:
-            if conn is not None:
-                conn.close()
-    result["message"] = " ".join(messages)
-    return result
-
-
-def _package_of(row, by_id, ids):
-    """Paket-ID der äußersten Sitzung; Unteragenten erben sie."""
-    current = row
-    seen = set()
-    while current.get("parent_id") and current["parent_id"] in by_id \
-            and current["parent_id"] not in seen:
-        seen.add(current["parent_id"])
-        current = by_id[current["parent_id"]]
-    return package_for_title(current.get("title"), ids)
-
-
-def _project_stats(name, sessions, by_id, user_prices, system_prices, catalog):
-    """Paket- und Modellstatistik eines Projekts samt Euro-Kosten und Monaten.
-
-    F34 ergänzt je Paket ``month`` (Monat der jüngsten Sitzung), ``months``
-    (Monat -> Tokens/Kosten/Sitzungen) und ``monthly`` (neueste zuerst) sowie
-    die Projektmonate in ``monthly``. Alle bisherigen Felder bleiben unverändert.
-    """
-    titles = package_catalog(name)
     packages = {}
-    for row, usage in sessions:
-        pid = _package_of(row, by_id, titles)
+    for record in tickets:
+        pid = str(record.get("id") or "")
+        if not pid:
+            continue
+        costs = vibe_tickets.usage_of(record)
+        sessions = costs.get("sessions") if isinstance(costs, dict) else {}
+        if not isinstance(sessions, dict) or not sessions:
+            continue
         package = packages.setdefault(pid, {
             "id": pid,
-            "title": titles.get(pid, "") or ("Ohne Arbeitspaket" if not pid else ""),
+            "title": str(record.get("title") or ""),
             "sessions": 0, "models": {}, "tokens": _zero_tokens(), "cost": 0.0,
             "_months": {}, "_month_sessions": {}})
-        package["sessions"] += 1
-        month = _month_key(row.get("time_created"))
-        if month:
-            package["_month_sessions"][month] = (
-                package["_month_sessions"].get(month, 0) + 1)
-        for (agent, model), tokens in usage.items():
-            entry = package["models"].setdefault((agent, model), {
-                "agent": agent, "model": model,
-                "tokens": _zero_tokens(), "cost": 0.0, "_by_month": {}})
-            _add_tokens(entry["tokens"], tokens)
+        for session_id, usage in sessions.items():
+            if not isinstance(usage, dict):
+                continue
+            package["sessions"] += 1
+            month = _session_month(usage, costs, session_id)
             if month:
-                _add_month(entry["_by_month"], month, tokens)
+                package["_month_sessions"][month] = (
+                    package["_month_sessions"].get(month, 0) + 1)
+            models = usage.get("models")
+            if not isinstance(models, dict):
+                continue
+            for model, entry in models.items():
+                if not isinstance(entry, dict):
+                    continue
+                agent = str(entry.get("agent") or "")
+                tokens = {
+                    "input": _int_tokens(entry.get("input")),
+                    "cached": _int_tokens(entry.get("cached_input")),
+                    "output": _int_tokens(entry.get("output")),
+                }
+                model_entry = package["models"].setdefault((agent, model), {
+                    "agent": agent, "model": model,
+                    "tokens": _zero_tokens(), "cost": 0.0, "_by_month": {}})
+                _add_tokens(model_entry["tokens"], tokens)
+                if month:
+                    _add_month(model_entry["_by_month"], month, tokens)
     total = {"tokens": _zero_tokens(), "cost": 0.0,
              "sessions": sum(p["sessions"] for p in packages.values())}
     total_months = {}
@@ -4887,15 +4682,14 @@ def _natural_key(value):
 
 
 def costs_project(name):
-    """Kostenübersicht eines Projekts je Arbeitspaket, Agent und Modell."""
+    """Kostenübersicht eines Projekts aus den persistierten Paketkosten."""
     path = _known_project(name)
-    collected = _collect({name: os.path.realpath(path)})
-    stats = _project_stats(name, collected["sessions"].get(name, []),
-                           collected["by_id"], _global_user_prices(name),
+    tickets = vibe_tickets.load(path)
+    stats = _project_stats(name, tickets, _global_user_prices(name),
                            _system_prices(), models_info_map())
     return {
-        "available": collected["available"], "message": collected["message"],
-        "db": collected["db"], "currency": COSTS_CURRENCY, "unit": "1M",
+        "available": True, "message": "", "db": "",
+        "currency": COSTS_CURRENCY, "unit": "1M",
         "project": name, "sessions": stats["total"]["sessions"],
         "packages": stats["packages"], "total": stats["total"],
         "models": stats["models"], "monthly": stats["monthly"],
@@ -4905,18 +4699,19 @@ def costs_project(name):
 
 
 def costs_overview():
-    """Kostenübersicht aller Projekte; die Summe bildet das Gesamtprojekt."""
-    projects = {name: os.path.realpath(path) for name, path in project_map().items()}
-    collected = _collect(projects)
-    data, _ = _costs_data()
+    """Kostenübersicht aller Projekte aus den persistierten Paketkosten."""
+    projects = {name: path for name, path in project_map().items()}
     system_prices = _system_prices()
     catalog = models_info_map()
     rows = []
     total = {"tokens": _zero_tokens(), "cost": 0.0, "sessions": 0}
     monthly = {}
     for name in sorted(projects):
-        stats = _project_stats(name, collected["sessions"].get(name, []),
-                               collected["by_id"], _global_user_prices(name),
+        try:
+            tickets = vibe_tickets.load(projects[name])
+        except (OSError, ValueError):
+            tickets = []
+        stats = _project_stats(name, tickets, _global_user_prices(name),
                                system_prices, catalog)
         row = {"name": name, "packages": len(stats["packages"]),
                "sessions": stats["total"]["sessions"],
@@ -4929,8 +4724,8 @@ def costs_overview():
         _add_tokens(total["tokens"], row["tokens"])
         total["cost"] += row["cost"]
         total["sessions"] += row["sessions"]
-    return {"available": collected["available"], "message": collected["message"],
-            "db": collected["db"], "currency": COSTS_CURRENCY, "unit": "1M",
+    return {"available": True, "message": "", "db": "",
+            "currency": COSTS_CURRENCY, "unit": "1M",
             "projects": rows, "total": total, "monthly": _month_rows(monthly),
             "global_prices": global_prices()}
 
@@ -5111,26 +4906,6 @@ def cmd_server(action="status", out=None):
         run(["tmux", "kill-session", "-t", session]); print("opencode-Server beendet.", file=out)
     else:
         h = server_health(); print("opencode-Server:", col("g", "läuft " + OC_URL + " " + h, stream=out) if h else "aus", file=out)
-
-def cmd_limits(action="status"):
-    """Zeigt oder ändert das globale Limitverhalten (V-027).
-
-    Die Einstellung wirkt für alle Projekte. Ohne Datei und bei defekter
-    Datei gilt ``stop``; eine ungültige Angabe wird gemeldet und nie still
-    als ``continue`` ausgelegt.
-    """
-    action = (action or "status").lower()
-    if action not in ("status", *vibe_limits.MODES):
-        sys.exit("Aufruf: vibe limits [status|stop|continue]")
-    if action in vibe_limits.MODES:
-        try:
-            vibe_limits.save(PATHS.state, action)
-        except OSError as error:
-            sys.exit("Limitverhalten nicht gespeichert: " + str(error))
-    _mode, problem = vibe_limits.load(PATHS.state)
-    if problem:
-        print(problem, file=sys.stderr)
-    print(vibe_limits.describe(PATHS.state))
 
 # ---------- Schrankeneinstellungen des Läufers (AP10) ----------
 # Die Schranken sind global in <Zustand>/gates.json abgelegt und können je
@@ -5921,7 +5696,6 @@ def main():
                  "ui": lambda: cmd_ui(r), "server": lambda: cmd_server(r[0] if r else "status"),
                  "harness": lambda: cmd_harness(r[0] if r else "status", r[1] if len(r) > 1 else None),
                  "keys": lambda: cmd_keys(r),
-                 "limits": lambda: cmd_limits(r[0] if r else "status"),
                  "gates": lambda: cmd_gates(r),
                  "github": lambda: github_cli(r),
                  "package": lambda: cmd_package_close(r),

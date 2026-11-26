@@ -81,3 +81,4 @@ Zuordnung der Projekt-Dokumentation zu den Notizen in Trilium (Stand 2026-11-25)
 | vibe | Features | GH-68 Code Janitor Run: Gesamtanalyse (83 Funde, priorisiert, Komplexität) | `JNV0ehwK2ga6` |
 | vibe | Features | GH-82 — Geschlossene Tickets unterhalb des Boards | `GXPkDx6IpUCC` |
 | vibe | Features | GH-94 — Neuer UI-Stil der neuen Oberfläche | `Lb1UtEwA3vob` |
+| vibe | Features | GH-99 — UI Session Rework | `yt3VvAxBAbCI` |

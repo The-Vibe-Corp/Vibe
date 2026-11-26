@@ -36,10 +36,11 @@ WEB = REPO / "bin" / "vibe-web.py"
 
 # Echte Feature-Schalter (Vertrag F34.md WP4, ``NV_SETTINGS_FEATURE_GROUPS``);
 # ``costs``/``env``/``runs`` entfallen — die Bereiche stehen unter
-# ``#/evaluations`` (Tabs costs/runs/environment).
+# ``#/evaluations`` (Tabs costs/runs/environment). GH-99 entfernt ``limits``
+# („Laufverhalten“/„Run behaviour“) vollständig: kein Schalter, keine Sektion.
 FEATURE_IDS = (
     "github", "agentsfile", "writeaccess", "models", "profiles", "mcp",
-    "harness", "limits", "gates", "sandbox", "priority",
+    "harness", "gates", "sandbox", "priority",
 )
 PROJECT_FEATURES = ("github", "writeaccess", "sandbox", "agentsfile",
                     "priority")
@@ -467,8 +468,8 @@ class AP22AdvancedBrowserTest(unittest.TestCase):
     def await_highlight(self, button, message):
         """Wartet auf die lokale Neuzeichnung nach einer Modusänderung.
 
-        ``GET /api/limits`` kann den neuen Modus bereits bestätigen, während
-        die Oberfläche die Karte noch nicht neu gezeichnet hat. Geprüft wird
+        Ein API-Status kann den neuen Wert bereits bestätigen, während die
+        Oberfläche die Karte noch nicht neu gezeichnet hat. Geprüft wird
         unverändert dieselbe Hervorhebung (``aria-pressed`` oder
         ``nv-primary``); nur der Zeitpunkt wird deterministisch.
         """
@@ -851,70 +852,79 @@ class HarnessTest(AP22AdvancedBrowserTest):
         self.assert_no_page_errors()
 
 
-class LimitsModeTest(AP22AdvancedBrowserTest):
-    def test_limits_mode_switches_between_continue_and_stop(self):
-        """GH-57 (limits): ein Schalter statt Optionskarten.
+class RunBehaviourRemovedTest(AP22AdvancedBrowserTest):
+    """GH-99: „Run behaviour“/„Laufverhalten“ ist aus der UI entfernt.
 
-        Vorbedingung: Modus ``stop``, Feature ``limits`` aus.
-        Aktion: Feature einschalten; Schalter
-        ``input[type=checkbox][data-nv-limits-mode]`` umlegen, zurücklegen.
-        Erwartung: Sektion ``section[data-nv-ssection='limits']``; genau ein
-        Schalter in ``label.nv-switch-row``; Erklärung
-        ``[data-nv-limits-help]`` nennt die Wirkung; aus = Stopp, an =
-        Fortsetzen, jeweils bestätigt durch ``GET /api/limits``; keine
-        Modus-Karten ``limits-continue``/``limits-stop``. Ersetzt den
-        F34-Stand (Optionskarten), der dem GH-57-Vertrag widerspricht.
+    Eine veraltete ``limits.json`` darf die Oberfläche weder beschädigen
+    noch einen Schalter oder eine Sektion wiederherstellen. Der ehemalige
+    GH-57-Schaltertest ist hiermit durch den Abwesenheitsvertrag ersetzt.
+    """
+
+    def test_no_limits_section_or_switch_even_with_legacy_limits_json(self):
+        """Vorbedingung: veraltete limits.json mit ``mode: continue``.
+
+        Aktion: Einstellungen öffnen (englisch und deutsch).
+
+        Erwartung: keine Sektion ``[data-nv-ssection='limits']``, kein
+        Feature-Schalter ``input[data-nv-feature='limits']``, kein
+        ``data-nv-limits-mode``-Schalter, keine Hilfetexte
+        ``[data-nv-limits-help]``, kein Navigationslink
+        ``[data-nv-ssection-link='limits']`` und kein sichtbarer Text
+        „Run behaviour“/„Laufverhalten“. Die Seite lädt ohne JS-Fehler.
         """
-        self.api_post("/api/limits", {"action": "stop"})
+        legacy = self.state_dir / "limits.json"
+        legacy.write_text(
+            json.dumps({"mode": "continue"}, indent=1, ensure_ascii=False) + "\n",
+            encoding="utf-8")
+
+        for language, label in (("en", "Run behaviour"), ("de", "Laufverhalten")):
+            with self.subTest(language=language):
+                self.set_language(language)
+                self.boot()
+                self.open_settings()
+                settings = self.page.locator(
+                    "main#nv-main[data-nv-view='settings']")
+                settings.wait_for(state="visible", timeout=20000)
+                # Erst die Sektionen asynchron laden lassen, dann zählen.
+                self.page.locator("[data-nv-ssection='appearance']").wait_for(
+                    state="visible", timeout=20000)
+                for selector in (
+                    "[data-nv-ssection='limits']",
+                    "input[data-nv-feature='limits']",
+                    "input[data-nv-limits-mode]",
+                    "[data-nv-limits-help]",
+                    "[data-nv-ssection-link='limits']",
+                    "button[data-nv-action='limits-continue']",
+                    "button[data-nv-action='limits-stop']",
+                ):
+                    self.assertEqual(
+                        0, self.page.locator(selector).count(),
+                        f"GH-99: {selector} ist trotz Entfernung vorhanden")
+                self.assertNotIn(
+                    label.lower(), (settings.inner_text() or "").lower(),
+                    f"Die Einstellungen zeigen weiterhin {label!r}: "
+                    + repr(settings.inner_text()))
+                self.assert_no_page_errors()
+
+
+    def test_malformed_legacy_limits_json_does_not_break_settings(self):
+        """Vorbedingung: defekte veraltete ``limits.json`` (kein JSON).
+
+        Erwartung: Die Einstellungen laden ohne JavaScript-Fehler weiter;
+        ``[data-nv-ssection='limits']`` existiert nicht. Der Eintrag darf
+        nach GH-99 weder die Ansicht beschädigen noch wieder erscheinen.
+        """
+        (self.state_dir / "limits.json").write_text(
+            "{dies ist kein JSON", encoding="utf-8")
         self.boot()
-        self.enable_features("limits")
-        limits = self.section("limits")
-        toggle = limits.locator(
-            "input[type=checkbox][data-nv-limits-mode]")
-        toggle.wait_for(state="visible", timeout=20000)
+        self.open_settings()
+        self.page.locator("main#nv-main[data-nv-view='settings']").wait_for(
+            state="visible", timeout=20000)
+        self.page.locator("[data-nv-ssection='appearance']").wait_for(
+            state="visible", timeout=20000)
         self.assertEqual(
-            1, limits.locator(
-                "input[type=checkbox][data-nv-limits-mode]").count(),
-            "Es gibt nicht genau einen Limits-Schalter")
-        self.assertEqual(
-            0, limits.locator(
-                "button[data-nv-action='limits-continue'],"
-                " button[data-nv-action='limits-stop']").count(),
-            "Die alten Modus-Karten existieren weiterhin")
-        help_box = limits.locator("[data-nv-limits-help]")
-        help_box.wait_for(state="visible", timeout=20000)
-        self.assertRegex(
-            (help_box.inner_text() or "") + " " + (limits.inner_text() or ""),
-            r"(?i)new run|neue läuf|fortsetz|stopp",
-            "Die Limits-Erklärung enthält keine Wirkungsbeschreibung: "
-            + repr(limits.inner_text()))
-        self.assertFalse(
-            toggle.is_checked(),
-            "Der Schalter spiegelt den Modus stop nicht (aus = Stopp)")
-        self.assertEqual(
-            "label.nv-switch-row",
-            toggle.evaluate(
-                "node => { const l = node.closest('label');"
-                " return l ? l.className : ''; }"),
-            "Der Schalter liegt nicht in label.nv-switch-row")
-
-        toggle.check()
-        self.wait_until(
-            lambda: self.api_json("/api/limits").get("mode") == "continue",
-            timeout=30,
-            message="Der Modus continue wird nicht bestätigt: "
-                    + repr(self.api_json("/api/limits")))
-        self.assertTrue(toggle.is_checked(),
-                         "Der Schalter zeigt den Modus continue nicht")
-
-        toggle.uncheck()
-        self.wait_until(
-            lambda: self.api_json("/api/limits").get("mode") == "stop",
-            timeout=30,
-            message="Der Modus stop wird nicht bestätigt: "
-                    + repr(self.api_json("/api/limits")))
-        self.assertFalse(toggle.is_checked(),
-                          "Der Schalter zeigt den Modus stop nicht")
+            0, self.page.locator("[data-nv-ssection='limits']").count(),
+            "GH-99: die Limits-Sektion existiert trotz Entfernung")
         self.assert_no_page_errors()
 
 
@@ -1096,9 +1106,10 @@ class ParityTest(AP22AdvancedBrowserTest):
         prüfen; die Projektfunktionen einschalten und
         ``#/project/proj/settings`` öffnen.
 
-        Erwartung: Alle 11 Schalter existieren (Vertrag F34.md WP4;
-        ``costs``/``env``/``runs`` entfallen); die Projektsektionen github,
-        writeaccess, sandbox, agentsfile erscheinen (``[data-nv-psection]``);
+        Erwartung: Alle 10 Schalter existieren (Vertrag F34.md WP4;
+        ``costs``/``env``/``runs`` und GH-99 ``limits`` entfallen); die
+        Projektsektionen github, writeaccess, sandbox, agentsfile erscheinen
+        (``[data-nv-psection]``);
         bei agentsfile ist die echte Struktur ``details[data-nv-agents-
         section]`` aus ``nova-project.js`` belegt, keine h2/h3/h4-Überschrift
         (Vertrag fordert keine); Priorisierung ist keine Einstellungssektion
@@ -1126,6 +1137,10 @@ class ParityTest(AP22AdvancedBrowserTest):
             box = self.page.locator(f"input[data-nv-feature='{feature}']")
             if not box.is_checked():
                 box.check()
+        self.assertEqual(
+            0, self.page.locator("input[data-nv-feature='limits']").count(),
+            "GH-99: der Feature-Schalter 'limits' (Laufverhalten) muss "
+            "entfernt sein")
 
         self.page.goto(self.base + "/#/project/proj/settings")
         self.page.locator("main#nv-main[data-nv-view='project']").wait_for(
@@ -1204,8 +1219,8 @@ from playwright.sync_api import sync_playwright  # noqa: E402
 # Echte Sektions-IDs (Vertrag F34.md WP4; ``global-agents`` bestätigt aus
 # nova-settings.js + grüner F34-Suite, nicht ``agentsfile``).
 SECTIONS = (
-    "global-agents", "appearance", "access", "features", "limits", "gates",
-    "models", "profiles", "mcp", "harness",
+    "global-agents", "appearance", "access", "features", "gates", "models",
+    "profiles", "mcp", "harness",
 )
 AP22_PASSWORD = "ap22-ui-kennwort-42"
 
@@ -1452,11 +1467,11 @@ class SettingsTest(AP22SettingsBrowserTest):
         """Vorbedingung: angemeldet. Aktion: Einstellungen öffnen.
 
         Erwartung: die Sektionen ``global-agents``, ``appearance``,
-        ``access``, ``features``, ``limits``, ``gates``, ``models``,
-        ``profiles``, ``mcp``, ``harness`` existieren und sind sichtbar; die
-        Sektionen ``language`` (Sprache steckt in ``appearance``) und
-        ``advanced`` (entfallen) existieren nicht; der Klassisch-Link
-        ``a[data-nv-classic-link]`` zeigt auf ``/classic``.
+        ``access``, ``features``, ``gates``, ``models``, ``profiles``, ``mcp``,
+        ``harness`` existieren und sind sichtbar; die Sektionen ``language``
+        (Sprache steckt in ``appearance``), ``advanced`` (entfallen) und
+        ``limits`` (GH-99: „Run behaviour“ entfernt) existieren nicht; der
+        Klassisch-Link ``a[data-nv-classic-link]`` zeigt auf ``/classic``.
 
         Vertragsableitung: Der Settings-View rendert asynchron — die Helfer
         warten auf die Sektionen (``wait_for``), nicht nur auf die View.
@@ -1468,7 +1483,7 @@ class SettingsTest(AP22SettingsBrowserTest):
                 self.page.locator(
                     f"[data-nv-ssection='{section}']").wait_for(
                         state="visible", timeout=15000)
-        for section in ("language", "advanced"):
+        for section in ("language", "advanced", "limits"):
             with self.subTest(absent=section):
                 self.assertEqual(
                     0, self.page.locator(
@@ -1716,7 +1731,8 @@ class SettingsTest(AP22SettingsBrowserTest):
         Erwartung: je dokumentierter Feature-ID ein ``input[data-nv-feature]``,
         alle standardmäßig aus; die IDs ``costs``/``env``/``runs`` existieren
         als Schalter nicht mehr (Auswertungen unter ``#/evaluations``,
-        abgedeckt in ``tests/browser/test_f34_activity_evals_ui.py``).
+        abgedeckt in ``tests/browser/test_f34_activity_evals_ui.py``); GH-99
+        entfernt zusätzlich ``limits`` („Run behaviour“).
         """
         self.boot()
         self.open_settings()
@@ -1734,81 +1750,12 @@ class SettingsTest(AP22SettingsBrowserTest):
                 self.assertFalse(
                     toggle.is_checked(),
                     f"Feature {feature!r} ist standardmäßig eingeschaltet")
-        for feature in ("costs", "env", "runs"):
+        for feature in ("costs", "env", "runs", "limits"):
             with self.subTest(absent=feature):
                 self.assertEqual(
                     0, self.page.locator(
                         f"input[data-nv-feature='{feature}']").count(),
-                    f"Der Feature-Schalter {feature!r} existiert nach F34 "
-                    "nicht mehr")
-
-    def test_advanced_limits_appears_and_switches_mode(self):
-        """GH-57: Vorbedingung Modus ``stop``, Feature ``limits`` aus. Aktion:
-        Feature einschalten (lokales Erscheinen der Sektion), Schalter
-        ``input[type=checkbox][data-nv-limits-mode]`` umlegen, zurücklegen.
-
-        Erwartung: Die Sektion erscheint nach dem Einschalten lokal; genau ein
-        Schalter in ``label.nv-switch-row``; die Erklärung
-        ``[data-nv-limits-help]`` nennt die Wirkung; der Schalter spiegelt
-        ``GET /api/limits`` und wechselt ``continue``/``stop``. Das
-        „kein Voll-Neurender“-Kriterium sichern ``test_gh57_settings_ui``
-        und ``test_f34_settings_ui`` ab (diese Basisklasse besitzt keinen
-        Render-Zähler). Ersetzt den F34-Stand (Modus-Karten
-        limits-continue/limits-stop), der dem GH-57-Vertrag widerspricht.
-        """
-        self.api_post("/api/limits", {"action": "stop"})
-        self.boot()
-        self.open_settings()
-        # GH-57: Sektionen gesperrter Features sind vollständig ausgeblendet;
-        # das Einschalten lässt die Sektion lokal erscheinen.
-        limits = self.page.locator("[data-nv-ssection='limits']")
-        self.page.locator("input[data-nv-feature='limits']").wait_for(
-            state="visible", timeout=15000)
-        self.page.locator("input[data-nv-feature='limits']").check()
-        limits.wait_for(state="visible", timeout=20000)
-
-        toggle = limits.locator(
-            "input[type=checkbox][data-nv-limits-mode]")
-        toggle.wait_for(state="visible", timeout=20000)
-        self.assertEqual(
-            0, self.page.locator(
-                "button[data-nv-action='limits-continue'],"
-                " button[data-nv-action='limits-stop']").count(),
-            "Die alten Modus-Knöpfe existieren weiterhin")
-        help_box = limits.locator("[data-nv-limits-help]")
-        help_box.wait_for(state="visible", timeout=20000)
-        self.assertRegex(
-            (help_box.inner_text() or "") + " " + (limits.inner_text() or ""),
-            r"(?i)new run|neue läuf|fortsetz|stopp",
-            "Die Limits-Erklärung enthält keine Wirkungsbeschreibung: "
-            + repr(limits.inner_text()))
-        self.assertFalse(
-            toggle.is_checked(),
-            "Der Schalter spiegelt den Modus stop nicht (aus = Stopp)")
-        self.assertEqual(
-            "label.nv-switch-row",
-            toggle.evaluate(
-                "node => { const l = node.closest('label');"
-                " return l ? l.className : ''; }"),
-            "Der Schalter liegt nicht in label.nv-switch-row")
-
-        toggle.check()
-        self.wait_until(
-            lambda: self.api_json("/api/limits").get("mode") == "continue",
-            timeout=30,
-            message="Der Moduswechsel auf continue wird nicht bestätigt: "
-                    + repr(self.api_json("/api/limits")))
-        self.assertTrue(toggle.is_checked(),
-                         "Der Schalter zeigt den Modus continue nicht")
-        toggle.uncheck()
-        self.wait_until(
-            lambda: self.api_json("/api/limits").get("mode") == "stop",
-            timeout=30,
-            message="Der Moduswechsel auf stop wird nicht bestätigt: "
-                    + repr(self.api_json("/api/limits")))
-        self.assertFalse(toggle.is_checked(),
-                         "Der Schalter zeigt den Modus stop nicht")
-        self.assert_no_page_errors()
+                    f"Der Feature-Schalter {feature!r} existiert nicht mehr")
 
     def test_advanced_gates_shows_keys_and_project_form(self):
         """Vorbedingung: Feature ``gates`` aus. Aktion: Schalter an; Wert
@@ -2840,18 +2787,19 @@ class ActivityOrderTest(F33SettingsBrowserTest):
 
 class SettingsStructureTest(F33SettingsBrowserTest):
     SETTINGS_SECTIONS = [
-        "global-agents", "appearance", "access", "features", "limits",
-        "gates", "models", "profiles", "mcp", "harness"]
+        "global-agents", "appearance", "access", "features", "gates",
+        "models", "profiles", "mcp", "harness"]
 
     def test_settings_sections_in_contract_order(self):
         """Vorbedingung: Einstellungen offen.
 
         Erwartung: Die Sektionen ``section[data-nv-ssection]`` stehen in
         Vertragsreihenfolge (global-agents, appearance, access, features,
-        limits, gates, models, profiles, mcp, harness); die lokale Navigation
+        gates, models, profiles, mcp, harness); die lokale Navigation
         ``nav[data-nv-settings-nav]`` in der gleichen Reihenfolge. Absence:
-        ``section[data-nv-ssection='language']`` und die F33-Sektionen
-        ``[data-nv-advanced='costs'|'runs'|'env']``.
+        ``section[data-nv-ssection='language']``, die F33-Sektionen
+        ``[data-nv-advanced='costs'|'runs'|'env']`` und GH-99
+        ``[data-nv-ssection='limits']``.
         """
         self.open_settings()
         ids = self.page.evaluate(
@@ -3513,7 +3461,7 @@ class F34SettingsBrowserTest(unittest.TestCase):
             if request.method == "POST" else None)
         self.context.add_init_script(
             "try { localStorage.setItem('nv-features', JSON.stringify("
-            "{gates: true, limits: true, models: true, profiles: true, "
+            "{gates: true, models: true, profiles: true, "
             "mcp: true, agentsfile: true})); } catch (error) {}")
 
     def tearDown(self):
@@ -4034,48 +3982,6 @@ class SettingsNavigationTest(F34SettingsBrowserTest):
             "node => parseFloat(getComputedStyle(node).maxWidth) || 0")
         self.assertLessEqual(
             max_width, 980.5, f"Der Inhaltsbereich ist zu breit: {max_width}")
-
-
-class LimitsTest(F34SettingsBrowserTest):
-    def test_limits_single_toggle_posts_mode_and_explains_effect(self):
-        """GH-57 (limits): statt zwei Optionskarten gibt es genau einen
-        Schalter input[type=checkbox][data-nv-limits-mode] in
-        label.nv-switch-row, eine Erklärung [data-nv-limits-help] und einen
-        POST /api/limits {action:'continue'|'stop'} ohne Voll-Neurender.
-        Ersetzt den F34-Stand (limits-continue/limits-stop-Karten), der dem
-        GH-57-Vertrag widerspricht; die Prüfung „Wirkung erklärt“ bleibt."""
-        self.boot()
-        self.open_settings()
-        self.enable_features("limits")
-        box = self.page.locator("section[data-nv-ssection='limits']")
-        box.wait_for(state="visible", timeout=20000)
-        self.assertEqual(
-            0, self.page.locator(
-                "button[data-nv-action='limits-continue'],"
-                " button[data-nv-action='limits-stop']").count(),
-            "Die alten Modus-Knöpfe existieren weiterhin")
-        help_box = box.locator("[data-nv-limits-help]")
-        help_box.wait_for(state="visible", timeout=20000)
-        effect = (help_box.inner_text() or "") + " " + (box.inner_text() or "")
-        self.assertTrue(
-            re.search(r"fortsetz|stopp|neuen|lauf|unterbrech", effect, re.I),
-            "Die Limits-Erklärung enthält keine Wirkungsbeschreibung")
-        toggle = box.locator("input[type=checkbox][data-nv-limits-mode]")
-        toggle.wait_for(state="visible", timeout=20000)
-        mode = self.api_json("/api/limits").get("mode")
-        self.assertEqual(mode == "continue", toggle.is_checked(),
-                        "Der Schalter spiegelt den Modus nicht")
-        render_before = self.nv_render_count()
-        toggle.click()
-        expected = "continue" if mode != "continue" else "stop"
-        self.wait_for_post(
-            "/api/limits", lambda p: p.get("action") == expected,
-            message="Kein POST /api/limits {action:%r}" % expected)
-        self.wait_until(
-            lambda: self.api_json("/api/limits").get("mode") == expected,
-            timeout=20, message="Der Moduswechsel wird nicht bestätigt")
-        self.assertEqual(render_before, self.nv_render_count(),
-                         "Der Limits-Schalter vollneu-rendered")
 
 
 class GatesTest(F34SettingsBrowserTest):
@@ -4774,7 +4680,7 @@ class GH57SettingsBrowserTest(unittest.TestCase):
             if request.method == "POST" else None)
         self.context.add_init_script(
             "try { localStorage.setItem('nv-features', JSON.stringify("
-            "{agentsfile: true, gates: true, limits: true, models: true, "
+            "{agentsfile: true, gates: true, models: true, "
             "profiles: true, mcp: true, harness: true})); } catch (e) {}")
 
     def tearDown(self):
@@ -5412,60 +5318,6 @@ class FeaturesSectionTest(GH57SettingsBrowserTest):
             scroll_before, self.page.evaluate("() => window.scrollY"),
             "Das Wiedereinschalten verschob die Scroll-Position")
         self.assert_no_page_errors()
-
-
-class LimitsSectionTest(GH57SettingsBrowserTest):
-    def test_single_toggle_posts_mode_without_rerender(self):
-        """Kompakte Limits-Sektion: ein Schalter, POST, Toast, kein Re-Render."""
-        self.boot()
-        self.open_settings()
-        section = self.section("limits")
-        self.assertEqual(
-            0, self.page.locator(
-                "button[data-nv-action='limits-continue'],"
-                " button[data-nv-action='limits-stop']").count(),
-            "Die Limits-Sektion hat noch die alten Modus-Knöpfe")
-        help_box = section.locator("[data-nv-limits-help]")
-        help_box.wait_for(state="visible", timeout=20000)
-        self.assertTrue(
-            (help_box.inner_text() or "").strip(),
-            "Die Erklärung zu Fortsetzen/Stopp fehlt")
-        toggle = section.locator("input[type=checkbox][data-nv-limits-mode]")
-        toggle.wait_for(state="visible", timeout=20000)
-        self.assertEqual(
-            1, toggle.count(),
-            "Es gibt nicht genau einen Limits-Schalter")
-        self.assertEqual(
-            "label.nv-switch-row",
-            toggle.evaluate(
-                "node => { const l = node.closest('label');"
-                " return l ? l.className : ''; }"),
-            "Der Schalter liegt nicht in label.nv-switch-row")
-        mode = self.api_json("/api/limits").get("mode")
-        self.assertEqual(
-            mode == "continue", toggle.is_checked(),
-            "Der Schalter spiegelt den Modus %r nicht" % (mode,))
-
-        render_before = self.nv_render_count()
-        toggle.click()
-        expected = "continue" if mode != "continue" else "stop"
-        self.wait_for_post(
-            "/api/limits", lambda p: p.get("action") == expected,
-            message="Der Schalter sendet kein POST /api/limits "
-                    "{action:%r}" % expected)
-        self.wait_until(
-            lambda: self.api_json("/api/limits").get("mode") == expected,
-            timeout=20, message="GET /api/limits bestätigt den Modus nicht")
-        self.wait_until(
-            lambda: re.search(r"fortsetz|stopp|continue|stop",
-                              self.toast_text(), re.I) is not None,
-            timeout=15, message="Der Moduswechsel bestätigt nicht per Toast")
-        self.assertEqual(
-            render_before, self.nv_render_count(),
-            "Der Limits-Schalter vollneu-renderd")
-        self.assertEqual(
-            expected == "continue", toggle.is_checked(),
-            "Der Schalter zeigt den neuen Modus nicht")
 
 
 class GatesSectionTest(GH57SettingsBrowserTest):

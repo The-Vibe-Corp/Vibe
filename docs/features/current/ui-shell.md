@@ -33,9 +33,11 @@ without a static sidebar.
 - The interface is English by default and can be switched globally between
   English and German under Einstellungen → Darstellung. The choice is saved in
   `ui.json` through `/api/language` and applies to the whole interface (`AP21`).
-- Settings use their own responsive navigation with ten sections: global
-  AGENTS.md, appearance, access security, features, run behavior, gates,
-  models, profiles, MCP servers, and harness (`AP7`, `GH-57`).
+- Settings use their own responsive navigation with nine sections: global
+  AGENTS.md, appearance, access security, features, gates, models, profiles,
+  MCP servers, and harness (`AP7`, `GH-57`). The former "Run behaviour" section
+  and its toggle were removed; legacy `limits.json` files cannot reintroduce
+  them or influence runs (GH-99).
 - Section actions redraw only their own section. Harness selection reflects
   what is installed: an uninstalled harness is disabled and cannot be saved;
   the persisted `harness.json` remains the displayed state (`B18`).
@@ -52,6 +54,9 @@ without a static sidebar.
   prioritization, and drag-and-drop update the ticket store without a full page
   reload. Ticket semantics belong to [Work packages](work-packages.md) (`GH-56`,
   `F33`, `F34`).
+- The project overview lists sessions grouped under their work package: the
+  package and project give orientation, while the technical session ID is
+  muted, truncated and equipped with a tooltip containing the full ID (GH-99).
 - `GH-67` consolidated the shared sidebar and cleaned up the work view: one
   priority strip on mobile, localized labels, and a single card in the DOM.
   The binding design contracts are in the
@@ -81,6 +86,7 @@ Exact responsive breakpoints and visual styling were not verified here.
   [B18](../B18.md), [F11](../F11.md).
 - Language: [AP21](../AP21.md).
 - Work view: [F33](../F33.md), [F34](../F34.md), [GH-56](../GH-56.md),
-  [GH-56-design-notes](../GH-56-design-notes.md), [GH-67](../GH-67.md).
+  [GH-56-design-notes](../GH-56-design-notes.md), [GH-67](../GH-67.md),
+  [GH-99](../GH-99.md).
 - Visual style: [GH-94](../GH-94.md), [GH-88](../GH-88.md).
 - Foundation: [AP22](../AP22.md).

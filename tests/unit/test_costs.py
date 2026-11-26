@@ -24,8 +24,43 @@ from pathlib import Path
 from tests.unit import env_support
 
 REPO = Path(__file__).resolve().parents[2]
-CLI = REPO / "bin" / "vibe"
-WEB = REPO / "bin" / "vibe-web.py"
+BIN = REPO / "bin"
+CLI = BIN / "vibe"
+WEB = BIN / "vibe-web.py"
+if str(BIN) not in sys.path:
+    sys.path.insert(0, str(BIN))
+
+
+def load_module(path, name):
+    """Lädt ein bin-Modul als Testunterlage (ohne Installation)."""
+    loader = importlib.machinery.SourceFileLoader(name, str(path))
+    spec = importlib.util.spec_from_loader(loader.name, loader)
+    module = importlib.util.module_from_spec(spec)
+    loader.exec_module(module)
+    return module
+
+
+TICKETS = load_module(BIN / "vibe_tickets.py", "vibe_tickets_cost_contract")
+
+
+def record_usage(project, package_id, session_id, input_tokens=0,
+                 output_tokens=0, cached_input=0, agent="coding-agent",
+                 model="opencode/model-a", month=None):
+    """Legt persistente Paketkosten an (GH-99: keine DB als Kostenquelle).
+
+    ``month`` ist optional und versorgt die Monatsbuckets der Kostenübersicht;
+    fehlt es, bestimmt die Implementierung den Monat selbst. Der Verbrauch
+    eines Sessions ist ein Überschreiben, kein Inkrement.
+    """
+    usage = {"models": {model: {
+        "agent": agent,
+        "input": int(input_tokens),
+        "cached_input": int(cached_input),
+        "output": int(output_tokens),
+    }}}
+    if month is not None:
+        usage["month"] = month
+    TICKETS.record_usage(project, package_id, session_id, usage)
 
 # Reale Tabellenstruktur der opencode-Datenbank (Stand opencode 2.1.4).
 DDL_V2 = """
@@ -271,22 +306,23 @@ class CostFixture(unittest.TestCase):
             json.dumps({"stand": "2026-10-29", "models": models}), encoding="utf-8"
         )
 
+    def record_usage(self, package_id, session_id, **kwargs):
+        """Persistiert Verbrauch am Paket statt in der opencode-Datenbank."""
+        record_usage(self.proj, package_id, session_id, **kwargs)
+
 
 class TokenAggregationTest(CostFixture):
     def build_usage(self):
-        con = make_db(self.db)
-        add_session(con, "ses_a", self.proj, "proj F1")
-        add_message(con, "ses_a", "coding-agent", "model-a", 1000, 100, 50, 3000, seq=1)
-        add_message(con, "ses_a", "coding-agent", "model-a", 2000, 200, 50, 4000, seq=2)
-        add_session(con, "ses_b", self.proj, "Review F1 (@code-reviewer subagent)",
-                    parent="ses_a", agent="code-reviewer")
-        add_message(con, "ses_b", "code-reviewer", "model-b", 500, 10, 0, 0, seq=1)
-        add_session(con, "ses_c", self.proj, "proj F2")
-        add_message(con, "ses_c", "coding-agent", "model-a", 100, 20, 0, 0, seq=1)
-        add_session(con, "ses_d", self.proj, "proj Nebenarbeit")
-        add_message(con, "ses_d", "coding-agent", "model-a", 50, 5, 0, 0, seq=1)
-        con.commit()
-        con.close()
+        # GH-99: Die Kostenübersicht liest ausschließlich persistierte
+        # Paketkosten. Die früher aus zwei Nachrichten und dem Subagenten
+        # abgeleiteten Tokenwerte werden jetzt als Verbrauch zweier Sessions
+        # des Pakets F1 gespeichert (Summe unverändert).
+        self.record_usage("F1", "ses_a", input_tokens=10000,
+                          output_tokens=400, cached_input=7000)
+        self.record_usage("F1", "ses_b", input_tokens=500,
+                          output_tokens=10, agent="code-reviewer",
+                          model="opencode/model-b")
+        self.record_usage("F2", "ses_c", input_tokens=100, output_tokens=20)
         self.cli.costs_set_prices("proj", {"opencode/model-a": {
             "input": 2.0, "cached_input": 0.5, "output": 4.0}})
         return self.cli.costs_project("proj")
@@ -312,7 +348,7 @@ class TokenAggregationTest(CostFixture):
         data = self.build_usage()
         package = {p["id"]: p for p in data["packages"]}["F1"]
         self.assertAlmostEqual(package["cost"], 0.0111, places=9)
-        self.assertAlmostEqual(data["total"]["cost"], 0.0115, places=9)
+        self.assertAlmostEqual(data["total"]["cost"], 0.01138, places=9)
 
     def test_unknown_model_price_is_zero(self):
         data = self.build_usage()
@@ -321,12 +357,11 @@ class TokenAggregationTest(CostFixture):
         self.assertEqual(model["price_source"], "unbekannt")
         self.assertEqual(model["cost"], 0.0)
 
-    def test_unassigned_sessions_form_their_own_package(self):
-        data = self.build_usage()
-        unassigned = [p for p in data["packages"] if p["id"] == ""]
-        self.assertEqual(len(unassigned), 1)
-        self.assertEqual(unassigned[0]["title"], "Ohne Arbeitspaket")
-        self.assertEqual(unassigned[0]["tokens"], {"input": 50, "cached": 0, "output": 5})
+    # Der frühere Fall „Sitzung ohne Paketbezug bildet ein eigenes Paket mit
+    # dem Titel 'Ohne Arbeitspaket'“ ist unter GH-99 entfallen: Kosten werden
+    # nur über eine gespeicherte Zuordnung zu einem echten Paket erfasst. Ein
+    # leeres Paket hat keinen Ticketdatensatz und damit keine Kostenquelle;
+    # die Prüfung wäre ohne Zweck und wurde entfernt, nicht abgeschwächt.
 
     def test_project_total_is_the_sum_of_all_packages(self):
         data = self.build_usage()
@@ -339,9 +374,11 @@ class TokenAggregationTest(CostFixture):
             data["total"]["cost"], sum(p["cost"] for p in data["packages"]), places=9)
         self.assertEqual(data["total"]["sessions"],
                          sum(p["sessions"] for p in data["packages"]))
-        self.assertEqual(data["total"]["sessions"], 4)
+        # Drei Sessions in zwei Paketen; der frühere „Ohne Arbeitspaket“-
+        # Topf existiert ohne gespeicherte Zuordnung nicht mehr.
+        self.assertEqual(data["total"]["sessions"], 3)
         self.assertEqual(data["total"]["tokens"],
-                         {"input": 10650, "cached": 7000, "output": 435})
+                         {"input": 10600, "cached": 7000, "output": 430})
 
     def test_overview_lists_every_project_with_its_totals(self):
         self.build_usage()
@@ -349,31 +386,26 @@ class TokenAggregationTest(CostFixture):
         self.assertTrue(data["available"])
         self.assertEqual(data["currency"], "EUR")
         row = {p["name"]: p for p in data["projects"]}["proj"]
-        self.assertEqual(row["packages"], 3)
-        self.assertEqual(row["sessions"], 4)
-        self.assertAlmostEqual(row["cost"], 0.0115, places=9)
+        self.assertEqual(row["packages"], 2)
+        self.assertEqual(row["sessions"], 3)
+        self.assertAlmostEqual(row["cost"], 0.01138, places=9)
 
-    def test_sessions_of_other_projects_and_outside_roots_are_ignored(self):
+    def test_costs_of_other_projects_are_ignored(self):
+        # GH-99: Die Zuordnung liegt am Paket, nicht am Sitzungspfad. Ein
+        # anderes Projekt kann nicht in die Kostenübersicht von 'proj' laufen.
         other = self.add_project("other")
-        con = make_db(self.db)
-        add_session(con, "ses_own", self.proj, "proj F1")
-        add_message(con, "ses_own", "coding-agent", "model-a", 10, 1, 0, 0)
-        add_session(con, "ses_other", other, "other F1")
-        add_message(con, "ses_other", "coding-agent", "model-a", 999, 999, 0, 0)
-        add_session(con, "ses_outside", self.root / "aussen", "proj F1")
-        add_message(con, "ses_outside", "coding-agent", "model-a", 888, 888, 0, 0)
-        con.commit()
-        con.close()
+        self.record_usage("F1", "ses_own", input_tokens=10, output_tokens=1)
+        record_usage(other, "F1", "ses_other", input_tokens=999,
+                     output_tokens=999)
         data = self.cli.costs_project("proj")
         self.assertEqual(data["total"]["tokens"], {"input": 10, "cached": 0, "output": 1})
         self.assertEqual(data["sessions"], 1)
 
-    def test_a_session_in_a_subdirectory_belongs_to_the_project(self):
-        con = make_db(self.db)
-        add_session(con, "ses_sub", self.proj / "unterordner", "proj F1")
-        add_message(con, "ses_sub", "coding-agent", "model-a", 7, 3, 0, 0)
-        con.commit()
-        con.close()
+    def test_location_of_the_harness_session_does_not_change_attribution(self):
+        # Früher: eine Sitzung in einem Unterordner gehörte weiterhin zum
+        # Projekt. Heute: der gespeicherte Paketbezug entscheidet; der Pfad
+        # der Harness-Sitzung wird für die Übersicht nicht mehr herangezogen.
+        self.record_usage("F1", "ses_sub", input_tokens=7, output_tokens=3)
         data = self.cli.costs_project("proj")
         self.assertEqual(data["sessions"], 1)
         self.assertEqual(data["total"]["tokens"], {"input": 7, "cached": 0, "output": 3})
@@ -381,11 +413,8 @@ class TokenAggregationTest(CostFixture):
 
 class PriceResolutionTest(CostFixture):
     def build_single_session(self, model="model-a"):
-        con = make_db(self.db)
-        add_session(con, "ses_a", self.proj, "proj F1")
-        add_message(con, "ses_a", "coding-agent", model, 1000000, 500000, 0, 0)
-        con.commit()
-        con.close()
+        self.record_usage("F1", "ses_a", input_tokens=1000000,
+                          output_tokens=500000, model="opencode/" + model)
 
     def model_row(self, data, model):
         return {m["model"]: m for m in data["models"]}[f"opencode/{model}"]
@@ -432,11 +461,7 @@ class PriceResolutionTest(CostFixture):
     def test_user_prices_are_stored_per_project(self):
         self.build_single_session()
         other = self.add_project("other")
-        con = sqlite3.connect(str(self.db))
-        add_session(con, "ses_other", other, "other F1")
-        add_message(con, "ses_other", "coding-agent", "model-a", 1000000, 0, 0, 0)
-        con.commit()
-        con.close()
+        record_usage(other, "F1", "ses_other", input_tokens=1000000)
         self.cli.costs_set_prices("proj", {"opencode/model-a": {
             "input": 1.0, "cached_input": 0.0, "output": 2.0}})
         stored = json.loads((self.root / "_toolchain" / "costs.json").read_text(encoding="utf-8"))
@@ -488,90 +513,53 @@ class PriceValidationTest(CostFixture):
 
 
 class DataSourceTest(CostFixture):
-    def test_missing_database_is_reported_and_not_created(self):
-        os.environ["VIBE_OPENCODE_DB"] = str(self.root / "fehlt.db")
-        data = self.cli.costs_overview()
-        self.assertFalse(data["available"])
-        self.assertIn("fehlt.db", data["message"])
-        self.assertFalse((self.root / "fehlt.db").exists())
-        detail = self.cli.costs_project("proj")
-        self.assertFalse(detail["available"])
-        self.assertEqual(detail["total"]["tokens"], {"input": 0, "cached": 0, "output": 0})
+    """Die Übersicht hängt nicht mehr von der opencode-Datenbank ab.
 
-    def test_unknown_database_schema_is_reported(self):
+    Die früheren Prüfungen des Datenbanklesers (read-only, v1-Schema,
+    Session-Gesamtsummen ohne Nachrichten, JSON1-Ersatzpfad) sind unter
+    GH-99 in ``test_costs_refresh.CostFlushReaderTest`` auf den Flush-Pfad
+    ``vibe sessions finish-package`` verlagert: Der Leser wird nur noch beim
+    Spülen der Kosten benutzt, nicht mehr bei der Anzeige.
+    """
+
+    def test_persisted_costs_are_served_without_a_database(self):
+        self.record_usage("F1", "ses_a", input_tokens=100, output_tokens=10)
+        os.environ["VIBE_OPENCODE_DB"] = str(self.root / "fehlt.db")
+
+        data = self.cli.costs_overview()
+        detail = self.cli.costs_project("proj")
+
+        self.assertFalse((self.root / "fehlt.db").exists(),
+                         "Die Kostenübersicht darf keine Datenbank anlegen")
+        self.assertEqual(
+            detail["total"]["tokens"], {"input": 100, "cached": 0, "output": 10},
+            "Persistierte Kosten müssen ohne Datenbank angezeigt werden")
+        row = {item["name"]: item for item in data["projects"]}["proj"]
+        self.assertEqual(row["tokens"], {"input": 100, "cached": 0, "output": 10})
+
+    def test_an_unknown_database_schema_does_not_break_the_overview(self):
         con = sqlite3.connect(str(self.db))
         con.execute("create table fremd (id text)")
         con.commit()
         con.close()
-        data = self.cli.costs_overview()
-        self.assertFalse(data["available"])
-        self.assertIn("Schema", data["message"])
+        self.record_usage("F1", "ses_a", input_tokens=100, output_tokens=10)
 
-    def test_a_broken_database_is_reported_instead_of_crashing(self):
+        data = self.cli.costs_project("proj")
+
+        self.assertEqual(
+            data["total"]["tokens"], {"input": 100, "cached": 0, "output": 10},
+            "Ein fremdes DB-Schema darf die persistierten Kosten nicht stören")
+
+    def test_a_broken_database_does_not_crash_the_overview(self):
         self.db.write_bytes(b"keine sqlite datei")
+        self.record_usage("F1", "ses_a", input_tokens=100, output_tokens=10)
+
         data = self.cli.costs_overview()
-        self.assertFalse(data["available"])
-        self.assertTrue(data["message"])
 
-    def test_the_database_is_only_read(self):
-        con = make_db(self.db)
-        add_session(con, "ses_a", self.proj, "proj F1")
-        add_message(con, "ses_a", "coding-agent", "model-a", 10, 1, 0, 0)
-        con.commit()
-        con.close()
-        before = (self.db.stat().st_size, self.db.stat().st_mtime_ns)
-        self.cli.costs_project("proj")
-        after = (self.db.stat().st_size, self.db.stat().st_mtime_ns)
-        self.assertEqual(before, after)
-        self.assertFalse(Path(str(self.db) + "-wal").exists())
-        self.assertFalse(Path(str(self.db) + "-shm").exists())
-
-    def test_legacy_schema_is_read(self):
-        con = make_db(self.db, schema="v1")
-        add_session(con, "ses_a", self.proj, "proj F1", schema="v1")
-        add_message(con, "ses_a", "coding-agent", "model-a", 1000, 100, 10, 500,
-                    schema="v1")
-        add_message(con, "ses_a", "coding-agent", "model-a", 0, 0, 0, 0,
-                    schema="v1", role="user", seq=2)
-        con.commit()
-        con.close()
-        self.cli.costs_set_prices("proj", {"opencode/model-a": {
-            "input": 1.0, "cached_input": 0.0, "output": 2.0}})
-        data = self.cli.costs_project("proj")
-        package = {p["id"]: p for p in data["packages"]}["F1"]
-        self.assertEqual(package["tokens"], {"input": 1500, "cached": 500, "output": 110})
-        self.assertAlmostEqual(package["cost"], 0.001 + 0.00022, places=9)
-
-    def test_a_session_without_messages_uses_its_stored_totals(self):
-        con = make_db(self.db)
-        add_session(con, "ses_a", self.proj, "proj F1")
-        con.execute(
-            "update session_v2 set tokens_input=100, tokens_output=20,"
-            " tokens_reasoning=5, tokens_cache_read=50, agent='coding-agent',"
-            " model=? where id='ses_a'",
-            (json.dumps({"id": "model-a", "providerID": "opencode"}),),
-        )
-        con.commit()
-        con.close()
-        data = self.cli.costs_project("proj")
-        package = {p["id"]: p for p in data["packages"]}["F1"]
-        self.assertEqual(package["tokens"], {"input": 150, "cached": 50, "output": 25})
-        self.assertEqual(package["models"][0]["model"], "opencode/model-a")
-
-
-    def test_without_json1_the_messages_are_read_in_python(self):
-        con = make_db(self.db)
-        add_session(con, "ses_a", self.proj, "proj F1")
-        add_message(con, "ses_a", "coding-agent", "model-a", 1000, 100, 10, 500)
-        add_message(con, "ses_a", "code-reviewer", "model-b", 200, 20, 0, 0, seq=2)
-        con.commit()
-        con.close()
-        self.cli._json1_available = lambda conn: False
-        data = self.cli.costs_project("proj")
-        package = {p["id"]: p for p in data["packages"]}["F1"]
-        self.assertEqual(package["tokens"], {"input": 1700, "cached": 500, "output": 130})
-        self.assertEqual({m["model"] for m in package["models"]},
-                         {"opencode/model-a", "opencode/model-b"})
+        self.assertEqual(
+            {row["name"]: row for row in data["projects"]}["proj"]["tokens"],
+            {"input": 100, "cached": 0, "output": 10},
+            "Eine defekte Datenbank darf die Übersicht nicht abbrechen")
 
 
 class PackageIdTest(CostFixture):
@@ -602,11 +590,8 @@ class PackageIdTest(CostFixture):
 
 class CommandLineTest(CostFixture):
     def test_costs_command_prints_the_project_overview_without_arguments(self):
-        con = make_db(self.db)
-        add_session(con, "ses_a", self.proj, "proj F1")
-        add_message(con, "ses_a", "coding-agent", "model-a", 1000, 100, 0, 0)
-        con.commit()
-        con.close()
+        self.record_usage("F1", "ses_a", input_tokens=1000, output_tokens=100)
+
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
             self.cli.cmd_costs()
@@ -616,11 +601,8 @@ class CommandLineTest(CostFixture):
         self.assertIn("EUR", text)
 
     def test_costs_command_prints_the_project_overview(self):
-        con = make_db(self.db)
-        add_session(con, "ses_a", self.proj, "proj F1")
-        add_message(con, "ses_a", "coding-agent", "model-a", 1000, 100, 0, 0)
-        con.commit()
-        con.close()
+        self.record_usage("F1", "ses_a", input_tokens=1000, output_tokens=100)
+
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
             self.cli.cmd_costs("proj")
@@ -641,11 +623,8 @@ class CostsApiTest(CostFixture):
 
     def setUp(self):
         super().setUp()
-        con = make_db(self.db)
-        add_session(con, "ses_a", self.proj, "proj F1")
-        add_message(con, "ses_a", "coding-agent", "model-a", 400000, 300000, 200000, 600000)
-        con.commit()
-        con.close()
+        self.record_usage("F1", "ses_a", input_tokens=1000000,
+                          output_tokens=500000, cached_input=600000)
         self.port = free_port()
         # Instanzvariablen der Läuferumgebung (u. a. VIBE_UI_BIND) nicht erben:
         # der Testserver muss auf 127.0.0.1 binden.
@@ -782,56 +761,6 @@ import urllib.request
 from pathlib import Path
 
 
-GLOBAL_DDL_V2 = """
-CREATE TABLE `session_v2` (
-  `id` text PRIMARY KEY,
-  `project_id` text NOT NULL,
-  `workspace_id` text,
-  `parent_id` text,
-  `fork_session_id` text,
-  `fork_boundary` text,
-  `slug` text NOT NULL,
-  `directory` text NOT NULL,
-  `path` text,
-  `title` text,
-  `version` text NOT NULL,
-  `share_url` text,
-  `summary_additions` integer,
-  `summary_deletions` integer,
-  `summary_files` integer,
-  `summary_diffs` text,
-  `metadata` text,
-  `cost` real DEFAULT 0 NOT NULL,
-  `tokens_input` integer DEFAULT 0 NOT NULL,
-  `tokens_output` integer DEFAULT 0 NOT NULL,
-  `tokens_reasoning` integer DEFAULT 0 NOT NULL,
-  `tokens_cache_read` integer DEFAULT 0 NOT NULL,
-  `tokens_cache_write` integer DEFAULT 0 NOT NULL,
-  `revert` text,
-  `permission` text,
-  `agent` text,
-  `model` text,
-  `time_created` integer NOT NULL,
-  `time_updated` integer NOT NULL,
-  `time_compacting` integer,
-  `time_archived` integer,
-  `time_suspended` integer,
-  `resume_attempts` integer DEFAULT 0 NOT NULL,
-  `time_idle` integer,
-  `time_viewed` integer,
-  `idle_outcome` text
-);
-CREATE TABLE "session_message" (
-  `id` text PRIMARY KEY,
-  `session_id` text NOT NULL,
-  `type` text NOT NULL,
-  `seq` integer NOT NULL,
-  `time_created` integer NOT NULL,
-  `time_updated` integer NOT NULL,
-  `data` text NOT NULL
-);
-"""
-
 ISOLATED_ENV = (
     "VIBE",
     "VIBE_NO_CONTAINER",
@@ -893,37 +822,6 @@ def load_global_price_cli(vibe_root, home):
     return module
 
 
-def make_global_db(path):
-    con = sqlite3.connect(str(path))
-    con.executescript(GLOBAL_DDL_V2)
-    con.commit()
-    return con
-
-
-def add_global_session(con, session_id, directory, title):
-    con.execute(
-        "insert into session_v2 (id, project_id, slug, directory, title,"
-        " version, agent, model, time_created, time_updated)"
-        " values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        (session_id, "proj", "slug-" + session_id, str(directory), title,
-         "2.1.4", "coding-agent",
-         json.dumps({"id": "model-a", "providerID": "opencode"}), 1, 1))
-
-
-def add_global_message(con, session_id, input_tokens, output_tokens):
-    data = {
-        "agent": "coding-agent",
-        "model": {"id": "model-a", "providerID": "opencode"},
-        "tokens": {"input": input_tokens, "output": output_tokens,
-                   "reasoning": 0, "cache": {"read": 0, "write": 0}},
-    }
-    con.execute(
-        "insert into session_message (id, session_id, type, seq, time_created,"
-        " time_updated, data) values (?, ?, ?, ?, ?, ?, ?)",
-        ("msg_" + session_id, session_id, "assistant", 1, 1, 1,
-         json.dumps(data)))
-
-
 def snapshot(root):
     """SHA-256 je Datei relativ zum Verzeichnis (fehlende Ordner: leer)."""
     root = Path(root)
@@ -935,7 +833,7 @@ def snapshot(root):
 
 
 class GlobalPriceFixture(unittest.TestCase):
-    """Temporäres VIBE, Projekt, opencode-Datenbank und Zustandsordner."""
+    """Temporäres VIBE, Projekt mit persistierten Kosten und Zustandsordner."""
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -945,9 +843,8 @@ class GlobalPriceFixture(unittest.TestCase):
         (self.proj / ".vibe").mkdir(parents=True)
         (self.proj / ".vibe" / "project.env").write_text(
             "TYPE=generic\n", encoding="utf-8")
-        (self.proj / "FEEDBACK.md").write_text(
-            "# FEEDBACK\n\n- [ ] F1 Erster Punkt\n"
-            "  Beschreibung: Erste Beschreibung\n", encoding="utf-8")
+        write_tickets(self.proj, [
+            {"id": "F1", "title": "Erster Punkt", "type": "feedback"}])
         (self.root / "_toolchain").mkdir()
         (self.root / "_state").mkdir()
         self.db = self.root / "opencode.db"
@@ -967,11 +864,8 @@ class GlobalPriceFixture(unittest.TestCase):
         self.tmp.cleanup()
 
     def build_usage(self, input_tokens=1000000, output_tokens=1000000):
-        con = make_global_db(self.db)
-        add_global_session(con, "ses_f33", self.proj, "proj F1")
-        add_global_message(con, "ses_f33", input_tokens, output_tokens)
-        con.commit()
-        con.close()
+        record_usage(self.proj, "F1", "ses_f33", input_tokens=input_tokens,
+                     output_tokens=output_tokens)
 
     def model_row(self, data, model="opencode/model-a"):
         return {item["model"]: item for item in data["models"]}[model]
@@ -1117,16 +1011,13 @@ class GlobalPriceApiTest(unittest.TestCase):
         (cls.project / ".vibe").mkdir(parents=True)
         (cls.project / ".vibe" / "project.env").write_text(
             "TYPE=generic\n", encoding="utf-8")
-        (cls.project / "FEEDBACK.md").write_text(
-            "# FEEDBACK\n\n- [ ] F1 Erster Punkt\n", encoding="utf-8")
+        write_tickets(cls.project, [
+            {"id": "F1", "title": "Erster Punkt", "type": "feedback"}])
+        record_usage(cls.project, "F1", "ses_f33", input_tokens=1000000,
+                     output_tokens=1000000)
         (cls.root / "_toolchain").mkdir()
         (cls.root / "_state").mkdir()
         cls.db = cls.root / "opencode.db"
-        con = make_global_db(cls.db)
-        add_global_session(con, "ses_f33", cls.project, "proj F1")
-        add_global_message(con, "ses_f33", 1000000, 1000000)
-        con.commit()
-        con.close()
         cls.port = free_port()
         env = isolated_env(cls.root, cls.home, cls.port)
         env["VIBE_OPENCODE_DB"] = str(cls.db)

@@ -1648,6 +1648,23 @@
    ],
    "datum": "2026-11-25",
    "grund": "Neue Oberflaeche auf das Designsystem \"Precise Frames x Technical Density\" umgestellt: der zugelieferte Style-Guide liegt unveraendert als docs/style.html bei (docs ist nicht im Manifest-Scope). Matte, deckende Token-Flaechen statt Glas/Blur/Transparenz, kleine Radien (2/3/4/6 px), 34-px-Controls, 22-px-Badges sowie 42x12-Toggle mit 22-px-Thumb, 11-px-uppercase-Tabellenkoepfe und 2-px-Fokus-Outline mit 1-px-Abstand. Inter/JetBrains-Mono-Stacks ohne Netzanfrage. Alle 12 Akzent-IDs und der Standard blau bleiben; indigo/cyan/green/orange nutzen die gedaempfte Referenzpalette in hell und dunkel. Klassische UI unveraendert. Groesse und SHA-256 von bin/web/nova.css wurden aktualisiert."
+  },
+  {
+   "arbeitspaket": "GH-99",
+   "dateien": [
+    "bin/vibe",
+    "bin/vibe-run.sh",
+    "bin/vibe-web.py",
+    "bin/vibe_usage.py",
+    "bin/vibe_runs.py",
+    "bin/vibe_tickets.py",
+    "bin/web/nova-project.js",
+    "bin/web/nova-settings.js",
+    "bin/web/nova.css",
+    "scripts/setup-vibe.py"
+   ],
+   "datum": "2026-11-26",
+   "grund": "Arbeitspakete sind der dauerhafte Bezugspunkt fuer Sessions und Kosten: Zuordnung am Paket, Wiederaufnahme und Bereinigung nur bei Erfolg, persistierte Paketkosten und Entfernung des Einstellungs- und Executionspfads von Run behaviour. bin/vibe_limits.py entfaellt, bin/vibe_usage.py ist der neue lesende Verbrauchs-Flush. Groessen und SHA-256 der betroffenen Manifest-Dateien wurden aktualisiert."
   }
  ],
  "files": [
@@ -1657,19 +1674,19 @@
    "sha256": "f5e9382967c9833066a55808829f3750fc8e1181b170cafd222c37048bb49a77"
   },
   {
-   "bytes": 274312,
+   "bytes": 265627,
    "path": "bin/vibe",
-   "sha256": "1e2df016e87be00547a440bf0080720c166da80de911fd7801c54bd40fa04b29"
+   "sha256": "dbed52f69bb2a75c4d6ace58b0976d06b1784e86681a53c20b6a08ea388e9cb1"
   },
   {
-   "bytes": 88742,
+   "bytes": 89268,
    "path": "bin/vibe-run.sh",
-   "sha256": "8815cae11137a269658fa041e6299461249120ed1949103891caaaa802cdb466"
+   "sha256": "23588a9de03f879521465062645aeb692a53a676a5ef9ece02e7d68485a2c769"
   },
   {
-   "bytes": 142652,
+   "bytes": 143078,
    "path": "bin/vibe-web.py",
-   "sha256": "91363cce27b42cf47c543e83260649a28afc6e446cbe965c6a46434fd38aaa06"
+   "sha256": "1fe546419152a53cb5411dfea44b6a0a2edb3fbc9ad3ff3d3d8636fe45339b18"
   },
   {
    "bytes": 5189,
@@ -1707,9 +1724,9 @@
    "sha256": "ea1b39504b51d10e26408429930de59b4399cf130eb8ce10310443757e6fb9b7"
   },
   {
-   "bytes": 4311,
-   "path": "bin/vibe_limits.py",
-   "sha256": "005359ac957b04c4af4efdd01539de40457029291512bf0fa6bc237f28990dc9"
+   "path": "bin/vibe_usage.py",
+   "bytes": 11362,
+   "sha256": "188919a86f39006c5209c4f776384d1703b6cb547cc5e59b60c77703bb835a64"
   },
   {
    "bytes": 55440,
@@ -1742,9 +1759,9 @@
    "sha256": "00d99010d08373dc3e75b41a640cb6341ebcb0e0e2fc19e17e020158ae3d5525"
   },
   {
-   "bytes": 69645,
+   "bytes": 74203,
    "path": "bin/vibe_runs.py",
-   "sha256": "ef5b91c488574a122f700b83e656809f006b69ecfa24a355ddaddf65ca2e417a"
+   "sha256": "42fb469d3f0eb391c8b3f8a824414a74bbbdc7ae1455b6849269db0d84fbb4ce"
   },
   {
    "bytes": 39912,
@@ -1762,9 +1779,9 @@
    "sha256": "7b6aa4118259dc3440b37eaeec5eaa96eac7d928e6e704b2310946490bd25fbb"
   },
   {
-   "bytes": 18399,
+   "bytes": 29571,
    "path": "bin/vibe_tickets.py",
-   "sha256": "ab25a15f30ea594b7b514cbe2094cd8b83f1af55205ecfe297c610b0b30f7d17"
+   "sha256": "bc8f4149695352afd2ef82dc20c0a6d7a01af749b94580e798946662798a3f7c"
   },
   {
    "bytes": 12460,
@@ -1822,14 +1839,14 @@
    "sha256": "3b6ef244ff1b10575e9b86ec816b70181f06fbcf0beb82697d7cc3cee458068b"
   },
   {
-   "bytes": 121795,
+   "bytes": 124575,
    "path": "bin/web/nova-project.js",
-   "sha256": "384408b0c885250c416bc5237387a04fec69a3307c6cfe2604e7b159cedd7283"
+   "sha256": "b220052d920f2af6e3c8f5589ac36b00816c57b69cedd945cb94bbe56688d11b"
   },
   {
-   "bytes": 90883,
+   "bytes": 88034,
    "path": "bin/web/nova-settings.js",
-   "sha256": "f2ab2bb02b97e94c22067e63b687552e339b371ac5ce51c844be85b936811874"
+   "sha256": "11b1c92fde447f4a8793fb172bded2d2c3a51203b95e7fc332f5ce3e819daae9"
   },
   {
    "bytes": 15335,
@@ -1837,9 +1854,9 @@
    "sha256": "84ae6329f31c04fcc8b48c552ade8f9d276c283ab81b1babb66f8988b627d8a7"
   },
   {
-   "bytes": 71152,
+   "bytes": 71820,
    "path": "bin/web/nova.css",
-   "sha256": "50bb42b1dfec25932a94d8ee1872fdc5e180eafdd4691d37847f086f1634d9ed"
+   "sha256": "0985e92b9e11b40e312fe6227d3699109fa7e4fb52cc7f5a6e73970cd2245d9f"
   },
   {
    "bytes": 12751,
@@ -1862,9 +1879,9 @@
    "sha256": "9cfa27971f1d08d8f87ff46cefc7d927f49b27e22f2b24a6eade954da4b8a3ec"
   },
   {
-   "bytes": 76965,
+   "bytes": 76964,
    "path": "scripts/setup-vibe.py",
-   "sha256": "ccf77952382b1b7f7498ffc484ded223031a93bf5935b0691a7fae90c77276cd"
+   "sha256": "15c71cda6e173c86c282950740e5edbac6e586fb89b24b8ed341fafc18568616"
   },
   {
    "bytes": 377,

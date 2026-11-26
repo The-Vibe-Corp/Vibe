@@ -49,10 +49,20 @@ import time
 # ist sys.path[0]); aus ihr kommt die gemeinsame Verzeichnis-Fsync-Hilfe.
 import vibe_storage
 
+try:  # Neues Modul: ohne Installation bleibt vibe_runs importierbar.
+    import vibe_tickets
+except ImportError:  # pragma: no cover - Installation ohne vibe_tickets
+    vibe_tickets = None
+
 try:  # Nur unter POSIX verfügbar; ohne Sperre bleibt der letzte Schreibvorgang gewinnen.
     import fcntl
 except ImportError:  # pragma: no cover - Windows ohne vibe-Betrieb
     fcntl = None
+
+try:  # Neues Modul: ohne Installation bleibt vibe_runs importierbar.
+    import vibe_usage
+except ImportError:  # pragma: no cover - Installation ohne vibe_usage
+    vibe_usage = None
 
 KEEP_RECORDS = 100
 DEFAULT_MAX_BYTES = 5 * 1024 * 1024
@@ -718,6 +728,16 @@ def stream_events(stdin, emit, state_path, attempt=False, sessions=None,
             worktree_path=session_worktree, package_id=session_package,
             branch=session_branch,
         )
+        # GH-99: Das Arbeitspaket ist der Eigentümer der Session. Die
+        # Zuordnung wird sofort persistiert, damit ein harter Abbruch sie
+        # nicht verliert. Ungültige/fehlende Paketkennungen dürfen den Lauf
+        # nicht stören.
+        if session_package and session_project and vibe_tickets is not None:
+            try:
+                vibe_tickets.attach_session(
+                    session_project, session_package, current)
+            except (ImportError, OSError, ValueError):
+                pass
         recorded = current
 
     for raw in stdin:
@@ -1194,6 +1214,64 @@ class SessionRegistry:
             if len(data["sessions"]) != before:
                 self._write(data)
 
+    def forget_sessions(self, sessions):
+        """Vergisst genau die genannten Session-Einträge (GH-99).
+
+        Wird nur nach erfolgreichem Paketabschluss aufgerufen, nachdem die
+        Kosten gespült und die Zuordnungen am Paket bereinigt wurden.
+        """
+        wanted = {
+            value for value in (sessions or [])
+            if isinstance(value, str) and SESSION_ID_RE.fullmatch(value)
+        }
+        if not wanted:
+            return
+        with self._locked():
+            data = self._read()
+            before = len(data["sessions"])
+            data["sessions"] = [
+                entry for entry in data["sessions"]
+                if entry.get("session") not in wanted
+            ]
+            if len(data["sessions"]) != before:
+                self._write(data)
+
+
+def finish_package(project, package_id, runtime, forget=True):
+    """Schließt ein Arbeitspaket erfolgreich ab (GH-99).
+
+    Reihenfolge ist bindend: erst den Verbrauch der gespeicherten Sessions
+    persistieren, dann die Zuordnungen am Paket löschen. Scheitert das Spülen,
+    bleiben Kosten und Zuordnungen erhalten.
+
+    ``forget=False`` behält die Registereinträge: der Läufer beendet die
+    Hauptsession regulär über ``sessions-finish`` und muss ihren Endzustand
+    für ``session_overview`` erhalten. Nur der ausdrückliche Paketabschluss
+    über die CLI vergisst die Einträge zusätzlich.
+    """
+    if vibe_tickets is None:
+        return []
+    record = vibe_tickets.find(vibe_tickets.load(project), package_id)
+    if record is None:
+        # Kein Datensatz: nichts zu spülen oder zu bereinigen. Der PR-only-
+        # Abschluss kann ein Paket betreffen, das (noch) nicht im Speicher
+        # steht; das ist kein Fehler.
+        return []
+    sessions = vibe_tickets.sessions_of(record)
+    if vibe_usage is not None:
+        vibe_usage.flush_package_usage(project, package_id)
+    vibe_tickets.clear_sessions(project, package_id)
+    if forget:
+        SessionRegistry(runtime).forget_sessions(sessions)
+    return sessions
+
+
+def resume_session_for_package(project, package_id):
+    """Gespeicherte fortsetzbare Session eines Pakets oder ``""`` (GH-99)."""
+    if vibe_tickets is None:
+        return ""
+    return vibe_tickets.resume_session(project, package_id)
+
 
 def _clean_registry_id(value):
     """Paket-Kennung des Worktree-Registers; ungültig → Leerwert."""
@@ -1564,6 +1642,24 @@ def build_parser():
     sessions_forget.add_argument("--runtime", required=True)
     sessions_forget.add_argument("--worktree", required=True)
 
+    sessions_finish_package = sub.add_parser(
+        "sessions-finish-package",
+        help="Verbrauch spülen, Paket-Sessions bereinigen (GH-99)",
+    )
+    sessions_finish_package.add_argument("--runtime", required=True)
+    sessions_finish_package.add_argument("--project", required=True)
+    sessions_finish_package.add_argument("--id", required=True)
+    sessions_finish_package.add_argument(
+        "--keep-registry", action="store_true",
+        help="Registereinträge der Hauptsession behalten (Läufer-Erfolgspfad)")
+
+    sessions_resume = sub.add_parser(
+        "sessions-resume",
+        help="Gespeicherte Session eines Pakets ausgeben (GH-99)",
+    )
+    sessions_resume.add_argument("--project", required=True)
+    sessions_resume.add_argument("--id", required=True)
+
     worktree_get = sub.add_parser(
         "worktree-get", help="Worktree-Eintrag als JSON oder 'none' (AP4)",
     )
@@ -1651,6 +1747,21 @@ def main(argv=None):
         return 0
     if args.command == "sessions-forget-worktree":
         SessionRegistry(args.runtime).forget_worktree(args.worktree)
+        return 0
+    if args.command == "sessions-finish-package":
+        try:
+            finish_package(args.project, args.id, args.runtime,
+                           forget=not args.keep_registry)
+        except (OSError, ValueError) as error:
+            print(str(error), file=sys.stderr)
+            return 1
+        return 0
+    if args.command == "sessions-resume":
+        try:
+            print(resume_session_for_package(args.project, args.id))
+        except (OSError, ValueError) as error:
+            print(str(error), file=sys.stderr)
+            return 1
         return 0
     if args.command == "worktree-get":
         entry = WorktreeRegistry(args.runtime).get(args.project, args.id)

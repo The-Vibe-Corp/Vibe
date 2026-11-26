@@ -26,7 +26,6 @@ if str(BIN) not in sys.path:
     sys.path.insert(0, str(BIN))
 
 import vibe_gates  # noqa: E402
-import vibe_limits  # noqa: E402
 import vibe_runs  # noqa: E402
 
 ISOLATED_ENV = (
@@ -312,79 +311,33 @@ class ShellRoutingTest(DashboardFixture):
         self.assertEqual(404, status, body)
 
 
-class LimitsApiTest(DashboardFixture):
-    """GET/POST /api/limits spiegelt vibe_limits (global, kein Projekt)."""
+class LimitsRemovalApiTest(DashboardFixture):
+    """The removed run-behaviour setting has no API and ignores stale data."""
 
     @classmethod
     def setUpClass(cls):
         cls.start_server()
 
-    def test_limits_view_requires_token_and_reports_stop(self):
-        """Vorbedingung: kein ``limits.json``. Aktion: GET ohne und mit Token.
-
-        Erwartung: ohne Token 403 ``unauthorized``; mit Token 200 ``ok:true``,
-        ``mode`` aus ``stop``/``continue`` (Default ``stop``), ``problem``
-        leer/fehlend und ``lines`` als Liste der describe-Zeilen.
-        """
-        status, body, _ = self.request("GET", "/api/limits", token=None)
-        self.assertEqual(403, status, body)
-        self.assertEqual("unauthorized", json.loads(body)["error"]["code"])
-
+    def test_limits_get_endpoint_is_removed(self):
         status, body, _ = self.request("GET", "/api/limits", token=self.token)
-        self.assertEqual(200, status, body)
-        data = json.loads(body)
-        self.assertTrue(data["ok"], body)
-        self.assertIn(data["mode"], vibe_limits.MODES, body)
-        self.assertEqual(vibe_limits.DEFAULT_MODE, data["mode"], body)
-        self.assertIn(data.get("problem"), (None, ""), body)
-        self.assertIsInstance(data.get("lines"), list, body)
+        self.assertEqual(404, status, body)
 
-    def test_limits_post_continue_persists_in_state(self):
-        """Vorbedingung: Default ``stop``. Aktion: POST ``continue``.
-
-        Erwartung: 200 ``ok:true`` mit ``mode:"continue"``; ``vibe_limits.load``
-        auf dem isolierten Zustandsordner liest ``continue``; ein
-        anschließendes GET bestätigt den neuen Zustand.
-        """
-        status, body, _ = self.post(
-            "/api/limits", {"action": "continue"})
-        self.assertEqual(200, status, body)
-        data = json.loads(body)
-        self.assertTrue(data["ok"], body)
-        self.assertEqual("continue", data["mode"], body)
-
-        stored_mode, problem = vibe_limits.load(str(self.state))
-        self.assertEqual("", problem, "Der gespeicherte Zustand ist defekt")
-        self.assertEqual("continue", stored_mode,
-                         "limits.json enthält den neuen Modus nicht")
-        self.assertEqual(
-            {"mode": "continue"},
-            json.loads(self.state_file("limits.json").read_text(encoding="utf-8")),
-            "limits.json hat nicht die dokumentierte Form")
-
-        status, body, _ = self.request("GET", "/api/limits", token=self.token)
-        self.assertEqual(200, status, body)
-        self.assertEqual("continue", json.loads(body)["mode"], body)
-
-    def test_limits_unknown_action_changes_nothing(self):
-        """Vorbedingung: gespeicherter Modus ``continue``. Aktion: POST mit
-        unbekannter Aktion.
-
-        Erwartung: 200 ``ok:false`` mit Meldung; ``limits.json`` bleibt
-        byte-gleich (kein Schreibvorgang).
-        """
+    def test_limits_post_endpoint_is_removed_and_writes_nothing(self):
         status, body, _ = self.post("/api/limits", {"action": "continue"})
-        self.assertEqual(200, status, body)
-        before = self.state_file("limits.json").read_bytes()
+        self.assertEqual(404, status, body)
+        self.assertFalse(
+            self.state_file("limits.json").exists(),
+            "Der entfernte Modus wurde über die API persistiert",
+        )
 
-        status, body, _ = self.post("/api/limits", {"action": "weiter"})
+    def test_a_stale_limits_file_does_not_break_the_dashboard(self):
+        self.state_file("limits.json").write_text(
+            '{"mode": "continue"}\n', encoding="utf-8")
+
+        status, body, _ = self.request("GET", "/api/gates", token=self.token)
+
         self.assertEqual(200, status, body)
-        data = json.loads(body)
-        self.assertFalse(data["ok"], body)
-        self.assertTrue(str(data.get("message") or "").strip(), body)
-        self.assertEqual(
-            before, self.state_file("limits.json").read_bytes(),
-            "Unbekannte Aktion veränderte limits.json")
+        self.assertTrue(json.loads(body)["ok"], body)
 
 
 class GatesApiTest(DashboardFixture):
@@ -967,6 +920,12 @@ def _load_module(name, path):
     return module
 
 
+# GH-99: Monatsbuckets werden aus den persistierten Paketkosten gebildet. Der
+# optionale Schlüssel ``month`` im Session-Verbrauch ist die Zeitquelle dafür.
+TICKETS_COSTS = _load_module(
+    "vibe_tickets_costs_monthly", BIN / "vibe_tickets.py")
+
+
 def load_vibe_module(vibe_root):
     """Lädt bin/vibe als Modul mit isoliertem VIBE/HOME (für Delete-/Cost-Fälle)."""
     with env_support.isolated_process_environment(
@@ -1540,17 +1499,16 @@ class CostsMonthlyTest(unittest.TestCase):
         )
 
     def build_usage(self):
-        con = self.make_db()
-        self.add_session(con, "ses_a", self.proj, "proj F1", time_created=1760000000)
-        self.add_message(con, "ses_a", "coding-agent", "model-a",
-                        input_tokens=1000, output_tokens=100, reasoning=50,
-                        cache_read=3000)
-        self.add_session(con, "ses_b", self.proj, "Review F1 (@code-reviewer subagent)",
-                         parent="ses_a", agent="code-reviewer", time_created=1790000000)
-        self.add_message(con, "ses_b", "code-reviewer", "model-a",
-                        input_tokens=500, output_tokens=10, seq=1)
-        con.commit()
-        con.close()
+        # GH-99: Die Monatszuordnung kommt aus den persistierten Kosten, nicht
+        # aus time_created der opencode-Sitzung. Zwei Sessions in zwei Monaten.
+        TICKETS_COSTS.record_usage(self.proj, "F1", "ses_a", {"models": {
+            "opencode/model-a": {"agent": "coding-agent", "input": 4000,
+                                 "cached_input": 3000, "output": 150}},
+            "month": "2025-10"})
+        TICKETS_COSTS.record_usage(self.proj, "F1", "ses_b", {"models": {
+            "opencode/model-a": {"agent": "code-reviewer", "input": 500,
+                                 "cached_input": 0, "output": 10}},
+            "month": "2026-09"})
         self.cli.costs_set_prices("proj", {"opencode/model-a": {
             "input": 2.0, "cached_input": 0.5, "output": 4.0}})
         return self.cli.costs_project("proj")
