@@ -2251,8 +2251,8 @@ class H(BaseHTTPRequestHandler):
                 if act == "save":
                     try:
                         vibe.agents_file_save(
-                            name, body.get("before", ""), body.get("after", ""),
-                            body.get("digest"))
+                            name, body.get("text"), body.get("digest"),
+                            body.get("before", ""), body.get("after", ""))
                         ok, msg = True, "AGENTS.md gespeichert"
                     except ValueError as e:
                         ok, msg = False, str(e)
@@ -2266,9 +2266,14 @@ class H(BaseHTTPRequestHandler):
                         return self._error(
                             400, "rejected",
                             "Restore ohne Bestätigung nicht möglich — senden "
-                            "Sie {\"action\": \"restore\", \"confirm\": true}.")
-                    vibe.agents_file_restore(name)
-                    ok, msg = True, "AGENTS.md wiederhergestellt"
+                            "Sie {\"action\": \"restore\", \"backup\": <Name>, "
+                            "\"confirm\": true}.")
+                    try:
+                        vibe.agents_file_restore(
+                            name, str(body.get("backup") or ""))
+                        ok, msg = True, "AGENTS.md wiederhergestellt"
+                    except (ValueError, vibe_storage.StorageError) as e:
+                        ok, msg = False, str(e)
                     extra["agents_file"] = vibe.agents_file_view(name)
                 elif act == "create":
                     try:

@@ -1048,9 +1048,6 @@
         "Die letzte Sicherung wiederherstellen? Der aktuelle Stand wird zuvor gesichert.": "Restore the latest backup? The current state is saved first.",
         "Erledigte anzeigen": "Show done",
         "Erledigte ausblenden": "Hide done",
-        "Freier Teil danach": "Free section after",
-        "Freier Teil davor": "Free section before",
-        "Freier Text vor und nach dem verwalteten Block. Der verwaltete Block ist schreibgeschützt.": "Free text before and after the managed block. The managed block is read-only.",
         "Keine offenen Pakete": "No open packages",
         "Merge-Request": "Merge request",
         "Merge-Requests automatisch mergen": "Automatically merge merge requests",
@@ -1061,7 +1058,6 @@
         "Pull / Push": "Pull / Push",
         "Quell-Branch: der lokale Branch, dessen Stand übertragen wird": "Source branch: the local branch whose state is transferred",
         "Verbinden": "Connect",
-        "Verwaltet": "Managed",
         "Wiederhergestellt": "Restored",
         "Zeigt an, ob dieser Abschnitt schon beantwortet ist": "Shows whether this section has already been answered",
         "Ziel-Branch": "Target branch",
@@ -1103,6 +1099,11 @@
         "Globale AGENTS.md gespeichert": "Global AGENTS.md saved",
         "Globale AGENTS.md ist noch nicht vorhanden — klicken Sie „Vorlage anlegen“, um die Vorlage für alle Projekte zu erstellen.": "Global AGENTS.md is missing — click \"Create template\" to create the template for all projects.",
         "Vorlage anlegen": "Create template",
+        // ===== GH-101: kompakte AGENTS.md-Auswahl und Markdown-Vorschau =====
+        "AGENTS.md auswählen": "Select AGENTS.md",
+        "Globale AGENTS.md (alle Projekte)": "Global AGENTS.md (all projects)",
+        "Globale AGENTS.md anzeigen": "Show global AGENTS.md",
+        "Der vollständige Inhalt der Datei. Speichern schreibt ihn unverändert zurück.": "The complete file content. Saving writes it back unchanged.",
     },
     de: {
         "ui.language.hint": "Die gesamte vibe-Oberfläche; Englisch ist der Standard.",
@@ -2100,6 +2101,11 @@
         "Issues synchronisieren": "Issues synchronisieren",
         "Bereit": "Bereit",
         "Der einheitliche Sync zieht offene Issues samt Text, pusht neue Tickets, schließt gelöschte Tickets best effort und setzt erledigte Tickets über geschlossene Issues zurück.": "Der einheitliche Sync zieht offene Issues samt Text, pusht neue Tickets, schließt gelöschte Tickets best effort und setzt erledigte Tickets über geschlossene Issues zurück.",
+        /* GH-101: kompakte AGENTS.md-Auswahl und Markdown-Vorschau. */
+        "AGENTS.md auswählen": "AGENTS.md auswählen",
+        "Globale AGENTS.md (alle Projekte)": "Globale AGENTS.md (alle Projekte)",
+        "Globale AGENTS.md anzeigen": "Globale AGENTS.md anzeigen",
+        "Der vollständige Inhalt der Datei. Speichern schreibt ihn unverändert zurück.": "Der vollständige Inhalt der Datei. Speichern schreibt ihn unverändert zurück.",
     }
 
   };

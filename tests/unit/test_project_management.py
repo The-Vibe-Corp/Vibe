@@ -271,9 +271,9 @@ class InitTest(ProjectFixture):
         agents = self.project / "AGENTS.md"
         original = (
             "# eigene Regel\n\n"
-            + self.cli.GENERAL_RULES_MARK
+            + "<!-- vibe:general-rules -->"
             + "\n## Alt\n- veraltet\n"
-            + self.cli.GENERAL_RULES_END
+            + "<!-- /vibe:general-rules -->"
             + "\n\n## Eigener Rest\n"
         )
         agents.write_text(original, encoding="utf-8")
@@ -295,7 +295,7 @@ class InitTest(ProjectFixture):
 
     def test_init_leaves_an_unpaired_rules_marker_unchanged(self):
         agents = self.project / "AGENTS.md"
-        original = "# eigene Regel\n\n" + self.cli.GENERAL_RULES_MARK + "\n- ohne Ende\n"
+        original = "# eigene Regel\n\n<!-- vibe:general-rules -->\n- ohne Ende\n"
         agents.write_text(original, encoding="utf-8")
 
         self.init_project()
@@ -423,8 +423,8 @@ class TemplateFilesTest(ProjectFixture):
         self.assertTrue(templates)
         for path in templates:
             text = path.read_text(encoding="utf-8")
-            self.assertNotIn(self.cli.GENERAL_RULES_MARK, text, path)
-            self.assertNotIn(self.cli.GENERAL_RULES_END, text, path)
+            self.assertNotIn("<!-- vibe:general-rules -->", text, path)
+            self.assertNotIn("<!-- /vibe:general-rules -->", text, path)
             self.assertNotIn("Projektordner sauber halten", text, path)
 
 
@@ -877,8 +877,8 @@ class LocalAdoptionTest(StorageFixture):
 
         text = (self.workspace / found / "AGENTS.md").read_text(encoding="utf-8")
         self.assertEqual("# AGENTS fuer " + found + "\n\n", text)
-        self.assertNotIn(self.cli.GENERAL_RULES_MARK, text)
-        self.assertNotIn(self.cli.GENERAL_RULES_END, text)
+        self.assertNotIn("<!-- vibe:general-rules -->", text)
+        self.assertNotIn("<!-- /vibe:general-rules -->", text)
         self.assertNotIn("Projektordner sauber halten", text)
 
     def test_missing_template_files_are_added_and_own_content_survives(self):

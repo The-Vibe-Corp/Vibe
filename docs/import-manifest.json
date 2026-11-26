@@ -1,6 +1,19 @@
 {
  "aenderungen": [
   {
+   "arbeitspaket": "GH-101",
+   "dateien": [
+    "bin/vibe",
+    "bin/vibe-web.py",
+    "bin/web/nova-settings.js",
+    "bin/web/nova-project.js",
+    "bin/web/nova.css",
+    "bin/web/i18n.js"
+   ],
+   "datum": "2026-11-26",
+   "grund": "AGENTS.md-Bereich neu aufgebaut: globale Datei als Standard, kompakte Projektauswahl ohne Zeilen je Projekt, ein breitenfüllender Editor in der Sidebar mit eingeklappter schreibgeschuetzter Markdown-Vorschau der globalen Datei im Projektmodus. Sicherungen und Wiederherstellung sind auf die jeweils ausgewaehlte Datei begrenzt; projektspezifische Sicherungen liegen im Projektordner unter .vibe/agents-backups. Verwaltete Bloecke sind aus Oberflaeche und Logik entfernt; vorhandener Dateiinhalt bleibt byte-identisch erhalten. Groesse und SHA-256 der geaenderten Manifest-Dateien wurden aktualisiert."
+  },
+  {
    "arbeitspaket": "GH-96",
    "dateien": [
     "bin/vibe-run.sh",
@@ -1674,9 +1687,9 @@
    "sha256": "f5e9382967c9833066a55808829f3750fc8e1181b170cafd222c37048bb49a77"
   },
   {
-   "bytes": 265627,
+   "bytes": 264916,
    "path": "bin/vibe",
-   "sha256": "dbed52f69bb2a75c4d6ace58b0976d06b1784e86681a53c20b6a08ea388e9cb1"
+   "sha256": "8e2f068b709eabcab58dcca65841ecd529b28f0702c2aa174688488268b01772"
   },
   {
    "bytes": 89268,
@@ -1684,9 +1697,9 @@
    "sha256": "23588a9de03f879521465062645aeb692a53a676a5ef9ece02e7d68485a2c769"
   },
   {
-   "bytes": 143078,
+   "bytes": 143361,
    "path": "bin/vibe-web.py",
-   "sha256": "1fe546419152a53cb5411dfea44b6a0a2edb3fbc9ad3ff3d3d8636fe45339b18"
+   "sha256": "3cf2972f4d2d4b9bc84780b0c307ca0cd66300ceb777bf5dc990313c0d4cf809"
   },
   {
    "bytes": 5189,
@@ -1799,9 +1812,9 @@
    "sha256": "19ea677f5c3dc3579279fd9b5bf7584612967654b8ec0bbde3818576c78b46b5"
   },
   {
-   "bytes": 156804,
+   "bytes": 157368,
    "path": "bin/web/i18n.js",
-   "sha256": "3a93ecc37bf88a99b5fccd3c4a27896fe4e8c8bc5e6c20a6773a446e857d7d63"
+   "sha256": "6a6ca944ea2f803a06fea549363cd2117960bd8fbb1908b37e27c5980314a6c7"
   },
   {
    "bytes": 4214,
@@ -1839,14 +1852,14 @@
    "sha256": "3b6ef244ff1b10575e9b86ec816b70181f06fbcf0beb82697d7cc3cee458068b"
   },
   {
-   "bytes": 124575,
+   "bytes": 124285,
    "path": "bin/web/nova-project.js",
-   "sha256": "b220052d920f2af6e3c8f5589ac36b00816c57b69cedd945cb94bbe56688d11b"
+   "sha256": "8dd4c1c60e5d6caf4df2717e6c39413b7a817eabcacd733d443bf801936b7c5f"
   },
   {
-   "bytes": 88034,
+   "bytes": 93384,
    "path": "bin/web/nova-settings.js",
-   "sha256": "11b1c92fde447f4a8793fb172bded2d2c3a51203b95e7fc332f5ce3e819daae9"
+   "sha256": "d2bc996e2bbc2621cbe8f3f7982de6112060ef4461e58d319ceb237363c41a7a"
   },
   {
    "bytes": 15335,
@@ -1854,9 +1867,9 @@
    "sha256": "84ae6329f31c04fcc8b48c552ade8f9d276c283ab81b1babb66f8988b627d8a7"
   },
   {
-   "bytes": 71820,
+   "bytes": 73813,
    "path": "bin/web/nova.css",
-   "sha256": "0985e92b9e11b40e312fe6227d3699109fa7e4fb52cc7f5a6e73970cd2245d9f"
+   "sha256": "4cf49a24db1faea371b0520c1bff96e40de43eb20f1c2722887888953d0055ea"
   },
   {
    "bytes": 12751,

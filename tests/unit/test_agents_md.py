@@ -178,44 +178,64 @@ class AgentsFileFixture(unittest.TestCase):
         """Dateiinhalt mit byte-identischem verwaltetem Block in der Mitte."""
         return before + BLOCK + after
 
-    # ---------- AK1: Ansicht ----------
+    # ---------- AK1: Ansicht (GH-101: kein Split, kein verwalteter Block) ----------
 
-    def test_view_splits_managed_block_from_free_parts(self):
-        self.write_agents(self.with_block("Kopfteil-F31\n", "\nFußteil-F31\n"))
+    def test_view_returns_full_text_without_managed_block(self):
+        """GH-101: Die Ansicht liefert den vollständigen Dateiinhalt als
+        ``text``; ein vorhandener Legacy-Block bleibt darin byte-identisch,
+        wird aber nicht mehr als verwalteter Block ausgewiesen. ``before``
+        (vollständiger Text) und ``after`` (leer) existieren nur noch als
+        Kompatibilitätsfelder für die eingefrorene klassische UI.
+        """
+        text = self.with_block("Kopfteil-F31\n", "\nFußteil-F31\n")
+        self.write_agents(text)
         view = self.cli.agents_file_view("proj")
         self.assertTrue(view["exists"])
-        self.assertEqual(view["before"], "Kopfteil-F31\n")
-        self.assertEqual(view["managed"], BLOCK)
-        self.assertEqual(view["after"], "\nFußteil-F31\n")
+        self.assertEqual(view["text"], text)
+        self.assertIsNone(view["managed"])
+        # Kompatibilität: kein Split mehr, sondern Gesamttext + leeres after.
+        self.assertEqual(view["before"], text)
+        self.assertEqual(view["after"], "")
         self.assertTrue(view["digest"], "Digest fehlt in der Ansicht")
+        self.assertIn("backups", view)
 
-    def test_view_without_markers_reports_whole_text_as_after(self):
+    def test_view_without_legacy_block_returns_text_and_empty_compat_after(self):
         text = "Nur freier Text, keine Marker.\n"
         self.write_agents(text)
         view = self.cli.agents_file_view("proj")
         self.assertTrue(view["exists"])
+        self.assertEqual(view["text"], text)
         self.assertIsNone(view["managed"])
-        self.assertEqual(view["after"], text)
+        self.assertEqual(view["before"], text)
+        self.assertEqual(view["after"], "")
         self.assertTrue(view["digest"])
 
     def test_view_missing_file_reports_empty_view(self):
         view = self.cli.agents_file_view("proj")
         self.assertFalse(view["exists"])
+        self.assertEqual(view["text"], "")
         self.assertEqual(view["before"], "")
         self.assertIsNone(view["managed"])
         self.assertEqual(view["after"], "")
         self.assertEqual(view["digest"], "")
 
-    # ---------- AK3: Bearbeiten und Speichern ----------
+    # ---------- AK3: Bearbeiten und Speichern (GH-101: text statt Split) ----------
 
-    def test_save_merges_free_parts_with_byte_identical_block(self):
+    def test_save_writes_text_verbatim_and_keeps_legacy_block_byte_identical(self):
+        """GH-101: ``agents_file_save`` schreibt den einen Text wörtlich. Ein
+        vorhandener Legacy-Markerblock wird nicht erzeugt, aktualisiert oder
+        umgeschrieben — er überlebt genau so, wie er im übergebenen Text steht.
+        """
         self.write_agents(self.with_block("Alt oben\n", "\nAlt unten\n"))
         view = self.cli.agents_file_view("proj")
+        replacement = self.with_block("Neu oben\n", "\nNeu unten\n")
         storage = self.cli.vibe_storage
         with mock.patch.object(storage, "write_text", wraps=storage.write_text) as spy:
-            self.cli.agents_file_save("proj", "Neu oben\n", "Neu unten\n", view["digest"])
-        self.assertEqual(self.read_agents(), self.with_block("Neu oben\n", "Neu unten\n"))
-        # Atomar über die Speicherschicht (V-005): Der Digest-Schutz wurde
+            self.cli.agents_file_save("proj", replacement, view["digest"])
+        self.assertEqual(self.agents_path().read_bytes(),
+                         replacement.encode("utf-8"))
+        self.assertIn(BLOCK, self.read_agents())
+        # Atomar über die Speicherschicht (V-005): der Digest-Schutz wurde
         # an write_text durchgereicht.
         self.assertTrue(
             any(
@@ -225,12 +245,47 @@ class AgentsFileFixture(unittest.TestCase):
             ),
             "save hat nicht mit Digest-Schutz über vibe_storage geschrieben",
         )
-        # Der Digest der Ansicht ist für einen zweiten Lauf verwendbar.
+        # Der frische Digest ist für einen zweiten Lauf verwendbar.
         fresh = self.cli.agents_file_view("proj")
+        self.cli.agents_file_save("proj", fresh["text"], fresh["digest"])
+        self.assertEqual(self.read_agents(), replacement)
+
+    def test_save_writes_plain_text_verbatim_without_inserting_markers(self):
+        """Ohne Legacy-Block wird genau der übergebene Text geschrieben; es
+        werden keine Marker oder managed Blöcke eingefügt.
+        """
+        self.write_agents("Nur freier Text, keine Marker.\n")
+        view = self.cli.agents_file_view("proj")
+        replacement = "Ersetzt ohne Block.\n"
+        self.cli.agents_file_save("proj", replacement, view["digest"])
+        self.assertEqual(self.read_agents(), replacement)
+        text = self.read_agents()
+        self.assertNotIn(MARK, text)
+        self.assertNotIn(MARK_END, text)
+        self.assertIsNone(self.cli.agents_file_view("proj")["managed"])
+
+    def test_save_writes_unpaired_marker_text_verbatim(self):
+        """GH-101: Die Marker-/Blockprüfung wurde aus der Logik entfernt; auch
+        ein unpaariger Marker im Text wird nicht mehr abgelehnt.
+        """
+        self.write_agents("Alter Inhalt ohne Marker.\n")
+        view = self.cli.agents_file_view("proj")
+        replacement = "Oben " + MARK + "\nUnten ohne Endmarker.\n"
+        self.cli.agents_file_save("proj", replacement, view["digest"])
+        self.assertEqual(self.agents_path().read_bytes(),
+                         replacement.encode("utf-8"))
+
+    def test_save_accepts_legacy_before_after_for_frozen_classic_ui(self):
+        """Die eingefrorene klassische UI sendet weiter before/after. Ohne
+        ``text`` werden diese Teile wörtlich konkateniert.
+        """
+        self.write_agents("Alter Inhalt ohne Marker.\n")
+        view = self.cli.agents_file_view("proj")
         self.cli.agents_file_save(
-            "proj", fresh["before"], fresh["after"], fresh["digest"]
-        )
-        self.assertEqual(self.read_agents(), self.with_block("Neu oben\n", "Neu unten\n"))
+            "proj", None, view["digest"],
+            before="Neuer oberer Teil.\n", after="Neuer unterer Teil.\n")
+        self.assertEqual(self.read_agents(),
+                         "Neuer oberer Teil.\nNeuer unterer Teil.\n")
 
     # ---------- AK4: Gleichzeitigkeit ----------
 
@@ -238,63 +293,14 @@ class AgentsFileFixture(unittest.TestCase):
         original = self.with_block("Alt oben\n", "\nAlt unten\n")
         self.write_agents(original)
         view = self.cli.agents_file_view("proj")
-        # Gleichzeitige fremde Änderung außerhalb des Blocks.
+        # Gleichzeitige fremde Änderung nach dem Lesen.
         self.write_agents(original + "Fremde Änderung\n")
         with self.assertRaises(ValueError):
-            self.cli.agents_file_save("proj", "Neu oben\n", "Neu unten\n", view["digest"])
+            self.cli.agents_file_save("proj", "Neuer Text\n", view["digest"])
         self.assertEqual(
             self.agents_path().read_bytes(),
             (original + "Fremde Änderung\n").encode("utf-8"),
         )
-
-    # ---------- AK5: Schutz der Marker ----------
-
-    def test_save_rejects_markers_in_free_parts(self):
-        cases = [
-            ("before", "Oben " + MARK + "\n"),
-            ("before", "Oben " + MARK + " ... " + MARK_END + "\n"),
-            ("before", "Oben " + MARK_END + "\n"),
-            ("after", "\nUnten " + MARK + "\n"),
-            ("after", "\nUnten " + MARK + " ... " + MARK_END + "\n"),
-            ("after", "\nUnten " + MARK_END + "\n"),
-        ]
-        original = self.with_block("Alt oben\n", "\nAlt unten\n")
-        for side, snippet in cases:
-            with self.subTest(side=side, snippet=snippet):
-                self.write_agents(original)
-                view = self.cli.agents_file_view("proj")
-                before = snippet if side == "before" else "Neu oben\n"
-                after = snippet if side == "after" else "Neu unten\n"
-                with self.assertRaises(ValueError):
-                    self.cli.agents_file_save("proj", before, after, view["digest"])
-                self.assertEqual(self.agents_path().read_bytes(), original.encode("utf-8"))
-
-    def test_save_without_block_writes_after_verbatim(self):
-        self.write_agents("Nur freier Text, keine Marker.\n")
-        view = self.cli.agents_file_view("proj")
-        self.assertIsNone(view["managed"])
-        self.cli.agents_file_save("proj", "", "Ersetzt ohne Block.\n", view["digest"])
-        text = self.read_agents()
-        self.assertEqual(text, "Ersetzt ohne Block.\n")
-        self.assertNotIn(MARK, text)
-        self.assertNotIn(MARK_END, text)
-        # Kein Block wurde still eingefügt: die Ansicht bleibt blockfrei.
-        self.assertIsNone(self.cli.agents_file_view("proj")["managed"])
-
-    def test_save_without_block_writes_before_and_after(self):
-        """GH-76: Für blockfreie Dateien sind beide Editor-Teile speicherbar."""
-        self.write_agents("Alter Inhalt ohne Marker.\n")
-        view = self.cli.agents_file_view("proj")
-        self.assertIsNone(view["managed"])
-
-        self.cli.agents_file_save(
-            "proj", "Neuer oberer Teil.\n", "Neuer unterer Teil.\n",
-            view["digest"])
-
-        self.assertEqual(
-            "Neuer oberer Teil.\nNeuer unterer Teil.\n", self.read_agents())
-        self.assertNotIn(MARK, self.read_agents())
-        self.assertIsNone(self.cli.agents_file_view("proj")["managed"])
 
     # ---------- AK6: Aus Vorlage anlegen ----------
 
@@ -333,7 +339,7 @@ class AgentsFileFixture(unittest.TestCase):
                 with self.assertRaises((ValueError, SystemExit)):
                     self.cli.agents_file_create(name)
                 with self.assertRaises((ValueError, SystemExit)):
-                    self.cli.agents_file_save(name, "a", "b", "0" * 64)
+                    self.cli.agents_file_save(name, "a", "0" * 64)
         # Es wurde nichts außerhalb der Projekte angelegt oder verändert.
         self.assertFalse((self.root.parent / "f31-outside" / "AGENTS.md").exists())
         self.assertFalse((self.root.parent / "AGENTS.md").exists())
@@ -365,7 +371,7 @@ class AgentsFileFixture(unittest.TestCase):
         target = self.make_agents_symlink()
         original = target.read_bytes()
         with self.assertRaises(ValueError):
-            self.cli.agents_file_save("proj", "Neu oben\n", "Neu unten\n", "0" * 64)
+            self.cli.agents_file_save("proj", "Neuer Text\n", "0" * 64)
         # Das Link-Ziel bleibt byte-identisch, der Symlink bleibt Symlink.
         self.assertEqual(target.read_bytes(), original)
         self.assertTrue(self.agents_path().is_symlink())
@@ -497,6 +503,11 @@ class AgentsFileBackupFixture(unittest.TestCase):
         (self.proj / ".vibe" / "project.env").write_text(
             "TYPE=generic\n", encoding="utf-8")
         (self.proj / "FEEDBACK.md").write_text("# FEEDBACK\n", encoding="utf-8")
+        # Zweites Projekt für die Abgrenzung von Sicherungen (GH-101).
+        self.webproj = self.root / "webproj"
+        (self.webproj / ".vibe").mkdir(parents=True)
+        (self.webproj / ".vibe" / "project.env").write_text(
+            "TYPE=web\n", encoding="utf-8")
         self.cli = load_cli_f33(self.root, self.home)
 
     def tearDown(self):
@@ -569,25 +580,36 @@ class AgentsFileBackupFunctionTest(AgentsFileBackupFixture):
                       "Die zweite Sicherung fehlt: " + repr(sorted(files)))
         self.assertEqual(self.read_agents(), AGENTS_V2)
 
-    def test_restore_brings_back_the_newest_backup_with_a_safety_backup(self):
-        """Vorbedingung: v1 gesichert, v2 gesichert, v3 ungesichert.
+    def test_backup_dir_is_inside_the_project_directory(self):
+        """GH-101: Projektsicherungen liegen im jeweiligen Projekt, nicht im
+        zentralen Zustandsordner.
+        """
+        directory = Path(self.cli.agents_file_backup_dir("proj"))
+        self.assertEqual(directory,
+                         self.proj / ".vibe" / "agents-backups")
 
-        Aktion: ``agents_file_restore("proj")``.
-        Erwartung: Die Datei enthält v2 (neueste Sicherung); eine zusätzliche
-        Safety-Sicherung enthält den vorherigen Stand v3.
+    def test_restore_uses_the_exact_named_backup_with_a_safety_backup(self):
+        """Vorbedingung: v1 und v2 gesichert, v3 ungesichert.
+
+        Aktion: ``agents_file_restore("proj", <Name der v1-Sicherung>)``.
+        Erwartung: Genau die benannte Sicherung wird zurückgebracht (nicht die
+        neueste); eine Safety-Sicherung enthält den vorherigen Stand v3.
         """
         self.write_agents(AGENTS_V1)
         self.cli.agents_file_backup("proj")
         self.write_agents(AGENTS_V2)
         self.cli.agents_file_backup("proj")
         self.write_agents(AGENTS_V3)
+        directory = Path(self.cli.agents_file_backup_dir("proj"))
+        names = [entry["name"] for entry in self.cli.agents_file_backups("proj")]
+        first = next(name for name in names
+                     if (directory / name).read_bytes() == AGENTS_V1.encode("utf-8"))
         before = snapshot(self.root)
 
-        self.cli.agents_file_restore("proj")
+        self.cli.agents_file_restore("proj", first)
 
-        self.assertEqual(
-            self.read_agents(), AGENTS_V2,
-            "Die Wiederherstellung brachte nicht die neueste Sicherung zurück")
+        self.assertEqual(self.read_agents(), AGENTS_V1,
+                         "Es wurde nicht die benannte Sicherung wiederhergestellt")
         files = self.new_files(before)
         self.assert_backup_of(files, AGENTS_V3)
         # v1 und v2 bleiben als Sicherungen erhalten.
@@ -595,15 +617,34 @@ class AgentsFileBackupFunctionTest(AgentsFileBackupFixture):
         self.assertIn(content_digest(AGENTS_V1), all_digests)
         self.assertIn(content_digest(AGENTS_V2), all_digests)
 
+    def test_restore_rejects_unknown_and_foreign_backup_names(self):
+        """Eine Sicherung aus einem anderen Projekt oder ein unbekannter Name
+        darf nicht in ``proj`` wiederhergestellt werden; die Datei bleibt
+        unverändert.
+        """
+        self.write_agents(AGENTS_V1)
+        self.cli.agents_file_backup("proj")
+        (self.webproj / "AGENTS.md").write_text(AGENTS_V2, encoding="utf-8")
+        self.cli.agents_file_backup("webproj")
+        foreign = [entry["name"]
+                   for entry in self.cli.agents_file_backups("webproj")]
+        original = self.agents_path().read_bytes()
+        for name in tuple(foreign) + ("does-not-exist", "../aussen"):
+            with self.subTest(name=name):
+                with self.assertRaises(
+                        (ValueError, self.cli.vibe_storage.StorageError)):
+                    self.cli.agents_file_restore("proj", name)
+                self.assertEqual(self.agents_path().read_bytes(), original)
+
     def test_restore_without_a_backup_is_rejected(self):
         """Vorbedingung: keine Sicherung vorhanden.
 
-        Erwartung: ``agents_file_restore`` wirft ``ValueError`` und die Datei
+        Erwartung: ``agents_file_restore`` lehnt den Namen ab und die Datei
         bleibt unverändert.
         """
         self.write_agents(AGENTS_V1)
-        with self.assertRaises(ValueError):
-            self.cli.agents_file_restore("proj")
+        with self.assertRaises((ValueError, self.cli.vibe_storage.StorageError)):
+            self.cli.agents_file_restore("proj", "irgendwas")
         self.assertEqual(self.read_agents(), AGENTS_V1)
 
 
@@ -698,10 +739,15 @@ class AgentsFileBackupApiTest(unittest.TestCase):
     def assert_view(self, payload):
         view = payload.get("agents_file")
         self.assertIsInstance(view, dict, payload)
-        for key in ("exists", "before", "managed", "after", "digest"):
+        for key in ("exists", "text", "before", "managed", "after", "digest"):
             self.assertIn(key, view, "agents_file-Ansicht ohne " + key
                           + ": " + repr(view))
         self.assertTrue(view["exists"], view)
+        # GH-101: keine verwalteten Blockdaten mehr in der API-Ansicht.
+        self.assertIsNone(view["managed"], view)
+        self.assertEqual(view["text"], self.path.read_text(encoding="utf-8"))
+        self.assertEqual(view["before"], view["text"])
+        self.assertEqual(view["after"], "")
 
     def test_backup_reports_the_exact_message_and_view(self):
         """Vorbedingung: Projekt-AGENTS.md.
@@ -718,21 +764,22 @@ class AgentsFileBackupApiTest(unittest.TestCase):
         self.assert_view(payload)
         self.assertEqual(self.path.read_text(encoding="utf-8"), AGENTS_V1)
 
-    def test_restore_with_confirm_brings_back_the_backup(self):
+    def test_restore_with_confirm_brings_back_the_named_backup(self):
         """Vorbedingung: v1 gesichert, danach v2 geschrieben.
 
-        Aktion: POST ``{action:"restore", confirm:true}``.
+        Aktion: POST ``{action:"restore", backup:<Name>, confirm:true}``.
         Erwartung: Meldung exakt „AGENTS.md wiederhergestellt“, die Datei
         enthält wieder v1, die Antwort bringt die aktualisierte Ansicht.
         """
         status, payload = self.request(
             "/api/agents_file", {"name": "proj", "action": "backup"})
         self.assertEqual(200, status, payload)
+        backup = payload["agents_file"]["backups"][0]["name"]
         self.path.write_text(AGENTS_V2, encoding="utf-8")
 
         status, payload = self.request(
-            "/api/agents_file",
-            {"name": "proj", "action": "restore", "confirm": True})
+            "/api/agents_file", {"name": "proj", "action": "restore",
+                                 "backup": backup, "confirm": True})
         self.assertEqual(200, status, payload)
         self.assertTrue(payload.get("ok"), payload)
         self.assertEqual(
@@ -754,14 +801,83 @@ class AgentsFileBackupApiTest(unittest.TestCase):
             "/api/agents_file", {"name": "proj", "action": "backup"})
         self.assertEqual(200, status, payload)
         self.assertEqual("AGENTS.md gesichert", payload.get("message"), payload)
+        backup = payload["agents_file"]["backups"][0]["name"]
         self.path.write_text(AGENTS_V2, encoding="utf-8")
 
         status, payload = self.request(
-            "/api/agents_file", {"name": "proj", "action": "restore"})
+            "/api/agents_file", {"name": "proj", "action": "restore",
+                                 "backup": backup})
         self.assertEqual(400, status, payload)
         self.assertFalse(payload.get("ok"), payload)
         self.assertEqual(self.path.read_text(encoding="utf-8"), AGENTS_V2,
                          "Ohne Bestätigung wurde die Datei verändert")
+
+    def test_save_accepts_text_and_digest(self):
+        """GH-101: ``POST /api/agents_file`` speichert ``text`` wörtlich mit
+        Digest-Schutz; die Ansicht liefert anschließend genau diesen Text.
+        """
+        status, view = self.request("/api/agents_file?name=proj")
+        self.assertEqual(200, status, view)
+        status, payload = self.request("/api/agents_file", {
+            "name": "proj", "action": "save", "text": AGENTS_V2,
+            "digest": view.get("digest")})
+        self.assertEqual(200, status, payload)
+        self.assertTrue(payload.get("ok"), payload)
+        self.assertEqual(self.path.read_text(encoding="utf-8"), AGENTS_V2)
+        self.assert_view(payload)
+
+    def test_restore_uses_explicit_name_not_the_newest_backup(self):
+        """Zwei Sicherungen: die ausdrücklich benannte ältere muss
+        zurückkommen, nicht die neueste.
+        """
+        status, _ = self.request(
+            "/api/agents_file", {"name": "proj", "action": "backup"})
+        self.assertEqual(200, status)
+        status, first = self.request("/api/agents_file?name=proj")
+        self.assertEqual(200, status, first)
+        older = first["backups"][0]["name"]
+        self.path.write_text(AGENTS_V2, encoding="utf-8")
+        status, _ = self.request(
+            "/api/agents_file", {"name": "proj", "action": "backup"})
+        self.assertEqual(200, status)
+        self.path.write_text(AGENTS_V3, encoding="utf-8")
+
+        status, payload = self.request("/api/agents_file", {
+            "name": "proj", "action": "restore", "backup": older,
+            "confirm": True})
+        self.assertEqual(200, status, payload)
+        self.assertTrue(payload.get("ok"), payload)
+        self.assertEqual(self.path.read_text(encoding="utf-8"), AGENTS_V1)
+
+    def test_restore_rejects_unknown_and_global_backup_names(self):
+        """Projektsicherungen und globale Sicherungen leben getrennt: ein
+        unbekannter oder ein globaler Sicherungsname darf das Projekt nicht
+        verändern.
+        """
+        status, _ = self.request(
+            "/api/agents_file", {"name": "proj", "action": "backup"})
+        self.assertEqual(200, status)
+        self.path.write_text(AGENTS_V2, encoding="utf-8")
+        # Globale Sicherung anlegen und deren Namen ermitteln.
+        global_path = self.root / "home" / ".config" / "opencode" / "AGENTS.md"
+        global_path.parent.mkdir(parents=True, exist_ok=True)
+        global_path.write_text("GLOBALE-F33-FUER-ABGRENZUNG\n", encoding="utf-8")
+        status, _ = self.request(
+            "/api/global_agents_file", {"action": "backup"})
+        self.assertEqual(200, status)
+        status, global_view = self.request("/api/global_agents_file")
+        self.assertEqual(200, status, global_view)
+        global_names = [str(name) for name in global_view.get("backups") or []]
+        self.assertTrue(global_names, global_view)
+
+        for backup in tuple(global_names) + ("does-not-exist",):
+            with self.subTest(backup=backup):
+                before = self.path.read_bytes()
+                status, payload = self.request("/api/agents_file", {
+                    "name": "proj", "action": "restore", "backup": backup,
+                    "confirm": True})
+                self.assertFalse(payload.get("ok", True), payload)
+                self.assertEqual(self.path.read_bytes(), before)
 
 
 # ===========================================================================

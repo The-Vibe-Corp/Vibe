@@ -5164,8 +5164,10 @@ class GlobalAgentsSectionTest(GH57SettingsBrowserTest):
             message="Das Speichern bestätigt nicht per Toast: "
                     + repr(self.toast_text()))
 
-    def test_backup_restore_and_project_rows(self):
-        """Backup/Restore im Fuß; Projektzeilen öffnen den Projekt-Editor."""
+    def test_backup_restore_and_compact_project_selection(self):
+        """Backup/Restore der globalen Datei bleibt; Projekte erscheinen nur
+        als Optionen EINER kompakten Auswahl, nicht als Zeilen/Karten.
+        """
         self.boot()
         self.open_settings()
         self.open_global_agents_edit()
@@ -5191,19 +5193,220 @@ class GlobalAgentsSectionTest(GH57SettingsBrowserTest):
             message="Der Restore sendet keinen bestätigten POST")
         self.page.keyboard.press("Escape")
 
-        row = self.page.locator("[data-nv-agents-file-row='proj']")
-        row.wait_for(state="visible", timeout=20000)
-        row.locator("button[data-nv-action='agents-file-edit']").click()
+        section = self.section("global-agents")
+        self.assertEqual(
+            0, section.locator("[data-nv-agents-file-row]").count(),
+            "Die Sektion rendert weiterhin eine Zeile je Projekt")
+        project_select = section.locator("select[data-nv-agents-project-select]")
+        project_select.wait_for(state="visible", timeout=20000)
+        self.assertEqual(
+            1, section.locator("select[data-nv-agents-project-select]").count(),
+            "Es gibt nicht genau eine kompakte Projektauswahl")
+        values = project_select.evaluate(
+            "node => Array.from(node.options).map(o => o.value)")
+        self.assertIn("", values, "Die globale Auswahl fehlt")
+        self.assertEqual(
+            "", project_select.input_value(),
+            "Die Sektion startet nicht mit der globalen Auswahl")
+        for name in (PROJECT, OTHER):
+            with self.subTest(project=name):
+                self.assertIn(name, values,
+                              "Das Projekt fehlt in derAuswahl: " + name)
+        self.assertNotRegex(
+            (section.inner_text() or ""), r"verwalteten block|managed block",
+            "Die Sektion nennt weiterhin den verwalteten Block")
+        self.assert_no_page_errors()
+
+    def test_section_defaults_to_global_after_project_was_selected(self):
+        """Auch nach einer Projektauswahl öffnet die Sektion wieder die
+        globale AGENTS.md; im globalen Modus gibt es keine Vorschau.
+        """
+        self.boot()
+        self.open_settings()
+        section = self.section("global-agents")
+        select = section.locator("select[data-nv-agents-project-select]")
+        select.wait_for(state="visible", timeout=20000)
+        select.select_option(PROJECT)
+        self.wait_until(
+            lambda: select.input_value() == PROJECT, timeout=10,
+            message="Die Projektauswahl wurde nicht gesetzt")
+        # Erneutes Öffnen der Sektion (wie ein Neustart der Ansicht).
+        self.open_settings()
+        section = self.section("global-agents")
+        select = section.locator("select[data-nv-agents-project-select]")
+        select.wait_for(state="visible", timeout=20000)
+        self.assertEqual(
+            "", select.input_value(),
+            "Die Sektion öffnet nicht wieder die globale AGENTS.md")
+        aside = self.open_global_agents_edit()
+        textarea = aside.locator("textarea[data-nv-agents-text]")
+        textarea.wait_for(state="visible", timeout=20000)
+        self.assertIn(
+            "GH57-GLOBAL-RULE", textarea.input_value(),
+            "Der Editor zeigt nicht die globale AGENTS.md")
+        self.assertEqual(
+            0, aside.locator("[data-nv-agents-global-preview]").count(),
+            "Im globalen Modus gibt es eine Globale-Vorschau")
+        self.page.keyboard.press("Escape")
+        self.assert_no_page_errors()
+
+    def test_project_select_does_not_grow_ui_with_more_projects(self):
+        """Ein weiteres Projekt ergänzt nur eine Option; die Sektion wächst
+        nicht vertikal und erzeugt keine Zeile je Projekt.
+        """
+        self.boot()
+        self.open_settings()
+        section = self.section("global-agents")
+        select = section.locator("select[data-nv-agents-project-select]")
+        select.wait_for(state="visible", timeout=20000)
+        height_before = section.bounding_box()["height"]
+
+        third = self.root / "dritt"
+        (third / ".vibe").mkdir(parents=True, exist_ok=True)
+        (third / ".vibe" / "project.env").write_text(
+            "TYPE=generic\n", encoding="utf-8")
+        self.open_settings()
+        section = self.section("global-agents")
+        select = section.locator("select[data-nv-agents-project-select]")
+        select.wait_for(state="visible", timeout=20000)
+        self.wait_until(
+            lambda: "dritt" in select.evaluate(
+                "node => Array.from(node.options).map(o => o.value)"),
+            timeout=20, message="Das neue Projekt fehlt in der Auswahl")
+        height_after = section.bounding_box()["height"]
+        self.assertLessEqual(
+            height_after, height_before + 8,
+            "Die Sektion wächst mit der Projektzahl: %r -> %r"
+            % (height_before, height_after))
+        self.assertEqual(
+            0, section.locator("[data-nv-agents-file-row]").count(),
+            "Es entstand eine Zeile je Projekt")
+        self.assertEqual(
+            1, section.locator("select[data-nv-agents-project-select]").count(),
+            "Es gibt mehr als eine Projektauswahl")
+        self.assert_no_page_errors()
+
+    def test_sidebar_has_one_width_filling_textarea_without_overflow(self):
+        """Die Edit-View enthält genau ein Textfeld, das die verfügbare
+        Breite füllt und beim Verbreitern der Sidebar mitwächst, ohne
+        horizontalen Überlauf.
+        """
+        self.boot()
+        self.open_settings()
+        self.open_global_agents_edit()
+        aside = self.page.locator("aside[data-nv-editview]")
+        self.assertEqual(
+            1, aside.locator("textarea").count(),
+            "Die Edit-View hat nicht genau ein Textfeld")
+        textarea = aside.locator("textarea[data-nv-agents-text]")
+        textarea.wait_for(state="visible", timeout=20000)
+        self.assertEqual(
+            0, aside.locator("textarea[data-nv-agents-before]").count())
+        self.assertEqual(
+            0, aside.locator("textarea[data-nv-agents-after]").count())
+
+        def metrics():
+            return aside.evaluate(
+                """node => {
+                  const ta = node.querySelector('textarea[data-nv-agents-text]');
+                  return {width: ta.getBoundingClientRect().width,
+                          parent: ta.parentElement.clientWidth,
+                          scroll: node.scrollWidth, client: node.clientWidth};
+                }""")
+
+        before = metrics()
+        self.assertGreaterEqual(
+            before["width"], before["parent"] * 0.9,
+            "Das Textfeld füllt nicht die verfügbare Breite: %r" % before)
+        self.assertLessEqual(
+            before["scroll"], before["client"] + 2,
+            "Die Sidebar hat horizontalen Überlauf: %r" % before)
+
+        handle = self.page.locator("[data-nv-editview-resize]")
+        box = handle.bounding_box()
+        self.page.mouse.move(box["x"] + box["width"] / 2,
+                             box["y"] + box["height"] / 2)
+        self.page.mouse.down()
+        self.page.mouse.move(box["x"] + box["width"] / 2 - 90,
+                             box["y"] + box["height"] / 2, steps=8)
+        self.page.mouse.up()
+        self.wait_until(
+            lambda: metrics()["width"] > before["width"] + 50, timeout=10,
+            message="Das Textfeld wächst nicht mit der Sidebar")
+        after = metrics()
+        self.assertGreaterEqual(
+            after["width"], after["parent"] * 0.9,
+            "Das Textfeld füllt nach dem Verbreitern nicht die Breite: %r"
+            % after)
+        self.assertLessEqual(
+            after["scroll"], after["client"] + 2,
+            "Nach dem Verbreitern entsteht horizontaler Überlauf: %r" % after)
+        self.page.keyboard.press("Escape")
+        self.assert_no_page_errors()
+
+    def test_project_editor_has_one_textarea_and_collapsed_markdown_preview(self):
+        """Im Projektmodus gibt es genau ein Editorfeld und darunter eine
+        zugeklappte, schreibgeschützte Vorschau der globalen AGENTS.md als
+        formatiertes Markdown (h1/strong/code/li), kein Roh-Text-Feld.
+        """
+        markdown = (
+            "# Globale Ueberschrift\n\n"
+            "**Wichtige Regel** und `inline-code`.\n\n"
+            "- Erstens\n- Zweitens\n")
+        self.global_agents.write_text(markdown, encoding="utf-8")
+        self.boot()
+        self.open_settings()
+        section = self.section("global-agents")
+        select = section.locator("select[data-nv-agents-project-select]")
+        select.wait_for(state="visible", timeout=20000)
+        select.select_option(PROJECT)
+        self.wait_until(
+            lambda: select.input_value() == PROJECT, timeout=10,
+            message="Das Projekt wurde nicht ausgewählt")
+        section.locator("button[data-nv-action='global-agents-edit']").click()
         aside = self.page.locator("aside[data-nv-editview]")
         aside.wait_for(state="visible", timeout=20000)
-        textareas = aside.locator("textarea")
+        textarea = aside.locator("textarea[data-nv-agents-text]")
+        textarea.wait_for(state="visible", timeout=20000)
+        self.assertEqual(
+            1, aside.locator("textarea").count(),
+            "Der Projekt-Editor hat nicht genau ein Textfeld")
+        self.assertNotIn(
+            "Globale Ueberschrift", textarea.input_value(),
+            "Die globale Datei steht im Projekt-Textfeld")
+        self.assertEqual(
+            0, aside.locator("textarea[data-nv-agents-before]").count())
+        self.assertEqual(
+            0, aside.locator("textarea[data-nv-agents-after]").count())
+        self.assertNotRegex(
+            (aside.inner_text() or ""), r"verwalteten block|managed block",
+            "Der Projekt-Editor nennt weiterhin den verwalteten Block")
+
+        preview = aside.locator("details[data-nv-agents-global-preview]")
+        self.assertEqual(
+            1, preview.count(),
+            "Die Vorschau der globalen AGENTS.md fehlt im Projektmodus")
+        self.assertFalse(
+            preview.evaluate("node => node.open"),
+            "Die globale Vorschau ist nicht zugeklappt")
+        ta_box = textarea.bounding_box()
+        pv_box = preview.bounding_box()
         self.assertGreaterEqual(
-            textareas.count(), 2,
-            "Der Projekt-Editor bietet nicht zwei Felder (before/after)")
-        self.assertTrue(
-            re.search(r"verwalteten block|managed block",
-                      (aside.inner_text() or ""), re.I),
-            "Der Projekt-Editor weist nicht auf den verwalteten Block hin")
+            pv_box["y"], ta_box["y"] + ta_box["height"] - 2,
+            "Die Vorschau steht nicht direkt unter dem Textfeld")
+        preview.locator("summary").click()
+        self.wait_until(
+            lambda: preview.evaluate("node => node.open"), timeout=10,
+            message="Die Vorschau lässt sich nicht aufklappen")
+        for selector in ("h1", "strong", "code", "li"):
+            with self.subTest(element=selector):
+                self.assertGreaterEqual(
+                    preview.locator(selector).count(), 1,
+                    "Die Vorschau rendert kein %s-Element" % selector)
+        self.assertEqual(
+            0, preview.locator("textarea, pre").count(),
+            "Die Vorschau zeigt rohen Text statt formatiertem Markdown")
+        self.page.keyboard.press("Escape")
         self.assert_no_page_errors()
 
 
