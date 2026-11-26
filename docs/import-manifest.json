@@ -1,6 +1,20 @@
 {
  "aenderungen": [
   {
+   "arbeitspaket": "GH-117",
+   "dateien": [
+    "bin/vibe_settings.py",
+    "bin/vibe-web.py",
+    "bin/web/index.html",
+    "bin/web/classic.html",
+    "bin/web/nova-core.js",
+    "bin/web/nova-home.js",
+    "bin/web/nova-agents.js"
+   ],
+   "datum": "2026-11-26",
+   "grund": "Einstellungsspeicher: Die fuenf persoenlichen Einstellungen (Theme hell/dunkel/System, Akzent, ein-/ausgeschaltete Funktionen, Lieblingsprojekte, Lieblingsagenten) liegen jetzt versioniert unter <state>/settings.json und werden ueber /api/settings atomar und schluesselweise zusammengefuehrt gespeichert. Unbekannte Schluessel und eine hoehere Schemaversion bleiben erhalten; fehlende oder ungueltige Werte fallen einzeln auf sichere Defaults zurueck, ohne andere gespeicherte Werte zu verlieren. Beide HTML-Shells injizieren die wirksamen Werte als HTML-escaped vibe-settings-Meta; die Nova-Oberflaeche migriert vorhandene localStorage-Werte beim ersten Laden, spiegelt sie weiterhin und liest danach den Server als autoritative Quelle. Groesse und SHA-256 der betroffenen Manifest-Dateien wurden aktualisiert."
+  },
+  {
    "arbeitspaket": "GH-115",
    "dateien": [
     "bin/vibe_packages.py",
@@ -1752,9 +1766,9 @@
    "sha256": "23588a9de03f879521465062645aeb692a53a676a5ef9ece02e7d68485a2c769"
   },
   {
-   "bytes": 145346,
+   "bytes": 146812,
    "path": "bin/vibe-web.py",
-   "sha256": "b01cefdad6641d4a81e7d7e5989d3dba41b4158df1a8a9f9b7c5e066250e6840"
+   "sha256": "3959340c5a1a5e69f6b829c717c7ab3551f2e07ae5d751191c5245440b2c235f"
   },
   {
    "bytes": 5189,
@@ -1842,6 +1856,11 @@
    "sha256": "3c557161abb0eeca19b2b2b189514f763e064982ee2e2fb9ccacd56766303b99"
   },
   {
+   "bytes": 12270,
+   "path": "bin/vibe_settings.py",
+   "sha256": "188955e88136514f91076246bff77cf72bd1c8eb6046570808c7fc4781568afd"
+  },
+  {
    "bytes": 21156,
    "path": "bin/vibe_storage.py",
    "sha256": "7b6aa4118259dc3440b37eaeec5eaa96eac7d928e6e704b2310946490bd25fbb"
@@ -1872,9 +1891,9 @@
    "sha256": "bcbf18a03c3334f661eaf82f00906a7db91331798db7bd19f2019ede4c8c9e36"
   },
   {
-   "bytes": 4214,
+   "bytes": 4270,
    "path": "bin/web/index.html",
-   "sha256": "f2ea6f0ff44d74448c947f33c055f114832d76a014a5eaa8ec5c73f11254c982"
+   "sha256": "f9274c3fcaf5058c542ce8282df3bf4beacee6ddd0a3036f99b9f2036d0bc1ab"
   },
   {
    "bytes": 8567,
@@ -1882,14 +1901,14 @@
    "sha256": "25ec1850cdd7923d7d480d73a03d8f8e2430b961d6695868c28a51e07b5ce180"
   },
   {
-   "bytes": 43122,
+   "bytes": 42923,
    "path": "bin/web/nova-agents.js",
-   "sha256": "cd290ec2b1b987f773d1c0a071b40a7a715d5244143857603d9de9337a27177a"
+   "sha256": "3508f1e4439ec12d4dcb6d4acc9b3d08040ccad8ddd73076fe6bf4cf0d386ca0"
   },
   {
-   "bytes": 44312,
+   "bytes": 54325,
    "path": "bin/web/nova-core.js",
-   "sha256": "0c368509c77b9057e59b3201e6aa217b87738d06e935c00dafddab7529cef84f"
+   "sha256": "bf6e2c8f9c5979e2ea8e49401d5fd742ba14379ce94d529d4bb657c9eb7f4514"
   },
   {
    "path": "bin/web/nova-evals.js",
@@ -1897,9 +1916,9 @@
    "sha256": "23da90c9c7b6087fb81b28a760fa2db28a21708c1b3749e50702debdcb49925d"
   },
   {
-   "bytes": 15653,
+   "bytes": 15427,
    "path": "bin/web/nova-home.js",
-   "sha256": "892e1813519fc47ec3f65101d6ab087d9557a97d6575da3582300694c5a517e1"
+   "sha256": "73082caafddfb60938ed0e74c738a217d8b46d3ab7b92b2395ad03068d812a77"
   },
   {
    "bytes": 37677,

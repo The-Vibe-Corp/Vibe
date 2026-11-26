@@ -29,15 +29,6 @@ var NV = window.NV = {
 /* ---------- Akzent (F33/4): gültige IDs für data-accent/localStorage. ---------- */
 var ACCENT_IDS = ['blue', 'teal', 'cyan', 'green', 'lime', 'yellow',
   'amber', 'orange', 'red', 'pink', 'violet', 'indigo'];
-NV.accent = function () {
-  var stored = localStorage.getItem('nv-accent');
-  return ACCENT_IDS.indexOf(stored) !== -1 ? stored : 'blue';
-};
-NV.setAccent = function (id) {
-  localStorage.setItem('nv-accent', id);
-  document.documentElement.setAttribute('data-accent', id);
-};
-function applyAccent() { NV.setAccent(NV.accent()); }
 
 function errText(j, status) {
   var e = j && j.error;
@@ -46,10 +37,11 @@ function errText(j, status) {
 
 /* GET wirft auf HTTP-Fehler (der Aufrufer zeigt die Anmeldung), POST liefert
    auch bei 400 das JSON zurück, damit Fachfehler (ok:false) sichtbar bleiben. */
-async function api(path, body) {
+async function api(path, body, extra) {
   var options = body
     ? {method: 'POST', headers: {'X-Token': T, 'Content-Type': 'application/json'}, body: JSON.stringify(body)}
     : {headers: {'X-Token': T}};
+  if (extra && extra.keepalive) options.keepalive = true;
   var response = await fetch(path, options);
   var data = await response.json().catch(function () { return {}; });
   if (!response.ok && !body) {
@@ -317,7 +309,178 @@ function startToastTimer(card) {
   tick();
 }
 
-/* ---------- Präferenzen (localStorage, rein clientseitig) ---------- */
+/* ---------- Präferenzen: Server-Einstellungen mit localStorage-Spiegel ----------
+ *
+ * GH-117: Die fünf Einstellungen (Darstellung, Akzent, Funktionen, angeheftete
+ * Projekte, angeheftete Agenten) liegen maßgeblich in der Serverdatei und
+ * werden über die Meta-Angabe ``vibe-settings`` beim Start übernommen. Die
+ * bisherigen localStorage-Schlüssel bleiben als Spiegel erhalten, damit
+ * bestehende Ansichten und Tests unverändert funktionieren.
+ */
+
+var SETTINGS_THEMES = ['light', 'dark', 'auto'];
+var SETTINGS_FEATURE_IDS = ['github', 'agentsfile', 'writeaccess', 'models',
+  'profiles', 'mcp', 'harness', 'gates', 'sandbox', 'priority'];
+/* Dieselben Grenzen wie im Backend (bin/vibe_settings.py): sonst würde die
+   Oberfläche einen Wert optimistisch spiegeln, den der Server verwirft. */
+var SETTINGS_MAX_TEXT = 200;
+var SETTINGS_MAX_LIST = 200;
+
+function defaultFeatureSettings() {
+  var map = {};
+  SETTINGS_FEATURE_IDS.forEach(function (id) { map[id] = false; });
+  return map;
+}
+
+function defaultSettings() {
+  return {
+    theme: 'light',
+    accent: 'blue',
+    features: defaultFeatureSettings(),
+    favorite_projects: [],
+    favorite_agents: []
+  };
+}
+
+function normalizeFeatures(input) {
+  var map = defaultFeatureSettings();
+  var source = input && typeof input === 'object' ? input : {};
+  SETTINGS_FEATURE_IDS.forEach(function (id) {
+    if (Object.prototype.hasOwnProperty.call(source, id)) map[id] = !!source[id];
+  });
+  return map;
+}
+
+function normalizeNames(input) {
+  if (!Array.isArray(input)) return [];
+  var seen = {};
+  var names = [];
+  input.forEach(function (item) {
+    if (typeof item !== 'string' || !item || item.length > SETTINGS_MAX_TEXT) return;
+    if (seen[item] || names.length >= SETTINGS_MAX_LIST) return;
+    seen[item] = true;
+    names.push(item);
+  });
+  return names;
+}
+
+function normalizeAgents(input) {
+  if (!Array.isArray(input)) return [];
+  var seen = {};
+  var agents = [];
+  input.forEach(function (item) {
+    if (!item || typeof item !== 'object') return;
+    var name = item.name;
+    var scope = item.scope;
+    if (typeof name !== 'string' || !name || name.length > SETTINGS_MAX_TEXT) return;
+    if (typeof scope !== 'string' || !scope || scope.length > SETTINGS_MAX_TEXT) return;
+    var key = scope + '\u0000' + name;
+    if (seen[key] || agents.length >= SETTINGS_MAX_LIST) return;
+    seen[key] = true;
+    agents.push({scope: scope, name: name});
+  });
+  return agents;
+}
+
+function normalizeSettings(input) {
+  var source = input && typeof input === 'object' ? input : {};
+  return {
+    theme: SETTINGS_THEMES.indexOf(source.theme) !== -1 ? source.theme : 'light',
+    accent: ACCENT_IDS.indexOf(source.accent) !== -1 ? source.accent : 'blue',
+    features: normalizeFeatures(source.features),
+    favorite_projects: normalizeNames(source.favorite_projects),
+    favorite_agents: normalizeAgents(source.favorite_agents)
+  };
+}
+
+NV.settings = defaultSettings();
+NV.settingsStored = false;
+
+function legacyValue(key) {
+  try { return localStorage.getItem(key); }
+  catch (error) { return null; }
+}
+
+function legacyFeatures() {
+  var raw = legacyValue('nv-features');
+  if (raw == null) return null;
+  try {
+    var data = JSON.parse(raw);
+    return data && typeof data === 'object' ? normalizeFeatures(data) : null;
+  } catch (error) { return null; }
+}
+
+function legacyNames(key) {
+  var raw = legacyValue(key);
+  if (raw == null) return null;
+  try {
+    var data = JSON.parse(raw);
+    return Array.isArray(data) ? normalizeNames(data) : null;
+  } catch (error) { return null; }
+}
+
+function legacyAgents() {
+  var raw = legacyValue('nv-pinned-agents');
+  if (raw == null) return null;
+  try {
+    var data = JSON.parse(raw);
+    return Array.isArray(data) ? normalizeAgents(data) : null;
+  } catch (error) { return null; }
+}
+
+/* Der localStorage-Spiegel hält exakt den effektiven Stand: Funktionen wie
+   vorher nur als true-Einträge, Projekte als Namensarray, Agenten als
+   {scope,name}-Array. */
+function mirrorSettings() {
+  try {
+    localStorage.setItem('nv-theme', NV.settings.theme);
+    localStorage.setItem('nv-accent', NV.settings.accent);
+    var features = {};
+    SETTINGS_FEATURE_IDS.forEach(function (id) {
+      if (NV.settings.features[id]) features[id] = true;
+    });
+    localStorage.setItem('nv-features', JSON.stringify(features));
+    localStorage.setItem('nv-pinned-projects',
+      JSON.stringify(NV.settings.favorite_projects));
+    localStorage.setItem('nv-pinned-agents',
+      JSON.stringify(NV.settings.favorite_agents));
+  } catch (error) { /* Speicher nicht verfügbar: der Serverstand bleibt gültig */ }
+}
+
+var settingsSaveSeq = 0;
+var settingsSaveChain = Promise.resolve();
+
+/* Teil-Patch an den Server. Fehler bleiben lokal folgenlos (keine
+   unbehandelte Rejection); bei Erfolg wird der Serverstand übernommen.
+   Aufrufe laufen nacheinander, damit sich Teil-Patches nicht überholen. */
+NV.saveSettings = function (patch) {
+  var payload = patch && typeof patch === 'object' ? patch : {};
+  var seq = ++settingsSaveSeq;
+  // Kleine Patches überleben einen schnellen Ansichtswechsel (keepalive).
+  // Das Browserlimit gilt für UTF-8-Bytes, nicht für JS-Zeichen (UTF-16):
+  // 200 lange Favoritennamen mit Nicht-ASCII-Zeichen wären sonst scheinbar
+  // klein, würden von fetch abgelehnt und stillschweigend nicht gespeichert.
+  var keepalive = false;
+  try {
+    var encoded = JSON.stringify(payload);
+    keepalive = typeof TextEncoder === 'function'
+      && new TextEncoder().encode(encoded).length < 60000;
+  } catch (error) { keepalive = false; }
+  var request = settingsSaveChain.then(function () {
+    return api('/api/settings', payload, {keepalive: keepalive});
+  }).then(function (response) {
+    if (response && response.ok && response.settings) {
+      NV.settingsStored = true;
+      if (seq === settingsSaveSeq) {
+        NV.settings = normalizeSettings(response.settings);
+        mirrorSettings();
+      }
+    }
+    return response || null;
+  }).catch(function () { return null; });
+  settingsSaveChain = request.then(function () {}, function () {});
+  return request;
+};
 
 function media(query) {
   return window.matchMedia ? window.matchMedia(query) : null;
@@ -333,7 +496,11 @@ function resolvedTheme(preference) {
    dark, auto), data-theme dagegen immer den aufgelösten Wert. Beide Controls
    bleiben so in beide Richtungen synchron. */
 NV.themePreference = function () {
-  return localStorage.getItem('nv-theme') || 'light';
+  if (NV.settings && SETTINGS_THEMES.indexOf(NV.settings.theme) !== -1) {
+    return NV.settings.theme;
+  }
+  var stored = legacyValue('nv-theme');
+  return SETTINGS_THEMES.indexOf(stored) !== -1 ? stored : 'light';
 };
 
 function applyTheme() {
@@ -341,10 +508,13 @@ function applyTheme() {
 }
 
 NV.setTheme = function (preference) {
-  localStorage.setItem('nv-theme', preference);
+  var theme = SETTINGS_THEMES.indexOf(preference) !== -1 ? preference : 'light';
+  NV.settings.theme = theme;
+  mirrorSettings();
   applyTheme();
   var select = document.querySelector('[data-nv-theme-select]');
-  if (select) select.value = preference;
+  if (select) select.value = theme;
+  return NV.saveSettings({theme: theme});
 };
 
 NV.toggleTheme = function () {
@@ -368,23 +538,141 @@ NV.setAnimations = function (enabled) {
   applyAnimations();
 };
 
+/* Die Funktionen kommen aus NV.settings; solange noch kein Serverstand
+   existiert, gilt zusätzlich der bisherige localStorage-Schlüssel (Migration
+   und Tests, die den Spiegel vor dem Start setzen). */
 function featureMap() {
-  try { return JSON.parse(localStorage.getItem('nv-features') || '{}') || {}; }
-  catch (e) { return {}; }
+  var map = normalizeFeatures((NV.settings && NV.settings.features) || {});
+  if (!NV.settingsStored) {
+    var legacy = legacyFeatures();
+    if (legacy) map = legacy;
+  }
+  return map;
 }
 
 NV.feature = function (id) { return !!featureMap()[id]; };
 
 NV.setFeature = function (id, enabled, options) {
-  var all = featureMap();
-  if (enabled) all[id] = true; else delete all[id];
-  localStorage.setItem('nv-features', JSON.stringify(all));
+  if (SETTINGS_FEATURE_IDS.indexOf(id) === -1) return;
+  if (!NV.settings.features) NV.settings.features = defaultFeatureSettings();
+  NV.settings.features[id] = !!enabled;
+  mirrorSettings();
   var detail = {id: id, on: !!enabled};
   // Die Einstellungen zeichnen ihre Sektionen selbst; ein Voll-Neurender
   // würde dort die Scroll-Position verlieren (GH-57).
   if (options && options.source === 'settings') detail.source = 'settings';
   window.dispatchEvent(new CustomEvent('nv:featureschange', {detail: detail}));
+  // Nur die geänderte Funktion senden; der Server mischt den Teil-Patch.
+  var patch = {};
+  patch[id] = !!enabled;
+  return NV.saveSettings({features: patch});
 };
+
+/* Akzent: gespeicherte ID aus NV.settings, sonst der alte localStorage-Wert,
+   sonst Blau. Die Wahl setzt data-accent sofort und spiegelt localStorage. */
+NV.accent = function () {
+  if (NV.settings && ACCENT_IDS.indexOf(NV.settings.accent) !== -1) {
+    return NV.settings.accent;
+  }
+  var stored = legacyValue('nv-accent');
+  return ACCENT_IDS.indexOf(stored) !== -1 ? stored : 'blue';
+};
+
+NV.setAccent = function (id) {
+  var accent = ACCENT_IDS.indexOf(id) !== -1 ? id : 'blue';
+  NV.settings.accent = accent;
+  mirrorSettings();
+  document.documentElement.setAttribute('data-accent', accent);
+  return NV.saveSettings({accent: accent});
+};
+
+function applyAccent() {
+  document.documentElement.setAttribute('data-accent', NV.accent());
+}
+
+/* Angeheftete Projekte und Agenten: NV.settings ist maßgeblich, der alte
+   localStorage-Schlüssel bleibt als Spiegel (und als Übergangsquelle, solange
+   kein Serverstand existiert). */
+NV.favoriteProjects = function () {
+  if (!NV.settingsStored) {
+    var legacy = legacyNames('nv-pinned-projects');
+    if (legacy) return legacy;
+  }
+  return normalizeNames((NV.settings && NV.settings.favorite_projects) || []);
+};
+
+NV.setFavoriteProjects = function (names) {
+  var list = normalizeNames(names);
+  NV.settings.favorite_projects = list;
+  mirrorSettings();
+  return NV.saveSettings({favorite_projects: list});
+};
+
+NV.favoriteAgents = function () {
+  if (!NV.settingsStored) {
+    var legacy = legacyAgents();
+    if (legacy) return legacy;
+  }
+  return normalizeAgents((NV.settings && NV.settings.favorite_agents) || []);
+};
+
+NV.setFavoriteAgents = function (items) {
+  var list = normalizeAgents(items);
+  NV.settings.favorite_agents = list;
+  mirrorSettings();
+  return NV.saveSettings({favorite_agents: list});
+};
+
+/* Beim Start: Meta-Angabe des Servers lesen. Fehlt oder bricht sie, bleibt
+   der Standardzustand nutzbar; dann werden vorhandene localStorage-Werte in
+   genau einem POST migriert. */
+function readSettingsMeta() {
+  var meta = document.querySelector('meta[name="vibe-settings"]');
+  if (!meta) return null;
+  try {
+    var data = JSON.parse(meta.getAttribute('content') || '');
+    return data && typeof data === 'object' ? data : null;
+  } catch (error) { return null; }
+}
+
+function legacySettingsPatch() {
+  var patch = {};
+  var theme = legacyValue('nv-theme');
+  if (theme !== null) {
+    patch.theme = SETTINGS_THEMES.indexOf(theme) !== -1 ? theme : 'light';
+  }
+  var accent = legacyValue('nv-accent');
+  if (accent !== null) {
+    patch.accent = ACCENT_IDS.indexOf(accent) !== -1 ? accent : 'blue';
+  }
+  var features = legacyFeatures();
+  if (features) patch.features = features;
+  var projects = legacyNames('nv-pinned-projects');
+  if (projects) patch.favorite_projects = projects;
+  var agents = legacyAgents();
+  if (agents) patch.favorite_agents = agents;
+  return Object.keys(patch).length ? patch : null;
+}
+
+function bootSettings() {
+  var meta = readSettingsMeta();
+  if (meta && meta.settings && typeof meta.settings === 'object') {
+    NV.settings = normalizeSettings(meta.settings);
+    NV.settingsStored = meta.stored === true;
+  } else {
+    NV.settings = defaultSettings();
+    NV.settingsStored = false;
+  }
+  if (NV.settingsStored) {
+    mirrorSettings();
+    return;
+  }
+  var patch = legacySettingsPatch();
+  if (!patch) return;
+  NV.settings = normalizeSettings(Object.assign({}, NV.settings, patch));
+  mirrorSettings();
+  NV.saveSettings(patch);
+}
 
 /* ---------- Router: Hash → Ansicht, mit RENDER_TOKEN gegen Rennen ---------- */
 
@@ -578,7 +866,7 @@ function initChrome() {
   var scheme = media('(prefers-color-scheme: dark)');
   if (scheme && scheme.addEventListener) {
     scheme.addEventListener('change', function () {
-      if ((localStorage.getItem('nv-theme') || 'light') === 'auto') applyTheme();
+      if (NV.themePreference() === 'auto') applyTheme();
     });
   }
   window.addEventListener('unhandledrejection', function (event) {
@@ -1160,6 +1448,7 @@ function enhanceView(main) {
 /* ---------- Boot ---------- */
 
 async function boot() {
+  bootSettings();
   applyTheme();
   applyAnimations();
   applyAccent();

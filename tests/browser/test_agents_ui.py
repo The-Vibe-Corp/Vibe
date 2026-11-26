@@ -3360,6 +3360,10 @@ class F33AgentsTest(unittest.TestCase):
 
     def setUp(self):
         self._reset_fixture()
+        # GH-117: angeheftete Agenten und weitere Einstellungen stehen jetzt
+        # auch serverseitig; ohne Reset startet der nächste Fall mit Pins aus
+        # dem vorherigen Fall. Das neue Browserprofil hat leeren localStorage.
+        (self.state / "settings.json").unlink(missing_ok=True)
         self.post_language("en")
         self.page_errors = []
         self.requests = []

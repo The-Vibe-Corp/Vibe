@@ -109,17 +109,11 @@ NV.views.agents = async function agents(context, token) {
 /* ---------- Liste (2c/2h/2i): Anpinnen, Suche, Tag-Filter ---------- */
 
 function nvAgentPinned() {
-  try {
-    var raw = localStorage.getItem('nv-pinned-agents');
-    var items = raw ? JSON.parse(raw) : [];
-    return Array.isArray(items) ? items : [];
-  } catch (error) {
-    return [];
-  }
+  return NV.favoriteAgents();
 }
 
 function nvAgentPinStore(items) {
-  localStorage.setItem('nv-pinned-agents', JSON.stringify(items));
+  NV.setFavoriteAgents(items);
 }
 
 function nvAgentList(data, token, wanted) {

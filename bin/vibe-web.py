@@ -4,6 +4,7 @@ import os
 import re
 import sys
 import json
+import html
 import time
 import secrets
 import threading
@@ -28,6 +29,7 @@ import vibe_storage  # pylint: disable=wrong-import-position
 import vibe_paths  # pylint: disable=wrong-import-position
 import vibe_runs  # pylint: disable=wrong-import-position
 import vibe_ui_config  # pylint: disable=wrong-import-position
+import vibe_settings  # pylint: disable=wrong-import-position
 _loader = importlib.machinery.SourceFileLoader("vibe", os.path.join(HERE, "vibe"))
 _spec = importlib.util.spec_from_loader("vibe", _loader)
 vibe = importlib.util.module_from_spec(_spec)
@@ -1358,6 +1360,10 @@ class H(BaseHTTPRequestHandler):
             if u.path == "/api/ui_settings":
                 # F34: Anzeigewährung (auth wie die uebrigen APIs).
                 return self._send(200, _currency_view())
+            if u.path == "/api/settings":
+                # GH-117: persistente Nutzereinstellungen (auth wie die
+                # uebrigen APIs), Ansicht ohne Geheimnisse.
+                return self._send(200, vibe_settings.view(PATHS.state))
             if u.path == "/api/projects":
                 return self._send(200, [vibe_services.project_row(vibe, n) for n in vibe.projects()])
             if u.path == "/api/run-state":
@@ -1643,6 +1649,15 @@ class H(BaseHTTPRequestHandler):
                     500, "internal_error", "ui.json ist nach dem Speichern nicht lesbar")
             return self._send(200, {**_currency_view(),
                                     "message": "Währungseinstellungen gespeichert"})
+        if u.path == "/api/settings":
+            # GH-117: gültige Schlüssel werden einzeln übernommen, ungültige
+            # nur gemeldet. Ein Fehler beim Schreiben ist ein Serverfehler,
+            # kein ungültiger Clientwert.
+            try:
+                result = vibe_settings.update(PATHS.state, body)
+            except OSError as error:
+                return self._error(500, "internal_error", str(error))
+            return self._send(200, result)
         if u.path == "/api/language":
             # AP21 v2: globale Sprache in ui.json persistieren. Die Validierung
             # verhindert, dass eine ungueltige Wahl die Datei veraendert; danach
@@ -2791,6 +2806,20 @@ STATIC_FILES = {
     "/static/nova-widgets.js": ("web/nova-widgets.js", "application/javascript"),
 }
 
+def _settings_meta():
+    """GH-117: Einstellungen als attributsicheres JSON für das Meta-Feld.
+
+    ``html.escape(..., quote=True)`` maskiert Anführungszeichen und
+    Sonderzeichen, damit der Wert nicht aus dem ``content``-Attribut
+    ausbrechen kann. Es werden nur die effektiven Einstellungen ohne
+    Geheimnisse ausgegeben.
+    """
+    return html.escape(
+        json.dumps(vibe_settings.view(PATHS.state), ensure_ascii=False),
+        quote=True,
+    )
+
+
 def page():
     """Liefert die Oberfläche aus der eigenen HTML-Datei.
 
@@ -2807,7 +2836,8 @@ def page():
     # damit fuer HTML-Attribute ungefaehrlich (kein Benutzer-Freitext).
     language = language_data()["language"]
     return (page.cache.replace("__OPENCODE_URL__", vibe.OC_URL)
-            .replace("__VIBE_LANG__", language))
+            .replace("__VIBE_LANG__", language)
+            .replace("__VIBE_SETTINGS__", _settings_meta()))
 
 page.cache = None
 
@@ -2818,6 +2848,8 @@ def classic_page():
         with open(os.path.join(HERE, "web", "classic.html"), encoding="utf-8") as handle:
             classic_page.cache = handle.read()
     language = language_data()["language"]
+    # GH-117: Die klassische Shell bleibt byte-identisch zur Baseline und
+    # lädt kein nova-core.js; Einstellungen gehören zur Nova-Oberfläche.
     return (classic_page.cache.replace("__OPENCODE_URL__", vibe.OC_URL)
             .replace("__VIBE_LANG__", language))
 

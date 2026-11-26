@@ -33,11 +33,24 @@ without a static sidebar.
 - The interface is English by default and can be switched globally between
   English and German under Einstellungen → Darstellung. The choice is saved in
   `ui.json` through `/api/language` and applies to the whole interface (`AP21`).
+- Appearance and favorites are persisted in the local application state
+  directory (`<state>/settings.json`) through `/api/settings` (`GH-117`): theme
+  (`light`, `dark`, `auto`), accent (12 choices, `blue` default), enabled /
+  disabled features, favorite projects and favorite agents. The file is
+  versioned (`{"version": 1, "settings": {...}}`), written atomically and merged
+  per key. Unknown keys and a higher schema version are preserved; missing or
+  invalid values fall back individually to `light`, `blue`, no enabled features
+  and empty favorites without touching the other saved values. The server
+  injects the effective view as an HTML-escaped `vibe-settings` meta tag, so
+  settings are restored after a restart or an application update. Values already
+  in browser `localStorage` are migrated on first load and still mirrored there
+  for compatibility; the server file is authoritative once it exists.
 - Settings use their own responsive navigation with nine sections: global
   AGENTS.md, appearance, access security, features, gates, models, profiles,
   MCP servers, and harness (`AP7`, `GH-57`). The former "Run behaviour" section
   and its toggle were removed; legacy `limits.json` files cannot reintroduce
-  them or influence runs (GH-99).
+  them or influence runs (GH-99). Since GH-117 the appearance controls and the
+  project/agent pin buttons write through to `/api/settings`.
 - Section actions redraw only their own section. Harness selection reflects
   what is installed: an uninstalled harness is disabled and cannot be saved;
   the persisted `harness.json` remains the displayed state (`B18`).
@@ -80,7 +93,7 @@ without a static sidebar.
 
 ## Visual style
 
-Since `GH-94`, Nova follows the “Precise Frames × Technical Density” reference stored at [`../style.html`](../style.html): matte light/dark palettes, 1 px frames, radii of 2–6 px, compact control heights, a 4/8/12/16/24/32 px spacing scale, and technical typography (Inter for UI text, JetBrains Mono for technical values). All styling lives in `bin/web/nova.css` and uses `--nv-*` custom properties. Theme and accent selection are unchanged (12 accents, `blue` default, attributes on `html`), and the classic interface keeps its own stylesheet.
+Since `GH-94`, Nova follows the “Precise Frames × Technical Density” reference stored at [`../style.html`](../style.html): matte light/dark palettes, 1 px frames, radii of 2–6 px, compact control heights, a 4/8/12/16/24/32 px spacing scale, and technical typography (Inter for UI text, JetBrains Mono for technical values). All styling lives in `bin/web/nova.css` and uses `--nv-*` custom properties. Theme and accent selection keep their visual contract (12 accents, `blue` default, attributes on `html`) but are now persisted server-side as described above (`GH-117`), and the classic interface keeps its own stylesheet.
 
 The agents list applies the same header alignment to its title, search field
 and "New Agent" action, and its cards use a flex column so Edit/Delete stay on a
@@ -97,14 +110,15 @@ Exact responsive breakpoints and visual styling were not verified here.
 
 - Routes: `#/home`, `#/agents`, `#/activity`, `#/evaluations/<tab>`,
   `#/settings`, `#/project/<name>/<tab>`.
-- HTTP: `/api/language`, `/api/security`, `/api/questions`, `/api/ticket`.
+- HTTP: `/api/language`, `/api/settings`, `/api/security`, `/api/questions`,
+  `/api/ticket`.
 - Files: `bin/web/index.html`, `bin/web/nova-*.js`, `bin/web/nova.css`,
-  `bin/web/i18n.js`, `ui.json`.
+  `bin/web/i18n.js`, `ui.json`, `settings.json`.
 
 ## Records
 
 - Shell and settings: [AP7](../AP7.md), [GH-57](../GH-57.md),
-  [B18](../B18.md), [F11](../F11.md).
+  [B18](../B18.md), [F11](../F11.md), [GH-117](../GH-117.md).
 - Language: [AP21](../AP21.md).
 - Work view: [F33](../F33.md), [F34](../F34.md), [GH-56](../GH-56.md),
   [GH-56-design-notes](../GH-56-design-notes.md), [GH-67](../GH-67.md),
