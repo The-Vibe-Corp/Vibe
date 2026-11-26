@@ -390,6 +390,52 @@ def priority(record):
     return int(match.group(1)) if match else 9
 
 
+# GH-115: Implementierungsreihenfolge der nicht geschlossenen Zustände.
+# Innerhalb einer Statusgruppe ordnet die Priorität (P0..P8), erst danach die
+# Position im Speicher. ``in-progress`` läuft immer vor ``open``/Ready, egal
+# welche Priorität gesetzt ist. ``done`` ist erledigt und entfällt.
+# ``draft`` wird nie implementiert: ``select_package`` wählt ihn nicht, und die
+# mobile Priorisierungsleiste blendet ihn aus. In der Anzeige-Standardordnung
+# bleibt er als „Entwurf“ sichtbar (GH-47) und steht nach allen
+# implementierbaren Status. Ein explizites ``PACKAGE_ORDER`` bleibt davon
+# unberührt verbindlich.
+STATUS_PRECEDENCE = ("in-progress", "open", "blocked", "waiting-merge")
+STATUS_RANK = {state: rank for rank, state in enumerate(STATUS_PRECEDENCE)}
+DRAFT_RANK = len(STATUS_PRECEDENCE)
+
+
+def status_rank(record):
+    """Rang in der Implementierungsreihenfolge; ``None`` für draft/done/unbekannt."""
+    return STATUS_RANK.get(record.get("state"))
+
+
+def processing_key(record, index):
+    """Sortierschlüssel ``(Statusrang, Priorität, Speicherposition)`` oder ``None``.
+
+    Für die Auswahl: ``draft``, ``done`` und unbekannte Zustände haben keinen
+    Rang und werden nie automatisch gewählt.
+    """
+    rank = status_rank(record)
+    if rank is None:
+        return None
+    return (rank, priority(record), index)
+
+
+def standard_key(record, index):
+    """Sortierschlüssel der Anzeige-Standardordnung; ``None`` für done/unbekannt.
+
+    Wie :func:`processing_key`, aber ``draft`` bleibt als sichtbarer Entwurf
+    erhalten und steht nach allen implementierbaren Status; die Priorität
+    ordnet auch dort nur sekundär.
+    """
+    rank = status_rank(record)
+    if rank is None:
+        if record.get("state") != "draft":
+            return None
+        rank = DRAFT_RANK
+    return (rank, priority(record), index)
+
+
 ORDER_KEY = "PACKAGE_ORDER"
 ORDER_SPLIT = re.compile(r"[,;\s]+")
 
@@ -528,9 +574,10 @@ def select_package(project, skip=None, state_path=None, prefer=""):
     Standardordnung. Erledigte, blockierte, wartende, abhängigkeitsgeblockte
     oder unbekannte Einträge werden der Priorisierung entnommen, ohne die Wahl
     aufzuhalten. Ohne geeigneten Eintrag gilt die Standardordnung: Kandidaten
-    sind ``open`` und ``in-progress``; sortiert wird nach Priorität (P0..P8,
-    ohne Angabe hinten) und dann nach der Position im Ticketspeicher. Ein
-    Paket wird nur gewählt, wenn alle bekannten Abhängigkeiten erledigt sind.
+    sind ``open`` und ``in-progress``; sortiert wird nach Statusvorrang
+    (``in-progress`` vor ``open``), dann nach Priorität (P0..P8, ohne Angabe
+    hinten) und zuletzt nach der Position im Ticketspeicher. Ein Paket wird
+    nur gewählt, wenn alle bekannten Abhängigkeiten erledigt sind.
 
     ``prefer`` (AP4/T-W1) nennt ein ausdrücklich bevorzugtes Paket (Reattach):
     Ist es im Kandidatenbestand und noch nicht erledigt, wird es vorrangig
@@ -577,7 +624,9 @@ def select_package(project, skip=None, state_path=None, prefer=""):
             pid = record.get("id")
             if not pid or pid in skip or not _ready(pid):
                 continue
-            key = (priority(record), index)
+            key = processing_key(record, index)
+            if key is None:
+                continue
             candidates.append((key, pid))
         if candidates:
             candidates.sort(key=lambda item: item[0])
@@ -1286,8 +1335,13 @@ def priority_view(project):
     Liefert ``order`` mit Status je konfiguriertem Eintrag (erledigt, gesperrt,
     wartet auf Merge, offen oder fehlt), ``queue`` mit der effektiven
     Abarbeitungsreihenfolge aller bereiten offenen Pakete und ``standard`` mit
-    der Standardordnung über alle nicht erledigten Pakete. Die Ansicht ändert
-    nichts; sie nutzt dieselbe Auswahllogik wie der Läufer.
+    der Standardordnung über alle implementierbaren Pakete. Die Ansicht ändert
+    nichts; sie nutzt dieselbe Auswahllogik wie der Läufer. Die
+    Standardordnung folgt dem Statusvorrang aus :data:`STATUS_PRECEDENCE`
+    (``in-progress`` vor ``open`` vor ``blocked`` vor ``waiting-merge``) und
+    sortiert innerhalb einer Statusgruppe nach Priorität und Speicherposition.
+    Entwürfe bleiben als „Entwurf“ sichtbar (GH-47), stehen aber nach allen
+    implementierbaren Status und werden nie gewählt; ``done`` entfällt.
     """
     project = Path(project)
     tickets = vibe_tickets.load(project)
@@ -1334,17 +1388,20 @@ def priority_view(project):
             })
             skip.add(selected["id"])
     # Standardordnung wie im Fallback von select_package, ohne Ready-Prüfung,
-    # damit gesperrte/geblockte Pakete ihre spätere Position behalten.
+    # damit gesperrte/wartende Pakete ihre spätere Position behalten. Der
+    # Statusvorrang steht vor der Priorität; Entwürfe bleiben sichtbar am Ende,
+    # done entfällt.
     standard = []
     candidates = []
     for index, record in enumerate(tickets):
         if not record.get("id"):
             continue
-        candidates.append(((priority(record), index), record))
+        key = standard_key(record, index)
+        if key is None:
+            continue
+        candidates.append((key, record))
     candidates.sort(key=lambda item: item[0])
     for _, record in candidates:
-        if record.get("state") == "done":
-            continue
         standard.append({
             "id": record["id"],
             "title": record.get("title"),

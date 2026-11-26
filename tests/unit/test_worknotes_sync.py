@@ -580,23 +580,24 @@ class SelectPackageTest(RunnerCase):
     """Kandidaten, Ordnung, Abhängigkeiten und Reattach."""
 
     def test_open_and_in_progress_are_candidates_in_store_order(self):
-        """Vor: AP1 offen, AP2 in-progress. Aktion: select_package.
-        Erwartet: AP1 (Speicherposition), danach mit skip AP1 -> AP2;
-        Zeilenform enthält id, type, title, description, priority, ordered,
-        github."""
+        """Vor: AP1 offen (Ready), AP2 in-progress, beide ohne Priorität.
+        Aktion: select_package. Erwartet: AP2 zuerst — Statusvorrang
+        „In Progress“ vor „Ready“ unabhängig von Priorität und
+        Speicherposition —, danach mit skip AP2 -> AP1; Zeilenform enthält
+        id, type, title, description, priority, ordered, github."""
         self.store(ticket("AP1", "Offen"), ticket("AP2", "Läuft",
                                                  state="in-progress"))
 
         first = self.select()
-        self.assertEqual("AP1", first["id"])
+        self.assertEqual("AP2", first["id"])
         for key in ("id", "type", "title", "description", "priority",
                     "ordered", "github"):
             self.assertIn(key, first)
         self.assertEqual("task", first["type"])
-        self.assertEqual("Offen", first["title"])
+        self.assertEqual("Läuft", first["title"])
         self.assertIs(False, first["ordered"])
 
-        self.assertEqual("AP2", self.select(skip={"AP1"})["id"])
+        self.assertEqual("AP1", self.select(skip={"AP2"})["id"])
 
     def test_draft_blocked_waiting_and_done_are_never_selected(self):
         """Vor: nur draft/blocked/waiting-merge/done. Aktion: select_package.

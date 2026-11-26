@@ -3372,24 +3372,36 @@ class GH56WorkBrowserTest(unittest.TestCase):
             "input[data-nv-work-search]").count(),
             "Die mobile Liste hat keine Suche/Schnellfilter")
 
-    def test_19_mobile_priority_view_ready_only(self):
-        """AP7: mobile Priorisierung zeigt ausschließlich Ready-Tickets.
+    def test_19_mobile_priority_view_shows_all_non_closed_except_draft(self):
+        """Mobile Priorisierung zeigt alle nicht erledigten Status außer Draft.
 
-        Vorbedingung: Draft, Ready, Running. Aktion: mobile Work-Ansicht.
-        Erwartung: die Priorisierungszeilen enthalten nur die Ready-ID.
+        Vorbedingung: Tickets in draft/open/in-progress/blocked/
+        waiting-merge/done, keine gespeicherte Priorisierung. Aktion: mobile
+        Work-Ansicht. Erwartung: die Priorisierungszeilen enthalten In
+        Progress, Ready, BLOCKIERT und WARTET AUF MERGE in dieser
+        Statusreihenfolge; Draft und erledigt fehlen.
         """
+        status, body = self.api_json("/api/priority", "POST", {
+            "name": PROJECT, "action": "clear"})
+        self.assertEqual(200, status, body)
         self.write_store([
             ticket("AP3", "Nur Entwurf", state="draft"),
             ticket("AP1", "Bereit zum Start"),
             ticket("AP2", "Läuft gerade", state="in-progress"),
+            ticket("AP4", "Blockiert", state="blocked",
+                   blocked_reason="externe Freigabe fehlt"),
+            ticket("AP5", "Wartet auf Merge", state="waiting-merge"),
+            ticket("AP6", "Erledigt", state="done", commit="abcdef1",
+                   test="test_ap_done"),
         ])
         self.goto_work(viewport={"width": 600, "height": 800})
         strip = self.strip()
         strip.wait_for(state="visible", timeout=5000)
         ids = strip.locator("[data-nv-priority-id]").evaluate_all(
             "els => els.map(e => e.getAttribute('data-nv-priority-id'))")
-        self.assertEqual(["AP1"], ids,
-                         "Die mobile Priorisierung zeigt fremde Zustände")
+        self.assertEqual(["AP2", "AP1", "AP4", "AP5"], ids,
+                         "Die mobile Priorisierung zeigt nicht alle "
+                         "nicht-erledigten Status in Statusreihenfolge")
 
     def test_20_mobile_fullscreen_editor_matches_desktop(self):
         """AP8: mobile Bearbeitung ist Vollbild und enthält die Kernaktionen.
@@ -4022,12 +4034,15 @@ class GH67WorkBrowserTest(unittest.TestCase):
             0, self.page.locator("div[data-nv-priority-strip]").count(),
             "Die Priorisierungsansicht ist auf Desktop im DOM vorhanden")
 
-    def test_08_priority_strip_visible_on_mobile_ready_only(self):
-        """AP2: Mobile zeigt den Strip, ausschließlich mit Rohzustand open.
+    def test_08_priority_strip_shows_non_closed_states_on_mobile(self):
+        """AP2: Mobile zeigt den Strip mit In Progress und Ready, nicht Draft.
 
-        Vorbedingung: draft/open/in-progress, 600x800. Aktion: Work öffnen.
-        Erwartung: Strip sichtbar; nur die Ready-ID erscheint als Zeile.
+        Vorbedingung: draft/open/in-progress, 600x800, keine gespeicherte
+        Priorisierung. Aktion: Work öffnen. Erwartung: Strip sichtbar;
+        In Progress und Ready erscheinen als Zeilen, Draft nicht, und
+        In Progress steht vor Ready.
         """
+        self.set_priority([])
         self.write_store([
             ticket("AP3", "Draft", state="draft"),
             ticket("AP1", "Ready"),
@@ -4038,8 +4053,80 @@ class GH67WorkBrowserTest(unittest.TestCase):
         strip.wait_for(state="visible", timeout=5000)
         ids = strip.locator("[data-nv-priority-id]").evaluate_all(
             "els => els.map(e => e.getAttribute('data-nv-priority-id'))")
-        self.assertEqual(["AP1"], ids,
-                         "Der Strip enthält nicht ausschließlich Ready-Tickets")
+        self.assertEqual(["AP2", "AP1"], ids,
+                         "Der Strip zeigt nicht alle unterstützten "
+                         "nicht-erledigten Status in Statusreihenfolge")
+
+    def test_08a_mobile_priority_status_precedes_priority(self):
+        """In Progress steht vor Ready, auch bei schlechterer Priorität.
+
+        Vorbedingung: Ready mit P0 steht im Speicher vor In Progress mit P8,
+        keine gespeicherte Priorisierung, mobiler Viewport. Aktion: Work
+        öffnen. Erwartung: der Strip nennt zuerst In Progress, dann Ready.
+        """
+        self.set_priority([])
+        self.write_store([
+            ticket("AP1", "Ready P0", priority="P0"),
+            ticket("AP2", "Running P8", state="in-progress", priority="P8"),
+        ])
+        self.goto_work(viewport=MOBILE)
+        strip = self.strip()
+        strip.wait_for(state="visible", timeout=5000)
+        ids = strip.locator("[data-nv-priority-id]").evaluate_all(
+            "els => els.map(e => e.getAttribute('data-nv-priority-id'))")
+        self.assertEqual(["AP2", "AP1"], ids,
+                         "Ready P0 schlägt In Progress P8")
+
+    def test_08b_mobile_priority_orders_only_within_status_group(self):
+        """Priorität sortiert nur innerhalb der Statusgruppen.
+
+        Vorbedingung: Ready P1, Ready P0, In Progress P1, In Progress P0 und
+        In Progress ohne Priorität (Speicherreihenfolge wie genannt), mobile
+        Work. Erwartung: erst alle In-Progress-Tickets nach Priorität, dann
+        die Ready-Tickets nach Priorität; „ohne“ steht hinter P1.
+        """
+        self.set_priority([])
+        self.write_store([
+            ticket("AP1", "Ready P1", priority="P1"),
+            ticket("AP2", "Ready P0", priority="P0"),
+            ticket("AP3", "Running P1", state="in-progress", priority="P1"),
+            ticket("AP4", "Running P0", state="in-progress", priority="P0"),
+            ticket("AP5", "Running ohne", state="in-progress"),
+        ])
+        self.goto_work(viewport=MOBILE)
+        strip = self.strip()
+        strip.wait_for(state="visible", timeout=5000)
+        ids = strip.locator("[data-nv-priority-id]").evaluate_all(
+            "els => els.map(e => e.getAttribute('data-nv-priority-id'))")
+        self.assertEqual(["AP4", "AP3", "AP5", "AP2", "AP1"], ids,
+                         "Priorität wurde nicht nur innerhalb der "
+                         "Statusgruppen angewendet")
+
+    def test_08c_mobile_priority_orders_other_states_before_priority(self):
+        """Sonstige Status folgen der Statusreihenfolge, dann der Priorität.
+
+        Vorbedingung: WARTET AUF MERGE P0, BLOCKIERT P0, BLOCKIERT P8,
+        WARTET AUF MERGE P8, Ready und In Progress (Speicherreihenfolge wie
+        genannt), mobile Work. Erwartung: In Progress, Ready, dann BLOCKIERT
+        (P0 vor P8) vor WARTET AUF MERGE (P0 vor P8).
+        """
+        self.set_priority([])
+        self.write_store([
+            ticket("AP1", "Waiting P0", state="waiting-merge", priority="P0"),
+            ticket("AP2", "Blocked P0", state="blocked", priority="P0"),
+            ticket("AP3", "Blocked P8", state="blocked", priority="P8"),
+            ticket("AP4", "Waiting P8", state="waiting-merge", priority="P8"),
+            ticket("AP5", "Ready"),
+            ticket("AP6", "Running", state="in-progress"),
+        ])
+        self.goto_work(viewport=MOBILE)
+        strip = self.strip()
+        strip.wait_for(state="visible", timeout=5000)
+        ids = strip.locator("[data-nv-priority-id]").evaluate_all(
+            "els => els.map(e => e.getAttribute('data-nv-priority-id'))")
+        self.assertEqual(["AP6", "AP5", "AP2", "AP3", "AP1", "AP4"], ids,
+                         "Sonstige Status folgen nicht der definierten "
+                         "Statusreihenfolge vor der Priorität")
 
     def test_09_prio_count_zero_with_configured_but_no_ready(self):
         """AP2 Regression: 5 konfigurierte IDs, 0 Ready ⇒ Zähler „0“.

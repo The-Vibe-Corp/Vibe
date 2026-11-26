@@ -85,3 +85,4 @@ Zuordnung der Projekt-Dokumentation zu den Notizen in Trilium (Stand 2026-11-26)
 | vibe | Features | GH-101 — AGENTS.md-Einstellungen neu aufgebaut | `y7GNAsqtNqNF` |
 | vibe | Features | GH-109 — Agents UI Anpassungen | `W9bVEOCA6rjV` |
 | vibe | Features | GH-114 — Kostenübersicht: kompakte Ansicht und Preisfelder | `V5ZLRDvPvRcq` |
+| vibe | Features | GH-115 — Priorisierungsansicht auf kleinen Bildschirmen | `89kJlya6mQai` |

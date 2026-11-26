@@ -45,9 +45,18 @@ exists.
 
 ## Selection order
 
-- `PACKAGE_ORDER` in `.vibe/project.env` is binding first.
-- Otherwise candidates (`open` and `in-progress`) are sorted by priority
-  `P0`–`P8` (unset last), then by position in the store.
+- `PACKAGE_ORDER` in `.vibe/project.env` is binding first; an explicitly saved
+  order is never silently re-sorted.
+- Otherwise candidates (`open` and `in-progress`) are sorted by status
+  precedence first — `in-progress` always before `open`/Ready, regardless of
+  priority — then by priority `P0`–`P8` (unset last), then by position in the
+  store (GH-115).
+- The implementation view and the standard order also list `blocked` and
+  `waiting-merge` after `open`, in the fixed order `in-progress` → `open` →
+  `blocked` → `waiting-merge`, but they remain unavailable for automatic
+  selection until they become runnable. Drafts stay visible in the standard
+  order as `Entwurf` after all implementable states (GH-47), but are never
+  selected; the mobile priority strip hides them. `done` is closed and absent.
 - A package is only selected when all known dependencies are `done`.
 - `github_deletions` records issue numbers to close on the next GitHub sync.
 
@@ -84,3 +93,4 @@ current.
 - [worknotes-nachweis-sync](../worknotes-nachweis-sync.md) — writing the
   ticket proof back without versioning it
 - [GH-108](../GH-108.md) — project detail controls and In Progress return paths
+- [GH-115](../GH-115.md) — status precedence in the implementation order and mobile prioritization strip
