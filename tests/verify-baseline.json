@@ -7,12 +7,12 @@
         {
           "module": "tests.unit.test_repository_hygiene",
           "class": "AssertionError",
-          "signature": "sha256:b453a148a7dbb5cc42ff6f9cf3b82271d4d2b8bf859cdd6c8ce59ca6d04e05e8"
+          "signature": "sha256:01c712428c51dcb51aa962bbc27bb5e4f1711d0930daf4281ee91a7d92e249aa"
         },
         {
           "module": "tests.unit.test_github_issues",
           "class": "AssertionError",
-          "signature": "sha256:02c6cfb04bd82e7af9b7399f409d0fa8ca3f3cc9425901180f4c44f396e70213"
+          "signature": "sha256:bb6c57ab410441919edf9fb9ee66b437ebf0cd82416fadd4be21da25a1b0df19"
         },
         {
           "module": "tests.unit.test_work_packages",
@@ -72,22 +72,7 @@
         {
           "module": "tests.unit.test_release",
           "class": "AssertionError",
-          "signature": "sha256:4338c03760b18118f434d2a71a144d7823e7d49c6190e9fd7f24fd35ae1b5932"
-        },
-        {
-          "module": "tests.unit.test_release",
-          "class": "AssertionError",
-          "signature": "sha256:af13c6bde2887ebff608bfe9ce295dedeb2286890d9ed0762056695b03331c13"
-        },
-        {
-          "module": "tests.unit.test_release",
-          "class": "AssertionError",
-          "signature": "sha256:ae67d8a0314c9949cd4b35073c5cb5628c0090350b820fa291ea825656280419"
-        },
-        {
-          "module": "tests.unit.test_release",
-          "class": "AssertionError",
-          "signature": "sha256:dbe32e8af7a58d58a7179f8d05e2493c6ef5a074767746b7e1ccbfe1011cd9f1"
+          "signature": "sha256:a90166200bb4f8cb48c788f82e23957837fadf3e3a49e6fa6b51466e80a1fac7"
         }
       ]
     }

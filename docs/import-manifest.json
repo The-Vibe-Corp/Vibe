@@ -1,6 +1,16 @@
 {
  "aenderungen": [
   {
+   "arbeitspaket": "GH-96",
+   "dateien": [
+    "bin/vibe-run.sh",
+    "docs/features/B13.md",
+    "docs/features/B1.md"
+   ],
+   "datum": "2026-11-26",
+   "grund": "Gemeinsamer opencode-Server wird ohne wirksame Projektkonfiguration und mit nichtleerer Kennwortdatei wieder als --server-Ziel verwendet (B13/AK9). Das Merge-Skript meldet Modelle auch bei nur deaktivierten opencode-Eintraegen ueber eine Flag-Datei; ohne Kennwort bleibt es --standalone. Groesse und SHA-256 der geaenderten Manifest-Datei wurden aktualisiert."
+  },
+  {
    "arbeitspaket": "GH-82",
    "dateien": [
     "bin/vibe-web.py",
@@ -1652,9 +1662,9 @@
    "sha256": "1e2df016e87be00547a440bf0080720c166da80de911fd7801c54bd40fa04b29"
   },
   {
-   "bytes": 87451,
+   "bytes": 88742,
    "path": "bin/vibe-run.sh",
-   "sha256": "0426227dbd3e179b68d718859be0c7e14a7d5a92b753daba7a2b3140f0e18a07"
+   "sha256": "8815cae11137a269658fa041e6299461249120ed1949103891caaaa802cdb466"
   },
   {
    "bytes": 142652,
@@ -2003,6 +2013,6 @@
   "setup-vibe.cmd",
   "VERSION"
  ],
- "stand": "2026-11-25",
+ "stand": "2026-11-26",
  "version": 1
 }

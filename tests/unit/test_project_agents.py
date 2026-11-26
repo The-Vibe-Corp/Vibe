@@ -1684,14 +1684,22 @@ class SharedServerTest(B1RunnerFixture):
         return "http://127.0.0.1:" + str(port)
 
     def test_shared_server_without_platform_instructions_is_not_reused(self):
-        """GH-76: Ein vorbestehender Server ohne den Plattformtext wird ersetzt.
+        """GH-96: Ohne Kennwortdatei bleibt der gemeinsame Server ungenutzt.
 
+        Die tatsächlich trennende Bedingung ist hier die fehlende
+        Kennwortdatei: Ohne Anmeldung kann der Lauf einen erreichbaren
+        gemeinsamen Server nicht nutzen und bleibt beim bisherigen Verhalten.
+        Historisch (GH-76) galt zusätzlich, dass ein vorbestehender Server
+        ohne den Plattformtext ersetzt wird, weil die Inline-Konfiguration
+        immer gesetzt war; GH-96 adressiert den gemeinsamen Server wieder,
+        wenn keine wirksame Projektkonfiguration vorliegt.
         Aktion: gemeinsamer Server läuft, keine Projektmodelle, keine
         Kennwortdatei. Erwartung: ``opencode run --standalone`` (der Lauf
         startet seinen eigenen Server mit der Inline-Konfiguration); der
         gemeinsame Server wird nicht kontaktiert und kein privater
-        ``serve``-Prozess gestartet. Fehlerfall: Wiederverwendung eines
-        Servers, der die Plattformanweisungen nicht kennt.
+        ``serve``-Prozess gestartet.
+        Fehlerfall: Der Lauf adressiert einen Server, an dem er sich nicht
+        anmelden kann.
         """
         shared_port = self.start_shared_server()
 
