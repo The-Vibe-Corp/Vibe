@@ -25,9 +25,9 @@ Vibe brings projects, agents, models, MCP servers, agent runs, verification, and
 
 Vibe is a **local development hub** for AI-assisted software projects. Instead of managing agents, models, MCP servers, tickets, logs, and verification across separate tools, Vibe brings these building blocks into one organized workspace.
 
-Vibe is **not an AI harness**. It works with external, interchangeable harnesses through isolated execution and configuration interfaces. OpenCode is a supported harness. [cite:1]
+Vibe is **not an AI harness**. It works with external, interchangeable harnesses through isolated execution and configuration interfaces. OpenCode is a supported harness.
 
-Vibe is designed for consultants, product owners, project managers, and anyone who wants to build reliable software without needing deep development expertise. Users describe goals, requirements, and feedback, while technical configuration, agent runs, and verification remain visible and controllable. [cite:1]
+Vibe is designed for consultants, product owners, project managers, and anyone who wants to build reliable software without needing deep development expertise. Users describe goals, requirements, and feedback, while technical configuration, agent runs, and verification remain visible and controllable.
 
 ## Features
 
@@ -43,7 +43,7 @@ Vibe is designed for consultants, product owners, project managers, and anyone w
 | **Diagnostics** | Check operating system, containers, Python version, ports, write permissions, and optional tools. |
 | **Local first** | Source code, installation, and runtime data remain separate; users retain control of local data, credentials, and project sources. |
 
-These capabilities follow the binding product specification in [`SPEC.md`](./SPEC.md). [cite:1]
+These capabilities follow the binding product specification in [`SPEC.md`](./SPEC.md).
 
 ## Quick start
 
@@ -54,7 +54,7 @@ These capabilities follow the binding product specification in [`SPEC.md`](./SPE
 - Optional: Docker, Podman, Toolbx, or Distrobox for containerized environments
 - Optional: Git for project-related workflows
 
-Vibe determines actual support through diagnostics. It distinguishes mandatory application prerequisites from optional project tools; missing optional components must not silently break core functionality. [cite:1]
+Vibe determines actual support through diagnostics. It distinguishes mandatory application prerequisites from optional project tools; missing optional components must not silently break core functionality.
 
 ### Install on Linux
 
@@ -78,7 +78,7 @@ For workspace paths, containers, updates, and rollback behavior, see [docs/INSTA
 
 ### Open the dashboard
 
-After starting Vibe, open the local dashboard in your browser. By default, the web server binds to loopback; an explicitly configured network bind address must be an IP literal, not a DNS hostname. [cite:1]
+After starting Vibe, open the local dashboard in your browser. By default, the web server binds to loopback; an explicitly configured network bind address must be an IP literal, not a DNS hostname.
 
 ## Documentation
 
@@ -96,7 +96,7 @@ After starting Vibe, open the local dashboard in your browser. By default, the w
 
 ## Architecture
 
-Vibe deliberately separates **project source code**, **installation**, and **runtime data**. Updating one layer must not overwrite the others. [cite:1]
+Vibe deliberately separates **project source code**, **installation**, and **runtime data**. Updating one layer must not overwrite the others.
 
 ```text
 Project sources ──► Vibe workspace ──► Agent runs ──► Verification ──► Integration
@@ -119,7 +119,7 @@ Core concepts:
 | **Dashboard** | The Vibe web application |
 | **Runner** | The Vibe-managed process that coordinates work packages, Git workspaces, verification, and closing actions |
 
-These definitions come from the product specification. [cite:1]
+These definitions come from the product specification.
 
 ## Workflows
 
@@ -132,11 +132,11 @@ Vibe coordinates the path from an idea to an integrated change:
 5. **Review the result** — Inspect live logs, verification logs, and supporting evidence.
 6. **Complete integration** — Merge locally or create a GitHub pull request when configured.
 
-A commit alone does not prove acceptance: completing a work package requires satisfied acceptance criteria and appropriate supporting evidence. [cite:1]
+A commit alone does not prove acceptance: completing a work package requires satisfied acceptance criteria and appropriate supporting evidence.
 
 ## Security and data ownership
 
-Vibe is local-first. The web server binds to loopback by default, authenticated mutating API requests are required, and tokens must never appear in access logs or error messages. [cite:1]
+Vibe is local-first. The web server binds to loopback by default, authenticated mutating API requests are required, and tokens must never appear in access logs or error messages.
 
 Key principles:
 
@@ -147,7 +147,7 @@ Key principles:
 - Files are written atomically, and concurrent changes are detected.
 - API keys, tokens, global configurations, and personal agents are never automatically added to Git.
 
-See [docs/SECURITY.md](docs/SECURITY.md) and [`SECURITY.md`](./SECURITY.md) for details. [cite:1]
+See [docs/SECURITY.md](docs/SECURITY.md) and [`SECURITY.md`](./SECURITY.md) for details.
 
 ## Project structure
 
@@ -178,9 +178,9 @@ git clone https://github.com/The-Vibe-Corp/Vibe.git
 cd Vibe
 ```
 
-Vibe follows an incremental decoupling approach: the CLI and web API remain thin, domain logic is shared through services, file access is placed behind testable storage functions, and static frontend files remain separate from Python code. [cite:1]
+Vibe follows an incremental decoupling approach: the CLI and web API remain thin, domain logic is shared through services, file access is placed behind testable storage functions, and static frontend files remain separate from Python code.
 
-Quality is supported by unit tests for domain logic, integration tests for APIs, storage, and process adapters, and browser tests for core workflows. Mocks do not replace browser or system acceptance checks. [cite:1]
+Quality is supported by unit tests for domain logic, integration tests for APIs, storage, and process adapters, and browser tests for core workflows. Mocks do not replace browser or system acceptance checks.
 
 See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) and [`CONTRIBUTING.md`](./CONTRIBUTING.md) for details.
 
