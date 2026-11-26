@@ -931,12 +931,13 @@ class F29PriorityApiTest(unittest.TestCase):
         von T1; FEEDBACK: F1 offen); project.env ohne PACKAGE_ORDER.
         Aktion: GET /api/priority?name=proj mit Token stellen.
         Erwartet: HTTP 200; ``standard`` enthält alle nicht erledigten
-        Pakete in Läufer-Standardordnung — innerhalb der TICKETS nach
-        Priorität (P0 vor P1 vor ohne Angabe, sonst Dateireihenfolge),
-        FEEDBACK dahinter nach Dateireihenfolge; das gesperrte T4 und das
-        abhängigkeitsgeblockte T5 sind enthalten, die erledigte T0 fehlt;
-        die bestehenden Felder ``order`` und ``queue`` bleiben in der
-        Antwort vorhanden.
+        Pakete in Läufer-Standardordnung — Statusvorrang vor Priorität:
+        zuerst die offenen TICKETS T2 (P0), T1 (P1), T3 (ohne Angabe) und
+        das abhängigkeitsgeblockte, aber offene T5 in Dateireihenfolge,
+        dann das offene FEEDBACK F1, zuletzt das BLOCKIERT-Paket T4 (der
+        Status BLOCKIERT steht nach ``open``; die Priorität ist innerhalb
+        der Statusgruppe sekundär). Die erledigte T0 fehlt; die Felder
+        ``order`` und ``queue`` bleiben in der Antwort vorhanden.
         """
         self.write_mixed_sources_fixture()
 
@@ -958,9 +959,10 @@ class F29PriorityApiTest(unittest.TestCase):
             "standard-Einträge ohne Kennung (id): "
             + json.dumps(payload, ensure_ascii=False))
         self.assertEqual(
-            ["T2", "T1", "T3", "T4", "T5", "F1"],
+            ["T2", "T1", "T3", "T5", "F1", "T4"],
             [entry["id"] for entry in standard],
-            "standard zeigt nicht die Läufer-Standardordnung: "
+            "standard zeigt nicht die Läufer-Standardordnung mit "
+            "Statusvorrang vor Priorität: "
             + json.dumps(payload, ensure_ascii=False))
         self.assertNotIn(
             "T0", [entry["id"] for entry in standard],

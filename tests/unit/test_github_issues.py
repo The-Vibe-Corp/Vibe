@@ -2369,9 +2369,11 @@ class DraftRunDisciplineTest(Gh47Case):
             project, state_path=str(self.base / "next.json"), **kwargs)
 
     def test_only_open_and_in_progress_are_eligible(self):
-        """Vor: Draft, blocked, waiting-merge, open und in-progress.
-        Aktion: select zweimal. Erwartet: erst open, dann in-progress; nie
-        draft/blocked/waiting."""
+        """Vor: Draft, blocked, waiting-merge, open (T1) und in-progress
+        (P1), beide ohne Priorität. Aktion: select zweimal. Erwartet: erst
+        P1 (Statusvorrang In Progress vor Ready, unabhängig von Priorität
+        und Speicherposition), dann mit skip P1 -> T1; nie draft/blocked/
+        waiting."""
         project = self.make_project()
         self.write_document(project, [
             ticket_record("D1", "Entwurf", state="draft"),
@@ -2385,8 +2387,8 @@ class DraftRunDisciplineTest(Gh47Case):
         first = self.select(project)
         second = self.select(project, skip={first["id"]})
 
-        self.assertEqual("T1", first["id"])
-        self.assertEqual("P1", second["id"])
+        self.assertEqual("P1", first["id"])
+        self.assertEqual("T1", second["id"])
 
     def test_order_and_priority_fallbacks_skip_drafts(self):
         """Vor: Draft D1 in PACKAGE_ORDER und mit P0; offenes T2.

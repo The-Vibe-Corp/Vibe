@@ -72,6 +72,11 @@ without a static sidebar.
   priority strip on mobile, localized labels, and a single card in the DOM.
   The binding design contracts are in the
   [GH-56 design notes](../GH-56-design-notes.md).
+- `GH-115` extends the mobile priority strip to the implementation order: it
+  lists every ticket that is not closed and not a draft — `in-progress` first,
+  then `open`/Ready, `blocked`, and `waiting-merge` — with priority only
+  ordering within a status group. Saved positions remain authoritative; the
+  strip no longer shows only Ready tickets.
 
 ## Visual style
 
@@ -103,6 +108,6 @@ Exact responsive breakpoints and visual styling were not verified here.
 - Language: [AP21](../AP21.md).
 - Work view: [F33](../F33.md), [F34](../F34.md), [GH-56](../GH-56.md),
   [GH-56-design-notes](../GH-56-design-notes.md), [GH-67](../GH-67.md),
-  [GH-99](../GH-99.md), [GH-108](../GH-108.md).
+  [GH-99](../GH-99.md), [GH-108](../GH-108.md), [GH-115](../GH-115.md).
 - Visual style: [GH-94](../GH-94.md), [GH-88](../GH-88.md).
 - Foundation: [AP22](../AP22.md).

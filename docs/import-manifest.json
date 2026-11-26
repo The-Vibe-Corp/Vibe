@@ -1,6 +1,15 @@
 {
  "aenderungen": [
   {
+   "arbeitspaket": "GH-115",
+   "dateien": [
+    "bin/vibe_packages.py",
+    "bin/web/nova-project.js"
+   ],
+   "datum": "2026-11-26",
+   "grund": "Priorisierungsansicht auf kleinen Geraeten: Die mobile Priorisierungsleiste zeigt jetzt alle implementierbaren Tickets statt nur Ready/open. Neue Statusvorrangregel in bin/vibe_packages.py (STATUS_PRECEDENCE: in-progress vor open vor blocked vor waiting-merge, Prioritaet nur innerhalb der Statusgruppe, Speicherposition als Tie-Breaker); done ist ausgeschlossen, Entwuerfe bleiben in der Anzeige-Standardordnung sichtbar (Rang nach allen implementierbaren Status) und werden nie automatisch gewaehlt, waehrend die mobile Leiste sie ausblendet. priority_view.standard und der select_package-Fallback nutzen getrennte Sortierschluessel (standard_key bzw. processing_key); ein explizit gespeichertes PACKAGE_ORDER bleibt unveraendert verbindlich, und der _ready-Gate laesst weiterhin nur open/in-progress automatisch waehlen. Nova normalisiert zusaetzlich ready zu open, filtert die Leiste auf die zulaessigen Zustaende und zaehlt konfigurierte Eintraege entsprechend. Groesse und SHA-256 der geaenderten Manifest-Dateien wurden aktualisiert."
+  },
+  {
    "arbeitspaket": "GH-114",
    "dateien": [
     "bin/web/nova-evals.js",
@@ -1803,9 +1812,9 @@
    "sha256": "2d5f5b9b1a1d3f74082985fc4c9c51ecbb0191f3a8b508cd9f5ac0f967d6d5bd"
   },
   {
-   "bytes": 75445,
+   "bytes": 77918,
    "path": "bin/vibe_packages.py",
-   "sha256": "614c4adeb3582fb076189533bcbbd8524072a3c888e5a140bdb935e96b5e2348"
+   "sha256": "992879839ae4e6da803ff12ff2553f650f3f8132f167c63a78afaeccd0a42536"
   },
   {
    "bytes": 20773,
@@ -1898,9 +1907,9 @@
    "sha256": "6b93d852db7be168694470fd1e842a089fa33f1eaf89e1fc643e025ddaddb292"
   },
   {
-   "bytes": 130441,
+   "bytes": 130871,
    "path": "bin/web/nova-project.js",
-   "sha256": "69c9ffb66e526d688907138c222b7ef9e6f884bf71e74aae22c821651e594860"
+   "sha256": "d9fa4e6744d1fc38e121af4e7f41e10cba517a3577f27a39cca08b7e44146a9b"
   },
   {
    "bytes": 93384,

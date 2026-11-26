@@ -108,10 +108,22 @@ function nvpRawState(row) {
     'Draft': 'draft', 'offen': 'open', 'In Progress': 'in-progress',
     'BLOCKIERT': 'blocked', 'WARTET AUF MERGE': 'waiting-merge',
     'erledigt': 'done', 'draft': 'draft', 'open': 'open',
+    'ready': 'open', 'Ready': 'open',
     'in-progress': 'in-progress', 'blocked': 'blocked',
     'waiting-merge': 'waiting-merge', 'done': 'done'
   };
   return map[state] || '';
+}
+
+/* GH-115: Implementierungsansicht. Sichtbar sind alle nicht geschlossenen
+   Tickets ausser Entwuerfen; die Reihenfolge traegt der Statusvorrang aus
+   ``priority.standard`` (in-progress vor open vor blocked vor waiting-merge).
+   Draft bleibt aussen vor, weil Entwuerfe nie implementiert werden. */
+var NVP_IMPLEMENTATION_STATES = ['in-progress', 'open', 'blocked', 'waiting-merge'];
+
+function nvpImplementationState(row) {
+  var state = nvpRawState(row);
+  return NVP_IMPLEMENTATION_STATES.indexOf(state) >= 0 ? state : '';
 }
 
 /* Board-Spalte eines Rohzustands; done hat keine Board-Spalte und lebt im
@@ -1144,14 +1156,12 @@ function nvpEntryId(entry) {
   return typeof entry === 'string' ? entry : String(entry && entry.id || '');
 }
 
-/* Zählt nur konfigurierte Einträge, die zugleich ein echtes Ready-Ticket
-   sind; pausierte Einträge (status != offen) zählen nicht mit. */
-function nvpPrioritizedCount(configured, open) {
+/* Zählt konfigurierte Einträge, die zugleich in der Implementierungsansicht
+   sichtbar sind (nicht geschlossen, kein Entwurf). */
+function nvpPrioritizedCount(configured, eligible) {
   return (configured || []).reduce(function (n, entry) {
     var id = nvpEntryId(entry);
-    if (!open[id]) return n;
-    if (entry && entry.status && entry.status !== 'offen') return n;
-    return n + 1;
+    return eligible[id] ? n + 1 : n;
   }, 0);
 }
 
@@ -1162,27 +1172,26 @@ function nvpPriorityCountLabel(n) {
 
 /* Die Priorisierungsleiste steht zwischen Filtern und Liste. Manuell
    priorisierte Einträge stehen zuerst, danach die Standardreihenfolge;
-   erledigte Einträge erscheinen nie. Drag & Drop zeigt eine Live-Vorschau
-   (Zeiger-Geist + Einfügemarke), ↑/↓ bleiben die Tastaturalternative. */
+   erledigte Einträge und Entwürfe erscheinen nie. GH-115: sichtbar sind alle
+   implementierbaren Zustände (in-progress, open, blocked, waiting-merge);
+   die Reihenfolge innerhalb der Standardordnung trägt der Statusvorrang. */
 function nvpPriorityStrip(name, token, view, items, cards) {
   var strip = el('div', {class: 'nv-priority-strip', 'data-nv-priority-strip': ''});
   var priority = (view && view.priority) || {};
   var configured = priority.order || [];
   var standard = priority.standard || [];
   var titles = {};
-  var open = {};
-  /* GH-56: Die Work-Priorisierung zeigt ausschließlich Ready-Tickets
-     (Rohzustand ``open``); Draft und Running gehören in ihre Board-Spalten. */
+  var eligible = {};
   (items || []).forEach(function (row) {
     var id = String(row && row.id || '');
-    if (!id || nvpRawState(row) !== 'open') return;
-    open[id] = true;
+    if (!id || !nvpImplementationState(row)) return;
+    eligible[id] = true;
     titles[id] = String(row && row.title || id);
   });
   var ids = [];
   function add(entry) {
     var id = nvpEntryId(entry);
-    if (!id || !open[id] || ids.indexOf(id) >= 0) return;
+    if (!id || !eligible[id] || ids.indexOf(id) >= 0) return;
     ids.push(id);
     if (!titles[id]) titles[id] = String(entry && entry.title || id);
   }
@@ -1191,7 +1200,7 @@ function nvpPriorityStrip(name, token, view, items, cards) {
   (items || []).forEach(add);
   var ranks = nvpRankMap(configured);
   var count = el('div', {class: 'nv-muted', 'data-nv-prio-count': ''},
-    nvpPriorityCountLabel(nvpPrioritizedCount(configured, open)));
+    nvpPriorityCountLabel(nvpPrioritizedCount(configured, eligible)));
   var rowsBox = el('div', {class: 'nv-priority-rows'});
   var marker = el('div', {'data-nv-drop-marker': '', 'aria-hidden': 'true',
     style: 'height:3px;border-radius:2px;background:var(--nv-primary, #2b6cb0);margin:2px 0;'});
@@ -1210,7 +1219,7 @@ function nvpPriorityStrip(name, token, view, items, cards) {
       /* Nach dem Speichern ist die ganze Liste die konfigurierte Reihenfolge:
          Ränge, Zähler und Karten-Badges lokal nachziehen statt Voll-Neurender. */
       ranks = nvpRankMap(order);
-      setTx(count, nvpPriorityCountLabel(nvpPrioritizedCount(order, open)));
+      setTx(count, nvpPriorityCountLabel(nvpPrioritizedCount(order, eligible)));
       draw();
       nvpUpdateCardBadges(cards, ranks);
     } catch (e) {
