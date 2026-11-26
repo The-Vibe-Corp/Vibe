@@ -72,11 +72,23 @@ log and subagent cards can be focused or enlarged, `Escape` clears focus, and
 autoscroll follows until the user scrolls away (`AP14`, `AP16`, `AP20`, `B20`,
 `F30`). In the Nova view the user's scroll position is held steady while new
 lines arrive; following resumes only when the user scrolls back to the end
-(`GH-88`). Nova places the main agent card and the subagent preview cards in
-one responsive grid, styled with the shared design tokens; the redundant
-“läuft / Hauptagent / Subagenten” status row is no longer rendered (`GH-88`).
-The agent name and run state remain visible in the summary rows and the main
-card.
+(`GH-88`).
+
+Nova arranges the output in two responsive grids styled with the shared design
+tokens: the compact overview at the top and the large windows below (`GH-100`).
+In the overview each agent row wraps inside its grid cell, and the column count
+drops before a row falls below its readable minimum; the strip never scrolls
+horizontally. Each main-agent window occupies its own full-width row; only
+subagent windows share the grid below it, keeping the established 24rem
+minimum per column. Both grids use the available width without a horizontal
+scrollbar, and narrow views fall back to a single column with wrapped content.
+
+Every large output window has a definite height that changes only at layout
+breakpoints and never grows with the amount of output; long output scrolls
+vertically inside its window. Focus and “Alles anzeigen” still lift the fixed
+height for the enlarged or fully expanded view. The redundant
+“läuft / Hauptagent / Subagenten” status row is no longer rendered (`GH-88`);
+agent name and run state remain visible in the summary rows and the main card.
 
 ## Entry points
 
@@ -93,7 +105,8 @@ card.
 - Output view and subagents: [AP14](../AP14.md), [AP16](../AP16.md),
   [AP20](../AP20.md), [B11](../B11.md), [B12](../B12.md), [B13](../B13.md),
   [B14](../B14.md), [B20](../B20.md), [F19](../F19.md), [F24](../F24.md),
-  [F30](../F30.md), [F32](../F32.md), [GH-88](../GH-88.md).
+  [F30](../F30.md), [F32](../F32.md), [GH-88](../GH-88.md),
+  [GH-100](../GH-100.md).
 - Run registry, sessions, and questions: [V-015](../V-015.md),
   [V-016](../V-016.md), [V-024](../V-024.md), [V-026](../V-026.md),
   [F10](../F10.md), [AP19](../AP19.md), [F16](../F16.md),

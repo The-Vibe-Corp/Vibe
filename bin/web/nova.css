@@ -1220,10 +1220,32 @@ span[data-nv-prio-badge] {
   overflow-wrap: anywhere;
   max-width: 100%;
 }
-/* GH-88: gemeinsames, responsives Kartenraster für Haupt- und Subagenten.
-   [data-nv-out-subs] bleibt als Container erhalten und nimmt per
-   display:contents direkt am Raster teil, damit alle Karten gemeinsame
-   Spalten und Abstände teilen. */
+/* GH-100: Die Zusammenfassung ist ein umbruchfähiges Raster statt einer
+   horizontal scrollenden Zeile. Jede Zeile darf ihren Inhalt umbrechen,
+   damit auch schmale Ansichten ohne horizontalen Überlauf bleiben. */
+.nv-out-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
+  gap: var(--nv-space-3);
+  align-items: start;
+  max-width: 100%;
+  min-width: 0;
+  padding-bottom: var(--nv-space-2);
+}
+.nv-out-summary-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--nv-space-2);
+  padding: var(--nv-space-2) var(--nv-space-3);
+  text-align: left;
+  max-width: 100%;
+  min-width: 0;
+}
+/* GH-88/GH-100: gemeinsames, responsives Kartenraster. Jede
+   Hauptagentenkarte belegt eine eigene, volle Zeile; nur die Subagenten
+   teilen sich das Raster darunter. [data-nv-out-subs] bleibt als Container
+   erhalten und nimmt per display:contents direkt am Raster teil. */
 .nv-out-cards {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 24rem), 1fr));
@@ -1237,6 +1259,10 @@ span[data-nv-prio-badge] {
   padding: var(--nv-space-4);
   min-width: 0;
 }
+/* GH-100: Hauptkarten stehen vor [data-nv-out-subs] im DOM. Mit voller
+   Spaltenbreite beginnt jede von ihnen eine eigene Zeile, sodass im Raster
+   darunter ausschließlich Subagentenkarten bleiben. */
+.nv-out-main-wrap { grid-column: 1 / -1; }
 /* Live-Vorschaukarten erscheinen ohne Slide-in: bei schnellem Aufbau würden
    Haupt- und Subkarten sonst für einen Moment versetzt im Raster stehen. */
 html[data-animations="on"] .nv-out-cards .nv-card { animation: none; }
@@ -1283,8 +1309,22 @@ html[data-animations="on"] .nv-out-cards .nv-card { animation: none; }
   font-size: 0.8125rem;
 }
 .nv-out-spacer { flex: 1 1 auto; }
-.nv-out-main { max-height: 60vh; overflow: auto; }
-.nv-out-sub-log { max-height: 40vh; overflow: auto; }
+/* GH-100: Feste, layoutabhängige Höhen. Die Höhe wächst nie mit dem
+   Protokollumfang; lange Ausgaben scrollen innerhalb ihres Fensters. */
+.nv-out-main { height: 22rem; overflow: auto; }
+.nv-out-sub-log { height: 16rem; overflow: auto; }
+@media (max-width: 900px) {
+  .nv-out-main { height: 18rem; }
+  .nv-out-sub-log { height: 13rem; }
+}
+@media (max-width: 600px) {
+  .nv-out-main { height: 16rem; }
+  .nv-out-sub-log { height: 12rem; }
+}
+/* Aufklappen/Fokus hebt die feste Höhe bewusst auf: die vergrößerte Fläche
+   füllt das Overlay, „Alles anzeigen“ zeigt weiterhin den ganzen Verlauf. */
+.nv-out-main.nv-out-log-open,
+.nv-out-sub-log.nv-out-log-open { height: auto; }
 /* Fokus/Vergrößern: reine Optik, Escape/aria-expanded liegt bei nova-output.js. */
 .nv-out-enlarged {
   position: fixed;
@@ -1299,7 +1339,7 @@ html[data-animations="on"] .nv-out-cards .nv-card { animation: none; }
   border-radius: var(--nv-radius-lg);
   box-shadow: var(--nv-shadow-2);
 }
-.nv-out-enlarged .nv-log { flex: 1 1 auto; max-height: none; overflow: auto; }
+.nv-out-enlarged .nv-log { flex: 1 1 auto; height: auto; max-height: none; overflow: auto; }
 /* Steuerzeile direkt unter der Statuszeile — ohne Scrollen erreichbar.
    Der Selektor mit :has() findet die Zeile auch ohne neuen JS-Hook. */
 .nv-out-controls,
