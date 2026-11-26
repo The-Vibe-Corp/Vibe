@@ -1,51 +1,51 @@
-# Modelle und Modellprofile
+# Models and model profiles
 
-Vibe verwaltet Modelle verschiedener Provider und ermöglicht deren rollenbasierte Zuordnung über Modellprofile. Ein **Model Profile** ordnet Modelle Rollen zu, beispielsweise Coder und Reviewer. [cite:1]
+Vibe manages models from multiple providers and enables role-based assignment through model profiles. A **model profile** maps models to roles, such as coder and reviewer. [cite:1]
 
-## Modellübersicht
+## Model overview
 
-Die Modell-Tabelle bietet eine Übersicht und Bewertung verfügbarer Modelle. Sie enthält unter anderem:
+The model table provides an overview and assessment of available models. It includes:
 
-- Modell-ID
+- Model ID
 - Provider
-- Verfügbarkeit
-- Kontextgröße
-- Bildunterstützung
-- Stärken und Schwächen
-- Geschwindigkeit
-- Aufwand
-- Datenbedingungen
-- Preis [cite:1]
+- Availability
+- Context size
+- Image support
+- Strengths and weaknesses
+- Speed
+- Effort
+- Data terms
+- Price [cite:1]
 
-Unbekannte Werte werden ausdrücklich als unbekannt gekennzeichnet. Vibe erfindet keine Modell-IDs oder Fähigkeiten. [cite:1]
+Unknown values are explicitly marked as unknown. Vibe does not invent model IDs or capabilities. [cite:1]
 
-## Fakten, Messungen und Bewertungen
+## Facts, measurements, and assessments
 
-Vibe unterscheidet zwischen Fakten, Messungen, Nutzerberichten und Bewertungen. Wo möglich, werden Quelle, Datum und Testmethode angegeben. [cite:1]
+Vibe distinguishes facts, measurements, user reports, and assessments. Where applicable, it provides the source, date, and test method. [cite:1]
 
-Veraltete Informationen werden markiert. Alte Bewertungen oder Preise werden nicht ungeprüft übernommen. [cite:1]
+Stale information is marked as stale. Old assessments or prices are not copied without verification. [cite:1]
 
-## Preise
+## Pricing
 
-Preise geben Währung, Einheit, Input- und Output-Rate sowieEffective Date an. Cache-Preise, Tiers und Zuschläge werden separat dargestellt. [cite:1]
+Prices specify currency, unit, input and output rates, and effective date. Cache pricing, tiers, and surcharges are displayed separately. [cite:1]
 
-## Modellprofile
+## Model profiles
 
-Modellprofile können erstellt, bearbeitet, kopiert, gelöscht und angewendet werden. Sie unterstützen konfigurierbare Rollen, mindestens Coder und Reviewer, die globalen oder projektbezogenen Agenten zugeordnet werden. [cite:1]
+Model profiles can be created, edited, copied, deleted, and applied. They support configurable roles, including at least coder and reviewer, mapped to global or project agents. [cite:1]
 
-Beim Anwenden eines Profils gilt:
+When applying a profile:
 
-- Die exakten Änderungen werden vor dem Schreiben als Vorschau angezeigt.
-- Alle Ziel-Agenten und Modelle werden vor dem ersten Schreiben validiert.
-- Die Anwendung ist transaktional oder nach einem partiellen Fehler vollständig reversibel.
-- Ein leeres Profil darf keinen erfolgreichen Abschluss melden. [cite:1]
+- The exact changes are previewed before writing.
+- All target agents and models are validated before the first write.
+- Applying a profile is transactional or fully reversible after partial failure.
+- An empty profile must not report successful application. [cite:1]
 
-## Abweichungen erkennen
+## Detecting drift
 
-Wenn spätere manuelle Änderungen dazu führen, dass Agenten vom Profil abweichen, macht Vibe das sichtbar. [cite:1]
+If later manual edits cause agents to differ from a profile, Vibe makes that visible. [cite:1]
 
-## Kosten und Paid Models
+## Cost and paid models
 
-Paid Profiles werden klar gekennzeichnet. Vibe schaltet niemals automatisch von einem kostenlosen Modell auf ein kostenpflichtiges Modell um. [cite:1]
+Paid profiles are clearly identified. Vibe never automatically switches from a free model to a paid model. [cite:1]
 
-Credentials gehören weder in Agent-Dateien noch in dieses Repository. Vibe unterscheidet zwischen einem gelisteten Modell und einem Modell, für das der Nutzer autorisiert ist. [cite:1]
+Credentials do not belong in agent files or this repository. Vibe distinguishes between a listed model and a model the user is authorized to use. [cite:1]

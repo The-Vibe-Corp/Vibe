@@ -1,29 +1,29 @@
 # Installation
 
-Vibe ist eine lokal betriebene Entwicklungszentrale für KI-assistierte Softwareprojekte. Die Installation trennt Quellcode, installierte Anwendung und Laufzeitdaten voneinander. [cite:1]
+Vibe is a locally operated development hub for AI-assisted software projects. Installation separates project source code, the installed application, and runtime data. [cite:1]
 
-## Voraussetzungen
+## Prerequisites
 
-- Python-Umgebung
-- Linux, Windows oder macOS
-- Optional: Docker, Podman, Toolbx oder Distrobox
+- A Python environment
+- Linux, Windows, or macOS
+- Optional: Docker, Podman, Toolbx, or Distrobox
 - Optional: Git
 
-Vibe ermittelt die tatsächliche Unterstützung über Diagnostics. Dabei werden Betriebssystem, Container, Python-Version und optionale Werkzeuge geprüft. Fehlende optionale Komponenten dürfen die Kernfunktionalität nicht still beschädigen. [cite:1]
+Vibe determines actual support through diagnostics. It checks the operating system, containers, Python version, and optional tools. Missing optional components must not silently break core functionality. [cite:1]
 
-## Workspace festlegen
+## Set the workspace
 
-`$VIBE` bezeichnet den **Workspace**, nicht das Vibe-Quellcode-Repository. Dort liegen die von Vibe verwalteten Laufzeitdaten, Einstellungen, Logs, Backups und Statusinformationen. [cite:1]
+`$VIBE` identifies the **workspace**, not the Vibe source repository. It is where Vibe stores managed runtime data, settings, logs, backups, and status records. [cite:1]
 
-Beispiel:
+Example:
 
 ```bash
 export VIBE="$HOME/vibe-workspace"
 ```
 
-## Linux installieren
+## Install on Linux
 
-Der Repository-Installer ist `install-vibe.sh`. Er ist ein kompatibler Einstiegspunkt für Linux und ruft das plattformübergreifende Setup `scripts/setup-vibe.py` auf. [cite:2]
+The repository installer is `install-vibe.sh`. It is a compatible Linux entry point and invokes the cross-platform setup script, `scripts/setup-vibe.py`. [cite:2]
 
 ```bash
 git clone https://github.com/The-Vibe-Corp/Vibe.git
@@ -32,11 +32,11 @@ cd Vibe
 VIBE="$HOME/vibe-workspace" bash install-vibe.sh
 ```
 
-Der Aufruf installiert bzw. aktualisiert Vibe ohne Rückfragen. Das Setup verwendet das geklonte Repository als Quelle und den angegebenen `VIBE`-Pfad als Workspace. [cite:2]
+This command installs or updates Vibe without prompts. The setup uses the cloned repository as its source and the specified `VIBE` path as its workspace. [cite:2]
 
-## Windows installieren
+## Install on Windows
 
-Für Windows existiert `setup-vibe.cmd` als eigener Einstiegspunkt. [cite:0]
+Vibe provides `setup-vibe.cmd` as the Windows entry point. [cite:0]
 
 ```powershell
 git clone https://github.com/The-Vibe-Corp/Vibe.git
@@ -44,27 +44,27 @@ cd Vibe
 .\setup-vibe.cmd
 ```
 
-## Container-Umgebungen
+## Container environments
 
-Vibe unterstützt den Betrieb in Container-Umgebungen. Diagnostics erkennen Host-/Container-Mismatch, prüfen Schreibrechte, Portverfügbarkeit und erforderliche Programme sowie liefern konkrete, kopierbare Remediation-Schritte. [cite:1]
+Vibe supports operation in container environments. Diagnostics detect host/container mismatches, check write permissions, port availability, and required programs, and provide concrete, copyable remediation steps. [cite:1]
 
-## Update und Rollback
+## Updates and rollback
 
-Updates und Rollbacks müssen persönliche Einstellungen erhalten. Eine Deinstallation entfernt standardmäßig weder Projekte noch Nutzerdaten. [cite:1]
+Updates and rollbacks must preserve personal settings. Uninstallation must not remove projects or, by default, user data. [cite:1]
 
-Wichtige Regeln:
+Important rules:
 
-- Ändere Vibe zunächst separat, bevor du die laufende Installation aktualisierst.
-- Überschreibe während eines Agent Runs nicht die Produktionsinstanz.
-- Erhalte bestehende `_toolchain`- und `_logs`-Daten bei der Adoption.
-- Ersetze persönliche Konfiguration nicht durch ausgelieferte Defaults. [cite:1]
+- Test changes to Vibe separately before updating the running installation.
+- Do not overwrite the production instance during an agent run.
+- Preserve existing `_toolchain` and `_logs` data during adoption.
+- Do not replace personal configuration with shipped defaults. [cite:1]
 
-## Nach der Installation
+## After installation
 
-1. Starte das lokale Dashboard.
-2. Füge ein Entwicklungverzeichnis hinzu.
-3. Prüfe Diagnostics.
-4. Konfiguriere bei Bedarf Agenten, Modelle und MCP-Server.
-5. Lege dein erstes Work Package an.
+1. Start the local dashboard.
+2. Add a development directory.
+3. Review diagnostics.
+4. Configure agents, models, and MCP servers as needed.
+5. Create your first work package.
 
-Das Entfernen eines Entwicklungverzeichnisses aus Vibe löscht keine Projektdateien. Das Scannen eines Verzeichnisses führt ebenfalls keine Builds, Installationen oder Projekt-Commands aus. [cite:1]
+Removing a development directory from Vibe does not delete project files. Scanning a directory also does not run builds, installations, or project commands. [cite:1]

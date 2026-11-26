@@ -1,52 +1,52 @@
-# Sicherheit und Datenintegrität
+# Security and data integrity
 
-Vibe ist lokal ausgerichtet. Nutzer behalten Kontrolle über lokale Daten, Zugangsdaten und Projektquellen. Sicherheitsrelevante Aktionen sind sichtbar, begrenzt und in auditierbaren Logs nachvollziehbar. [cite:1]
+Vibe is local-first. Users retain control of local data, credentials, and project source code. Security-sensitive actions are visible, subject to limits, and recorded in auditable logs. [cite:1]
 
-## Netzwerk und Zugriff
+## Network and access
 
-- Der Webserver bindet sich standardmäßig an Loopback.
-- Ein explizit konfigurierter Netzwerk-Bind muss eine IP-Adresse sein; DNS-Hostnamen werden abgelehnt, um DNS Rebinding zu verhindern.
-- Eine IP/CIDR-Allowlist kann Clients einschränken; Loopback bleibt dadurch erlaubt. [cite:1]
+- The web server binds to loopback by default.
+- An explicitly configured network bind address must be an IP literal; DNS hostnames are rejected to prevent DNS rebinding.
+- An IP/CIDR allowlist may restrict clients; loopback remains allowed by that list. [cite:1]
 
-## Authentifizierung
+## Authentication
 
-Die Authentifizierung verwendet einen Token oder ein Passwort mit Session Cookie, statt einen permanenten Token im Browser zu hinterlassen. Mutierende API-Anfragen erfordern gültige Authentifizierung. [cite:1]
+Authentication uses a token or password with a session cookie rather than leaving a permanent token in the browser. Mutating API requests require valid authentication. [cite:1]
 
-Zusätzlich werden Host- und Origin-Checks sowie CSRF-Schutz durchgesetzt. [cite:1]
+Host and Origin checks and CSRF protection are enforced. [cite:1]
 
 ## Secrets
 
-- Tokens erscheinen niemals in Access-Logs oder Fehlermeldungen.
-- Credentials gehören nicht in Agent-Dateien oder dieses Repository.
-- Secret-Werte bleiben beim Speichern erhalten, werden aber maskiert.
-- Secrets werden weder in Antworten, Fehlermeldungen, Command-Anzeigen noch Logs offengelegt. [cite:1]
+- Tokens are never included in access logs or error messages.
+- Credentials do not belong in agent files or this repository.
+- Secret values are preserved when saving but are masked.
+- Secrets are not exposed in responses, error messages, command displays, or logs. [cite:1]
 
-## Eingaben und Dateizugriff
+## Input and file access
 
-- Input- und Request-Größen werden begrenzt.
-- Path Traversal und unautorisierte Symlink-Ziele werden verhindert.
-- Externe Commands werden mit Argumentlisten statt Shell-Concatenation aufgerufen, sofern keine explizit konfigurierte Shell-Ausführung erforderlich ist. [cite:1]
+- Input and request sizes are limited.
+- Path traversal and unauthorized symlink targets are prevented.
+- External commands are invoked using argument lists rather than shell concatenation, unless explicitly configured shell execution is required. [cite:1]
 
-## Trusted Code
+## Trusted code
 
-Projekt-Check-Commands und MCP-Programme werden als **trusted-code execution** behandelt, nicht als passive Konfiguration. [cite:1]
+Project check commands and MCP programs are treated as **trusted-code execution**, not passive configuration. [cite:1]
 
-## Dateien und Backups
+## Files and backups
 
-- Dateien werden atomar geschrieben.
-- Gleichzeitige Änderungen werden erkannt.
-- Backups kollidieren nicht und können sensible Daten enthalten.
-- Sensible Laufzeitdaten werden auf einem angemessen geschützten Dateisystem gespeichert.
-- Unix-Berechtigungen werden auf FUSE oder NTFS nicht ohne Nachweis als wirksam behandelt. [cite:1]
+- Files are written atomically.
+- Concurrent changes are detected.
+- Backups do not collide and may contain sensitive data.
+- Sensitive runtime data is stored on a suitably protected filesystem.
+- Unix permissions are not treated as effective on FUSE or NTFS without evidence. [cite:1]
 
-## Git und Repository
+## Git and repository
 
-API-Keys, Tokens, globale Konfigurationen oder persönliche Agenten werden niemals automatisch zu Git hinzugefügt. [cite:1]
+API keys, tokens, global configurations, or personal agents are never automatically added to Git. [cite:1]
 
 ## Sandbox
 
-Agenten können optional in einer Sandbox laufen, um den Zugriff auf den Host zu begrenzen. [cite:1]
+Agents can optionally run in a sandbox to limit access to the host. [cite:1]
 
-## Sicherheitsmeldungen
+## Security reports
 
-Sicherheitsprobleme bitte nicht öffentlich als Issue melden. Verwende die Richtlinien in [`SECURITY.md`](../SECURITY.md). [cite:1]
+Do not report security issues publicly in GitHub Issues. Follow the guidance in [`SECURITY.md`](../SECURITY.md). [cite:1]

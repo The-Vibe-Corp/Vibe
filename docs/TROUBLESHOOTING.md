@@ -1,48 +1,48 @@
 # Troubleshooting
 
-Vibe bietet Diagnostics, um Probleme früh zu erkennen und konkrete Remediation-Schritte bereitzustellen. [cite:1]
+Vibe provides diagnostics to detect problems early and provide concrete, copyable remediation steps. [cite:1]
 
-## Diagnostics prüfen
+## Review diagnostics
 
-Diagnostics unterscheiden zwischen:
+Diagnostics distinguish:
 
-- Anwendungs-Voraussetzungen
-- optionalen Projekt-Tools
-- Host-/Container-Mismatch
-- Schreibrechten
-- Portverfügbarkeit
-- erforderlichen Programmen [cite:1]
+- Application prerequisites
+- Optional project tools
+- Host/container mismatches
+- Write permissions
+- Port availability
+- Required programs [cite:1]
 
-Fehlende optionale Komponenten dürfen die Kernfunktionalität nicht still beschädigen. [cite:1]
+Missing optional components must not silently break core functionality. [cite:1]
 
-## Häufige Probleme
+## Common issues
 
-| Problem | Mögliche Ursache | Nächster Schritt |
+| Issue | Possible cause | Next step |
 |---|---|---|
-| Dashboard nicht erreichbar | Vibe läuft nicht oder Port ist belegt | Diagnostics und Portverfügbarkeit prüfen |
-| Agent Run startet nicht | Fehlende Verifikationskonfiguration oder Harness-Problem | Verifikationskonfiguration und Harness-Logs prüfen |
-| MCP-Verbindung schlägt fehl | Executable fehlt, Timeout, DNS/TLS-, HTTP-, Auth- oder Protokollfehler | Verbindungstest und Fehlerklasse prüfen |
-| Modell nicht nutzbar | Modell gelistet, aber keine Autorisierung | Provider-Zugang und Credentials prüfen |
-| Ticket lässt sich nicht abschließen | Akzeptanzkriterien oder Nachweise fehlen | Akzeptanzkriterien und Verifikationsnachweise ergänzen |
-| Update überschreibt Einstellungen | Nicht erwartet; persönliche Einstellungen müssen erhalten bleiben | Backup prüfen und Issue melden |
+| Dashboard is unreachable | Vibe is not running or the port is occupied | Review diagnostics and port availability |
+| Agent run does not start | Missing verification configuration or a harness issue | Review verification configuration and harness logs |
+| MCP connection fails | Missing executable, timeout, DNS/TLS, HTTP, authentication, or protocol error | Run a connection check and review the error class |
+| Model is unavailable | The model is listed but the user is not authorized | Review provider access and credentials |
+| Ticket cannot be completed | Acceptance criteria or evidence are missing | Add acceptance criteria and verification evidence |
+| Update overwrites settings | Not expected; personal settings must be preserved | Review backups and report an issue |
 
 ## Logs
 
-Vibe stellt Live-Logs und separate Verifikationslogs bereit. Diese helfen dabei, Agent Runs, Verifikation und Fehler getrennt nachzuvollziehen. [cite:1]
+Vibe provides live logs and separate verification logs. These help you trace agent runs, verification, and failures independently. [cite:1]
 
-## Agent Runs
+## Agent runs
 
-- Quota- und Login-Fehler stoppen einen Run sofort.
-- Retry-Limits gelten nur für andere, wiederholbare Fehlerklassen.
-- Externe Signale wie `HUP`, `TERM` oder `INT` erzeugen einen Trace, einen Log-Eintrag und eine Aktualisierung des Run-Registry-States. [cite:1]
+- Quota and login failures stop a run immediately.
+- Retry limits apply only to other, repeatable error classes.
+- External signals such as `HUP`, `TERM`, or `INT` produce a trace, a log entry, and an update to the run registry state. [cite:1]
 
-## MCP-Fehler
+## MCP errors
 
-Ein erfolgreicher Verbindungstest bedeutet nicht, dass ein Agent jedes gelistete Tool verwenden darf. Agent-spezifische Berechtigungen müssen sichtbar oder nachvollziehbar sein. [cite:1]
+A successful connection check does not establish that an agent may use every listed tool. Agent-specific permissions must be visible or traceable. [cite:1]
 
-## Sichere Fehlerbehebung
+## Safe troubleshooting
 
-- Ändere zunächst eine separate Test-Instanz, nicht die Produktionsinstallation.
-- Starte während eines Agent Runs kein Update der laufenden Instanz.
-- Erstelle vor Migration oder riskanten Änderungen ein Backup.
-- Teile keine Tokens, API-Keys oder anderen Secrets in Issues, Logs oder Screenshots. [cite:1]
+- Test changes in a separate instance before touching the production installation.
+- Do not update the running instance during an agent run.
+- Create a backup before migration or risky changes.
+- Do not share tokens, API keys, or other secrets in issues, logs, or screenshots. [cite:1]

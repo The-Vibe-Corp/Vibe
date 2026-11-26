@@ -1,45 +1,45 @@
-# Konfiguration
+# Configuration
 
-Vibe trennt Quellcode, Installation und Laufzeitdaten. Einstellungen, Logs, Tokens, Backups und Statusdaten gehören zu den Laufzeitdaten und werden nicht im Quellcode-Repository verwaltet. [cite:1]
+Vibe separates project source code, installation, and runtime data. Settings, logs, tokens, backups, and status records are runtime data and are not managed in the source repository. [cite:1]
 
 ## Workspace
 
-`$VIBE` identifiziert den Vibe-Workspace. Er ist der zentrale Ort für die von Vibe verwalteten Laufzeitdaten. [cite:1]
+`$VIBE` identifies the Vibe workspace. It is the central location for Vibe-managed runtime data. [cite:1]
 
 ```bash
 export VIBE="$HOME/vibe-workspace"
 ```
 
-## Datenmodell
+## Data model
 
-| Ebene | Inhalt | Behandlung |
+| Layer | Contents | Handling |
 |---|---|---|
-| **Project source** | Quellcode im Git-Repository | Bleibt im jeweiligen Projekt |
-| **Installation** | Deployed, ausführbare Vibe-Anwendung | Wird durch Installation und Update verwaltet |
-| **Runtime data** | Einstellungen, Logs, Tokens, Backups, Status | Bleibt lokal im Workspace |
+| **Project source** | Source code in a Git repository | Remains in the respective project |
+| **Installation** | Deployed, executable Vibe application | Managed through installation and updates |
+| **Runtime data** | Settings, logs, tokens, backups, status | Remains local in the workspace |
 
-Diese Trennung ist verbindlich: Ein Update einer Ebene darf die anderen nicht überschreiben. [cite:1]
+This separation is binding: updating one layer must not overwrite the others. [cite:1]
 
-## Projekte
+## Projects
 
-Vibe kann Entwicklungverzeichnisse verwalten und Projekte über Git-Metadaten oder eine Vibe-Projektkonfiguration erkennen. Projekte mit gleichem Namen in unterschiedlichen Verzeichnissen werden unterschieden. [cite:1]
+Vibe can manage development directories and recognize projects through Git metadata or Vibe project configuration. Projects with the same name in different directories are distinguished. [cite:1]
 
-- Entwicklungverzeichnisse hinzufügen, entfernen und neu scannen.
-- Projektliste mit Name, Typ, Branch, Änderungen, offenen Work Packages, Run-Status und letztem Commit.
-- Projekt-Detailansicht mit Pfad, Feedback, Tickets, Logs und verfügbaren Aktionen.
-- Ungeeignete, zu breite oder nicht erlaubte Pfade werden mit klarer Begründung abgelehnt. [cite:1]
+- Add, remove, and rescan development directories.
+- Show project name, type, branch, changes, open work packages, run status, and latest commit.
+- Show project path, feedback, tickets, logs, and available actions in the project detail view.
+- Reject unsuitable, overly broad, or disallowed paths with a clear explanation. [cite:1]
 
-## Projekt-Templates
+## Project templates
 
-Vibe bietet Vorlagen für gängige Projekttypen, beispielsweise generische Projekte, Android und Web. Weitere Projekttypen können über Templates ergänzt werden. [cite:1]
+Vibe provides templates for common project types, including generic, Android, and web projects. Additional project types can be added through templates. [cite:1]
 
-Templates bereiten bestehende Projekte vor, ohne Dateien still zu überschreiben. Fehler bei Projekterstellung oder Git-Initialisierung werden klar gemeldet. Projekttypen können eigene Verifikations-Adapter bereitstellen. [cite:1]
+Templates prepare existing projects without silently overwriting files. Project creation and Git initialization errors are reported clearly. Project types can provide their own verification adapters. [cite:1]
 
-## Tickets und Work Packages
+## Tickets and work packages
 
-Tickets — einschließlich Work Packages, Bugs und Feedback — werden in einem lokalen, nicht versionierten und maschinenlesbaren Store gespeichert: `.vibe/tickets.json`. [cite:1]
+Tickets, including work packages, bugs, and feedback, are stored in a local, unversioned, machine-readable store: `.vibe/tickets.json`. [cite:1]
 
-Unterstützte Status:
+Supported statuses:
 
 - `draft`
 - `open`
@@ -48,10 +48,10 @@ Unterstützte Status:
 - `awaiting-merge`
 - `completed`
 
-IDs werden automatisch vergeben, sofern keine eigene ID angegeben wird. Sie müssen auch bei gleichzeitigen Schreibvorgängen eindeutig bleiben. [cite:1]
+IDs are assigned automatically unless the user provides one. They must remain unique, including during concurrent writes. [cite:1]
 
 ## Migration
 
-Bei der Übernahme bestehender Installationen müssen `_toolchain`- und `_logs`-Daten erhalten bleiben. Persönliche Konfiguration darf nicht durch ausgelieferte Defaults ersetzt werden. [cite:1]
+When adopting existing installations, `_toolchain` and `_logs` data must be preserved. Personal configuration must not be replaced with shipped defaults. [cite:1]
 
-Vor einer Migration werden Vorschau und Backup bereitgestellt. Updates und Rollbacks erhalten persönliche Einstellungen; eine Deinstallation entfernt standardmäßig weder Projekte noch Nutzerdaten. [cite:1]
+A preview and backup are provided before migration. Updates and rollbacks preserve personal settings; uninstallation does not remove projects or, by default, user data. [cite:1]
