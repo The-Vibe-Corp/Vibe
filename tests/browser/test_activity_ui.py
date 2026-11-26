@@ -1714,6 +1714,709 @@ class CostsTest(F34ActivityEvalsBrowserTest):
         self.assert_clean_page()
 
 
+class CostsOverviewUiTest(F34ActivityEvalsBrowserTest):
+    """GH-114: kompakte Projektliste, Monatssummary, alle Modelle, Währungsfelder.
+
+    Eigene Klasse mit derselben Fixture wie ``CostsTest``, damit vorhandene
+    Kosten-Tests nicht erneut ausgeführt und nicht durch Preisspeicherungen
+    dieser Fälle beeinflusst werden. Die API-Stubs ersetzen ausschließlich
+    ``/api/costs`` und ``/api/project-agents`` — keine Modellaufrufe.
+    """
+
+    LONG_PROJECT = (
+        "projekt-mit-sehr-langem-namen-fuer-die-kompakte-kostenuebersicht"
+        "-und-responsive-layouts-2026-11")
+
+    # ---------- Helfer ----------
+
+    def route_costs(self, overview, detail):
+        """GET /api/costs je nach ``name``-Parameter stubben (wie GH-99)."""
+        def handle(route):
+            body = detail if "name=" in route.request.url else overview
+            route.fulfill(status=200, content_type="application/json",
+                          body=json.dumps(body, ensure_ascii=False))
+        self.page.route("**/api/costs*", handle)
+
+    @staticmethod
+    def cost_tokens():
+        return {"input": 15505947, "cached": 15212032, "output": 76311}
+
+    @staticmethod
+    def parse_price(value):
+        """Wert eines Preisfeldes unabhängig von Symbol/Trennzeichen lesen."""
+        text = (value or "").strip()
+        for symbol in ("€", "$", "EUR", "USD"):
+            text = text.replace(symbol, "")
+        text = text.replace("\u00a0", " ").strip()
+        if not text:
+            raise AssertionError("Preisfeld ist leer: " + repr(value))
+        if "," in text and "." in text:
+            decimal = "," if text.rfind(",") > text.rfind(".") else "."
+            thousands = "." if decimal == "," else ","
+            text = text.replace(thousands, "").replace(decimal, ".")
+        elif "," in text:
+            text = text.replace(",", ".")
+        return float(text)
+
+    def month_summary(self, month="2026-11"):
+        return self.page.locator(f'div[data-nv-cost-month="{month}"]').first
+
+    def assert_summary_fields(self, month, labels, numbers, cost_number):
+        summary = self.month_summary(month)
+        summary.wait_for(state="visible", timeout=20000)
+        self.assertIn(month, summary.inner_text(), "Monatslabel fehlt")
+        self.assertEqual(
+            1, self.page.locator(f'div[data-nv-cost-month="{month}"]').count(),
+            "Monatszeile ist nicht eindeutig")
+        for field, label, number in zip(
+                ("sessions", "input", "cached", "output", "cost"),
+                labels, numbers):
+            with self.subTest(field=field):
+                cell = summary.locator(
+                    f'[data-nv-cost-month-field="{field}"]').first
+                self.assertEqual(1, summary.locator(
+                    f'[data-nv-cost-month-field="{field}"]').count(),
+                    f"Feld {field} fehlt oder ist mehrfach vorhanden")
+                text = cell.inner_text() or ""
+                self.assertIn(label.lower(), text.lower(),
+                              f"Feld {field} ist nicht beschriftet: {text!r}")
+                self.assertIn(number, text,
+                              f"Feld {field} ist falsch formatiert: {text!r}")
+        cost_text = summary.locator(
+            '[data-nv-cost-month-field="cost"]').first.inner_text() or ""
+        self.assertTrue(
+            ("€" in cost_text or "EUR" in cost_text
+             or "$" in cost_text or "USD" in cost_text),
+            "Kosten zeigen kein Währungssymbol/-code: " + repr(cost_text))
+        self.assertIn(cost_number, cost_text,
+                      "Kosten haben nicht vier Nachkommastellen: " + repr(cost_text))
+
+    def month_fixture(self):
+        """Persistierte Monatswerte für die Detailansicht von ``proj``."""
+        tokens = self.cost_tokens()
+        detail = {
+            "available": True, "project": PROJECT,
+            "packages": [{
+                "id": "F34-TEST", "title": "WP zum Test", "month": "2026-11",
+                "sessions": 1234, "tokens": tokens, "cost": 0.042,
+                "models": [{"price_source": "system"}],
+            }],
+            "total": {"tokens": tokens, "cost": 0.042, "sessions": 1234},
+            "monthly": [{"month": "2026-11", "sessions": 1234,
+                         "tokens": tokens, "cost": 0.042}],
+            "user_prices": {}, "global_prices": {},
+        }
+        overview = {
+            "available": True, "currency": "EUR",
+            "projects": [{"name": PROJECT, "packages": 1, "sessions": 1234,
+                          "tokens": tokens, "cost": 0.042, "monthly": []}],
+            "total": {"tokens": tokens, "cost": 0.042, "sessions": 1234},
+            "monthly": [], "global_prices": {},
+        }
+        return overview, detail
+
+    # ---------- 1: kompakte Projektliste ----------
+
+    def test_project_rows_stay_single_line_with_long_name_at_1400_and_900px(self):
+        """GH-114/1: ein Projekt = eine Zeile, langer Name gekürzt mit Tooltip.
+
+        Vorbedingung: ``/api/costs`` liefert zwei Projekte, eines mit sehr
+        langem Namen; Viewport 1400 px, danach 900 px.
+
+        Erwartung: ``tr[data-nv-cost-project]`` existiert genau einmal pro
+        Projekt; das Namenselement ``[data-nv-cost-name]`` trägt den vollen
+        Namen als ``title`` und ist per CSS auf eine Zeile mit Ellipsis
+        begrenzt; keine Zeile/Zelle ist höher als 44 px; alle sieben Spalten
+        bleiben erhalten ( horizontales Scrollen im Wrapper ist erlaubt).
+        """
+        tokens = self.cost_tokens()
+        overview = {
+            "available": True, "currency": "EUR",
+            "projects": [
+                {"name": self.LONG_PROJECT, "packages": 3, "sessions": 12,
+                 "tokens": tokens, "cost": 0.042, "monthly": []},
+                {"name": PROJECT, "packages": 1, "sessions": 2,
+                 "tokens": tokens, "cost": 0.042, "monthly": []},
+            ],
+            "total": {"tokens": tokens, "cost": 0.084, "sessions": 14},
+            "monthly": [], "global_prices": {},
+        }
+        detail = {"available": True, "project": PROJECT, "packages": [],
+                  "total": {"tokens": tokens, "cost": 0.0, "sessions": 0},
+                  "monthly": [], "user_prices": {}, "global_prices": {}}
+        self.route_costs(overview, detail)
+        self.open_evaluations("costs")
+        table = self.page.locator("table[data-nv-cost-projects]").first
+        table.wait_for(state="visible", timeout=20000)
+        rows = table.locator("tr[data-nv-cost-project]")
+        self.assertEqual(2, rows.count(), "Nicht genau eine Zeile pro Projekt")
+        row = table.locator(
+            f'tr[data-nv-cost-project="{self.LONG_PROJECT}"]')
+        self.assertEqual(1, row.count(), "Zeile des langen Projekts fehlt")
+        self.assertEqual(7, table.locator("th").count(),
+                         "Nicht alle Spalten sind vorhanden")
+
+        for width in (1400, 900):
+            with self.subTest(viewport=width):
+                self.page.set_viewport_size({"width": width, "height": 1000})
+                self.page.wait_for_timeout(150)
+                name = row.locator("[data-nv-cost-name]").first
+                self.assertEqual(1, row.locator("[data-nv-cost-name]").count(),
+                                 "Namens-Hook [data-nv-cost-name] fehlt")
+                self.assertEqual(
+                    self.LONG_PROJECT, name.get_attribute("title"),
+                    "Tooltip zeigt nicht den vollen Projektnamen")
+                style = name.evaluate("""e => {
+                  const s = getComputedStyle(e);
+                  return {white: s.whiteSpace, ellipsis: s.textOverflow,
+                          overflow: s.overflow};
+                }""")
+                self.assertEqual("nowrap", style["white"],
+                                 "Projektname darf nicht umbrechen: " + repr(style))
+                self.assertEqual("ellipsis", style["ellipsis"],
+                                 "Projektname wird nicht abgekürzt: " + repr(style))
+                self.assertIn(style["overflow"], ("hidden", "clip"),
+                              "Ellipsis ohne Overflow-Check: " + repr(style))
+                height = row.evaluate("e => e.getBoundingClientRect().height")
+                self.assertLessEqual(height, 44,
+                                     f"Projektzeile ist {height}px hoch (> 44px)")
+                for cell in row.locator("td").all():
+                    cell_height = cell.evaluate(
+                        "e => e.getBoundingClientRect().height")
+                    self.assertLessEqual(
+                        cell_height, 44,
+                        f"Zelle bricht um: {cell_height}px hoch")
+                cells = [cell.inner_text().strip()
+                         for cell in row.locator("td").all()]
+                self.assertEqual(7, len(cells), cells)
+                self.assertIn("12", cells, "Sitzungen der Zeile verändert: " + repr(cells))
+                self.assertIn("0,0420 €", cells,
+                              "Kosten der Zeile verändert: " + repr(cells))
+                wrap = self.page.locator(".nv-table-wrap").first
+                self.assertIn(wrap.evaluate("e => getComputedStyle(e).overflowX"),
+                              ("auto", "scroll"),
+                              "Tabelle hat keinen horizontalen Scrollbereich")
+                self.assert_clean_page()
+
+    # ---------- 2: Monatszusammenfassung ----------
+
+    def test_monthly_summary_de_is_labeled_locale_formatted_and_compact(self):
+        """GH-114/2: strukturierte deutsche Monatssummary ohne Überlauf.
+
+        Vorbedingung: ``/api/costs`` mit Monat 2026-11 (1.234 Sitzungen,
+        15.505.947 Eingabe, 15.212.032 Cache, 76.311 Ausgabe, 0,042 EUR);
+        Sprache ``de`` (Fixture-Standard); Viewport danach 900 px.
+
+        Erwartung: ``div[data-nv-cost-month="2026-11"]`` bleibt erhalten,
+        enthält Monatslabel und fünf einzeln beschriftete Felder
+        ``[data-nv-cost-month-field]``; de-DE-Tausendertrennung und vier
+        Nachkommastellen mit EUR-Symbol; bei 900 px kein horizontaler
+        Überlauf des Summary-Elements.
+        """
+        overview, detail = self.month_fixture()
+        self.route_costs(overview, detail)
+        self.post_json("/api/ui_settings", {"currency": "EUR", "usd_rate": 1.0})
+        self.open_evaluations("costs")
+        self.page.locator("[data-nv-cost-projects] [data-nv-cost-expand]").first.click()
+        self.assert_summary_fields(
+            "2026-11",
+            ("Sitzungen", "Eingabe", "davon Cache", "Ausgabe", "Kosten"),
+            ("1.234", "15.505.947", "15.212.032", "76.311", "0,0420"),
+            "0,0420")
+        self.assertEqual(
+            5, self.month_summary().locator("[data-nv-cost-month-field]").count(),
+            "Monatszeile hat nicht genau fünf beschriftete Werte")
+        self.page.set_viewport_size({"width": 900, "height": 1000})
+        self.page.wait_for_timeout(150)
+        metrics = self.month_summary().evaluate(
+            "e => ({scrollWidth: e.scrollWidth, clientWidth: e.clientWidth})")
+        self.assertLessEqual(
+            metrics["scrollWidth"], metrics["clientWidth"] + 2,
+            "Monatssummary läuft bei 900px über: " + repr(metrics))
+        self.assert_clean_page()
+
+    def test_monthly_summary_en_us_uses_english_locale_number_format(self):
+        """GH-114/2: Monatssummary folgt der aktiven Sprache (en-US).
+
+        Vorbedingung: ``POST /api/language {language: en}``, ``/api/costs``
+        wie im deutschen Fall; danach Sprachwechsel zurück auf ``de``.
+
+        Erwartung: dieselbe Summary nutzt englische Beschriftungen und
+        en-US-Tausendertrennung (15,505,947 / 0.0420) statt deutscher Punkte.
+        """
+        overview, detail = self.month_fixture()
+        status, body = self.post_json("/api/language", {"language": "en"})
+        self.assertEqual(200, status, "Sprache en konnte nicht gesetzt werden: " + body)
+        try:
+            self.route_costs(overview, detail)
+            self.open_evaluations("costs")
+            self.page.locator(
+                "[data-nv-cost-projects] [data-nv-cost-expand]").first.click()
+            self.assert_summary_fields(
+                "2026-11",
+                ("Sessions", "Input", "cached", "Output", "Cost"),
+                ("1,234", "15,505,947", "15,212,032", "76,311", "0.0420"),
+                "0.0420")
+            self.assert_clean_page()
+        finally:
+            self.post_json("/api/language", {"language": "de"})
+
+    # ---------- 3: alle Modelle inkl. Subagenten ----------
+
+    def test_price_editor_lists_each_used_model_once_with_subagent_roles(self):
+        """GH-114/3: Hauptagent, Subagenten und Duplikatverarbeitung.
+
+        Vorbedingung: ``/api/costs``-Detail nennt ``model-main`` (coding-agent)
+        und ``model-shared`` (coding-agent + general); ``/api/project-agents``
+        nennt zusätzlich ``model-explore`` für den Subagenten ``explore``.
+        ``model-shared`` erscheint in Usage und Agentkonfiguration.
+
+        Erwartung: der Editor listet genau drei Modelle, jedes als eine
+        ``[data-nv-price-row]`` mit drei editierbaren Preisfeldern; Rollen
+        ``coding-agent``, ``general`` und ``explore`` sind als Badges
+        ``[data-nv-price-agent]`` sichtbar; der bestehende Preis von
+        ``model-main`` (1.5) ist vorbelegt.
+        """
+        tokens = self.cost_tokens()
+        overview = {
+            "available": True, "currency": "EUR",
+            "projects": [{"name": PROJECT, "packages": 1, "sessions": 2,
+                          "tokens": tokens, "cost": 0.0, "monthly": []}],
+            "total": {"tokens": tokens, "cost": 0.0, "sessions": 2},
+            "monthly": [], "global_prices": {},
+        }
+        detail = {
+            "available": True, "project": PROJECT,
+            "packages": [{
+                "id": "F34-TEST", "title": "WP zum Test", "month": "2026-11",
+                "sessions": 2, "tokens": tokens, "cost": 0.0,
+                "models": [
+                    {"agent": "coding-agent", "model": "opencode/model-main",
+                     "price_source": "user"},
+                    {"agent": "explore", "model": "opencode/model-shared",
+                     "price_source": "unbekannt"},
+                ],
+            }],
+            "total": {"tokens": tokens, "cost": 0.0, "sessions": 2},
+            "monthly": [],
+            "models": [
+                {"model": "opencode/model-main", "agents": ["coding-agent"],
+                 "tokens": tokens, "cost": 0.0, "price_source": "user"},
+                {"model": "opencode/model-shared",
+                 "agents": ["coding-agent", "general"],
+                 "tokens": tokens, "cost": 0.0, "price_source": "unbekannt"},
+            ],
+            "user_prices": {"opencode/model-main": {
+                "input": 1.5, "cached_input": 0.25, "output": 2.0}},
+            "global_prices": {},
+        }
+        agents = {
+            "project": PROJECT, "agents": [
+                {"name": "coding-agent",
+                 "effective_model": "opencode/model-main", "opencode": False},
+                {"name": "general",
+                 "effective_model": "opencode/model-shared", "opencode": True},
+                {"name": "explore",
+                 "effective_model": "opencode/model-explore", "opencode": True},
+            ], "error": None,
+        }
+        self.route_costs(overview, detail)
+        self.page.route("**/api/project-agents*", lambda route: route.fulfill(
+            status=200, content_type="application/json",
+            body=json.dumps(agents, ensure_ascii=False)))
+        self.open_evaluations("costs")
+        self.page.locator("[data-nv-cost-projects] [data-nv-cost-expand]").first.click()
+        self.wait_until(
+            lambda: self.page.locator("[data-nv-cost-missing]").count() == 1,
+            timeout=25, message="Der fehlende Preis erscheint nicht")
+        self.page.locator("[data-nv-cost-price-link]").first.click()
+        editor = self.page.locator("section[data-nv-price-editor]").first
+        editor.wait_for(state="visible", timeout=20000)
+        self.wait_until(
+            lambda: editor.locator("[data-nv-price-row]").count() == 3,
+            timeout=25,
+            message="Der Editor zeigt nicht genau die drei verwendeten Modelle")
+
+        expected = {
+            "opencode/model-main": {"coding-agent"},
+            "opencode/model-shared": {"coding-agent", "general"},
+            "opencode/model-explore": {"explore"},
+        }
+        seen = set()
+        for row in editor.locator("[data-nv-price-row]").all():
+            model = row.get_attribute("data-nv-price-row")
+            with self.subTest(model=model):
+                self.assertIn(model, expected, "Unerwartetes Modell im Editor: " + str(model))
+                self.assertNotIn(model, seen, "Modell ist doppelt im Editor: " + str(model))
+                seen.add(model)
+                self.assertEqual(
+                    1, editor.locator(f'[data-nv-price-row="{model}"]').count(),
+                    "Modell ist mehrfach im Editor")
+                fields = row.locator("input[data-nv-price-field]")
+                self.assertEqual(3, fields.count(), "Preisfelder fehlen")
+                for field in ("input", "cached_input", "output"):
+                    self.assertEqual(
+                        1, row.locator(
+                            f'input[data-nv-price-model="{model}"]'
+                            f'[data-nv-price-field="{field}"]').count(),
+                        "Feld " + field + " fehlt oder ist doppelt")
+                roles = {
+                    badge.inner_text().strip()
+                    for badge in row.locator("[data-nv-price-agent]").all()
+                }
+                self.assertEqual(
+                    expected[model], roles,
+                    "Agentenrollen fehlen für " + str(model) + ": " + repr(roles))
+        self.assertEqual(set(expected), seen, "Nicht alle Modelle sind im Editor")
+        main_input = editor.locator(
+            'input[data-nv-price-model="opencode/model-main"]'
+            '[data-nv-price-field="input"]').first
+        self.assertEqual(
+            1.5, self.parse_price(main_input.input_value()),
+            "Bestehender Preis ist nicht editierbar vorbelegt: "
+            + repr(main_input.input_value()))
+        self.assert_clean_page()
+
+    # ---------- 4: Währungsfelder und Validierung ----------
+
+    def test_cost_entry_accepts_locale_currency_values_and_rejects_invalid(self):
+        """GH-114/4: Währungseingabe, Validierung und Übernahme in der Ansicht.
+
+        Vorbedingung: zustandsbehafteter ``/api/costs``-Stub mit persistiertem
+        Paket (400k Eingabe, 600k Cache, 500k Ausgabe) ohne bekannten Preis;
+        Preis-Editor für ``proj`` offen; EUR/de. Der Stub zeichnet POSTs auf
+        und rechnet den Paketwert aus den gespeicherten Preisen, damit der
+        Fachvertrag unabhängig von der DB-Fixture geprüft wird.
+
+        Aktion: ungültige Werte (negativ, Text, leer) speichern; danach
+        locale-formatierte Werte ``1,50 €`` / ``0,25 €`` / ``2,00 €`` speichern.
+
+        Erwartung: ungültige Werte zeigen ``[data-nv-eval-error]`` und lösen
+        keinen POST aus; formatierte Werte werden als 1.5/0.25/2.0 gespeichert,
+        der „Preis fehlt"-Hinweis verschwindet und die Paketzeile zeigt den
+        formatierten Kostenwert (1,7500 €).
+        """
+        self.post_json("/api/ui_settings", {"currency": "EUR", "usd_rate": 1.0})
+        model = "opencode/model-a"
+        tokens = {"input": 400000, "cached": 600000, "output": 500000}
+        state = {"prices": {}, "posts": []}
+
+        def cost_of(price):
+            price = price or {}
+            return (tokens["input"] / 1000000 * float(price.get("input", 0))
+                    + tokens["cached"] / 1000000 * float(price.get("cached_input", 0))
+                    + tokens["output"] / 1000000 * float(price.get("output", 0)))
+
+        def handle(route):
+            if route.request.method == "POST":
+                payload = json.loads(route.request.post_data or "{}")
+                state["posts"].append(payload)
+                state["prices"].update(payload.get("prices") or {})
+                route.fulfill(status=200, content_type="application/json",
+                              body=json.dumps({"ok": True, "message": "Preise gespeichert"}))
+                return
+            price = state["prices"].get(model) or {}
+            cost = cost_of(price)
+            source = "user" if price else "unbekannt"
+            package = {
+                "id": "F34-TEST", "title": "WP zum Test", "month": "2026-11",
+                "sessions": 1, "tokens": tokens, "cost": cost,
+                "models": [{"agent": "coding-agent", "model": model,
+                            "price_source": source}],
+            }
+            if "name=" in route.request.url:
+                body = {
+                    "available": True, "project": PROJECT, "packages": [package],
+                    "models": [{"model": model, "agents": ["coding-agent"],
+                                "tokens": tokens, "cost": cost,
+                                "price_source": source}],
+                    "total": {"tokens": tokens, "cost": cost, "sessions": 1},
+                    "monthly": [{"month": "2026-11", "sessions": 1,
+                                 "tokens": tokens, "cost": cost}],
+                    "user_prices": dict(state["prices"]), "global_prices": {},
+                }
+            else:
+                body = {
+                    "available": True, "currency": "EUR",
+                    "projects": [{"name": PROJECT, "packages": 1, "sessions": 1,
+                                  "tokens": tokens, "cost": cost, "monthly": []}],
+                    "total": {"tokens": tokens, "cost": cost, "sessions": 1},
+                    "monthly": [], "global_prices": {},
+                }
+            route.fulfill(status=200, content_type="application/json",
+                          body=json.dumps(body, ensure_ascii=False))
+
+        self.page.route("**/api/costs*", handle)
+        self.open_evaluations("costs")
+        self.page.locator("[data-nv-cost-projects] [data-nv-cost-expand]").first.click()
+        self.wait_until(
+            lambda: self.page.locator("[data-nv-cost-price-link]").count() == 1,
+            timeout=25, message="Preis-Link fehlt")
+        self.page.locator("[data-nv-cost-price-link]").first.click()
+        editor = self.page.locator("section[data-nv-price-editor]").first
+        editor.wait_for(state="visible", timeout=20000)
+        self.wait_until(
+            lambda: editor.locator("input[data-nv-price-field]").count() >= 3,
+            timeout=25, message="Keine Preisfelder im Editor")
+        field = lambda name: editor.locator(
+            f'input[data-nv-price-model="{model}"][data-nv-price-field="{name}"]').first
+
+        for raw in ("-1", "abc", ""):
+            with self.subTest(invalid=raw):
+                field("input").fill(raw)
+                self.page.locator("[data-nv-action='cost-prices-save']").first.click()
+                error = editor.locator("[data-nv-eval-error]").first
+                error.wait_for(state="visible", timeout=10000)
+                self.assertTrue(error.inner_text().strip(),
+                                "Ungültiger Wert zeigt keine Fehlermeldung")
+                self.assertEqual([], state["posts"],
+                                 "Ungültiger Wert wurde trotzdem gespeichert: "
+                                 + repr(state["posts"]))
+
+        field("input").fill("1,50 €")
+        field("cached_input").fill("0,25 €")
+        field("output").fill("2,00 €")
+        self.page.locator("[data-nv-action='cost-prices-save']").first.click()
+        toast = self.page.locator("[data-nv-toast-auto]").first
+        toast.wait_for(state="visible", timeout=20000)
+        self.assertIn("Preise", toast.inner_text())
+        self.wait_until(lambda: len(state["posts"]) == 1, timeout=25,
+                        message="Gültige Preise wurden nicht gespeichert")
+        self.assertEqual(
+            {"input": 1.5, "cached_input": 0.25, "output": 2.0},
+            state["posts"][0]["prices"][model],
+            "Formatierte Preise falsch interpretiert: " + repr(state["posts"][0]))
+        self.wait_until(
+            lambda: self.page.locator("[data-nv-cost-missing]").count() == 0,
+            timeout=25, message="Preisfehler verschwindet nach dem Speichern nicht")
+        row = self.page.locator(
+            "table[data-nv-cost-packages] tr", has_text="F34-TEST").first
+        self.wait_until(
+            lambda: "1,7500" in (row.inner_text() or ""),
+            timeout=25,
+            message="Gespeicherter Preis erscheint nicht in der Detailübersicht: "
+            + (row.inner_text() or ""))
+        self.assert_clean_page()
+
+    def test_saving_unmodified_usd_price_keeps_stored_eur_value(self):
+        """GH-114/4: Speichern ohne Änderung darf EUR-Preis nicht verschieben.
+
+        Vorbedingung: ``POST /api/ui_settings {currency: USD, usd_rate: 1.19}``;
+        zustandsbehafteter ``/api/costs``-Stub mit ``user_prices`` =
+        ``{input: 0.1234, cached_input: 0, output: 0}``; Editor für ``proj``
+        offen, Preisfelder unverändert.
+
+        Aktion: ``cost-prices-save`` klicken, danach unverändert erneut klicken.
+
+        Erwartung: genau zwei POSTs mit ``prices[model]['input'] == 0.1234``
+        (places=6), kein sichtbarer ``[data-nv-eval-error]``, keine
+        JavaScript-Fehler. Die Anzeige im USD-Kurs darf beim Speichern nicht
+        in den gespeicherten EUR-Wert zurückgerechnet werden.
+        """
+        model = "opencode/model-a"
+        initial = {"input": 0.1234, "cached_input": 0.0, "output": 0.0}
+        tokens = {"input": 400000, "cached": 600000, "output": 500000}
+        state = {"prices": {model: dict(initial)}, "posts": []}
+
+        def handle(route):
+            if route.request.method == "POST":
+                payload = json.loads(route.request.post_data or "{}")
+                state["posts"].append(payload)
+                state["prices"].update(payload.get("prices") or {})
+                route.fulfill(status=200, content_type="application/json",
+                              body=json.dumps({"ok": True, "message": "Preise gespeichert"}))
+                return
+            price = state["prices"].get(model) or {}
+            package = {
+                "id": "F34-TEST", "title": "WP zum Test", "month": "2026-11",
+                "sessions": 1, "tokens": tokens, "cost": 0.0,
+                # „unbekannt" öffnet den projektbezogenen Preis-Editor; der
+                # vorhandene user_price bleibt davon unabhängig vorbelegt.
+                "models": [{"agent": "coding-agent", "model": model,
+                            "price_source": "unbekannt"}],
+            }
+            if "name=" in route.request.url:
+                body = {
+                    "available": True, "project": PROJECT, "packages": [package],
+                    "models": [{"model": model, "agents": ["coding-agent"],
+                                "tokens": tokens, "cost": 0.0,
+                                "price_source": "unbekannt"}],
+                    "total": {"tokens": tokens, "cost": 0.0, "sessions": 1},
+                    "monthly": [], "user_prices": dict(state["prices"]),
+                    "global_prices": {},
+                }
+            else:
+                body = {
+                    "available": True, "currency": "USD",
+                    "projects": [{"name": PROJECT, "packages": 1, "sessions": 1,
+                                  "tokens": tokens, "cost": 0.0, "monthly": []}],
+                    "total": {"tokens": tokens, "cost": 0.0, "sessions": 1},
+                    "monthly": [], "global_prices": {},
+                }
+            route.fulfill(status=200, content_type="application/json",
+                          body=json.dumps(body, ensure_ascii=False))
+
+        status, body = self.post_json(
+            "/api/ui_settings", {"currency": "USD", "usd_rate": 1.19})
+        self.assertEqual(200, status, "USD-Kurs konnte nicht gesetzt werden: " + body)
+        try:
+            self.page.route("**/api/costs*", handle)
+            self.open_evaluations("costs")
+            self.page.locator(
+                "[data-nv-cost-projects] [data-nv-cost-expand]").first.click()
+            self.wait_until(
+                lambda: self.page.locator("[data-nv-cost-price-link]").count() == 1,
+                timeout=25, message="Preis-Link fehlt")
+            self.page.locator("[data-nv-cost-price-link]").first.click()
+            editor = self.page.locator("section[data-nv-price-editor]").first
+            editor.wait_for(state="visible", timeout=20000)
+            self.wait_until(
+                lambda: editor.locator(
+                    f'input[data-nv-price-model="{model}"]'
+                    '[data-nv-price-field="input"]').count() == 1,
+                timeout=25, message="Preisfeld fehlt im Editor")
+
+            for expected_posts in (1, 2):
+                self.page.locator(
+                    "[data-nv-action='cost-prices-save']").first.click()
+                self.wait_until(
+                    lambda: len(state["posts"]) == expected_posts,
+                    timeout=25,
+                    message="Speichern ohne Änderung wurde nicht ausgeführt")
+                self.assertAlmostEqual(
+                    0.1234, state["posts"][-1]["prices"][model]["input"],
+                    places=6,
+                    msg="EUR-Preis driftet nach ungeändertem Speichern: "
+                    + repr(state["posts"][-1]["prices"][model]))
+            self.assertTrue(
+                editor.locator("[data-nv-eval-error]").first.is_hidden(),
+                "Speichern zeigt unerwartet einen Fehler")
+            self.assert_clean_page()
+        finally:
+            self.post_json("/api/ui_settings", {"currency": "EUR", "usd_rate": 1.0})
+
+    def assert_price_inputs_saved_as(self, cases, language="de"):
+        """Preisfelder füllen und die gespeicherten EUR-Werte prüfen.
+
+        ``cases`` ist eine Folge von ``(Eingabetext, erwarteter EUR-Wert)``.
+        Der zustandsbehaftete Stub speichert jeden POST und liefert die
+        aktualisierten Preise anschließend wieder an den Editor zurück.
+        """
+        model = "opencode/model-a"
+        tokens = {"input": 400000, "cached": 600000, "output": 500000}
+        state = {"prices": {model: {"input": 0.0, "cached_input": 0.0,
+                                    "output": 0.0}}, "posts": []}
+
+        def handle(route):
+            if route.request.method == "POST":
+                payload = json.loads(route.request.post_data or "{}")
+                state["posts"].append(payload)
+                state["prices"].update(payload.get("prices") or {})
+                route.fulfill(status=200, content_type="application/json",
+                              body=json.dumps({"ok": True, "message": "Preise gespeichert"}))
+                return
+            price = state["prices"].get(model) or {}
+            package = {
+                "id": "F34-TEST", "title": "WP zum Test", "month": "2026-11",
+                "sessions": 1, "tokens": tokens, "cost": 0.0,
+                "models": [{"agent": "coding-agent", "model": model,
+                            "price_source": "unbekannt"}],
+            }
+            if "name=" in route.request.url:
+                body = {
+                    "available": True, "project": PROJECT, "packages": [package],
+                    "models": [{"model": model, "agents": ["coding-agent"],
+                                "tokens": tokens, "cost": 0.0,
+                                "price_source": "unbekannt"}],
+                    "total": {"tokens": tokens, "cost": 0.0, "sessions": 1},
+                    "monthly": [], "user_prices": dict(state["prices"]),
+                    "global_prices": {},
+                }
+            else:
+                body = {
+                    "available": True, "currency": "EUR",
+                    "projects": [{"name": PROJECT, "packages": 1, "sessions": 1,
+                                  "tokens": tokens, "cost": 0.0, "monthly": []}],
+                    "total": {"tokens": tokens, "cost": 0.0, "sessions": 1},
+                    "monthly": [], "global_prices": {},
+                }
+            route.fulfill(status=200, content_type="application/json",
+                          body=json.dumps(body, ensure_ascii=False))
+
+        self.post_json("/api/ui_settings", {"currency": "EUR", "usd_rate": 1.0})
+        if language != "de":
+            status, response = self.post_json("/api/language", {"language": language})
+            self.assertEqual(200, status,
+                             "Sprache " + language + " nicht gesetzt: " + response)
+        try:
+            self.page.route("**/api/costs*", handle)
+            self.open_evaluations("costs")
+            self.page.locator(
+                "[data-nv-cost-projects] [data-nv-cost-expand]").first.click()
+            self.wait_until(
+                lambda: self.page.locator("[data-nv-cost-price-link]").count() == 1,
+                timeout=25, message="Preis-Link fehlt")
+            self.page.locator("[data-nv-cost-price-link]").first.click()
+            editor = self.page.locator("section[data-nv-price-editor]").first
+            editor.wait_for(state="visible", timeout=20000)
+            field = editor.locator(
+                f'input[data-nv-price-model="{model}"][data-nv-price-field="input"]').first
+            self.wait_until(lambda: field.count() == 1, timeout=25,
+                            message="Preisfeld fehlt im Editor")
+            for number, (raw, expected) in enumerate(cases, 1):
+                with self.subTest(raw=raw, expected=expected):
+                    field.fill(raw)
+                    self.page.locator(
+                        "[data-nv-action='cost-prices-save']").first.click()
+                    self.wait_until(
+                        lambda: len(state["posts"]) == number,
+                        timeout=25, message="Preis wurde nicht gespeichert: " + raw)
+                    # Der Editor wird nach dem Speichern asynchron neu gezeichnet.
+                    # Erst wenn der Wert aus dem Stub wieder im Feld steht, darf
+                    # der nächste Fall gefüllt werden — sonst speichert der
+                    # Klick den alten Wert erneut.
+                    self.wait_until(
+                        lambda: field.input_value() != raw,
+                        timeout=25,
+                        message="Editor hat den gespeicherten Preis nicht übernommen: "
+                        + raw)
+                    self.assertAlmostEqual(
+                        expected, state["posts"][-1]["prices"][model]["input"],
+                        places=6,
+                        msg="Falsch geparst: " + repr(raw) + " -> "
+                        + repr(state["posts"][-1]["prices"][model]))
+            self.assertTrue(
+                editor.locator("[data-nv-eval-error]").first.is_hidden(),
+                "Speichern zeigt unerwartet einen Fehler")
+            self.assert_clean_page()
+        finally:
+            if language != "de":
+                self.post_json("/api/language", {"language": "de"})
+            self.post_json("/api/ui_settings", {"currency": "EUR", "usd_rate": 1.0})
+
+    def test_german_thousands_separator_price_is_saved_as_full_value(self):
+        """GH-114/4: de-DE ``1.234 €`` ist 1234, ``1.5`` bleibt 1.5.
+
+        Vorbedingung: EUR/1.0, Sprache ``de``, Preis-Editor für ``proj`` offen.
+        Erwartung: der Punkt in ``1.234 €`` wird als Tausendertrennzeichen
+        gelesen (POST 1234); eine einzelne Nachkommastelle wie in ``1.5``
+        bleibt eine Dezimalstelle (POST 1.5). Kein Fehler, keine JS-Fehler.
+        """
+        self.assert_price_inputs_saved_as([("1.234 €", 1234), ("1.5", 1.5)])
+
+    def test_english_thousands_separator_price_is_saved_as_full_value(self):
+        """GH-114/4: en-US ``1,234 €`` ist 1234.
+
+        Vorbedingung: EUR/1.0, ``POST /api/language {language: en}``,
+        Preis-Editor für ``proj`` offen; Sprache wird am Ende auf ``de``
+        zurückgesetzt.
+
+        Erwartung: das Komma in ``1,234 €`` wird als Tausendertrennzeichen
+        gelesen (POST 1234). Kein Fehler, keine JS-Fehler.
+        """
+        self.assert_price_inputs_saved_as([("1,234 €", 1234)], language="en")
+
+
 class RunsTableTest(F34ActivityEvalsBrowserTest):
     def test_runs_table_cleanup_removes_finished_run(self):
         """Name: Läufe — Register, Filter, Cleanup.

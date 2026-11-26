@@ -1,6 +1,15 @@
 {
  "aenderungen": [
   {
+   "arbeitspaket": "GH-114",
+   "dateien": [
+    "bin/web/nova-evals.js",
+    "bin/web/nova.css"
+   ],
+   "datum": "2026-11-26",
+   "grund": "Kostenuebersicht: Projektliste zeigt je Projekt genau eine kompakte Zeile (Namenskuerzung mit Ellipse und Tooltip, alle sieben Spalten, horizontal scrollbar). Die Monatszusammenfassung ist ein strukturiertes Feldraster mit Monats-Pill und fuenf beschrifteten Feldern (Sitzungen, Eingabe, davon Cache, Ausgabe, Kosten), lokalisiert formatiert (de-DE/en-US) und bei schmalen Viewports umbrechend. Der Preis-Editor sammelt Modelle aus Preisen, Nutzung und /api/project-agents inklusive opencode-Subagenten, dedupliziert nach Modell-ID und zeigt Agentenrollen als Badges. Preisfelder sind Waehrungsfelder mit lokalisiertem Startwert; der Parser akzeptiert deutsche und englische Formate, Waehrungssymbole/-codes und NBSP, lehnt leere/negative/ungueltige Eingaben ohne POST ab und rechnet USD-Anzeigewerte vor dem Speichern in EUR um. Groesse und SHA-256 der geaenderten Manifest-Dateien wurden aktualisiert."
+  },
+  {
    "arbeitspaket": "GH-109",
    "dateien": [
     "bin/web/nova-agents.js",
@@ -1875,8 +1884,8 @@
   },
   {
    "path": "bin/web/nova-evals.js",
-   "bytes": 33055,
-   "sha256": "bf9f3750857c64d64e19e31d02ba4cb7e4ef6ecf9f7e942fbac3c188a15b99f5"
+   "bytes": 41634,
+   "sha256": "23da90c9c7b6087fb81b28a760fa2db28a21708c1b3749e50702debdcb49925d"
   },
   {
    "bytes": 15653,
@@ -1904,9 +1913,9 @@
    "sha256": "84ae6329f31c04fcc8b48c552ade8f9d276c283ab81b1babb66f8988b627d8a7"
   },
   {
-   "bytes": 78878,
+   "bytes": 81637,
    "path": "bin/web/nova.css",
-   "sha256": "1b2b5b2ad6b460d908b42235c25ed0506fe8675c44eda00543e9340561e6eeb3"
+   "sha256": "fbd03f7be5b810ede648cef78d10f16e37b9dc2d31a13f4782e03cce72d4277e"
   },
   {
    "bytes": 12751,

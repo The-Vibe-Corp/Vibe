@@ -1,6 +1,6 @@
 # Costs, environment, and diagnostics
 
-Status: current as of 2026-11-25 (vibe 0.18.0, repository state). Authority: [SPEC.md](../../../SPEC.md).
+Status: current as of 2026-11-26 (vibe 0.18.0, repository state). Authority: [SPEC.md](../../../SPEC.md).
 History: see the ticket records linked at the end.
 
 Vibe reports token usage and cost persisted on work packages. It also exposes
@@ -29,6 +29,20 @@ resolved paths and environment checks.
   `<state>/global-prices.json`, and system prices in `<install>/prices.json`.
   The dashboard under `Auswertungen → Kosten` edits prices and can display USD
   using the configured rate; the CLI reports EUR.
+- The Nova cost overview (`Auswertungen → Kosten`) shows one compact,
+  single-line row per project; long names are truncated with a full-name
+  tooltip and narrow viewports scroll horizontally (GH-114).
+- An expanded project shows a monthly summary card with labelled fields for
+  sessions, input, cached input, output and cost. Token counts and monetary
+  values follow the active UI locale (`de-DE` or `en-US`); costs keep four
+  decimals and the configured currency symbol (GH-114).
+- The project price editor lists every model used in the project, including
+  subagent models from `/api/project-agents` (`general`, `explore`). One row
+  per model shows agent-role badges and existing prices. Price fields are
+  locale-formatted currency inputs; German and English formats, currency
+  symbols/codes and non-breaking spaces are accepted, negative/invalid/empty
+  input is rejected without saving, and USD entries are converted back to the
+  stored EUR base price (GH-114).
 - Runtime behavior against unusual or unreadable session schemas was not
   verified here beyond the fallbacks in the code path.
 
@@ -54,3 +68,4 @@ resolved paths and environment checks.
 - [B1](../B1.md) — cost table refreshes after each package
 - [F12](../F12.md) — cost calculation per package and project
 - [GH-99](../GH-99.md) — persisted per-package costs and session ownership
+- [GH-114](../GH-114.md) — compact overview, monthly summary, all-model price entry
