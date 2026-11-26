@@ -48,12 +48,23 @@ without a static sidebar.
   It shows a three-column board on desktop (draft, ready, in progress) and a
   list on mobile, with shared filter and search controls. Completed tickets
   appear in their own grid below it and stay behind the `Show done` toggle;
-  users can set only draft/open, while in-progress and done belong to the
-  runner (`GH-82`). Native dropdowns share one Nova select style.
+  users can set only draft/open, while blocked, awaiting-merge, and done belong
+  to the runner (`GH-82`, `GH-108`). Native dropdowns share one Nova select
+  style.
+- Since `GH-108`, the quick filters occupy a row above the search field, which
+  uses only its content width instead of the full panel; `Show done` sits
+  directly to its right. `Add package`, `Report bug`, and `Give feedback` live
+  permanently in the hero row on every tab, while `Check` and `Full
+  verification` are reachable through a collapsed `More actions` menu there.
+  `Start working` is disabled while a run is active, and the In Progress
+  `Continue` button is disabled while a session of the project is running.
 - The editor and detail view open in the shared context panel. Status changes,
   prioritization, and drag-and-drop update the ticket store without a full page
-  reload. Ticket semantics belong to [Work packages](work-packages.md) (`GH-56`,
-  `F33`, `F34`).
+  reload. In-progress tickets can be returned to draft or ready from the card,
+  by drag-and-drop, or from the detail sidebar (`GH-108`). Ticket descriptions
+  render as formatted Markdown in detail view, and ticket form fields use the
+  full sidebar width (`GH-108`). Ticket semantics belong to
+  [Work packages](work-packages.md) (`GH-56`, `F33`, `F34`).
 - The project overview lists sessions grouped under their work package: the
   package and project give orientation, while the technical session ID is
   muted, truncated and equipped with a tooltip containing the full ID (GH-99).
@@ -87,6 +98,6 @@ Exact responsive breakpoints and visual styling were not verified here.
 - Language: [AP21](../AP21.md).
 - Work view: [F33](../F33.md), [F34](../F34.md), [GH-56](../GH-56.md),
   [GH-56-design-notes](../GH-56-design-notes.md), [GH-67](../GH-67.md),
-  [GH-99](../GH-99.md).
+  [GH-99](../GH-99.md), [GH-108](../GH-108.md).
 - Visual style: [GH-94](../GH-94.md), [GH-88](../GH-88.md).
 - Foundation: [AP22](../AP22.md).

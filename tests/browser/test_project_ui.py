@@ -687,19 +687,27 @@ class ChecksTest(AP22ProjectBrowserTest):
     def test_checks_buttons_and_quick_verify_started(self):
         """Vorbedingung: ``VERIFY_QUICK="true"`` in ``.vibe/project.env``.
 
-        Aktion: Quick-Prüfung über ``[data-nv-action="verify"]`` starten.
-        Erwartung: ``[data-nv-verify="full"]`` existiert; eine sichtbare
-        Startmeldung erscheint und das Prüfprotokoll wird angelegt.
+        GH-108: Prüfen und Vollprüfung liegen im „Weitere Aktionen“-Dropdown
+        des Headers und sind dort erst nach dem Aufklappen erreichbar.
+        Aktion: Dropdown öffnen und Quick-Prüfung starten. Erwartung: Beide
+        Knöpfe sind im Dropdown vorhanden, eine sichtbare Startmeldung
+        erscheint und das Prüfprotokoll wird angelegt.
         """
         self.open_project()
+        more = self.page.locator("details[data-nv-more-actions]")
+        self.assertEqual(1, more.count(), "Das Aktions-Dropdown fehlt im Header")
+        quick = more.locator("[data-nv-action='verify']")
+        full = more.locator("[data-nv-verify='full']")
+        self.assertEqual(1, quick.count(), "Der Quick-Prüfknopf fehlt im Dropdown")
         self.assertEqual(
-            1, self.page.locator("[data-nv-action='verify']").count(),
-            "Der Quick-Prüfknopf fehlt")
-        self.assertEqual(
-            1, self.page.locator("[data-nv-verify='full']").count(),
-            "Der Voll-Prüfknopf [data-nv-verify='full'] fehlt")
+            1, full.count(), "Der Voll-Prüfknopf fehlt im Dropdown")
+        self.assertFalse(quick.is_visible(),
+                         "Die Prüfknöpfe sind ohne Dropdown sichtbar")
+        more.locator("summary").click()
+        self.assertTrue(quick.is_visible(),
+                        "Die Prüfknöpfe bleiben nach dem Öffnen verborgen")
 
-        self.page.locator("[data-nv-action='verify']").first.click()
+        quick.click()
         verify_log = self.log_dir / f"{PROJECT}.verify.log"
         self.wait_until(
             lambda: verify_log.is_file() and verify_log.stat().st_size > 0,
@@ -1974,19 +1982,21 @@ class WorkOrderTest(F33ProjectBrowserTest):
     def test_work_tab_follows_the_contract_order(self):
         """Vorbedingung: Feature ``priority`` an, Arbeit geöffnet.
 
-        Erwartung (GH-56): Aktionsleiste → Filterleiste → Priorisierung →
-        Kanban-Board in genau dieser DOM-Reihenfolge.
+        GH-108: Die Aktionen liegen im Header (``nv-hero``), nicht mehr in
+        einer Aktionsleiste der Work-Ansicht. Erwartung: Header-Aktion →
+        Filterleiste → Priorisierung → Kanban-Board in genau dieser
+        DOM-Reihenfolge.
         """
         panel = self.open_work()
         self.assert_follows(
             [
-                "section[data-nv-ppanel='work'] div.nv-work-actions",
+                "[data-nv-hero] [data-nv-action='new-package']",
                 "section[data-nv-ppanel='work'] div[data-nv-filter-bar]",
                 "section[data-nv-ppanel='work'] div[data-nv-priority-strip]",
                 "section[data-nv-ppanel='work'] div[data-nv-board]",
             ],
             "Die Arbeitsbereiche stehen nicht in der Reihenfolge "
-            "Aktionsleiste → Filterleiste → Priorisierung → Board")
+            "Header-Aktion → Filterleiste → Priorisierung → Board")
         self.assertEqual(
             3, panel.locator("[data-nv-col]").count(),
             "GH-56: Das Board muss genau drei Spalten haben")
@@ -3859,21 +3869,33 @@ class WorkTest(F34ProjectBrowserTest):
     def test_work_order_and_no_board(self):
         """Vorbedingung: Arbeit geöffnet.
 
-        Erwartung (GH-56, GH-67): Aktionsleiste → Filterleiste → Kanban-Board
-        in DOM-Reihenfolge. GH-67: die Priorisierung liegt auf Desktop nicht
-        im DOM und ist deshalb nicht Teil der Kette (siehe open_work_mobile).
+        GH-108: „Paket anlegen“, „Bug melden“ und „Feedback geben“ stehen im
+        Header und sind in jedem Tab verfügbar; in der Work-Ansicht gibt es
+        keine eigene Aktionsleiste mehr. Erwartung: Header-Aktionen vor der
+        Filterleiste, danach das Kanban-Board. GH-67: die Priorisierung liegt
+        auf Desktop nicht im DOM (siehe open_work_mobile).
         """
         panel = self.open_work()
+        hero = self.page.locator("[data-nv-hero]")
+        for action in ("new-package", "new-bug", "new-feedback"):
+            with self.subTest(action=action):
+                self.assertEqual(
+                    1, hero.locator(f"[data-nv-action='{action}']").count(),
+                    f"{action} fehlt im Header")
+                self.assertEqual(
+                    0, panel.locator(f"[data-nv-action='{action}']").count(),
+                    f"{action} ist noch in der Work-Ansicht")
+        self.assert_before(
+            "[data-nv-hero] [data-nv-action='new-package']",
+            "section[data-nv-ppanel='work'] div.nv-filter-bar[data-nv-filter-bar]",
+            "Die Header-Aktionen stehen nicht vor der Filterleiste")
         self.assert_follows(
             [
-                "section[data-nv-ppanel='work'] [data-nv-action='new-package']",
-                "section[data-nv-ppanel='work'] [data-nv-action='new-bug']",
-                "section[data-nv-ppanel='work'] [data-nv-action='new-feedback']",
                 "section[data-nv-ppanel='work'] div.nv-filter-bar[data-nv-filter-bar]",
                 "section[data-nv-ppanel='work'] div[data-nv-board]",
             ],
-            "Die Arbeitsbereiche stehen nicht in der Reihenfolge "
-            "Aktionsleiste → Filterleiste → Board")
+            "Filterleiste und Board stehen nicht in der Reihenfolge "
+            "Filterleiste → Board")
         self.assertEqual(
             3, panel.locator("[data-nv-col]").count(),
             "GH-56: Das Board muss genau drei Spalten haben")

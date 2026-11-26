@@ -1213,6 +1213,15 @@ span[data-nv-prio-badge] {
   border-left: 3px solid var(--nv-primary);
   border-radius: var(--nv-radius);
 }
+/* GH-108: Felder in der Seitenleiste füllen die verfügbare Breite; die
+   32rem-Obergrenze gilt weiterhin nur für Formulare außerhalb dieses Editors. */
+[data-nv-ticket-form] label.nv-field input,
+[data-nv-ticket-form] label.nv-field select,
+[data-nv-ticket-form] label.nv-field textarea {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
 /* ===== F33 WP4 styles (Ausgabe) — nur in diesem Block ergänzen ===== */
 /* Log bricht Zeilen um — keine horizontalen Überläufe über den Rahmen. */
 .nv-log {
@@ -1708,7 +1717,6 @@ label.nv-field input, label.nv-field select, label.nv-field textarea { max-width
 /* ===== GH-56: Projektansicht „Work" — Board, Liste und Ticket-Editor =====
    Alle Abstände kommen aus dem bestehenden 4px-Raster (--nv-space-1..3),
    damit Board, Filter, Karten und Editor dasselbe Grundraster teilen. */
-.nv-work-actions { margin-bottom: var(--nv-space-3); }
 .nv-work-states { gap: var(--nv-space-1); }
 .nv-work-states .nv-btn[aria-pressed="true"] {
   background: var(--nv-accent-soft-bg);
@@ -1733,11 +1741,41 @@ label.nv-field input, label.nv-field select, label.nv-field textarea { max-width
   color: var(--nv-text);
   font: inherit;
 }
-.nv-work-show-done {
+/* GH-108: Schnellfilter belegen eine eigene Zeile über der Suche; Suche und
+   Erledigt-Schalter teilen sich die Zeile darunter. */
+.nv-work-chips,
+.nv-work-search-row {
+  flex: 1 1 100%;
+  margin-bottom: 0;
+  min-width: 0;
+}
+.nv-work-search-row { flex-wrap: wrap; }
+/* Die Suche nimmt nur ihren Inhaltsanteil statt der vollen Breite ein und
+   schrumpft auf schmalen Viewports weiter. */
+.nv-work-search-row .nv-search {
+  flex: 0 1 20rem;
+  width: auto;
+  max-width: 24rem;
+}
+/* GH-108: „Weitere Aktionen“ klappt die Prüfknöpfe im Held auf, statt sie
+   als primäre Schaltflächen zu zeigen. */
+.nv-more-actions { position: relative; }
+.nv-more-actions > summary { list-style: none; }
+.nv-more-actions > summary::-webkit-details-marker { display: none; }
+.nv-more-actions .nv-more-menu {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   gap: var(--nv-space-2);
-  margin-bottom: var(--nv-space-3);
+  margin-top: var(--nv-space-2);
+  padding: var(--nv-space-2);
+  border: 1px solid var(--nv-border);
+  border-radius: var(--nv-radius-sm);
+  background: var(--nv-bg-raised);
+  box-shadow: var(--nv-shadow);
+}
+.nv-more-actions .nv-more-menu .nv-btn {
+  justify-content: flex-start;
+  white-space: nowrap;
 }
 .nv-priority-label {
   flex: 1 1 auto;
