@@ -563,6 +563,11 @@ img.nv-logo[data-nv-logo] {
 .nv-agent .nv-row:first-child { flex-wrap: nowrap; }
 .nv-agent-name { flex: 1 1 auto; min-width: 0; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .nv-agent .nv-row:first-child .nv-pill { flex: 0 0 auto; white-space: nowrap; }
+/* GH-109: Agentenkarten sind Spalten; die Aktionszeile sitzt am unteren
+   Rand, damit Bearbeiten/Löschen über alle Karten einer Reihe gleich
+   ausgerichtet sind — unabhängig von der Beschreibungslänge. */
+.nv-agent { display: flex; flex-direction: column; }
+.nv-agent .nv-agent-actions { margin-top: auto; margin-bottom: 0; }
 .nv-list { display: flex; flex-direction: column; gap: var(--nv-space-2); margin-bottom: var(--nv-space-3); }
 .nv-muted { color: var(--nv-muted); }
 .nv-note { color: var(--nv-muted); font-size: 0.8125rem; padding: var(--nv-space-2); background: var(--nv-surface-2); border-radius: var(--nv-radius-sm); }
@@ -1086,6 +1091,46 @@ details[data-nv-assignments] > summary {
   font-size: 0.875rem;
 }
 details[data-nv-assignments][open] > summary { margin-bottom: var(--nv-space-3); }
+/* GH-109: Projektzuordnungen — eine Zeile je Projekt mit sichtbarem Namen,
+   beschriftetem Schalter und Modell-Override. */
+[data-nv-assign-row] {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--nv-space-2) var(--nv-space-3);
+  padding: var(--nv-space-2) 0;
+  border-bottom: 1px solid var(--nv-divider);
+}
+[data-nv-assign-row]:last-child { border-bottom: 0; }
+.nv-assign-project {
+  flex: 1 1 8rem;
+  min-width: 0;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.nv-card details[data-nv-assignments] label.nv-assign-toggle {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--nv-space-1);
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 400;
+  cursor: pointer;
+}
+.nv-assign-toggle input[type="checkbox"] { margin: 0; }
+[data-nv-assign-row] .nv-combobox {
+  flex: 1 1 14rem;
+  min-width: 0;
+  max-width: none;
+}
+@media (max-width: 640px) {
+  .nv-assign-project,
+  [data-nv-assign-row] .nv-combobox { flex-basis: 100%; }
+}
+/* GH-109: Restore-Versionsauswahl. */
+.nv-restore-version select { width: 100%; max-width: 32rem; }
+.nv-restore-order { margin: var(--nv-space-1) 0 0; font-size: 0.8125rem; }
 /* ===== F33 WP3 styles (Projektdetail) — nur in diesem Block ergänzen ===== */
 /* F33 WP3-Zusätze: Filterung per [hidden] muss auch Karten mit display-Regeln
    zuverlässig ausblenden; Drag-Griff und Switch brauchen echte Boxen. */
@@ -1478,6 +1523,29 @@ small[data-nv-gate-help] {
 .nv-search-clear { flex: 0 0 auto; min-width: 36px; min-height: 36px; border: 0; border-radius: var(--nv-radius-sm); background: transparent; color: var(--nv-muted); cursor: pointer; font-size: 1.1rem; }
 .nv-search-clear:disabled { opacity: 0.45; cursor: default; }
 .nv-filter-bar, .nv-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--nv-space-3); margin-bottom: var(--nv-space-4); }
+/* GH-109: Agenten-Kopfzeile — Titel, Suche und Aktion teilen eine
+   Mittelachse; die Titel-Margin zog die Elemente bisher aus der Mitte.
+   enhanceView() hüllt die Suche zusätzlich in .nv-filter-bar. */
+.nv-agents-toolbar > .nv-page-title,
+.nv-agents-toolbar > .nv-btn { flex: 0 0 auto; margin: 0; }
+.nv-agents-toolbar > .nv-filter-bar {
+  flex: 1 1 18rem;
+  min-width: 0;
+  max-width: 32rem;
+  margin: 0;
+}
+.nv-agents-toolbar [data-nv-agent-search] {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+}
+.nv-agents-toolbar .nv-search { width: 100%; max-width: none; }
+@media (max-width: 640px) {
+  .nv-agents-toolbar > .nv-filter-bar {
+    flex-basis: 100%;
+    max-width: none;
+  }
+}
 .nv-stack { display: flex; flex-direction: column; gap: var(--nv-space-3); }
 .nv-grid { gap: var(--nv-space-4); }
 .nv-table-wrap { width: 100%; overflow-x: auto; margin-bottom: var(--nv-space-4); }

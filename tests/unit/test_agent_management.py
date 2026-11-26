@@ -483,6 +483,30 @@ class RestoreTest(AgentFixture):
         self.cli.agent_restore("global", "tester", backups[-1])
         self.assertEqual(path.read_text(encoding="utf-8"), AGENT_V1)
 
+    def test_restore_uses_an_explicitly_chosen_older_backup(self):
+        """Vorbedingung: drei Stände und damit zwei Sicherungen; die älteste
+        enthält AGENT_V1, die neueste AGENT_V2.
+
+        Aktion: ``agent_restore`` mit der ältesten Sicherung aufrufen.
+        Erwartung: Genau diese Version wird wiederhergestellt — nicht die
+        neueste. Dies ist der Backend-Vertrag, den die Versionsauswahl der
+        Oberfläche nutzen muss.
+        """
+        path = self.write_global(text=AGENT_V1)
+        first = self.cli.agent_snapshot("global", "tester")
+        self.cli.agent_write("global", "tester", AGENT_V2, expected=first.digest)
+        second = self.cli.agent_snapshot("global", "tester")
+        third = AGENT_V1.replace("Erste Beschreibung", "Dritte Beschreibung")
+        self.cli.agent_write("global", "tester", third, expected=second.digest)
+
+        backups = self.cli.agent_backups("global", "tester")
+        self.assertEqual(2, len(backups))
+        self.assertEqual(path.read_text(encoding="utf-8"), third)
+
+        self.cli.agent_restore("global", "tester", backups[0])
+
+        self.assertEqual(path.read_text(encoding="utf-8"), AGENT_V1)
+
 
 class VersionAndRoleTest(AgentFixture):
     def test_agent_writes_warn_about_an_untested_version_instead_of_blocking(self):
