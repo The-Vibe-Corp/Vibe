@@ -26,25 +26,42 @@ var NV_EVAL_STATE_CODES = {
 
 function nvEvalText(value) { return String(value == null ? '' : value); }
 
+/* GH-114: Zahlen und Beträge folgen der aktiven Sprache. Ohne I18N-Engine
+   bleibt Deutsch der Rückfall, wie in der übrigen Nova-Oberfläche. */
+function nvEvalLocale() {
+  try {
+    if (window.VIBE_I18N && typeof VIBE_I18N.locale === 'function') {
+      return VIBE_I18N.locale();
+    }
+  } catch (error) { /* Fallback unten */ }
+  return 'de-DE';
+}
+
 function nvEvalInt(value) {
   var number = Number(value) || 0;
-  try { return new Intl.NumberFormat('de-DE').format(number); }
+  try { return new Intl.NumberFormat(nvEvalLocale()).format(number); }
   catch (error) { return String(number).replace(/\B(?=(\d{3})+(?!\d))/g, '.'); }
+}
+
+function nvEvalUsd(settings) {
+  return String(settings && settings.currency || 'EUR').toUpperCase() === 'USD';
+}
+
+function nvEvalRate(settings) {
+  var rate = Number(settings && settings.usd_rate);
+  return isFinite(rate) && rate > 0 ? rate : 1;
 }
 
 /* Preise werden in EUR je 1 Mio. Tokens gespeichert. Die Anzeige folgt der
    globalen Einstellung currency/usd_rate: USD-Werte werden umgerechnet.
-   Vier Nachkommastellen halten auch sehr kleine Beträge sichtbar; die
-   Tausenderteilung nutzt deutsche Punkte. */
+   Vier Nachkommastellen halten auch sehr kleine Beträge sichtbar. */
 function nvEvalMoney(eurValue, ui) {
   var settings = ui || {};
-  var usd = String(settings.currency || 'EUR').toUpperCase() === 'USD';
-  var rate = Number(settings.usd_rate);
-  if (!isFinite(rate) || rate <= 0) rate = 1;
-  var value = (Number(eurValue) || 0) * (usd ? rate : 1);
+  var usd = nvEvalUsd(settings);
+  var value = (Number(eurValue) || 0) * (usd ? nvEvalRate(settings) : 1);
   var formatted;
   try {
-    formatted = new Intl.NumberFormat('de-DE', {
+    formatted = new Intl.NumberFormat(nvEvalLocale(), {
       minimumFractionDigits: 4, maximumFractionDigits: 4
     }).format(value);
   } catch (error) {
@@ -54,11 +71,100 @@ function nvEvalMoney(eurValue, ui) {
   return usd ? '$' + formatted : formatted + ' €';
 }
 
+/* GH-114: Startwert eines Preisfeldes in der eingestellten Anzeigewährung.
+   Zwei bis vier Nachkommastellen halten den Wert lesbar; der rohe EUR-Wert
+   wird zusätzlich am Feld hinterlegt, damit unveränderte Felder beim Speichern
+   unverändert bleiben (keine Rundungsdrift über den Wechselkurs). */
+function nvEvalPriceInput(eurValue, ui) {
+  var settings = ui || {};
+  var usd = nvEvalUsd(settings);
+  var value = (Number(eurValue) || 0) * (usd ? nvEvalRate(settings) : 1);
+  var formatted;
+  try {
+    formatted = new Intl.NumberFormat(nvEvalLocale(), {
+      minimumFractionDigits: 2, maximumFractionDigits: 4
+    }).format(value);
+  } catch (error) { formatted = value.toFixed(2); }
+  return usd ? '$' + formatted : formatted + ' €';
+}
+
+/* GH-114: Kursanzeige im Editor folgt der aktiven Locale (de-DE: 1,19). */
+function nvEvalRateText(value) {
+  var number = Number(value);
+  if (!isFinite(number)) return nvEvalText(value);
+  try {
+    return new Intl.NumberFormat(nvEvalLocale(),
+      {maximumFractionDigits: 4}).format(number);
+  } catch (error) { return String(number).replace('.', ','); }
+}
+
+/* GH-114: Toleranter Währungsparser für Preisfelder. Akzeptiert reine
+   Dezimalzahlen (1.5), deutsche (1,50 €, 1.234,50 €, 1.234 €), englische
+   ($1,500.50, 1,234 €) und Währungscodes. Sind beide Separatortypen
+   vorhanden, ist der letzte das Dezimalzeichen und alle früheren sind
+   Tausendertrenner. Bei nur einem Separatortyp entscheidet die aktive
+   Locale: das Dezimalzeichen bleibt Dezimalzeichen (letztes Vorkommen),
+   das Tausenderzeichen wird nur bei gültiger 3er-Gruppierung als
+   Tausendertrenner gelesen, sonst als Dezimalzeichen. Leere, negative oder
+   nicht numerische Eingaben liefern null. */
+function nvEvalGroupedPrice(text, separator) {
+  var parts = text.split(separator);
+  if (parts.length < 2) return false;
+  if (!/^\d{1,3}$/.test(parts[0])) return false;
+  for (var index = 1; index < parts.length; index += 1) {
+    if (!/^\d{3}$/.test(parts[index])) return false;
+  }
+  return true;
+}
+
+function nvEvalParsePrice(raw) {
+  var text = String(raw == null ? '' : raw).replace(/\u00a0/g, ' ').trim();
+  if (!text) return null;
+  text = text.replace(/[€$]/g, '').replace(/EUR/gi, '').replace(/USD/gi, '');
+  text = text.replace(/\s/g, '');
+  if (!text || /[^0-9.,]/.test(text)) return null;
+  var comma = text.lastIndexOf(',');
+  var dot = text.lastIndexOf('.');
+  var decimal = '';
+  if (comma !== -1 && dot !== -1) {
+    decimal = comma > dot ? ',' : '.';
+  } else if (comma !== -1 || dot !== -1) {
+    var separator = comma !== -1 ? ',' : '.';
+    var decimalChar = /^en/i.test(nvEvalLocale()) ? '.' : ',';
+    var groupChar = decimalChar === ',' ? '.' : ',';
+    if (separator === groupChar && nvEvalGroupedPrice(text, separator)) {
+      text = text.replace(/[.,]/g, '');
+    } else {
+      decimal = separator;
+    }
+  }
+  if (decimal) {
+    var index = text.lastIndexOf(decimal);
+    var whole = text.slice(0, index).replace(/[.,]/g, '');
+    var fraction = text.slice(index + 1).replace(/[.,]/g, '');
+    text = whole + '.' + fraction;
+  } else if (comma !== -1 || dot !== -1) {
+    text = text.replace(/[.,]/g, '');
+  }
+  if (!/^\d*\.?\d*$/.test(text) || text === '' || text === '.') return null;
+  var number = Number(text);
+  if (!isFinite(number) || number < 0) return null;
+  return number;
+}
+
+/* GH-114: strukturiertes Monatsfeld der Detailansicht. Label und Wert
+   bleiben getrennte Knoten, damit das Designsystem sie ausrichten kann. */
+function nvEvalMonthField(key, label, value) {
+  return el('div', {class: 'nv-cost-month-field', 'data-nv-cost-month-field': key},
+    el('span', {class: 'nv-cost-month-label'}, label),
+    el('strong', {class: 'nv-cost-month-value'}, value));
+}
+
 function nvEvalPercent(part, total) {
   var all = Number(total) || 0;
   var value = all ? (Number(part) || 0) / all * 100 : 0;
   try {
-    return new Intl.NumberFormat('de-DE', {
+    return new Intl.NumberFormat(nvEvalLocale(), {
       minimumFractionDigits: 1, maximumFractionDigits: 1
     }).format(value) + ' %';
   } catch (error) {
@@ -148,6 +254,8 @@ function nvEvalLoadCosts(panel, token) {
   var expanded = {};
   var editorOpen = false;
   var editorProject = '';
+  var projectAgents = {};
+  var projectAgentsLoading = {};
 
   function money(value) { return nvEvalMoney(value, ui); }
 
@@ -216,13 +324,15 @@ function nvEvalLoadCosts(panel, token) {
     var months = el('div', {'data-nv-cost-months': ''});
     (data.monthly || []).forEach(function (entry) {
       var tokens = entry.tokens || {};
-      months.append(el('div', {class: 'nv-row', 'data-nv-cost-month': nvEvalText(entry.month)},
-        el('b', {}, nvEvalText(entry.month)),
-        el('span', {}, tr('Sitzungen') + ': ' + nvEvalInt(entry.sessions)),
-        el('span', {}, tr('Eingabe') + ': ' + nvEvalInt(tokens.input)),
-        el('span', {}, tr('davon Cache') + ': ' + nvEvalInt(tokens.cached)),
-        el('span', {}, tr('Ausgabe') + ': ' + nvEvalInt(tokens.output)),
-        el('span', {}, tr('Kosten') + ': ' + money(entry.cost))));
+      var month = el('div', {class: 'nv-cost-month',
+        'data-nv-cost-month': nvEvalText(entry.month)},
+        el('span', {class: 'nv-pill nv-type'}, nvEvalText(entry.month)),
+        nvEvalMonthField('sessions', tr('Sitzungen'), nvEvalInt(entry.sessions)),
+        nvEvalMonthField('input', tr('Eingabe'), nvEvalInt(tokens.input)),
+        nvEvalMonthField('cached', tr('davon Cache'), nvEvalInt(tokens.cached)),
+        nvEvalMonthField('output', tr('Ausgabe'), nvEvalInt(tokens.output)),
+        nvEvalMonthField('cost', tr('Kosten'), money(entry.cost)));
+      months.append(month);
     });
     var packages = el('table', {class: 'nv-table', 'data-nv-cost-packages': ''});
     packages.append(el('tr', {},
@@ -284,7 +394,10 @@ function nvEvalLoadCosts(panel, token) {
         drawTable();
       });
       table.append(el('tr', {'data-nv-cost-project': name},
-        el('td', {}, el('div', {class: 'nv-row'}, toggle, el('b', {}, name))),
+        el('td', {}, el('div', {class: 'nv-cost-project-cell'},
+          toggle,
+          el('span', {class: 'nv-cost-name', 'data-nv-cost-name': name,
+            title: name}, name))),
         el('td', {}, nvEvalInt(project.sessions)),
         el('td', {}, nvEvalInt(tokens.input)),
         el('td', {}, nvEvalInt(tokens.cached)),
@@ -315,6 +428,74 @@ function nvEvalLoadCosts(panel, token) {
     return merged;
   }
 
+  /* GH-114: Modelle aus allen Quellen sammeln — Preise (global/projekt),
+     Nutzung (detail.models) und Agentkonfiguration des Projekts inklusive
+     opencode-Subagenten. Die Modell-ID ist der Schlüssel; Duplikate über
+     Quellen hinweg werden vermieden. */
+  function agentRowsFor(project) {
+    var view = projectAgents[project] || {};
+    return Array.isArray(view.agents) ? view.agents : [];
+  }
+
+  function editorModels(project, prices) {
+    var seen = {};
+    var list = [];
+    function add(value) {
+      var id = nvEvalText(value);
+      if (!id || id === '-' || seen[id]) return;
+      seen[id] = true;
+      list.push(id);
+    }
+    Object.keys(prices || {}).forEach(add);
+    var detail = project && detailCache[project];
+    (detail && detail.models || []).forEach(function (item) {
+      add(item && item.model);
+    });
+    agentRowsFor(project).forEach(function (agent) {
+      add(agent && agent.effective_model);
+    });
+    return list.sort();
+  }
+
+  /* Rollen stammen ausschließlich aus der Nutzung und der Agentkonfiguration.
+     packages[].models[].agent wird bewusst nicht übernommen, wenn die
+     Agentkonfiguration ein anderes Modell für den Agenten meldet. */
+  function editorRoles(project) {
+    var roles = {};
+    function add(model, agent) {
+      var id = nvEvalText(model);
+      var name = nvEvalText(agent);
+      if (!id || !name) return;
+      if (!roles[id]) roles[id] = [];
+      if (roles[id].indexOf(name) === -1) roles[id].push(name);
+    }
+    var detail = project && detailCache[project];
+    (detail && detail.models || []).forEach(function (item) {
+      (item && item.agents || []).forEach(function (agent) {
+        add(item && item.model, agent);
+      });
+    });
+    agentRowsFor(project).forEach(function (agent) {
+      add(agent && agent.effective_model, agent && agent.name);
+    });
+    return roles;
+  }
+
+  function loadProjectAgents(project) {
+    if (!project || projectAgents[project] || projectAgentsLoading[project]) return;
+    projectAgentsLoading[project] = api(
+      '/api/project-agents?name=' + encodeURIComponent(project)
+    ).then(function (answer) {
+      if (NV.stale(token)) return;
+      projectAgents[project] = answer || {};
+      if (editorOpen && editorProject === project) buildEditor();
+    }).catch(function () {
+      if (NV.stale(token)) return;
+      projectAgents[project] = {agents: []};
+      if (editorOpen && editorProject === project) buildEditor();
+    });
+  }
+
   function buildEditor() {
     var select = el('select', {'data-nv-price-project': '',
       'aria-label': tr('Projekt für Preise wählen')},
@@ -327,38 +508,48 @@ function nvEvalLoadCosts(panel, token) {
     select.addEventListener('change', function () {
       editorProject = String(select.value || '');
       buildEditor();
-      if (editorProject && !detailCache[editorProject]) {
-        requestDetail(editorProject);
+      if (editorProject) {
+        if (!detailCache[editorProject]) requestDetail(editorProject);
+        loadProjectAgents(editorProject);
       }
     });
 
     var rows = el('div', {class: 'nv-stack'});
     var prices = priceMapFor(editorProject);
-    var models = Object.keys(prices).sort();
-    var detail = editorProject && detailCache[editorProject];
-    if (detail) {
-      (detail.models || []).forEach(function (model) {
-        if (models.indexOf(String(model.model)) === -1) models.push(String(model.model));
-      });
-    }
+    var models = editorModels(editorProject, prices);
+    var roles = editorRoles(editorProject);
     if (!models.length) {
       rows.append(el('p', {class: 'nv-muted'},
         tr('Keine Modelle mit bekannten Preisen.')));
     }
     models.forEach(function (model) {
-      var row = el('div', {class: 'nv-row'}, el('b', {}, nvEvalText(model)));
+      var price = prices[model] || {};
+      var badges = el('div', {class: 'nv-price-agents'});
+      (roles[model] || []).forEach(function (agent) {
+        badges.append(el('span', {class: 'nv-pill', 'data-nv-price-agent': agent},
+          nvEvalText(agent)));
+      });
+      var fields = el('div', {class: 'nv-price-fields'});
       [['input', tr('Eingabe')], ['cached_input', tr('davon Cache')],
        ['output', tr('Ausgabe')]].forEach(function (field) {
-        var price = prices[model] || {};
-        var input = el('input', {type: 'number', min: '0', step: '0.0001',
+        var eur = price[field[0]] != null ? price[field[0]] : 0;
+        var display = nvEvalPriceInput(eur, ui);
+        var input = el('input', {type: 'text', inputmode: 'decimal',
           'data-nv-price-field': field[0], 'data-nv-price-model': nvEvalText(model),
-          value: String(price[field[0]] != null ? price[field[0]] : 0),
+          'data-nv-price-eur': nvEvalText(eur),
+          'data-nv-price-display': display,
+          value: display,
           'aria-label': String(field[1]) + ' ' + nvEvalText(model)});
-        row.append(el('label', {}, String(field[1]) + ' ', input));
+        fields.append(el('label', {class: 'nv-price-field'},
+          el('span', {}, field[1]), input));
       });
-      rows.append(row);
+      rows.append(el('div', {class: 'nv-price-row', 'data-nv-price-row': model},
+        el('div', {class: 'nv-price-model'},
+          el('b', {}, nvEvalText(model)), badges), fields));
     });
 
+    var usd = nvEvalUsd(ui);
+    var rate = nvEvalRateText(ui.usd_rate);
     var editorError = nvEvalErrorBox();
     var save = el('button', {class: 'nv-btn nv-primary', type: 'button',
       'data-nv-action': 'cost-prices-save'}, tr('Preise speichern'));
@@ -367,7 +558,11 @@ function nvEvalLoadCosts(panel, token) {
       el('h3', {}, tr('Modellpreise')),
       el('p', {class: 'nv-muted'}, tr(
         'Preise je 1 Mio. Tokens; Rangfolge: Projekt > global > Katalog.')),
-      select, rows, editorError, el('div', {class: 'nv-row'}, save));
+      select,
+      el('p', {class: 'nv-muted'}, tr(
+        'Anzeige in {{currency}}; gespeichert wird EUR je 1 Mio. Tokens (Kurs {{rate}}).',
+        {currency: usd ? 'USD' : 'EUR', rate: rate})),
+      rows, editorError, el('div', {class: 'nv-row'}, save));
   }
 
   function requestDetail(name) {
@@ -386,20 +581,34 @@ function nvEvalLoadCosts(panel, token) {
     editorProject = nvEvalText(project || '');
     editor.hidden = false;
     buildEditor();
-    if (editorProject && !detailCache[editorProject]) requestDetail(editorProject);
+    if (editorProject) {
+      if (!detailCache[editorProject]) requestDetail(editorProject);
+      loadProjectAgents(editorProject);
+    }
   }
 
   function savePrices(box) {
     nvEvalClearError(box);
     var prices = {};
     var invalid = false;
+    var usd = nvEvalUsd(ui);
+    var rate = nvEvalRate(ui);
     editor.querySelectorAll('input[data-nv-price-field]').forEach(function (input) {
-      var raw = String(input.value || '').trim().replace(',', '.');
-      var number = Number(raw);
-      if (!raw || !isFinite(number) || number < 0) {
+      var number = nvEvalParsePrice(input.value);
+      if (number == null) {
         nvEvalError(box, tr('Preis ist ungültig.'));
         invalid = true;
         return;
+      }
+      /* Unveränderte Felder übernehmen den rohen EUR-Basiswert. Die Anzeige
+         ist bei USD auf vier Nachkommastellen gerundet; ein Rückrechnen über
+         den Kurs würde den gespeicherten Wert sonst driften lassen. */
+      var shown = nvEvalParsePrice(input.getAttribute('data-nv-price-display'));
+      var stored = nvEvalParsePrice(input.getAttribute('data-nv-price-eur'));
+      if (shown != null && stored != null && number === shown) {
+        number = stored;
+      } else if (usd) {
+        number = number / rate;
       }
       var model = nvEvalText(input.getAttribute('data-nv-price-model'));
       if (!prices[model]) prices[model] = {};
@@ -739,6 +948,8 @@ if (window.VIBE_I18N && typeof VIBE_I18N.extend === 'function') {
       'Preise je 1 Mio. Tokens; Rangfolge: Projekt > global > Katalog.':
         'Prices per 1M tokens; precedence: project > global > catalog.',
       'Projekt für Preise wählen': 'Select project for prices',
+      'Anzeige in {{currency}}; gespeichert wird EUR je 1 Mio. Tokens (Kurs {{rate}}).':
+        'Shown in {{currency}}; stored in EUR per 1M tokens (rate {{rate}}).',
       'Keine Modelle mit bekannten Preisen.': 'No models with known prices.',
       'Preis ist ungültig.': 'Price is invalid.',
       'Preise gespeichert': 'Prices saved',
@@ -794,6 +1005,8 @@ if (window.VIBE_I18N && typeof VIBE_I18N.extend === 'function') {
       'Preise je 1 Mio. Tokens; Rangfolge: Projekt > global > Katalog.':
         'Preise je 1 Mio. Tokens; Rangfolge: Projekt > global > Katalog.',
       'Projekt für Preise wählen': 'Projekt für Preise wählen',
+      'Anzeige in {{currency}}; gespeichert wird EUR je 1 Mio. Tokens (Kurs {{rate}}).':
+        'Anzeige in {{currency}}; gespeichert wird EUR je 1 Mio. Tokens (Kurs {{rate}}).',
       'Keine Modelle mit bekannten Preisen.': 'Keine Modelle mit bekannten Preisen.',
       'Preis ist ungültig.': 'Preis ist ungültig.',
       'Preise gespeichert': 'Preise gespeichert',

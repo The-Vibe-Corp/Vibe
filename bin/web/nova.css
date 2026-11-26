@@ -1561,6 +1561,75 @@ small[data-nv-gate-help] {
 .nv-stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: var(--nv-space-3); margin-bottom: var(--nv-space-4); }
 .nv-stat { padding: var(--nv-space-4); border: 1px solid var(--nv-border); border-radius: var(--nv-radius); background: var(--nv-surface-2); }
 .nv-stat strong { display: block; font-size: 1.5rem; }
+
+/* GH-114: Kostenübersicht kompakt — ein Projekt je Zeile, alle sieben Spalten
+   bleiben erhalten. Der Name kürzt sich mit Ellipse und trägt den vollen Wert
+   im title; schmale Viewports scrollen horizontal statt umzubrechen. */
+table[data-nv-cost-projects] { table-layout: fixed; min-width: 46rem; }
+table[data-nv-cost-projects] th,
+table[data-nv-cost-projects] tr[data-nv-cost-project] td {
+  padding: 4px 8px;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+table[data-nv-cost-projects] th:first-child,
+table[data-nv-cost-projects] tr[data-nv-cost-project] td:first-child { width: 32%; }
+/* Der dekorative ▸-Marker erzeugt sonst eine zusätzliche Inline-Zeile über dem
+   Blockinhalt und verdoppelt die Zeilenhöhe; der Aufklappknopf bleibt sichtbar. */
+table[data-nv-cost-projects] tr[data-nv-cost-project] td:first-child::before {
+  content: none;
+  display: none;
+}
+.nv-cost-project-cell { display: flex; align-items: center; gap: var(--nv-space-2); min-width: 0; }
+.nv-cost-project-cell > .nv-btn { flex: 0 0 auto; }
+.nv-cost-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* GH-114: Monatszusammenfassung als eigenes Feldraster; bei schmalen
+   Viewports wickeln die Felder, statt horizontal überzulaufen. */
+.nv-cost-month {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--nv-space-2) var(--nv-space-4);
+  min-width: 0;
+  max-width: 100%;
+  padding: var(--nv-space-3);
+  margin-bottom: var(--nv-space-3);
+  border: 1px solid var(--nv-border);
+  border-radius: var(--nv-radius);
+  background: var(--nv-surface-2);
+}
+.nv-cost-month-field { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.nv-cost-month-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--nv-text-faint);
+}
+.nv-cost-month-value { white-space: nowrap; font-variant-numeric: tabular-nums; }
+/* GH-114: Preis-Editor als Kartenzeilen mit Rollen-Badges und Währungsfeldern. */
+.nv-price-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--nv-space-3);
+  padding: var(--nv-space-3);
+  border: 1px solid var(--nv-border);
+  border-radius: var(--nv-radius);
+  background: var(--nv-surface);
+}
+.nv-price-model { flex: 1 1 14rem; min-width: 0; display: flex; flex-direction: column; gap: var(--nv-space-1); }
+.nv-price-model > b { overflow-wrap: anywhere; }
+.nv-price-agents { display: flex; flex-wrap: wrap; gap: var(--nv-space-1); }
+.nv-price-fields { display: flex; flex-wrap: wrap; gap: var(--nv-space-2); }
+.nv-price-field { display: flex; flex-direction: column; gap: 2px; font-size: 0.8125rem; color: var(--nv-muted); }
+.nv-price-field input { width: 9rem; min-width: 0; }
 .nv-kind-badge { display: inline-block; padding: 0.1rem 0.55rem; border-radius: var(--nv-radius-xs); background: var(--nv-surface-2); color: var(--nv-muted); font-size: 0.8125rem; font-weight: 600; }
 .nv-kind-badge[data-nv-kind="package"] { background: var(--nv-info-bg); color: var(--nv-primary); }
 .nv-kind-badge[data-nv-kind="bug"] { background: var(--nv-error-bg); color: var(--nv-error-text); }
