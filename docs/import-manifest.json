@@ -1,6 +1,15 @@
 {
  "aenderungen": [
   {
+   "arbeitspaket": "GH-100",
+   "dateien": [
+    "bin/web/nova.css",
+    "bin/web/nova-output.js"
+   ],
+   "datum": "2026-11-26",
+   "grund": "Die GH-88-Ausgabekacheln werden korrigiert: Die kompakte Uebersicht ist ein umbruchfaehiges Raster ohne horizontalen Streifen, jede Hauptagenten-Karte belegt eine eigene volle Rasterzeile und nur Subagenten teilen sich das Raster darunter. Beide Raster nutzen die verfuegbare Breite ohne horizontale Scrollleiste und fallen unter der Lesbarkeitsgrenze auf eine Spalte zurueck. Alle grossen Ausgabefenster haben eine feste, an Layout-Breakpoints angepasste Hoehe; lange Ausgaben scrollen im Fenster, Aufklappen und Fokus heben die Hoehe weiterhin auf. Groesse und SHA-256 der geaenderten Manifest-Dateien wurden aktualisiert."
+  },
+  {
    "arbeitspaket": "GH-96",
    "dateien": [
     "bin/vibe-run.sh",
@@ -1834,9 +1843,9 @@
    "sha256": "892e1813519fc47ec3f65101d6ab087d9557a97d6575da3582300694c5a517e1"
   },
   {
-   "bytes": 37922,
+   "bytes": 37677,
    "path": "bin/web/nova-output.js",
-   "sha256": "3b6ef244ff1b10575e9b86ec816b70181f06fbcf0beb82697d7cc3cee458068b"
+   "sha256": "6b93d852db7be168694470fd1e842a089fa33f1eaf89e1fc643e025ddaddb292"
   },
   {
    "bytes": 124575,
@@ -1854,9 +1863,9 @@
    "sha256": "84ae6329f31c04fcc8b48c552ade8f9d276c283ab81b1babb66f8988b627d8a7"
   },
   {
-   "bytes": 71820,
+   "bytes": 73358,
    "path": "bin/web/nova.css",
-   "sha256": "0985e92b9e11b40e312fe6227d3699109fa7e4fb52cc7f5a6e73970cd2245d9f"
+   "sha256": "cef16f3ea6d123c6a68aaaf2c717a33651ed0de48646a1cf0c26eb78753cb734"
   },
   {
    "bytes": 12751,
