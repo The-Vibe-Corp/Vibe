@@ -522,7 +522,7 @@ class RunSelectionTest(ProjectAgentsFixture):
         agents = self.project / "AGENTS.md"
         original = (
             "# eigene Regel\n\n"
-            + self.cli.GENERAL_RULES_MARK
+            + "<!-- vibe:general-rules -->"
             + "\n## Alt\n- veraltet\n<!-- /vibe:general-rules -->\n\n## Eigener Rest\n"
         )
         agents.write_text(original, encoding="utf-8")
@@ -541,7 +541,7 @@ class RunSelectionTest(ProjectAgentsFixture):
 
         text = agents.read_text(encoding="utf-8")
         self.assertEqual("# eigene Regel\n", text)
-        self.assertNotIn(self.cli.GENERAL_RULES_MARK, text)
+        self.assertNotIn("<!-- vibe:general-rules -->", text)
 
     def test_cmd_run_does_not_create_a_hardcoded_test_agent(self):
         """35233ff: Der Laufstart legt keinen Test-Agenten und kein TESTER an.

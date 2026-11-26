@@ -2000,26 +2000,26 @@ function nvpSandboxSection(name, token, sandbox) {
 }
 
 /* AGENTS.md als erste Sektion: einklappbarer, standardmäßig offener Editor
-   mit freiem Teil davor, verwaltetem Block und freiem Teil danach. Sicherungen
+   mit genau einem Textfeld für den vollständigen Dateiinhalt. Sicherungen
    werden mit Zeitstempel ausgewählt und vor der Wiederherstellung benannt.
-   Das globale AGENTS.md-Details gibt es hier nicht mehr. */
+   Es gibt keinen schreibgeschützten Sonderbereich mehr; vorhandener
+   Dateiinhalt bleibt normal editierbar und wird unverändert zurückgeschrieben. */
+function nvpAgentsFileText(file) {
+  /* Der Server liefert den vollständigen Dateiinhalt als ``text``. */
+  return file && typeof file.text === 'string' ? file.text : '';
+}
+
 function nvpAgentsFileSection(name, token, view) {
   var file = (view && view.agents_file) || {};
-  var before = el('textarea', {rows: '14', 'data-nv-agents-before': '',
-    'aria-label': tr('Freier Teil davor')}, String(file.before || ''));
-  var managed = el('pre', {class: 'nv-managed-block', 'data-nv-agents-managed': '',
-    readonly: ''}, file.managed == null ? '' : String(file.managed));
-  var after = el('textarea', {rows: '14', 'data-nv-agents-after': '',
-    'aria-label': tr('Freier Teil danach')}, String(file.after || ''));
+  var text = el('textarea', {rows: '14', 'data-nv-agents-text': '',
+    'aria-label': tr('AGENTS.md')}, nvpAgentsFileText(file));
   var digest = String(file.digest || '');
   var error = nvpErrorBox();
 
   function adoptFile(fresh) {
     if (!fresh) return;
     digest = String(fresh.digest || digest);
-    setTx(before, String(fresh.before || ''));
-    setTx(after, String(fresh.after || ''));
-    if (fresh.managed != null) setTx(managed, String(fresh.managed));
+    setTx(text, nvpAgentsFileText(fresh));
   }
 
   function backupLabel(entry) {
@@ -2078,13 +2078,14 @@ function nvpAgentsFileSection(name, token, view) {
     try {
       var result = await api('/api/agents_file', {
         name: name, action: 'save',
-        before: String(before.value || ''),
-        after: String(after.value || ''),
+        text: String(text.value || ''),
         digest: digest
       });
       if (NV.stale(token)) return;
       if (result && result.ok === false) { nvpShowError(error, bt(result.message)); return; }
-      if (result && result.agents_file) digest = String(result.agents_file.digest || digest);
+      if (result && result.agents_file) {
+        digest = String(result.agents_file.digest || digest);
+      }
       toast(bt(result && result.message) || tr('Gespeichert'));
     } catch (e) { nvpShowError(error, String(e && e.message || e)); }
   }, 'nv-primary');
@@ -2116,10 +2117,8 @@ function nvpAgentsFileSection(name, token, view) {
   section.replaceChildren(el('details', {open: '', 'data-nv-agents-section': ''},
     el('summary', {}, tr('AGENTS.md bearbeiten')),
     el('p', {class: 'nv-muted'},
-      tr('Freier Text vor und nach dem verwalteten Block. Der verwaltete Block ist schreibgeschützt.')),
-    nvpLabel(tr('Freier Teil davor'), before),
-    el('div', {class: 'nv-managed'}, el('span', {class: 'nv-tag'}, tr('Verwaltet')), managed),
-    nvpLabel(tr('Freier Teil danach'), after),
+      tr('Der vollständige Inhalt der Datei. Speichern schreibt ihn unverändert zurück.')),
+    nvpLabel(tr('AGENTS.md'), text),
     el('div', {class: 'nv-row nv-form-actions'}, save, create, backup, restore),
     nvpLabel(tr('Sicherung auswählen'), backupSelect),
     restoreConfirm,
@@ -2617,6 +2616,7 @@ if (window.VIBE_I18N && typeof VIBE_I18N.extend === 'function') {
       "Schreibverzeichnisse: {{dirs}}": "Write directories: {{dirs}}",
       "Werkzeuge: {{tools}}": "Tools: {{tools}}",
       "Sicherung": "Backup",
+      "Gesichert": "Backed up",
       "Sicherung auswählen": "Select backup",
       "Keine Sicherungen vorhanden": "No backups available",
       "Sicherung „{{name}}“ wiederherstellen? ": "Restore backup '{{name}}'? ",
@@ -2716,6 +2716,7 @@ if (window.VIBE_I18N && typeof VIBE_I18N.extend === 'function') {
       "Schreibverzeichnisse: {{dirs}}": "Schreibverzeichnisse: {{dirs}}",
       "Werkzeuge: {{tools}}": "Werkzeuge: {{tools}}",
       "Sicherung": "Sicherung",
+      "Gesichert": "Gesichert",
       "Sicherung auswählen": "Sicherung auswählen",
       "Keine Sicherungen vorhanden": "Keine Sicherungen vorhanden",
       "Sicherung „{{name}}“ wiederherstellen? ": "Sicherung „{{name}}“ wiederherstellen? ",

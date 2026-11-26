@@ -92,8 +92,6 @@ OC_URL = PATHS.opencode_url
 UI_PORT = PATHS.ui_port
 UI_BIND = PATHS.ui_bind
 NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
-GENERAL_RULES_MARK = "<!-- vibe:general-rules -->"
-GENERAL_RULES_END = "<!-- /vibe:general-rules -->"
 # GH-76: Die code-gewirkten Vorgaben für laufzeitgesteuerte Agentenarbeit
 # stehen nicht mehr in einer sichtbaren AGENTS.md. Der Läufer schreibt diesen
 # Text in eine versteckte Datei außerhalb jedes Projekts und übergibt sie
@@ -1886,35 +1884,20 @@ def ensure_gitignore(project):
     return "appended"
 
 
-def _agents_file_split(text):
-    """Trennt eine AGENTS.md in freie Teile und den verwalteten Block.
-
-    Liefert ``(before, managed, after)``. Ohne paarigen Block ist ``managed``
-    ``None`` und der gesamte Text steht in ``after``. Ein unpaariger Marker
-    wird nicht als Block gewertet; er bleibt im freien Text sichtbar.
-    """
-    start = text.find(GENERAL_RULES_MARK)
-    if start < 0:
-        return "", None, text
-    end = text.find(GENERAL_RULES_END, start + len(GENERAL_RULES_MARK))
-    if end < 0:
-        # Endmarker fehlt oder steht nur vor dem Startmarker: unpaarig.
-        return "", None, text
-    end += len(GENERAL_RULES_END)
-    return text[:start], text[start:end], text[end:]
-
 def agents_file_view(name):
-    """Ansicht der AGENTS.md eines Projekts (F31).
+    """Ansicht der AGENTS.md eines Projekts (F31, GH-101).
 
-    Liefert die freien Teile vor und nach dem verwalteten Block, den Block
-    selbst und die Prüfsumme für das spätere Speichern. Eine fehlende Datei
-    oder ein Symlink ergibt ``exists=False``; es wird nichts gelesen, was
-    außerhalb des Projekts liegen könnte.
+    Liefert den vollständigen Dateiinhalt als ``text`` samt Prüfsumme für das
+    spätere Speichern. ``before``, ``after`` und ``managed`` bleiben nur als
+    Kompatibilitätsfelder für die eingefrorene klassische UI erhalten:
+    ``before`` ist der Gesamttext, ``after`` leer und ``managed`` immer
+    ``None``. Eine fehlende Datei oder ein Symlink ergibt ``exists=False``; es
+    wird nichts gelesen, was außerhalb des Projekts liegen könnte.
     """
     path = os.path.join(ppath(name), "AGENTS.md")
     backups = agents_file_backups(name)
     if os.path.islink(path) or not os.path.isfile(path):
-        return {"exists": False, "digest": "", "before": "",
+        return {"exists": False, "digest": "", "text": "", "before": "",
                 "managed": None, "after": "", "backups": backups}
     digest = vibe_storage.file_digest(path)
     try:
@@ -1922,50 +1905,42 @@ def agents_file_view(name):
             text = handle.read()
     except UnicodeDecodeError as error:
         raise ValueError("AGENTS.md ist nicht UTF-8 kodiert: " + str(error)) from error
-    before, managed, after = _agents_file_split(text)
-    return {"exists": True, "digest": digest, "before": before,
-            "managed": managed, "after": after, "backups": backups}
+    return {"exists": True, "digest": digest, "text": text, "before": text,
+            "managed": None, "after": "", "backups": backups}
 
-def agents_file_save(name, before, after, digest):
-    """Schreibt die freien Teile der AGENTS.md und behält den Block byte-identisch.
+def agents_file_save(name, text, digest, before=None, after=None):
+    """Schreibt die AGENTS.md wörtlich mit Digest-Schutz (F31, GH-101).
 
-    GH-76: Ein vorhandener Legacy-Block wird weder ersetzt noch neu erzeugt; er
-    bleibt genau so erhalten, wie er in der Datei steht. Ohne Block werden die
-    freien Teile gemeinsam als ``before + after`` geschrieben. Marker in den
-    freien Teilen und unpaarige Marker in der bestehenden Datei werden
-    abgelehnt. Der Digest-Schutz der Speicherschicht verhindert, dass eine
-    zwischenzeitliche fremde Änderung überschrieben wird; bei jeder Ablehnung
-    bleibt die Datei unverändert.
+    ``text`` ist der vollständige neue Inhalt. Fehlt ``text`` (``None``),
+    werden ``before`` und ``after`` für die eingefrorene klassische UI wörtlich
+    konkateniert. Es gibt keinen verwalteten Block mehr: Marker werden weder
+    erkannt noch erzeugt, aktualisiert oder abgelehnt. Der Digest-Schutz der
+    Speicherschicht verhindert, dass eine zwischenzeitliche fremde Änderung
+    überschrieben wird; bei jeder Ablehnung bleibt die Datei unverändert.
     """
-    project = ppath(name)
-    if not isinstance(before, str) or not isinstance(after, str):
-        raise ValueError("Vorheriger und nachfolgender Teil müssen Text sein.")
+    if text is None:
+        if not isinstance(before, str) or not isinstance(after, str):
+            raise ValueError(
+                "Ohne Text müssen vorheriger und nachfolgender Teil Text sein.")
+        content = before + after
+    elif isinstance(text, str):
+        content = text
+    else:
+        raise ValueError("Der Inhalt der AGENTS.md muss Text sein.")
     if not isinstance(digest, str) or not digest:
         raise ValueError("Prüfsumme fehlt. Bitte die Ansicht neu laden.")
-    path = os.path.join(project, "AGENTS.md")
+    path = os.path.join(ppath(name), "AGENTS.md")
     if os.path.islink(path) or not os.path.isfile(path):
         raise ValueError(
             "AGENTS.md fehlt oder ist ein Symlink; bitte zuerst aus der "
             "Vorlage anlegen.")
     try:
+        # Nur zur Wahrung der bisherigen UTF-8-Fehlerbehandlung lesen; der
+        # Inhalt selbst wird nicht umgeschrieben.
         with open(path, encoding="utf-8") as handle:
-            text = handle.read()
+            handle.read()
     except UnicodeDecodeError as error:
         raise ValueError("AGENTS.md ist nicht UTF-8 kodiert: " + str(error)) from error
-    _before, managed, _after = _agents_file_split(text)
-    if managed is None and (GENERAL_RULES_MARK in text or GENERAL_RULES_END in text):
-        raise ValueError(
-            "AGENTS.md enthält einen unpaarigen Marker. Bitte den Marker "
-            "zuerst von Hand bereinigen; die Datei bleibt unverändert.")
-    if any(marker in before or marker in after
-           for marker in (GENERAL_RULES_MARK, GENERAL_RULES_END)):
-        raise ValueError(
-            "Die Marker des verwalteten Blocks dürfen nicht in den freien "
-            "Teilen stehen.")
-    if managed is not None:
-        content = before + managed + after
-    else:
-        content = before + after
     vibe_storage.write_text(path, content, expected=digest)
 
 def agents_file_create(name):
@@ -2037,8 +2012,8 @@ def _test_agent_created(created):
 
 
 def agents_file_backup_dir(name):
-    """Verzeichnis der AGENTS.md-Sicherungen: ``BACKUPS/<safe(name)>-agents-md``."""
-    return os.path.join(BACKUPS, safe(name) + "-agents-md")
+    """Verzeichnis der AGENTS.md-Sicherungen im Projekt (``.vibe/agents-backups``)."""
+    return os.path.join(ppath(name), ".vibe", "agents-backups")
 
 
 def agents_file_backups(name):
@@ -2058,29 +2033,31 @@ def agents_file_backups(name):
 def agents_file_backup(name):
     """Sichert die AGENTS.md des Projekts; die Datei bleibt unverändert.
 
-    Der Sicherungsname trägt einen Zeitstempel und ist kollisionsfrei;
-    ``agents_file_restore`` stellt die neueste Sicherung wieder her.
+    Der Sicherungsname trägt einen Zeitstempel und ist kollisionsfrei. Die
+    Sicherung liegt im Projekt unter ``.vibe/agents-backups`` und wird von
+    ``agents_file_restore`` nur auf ausdrücklichen Namen wiederhergestellt.
     """
     target = os.path.join(ppath(name), "AGENTS.md")
     return vibe_storage.backup_file(
         target, agents_file_backup_dir(name), label="AGENTS.md")
 
 
-def agents_file_restore(name):
-    """Stellt die neueste AGENTS.md-Sicherung wieder.
+def agents_file_restore(name, backup_name):
+    """Stellt genau die benannte AGENTS.md-Sicherung des Projekts wieder her.
 
-    Vor dem Zurückschreiben wird der aktuelle Stand als Safety-Sicherung
-    abgelegt. Ohne Sicherung wird ``ValueError`` geworfen.
+    Nur Sicherungen aus ``.vibe/agents-backups`` dieses Projekts werden
+    akzeptiert; unbekannte, fehlende oder fremde Namen werden abgelehnt, ohne
+    die Datei zu verändern. Es gibt keine implizite Auswahl der neuesten
+    Sicherung. Vor dem Zurückschreiben legt die Speicherschicht den aktuellen
+    Stand als Safety-Sicherung ab.
     """
+    if not isinstance(backup_name, str) or not backup_name:
+        raise ValueError("Name der AGENTS.md-Sicherung fehlt.")
     directory = agents_file_backup_dir(name)
-    names = vibe_storage.list_backups(directory)
-    if not names:
-        raise ValueError("Keine AGENTS.md-Sicherung in " + directory)
+    if backup_name not in vibe_storage.list_backups(directory):
+        raise ValueError("AGENTS.md-Sicherung nicht gefunden: " + backup_name)
     target = os.path.join(ppath(name), "AGENTS.md")
-    newest = max(
-        names, key=lambda item: (os.path.getmtime(os.path.join(directory, item)),
-                                 item))
-    return vibe_storage.restore_backup(directory, newest, target,
+    return vibe_storage.restore_backup(directory, backup_name, target,
                                        label="AGENTS.md")
 
 

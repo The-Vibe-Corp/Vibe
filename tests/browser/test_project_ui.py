@@ -2632,16 +2632,10 @@ class SettingsTabTest(F33ProjectBrowserTest):
         locator.wait_for(state="visible", timeout=20000)
         return locator
 
-    def test_agents_file_is_the_first_section_with_split_editor(self):
-        """Vorbedingung: Feature ``agentsfile`` an, AGENTS.md mit verwaltetem
-        Block vorhanden.
-
-        Erwartung: ``[data-nv-psection="agentsfile"]`` ist die erste Sektion
-        (vor Team); ``textarea[data-nv-agents-before]`` enthält den freien
-        Teil davor, ``pre[data-nv-agents-managed]`` ist readonly und zeigt den
-        verwalteten Block, ``textarea[data-nv-agents-after]`` den Teil danach;
-        der Anlegen-Knopf ``data-nv-action="agents-file-create"`` existiert
-        nicht (F34: Vorlage nur bei fehlender Datei).
+    def test_agents_file_section_has_no_managed_block_editor(self):
+        """GH-101: Der verwaltete Block ist aus der UI entfernt. Der
+        Bestandsblock bleibt als gewöhnlicher Dateiinhalt sichtbar und wird
+        nicht mehr in einem schreibgeschützten Block-Feld ausgewiesen.
         """
         panel = self.open_settings()
         order = panel.evaluate(
@@ -2654,41 +2648,51 @@ class SettingsTabTest(F33ProjectBrowserTest):
             "AGENTS.md ist nicht die erste Sektion der Einstellungen: "
             + repr(order))
         section = self.section("agentsfile")
-        before = section.locator("textarea[data-nv-agents-before]")
-        after = section.locator("textarea[data-nv-agents-after]")
-        managed = section.locator("pre[data-nv-agents-managed]")
-        self.assertEqual(1, before.count(), "textarea[data-nv-agents-before] fehlt")
-        self.assertEqual(1, after.count(), "textarea[data-nv-agents-after] fehlt")
-        self.assertEqual(1, managed.count(), "pre[data-nv-agents-managed] fehlt")
-        self.assertIn("Projektregel davor",
-                      before.input_value(),
-                      "Der freie Teil davor ist nicht vorbelegt")
-        self.assertIn("Verwaltete Regel 4711", managed.inner_text(),
-                      "Der verwaltete Block wird nicht angezeigt")
-        self.assertIsNotNone(managed.get_attribute("readonly"),
-                             "Der verwaltete Block ist nicht readonly")
-        self.assertIn("Projektregel danach",
-                      after.input_value(),
-                      "Der freie Teil danach ist nicht vorbelegt")
+        self.assertEqual(
+            0, section.locator("pre[data-nv-agents-managed]").count(),
+            "Die Sektion zeigt weiterhin den verwalteten Block")
+        self.assertNotRegex(
+            (section.inner_text() or ""), r"verwalteten block|managed block",
+            "Die Sektion nennt weiterhin den verwalteten Block")
+        fields = section.locator(
+            "textarea[data-nv-agents-text], textarea[data-nv-agents-before],"
+            " textarea[data-nv-agents-after]")
+        self.assertGreaterEqual(
+            fields.count(), 1, "Die AGENTS.md-Sektion hat kein Textfeld")
+        combined = "".join(fields.nth(i).input_value() or ""
+                           for i in range(fields.count()))
+        for needle in ("Projektregel davor", "Verwaltete Regel 4711",
+                       "Projektregel danach"):
+            with self.subTest(inhalt=needle):
+                self.assertIn(needle, combined,
+                              "Der Dateiinhalt fehlt im Editor: " + needle)
         self.assertEqual(
             0, section.locator("[data-nv-action='agents-file-create']").count(),
             "Der Anlegen-Knopf agents-file-create existiert bei vorhandener "
             "Datei")
         self.assert_clean_page()
 
-    def test_agents_file_save_posts_before_after_and_digest(self):
-        """Vorbedingung: AGENTS.md vorhanden.
+    def test_agents_file_save_posts_text_and_preserves_legacy_block(self):
+        """Vorbedingung: AGENTS.md mit Legacy-Block vorhanden.
 
-        Aktion: Freien Teil davor ändern und speichern.
-        Erwartung: POST ``/api/agents_file`` mit ``action:"save"``,
-        ``before``, ``after`` und nichtleerem ``digest``; Toast; die Datei
-        enthält den neuen Text und der vorhandene (nicht-kanonische)
-        Bestandsblock bleibt byte-identisch — keine Normalisierung (GH-76).
+        Aktion: Dateiinhalt ändern und speichern.
+        Erwartung: POST ``/api/agents_file`` mit ``action:"save"``, dem
+        geänderten Text und nichtleerem ``digest``; Toast; der vorhandene
+        (nicht-kanonische) Bestandsblock bleibt byte-identisch — keine
+        Normalisierung und kein Neuschreiben (GH-101/GH-76).
         """
         self.open_settings()
         section = self.section("agentsfile")
-        before = section.locator("textarea[data-nv-agents-before]")
-        before.fill("Neue Regel davor 4711.\n")
+        fields = section.locator(
+            "textarea[data-nv-agents-text], textarea[data-nv-agents-before]")
+        self.assertGreaterEqual(fields.count(), 1, "Kein editbares Textfeld")
+        new_text = (
+            "Neue Regel davor 4711.\n\n"
+            "<!-- vibe:general-rules -->\n"
+            "Verwaltete Regel 4711.\n"
+            "<!-- /vibe:general-rules -->\n\n"
+            "Projektregel danach.\n")
+        fields.first.fill(new_text)
         save = section.locator("button[data-nv-action='agents-file-save']")
         self.assertEqual(1, save.count(),
                          "Der Speichern-Knopf agents-file-save fehlt")
@@ -2701,10 +2705,9 @@ class SettingsTabTest(F33ProjectBrowserTest):
                     "gesendet: " + repr(self.posts_to("/api/agents_file")))
         payload = [p for p in self.posts_to("/api/agents_file")
                    if p.get("action") == "save"][-1]
-        self.assertIn("Neue Regel davor 4711", str(payload.get("before") or ""),
-                      "Der POST enthält den geänderten Teil davor nicht")
-        self.assertTrue(str(payload.get("after") or "").strip(),
-                        "Der POST enthält den Teil danach nicht")
+        posted = str(payload.get("text") or "") + str(payload.get("before") or "")
+        self.assertIn("Neue Regel davor 4711", posted,
+                      "Der POST enthält den geänderten Text nicht")
         self.assertTrue(str(payload.get("digest") or ""),
                         "Der POST enthält keine Prüfsumme")
         self.wait_until(
@@ -2712,17 +2715,14 @@ class SettingsTabTest(F33ProjectBrowserTest):
             is not None,
             timeout=20,
             message="Das Speichern der AGENTS.md bestätigt nicht")
-        # F33 WP6: der bestehende GET-Vertrag antwortet flach
-        # ({exists, digest, before, managed, after}); nur POST-Antworten
-        # tragen den agents_file-Wrapper — kein Breaking Change.
         self.wait_api(
             f"/api/agents_file?name={PROJECT}",
             lambda data: "Neue Regel davor 4711"
-            in str(data.get("before") or ""),
-            message="Der geänderte freie Teil ist nicht gespeichert")
+            in str(data.get("text") or data.get("before") or ""),
+            message="Der geänderte Text ist nicht gespeichert")
         text = (self.project / "AGENTS.md").read_text(encoding="utf-8")
-        # GH-76: Der vorhandene Bestandsblock bleibt byte-identisch; der
-        # frühere deutsche Regeltext wird nicht mehr eingesetzt.
+        # GH-101/GH-76: Der vorhandene Bestandsblock bleibt byte-identisch;
+        # der frühere deutsche Regeltext wird nicht mehr eingesetzt.
         self.assertIn("<!-- vibe:general-rules -->", text,
                       "Der Bestandsblock-Marker fehlt nach dem Speichern")
         self.assertIn("Verwaltete Regel 4711", text,
@@ -4704,35 +4704,38 @@ class SettingsTest(F34ProjectBrowserTest):
             + repr(order))
         self.assert_clean_page()
 
-    def test_agents_section_details_and_textareas(self):
-        """Vorbedingung: AGENTS.md vorhanden („Projektregel davor“/„Verwaltete
-        Regel 4711“).
-
-        Erwartung: ``details[data-nv-agents-section]`` offen (Standard);
-        ``textarea[data-nv-agents-before]``/``[data-nv-agents-after]`` haben
-        ``rows >= 14``; ``pre[data-nv-agents-managed]`` zeigt den verwalteten
-        Block; ``select[data-nv-agents-backup]`` vorhanden.
+    def test_agents_section_has_editable_content_without_managed_block(self):
+        """GH-101: Die AGENTS.md-Sektion ist offen, zeigt den vollständigen
+        Dateiinhalt in einem editablen Feld und keinen verwalteten Block mehr.
+        Die Backup-Auswahl bleibt vorhanden.
         """
         panel = self.open_settings()
         details = panel.locator("details[data-nv-agents-section]")
         details.wait_for(state="visible", timeout=20000)
         self.assertTrue(details.evaluate("node => node.open"),
                         "Die AGENTS.md-Sektion ist nicht offen (Standard offen)")
-        before = details.locator("textarea[data-nv-agents-before]")
-        after = details.locator("textarea[data-nv-agents-after]")
-        self.assertEqual(1, before.count(), "textarea[data-nv-agents-before] fehlt")
-        self.assertEqual(1, after.count(), "textarea[data-nv-agents-after] fehlt")
-        for textarea in (before, after):
-            rows = textarea.evaluate(
+        fields = details.locator(
+            "textarea[data-nv-agents-text], textarea[data-nv-agents-before],"
+            " textarea[data-nv-agents-after]")
+        self.assertGreaterEqual(fields.count(), 1, "Kein editbares Textfeld")
+        for index in range(fields.count()):
+            rows = fields.nth(index).evaluate(
                 "node => parseInt(node.getAttribute('rows') || '0', 10) || node.rows")
-            self.assertGreaterEqual(rows, 14,
-                                    "textarea[data-nv-agents-*] hat weniger als 14 rows")
-        self.assertIn("Projektregel davor", before.input_value(),
-                      "Der freie Teil davor ist nicht vorbelegt: "
-                      + repr(before.input_value()))
-        managed = details.locator("pre[data-nv-agents-managed]")
-        self.assertIn("Verwaltete Regel 4711", managed.inner_text(),
-                      "Der verwaltete Block wird nicht angezeigt")
+            self.assertGreaterEqual(
+                rows, 14, "textarea[data-nv-agents-*] hat weniger als 14 rows")
+        combined = "".join(fields.nth(i).input_value() or ""
+                           for i in range(fields.count()))
+        for needle in ("Projektregel davor", "Verwaltete Regel 4711",
+                       "Projektregel danach"):
+            with self.subTest(inhalt=needle):
+                self.assertIn(needle, combined,
+                              "Der Dateiinhalt fehlt im Editor: " + needle)
+        self.assertEqual(
+            0, details.locator("pre[data-nv-agents-managed]").count(),
+            "Der verwaltete Block wird weiterhin angezeigt")
+        self.assertNotRegex(
+            (details.inner_text() or ""), r"verwalteten block|managed block",
+            "Die Sektion nennt weiterhin den verwalteten Block")
         backup = details.locator("select[data-nv-agents-backup]")
         self.assertEqual(1, backup.count(), "select[data-nv-agents-backup] fehlt")
         self.assert_clean_page()
@@ -6606,7 +6609,14 @@ class AgentsFileUiTest(unittest.TestCase):
 
     # ---------- AK1 + AK2: Ansicht und Kennzeichnung ----------
 
-    def test_card_shows_content_managed_block_and_explanation(self):
+    def test_card_shows_full_text_without_a_separate_managed_block(self):
+        """GH-101: Die Karte zeigt den vollständigen Dateiinhalt — including
+        des Legacy-Markerblocks — byte-identisch in einem Feld. Ein verwalteter
+        Block wird nicht mehr als eigenes, schreibgeschütztes Element
+        ausgewiesen; die eingefrorene klassische UI behält nur ihre
+        Kompatibilitätsfelder (vorher = Gesamttext, nachher = leer).
+        """
+        full = BEFORE + BLOCK + AFTER
         self.write_agents()
         self.open_guide()
         card = self.agents_card()
@@ -6614,41 +6624,109 @@ class AgentsFileUiTest(unittest.TestCase):
         text = card.inner_text()
         self.assertIn("AGENTS.md", text)
         self.assertRegex(text, r"Regeln für Agenten|rules for agents")
-        # AK2: Erklärung zum geschützten, bei jedem Lauf aktualisierten Block.
+        # Der Hinweis der eingefrorenen klassischen UI bleibt zulässig.
         self.assertRegex(text, EXPLANATION)
-        # AK1: Die Karte zeigt die freien Teile und den verwalteten Inhalt.
         boxes = card.get_by_role("textbox")
         self.assertEqual(boxes.count(), 2, "vor/after-Textareas fehlen in der Karte")
-        self.assertIn("Kopfteil-F31", boxes.nth(0).input_value())
-        self.assertIn("Fußteil-F31", boxes.nth(1).input_value())
-        self.assertIn("Bestandsregel F31", text, "verwalteter Block wird nicht angezeigt")
+        self.assertEqual(
+            boxes.nth(0).input_value(), full,
+            "Der vollständige Dateiinhalt fehlt oder ist verändert")
+        self.assertEqual(boxes.nth(1).input_value(), "")
+        # Kein gesonderter verwalteter Block mehr: kein <pre> und kein
+        # Element außerhalb der Textareas trägt den Legacy-Blocktext.
+        self.assertEqual(
+            0, card.locator("pre").count(),
+            "Die Karte stellt weiterhin einen verwalteten Block dar")
+        stray = card.evaluate(
+            """node => {
+                 const hits = [];
+                 node.querySelectorAll('*').forEach(el => {
+                   if (el.tagName === 'TEXTAREA') return;
+                   if ((el.textContent || '').includes('Bestandsregel F31')) {
+                     hits.push(el.tagName);
+                   }
+                 });
+                 return hits;
+               }""")
+        self.assertEqual(
+            [], stray, "Der Legacy-Block wird als eigenes Element angezeigt")
         SHOT_f31.parent.mkdir(parents=True, exist_ok=True)
         card.screenshot(path=str(SHOT_f31))
         self.assertTrue(SHOT_f31.exists() and SHOT_f31.stat().st_size > 0)
 
     # ---------- AK3: Bearbeiten und Speichern ----------
 
-    def test_editing_free_part_saves_file_and_keeps_block_identical(self):
+    def test_editing_full_text_saves_file_and_keeps_legacy_markers_identical(self):
+        """GH-101: Bearbeitet wird der vollständige Text. Der Legacy-Block
+        bleibt beim Speichern byte-identisch; Marker werden weder eingefügt
+        noch entfernt. Die eingefrorene klassische UI nutzt weiterhin die
+        Kompatibilitätsfelder, die API speichert ``text`` mit Digest-Schutz.
+        """
+        full = BEFORE + BLOCK + AFTER
         self.write_agents()
         self.open_guide()
         card = self.agents_card()
         card.wait_for()
         boxes = card.get_by_role("textbox")
-        # Der freie Teil nach dem Block wird geändert, der Teil davor bleibt.
-        target = None
-        for index in range(boxes.count()):
-            if "Fußteil-F31" in boxes.nth(index).input_value():
-                target = boxes.nth(index)
-                break
-        self.assertIsNotNone(target, "after-Textarea nicht gefunden")
-        target.fill("Fußteil-F31 geändert\n")
+        # Der Gesamttext steht im Kompatibilitätsfeld „vorher“; geändert wird
+        # nur der Teil nach dem Block, der Block selbst bleibt unberührt.
+        source = boxes.nth(0)
+        self.assertEqual(source.input_value(), full)
+        changed = BEFORE + BLOCK + "\nFußteil-F31 geändert\n"
+        source.fill(changed)
         card.get_by_role("button", name="Save").click()
         self.wait_until(
             lambda: "Fußteil-F31 geändert" in self.agents_path().read_text(encoding="utf-8"),
             message="Speichern hat AGENTS.md nicht aktualisiert",
         )
         text = self.agents_path().read_text(encoding="utf-8")
-        self.assertEqual(text, BEFORE + BLOCK + "Fußteil-F31 geändert\n")
+        self.assertEqual(text, changed)
+        self.assertEqual(text.count("<!-- vibe:general-rules -->"), 1)
+        self.assertEqual(text.count("<!-- /vibe:general-rules -->"), 1)
+
+        # API: vollständiger Text + Digest ohne Block-Sonderbehandlung.
+        def get_view():
+            request = urllib.request.Request(
+                self.base + "/api/agents_file?name=proj",
+                headers={"X-Token": self.token})
+            with urllib.request.urlopen(request, timeout=10) as response:
+                return json.loads(response.read().decode("utf-8"))
+
+        def post_save(payload):
+            body = json.dumps(payload).encode("utf-8")
+            request = urllib.request.Request(
+                self.base + "/api/agents_file", data=body, method="POST",
+                headers={"X-Token": self.token,
+                         "Content-Type": "application/json"})
+            try:
+                with urllib.request.urlopen(request, timeout=10) as response:
+                    return json.loads(response.read().decode("utf-8"))
+            except urllib.error.HTTPError as error:
+                try:
+                    return json.loads(error.read().decode("utf-8"))
+                finally:
+                    error.close()
+
+        digest = get_view()["digest"]
+        self.assertTrue(digest)
+        api_text = BEFORE + BLOCK + "\nAPI-Änderung F31\n"
+        answer = post_save({"name": "proj", "action": "save",
+                            "text": api_text, "digest": digest})
+        self.assertTrue(answer.get("ok"), answer)
+        result = self.agents_path().read_text(encoding="utf-8")
+        self.assertEqual(result, api_text)
+        self.assertEqual(result.count("<!-- vibe:general-rules -->"), 1)
+        self.assertEqual(result.count("<!-- /vibe:general-rules -->"), 1)
+
+        # Digest-Schutz: eine fremde Änderung nach dem Lesen wird nicht
+        # überschrieben; die Datei bleibt byte-identisch.
+        stale = get_view()["digest"]
+        foreign = api_text + "Fremde Änderung\n"
+        self.agents_path().write_text(foreign, encoding="utf-8")
+        answer = post_save({"name": "proj", "action": "save",
+                            "text": api_text, "digest": stale})
+        self.assertFalse(answer.get("ok"), answer)
+        self.assertEqual(self.agents_path().read_text(encoding="utf-8"), foreign)
 
     # ---------- AK3b: Blockfreie Datei (GH-76) ----------
 
@@ -6718,9 +6796,15 @@ class AgentsFileUiTest(unittest.TestCase):
         with urllib.request.urlopen(request, timeout=10) as response:
             self.assertEqual(response.status, 200)
             view = json.loads(response.read().decode("utf-8"))
+        full = BEFORE + BLOCK + AFTER
         self.assertTrue(view["exists"])
-        self.assertEqual(view["before"], BEFORE)
-        self.assertEqual(view["after"], AFTER)
+        # GH-101: die Ansicht liefert den vollständigen Text; die Felder
+        # before/after und managed existieren nur noch für die klassische UI.
+        self.assertEqual(view["text"], full)
+        self.assertEqual(view["before"], full)
+        self.assertEqual(view["after"], "")
+        self.assertIsNone(view["managed"])
+        self.assertTrue(view["digest"])
 
         # Unbekannte Aktion wird abgewiesen und ändert die Datei nicht.
         body = json.dumps({"name": "proj", "action": "f31-fremd"}).encode("utf-8")

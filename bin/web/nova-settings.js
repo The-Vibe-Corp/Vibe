@@ -252,73 +252,283 @@ NV.views.settings = async function settings(context, token) {
 /* 1. Globale AGENTS.md                                                       */
 /* ------------------------------------------------------------------------- */
 
+/* Minimaler, sicherer Markdown-Renderer für die globale AGENTS.md-Vorschau.
+   Er baut ausschließlich DOM-Knoten über el()/createTextNode; Server- und
+   Nutzertext wird nie als HTML interpretiert. Abgedeckt sind Überschriften,
+   Absätze, fett/kursiv, Inline-Code, Codeblöcke, Listen, Zitate und Links mit
+   sicheren Schemata. */
+function nvSafeHref(raw) {
+  var href = String(raw == null ? '' : raw).trim();
+  if (!href) return '';
+  if (/^[a-z][a-z0-9+.-]*:/i.test(href)) {
+    return /^(https?|mailto):/i.test(href) ? href : '';
+  }
+  if (/^\/\//.test(href)) return 'https:' + href;
+  return href;
+}
+
+function nvInlineNodes(text) {
+  var source = String(text == null ? '' : text);
+  var nodes = [];
+  var pattern = /`([^`]+)`|\*\*([^*]+)\*\*|__([^_]+)__|\*([^*]+)\*|_([^_]+)_|\[([^\]]+)\]\(([^)\s]+)\)/g;
+  var last = 0;
+  var match;
+  while ((match = pattern.exec(source))) {
+    if (match.index > last) {
+      nodes.push(document.createTextNode(source.slice(last, match.index)));
+    }
+    if (match[1] !== undefined) {
+      nodes.push(el('code', {}, match[1]));
+    } else if (match[2] !== undefined || match[3] !== undefined) {
+      nodes.push(el('strong', {}, nvInlineNodes(
+        match[2] !== undefined ? match[2] : match[3])));
+    } else if (match[4] !== undefined || match[5] !== undefined) {
+      nodes.push(el('em', {}, nvInlineNodes(
+        match[4] !== undefined ? match[4] : match[5])));
+    } else if (match[6] !== undefined) {
+      var href = nvSafeHref(match[7]);
+      var label = nvInlineNodes(match[6]);
+      if (href) nodes.push(el('a', {href: href, rel: 'noopener noreferrer'}, label));
+      else nodes.push.apply(nodes, label);
+    }
+    last = pattern.lastIndex;
+  }
+  if (last < source.length) {
+    nodes.push(document.createTextNode(source.slice(last)));
+  }
+  return nodes;
+}
+
+function nvMarkdown(source) {
+  var container = el('div', {class: 'nv-md'});
+  var lines = String(source == null ? '' : source)
+    .replace(/\r\n?/g, '\n').split('\n');
+  var paragraph = [];
+  var index = 0;
+
+  function flushParagraph() {
+    if (!paragraph.length) return;
+    container.append(el('p', {}, nvInlineNodes(paragraph.join(' '))));
+    paragraph.length = 0;
+  }
+
+  while (index < lines.length) {
+    var line = lines[index];
+    var fence = /^```\s*[\w+-]*\s*$/.exec(line);
+    if (fence) {
+      flushParagraph();
+      index += 1;
+      var code = [];
+      while (index < lines.length && !/^```\s*$/.test(lines[index])) {
+        code.push(lines[index]);
+        index += 1;
+      }
+      if (index < lines.length) index += 1;
+      container.append(el('div', {class: 'nv-md-code'},
+        el('code', {}, code.join('\n'))));
+      continue;
+    }
+    var heading = /^(#{1,6})\s+(.*?)\s*#*\s*$/.exec(line);
+    if (heading) {
+      flushParagraph();
+      container.append(el('h' + heading[1].length, {}, nvInlineNodes(heading[2])));
+      index += 1;
+      continue;
+    }
+    if (/^\s*$/.test(line)) {
+      flushParagraph();
+      index += 1;
+      continue;
+    }
+    var bullet = /^\s*[-*+]\s+(.*)$/.exec(line);
+    if (bullet) {
+      flushParagraph();
+      var unordered = el('ul', {});
+      while (index < lines.length) {
+        var item = /^\s*[-*+]\s+(.*)$/.exec(lines[index]);
+        if (!item) break;
+        unordered.append(el('li', {}, nvInlineNodes(item[1])));
+        index += 1;
+      }
+      container.append(unordered);
+      continue;
+    }
+    var ordered = /^\s*\d+[.)]\s+(.*)$/.exec(line);
+    if (ordered) {
+      flushParagraph();
+      var list = el('ol', {});
+      while (index < lines.length) {
+        var entry = /^\s*\d+[.)]\s+(.*)$/.exec(lines[index]);
+        if (!entry) break;
+        list.append(el('li', {}, nvInlineNodes(entry[1])));
+        index += 1;
+      }
+      container.append(list);
+      continue;
+    }
+    var quote = /^\s*>\s?(.*)$/.exec(line);
+    if (quote) {
+      flushParagraph();
+      var quoted = [];
+      while (index < lines.length) {
+        var quotedLine = /^\s*>\s?(.*)$/.exec(lines[index]);
+        if (!quotedLine) break;
+        quoted.push(quotedLine[1]);
+        index += 1;
+      }
+      container.append(el('blockquote', {}, nvMarkdown(quoted.join('\n'))));
+      continue;
+    }
+    paragraph.push(line.trim());
+    index += 1;
+  }
+  flushParagraph();
+  return container;
+}
+
+/* Baut die flache Sektion und hält Auswahl sowie Edit-View zusammen. Die
+   Projektauswahl wird bewusst nicht gespeichert: jeder Aufbau startet mit der
+   globalen AGENTS.md. */
 async function fillGlobalAgents(section, token) {
-  /* Das Gerüst steht sofort; der Anlegen-Knopf ist damit auch während des
-     Datenabrufs im DOM (Bestandsvertrag von F34). */
-  var view = {exists: false, digest: '', text: ''};
+  var globalView = {exists: false, digest: '', text: '', backups: []};
   var projects = [];
-  var digest = '';
+  var selected = '';
   var stateBox = el('div', {class: 'nv-row', 'data-nv-global-agents-state': ''});
-  var projectBox = el('div', {class: 'nv-stack', 'data-nv-agents-files': ''});
+  var projectSelect = el('select', {'data-nv-agents-project-select': '',
+    'aria-label': tr('AGENTS.md auswählen')});
   var error = settingsErrorBox();
   section.append(el('small', {class: 'nv-note',
     'data-nv-global-agents-hint': ''},
     tr('Diese Regeln gelten für alle Projekte; projektbezogene AGENTS.md ergänzen sie.')),
-    stateBox, el('h3', {}, tr('Projektdateien')), projectBox, error);
+    stateBox,
+    nvField(tr('AGENTS.md auswählen'), projectSelect),
+    error);
 
   function backupsOf(value) {
-    var source = (value && value.backups) || (value && value.view
-      && value.view.backups) || [];
+    var source = (value && value.backups) || [];
     return Array.isArray(source) ? source.map(String) : [];
   }
 
-  function openGlobalEditor(text) {
+  function fileText(value) {
+    /* Der Server liefert den vollständigen Dateiinhalt als ``text``. */
+    return value && typeof value.text === 'string' ? value.text : '';
+  }
+
+  function drawProjects(keep) {
+    var options = [el('option', {value: ''},
+      tr('Globale AGENTS.md (alle Projekte)'))];
+    projects.forEach(function (name) {
+      options.push(el('option', {value: name}, name));
+    });
+    projectSelect.replaceChildren.apply(projectSelect, options);
+    var wanted = keep && projects.indexOf(keep) >= 0 ? keep : '';
+    projectSelect.value = wanted;
+    selected = wanted;
+  }
+
+  function drawState() {
+    var button;
+    if (!selected && !globalView.exists) {
+      button = el('button', {class: 'nv-btn nv-primary', type: 'button',
+        'data-nv-action': 'global-agents-create', on: {click: async function () {
+          settingsError(error, '');
+          try {
+            var answer = await api('/api/global_agents_file', {action: 'create'});
+            if (answer && answer.ok === false) {
+              settingsError(error, nvBackend(answer.message) || tr('Aktion fehlgeschlagen'));
+              return;
+            }
+            globalView = await api('/api/global_agents_file') || {};
+            drawState();
+            openEditor();
+            toast(nvBackend(answer.message) || tr('Vorlage angelegt'));
+          } catch (failure) {
+            settingsError(error, String(failure && failure.message || failure));
+          }
+        }}}, tr('Vorlage anlegen'));
+    } else {
+      button = el('button', {class: 'nv-btn nv-primary', type: 'button',
+        'data-nv-action': 'global-agents-edit',
+        on: {click: function () { openEditor(); }}}, tr('Bearbeiten'));
+    }
+    var label = selected ? (tr('Projekt') + ': ' + selected)
+      : (globalView.exists ? tr('Vorhanden') : tr('Datei fehlt'));
+    stateBox.replaceChildren(el('span', {class: 'nv-muted'}, label), button);
+  }
+
+  async function openEditor() {
+    var projectName = selected;
+    var fileView = globalView;
+    if (projectName) {
+      try {
+        fileView = await api('/api/agents_file?name='
+          + encodeURIComponent(projectName)) || {};
+      } catch (failure) {
+        settingsError(error, String(failure && failure.message || failure));
+        return;
+      }
+      if (NV.stale(token)) return;
+    }
     var textarea = el('textarea', {'data-nv-agents-text': '', rows: '18'},
-      nvText(text));
+      fileText(fileView));
+    var fileDigest = String(fileView.digest || '');
     var restoreSelect = el('select', {'data-nv-agents-backup-select': '',
       'aria-label': tr('Sicherung auswählen')});
 
-    function showBackups(names) {
-      restoreSelect.replaceChildren.apply(restoreSelect, names.map(function (name) {
-        return el('option', {value: name}, name);
-      }));
+    function showBackups(value) {
+      restoreSelect.replaceChildren.apply(restoreSelect,
+        backupsOf(value).map(function (name) {
+          return el('option', {value: name}, name);
+        }));
     }
-    showBackups(backupsOf(view));
+    showBackups(fileView);
+
+    function remember(next) {
+      if (!next) return;
+      fileDigest = String(next.digest || fileDigest);
+      showBackups(next);
+      if (!projectName) globalView = next;
+    }
 
     var save = el('button', {class: 'nv-btn nv-primary', type: 'button',
       'data-nv-action': 'agents-save', on: {click: async function () {
         settingsError(error, '');
         try {
-          var answer = await api('/api/global_agents_file', {
-            action: 'save', text: String(textarea.value || ''), digest: digest
-          });
+          var answer = projectName
+            ? await api('/api/agents_file', {name: projectName, action: 'save',
+                text: String(textarea.value || ''), digest: fileDigest})
+            : await api('/api/global_agents_file', {action: 'save',
+                text: String(textarea.value || ''), digest: fileDigest});
           if (answer && answer.ok === false) {
             settingsError(error, nvBackend(answer.message) || tr('Speichern fehlgeschlagen'));
             return;
           }
-          digest = String(answer.digest || digest);
+          remember(answer.agents_file || answer.view);
+          if (answer.digest) fileDigest = String(answer.digest);
           toast(nvBackend(answer && answer.message) || tr('AGENTS.md gespeichert'));
         } catch (failure) {
           settingsError(error, String(failure && failure.message || failure));
         }
       }}}, tr('Speichern'));
+
     var backup = el('button', {class: 'nv-btn', type: 'button',
       'data-nv-action': 'agents-backup', on: {click: async function () {
         settingsError(error, '');
         try {
-          var answer = await api('/api/global_agents_file', {action: 'backup'});
+          var answer = projectName
+            ? await api('/api/agents_file', {name: projectName, action: 'backup'})
+            : await api('/api/global_agents_file', {action: 'backup'});
           if (answer && answer.ok === false) {
             settingsError(error, nvBackend(answer.message) || tr('Sichern fehlgeschlagen'));
             return;
           }
-          var fresh = answer.view || await api('/api/global_agents_file') || {};
-          view = fresh;
-          showBackups(backupsOf(fresh));
+          remember(answer.agents_file || answer.view);
           toast(nvBackend(answer.message) || tr('AGENTS.md gesichert'));
         } catch (failure) {
           settingsError(error, String(failure && failure.message || failure));
         }
       }}}, tr('Sichern'));
+
     var restore = el('button', {class: 'nv-btn', type: 'button',
       'data-nv-action': 'agents-restore', on: {click: function () {
         var name = String(restoreSelect.value || '');
@@ -328,18 +538,21 @@ async function fillGlobalAgents(section, token) {
           danger: true,
           onConfirm: async function () {
             try {
-              var answer = await api('/api/global_agents_file', {
-                action: 'restore', name: name, confirm: true
-              });
+              var answer = projectName
+                ? await api('/api/agents_file', {name: projectName,
+                    action: 'restore', backup: name, confirm: true})
+                : await api('/api/global_agents_file', {action: 'restore',
+                    name: name, confirm: true});
               if (answer && answer.ok === false) {
                 settingsError(error, nvBackend(answer.message) || tr('Aktion fehlgeschlagen'));
                 return;
               }
-              var fresh = answer.view || await api('/api/global_agents_file') || {};
-              view = fresh;
-              digest = String(fresh.digest || digest);
-              showBackups(backupsOf(fresh));
-              textarea.value = String(fresh.text || '');
+              var fresh = answer.agents_file || answer.view
+                || await api(projectName
+                  ? '/api/agents_file?name=' + encodeURIComponent(projectName)
+                  : '/api/global_agents_file') || {};
+              remember(fresh);
+              textarea.value = fileText(fresh);
               drawState();
               toast(nvBackend(answer.message) || tr('AGENTS.md wiederhergestellt'));
             } catch (failure) {
@@ -348,106 +561,82 @@ async function fillGlobalAgents(section, token) {
           }});
       }}}, tr('Wiederherstellen'));
 
-    NV.editView.open({title: tr('Globale AGENTS.md bearbeiten'),
-      content: el('div', {class: 'nv-stack'}, textarea),
+    var content = [textarea];
+    if (projectName) {
+      content.push(el('details', {'data-nv-agents-global-preview': ''},
+        el('summary', {}, tr('Globale AGENTS.md anzeigen')),
+        nvMarkdown(fileText(globalView))));
+    }
+    NV.editView.open({title: projectName
+      ? tr('AGENTS.md von ') + projectName : tr('Globale AGENTS.md bearbeiten'),
+      content: el('div', {class: 'nv-stack'}, content),
       footer: nvFoot(save, backup, restoreSelect, restore,
         el('button', {class: 'nv-btn', type: 'button',
           on: {click: function () { NV.editView.close(); }}}, tr('Abbrechen')))});
   }
 
-  function drawState() {
-    var button = view.exists
-      ? el('button', {class: 'nv-btn nv-primary', type: 'button',
-        'data-nv-action': 'global-agents-edit',
-        on: {click: function () { openGlobalEditor(view.text || ''); }}},
-        tr('Bearbeiten'))
-      : el('button', {class: 'nv-btn nv-primary', type: 'button',
-        'data-nv-action': 'global-agents-create', on: {click: async function () {
-          settingsError(error, '');
-          try {
-            var answer = await api('/api/global_agents_file', {action: 'create'});
-            if (answer && answer.ok === false) {
-              settingsError(error, nvBackend(answer.message) || tr('Aktion fehlgeschlagen'));
-              return;
-            }
-            view = await api('/api/global_agents_file') || {};
-            digest = String(view.digest || '');
-            drawState();
-            openGlobalEditor(view.text || '');
-            toast(nvBackend(answer.message) || tr('Vorlage angelegt'));
-          } catch (failure) {
-            settingsError(error, String(failure && failure.message || failure));
-          }
-        }}}, tr('Vorlage anlegen'));
-    stateBox.replaceChildren(
-      el('span', {class: 'nv-muted'},
-        view.exists ? tr('Vorhanden') : tr('Datei fehlt')), button);
+  projectSelect.addEventListener('change', function () {
+    selected = String(projectSelect.value || '');
+    drawState();
+  });
+
+  /* Ein erneuter Aufruf von #/settings (auch dieselbe URL) kommt als
+     popstate an, ohne dass der Browser neu lädt. Die Sektion beginnt dann
+     wieder mit der globalen Auswahl und liest die Projektliste frisch ein. */
+  function readProjects(keep) {
+    return api('/api/projects').then(function (list) {
+      if (NV.stale(token) || !document.contains(section)) return;
+      projects = (Array.isArray(list) ? list : []).map(function (item) {
+        return typeof item === 'string' ? item : (item && item.name || '');
+      }).filter(Boolean);
+      drawProjects(keep);
+      drawState();
+    }).catch(function () { /* die bisherige Liste bleibt bestehen */ });
   }
+
+  function resetToGlobal() {
+    if (!document.contains(section)) return;
+    if (String(location.hash || '').indexOf('#/settings') !== 0) return;
+    selected = '';
+    projectSelect.value = '';
+    drawState();
+    api('/api/global_agents_file').then(function (fresh) {
+      if (NV.stale(token) || !document.contains(section)) return;
+      globalView = fresh || {exists: false};
+      drawState();
+    }).catch(function () { /* die globale Auswahl bleibt bestehen */ });
+    readProjects('');
+    /* Die Projekt-Erkennung des Servers ist kurz gecacht; ein zweiter Lauf
+       nimmt gerade angelegte Projekte mit, ohne eine neue Auswahl zu
+       verwerfen. */
+    setTimeout(function () {
+      if (document.contains(section)) readProjects(selected);
+    }, 2200);
+  }
+  if (NV.settingsAgentsReset) {
+    window.removeEventListener('popstate', NV.settingsAgentsReset);
+  }
+  NV.settingsAgentsReset = resetToGlobal;
+  window.addEventListener('popstate', resetToGlobal);
+
+  drawProjects();
   drawState();
 
   try {
     var answers = await Promise.all([
       api('/api/global_agents_file'), api('/api/projects')
     ]);
-    view = answers[0] || {exists: false};
+    globalView = answers[0] || {exists: false};
     projects = (Array.isArray(answers[1]) ? answers[1] : []).map(function (item) {
       return typeof item === 'string' ? item : (item && item.name || '');
     }).filter(Boolean);
-  } catch (failure) { view = {exists: false}; }
+  } catch (failure) {
+    globalView = {exists: false};
+  }
   if (NV.stale(token)) return;
-  digest = String(view.digest || '');
+  selected = '';
+  drawProjects();
   drawState();
-
-  projects.forEach(function (name) {
-    projectBox.append(el('div', {class: 'nv-row',
-      'data-nv-agents-file-row': name},
-      el('span', {}, name),
-      el('button', {class: 'nv-btn', type: 'button',
-        'data-nv-action': 'agents-file-edit', on: {click: async function () {
-          var detail;
-          try {
-            detail = await api('/api/agents_file?name=' + encodeURIComponent(name)) || {};
-          } catch (failure) {
-            settingsError(error, String(failure && failure.message || failure));
-            return;
-          }
-          var before = el('textarea', {'data-nv-agents-before': '', rows: '16'},
-            nvText(detail.before));
-          var after = el('textarea', {'data-nv-agents-after': '', rows: '16'},
-            nvText(detail.after));
-          var fileError = settingsErrorBox();
-          var save = el('button', {class: 'nv-btn nv-primary', type: 'button',
-            'data-nv-action': 'agents-save', on: {click: async function () {
-              try {
-                var answer = await api('/api/agents_file', {
-                  name: name, action: 'save',
-                  before: String(before.value || ''),
-                  after: String(after.value || ''),
-                  digest: String(detail.digest || '')
-                });
-                if (answer && answer.ok === false) {
-                  settingsError(fileError, nvBackend(answer.message) || tr('Aktion fehlgeschlagen'));
-                  return;
-                }
-                detail = answer.agents_file || detail;
-                toast(nvBackend(answer.message) || tr('AGENTS.md gespeichert'));
-              } catch (failure) {
-                settingsError(fileError, String(failure && failure.message || failure));
-              }
-            }}}, tr('Speichern'));
-          var foot = nvActions();
-          foot.append(save, el('button', {class: 'nv-btn', type: 'button',
-            on: {click: function () { NV.editView.close(); }}}, tr('Abbrechen')));
-          NV.editView.open({title: tr('AGENTS.md von ') + name,
-            content: el('div', {class: 'nv-stack'},
-              el('p', {class: 'nv-note'}, tr('Der verwaltete Block zwischen den Feldern wird von vibe erzeugt und bleibt unverändert.')),
-              nvField(tr('Vor dem verwalteten Block'), before),
-              nvField(tr('Nach dem verwalteten Block'), after),
-              fileError),
-            footer: foot});
-        }}}, tr('Datei bearbeiten'))));
-  });
-
 }
 
 /* ------------------------------------------------------------------------- */
@@ -1771,13 +1960,7 @@ var NV_SETTINGS_TEXTS = {
   'AGENTS.md wiederherstellen': 'Restore AGENTS.md',
   'AGENTS.md wiederhergestellt': 'AGENTS.md restored',
   'Die aktuelle Datei wird vorher gesichert. Fortfahren?': 'The current file is backed up first. Continue?',
-  'Projektdateien': 'Project files',
-  'Datei bearbeiten': 'Edit file',
   'AGENTS.md von ': 'AGENTS.md of ',
-  'Der verwaltete Block zwischen den Feldern wird von vibe erzeugt und bleibt unverändert.':
-    'The managed block between the fields is generated by vibe and stays unchanged.',
-  'Vor dem verwalteten Block': 'Before the managed block',
-  'Nach dem verwalteten Block': 'After the managed block',
   'Diese Regeln gelten für alle Projekte; projektbezogene AGENTS.md ergänzen sie.':
     'These rules apply to all projects; project-specific AGENTS.md files add to them.',
   'Hell': 'Light', 'Dunkel': 'Dark', 'System': 'System',
