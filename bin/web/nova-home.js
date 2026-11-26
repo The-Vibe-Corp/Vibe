@@ -69,15 +69,10 @@ NV.views.home = async function home(context, token) {
   var grid = el('div', {class: 'nv-grid'});
 
   function readPinnedProjects() {
-    try {
-      var raw = localStorage.getItem('nv-pinned-projects');
-      if (!raw) return [];
-      var data = JSON.parse(raw);
-      return Array.isArray(data) ? data.map(String) : [];
-    } catch (error) { return []; }
+    return NV.favoriteProjects();
   }
   function writePinnedProjects(names) {
-    localStorage.setItem('nv-pinned-projects', JSON.stringify(names));
+    NV.setFavoriteProjects(names);
   }
   function toggleProjectPin(card) {
     var name = String(card.getAttribute('data-nv-project') || '');

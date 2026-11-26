@@ -1346,6 +1346,10 @@ class AP22SettingsBrowserTest(unittest.TestCase):
             cls.tmp.cleanup()
 
     def setUp(self):
+        # GH-117: Einstellungen liegen jetzt serverseitig und überleben einen
+        # Testfall. Jeder Fall beginnt mit dem Ausgangszustand; das frische
+        # Browserprofil enthält bereits keine localStorage-Werte.
+        (self.state_dir / "settings.json").unlink(missing_ok=True)
         # Unabhängige Vorbedingung: Sprache englisch, kein Kennwort gesetzt.
         self.api_post("/api/language", {"language": "en"})
         self.api_post("/api/security", {"action": "password", "clear": True})

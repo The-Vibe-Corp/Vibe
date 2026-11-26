@@ -671,6 +671,11 @@ class F34HomeAgentsTest(unittest.TestCase):
             cls.tmp.cleanup()
 
     def setUp(self):
+        # GH-117: angeheftete Projekte/Agenten und weitere Einstellungen
+        # werden jetzt im State-Verzeichnis gespeichert. Ohne Zurücksetzen
+        # übernimmt der nächste Fall den Pin eines vorherigen Falls. Das
+        # frische Browserprofil hat bereits leeren localStorage.
+        (self.state_dir / "settings.json").unlink(missing_ok=True)
         self.post_language("en")
         self.page_errors = []
         self.context = self.browser.new_context(
