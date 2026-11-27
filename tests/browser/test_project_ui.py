@@ -1558,27 +1558,27 @@ FEEDBACK = [
 
 SPEC = """# SPEC — F33 Test
 
-## Produktziel
+## Product goal
 
 Ein gefüllter Absatz, der den Zweck beschreibt.
 
-## Zielgruppe und Nutzung
+## Audience and use
 
 Noch offen – im Projektassistenten ergänzen.
 
-## Funktionsumfang
+## Functional scope
 
 Noch offen – im Projektassistenten ergänzen.
 
-## Nicht im Umfang
+## Out of scope
 
 Noch offen – im Projektassistenten ergänzen.
 
-## Zielumgebung
+## Target environment
 
 Noch offen – im Projektassistenten ergänzen.
 
-## Qualität und Abnahme
+## Quality and acceptance
 
 Noch offen – im Projektassistenten ergänzen.
 """
@@ -2970,27 +2970,27 @@ def feedback_fixture(proof_hash):
 
 SPEC_f34 = """# SPEC — F34 Test
 
-## Produktziel
+## Product goal
 
 Das Projekttest-Projekt der F34-Vertragsprüfung.
 
-## Zielgruppe und Nutzung
+## Audience and use
 
 Entwicklerinnen und Entwickler im Dashboard.
 
-## Funktionsumfang
+## Functional scope
 
 Überblick, Arbeit, Beschreibung, Einstellungen.
 
-## Nicht im Umfang
+## Out of scope
 
 Keine Auswertungen im Projektdetail.
 
-## Zielumgebung
+## Target environment
 
 Dashboard auf Loopback.
 
-## Qualität und Abnahme
+## Quality and acceptance
 
 Browser-Tests gegen das echte Dashboard.
 """

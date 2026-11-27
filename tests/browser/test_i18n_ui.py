@@ -1235,15 +1235,28 @@ class ReviewRound2Test(AP21BrowserTest):
                     "missing",
                 ),
                 "nutzer": (
-                    "Target group and usage",
+                    "Audience and use",
                     "Who uses the product and in which situation?",
                     "Roles, typical tasks and the place of use.",
+                    "missing",
+                ),
+                "umfang": (
+                    "Functional scope",
+                    "Which features belong to the product?",
+                    "As a list. Each line one verifiable feature.",
+                    "missing",
+                ),
+                "entscheidungen": (
+                    "Locked decisions",
+                    "Which decisions are already fixed?",
+                    "Only decisions that are no longer up for discussion.",
                     "missing",
                 ),
             }
             forbidden = [
                 "Produktziel", "Zielgruppe", "Welches Problem", "Wer nutzt",
                 "Ein bis drei Sätze", "Rollen, typische", "fehlt", "Pflicht",
+                "Funktionsumfang", "Decisions Locked",
             ]
         else:
             header = "Projektassistent"
@@ -1262,10 +1275,23 @@ class ReviewRound2Test(AP21BrowserTest):
                     "Rollen, typische Aufgaben und der Ort der Nutzung.",
                     "fehlt",
                 ),
+                "umfang": (
+                    "Funktionsumfang",
+                    "Welche Funktionen gehören zum Produkt?",
+                    "Als Liste. Jede Zeile eine überprüfbare Funktion.",
+                    "fehlt",
+                ),
+                "entscheidungen": (
+                    "Decisions Locked",
+                    "Welche Entscheidungen sind bereits fixiert?",
+                    "Nur Entscheidungen, die nicht mehr zur Disposition stehen.",
+                    "fehlt",
+                ),
             }
             forbidden = [
-                "Product goal", "Target group", "What problem", "Who uses",
+                "Product goal", "Audience", "What problem", "Who uses",
                 "One to three sentences", "Roles, typical", "missing",
+                "Functional scope", "Locked decisions",
             ]
 
         self.wait_until(

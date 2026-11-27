@@ -26,7 +26,7 @@ TITLE = "Vibe UI Style Guide — Precise Frames × Technical Density"
 CLASSIC_BASELINE_SHA256 = {
     "bin/web/classic.html": "19ea677f5c3dc3579279fd9b5bf7584612967654b8ec0bbde3818576c78b46b5",
     "bin/web/styles.css": "daac654a2a524dd49561ba2580419bad6209ed8646670e993409b88f5cb0bb1e",
-    "bin/web/app.js": "c3d04804c88eb99c05a441e1dd206a315ad4dde72517f31e51428e181d9976b3",
+    "bin/web/app.js": "f31477bd61d6722dd9949748a61a2e2de9502db5f930db3d310178fc9e68bf3f",
 }
 
 

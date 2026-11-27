@@ -13,6 +13,7 @@ Modellaufrufe ausgeführt.
 import importlib
 import json
 import os
+import re
 import shutil
 import socket
 import subprocess
@@ -94,9 +95,9 @@ class ProjectGuideModelTest(unittest.TestCase):
 
     def test_state_reads_filled_sections_and_reports_completion(self):
         self.project.joinpath("SPEC.md").write_text(
-            "# proj\n\n## Produktziel\n\nEin fertiges Ziel.\n\n"
-            "## Funktionsumfang\n\n- Eine Funktion\n\n"
-            "## Zielumgebung\n\nLinux\n",
+            "# proj\n\n## Product goal\n\nEin fertiges Ziel.\n\n"
+            "## Functional scope\n\n- Eine Funktion\n\n"
+            "## Target environment\n\nLinux\n",
             encoding="utf-8",
         )
         for name in ("TICKETS.md", "AGENTS.md", "FEEDBACK.md", "README.md"):
@@ -128,9 +129,16 @@ class ProjectGuideModelTest(unittest.TestCase):
                      ".vibe/project.env", "README.md"):
             self.assertTrue(self.project.joinpath(name).is_file(), name + " fehlt")
         text = self.spec()
-        for heading in ("Produktziel", "Zielgruppe und Nutzung", "Funktionsumfang",
-                        "Nicht im Umfang", "Zielumgebung", "Qualität und Abnahme"):
+        for heading in ("Product goal", "Audience and use", "Functional scope",
+                        "Out of scope", "Target environment",
+                        "Quality and acceptance", "Locked decisions",
+                        "Open questions"):
             self.assertIn("## " + heading, text)
+        for heading in ("Produktziel", "Zielgruppe und Nutzung",
+                        "Funktionsumfang", "Nicht im Umfang", "Zielumgebung",
+                        "Qualität und Abnahme", "Decisions Locked",
+                        "Offene Fragen"):
+            self.assertNotIn("## " + heading, text)
         self.assertIn("Eine lokale Entwicklungszentrale für KI-Projekte.", text)
         env = self.project.joinpath(".vibe", "project.env").read_text(encoding="utf-8")
         self.assertIn("TYPE=generic", env)
@@ -138,6 +146,97 @@ class ProjectGuideModelTest(unittest.TestCase):
         self.assertNotIn("{{NAME}}", tickets)
         self.assertIn("proj", tickets)
         self.assertIn("Projektassistent", result["message"])
+
+    def test_new_spec_uses_exactly_the_eight_english_section_headings(self):
+        guide.apply(self.project, self.answers(), name="proj")
+
+        headings = re.findall(r"(?m)^##[ \t]+(.+?)[ \t]*$", self.spec())
+
+        self.assertEqual(
+            [
+                "Product goal",
+                "Audience and use",
+                "Functional scope",
+                "Out of scope",
+                "Target environment",
+                "Quality and acceptance",
+                "Locked decisions",
+                "Open questions",
+            ],
+            headings,
+        )
+
+    def test_state_pulls_sections_from_english_spec_headings(self):
+        (self.project / "SPEC.md").write_text(
+            "# proj — Produktspezifikation\n\n"
+            "## Product goal\n\nEin bestehendes Ziel.\n\n"
+            "## Audience and use\n\nEntwicklerinnen und Entwickler.\n\n"
+            "## Functional scope\n\n- Bestehende Funktion\n\n"
+            "## Out of scope\n\n- Kein öffentlicher Zugriff\n\n"
+            "## Target environment\n\nLinux-Container\n\n"
+            "## Quality and acceptance\n\nAutomatisierte Tests\n\n"
+            "## Locked decisions\n\n- Bleibt so\n\n"
+            "## Open questions\n\n- Noch zu klären\n",
+            encoding="utf-8",
+        )
+
+        state = guide.state(self.project, name="proj")
+        values = {step["id"]: step["value"] for step in state["steps"]}
+
+        self.assertEqual("Ein bestehendes Ziel.", values["ziel"])
+        self.assertEqual("Entwicklerinnen und Entwickler.", values["nutzer"])
+        self.assertEqual("- Bestehende Funktion", values["umfang"])
+        self.assertEqual("- Kein öffentlicher Zugriff", values["nicht_umfang"])
+        self.assertEqual("Linux-Container", values["umgebung"])
+        self.assertEqual("Automatisierte Tests", values["qualitaet"])
+        self.assertEqual("- Bleibt so", values["entscheidungen"])
+        self.assertEqual("- Noch zu klären", values["offene_fragen"])
+        self.assertEqual([], state["open"])
+        self.assertTrue(all(step["status"] == "gefüllt" for step in state["steps"]))
+
+    def test_apply_preserves_and_updates_english_spec_sections(self):
+        (self.project / "SPEC.md").write_text(
+            "# proj — Produktspezifikation\n\n"
+            "## Product goal\n\nEin bestehendes Ziel.\n\n"
+            "## Audience and use\n\nEntwicklerinnen und Entwickler.\n\n"
+            "## Functional scope\n\n- Bestehende Funktion\n\n"
+            "## Out of scope\n\n- Kein öffentlicher Zugriff\n\n"
+            "## Target environment\n\nLinux-Container\n\n"
+            "## Quality and acceptance\n\nAutomatisierte Tests\n\n"
+            "## Locked decisions\n\n- Bleibt so\n\n"
+            "## Open questions\n\n- Noch zu klären\n",
+            encoding="utf-8",
+        )
+
+        kept = guide.apply(self.project, {"ziel": "Neues Ziel."}, name="proj")
+        self.assertIn("ziel", kept["sections_kept"])
+        self.assertIn("Ein bestehendes Ziel.", self.spec())
+
+        updated = guide.apply(
+            self.project,
+            {"umfang": "- Neue Funktion"},
+            replace=["umfang"],
+            name="proj",
+        )
+
+        self.assertIn("umfang", updated["sections_written"])
+        text = self.spec()
+        self.assertIn("## Functional scope\n\n- Neue Funktion", text)
+        self.assertNotIn("- Bestehende Funktion", text)
+        self.assertIn("## Product goal\n\nEin bestehendes Ziel.", text)
+        self.assertEqual(
+            [
+                "Product goal",
+                "Audience and use",
+                "Functional scope",
+                "Out of scope",
+                "Target environment",
+                "Quality and acceptance",
+                "Locked decisions",
+                "Open questions",
+            ],
+            re.findall(r"(?m)^##[ \t]+(.+?)[ \t]*$", text),
+        )
 
     def test_existing_files_are_kept_and_never_overwritten(self):
         self.project.joinpath("AGENTS.md").write_text("EIGENE REGEL\n", encoding="utf-8")
@@ -161,7 +260,7 @@ class ProjectGuideModelTest(unittest.TestCase):
 
     def test_existing_filled_section_is_not_overwritten_without_replace(self):
         self.project.joinpath("SPEC.md").write_text(
-            "# proj\n\n## Produktziel\n\nBestehendes Ziel.\n", encoding="utf-8"
+            "# proj\n\n## Product goal\n\nBestehendes Ziel.\n", encoding="utf-8"
         )
 
         result = guide.apply(
@@ -175,8 +274,8 @@ class ProjectGuideModelTest(unittest.TestCase):
 
     def test_explicit_replace_overwrites_the_selected_section_only(self):
         self.project.joinpath("SPEC.md").write_text(
-            "# proj\n\n## Produktziel\n\nBestehendes Ziel.\n\n"
-            "## Zielumgebung\n\nBestehende Umgebung.\n",
+            "# proj\n\n## Product goal\n\nBestehendes Ziel.\n\n"
+            "## Target environment\n\nBestehende Umgebung.\n",
             encoding="utf-8",
         )
 
@@ -251,7 +350,7 @@ class ProjectGuideAgentTest(unittest.TestCase):
 
     def test_agent_prompt_contains_context_and_rules(self):
         self.project.joinpath("SPEC.md").write_text(
-            "# proj\n\n## Funktionsumfang\n\nBisheriger Stand.\n", encoding="utf-8"
+            "# proj\n\n## Functional scope\n\nBisheriger Stand.\n", encoding="utf-8"
         )
 
         prompt = guide.agent_prompt(
@@ -492,7 +591,7 @@ class ProjectGuideAgentTest(unittest.TestCase):
         folder = self.project / ".vibe" / "guide"
         folder.mkdir(parents=True)
         guide.draft_path(self.project, "umfang").write_text(
-            "## Funktionsumfang\n\n- Projekte verwalten\n- Agenten starten\n",
+            "## Functional scope\n\n- Projekte verwalten\n- Agenten starten\n",
             encoding="utf-8",
         )
 
@@ -500,7 +599,7 @@ class ProjectGuideAgentTest(unittest.TestCase):
 
         text = self.project.joinpath("SPEC.md").read_text(encoding="utf-8")
         self.assertIn("- Projekte verwalten", text)
-        self.assertEqual(text.count("## Funktionsumfang"), 1)
+        self.assertEqual(text.count("## Functional scope"), 1)
         self.assertIn("umfang", result["sections_written"])
         self.assertFalse(guide.draft_path(self.project, "umfang").exists())
 
@@ -509,7 +608,7 @@ class ProjectGuideAgentTest(unittest.TestCase):
         folder = self.project / ".vibe" / "guide"
         folder.mkdir(parents=True)
         guide.draft_path(self.project, "umfang").write_text(
-            "## Funktionsumfang\n\n- Rechnungen einlesen\n\n"
+            "## Functional scope\n\n- Rechnungen einlesen\n\n"
             "## Zusatzhinweis\n\nNur ein Unterpunkt des Entwurfs.\n",
             encoding="utf-8",
         )

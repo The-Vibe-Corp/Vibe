@@ -1,5 +1,15 @@
 {
  "aenderungen": [
+ {
+  "arbeitspaket": "GH-98",
+  "dateien": [
+   "bin/vibe_guide.py",
+   "bin/web/app.js",
+   "docs/features/F9.md"
+  ],
+  "datum": "2026-11-27",
+  "grund": "Projektassistent: Die in SPEC.md geschriebenen Abschnittsueberschriften sind jetzt fest englisch (Product goal, Audience and use, Functional scope, Out of scope, Target environment, Quality and acceptance, Locked decisions, Open questions) und damit unabhaengig von der UI-Sprache; vorhandene SPEC.md-Abschnitte werden ueber genau diese Ueberschriften zurueck in die Felder gelesen. Die deutschen Schrittitel der Oberflaeche bleiben unveraendert; GUIDE_TEXT in bin/web/app.js uebersetzt die drei abweichenden Titel im englischen Modus auf exakt die neuen Dateiueberschriften. Groesse und SHA-256 von bin/vibe_guide.py und bin/web/app.js wurden aktualisiert."
+ },
   {
    "arbeitspaket": "GH-121",
    "dateien": [
@@ -1814,9 +1824,9 @@
    "sha256": "3b6727e324a70fc087f68d5f40d2a82b077dc10a7215a923e08372ab2c08bfe4"
   },
   {
-   "bytes": 27194,
+   "bytes": 27195,
    "path": "bin/vibe_guide.py",
-   "sha256": "8a9c5b1844b1215a9f75368645aeef771a9dcb1e884824bea9b0538104a197ea"
+   "sha256": "e6c6c687ec90e33ce3f0393a9b5fbfabaa26272ed1b71dc8327a82ca0b17a4d9"
   },
   {
    "bytes": 27744,
@@ -1904,9 +1914,9 @@
    "sha256": "baf438e2032b06a478b2a3debe6b62eff104f6d9a105f829013eabfcddf1acd5"
   },
   {
-   "bytes": 153247,
+   "bytes": 153244,
    "path": "bin/web/app.js",
-   "sha256": "c3d04804c88eb99c05a441e1dd206a315ad4dde72517f31e51428e181d9976b3"
+   "sha256": "f31477bd61d6722dd9949748a61a2e2de9502db5f930db3d310178fc9e68bf3f"
   },
   {
    "bytes": 688,
