@@ -1,6 +1,18 @@
 {
  "aenderungen": [
   {
+   "arbeitspaket": "GH-124",
+   "dateien": [
+    "bin/vibe",
+    "bin/vibe_models.py",
+    "bin/vibe_services.py",
+    "bin/web/nova-settings.js",
+    "bin/web/nova.css"
+   ],
+   "datum": "2026-11-27",
+   "grund": "GH-124: Die Modellliste in den Einstellungen liegt jetzt im ausklappbaren Bereich, der Refresh speichert angereicherte Modelldetails aus dem lokalen Katalog im Modell-Cache, konfigurierte Modelle werden hervorgehoben und gefiltert, und der Nova-Modellkatalog-Bereich entfaellt. Groesse und SHA-256 der betroffenen Manifest-Dateien wurden aktualisiert."
+  },
+  {
    "arbeitspaket": "GH-122",
    "dateien": [
     "scripts/setup-vibe.py"
@@ -1764,9 +1776,9 @@
    "sha256": "f5e9382967c9833066a55808829f3750fc8e1181b170cafd222c37048bb49a77"
   },
   {
-   "bytes": 264916,
+   "bytes": 266246,
    "path": "bin/vibe",
-   "sha256": "8e2f068b709eabcab58dcca65841ecd529b28f0702c2aa174688488268b01772"
+   "sha256": "c48f2344d9777991ef40b361c565e79453e04976e58b4b992f56e68e31230adb"
   },
   {
    "bytes": 89268,
@@ -1824,9 +1836,9 @@
    "sha256": "c056d9c7927ad03ce5c69ca97c93c9ba088f73566f7649611b066f7b3274c00a"
   },
   {
-   "bytes": 21057,
+   "bytes": 25251,
    "path": "bin/vibe_models.py",
-   "sha256": "645ed7fb1bf3cfc9bb66488d47ca49316b98ec95f887156f3ddd754d95b8c50b"
+   "sha256": "76b51724ab5ed81c096bf3c470b685181f06dc3d6b53ecfbb64f605a8b653ca7"
   },
   {
    "bytes": 16646,
@@ -1859,9 +1871,9 @@
    "sha256": "c402192b93bb0152d376a1e4306168be8c13dfb49176977105d3008791cc1011"
   },
   {
-   "bytes": 11452,
+   "bytes": 13278,
    "path": "bin/vibe_services.py",
-   "sha256": "3c557161abb0eeca19b2b2b189514f763e064982ee2e2fb9ccacd56766303b99"
+   "sha256": "8b45f55afc5f3e3df8295bcd274684162d858e668a3da01c689f88fe66196a2e"
   },
   {
    "bytes": 12270,
@@ -1939,9 +1951,9 @@
    "sha256": "d9fa4e6744d1fc38e121af4e7f41e10cba517a3577f27a39cca08b7e44146a9b"
   },
   {
-   "bytes": 93384,
+   "bytes": 94579,
    "path": "bin/web/nova-settings.js",
-   "sha256": "d2bc996e2bbc2621cbe8f3f7982de6112060ef4461e58d319ceb237363c41a7a"
+   "sha256": "afa2422c287fa5442e2b26fe3cbf06cb494af5230282e6a87154a33a4dc37d7a"
   },
   {
    "bytes": 15335,
@@ -1949,9 +1961,9 @@
    "sha256": "84ae6329f31c04fcc8b48c552ade8f9d276c283ab81b1babb66f8988b627d8a7"
   },
   {
-   "bytes": 81637,
+   "bytes": 82005,
    "path": "bin/web/nova.css",
-   "sha256": "fbd03f7be5b810ede648cef78d10f16e37b9dc2d31a13f4782e03cce72d4277e"
+   "sha256": "2558f3ad63a88637ac3bd52020885935ffe853e97cdc9bb0992407be4815ab24"
   },
   {
    "bytes": 12751,

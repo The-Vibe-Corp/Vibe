@@ -88,3 +88,4 @@ Zuordnung der Projekt-Dokumentation zu den Notizen in Trilium (Stand 2026-11-27)
 | vibe | Features | GH-114 — Kostenübersicht: kompakte Ansicht und Preisfelder | `V5ZLRDvPvRcq` |
 | vibe | Features | GH-115 — Priorisierungsansicht auf kleinen Bildschirmen | `89kJlya6mQai` |
 | vibe | Features | GH-117 — Einstellungen lokal speichern | `vDrJ39qv9XF1` |
+| vibe | Features | GH-124 — Verbesserungen der Modellliste in den Einstellungen | `WtkU2a8DMkqW` |

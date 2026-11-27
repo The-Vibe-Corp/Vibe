@@ -45,14 +45,24 @@ a role such as coder, reviewer, tester, or vibe. At most one agent has the
 `vibe` role; assigning it elsewhere removes the old holder, and the last vibe
 agent cannot be demoted.
 
-## Model catalog
+## Model catalog and the settings model list
 
 - `data/models.json` uses schema 2. `validate()` requires a source and date for
   every non-unknown value and marks prices older than 90 days as stale.
 - The live model list comes from the active harness (`opencode models` or
   `pi --list-models`); it determines what can actually be selected.
 - `<state>/models-cache.json` caches that list and is refreshed only through
-  `POST /api/agents` with `action=refresh_models`.
+  `POST /api/agents` with `action=refresh_models`. The update also looks up each
+  live model in the local catalogue and persists the enriched details (`info`)
+  together with the IDs that lack complete data (`info_unvollstaendig`). GET and
+  POST replies use the persisted view; a failed refresh leaves the cache
+  untouched. Missing, incomplete and stale catalogue values get an explicit
+  `hinweis` instead of an unexplained "unknown".
+- In the Nova settings the model table lives inside the `details[data-nv-models]`
+  expandable, which is collapsed by default. Models assigned to agents, role
+  defaults or profiles are marked as configured and can be shown exclusively
+  with a filter toggle. The Nova "Model Catalogue" section was removed;
+  the classic dashboard keeps its catalogue view (`GH-124`).
 
 ## Profiles
 
@@ -101,5 +111,6 @@ current `PROJECT_AGENTS_VERSION` is 3.
 - [F31](../F31.md) — edit free AGENTS.md parts; [GH-76](../GH-76.md) — hidden platform instructions
 - [GH-101](../GH-101.md) — AGENTS.md settings rework, scoped backups, managed block removed
 - [GH-109](../GH-109.md) — agents list/header/card layout, restore version selection, project assignment rows
+- [GH-124](../GH-124.md) — expandable model list, persisted local detail lookup, configured highlight/filter, Nova catalogue section removed
 - [V-010](../V-010.md) — complete agent management; [V-011](../V-011.md) — evidence-based catalog
 - [V-025](../V-025.md) — invalid start agent in the project selection
