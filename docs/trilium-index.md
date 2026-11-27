@@ -28,6 +28,7 @@ Zuordnung der Projekt-Dokumentation zu den Notizen in Trilium (Stand 2026-11-27)
 | vibe | Features | V-021 Installationsvollständigkeit und Aufräumregeln | `TNxOZ5jYhTfI` |
 | vibe | Features | GH-121 Falsche Anzahl geschlossener Tickets im Arbeit-Reiter | `uRBjeVuC8bMn` |
 | vibe | Features | GH-122 Web-UI startet nach Update nicht | `Nlwh8REdKhzP` |
+| vibe | Features | GH-128 Issues-Sync-Knopf im Projektkopf über dem Arbeit-Reiter | `AKxiSAXzqgYU` |
 | vibe | Features | V-022 Ordnung im Git als allgemeine Projektregel | `0nTTx7KSysUQ` |
 | vibe | Features | F1 Feedback-Erfassung: nur Titel und Beschreibung | `4gZSOc9wxivN` |
 | vibe | Features | F2 Projektdetail: Feedback bearbeiten, Ausgabe steuern | `4etfKlTUj9ah` |

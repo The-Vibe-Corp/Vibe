@@ -1,5 +1,14 @@
 {
  "aenderungen": [
+  {
+   "arbeitspaket": "GH-128",
+   "dateien": [
+    "bin/web/nova-project.js",
+    "docs/features/GH-128.md"
+   ],
+   "datum": "2026-11-27",
+   "grund": "GH-128: Der eine Knopf 'Issues synchronisieren' wandert aus der Git-und-GitHub-Einstellung in die Kopf-Aktionszeile des Projekts (nv-hero-actions) ueber dem Arbeit-Tab. Er erscheint nur bei aktivem GitHub-Feature und gesetztem Projekt-Opt-in (issues_enabled), bleibt bis zum Laden der Projektdaten verborgen, postet weiterhin issues.sync gegen /api/github und rendert nach Erfolg neu. Die Einstellungen behalten Opt-in, Labels und Erklaertext; der zweite Sync-Knopf entfaellt. Groesse und SHA-256 von bin/web/nova-project.js wurden aktualisiert."
+  },
  {
   "arbeitspaket": "GH-98",
   "dateien": [
@@ -1964,9 +1973,9 @@
    "sha256": "6b93d852db7be168694470fd1e842a089fa33f1eaf89e1fc643e025ddaddb292"
   },
   {
-   "bytes": 131024,
+   "bytes": 131545,
    "path": "bin/web/nova-project.js",
-   "sha256": "f2415e275f1e6077f49424e66bb93acab4ee3761d84d14717cdca6ba23950ede"
+   "sha256": "82c184a492065c045676904803af373cecbdd81d1f0e5652d8acd4dba1e17f37"
   },
   {
    "bytes": 94579,

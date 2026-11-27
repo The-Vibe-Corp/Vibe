@@ -1232,6 +1232,15 @@ def js_region(text, marker, fallback=8000):
     return text[start:end]
 
 
+def js_between(text, start, end):
+    """Quelltext zwischen zwei Markern (leer bei fehlendem Start)."""
+    first = text.find(start)
+    if first < 0:
+        return ""
+    last = text.find(end, first + len(start))
+    return text[first:last if last >= 0 else len(text)]
+
+
 def ticket_store(project, records):
     """Schreibt den GH-48-Ticketspeicher ``.vibe/tickets.json``.
 
@@ -1814,6 +1823,7 @@ class NovaIssuesSurfaceTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.text = NOVA.read_text(encoding="utf-8")
+        cls.hero = js_between(cls.text, "var hero = el('section'", "var tabBar = el(")
 
     def test_state_helpers_know_in_progress(self):
         """Vorbedingung: ``nova-project.js`` mit Zustandshelfer und Karte.
@@ -1859,21 +1869,28 @@ class NovaIssuesSurfaceTest(unittest.TestCase):
         self.assertNotIn("nvpBoardColumn", self.text,
                          "Die entfernte Board-Spalte existiert noch")
 
-    def test_github_card_has_sync_button_and_issues_fields(self):
-        """Vorbedingung: ``nvpGithubSection``.
+    def test_github_card_keeps_issues_fields_but_no_sync_button(self):
+        """Vorbedingung: ``nvpGithubSection`` und Header der Nova-Ansicht.
         Aktion: Aktionen und Formularfelder pruefen.
-        Erwartung (GH-47): genau ein Sync-Button ``issues-sync`` und die
-        entfallenen Aktionen ``github-issues``/``github-import`` sowie der
-        Label-Filter der Issues-Sektion fehlen; Schalter
-        ``github-issues-enabled``; Felder fuer In-Progress-Label und Assignee,
-        die ueber ``settings`` mit ``issues_enabled``/``issues_in_progress``/
-        ``issues_assignee`` gespeichert werden.
+        Erwartung (GH-47/GH-128): genau ein Sync-Button ``issues-sync`` im
+        ``nv-hero``, nicht in der GitHub-Einstellung; die entfallenen
+        Aktionen ``github-issues``/``github-import`` sowie der Label-Filter
+        fehlen; Schalter ``github-issues-enabled``; Felder fuer
+        In-Progress-Label und Assignee, die ueber ``settings`` mit
+        ``issues_enabled``/``issues_in_progress``/``issues_assignee``
+        gespeichert werden.
         Fehlerfall: Sync nicht ausloesbar, Altabktionen bleiben oder
         Einstellungen nicht speicherbar.
         """
         region = js_region(self.text, "function nvpGithubSection(")
         self.assertTrue(region, "nvpGithubSection nicht gefunden")
-        self.assertIn("issues-sync", region)
+        self.assertTrue(self.hero, "nv-hero nicht gefunden")
+        self.assertEqual(1, self.text.count("issues-sync"),
+                         "Es muss genau einen Issues-Sync-Hook geben")
+        self.assertIn("'issues-sync'", self.hero,
+                      "Der Sync-Button fehlt im Header")
+        self.assertNotIn("issues-sync", region,
+                         "Der Sync-Button steht noch in den Einstellungen")
         self.assertNotIn("'github-issues'", region)
         self.assertNotIn("'github-import'", region)
         self.assertNotIn("github-issue-label", region)
@@ -2922,15 +2939,23 @@ class SurfaceStructureTest(unittest.TestCase):
     def setUpClass(cls):
         cls.nova = NOVA.read_text(encoding="utf-8")
         cls.classic = CLASSIC.read_text(encoding="utf-8")
+        cls.hero = js_between(cls.nova, "var hero = el('section'", "var tabBar = el(")
 
-    def test_nova_issues_section_has_exactly_one_sync_and_no_legacy(self):
-        """Vor: ``nvpGithubSection``. Aktion: Aktionen/Felder prüfen.
-        Erwartet: genau ein ``issues-sync``, kein ``github-issues``/
-        ``github-import``, kein ``github-issue-label``; Erklärung nennt
+    def test_nova_has_exactly_one_sync_in_hero_and_no_legacy(self):
+        """Vor: ``nvpGithubSection`` und ``nv-hero``. Aktion: Felder prüfen.
+        Erwartet: genau ein ``issues-sync`` in der Header-Zeile, keines in
+        den Einstellungen, kein ``github-issues``/``github-import``, kein
+        ``github-issue-label``; die Erklärung nennt weiterhin
         Synchronisieren, Ready/Entwurf und Schließen."""
         region = js_region(self.nova, "function nvpGithubSection(")
         self.assertTrue(region, "nvpGithubSection nicht gefunden")
-        self.assertEqual(1, region.count("issues-sync"), region)
+        self.assertTrue(self.hero, "nv-hero nicht gefunden")
+        self.assertEqual(1, self.nova.count("issues-sync"),
+                         "Es darf nur einen Issues-Sync-Hook geben")
+        self.assertIn("'issues-sync'", self.hero,
+                      "Der Sync-Button fehlt in nv-hero")
+        self.assertNotIn("issues-sync", region,
+                         "Der Sync-Button steht noch in den Einstellungen")
         self.assertNotIn("'github-issues'", region)
         self.assertNotIn("'github-import'", region)
         self.assertNotIn("github-issue-label", region)
@@ -2938,6 +2963,40 @@ class SurfaceStructureTest(unittest.TestCase):
         self.assertRegex(region, r"(?i)ready")
         self.assertRegex(region, r"(?i)entwurf|draft")
         self.assertRegex(region, r"(?i)schließ|schliess|close")
+
+    def test_nova_hero_sync_posts_issues_sync_and_refreshes(self):
+        """Vor: ``nv-hero`` der Nova-Projektansicht. Aktion: Verdrahtung des
+        Sync-Buttons prüfen.
+        Erwartet (GH-128): Der Button steht in ``nv-hero-actions``, ist an
+        das GitHub-Feature gekoppelt, wird nach dem Laden nur bei aktivem
+        ``data.github.issues_enabled`` eingeblendet, postet
+        ``{action: 'issues.sync'}`` gegen ``/api/github`` und rendert nach
+        Erfolg neu. Die positive Sichtbarkeit prüfen zusätzlich die
+        Browser-Tests; hier zählt die Verdrahtung samt Einblendbedingung.
+        Fehlerfall: Der Button löst die falsche Aktion aus, bleibt dauerhaft
+        verborgen oder steht außerhalb der Aktionszeile."""
+        self.assertTrue(self.hero, "nv-hero nicht gefunden")
+        self.assertIn("nv-hero-actions", self.hero,
+                      "Die Header-Aktionszeile fehlt")
+        self.assertIn("'issues-sync'", self.hero,
+                      "Der Sync-Button fehlt in der Header-Zeile")
+        self.assertRegex(
+            self.hero, r"NV\.feature\(\s*['\"]github['\"]\s*\)",
+            "Der Sync-Button ist nicht an das GitHub-Feature gekoppelt")
+        # GH-128 review F1: der Knopf darf nicht dauerhaft hidden bleiben;
+        # nach dem Laden muss der Projekt-Opt-in ihn einblenden.
+        self.assertRegex(
+            self.nova,
+            r"issuesSync\.hidden\s*=\s*!\s*\([^;]{0,160}issues_enabled\s*\)"
+            r"|issuesSync\.hidden\s*=\s*![^\n;]{0,160}issues_enabled"
+            r"|if\s*\(\s*data\.github\s*&&\s*data\.github\.issues_enabled\s*\)"
+            r"[^}]{0,240}removeAttribute\(\s*['\"]hidden['\"]\s*\)",
+            "Der Sync-Button wird nicht an data.github.issues_enabled "
+            "gekoppelt eingeblendet")
+        self.assertRegex(self.nova, r"action\s*:\s*['\"]issues\.sync['\"]",
+                         "Der Button postet nicht issues.sync")
+        self.assertRegex(self.nova, r"NV\.render\(\)",
+                         "Die Ansicht wird nach dem Sync nicht neu gerendert")
 
     def test_classic_issues_section_drops_load_import_and_filter(self):
         """Vor: ``app.js``. Aktion: Issues-Bedienung prüfen.

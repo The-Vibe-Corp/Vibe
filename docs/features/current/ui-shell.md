@@ -70,7 +70,11 @@ without a static sidebar.
   permanently in the hero row on every tab, while `Check` and `Full
   verification` are reachable through a collapsed `More actions` menu there.
   `Start working` is disabled while a run is active, and the In Progress
-  `Continue` button is disabled while a session of the project is running.
+  `Continue` button is disabled while a session of the project is running. With
+  the GitHub feature and the project issue-sync opt-in enabled, `Sync issues`
+  is another action in the shared project header, visible above the Work
+  board; the settings section keeps only the opt-in and its explanation
+  (`GH-128`).
 - The editor and detail view open in the shared context panel. Status changes,
   prioritization, and drag-and-drop update the ticket store without a full page
   reload. In-progress tickets can be returned to draft or ready from the card,

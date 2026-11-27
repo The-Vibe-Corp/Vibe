@@ -58,6 +58,13 @@ branches, prepares merge requests, and synchronizes issues with the ticket store
 - Done tickets are not reopened by remote labels. In status reporting, a
   package with completed proof is reported as done rather than blocked or
   waiting for merge (`B3-wartet-auf-merge`).
+- In the Nova UI the single `Sync issues` button is a top action of the project
+  detail view, next to the ticket-creation actions (`GH-128`). The header is
+  shared by all project tabs, so the button is visible above the Work board as
+  well as on the other tabs. It is shown only with the GitHub feature enabled
+  and the project issue-sync opt-in turned on; the Git & GitHub settings
+  section keeps the
+  the opt-in, labels and explanation, but no second sync button.
 
 ## Discrepancy note
 
@@ -67,6 +74,7 @@ in [Runner and package flow](runner.md), not to GitHub mode.
 ## Entry points
 
 - CLI: `vibe clone`, `vibe github status|token|link|branches|fetch|pull|push|checkout|test|issues-sync|pr`.
+- UI: `Sync issues` in the project header actions on the Work tab (`GH-128`).
 - HTTP: `/api/clone`, `/api/github`.
 - Files: `<project>/.vibe/project.env`, `<state>/github-tokens/`,
   `<state>/github-token.key`.
