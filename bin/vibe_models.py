@@ -448,6 +448,104 @@ def view(catalog, heute=None, aktuell=None):
     return base
 
 
+def enrich(models, live_ids, heute=None):
+    """Reichert die Details tatsächlich verfügbarer Modelle an.
+
+    ``models`` ist die normalisierte Katalogliste aus :func:`view`.
+    ``live_ids`` ist die Modellliste des aktiven Harness. Für jede Live-ID
+    entsteht ein Eintrag mit den sichtbaren Feldern der Modellliste. Fehlende,
+    unvollständige oder veraltete Angaben werden nicht ersetzt, sondern über
+    ``hinweis`` erklärt und in ``info_unvollstaendig`` geführt.
+    """
+    heute = heute or date.today()
+    catalogue = {}
+    for model in models or []:
+        if isinstance(model, dict) and _text(model.get("id")):
+            catalogue[_text(model.get("id"))] = model
+    info = {}
+    incomplete = []
+    for model_id in [str(item) for item in (live_ids or [])]:
+        detail = _enriched_entry(model_id, catalogue.get(model_id), heute)
+        info[model_id] = detail["info"]
+        if detail["unvollstaendig"]:
+            incomplete.append(model_id)
+    return {"info": info, "info_unvollstaendig": incomplete}
+
+
+def _enriched_entry(model_id, model, heute):
+    """Detailansicht eines Modells samt erklärendem Hinweis."""
+    if not isinstance(model, dict):
+        return {
+            "info": {
+                "id": model_id,
+                "anbieter": "",
+                "preis": {"status": "unbekannt", "text": "unbekannt",
+                          "quelle": "", "grund": "kein Katalogeintrag"},
+                "status": "unbekannt",
+                "fakten": {},
+                "einschaetzungen": {},
+                "hinweis": ("Kein Katalogeintrag für '" + model_id
+                            + "'; Anbieter, Preis und Details sind unbekannt."),
+            },
+            "unvollstaendig": True,
+        }
+
+    anbieter = _text(model.get("anbieter"))
+    if is_unknown(anbieter):
+        anbieter = ""
+    price = dict(model.get("preis") if isinstance(model.get("preis"), dict) else {})
+    price_status = _text(price.get("status")) or "unbekannt"
+    price_value = _text(price.get("text")) or price_text(price)
+    price_quelle = _text(price.get("quelle"))
+    fakten = model.get("fakten") if isinstance(model.get("fakten"), dict) else {}
+    einschaetzungen = (model.get("einschaetzungen")
+                       if isinstance(model.get("einschaetzungen"), dict) else {})
+    status = _text(model.get("id_status")) or "unbekannt"
+
+    reasons = []
+    if not anbieter:
+        reasons.append("Anbieter ist unbekannt")
+    if price_status == "unbekannt" or is_unknown(price_value):
+        grund = _text(price.get("grund"))
+        reasons.append("Preis unbekannt" + (": " + grund if grund else ""))
+    else:
+        stand = _text(price.get("stand"))
+        datum = parse_date(stand)
+        if datum is None:
+            reasons.append("Preisstand fehlt oder ist kein ISO-Datum")
+        elif (heute - datum).days > MAX_PREIS_ALTER_TAGE:
+            reasons.append("Preis vom " + stand + " ist veraltet (älter als "
+                           + str(MAX_PREIS_ALTER_TAGE) + " Tage)")
+    if not fakten:
+        reasons.append("keine Fakten im Katalogeintrag")
+
+    price["status"] = price_status
+    price["text"] = price_value if price_value else "unbekannt"
+    price["quelle"] = price_quelle
+    return {
+        "info": {
+            # Die klassische Oberfläche liest weiterhin Katalogfelder wie
+            # Name, id_status und id_beleg aus dieser Ansicht.
+            "id": model_id,
+            "name": _text(model.get("name")) or model_id,
+            "anbieter": anbieter,
+            "id_status": status,
+            "id_beleg": (dict(model.get("id_beleg"))
+                         if isinstance(model.get("id_beleg"), dict) else {}),
+            "entfernt_am": _text(model.get("entfernt_am")),
+            "entfernt_quelle": _text(model.get("entfernt_quelle")),
+            "preis": price,
+            "status": status,
+            "fakten": dict(fakten),
+            "einschaetzungen": dict(einschaetzungen),
+            "staerken": list(model.get("staerken") or []),
+            "schwaechen": list(model.get("schwaechen") or []),
+            "hinweis": "; ".join(reasons),
+        },
+        "unvollstaendig": bool(reasons),
+    }
+
+
 def _empty(hinweis, code=None):
     findings = []
     if code:

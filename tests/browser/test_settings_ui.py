@@ -4255,14 +4255,16 @@ class GatesTest(F34SettingsBrowserTest):
 
 
 class ModelsLayoutTest(F34SettingsBrowserTest):
-    def test_models_collapsed_refresh_in_head_and_stand_line(self):
-        """GH-57 (models): details[data-nv-models] ist standardmäßig
-        EINGEKLAPPT (kein open); der Aktualisieren-Knopf steht im
-        Sektionskopf und ist auch eingeklappt sichtbar; die Katalog-
-        Beschreibung (data-nv-models-hint / „Referenz“-Text) ist entfallen.
-        Der Katalog (data-nv-model-catalog) bleibt eingeklappt mit
-        models-prices. Ersetzt den F34-Stand (details offen, Refresh im
-        Katalog, Hinweistext), der dem GH-57-Vertrag widerspricht."""
+    def test_models_collapsed_refresh_in_head_and_no_catalogue_section(self):
+        """Die Modellliste ist eingeklappt; Refresh bleibt im Kopf sichtbar.
+
+        details[data-nv-models] ist standardmäßig EINGEKLAPPT (kein open),
+        der Aktualisieren-Knopf steht im Sektionskopf und ist auch
+        eingeklappt sichtbar; die Katalog-Beschreibung
+        (data-nv-models-hint / „Referenz“-Text) ist entfallen. Der frühere
+        „Model Catalogue“-Bereich (data-nv-model-catalog, models-prices)
+        ist vollständig entfernt. Ersetzt den GH-57-Stand, der den Katalog
+        noch als eigene Sektion erwartete."""
         self.boot()
         self.open_settings()
         self.enable_features("models")
@@ -4280,16 +4282,12 @@ class ModelsLayoutTest(F34SettingsBrowserTest):
         self.assertEqual(1, section.locator(
             "[data-nv-models-stand]").count(),
             "Die Zeile mit dem Aktualisierungsstand fehlt")
-        catalog = section.locator("details[data-nv-model-catalog]")
-        catalog.wait_for(state="attached", timeout=20000)
-        self.assertFalse(catalog.evaluate("node => node.open"),
-                         "Der Katalog ist standardmäßig offen")
-        catalog.locator("summary").first.click()
-        self.wait_until(lambda: catalog.evaluate("node => node.open"),
-                        timeout=10, message="Der Katalog lässt sich nicht "
-                                            "aufklappen")
-        prices = catalog.locator("button[data-nv-action='models-prices']")
-        prices.wait_for(state="visible", timeout=20000)
+        self.assertEqual(
+            0, section.locator("details[data-nv-model-catalog]").count(),
+            "Der entfernte 'Model Catalogue'-Bereich ist noch vorhanden")
+        self.assertEqual(
+            0, section.locator("button[data-nv-action='models-prices']").count(),
+            "Die Aktion des entfernten Katalogs ist noch vorhanden")
         self.assert_no_page_errors()
 
 
@@ -4510,6 +4508,58 @@ case "$1" in
 esac
 exit 2
 """
+
+# Isolierter Lokalkatalog für die Modelldetail-Abnahme: ein vollständiger
+# Eintrag, ein Eintrag mit unbekanntem Preis und ein Harness-Modell ohne
+# Eintrag. Damit sind genau zwei von drei Modellen unvollständig.
+BROWSER_MODEL_CATALOG = {
+    "schema": 2,
+    "version": "2026-11-27.1",
+    "stand": "2026-11-27",
+    "waehrung": "USD",
+    "einheit": "1 Mio. Tokens",
+    "hinweis": "Testkatalog für die Browserabnahme der Modellliste.",
+    "quellen": [
+        {"name": "opencode models", "datum": "2026-11-27",
+         "zweck": "Modell-IDs"},
+        {"name": "models.dev API", "datum": "2026-11-27",
+         "zweck": "Fakten und Preise"},
+    ],
+    "modelle": [
+        {
+            "id": "opencode/vibe-modell",
+            "name": "Vibe Modell",
+            "anbieter": "OpenCode Zen",
+            "id_status": "bestaetigt",
+            "id_beleg": {"quelle": "opencode models", "datum": "2026-11-27"},
+            "preis": {
+                "status": "bekannt", "waehrung": "USD",
+                "einheit": "1 Mio. Tokens", "stand": "2026-11-27",
+                "quelle": "models.dev API",
+                "tarife": {"eingabe": 0.15, "ausgabe": 0.5},
+            },
+            "fakten": {
+                "kontext": {"wert": "200.000 Token", "art": "fakt",
+                            "quelle": "models.dev API",
+                            "datum": "2026-11-27"},
+            },
+            "einschaetzungen": {
+                "tempo": {"wert": "schnell", "art": "einschaetzung",
+                          "quelle": "Altkatalog", "datum": "2026-11-27"},
+            },
+        },
+        {
+            "id": "opencode/test-modell",
+            "name": "Test Modell",
+            "anbieter": "OpenCode Zen",
+            "id_status": "bestaetigt",
+            "id_beleg": {"quelle": "opencode models", "datum": "2026-11-27"},
+            "preis": {"status": "unbekannt", "grund": "kein belegter Preis"},
+            "fakten": {},
+            "einschaetzungen": {},
+        },
+    ],
+}
 
 
 class _FakeOpenCodeHandler_gh57(BaseHTTPRequestHandler):
@@ -5780,6 +5830,290 @@ class ModelsSectionTest(GH57SettingsBrowserTest):
                 "Der Aktualisieren-Knopf fehlt im leeren Zustand")
         finally:
             self.models_source.write_text(FAKE_MODELS, encoding="utf-8")
+
+    def test_model_table_lives_inside_details_and_follows_the_toggle(self):
+        """Die Tabelle liegt im details-Bereich und ist nur geöffnet sichtbar."""
+        self.boot()
+        self.open_settings()
+        section = self.section("models")
+        details = section.locator("details[data-nv-models]")
+        details.wait_for(state="attached", timeout=20000)
+        table = details.locator("table[data-nv-models-table]")
+        self.wait_until(
+            lambda: table.count() == 1, timeout=30,
+            message="Die Modelldetails-Tabelle fehlt im details-Bereich")
+        self.assertEqual(
+            1, section.locator("table[data-nv-models-table]").count(),
+            "Die Modelldetails-Tabelle liegt zusätzlich außerhalb des details")
+        self.assertFalse(
+            details.evaluate("node => node.open"),
+            "details[data-nv-models] ist nicht eingeklappt")
+        self.assertFalse(
+            table.is_visible(),
+            "Die Modellliste bleibt eingeklappt unterhalb des details sichtbar")
+        details.locator("summary").click()
+        self.wait_until(
+            lambda: details.evaluate("node => node.open"),
+            timeout=10, message="Der details-Bereich lässt sich nicht öffnen")
+        self.assertTrue(
+            table.is_visible(),
+            "Die Modellliste ist im geöffneten details-Bereich unsichtbar")
+        details.locator("summary").click()
+        self.wait_until(
+            lambda: not details.evaluate("node => node.open"),
+            timeout=10, message="Der details-Bereich lässt sich nicht schließen")
+        self.assertFalse(
+            table.is_visible(),
+            "Die Modellliste bleibt nach dem Schließen sichtbar")
+        self.assert_no_page_errors()
+
+    def test_model_catalogue_section_is_removed(self):
+        """Der frühere 'Model Catalogue'-Bereich existiert nicht mehr."""
+        self.boot()
+        self.open_settings()
+        section = self.section("models")
+        section.wait_for(state="visible", timeout=20000)
+        self.assertEqual(
+            0, section.locator("details[data-nv-model-catalog]").count(),
+            "Der entfernte Modellkatalog ist noch in der Sektion")
+        self.assertEqual(
+            0, section.locator("button[data-nv-action='models-prices']").count(),
+            "Die Aktion des entfernten Modellkatalogs ist noch vorhanden")
+        self.assertNotRegex(
+            section.inner_text() or "",
+            re.compile(r"model catalogue|modellkatalog", re.I),
+            "Die Sektion nennt weiterhin den entfernten Modellkatalog")
+        self.assert_no_page_errors()
+
+
+class ModelsCatalogSectionTest(GH57SettingsBrowserTest):
+    """Modelldetails aus einem isolierten Lokalkatalog (GH-124)."""
+
+    def setUp(self):
+        super().setUp()
+        install = self.root / "_toolchain"
+        install.mkdir(exist_ok=True)
+        self.catalog_path = install / "models.json"
+        self.catalog_path.write_text(
+            json.dumps(BROWSER_MODEL_CATALOG, ensure_ascii=False),
+            encoding="utf-8")
+
+    def tearDown(self):
+        self.catalog_path.unlink(missing_ok=True)
+        super().tearDown()
+
+    def open_models(self):
+        """Öffnet die Einstellungen und klappt die Modellliste auf."""
+        self.open_settings()
+        section = self.section("models")
+        section.wait_for(state="visible", timeout=20000)
+        details = section.locator("details[data-nv-models]")
+        details.wait_for(state="attached", timeout=20000)
+        if not details.evaluate("node => node.open"):
+            details.locator("summary").click()
+        self.wait_until(
+            lambda: section.locator("tr[data-nv-model]").count() >= 3,
+            timeout=30, message="Nach dem Öffnen fehlen Modellzeilen")
+        return section
+
+    def configured_ids(self, section):
+        """IDs der als konfiguriert markierten Modellzeilen."""
+        return section.evaluate(
+            """section => Array.from(section.querySelectorAll('tr[data-nv-model]'))
+                 .filter(row => row.hasAttribute('data-nv-configured')
+                   || row.classList.contains('nv-configured'))
+                 .map(row => row.getAttribute('data-nv-model'))""")
+
+    def visible_ids(self, section):
+        """IDs der tatsächlich sichtbaren Modellzeilen."""
+        return section.evaluate(
+            """section => Array.from(section.querySelectorAll('tr[data-nv-model]'))
+                 .filter(row => {
+                   const rect = row.getBoundingClientRect();
+                   const style = getComputedStyle(row);
+                   return rect.width > 0 && rect.height > 0
+                     && style.display !== 'none' && style.visibility !== 'hidden';
+                 })
+                 .map(row => row.getAttribute('data-nv-model'))""")
+
+    def row_style(self, section, model_id):
+        """Sichtbare Stilmerkmale einer Modellzeile für den Hervorhebungscheck."""
+        return section.locator("tr[data-nv-model='%s']" % model_id).evaluate(
+            """node => {
+                 const style = getComputedStyle(node);
+                 const cell = node.querySelector('td');
+                 const cellStyle = cell ? getComputedStyle(cell) : style;
+                 return [style.backgroundColor, style.outlineColor,
+                   style.outlineStyle, style.boxShadow, style.borderLeftColor,
+                   cellStyle.backgroundColor, cellStyle.fontWeight,
+                   cellStyle.color].join('|');
+               }""")
+
+    def set_configured_filter(self, section, enabled):
+        """Schaltet den Filter für konfigurierte Modelle um."""
+        box = section.locator("input[data-nv-models-filter='configured']")
+        button = section.locator(
+            "button[data-nv-action='models-filter-configured']")
+        if box.count():
+            if enabled:
+                box.check()
+            else:
+                box.uncheck()
+            return
+        self.assertTrue(
+            button.count(),
+            "Es fehlt ein umschaltbarer Filter für konfigurierte Modelle")
+        button.click()
+
+    def test_configured_models_are_highlighted_and_filter_toggles(self):
+        """Konfigurierte Modelle sind markiert; der Filter zeigt nur diese."""
+        self.boot()
+        section = self.open_models()
+
+        self.assertIn(
+            "OpenCode Zen",
+            section.locator("tr[data-nv-model='opencode/vibe-modell']").inner_text(),
+            "Vorbedingung: der lokale Katalog liefert echte Modelldaten")
+        configured = set(self.configured_ids(section))
+        self.assertIn("opencode/test-modell", configured)
+        self.assertIn("opencode/vibe-modell", configured)
+        self.assertNotIn("opencode/neu", configured)
+        self.assertNotEqual(
+            self.row_style(section, "opencode/test-modell"),
+            self.row_style(section, "opencode/neu"),
+            "Konfigurierte Modellzeilen sind nicht visuell hervorgehoben")
+
+        self.set_configured_filter(section, True)
+        self.wait_until(
+            lambda: set(self.visible_ids(section)) == configured,
+            timeout=15,
+            message="Der Filter zeigt nicht nur konfigurierte Modelle: %r"
+                    % (self.visible_ids(section),))
+        self.set_configured_filter(section, False)
+        self.wait_until(
+            lambda: len(self.visible_ids(section)) >= 3, timeout=15,
+            message="Der Filter lässt sich nicht wieder ausschalten")
+        self.assertIn("opencode/neu", self.visible_ids(section))
+        self.assert_no_page_errors()
+
+    def test_highlight_and_filter_follow_config_change_reload_and_refresh(self):
+        """Nach Konfigurationswechsel, Reload und Refresh bleibt die Markierung korrekt."""
+        self.boot()
+        section = self.open_models()
+        self.assertNotIn("opencode/neu", self.configured_ids(section))
+
+        tester = (self.root / "home" / ".config" / "opencode" / "agents"
+                  / "tester.md")
+        tester.write_text(
+            TESTER_AGENT.replace("opencode/test-modell", "opencode/neu"),
+            encoding="utf-8")
+        self.page.reload()
+        section = self.open_models()
+        self.wait_until(
+            lambda: "opencode/neu" in self.configured_ids(section),
+            timeout=30, message="Der Konfigurationswechsel erscheint nicht "
+                                "nach dem Reload")
+        self.assertNotIn("opencode/test-modell", self.configured_ids(section))
+        configured = set(self.configured_ids(section))
+        self.set_configured_filter(section, True)
+        self.wait_until(
+            lambda: set(self.visible_ids(section)) == configured,
+            timeout=15, message="Der Filter ist nach dem Reload falsch")
+        self.set_configured_filter(section, False)
+
+        section.locator(
+            "button[data-nv-action='models-refresh']").click()
+        self.wait_for_post(
+            "/api/agents", lambda p: p.get("action") == "refresh_models",
+            message="Der Refresh wurde nicht ausgelöst")
+        self.wait_until(
+            lambda: "opencode/neu" in self.configured_ids(section),
+            timeout=30, message="Nach dem Refresh fehlt die Markierung")
+        self.assertNotIn("opencode/test-modell", self.configured_ids(section))
+        self.set_configured_filter(section, True)
+        self.wait_until(
+            lambda: set(self.visible_ids(section)) == configured,
+            timeout=15, message="Der Filter ist nach dem Refresh falsch")
+        self.assert_no_page_errors()
+
+    def test_configured_filter_state_survives_page_reload(self):
+        """Der Filter für konfigurierte Modelle bleibt nach einem Reload aktiv."""
+        self.boot()
+        section = self.open_models()
+        configured = set(self.configured_ids(section))
+        self.assertIn("opencode/test-modell", configured)
+        self.assertNotIn("opencode/neu", configured)
+        all_models = {"opencode/test-modell", "opencode/vibe-modell",
+                      "opencode/neu"}
+        self.assertEqual(
+            all_models, set(self.visible_ids(section)),
+            "Vorbedingung: anfangs sind alle Modelle sichtbar")
+
+        box = section.locator("input[data-nv-models-filter='configured']")
+        self.assertEqual(
+            1, box.count(), "Der Filter für konfigurierte Modelle fehlt")
+        self.set_configured_filter(section, True)
+        self.wait_until(
+            lambda: set(self.visible_ids(section)) == configured,
+            timeout=15, message="Der Filter zeigt nicht nur konfigurierte Modelle")
+        self.assertTrue(box.is_checked(),
+                        "Vorbedingung: der Filter ist eingeschaltet")
+
+        self.page.reload()
+        section = self.open_models()
+        box = section.locator("input[data-nv-models-filter='configured']")
+        self.assertTrue(
+            box.is_checked(),
+            "Der eingeschaltete Filter ist nach dem Reload nicht mehr aktiv")
+        self.wait_until(
+            lambda: set(self.visible_ids(section)) == configured,
+            timeout=15,
+            message="Nach dem Reload sind nicht nur konfigurierte Modelle sichtbar")
+
+        self.set_configured_filter(section, False)
+        self.wait_until(
+            lambda: set(self.visible_ids(section)) == all_models,
+            timeout=15, message="Nach dem Abschalten fehlen Modelle wieder")
+        self.assert_no_page_errors()
+
+    def test_refresh_feedback_names_incomplete_catalogue_data(self):
+        """Die Refresh-Meldung nennt die Anzahl Modelle ohne vollständige Daten."""
+        self.boot()
+        section = self.open_models()
+        section.locator(
+            "button[data-nv-action='models-refresh']").click()
+        self.wait_for_post(
+            "/api/agents", lambda p: p.get("action") == "refresh_models",
+            message="Der Refresh wurde nicht ausgelöst")
+        self.wait_until(
+            lambda: bool(self.toast_text().strip()), timeout=20,
+            message="Der Refresh gibt keine Rückmeldung")
+        toast = self.toast_text()
+        numbers = [int(value) for value in re.findall(r"\d+", toast)]
+        self.assertIn(2, numbers,
+                      "Zwei der drei Modelle haben unvollständige Daten: " + toast)
+        self.assertRegex(
+            toast, r"unvollständig|fehl|ohne|kein|unbekannt|Angaben|incomplete",
+            "Die Meldung erklärt die unvollständigen Daten: " + toast)
+        self.assert_no_page_errors()
+
+    def test_missing_catalogue_entry_explains_its_reason(self):
+        """Ein Modell ohne Katalogeintrag zeigt einen Grund statt leerer Werte."""
+        self.boot()
+        section = self.open_models()
+        section.locator("tr[data-nv-model='opencode/neu']").click()
+        aside = self.page.locator("aside[data-nv-editview]")
+        aside.wait_for(state="visible", timeout=20000)
+        detail = aside.locator("[data-nv-model-detail]")
+        detail.wait_for(state="visible", timeout=20000)
+        text = detail.inner_text() or ""
+        self.assertRegex(
+            text,
+            r"catalogue|katalog|entry|eintrag|veraltet|stale|unvollständig|"
+            r"incomplete|no details|keine daten|grund|reason",
+            "Die Detailansicht erklärt den fehlenden Eintrag: %r" % text)
+        self.page.keyboard.press("Escape")
+        self.assert_no_page_errors()
 
 
 class ProfilesSectionTest(GH57SettingsBrowserTest):

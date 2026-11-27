@@ -62,6 +62,77 @@ ISOLATED_ENV = (
 
 STUB_MODELS = ["opencode/test-modell", "opencode/vibe-modell", "opencode/neu"]
 
+# Vier Modelle: ein vollständiger Katalogeintrag, einer mit unbekanntem Preis,
+# einer mit veraltetem Preis und einer ganz ohne Katalogeintrag.
+ENRICHED_MODELS = STUB_MODELS + ["opencode/veraltet"]
+
+# Lokaler Testkatalog unter <install>/models.json. Bewusst gemischte Datenlage,
+# damit der Refresh echte Angaben, unbekannte/veraltete Werte und einen
+# fehlenden Eintrag unterscheidbar melden muss.
+SEED_CATALOG = {
+    "schema": 2,
+    "version": "2026-11-27.1",
+    "stand": "2026-11-27",
+    "waehrung": "USD",
+    "einheit": "1 Mio. Tokens",
+    "hinweis": "Testkatalog für die Modelldetail-Abnahme.",
+    "quellen": [
+        {"name": "opencode models", "datum": "2026-11-27",
+         "zweck": "Modell-IDs"},
+        {"name": "models.dev API", "datum": "2026-11-27",
+         "zweck": "Fakten und Preise"},
+    ],
+    "modelle": [
+        {
+            "id": "opencode/vibe-modell",
+            "name": "Vibe Modell",
+            "anbieter": "OpenCode Zen",
+            "id_status": "bestaetigt",
+            "id_beleg": {"quelle": "opencode models", "datum": "2026-11-27"},
+            "preis": {
+                "status": "bekannt", "waehrung": "USD",
+                "einheit": "1 Mio. Tokens", "stand": "2026-11-27",
+                "quelle": "models.dev API",
+                "tarife": {"eingabe": 0.15, "ausgabe": 0.5, "cache_lesen": 0.03},
+            },
+            "fakten": {
+                "kontext": {"wert": "200.000 Token", "art": "fakt",
+                            "quelle": "models.dev API",
+                            "datum": "2026-11-27"},
+            },
+            "einschaetzungen": {
+                "tempo": {"wert": "schnell", "art": "einschaetzung",
+                          "quelle": "Altkatalog", "datum": "2026-11-27"},
+            },
+        },
+        {
+            "id": "opencode/test-modell",
+            "name": "Test Modell",
+            "anbieter": "OpenCode Zen",
+            "id_status": "bestaetigt",
+            "id_beleg": {"quelle": "opencode models", "datum": "2026-11-27"},
+            "preis": {"status": "unbekannt", "grund": "kein belegter Preis"},
+            "fakten": {},
+            "einschaetzungen": {},
+        },
+        {
+            "id": "opencode/veraltet",
+            "name": "Veraltetes Modell",
+            "anbieter": "OpenCode Zen",
+            "id_status": "bestaetigt",
+            "id_beleg": {"quelle": "opencode models", "datum": "2026-11-27"},
+            "preis": {
+                "status": "bekannt", "waehrung": "USD",
+                "einheit": "1 Mio. Tokens", "stand": "2020-01-01",
+                "quelle": "models.dev API",
+                "tarife": {"eingabe": 0.15, "ausgabe": 0.5},
+            },
+            "fakten": {},
+            "einschaetzungen": {},
+        },
+    ],
+}
+
 # Fake-opencode mit Aufrufzähler: Jede Ausführung (Probe und models) wird
 # protokolliert, damit der Cache-Nutzen von GET /api/agents beweisbar ist.
 FAKE_OPENCODE_COUNTING = """#!/usr/bin/env bash
@@ -78,6 +149,10 @@ case "$1" in
 esac
 exit 2
 """.replace("{models}", "\n".join(STUB_MODELS))
+
+# Zählender Fake-opencode mit einem zusätzlichen Harness-Modell ohne Katalogeintrag.
+FAKE_OPENCODE_ENRICHED = FAKE_OPENCODE_COUNTING.replace(
+    "\n".join(STUB_MODELS), "\n".join(ENRICHED_MODELS))
 
 # Fake-opencode mit unterstützter Version, aber fehlgeschlagenem Modellaufruf.
 FAKE_OPENCODE_BROKEN = """#!/usr/bin/env bash
@@ -380,6 +455,23 @@ class ModelsBrokenDashboard(Gh57Dashboard):
     """Dashboard, dessen Harness-Modellaufruf fehlschlägt."""
 
     FAKE_SCRIPT = FAKE_OPENCODE_BROKEN
+
+
+class ModelsCatalogDashboard(ModelsDashboard):
+    """Dashboard mit lokalem Katalog und gemischter Datenlage."""
+
+    FAKE_SCRIPT = FAKE_OPENCODE_ENRICHED
+
+    def setUp(self):
+        super().setUp()
+        # VIBE_INSTALL zeigt im Fixture auf <state>; dort liegt der Katalog.
+        self.catalog_path = self.toolchain / "models.json"
+        self.catalog_path.write_text(
+            json.dumps(SEED_CATALOG, ensure_ascii=False), encoding="utf-8")
+
+    def tearDown(self):
+        (self.toolchain / "models.json").unlink(missing_ok=True)
+        super().tearDown()
 
 
 class RestartDashboard(Gh57Dashboard):
@@ -1010,6 +1102,183 @@ class ModelsRefreshTest(ModelsDashboard):
         self.assertEqual({"coder": "opencode/test-modell"},
                          info["default_models"])
         self.assertEqual(list(STANDARD_PROFILES), info["standard_profiles"])
+
+    def test_configured_models_union_of_agents_roles_and_profile_assignments(self):
+        """Konfiguriert sind Agentenmodelle, Rollendefaults und Profilwerte."""
+        (self.agents / "tester.md").write_text(
+            agent_text("opencode/test-modell"), encoding="utf-8")
+        self.write_profiles({"rollen": {"tester": "coder"},
+                             "profile": {
+                                 "meins": {"coder": "opencode/vibe-modell"}}})
+
+        info = self.get_json("/api/agents")
+
+        configured = info["configured_models"]
+        self.assertIn("opencode/test-modell", configured)
+        self.assertIn("opencode/vibe-modell", configured)
+        self.assertNotIn("opencode/neu", configured)
+
+    def test_configured_models_follow_config_changes_and_the_refresh_reply(self):
+        """Nach Konfigurationsänderungen gilt die neue Modellmenge sofort."""
+        tester = self.agents / "tester.md"
+        tester.write_text(agent_text("opencode/test-modell"), encoding="utf-8")
+        self.write_profiles({"rollen": {"tester": "coder"},
+                             "profile": {
+                                 "meins": {"coder": "opencode/vibe-modell"}}})
+        self.assertIn("opencode/test-modell",
+                      self.get_json("/api/agents")["configured_models"])
+
+        tester.write_text(agent_text("opencode/neu"), encoding="utf-8")
+        self.write_profiles({"rollen": {"tester": "coder"},
+                             "profile": {"meins": {"coder": "opencode/neu"}}})
+
+        configured = self.get_json("/api/agents")["configured_models"]
+        self.assertIn("opencode/neu", configured)
+        self.assertNotIn("opencode/test-modell", configured)
+        _status, refreshed = self.post("/api/agents", {
+            "action": "refresh_models"})
+        self.assertIn("opencode/neu", refreshed["configured_models"])
+        self.assertNotIn("opencode/test-modell",
+                         refreshed["configured_models"])
+
+
+class ModelsCatalogTest(ModelsCatalogDashboard):
+    """Lokaler Katalog, angereicherter Cache und eindeutige Fehlerhinweise."""
+
+    def _read_cache(self):
+        return json.loads(
+            (self.state / "models-cache.json").read_text(encoding="utf-8"))
+
+    def test_refresh_persists_enriched_info_and_answers_it_immediately(self):
+        """Der Refresh speichert Katalogdetails und liefert sie sofort zurück."""
+        status, body = self.post("/api/agents", {"action": "refresh_models"})
+
+        self.assertEqual(200, status, str(body))
+        self.assertTrue(body["ok"], str(body))
+        cache = self._read_cache()
+        self.assert_utc_iso(cache["stand"])
+        self.assertEqual(ENRICHED_MODELS, cache["models"])
+        self.assertIn("info", cache,
+                      "Der Cache speichert die angereicherten Modelldetails")
+        for model_id in ENRICHED_MODELS:
+            self.assertIn(model_id, cache["info"])
+
+        complete = cache["info"]["opencode/vibe-modell"]
+        for key in ("anbieter", "preis", "status", "fakten",
+                    "einschaetzungen", "hinweis"):
+            with self.subTest(key=key):
+                self.assertIn(key, complete)
+        self.assertEqual("OpenCode Zen", complete["anbieter"])
+        self.assertIn("0,15", complete["preis"]["text"])
+        self.assertEqual("models.dev API", complete["preis"]["quelle"])
+        self.assertTrue(complete["status"])
+        self.assertIn("200.000 Token",
+                      json.dumps(complete["fakten"], ensure_ascii=False))
+
+        # Die POST-Antwort enthält dieselbe angereicherte Sicht ohne Wartezeit.
+        self.assertEqual(
+            "OpenCode Zen",
+            body["model_details"]["opencode/vibe-modell"]["anbieter"])
+        self.assertIn(
+            "0,15",
+            body["model_details"]["opencode/vibe-modell"]["preis"]["text"])
+
+        calls_after_refresh = self.stub_calls()
+        info = self.get_json("/api/agents")
+        self.assertEqual(
+            "OpenCode Zen",
+            info["model_details"]["opencode/vibe-modell"]["anbieter"])
+        # Das klassische Dashboard behält den Rohkatalog; live hinzugekommene
+        # Modell-IDs wie 'opencode/neu' gehören nicht in dieses info-Feld.
+        self.assertEqual(
+            {"opencode/vibe-modell", "opencode/test-modell",
+             "opencode/veraltet"}, set(info["info"]),
+            "API info bleibt der Rohkatalog des klassischen Dashboards")
+        self.assertEqual(
+            calls_after_refresh, self.stub_calls(),
+            "Die angereicherte Sicht kommt aus dem Cache, nicht live")
+
+    def test_missing_catalogue_entry_names_a_reason_without_inventing_values(self):
+        """Ein Modell ohne Katalogeintrag erhält einen klaren Grund."""
+        self.post("/api/agents", {"action": "refresh_models"})
+
+        missing = self._read_cache()["info"]["opencode/neu"]
+        self.assertTrue(
+            missing.get("hinweis"),
+            "Ein fehlender Katalogeintrag wird nicht als 'Unknown' stehen gelassen")
+        self.assertRegex(
+            missing["hinweis"], r"Katalog|Eintrag|unbekannt|neu",
+            "Der Hinweis nennt den Grund: " + str(missing["hinweis"]))
+        self.assertIn(str(missing.get("anbieter", "")), ("", "unbekannt"))
+        self.assertIn(str((missing.get("preis") or {}).get("text", "")),
+                      ("", "unbekannt"))
+        self.assertIn("opencode/neu", self._read_cache()["info_unvollstaendig"])
+
+    def test_incomplete_and_outdated_data_is_visible_as_such(self):
+        """Unbekannte und veraltete Angaben werden ausdrücklich gemeldet."""
+        self.post("/api/agents", {"action": "refresh_models"})
+
+        cache = self._read_cache()
+        incomplete = cache["info"]["opencode/test-modell"]["hinweis"]
+        outdated = cache["info"]["opencode/veraltet"]["hinweis"]
+        self.assertTrue(incomplete, "Ein unbekannter Preis bleibt erklärungsbedürftig")
+        self.assertRegex(incomplete, r"unbekannt|unvollständig|fehlt|Grund",
+                         "Der Hinweis erklärt den unbekannten Preis: " + incomplete)
+        self.assertTrue(outdated, "Ein veralteter Preis wird markiert")
+        self.assertRegex(outdated, r"veraltet|alt|2020",
+                         "Der Hinweis nennt das Veraltungsdatum: " + outdated)
+
+        for model_id in ("opencode/test-modell", "opencode/neu",
+                         "opencode/veraltet"):
+            with self.subTest(model_id=model_id):
+                self.assertIn(model_id, cache["info_unvollstaendig"])
+        self.assertNotIn("opencode/vibe-modell", cache["info_unvollstaendig"])
+        self.assertEqual(
+            cache["info_unvollstaendig"],
+            self.get_json("/api/agents")["info_unvollstaendig"],
+            "Die Liste unvollständiger Modelle bleibt in GET sichtbar")
+
+    def test_refresh_message_reports_success_and_incomplete_count(self):
+        """Die Erfolgsmeldung nennt die Anzahl Modelle ohne vollständige Daten."""
+        _status, body = self.post("/api/agents", {"action": "refresh_models"})
+
+        self.assertTrue(body["ok"], str(body))
+        message = str(body.get("message") or "")
+        self.assertTrue(message, "Der Refresh gibt eine Rückmeldung")
+        numbers = [int(value) for value in re.findall(r"\d+", message)]
+        self.assertIn(3, numbers,
+                      "Drei der vier Modelle haben keine vollständigen Daten: "
+                      + message)
+
+    def test_failed_refresh_keeps_persisted_enriched_info(self):
+        """Ein fehlgeschlagener Refresh lässt den angereicherten Cache stehen."""
+        self.post("/api/agents", {"action": "refresh_models"})
+        cache_path = self.state / "models-cache.json"
+        before = cache_path.read_text(encoding="utf-8")
+        info_before = json.loads(before).get("info")
+        self.assertTrue(info_before,
+                        "Vorbedingung: der Refresh speichert angereicherte Details")
+        stub = self.fake_bin / "opencode"
+        original = stub.read_text(encoding="utf-8")
+        stub.write_text(FAKE_OPENCODE_BROKEN, encoding="utf-8")
+        try:
+            _status, body = self.post("/api/agents", {
+                "action": "refresh_models"})
+            self.assertFalse(body["ok"], str(body))
+            self.assertTrue(body.get("message"), str(body))
+            self.assertEqual(
+                before, cache_path.read_text(encoding="utf-8"),
+                "Ein fehlgeschlagener Refresh überschreibt den Cache nicht")
+            self.assertEqual(
+                info_before, json.loads(
+                    cache_path.read_text(encoding="utf-8")).get("info"),
+                "Die angereicherten Details bleiben nach dem Fehlschlag erhalten")
+            info = self.get_json("/api/agents")
+            self.assertEqual(
+                "OpenCode Zen",
+                info["model_details"]["opencode/vibe-modell"]["anbieter"])
+        finally:
+            stub.write_text(original, encoding="utf-8")
 
 
 class ModelsBrokenApiTest(ModelsBrokenDashboard):

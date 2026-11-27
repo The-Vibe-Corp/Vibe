@@ -189,7 +189,7 @@ NV.views.settings = async function settings(context, token) {
     'access': function () { fillAccess(sections.access, token); },
     'features': function () { fillFeatures(sections.features); },
     'gates': function () { return fillGates(sections.gates, token); },
-    'models': function () { fillModels(sections.models, agentsData, token); },
+    'models': function () { fillModels(sections.models, agentsData); },
     'profiles': function () { fillProfiles(sections.profiles, agentsData, token); },
     'mcp': function () { return fillMcp(sections.mcp, token); },
     'harness': function () { return fillHarness(sections.harness, token); }
@@ -1114,12 +1114,40 @@ function nvAssert(label, node) {
     el('span', {class: 'nv-muted'}, ' — ' + nvMsrc(node)));
 }
 
-function fillModels(section, agentsData, token) {
+function fillModels(section, agentsData) {
   var data = agentsData;
+  var filterKey = 'nv-models-configured-filter';
+  function readFilter() {
+    try {
+      return window.localStorage.getItem(filterKey) === 'on';
+    } catch (failure) {
+      return false;
+    }
+  }
+  function writeFilter(enabled) {
+    try {
+      window.localStorage.setItem(filterKey, enabled ? 'on' : 'off');
+    } catch (failure) {
+      /* Ohne localStorage bleibt der Filter nur für diese Ansicht aktiv. */
+    }
+  }
+  var filterConfigured = readFilter();
   var holder = el('div', {class: 'nv-table-wrap'});
   var stand = el('div', {class: 'nv-muted', 'data-nv-models-stand': ''});
+  var configuredBox = el('input', {type: 'checkbox',
+    checked: filterConfigured,
+    'data-nv-models-filter': 'configured',
+    'aria-label': tr('Nur konfigurierte Modelle'),
+    on: {change: function () {
+      filterConfigured = this.checked;
+      writeFilter(filterConfigured);
+      applyFilter();
+    }}});
+  var toolbar = el('div', {class: 'nv-models-toolbar'},
+    el('label', {class: 'nv-muted'},
+      configuredBox, ' ' + tr('Nur konfigurierte Modelle')));
   var details = el('details', {class: 'nv-card', 'data-nv-models': ''},
-    el('summary', {}, tr('Modellliste')));
+    el('summary', {}, tr('Modellliste')), toolbar, holder);
   var refresh = el('button', {class: 'nv-btn nv-primary', type: 'button',
     'data-nv-action': 'models-refresh', on: {click: async function () {
       try {
@@ -1131,15 +1159,30 @@ function fillModels(section, agentsData, token) {
         data = answer.models != null ? answer : data;
         details.open = true;
         draw();
-        toast(nvBackend(answer.message) || tr('Modelle aktualisiert'));
+        var total = (data.models || []).length;
+        var incomplete = (answer.info_unvollstaendig || []).length;
+        toast(incomplete
+          ? tr('Modelle aktualisiert') + ' — ' + incomplete + '/' + total
+            + ' ' + tr('unvollständig')
+          : tr('Modelle aktualisiert'));
       } catch (failure) {
         toast(tr('Aktualisierung fehlgeschlagen: ')
           + String(failure && failure.message || failure));
       }
     }}}, tr('Aktualisieren'));
 
+  function applyFilter() {
+    Array.prototype.forEach.call(
+      holder.querySelectorAll('tr[data-nv-model]'), function (row) {
+        var hide = filterConfigured
+          && !row.hasAttribute('data-nv-configured');
+        row.style.display = hide ? 'none' : '';
+      });
+  }
+
   function modelDetail(id) {
-    var model = (data.info || {})[id] || {};
+    var model = (data.model_details || {})[id] || {};
+    var price = model.preis || {};
     var facts = Object.keys(model.fakten || {}).map(function (key) {
       return nvAssert(key, model.fakten[key]);
     });
@@ -1150,15 +1193,17 @@ function fillModels(section, agentsData, token) {
       el('p', {}, el('b', {}, tr('Anbieter') + ': '),
         nvText(model.anbieter || tr('unbekannt'))),
       el('p', {}, el('b', {}, tr('Preis') + ': '),
-        nvText((model.preis || {}).text || tr('unbekannt'))),
+        nvText(price.text || tr('unbekannt'))),
       el('p', {}, el('b', {}, tr('Status') + ': '),
         nvText(model.status || tr('unbekannt'))),
+      model.hinweis ? el('p', {class: 'nv-note', 'data-nv-model-hinweis': ''},
+        nvText(model.hinweis)) : null,
       el('div', {}, el('b', {}, tr('Fakten')), ...facts,
         facts.length ? null : el('div', {class: 'nv-muted'}, tr('keine Angaben'))),
       el('div', {}, el('b', {}, tr('Einschätzungen')), ...assessments,
         assessments.length ? null : el('div', {class: 'nv-muted'}, tr('keine Angaben'))),
       el('p', {class: 'nv-muted'}, tr('Preisquelle') + ': '
-        + nvText((model.preis || {}).quelle || tr('unbekannt'))));
+        + nvText(price.quelle || tr('unbekannt'))));
     var foot = nvActions();
     foot.append(el('button', {class: 'nv-btn', type: 'button',
       on: {click: function () { NV.editView.close(); }}}, tr('Schließen')));
@@ -1167,8 +1212,16 @@ function fillModels(section, agentsData, token) {
 
   function draw() {
     var ids = (data.models || []).slice();
-    Object.keys(data.info || {}).forEach(function (id) {
+    Object.keys(data.model_details || {}).forEach(function (id) {
       if (ids.indexOf(id) < 0) ids.push(id);
+    });
+    var configured = {};
+    (data.configured_models || []).forEach(function (id) {
+      configured[id] = true;
+    });
+    var incomplete = {};
+    (data.info_unvollstaendig || []).forEach(function (id) {
+      incomplete[id] = true;
     });
     var source = data.models_stand || '';
     stand.replaceChildren(document.createTextNode(
@@ -1187,39 +1240,30 @@ function fillModels(section, agentsData, token) {
         el('th', {}, tr('Preis')), el('th', {}, tr('Quelle')),
         el('th', {}, tr('Status'))));
     ids.forEach(function (id) {
-      var model = (data.info || {})[id] || {};
-      table.append(el('tr', {'data-nv-model': id, class: 'nv-clickable',
-        on: {click: function () { modelDetail(id); }}},
+      var model = (data.model_details || {})[id] || {};
+      var isConfigured = configured[id] === true;
+      var rowClass = 'nv-clickable' + (isConfigured ? ' nv-configured' : '');
+      var attrs = {'data-nv-model': id, class: rowClass,
+        title: model.hinweis || '',
+        on: {click: function () { modelDetail(id); }}};
+      if (isConfigured) attrs['data-nv-configured'] = '';
+      var status = model.status || tr('unbekannt');
+      if (incomplete[id] && model.hinweis) status = tr('unvollständig');
+      table.append(el('tr', attrs,
         el('td', {}, el('b', {}, id)),
         el('td', {}, nvText(model.anbieter || tr('unbekannt'))),
         el('td', {}, nvText((model.preis || {}).text || tr('unbekannt'))),
         el('td', {}, nvText((model.preis || {}).quelle || tr('unbekannt'))),
-        el('td', {}, nvText(model.status || tr('unbekannt')))));
+        el('td', {}, nvText(status))));
     });
     holder.replaceChildren(table);
+    applyFilter();
   }
   draw();
 
-  var catalog = el('details', {class: 'nv-card', 'data-nv-model-catalog': ''},
-    el('summary', {}, tr('Modellkatalog')),
-    el('p', {class: 'nv-muted'}, String(tr('Katalogstand')) + ': '
-      + nvText(data.stand || tr('unbekannt'))),
-    el('p', {class: 'nv-muted'}, String(tr('Quellen')) + ': '
-      + ((data.katalog || {}).quellen || []).map(function (source) {
-        return nvText(source.name) + (source.datum ? ' (' + source.datum + ')' : '');
-      }).join('; ')),
-    el('div', {class: 'nv-note'}, el('b', {}, tr('Befunde')),
-      el('div', {}, ((data.katalog || {}).findings || []).map(function (finding) {
-        return nvText(finding.text || finding);
-      }).join(' · ') || tr('keine Angaben'))),
-    nvFoot(el('button', {class: 'nv-btn', type: 'button',
-      'data-nv-action': 'models-prices',
-      on: {click: function () { NV.navigate('#/evaluations/costs'); }}},
-      tr('Preise bearbeiten'))));
-
   var head = nvActions();
   head.append(refresh);
-  section.append(head, stand, details, holder, catalog);
+  section.append(head, stand, details);
 }
 
 /* ------------------------------------------------------------------------- */
@@ -2050,6 +2094,8 @@ var NV_SETTINGS_TEXTS = {
     'override: Whether the agent may ask (ask) or abort (off) on a guard stop.',
   'Modellliste': 'Model list',
   'Aktualisieren': 'Refresh',
+  'Nur konfigurierte Modelle': 'Only configured models',
+  'unvollständig': 'incomplete',
   'Aktualisierung fehlgeschlagen': 'Refresh failed',
   'Aktualisierung fehlgeschlagen: ': 'Refresh failed: ',
   'Modelle aktualisiert': 'Models updated',
@@ -2065,11 +2111,6 @@ var NV_SETTINGS_TEXTS = {
   'keine Angaben': 'no data',
   'Keine Modelle vorhanden. Mit „Aktualisieren“ werden die Modelle des Harness geladen.':
     'No models available. Use "Refresh" to load the models of the harness.',
-  'Modellkatalog': 'Model catalogue',
-  'Katalogstand': 'Catalogue date',
-  'Befunde': 'Findings',
-  'Quellen': 'Sources',
-  'Preise bearbeiten': 'Edit prices',
   'Schließen': 'Close',
   'Default': 'Default',
   'Profil': 'Profile',

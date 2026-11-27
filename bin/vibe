@@ -3914,8 +3914,16 @@ def _models_cache():
         return None
     if not isinstance(data, dict) or not isinstance(data.get("models"), list):
         return None
+    info = data.get("info")
+    if not isinstance(info, dict):
+        info = {}
+    incomplete = data.get("info_unvollstaendig")
+    if not isinstance(incomplete, list):
+        incomplete = []
     return {"models": [str(model) for model in data["models"]],
-            "stand": str(data.get("stand") or "")}
+            "stand": str(data.get("stand") or ""),
+            "info": info,
+            "info_unvollstaendig": [str(model) for model in incomplete]}
 
 def models_list():
     """Alle Modelle des aktiven Harness; ein vorhandener Cache hat Vorrang."""
@@ -3925,16 +3933,24 @@ def models_list():
     return vibe_harness.list_models(state_dir=PATHS.state)["models"]
 
 def models_state():
-    """Modelle samt Cache-Stand und Fehlermeldung des Live-Laufs."""
+    """Modelle samt Cache-Stand, Details und Fehlermeldung des Live-Laufs."""
     cached = _models_cache()
     if cached is not None:
-        return {"models": list(cached["models"]), "stand": cached["stand"], "error": ""}
+        return {"models": list(cached["models"]), "stand": cached["stand"],
+                "error": "", "info": cached["info"],
+                "info_unvollstaendig": list(cached["info_unvollstaendig"])}
     try:
         result = vibe_harness.list_models(state_dir=PATHS.state)
     except vibe_harness.HarnessError as error:
-        return {"models": [], "stand": "", "error": str(error)}
-    return {"models": list(result.get("models") or []), "stand": "",
-            "error": str(result.get("error") or "")}
+        return {"models": [], "stand": "", "error": str(error),
+                "info": {}, "info_unvollstaendig": []}
+    live = [str(model) for model in (result.get("models") or [])]
+    enriched = vibe_models.enrich(
+        models_info().get("models") or [], live)
+    return {"models": live, "stand": "",
+            "error": str(result.get("error") or ""),
+            "info": enriched["info"],
+            "info_unvollstaendig": enriched["info_unvollstaendig"]}
 
 def models_refresh():
     """Holt die Modelle live und schreibt den Cache; nur hier wird geschrieben."""
@@ -3944,15 +3960,27 @@ def models_refresh():
         return False, str(error)
     if not result.get("ok"):
         return False, str(result.get("error") or "Modelle konnten nicht geladen werden")
+    live = [str(model) for model in (result.get("models") or [])]
+    enriched = vibe_models.enrich(models_info().get("models") or [], live)
     stand = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     try:
         vibe_storage.write_text(
             MODELS_CACHE_FILE,
-            json.dumps({"stand": stand, "models": list(result.get("models") or [])},
+            json.dumps({"stand": stand, "models": live,
+                        "info": enriched["info"],
+                        "info_unvollstaendig": enriched["info_unvollstaendig"]},
                        ensure_ascii=False))
     except OSError as error:
         return False, "Modell-Cache konnte nicht geschrieben werden: " + str(error)
-    return True, "Modelle aktualisiert (Stand " + stand + ")"
+    message = "Modelle aktualisiert (Stand " + stand + ")."
+    missing = len(enriched["info_unvollstaendig"])
+    if live and missing:
+        message += (" " + str(missing) + " der " + str(len(live))
+                    + " Modelle haben unvollständige Daten; Details in der Modellliste.")
+    elif live:
+        message += (" Alle " + str(len(live))
+                    + " Modelle haben vollständige Katalogdaten.")
+    return True, message
 
 def models_info():
     """Modellkatalog als normalisierte Sicht inklusive Prüfbefunden."""

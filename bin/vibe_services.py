@@ -21,6 +21,7 @@ import subprocess
 import vibe_autonomous
 import vibe_github
 import vibe_guide
+import vibe_models
 import vibe_packages
 
 ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
@@ -234,7 +235,7 @@ def project_agents_info(vibe, name):
 
 def agents_info(vibe):
     """Globale und projektbezogene Agenten samt Katalog und Profilen."""
-    info = vibe.models_info()
+    catalog = vibe.models_info()
     projects = vibe.projects()
     write_dirs, write_dirs_errors = {}, {}
     for project in projects:
@@ -246,6 +247,41 @@ def agents_info(vibe):
     profiles = vibe.profiles_load()
     agents = vibe.agents_all()
     models = vibe.models_state()
+    details = models.get("info") or {}
+    incomplete = models.get("info_unvollstaendig") or []
+    if not details:
+        enriched = vibe_models.enrich(
+            catalog.get("models") or [], models.get("models") or [])
+        details = enriched["info"]
+        incomplete = enriched["info_unvollstaendig"]
+    # Katalogeinträge ohne aktuelles Live-Modell bleiben für die klassische
+    # Katalogansicht sichtbar (etwa als entfernt markierte Modelle).
+    catalogue_models = catalog.get("models") or []
+    extra_ids = [model["id"] for model in catalogue_models
+                 if model.get("id") and model["id"] not in details]
+    if extra_ids:
+        details = dict(details)
+        details.update(vibe_models.enrich(catalogue_models, extra_ids)["info"])
+
+    configured = []
+
+    def add_configured(model):
+        value = str(model or "").strip()
+        if value and value != "-" and value not in configured:
+            configured.append(value)
+
+    for row in agents:
+        add_configured(row.get("model"))
+    for model in (vibe.default_role_models() or {}).values():
+        add_configured(model)
+    add_configured((vibe.vibe_agent_status() or {}).get("model"))
+    assignments = profiles.get("profile")
+    if isinstance(assignments, dict):
+        for values in assignments.values():
+            if isinstance(values, dict):
+                for model in values.values():
+                    add_configured(model)
+
     return {
         "agents": agents,
         "global_agents": [row for row in agents if row["scope"] == "global"],
@@ -255,18 +291,25 @@ def agents_info(vibe):
         "models": models["models"],
         "models_stand": models["stand"],
         "models_error": models["error"],
+        # Die klassische Oberfläche liest den Rohkatalog aus "info"; die
+        # angereicherten Live-Details stehen ausschließlich Nova unter
+        # "model_details" zur Verfügung.
+        "info": {model["id"]: model for model in catalogue_models
+                 if model.get("id")},
+        "model_details": details,
+        "info_unvollstaendig": list(incomplete),
+        "configured_models": configured,
         "default_models": vibe.default_role_models(),
         "standard_profiles": list(vibe.STANDARD_PROFILES),
-        "info": {model["id"]: model for model in info.get("models", [])},
-        "stand": info.get("stand", ""),
-        "hinweis": info.get("hinweis", ""),
+        "stand": catalog.get("stand", ""),
+        "hinweis": catalog.get("hinweis", ""),
         "katalog": {
-            "schema": info.get("schema"),
-            "version": info.get("version", ""),
-            "legacy": info.get("legacy", False),
-            "findings": info.get("findings", []),
-            "quellen": info.get("quellen", []),
-            "nicht_uebernommen": info.get("nicht_uebernommen", []),
+            "schema": catalog.get("schema"),
+            "version": catalog.get("version", ""),
+            "legacy": catalog.get("legacy", False),
+            "findings": catalog.get("findings", []),
+            "quellen": catalog.get("quellen", []),
+            "nicht_uebernommen": catalog.get("nicht_uebernommen", []),
         },
         "perms": vibe.PERM_LABELS,
         "perms_project": vibe.PERM_LABELS_PROJECT,
