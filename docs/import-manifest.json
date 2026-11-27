@@ -1,6 +1,14 @@
 {
  "aenderungen": [
   {
+   "arbeitspaket": "GH-121",
+   "dateien": [
+    "bin/web/nova-project.js"
+   ],
+   "datum": "2026-11-27",
+   "grund": "Erledigt-Zaehler im Arbeit-Tab: Der Schalter 'Erledigte anzeigen' zaehlt erledigte Eintraege jetzt ueber alle Arten (Pakete, Bugs und Feedback) statt nur ueber Pakete. Die kombinierte Zahl wird einmal aus Paketen und Feedback berechnet und sowohl fuer das Startlabel als auch fuer die Filterverdrahtung verwendet, sodass sie auch nach dem Ein- und Ausschalten korrekt bleibt. Die Ueberblickskachel 'Erledigt' zaehlt weiterhin bewusst nur abgeschlossene Pakete mit Nachweis. Groesse und SHA-256 von bin/web/nova-project.js wurden aktualisiert."
+  },
+  {
    "arbeitspaket": "GH-124",
    "dateien": [
     "bin/vibe",
@@ -1946,9 +1954,9 @@
    "sha256": "6b93d852db7be168694470fd1e842a089fa33f1eaf89e1fc643e025ddaddb292"
   },
   {
-   "bytes": 130871,
+   "bytes": 131024,
    "path": "bin/web/nova-project.js",
-   "sha256": "d9fa4e6744d1fc38e121af4e7f41e10cba517a3577f27a39cca08b7e44146a9b"
+   "sha256": "f2415e275f1e6077f49424e66bb93acab4ee3761d84d14717cdca6ba23950ede"
   },
   {
    "bytes": 94579,

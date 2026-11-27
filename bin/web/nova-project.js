@@ -231,6 +231,11 @@ function nvpCount(list, state) {
   }).length;
 }
 
+/* GH-121: Der Erledigt-Schalter zaehlt Pakete und Feedback gemeinsam. */
+function nvpDoneCount(list) {
+  return (list || []).filter(nvpIsDone).length;
+}
+
 /* Die Kennung ist ein zuverlässiger zweiter Hinweis auf die Art: Bugs werden
    mit B…/BUG… angelegt, gewöhnliches Feedback mit F…/FB…. Das Backend liefert
    kind bei korrekt formatierten Blöcken; ältere Blöcke mit „Art“ nach
@@ -2441,6 +2446,7 @@ NV.views.project = async function project(context, token) {
   var allItems = tickets.concat(feedback.map(function (row) {
     return Object.assign({}, row, {__feedback: true});
   }));
+  var doneTotal = nvpDoneCount(allItems);
 
   panels.overview.append(nvpAutonomousCard(name, token, view.autonomous));
 
@@ -2604,7 +2610,7 @@ NV.views.project = async function project(context, token) {
   /* ---- Arbeit: Filter (Schnellfilter über Suche) → Priorisierung → Board ---- */
   var hideDoneButton = el('button', {class: 'nv-btn nv-secondary nv-compact',
     type: 'button', 'data-nv-work-hide-done': '', 'aria-pressed': 'true'},
-  tr('Erledigte anzeigen') + ' (' + String(nvpCount(tickets, 'erledigt')) + ')');
+  tr('Erledigte anzeigen') + ' (' + String(doneTotal) + ')');
   var searchInput = el('input', {type: 'search', 'data-nv-work-search': '',
     placeholder: tr('Arbeitspakete suchen'),
     'aria-label': tr('Arbeitspakete suchen')});
@@ -2661,8 +2667,7 @@ NV.views.project = async function project(context, token) {
   panels.work.append(backToTop);
   window.addEventListener('scroll', nvpSyncBackToTop, {passive: true});
   nvpSyncBackToTop();
-  nvpWireWorkFilters(panels.work, hideDoneButton, nvpCount(tickets, 'erledigt'),
-    surface);
+  nvpWireWorkFilters(panels.work, hideDoneButton, doneTotal, surface);
 
   /* ---- Output: nur Container, Inhalt kommt aus B2 ---- */
   if (window.NV && NV.output && typeof NV.output.render === 'function') {
