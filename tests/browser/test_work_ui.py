@@ -347,6 +347,13 @@ class BoardTest(AP22WorkBrowserTest):
             0, self.page.locator(
                 "section[data-nv-ppanel='work'] div.nv-work-actions").count(),
             "Die entfernte Work-Aktionsleiste existiert noch")
+        # GH-128: Der Issues-Sync ist eine Header-Aktion und gehört nicht
+        # in den Work-Tab (auch nicht außerhalb der alten Aktionsleiste).
+        self.assertEqual(
+            0, self.page.locator(
+                "section[data-nv-ppanel='work'] "
+                "[data-nv-action='issues-sync']").count(),
+            "Der Issues-Sync ist in der Work-Ansicht verdrahtet")
         filter_bar = self.page.locator("[data-nv-filter-bar]").first
         filter_bar.wait_for(state="visible", timeout=20000)
         self.assertEqual(

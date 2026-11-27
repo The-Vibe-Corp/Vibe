@@ -534,18 +534,25 @@ class Gh47IssuesBrowserTest(unittest.TestCase):
             state="visible", timeout=20000)
 
     # -------------------------------------------------------------- Fälle
-    def test_issues_section_offers_one_sync_and_no_legacy_actions(self):
+    def test_issues_sync_is_a_single_hero_action_and_settings_keep_opt_in(self):
         """Vor: Issues-Sync aktiv, GitHub-Feature an.
-        Aktion: GitHub-Sektion öffnen.
-        Erwartet: genau ein ``[data-nv-action='issues-sync']``; keine
-        ``github-issues``/``github-import`` und kein
-        ``[data-nv-field='github-issue-label']``; Erklärung nennt
-        Synchronisieren, Ready, Entwurf und Schließen."""
+        Aktion: GitHub-Sektion und Work-Tab öffnen.
+        Erwartet (GH-47/GH-128): genau ein
+        ``[data-nv-action='issues-sync']`` in der Header-Aktionszeile,
+        keiner in den Einstellungen; keine ``github-issues``/
+        ``github-import`` und kein ``[data-nv-field='github-issue-label']``;
+        die Einstellung behält den Opt-in und den Erklärtext mit
+        Synchronisieren, Ready, Entwurf und Schließen.
+        """
         section = self.open_github_settings()
 
         self.assertEqual(
-            1, section.locator("[data-nv-action='issues-sync']").count(),
-            "Genau ein Sync-Button erwartet")
+            0, section.locator("[data-nv-action='issues-sync']").count(),
+            "Der Sync-Button steht noch in den Einstellungen (GH-128)")
+        self.assertEqual(
+            1, section.locator(
+                "input[data-nv-field='github-issues-enabled']").count(),
+            "Der Opt-in-Schalter fehlt in den Einstellungen")
         self.assertEqual(
             0, section.locator("[data-nv-action='github-issues']").count(),
             "„Issues laden“ ist noch vorhanden")
@@ -563,6 +570,28 @@ class Gh47IssuesBrowserTest(unittest.TestCase):
                          "Die Ready-/Entwurf-Abbildung fehlt im Text")
         self.assertRegex(text, r"(?i)schließ|schliess|close",
                          "Das Best-effort-Schließen wird nicht erklärt")
+
+        self.open_work()
+        hero = self.page.locator("[data-nv-hero] .nv-hero-actions")
+        hero.wait_for(state="visible", timeout=20000)
+        self.wait_until(
+            lambda: hero.locator(
+                "[data-nv-action='issues-sync']").count() == 1,
+            timeout=20,
+            message="Der eine Sync-Button fehlt in der Header-Aktionszeile")
+        self.assertEqual(
+            1, self.page.locator("[data-nv-action='issues-sync']").count(),
+            "Es gibt nicht genau einen Sync-Button auf der Seite")
+        # GH-128 review F1: der eine Knopf muss bei aktivem Opt-in auch
+        # tatsächlich sichtbar sein.
+        hook = hero.locator("[data-nv-action='issues-sync']")
+        hook.wait_for(state="visible", timeout=20000)
+        self.assertTrue(hook.is_visible(),
+                        "Der Sync-Button ist im Header nicht sichtbar")
+        self.assertEqual(
+            0, self.page.locator(
+                "section[data-nv-ppanel='work'] div.nv-work-actions").count(),
+            "Die entfernte Work-Aktionsleiste existiert noch")
         self.assertEqual([], self.page_errors, self.page_errors)
 
     def test_ticket_detail_state_control_changes_draft_to_open(self):

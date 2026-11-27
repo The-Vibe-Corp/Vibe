@@ -3140,17 +3140,18 @@ class NovaProjectDetailControlsTest(unittest.TestCase):
             "moreActions" in self.hero or "'verify'" in self.hero,
             "Das Aktions-Dropdown ist nicht im Header eingehängt")
 
-    def test_new_ticket_actions_live_in_the_header_on_every_tab(self):
-        """Paket anlegen, Bug melden und Feedback geben hängen am Header.
+    def test_project_actions_live_in_the_header_on_every_tab(self):
+        """Paket, Bug, Feedback und Issues-Sync hängen am Header.
 
         Vorbedingung: Nova-Projektansicht mit Registerkarten. Erwartung: Die
-        drei Aktionen werden im ``nv-hero`` aufgebaut und nicht mehr in der
+        vier Aktionen werden im ``nv-hero`` aufgebaut und nicht mehr in der
         Work-Ansicht; der Header wird außerhalb der Panels eingehängt und ist
-        damit in jedem Register sichtbar.
-        Fehlerfall: Eine Aktion fehlt oder ist weiterhin an den Work-Tab
+        damit in jedem Register sichtbar. Der Issues-Sync ist GH-128 aus der
+        GitHub-Einstellung in diese Header-Zeile gewandert.
+        Fehlerfall: Eine Aktion fehlt oder ist weiterhin an einen Tab
         gebunden.
         """
-        for hook in ("new-package", "new-bug", "new-feedback"):
+        for hook in ("new-package", "new-bug", "new-feedback", "issues-sync"):
             with self.subTest(action=hook):
                 self.assertIn(
                     "'" + hook + "'", self.hero,

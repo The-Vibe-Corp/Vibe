@@ -1986,13 +1986,6 @@ function nvpGithubSection(name, token, github) {
     value: String(g.issues_ready_label || ''), 'aria-label': tr('Ready-Label')});
   var issuesAssignee = el('input', {type: 'text', 'data-nv-field': 'issues_assignee',
     value: String(g.issues_assignee || ''), 'aria-label': tr('Assignee (leer = alle)')});
-  var issuesSync = g.issues_enabled
-    ? nvpButton(tr('Issues synchronisieren'), 'issues-sync', function () {
-        post({action: 'issues.sync'}, function (result) {
-          if (result && result.ok !== false) NV.render();
-        });
-      }, 'nv-primary')
-    : null;
 
   /* --- Block 4: Merge-Request --- */
   var prConfirm = el('div', {class: 'nv-confirm', 'data-nv-github-pr-confirm': '', hidden: ''},
@@ -2052,7 +2045,6 @@ function nvpGithubSection(name, token, github) {
     nvpLabel(tr('In-Progress-Label'), issuesInProgress),
     nvpLabel(tr('Ready-Label'), issuesReady),
     nvpLabel(tr('Assignee (leer = alle)'), issuesAssignee),
-    el('div', {class: 'nv-row'}, issuesSync),
     error
   ]);
 }
@@ -2297,11 +2289,12 @@ NV.views.project = async function project(context, token) {
       }}}, tr('Vollprüfung'))));
 
   var heroRow;
+  var heroActions;
   var hero = el('section', {class: 'nv-card nv-hero', 'data-nv-hero': ''},
     heroRow = el('div', {class: 'nv-row'},
       el('h2', {class: 'nv-page-title', 'data-nv-project-title': ''}, name),
       pill, branch, typeBadge),
-    el('div', {class: 'nv-row nv-hero-actions'},
+    heroActions = el('div', {class: 'nv-row nv-hero-actions'},
       runButton,
       nvpButton(tr('Pause anfordern'), 'pause', function () {
         nvpPost(name, '/api/pause', {action: 'request'}, 'Pause', token)
@@ -2324,6 +2317,23 @@ NV.views.project = async function project(context, token) {
         nvpOpenTicketForm(name, token, {mode: 'feedback', type: 'feedback',
           rows: feedback});
       })));
+
+  /* GH-128: Der eine Issues-Sync steht in der Header-Aktionszeile und wird
+     erst nach dem Laden sichtbar, wenn das Projekt den Sync per Opt-in
+     aktiviert hat. Ohne das GitHub-Feature existiert der Knopf nicht. */
+  var issuesSync = NV.feature('github')
+    ? nvpButton(tr('Issues synchronisieren'), 'issues-sync', function () {
+        nvpPost(name, '/api/github', {action: 'issues.sync'},
+          'Issues synchronisieren', token).then(function (result) {
+          if (NV.stale(token) || !result || result.ok === false) return;
+          NV.render();
+        });
+      }, 'nv-primary')
+    : null;
+  if (issuesSync) {
+    issuesSync.setAttribute('hidden', '');
+    heroActions.append(issuesSync);
+  }
 
   function nvpSyncPauseBadge(active) {
     var badge = hero.querySelector('[data-nv-pause-badge]');
@@ -2423,6 +2433,9 @@ NV.views.project = async function project(context, token) {
   pill.setAttribute('data-state', running ? 'running' : 'stopped');
   pill.textContent = String(running ? tr('läuft') : tr('gestoppt'));
   stopButton.hidden = !running;
+  if (issuesSync) {
+    issuesSync.hidden = !(data.github && data.github.issues_enabled);
+  }
   var branchValue = String(data.branch || '').trim();
   if (branchValue && branchValue !== '-') {
     branch.textContent = branchValue;

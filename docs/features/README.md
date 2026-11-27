@@ -178,6 +178,7 @@ Living documentation: [GitHub integration](current/github.md)
 - [B7.md](B7.md) — GitHub authentication through UI
 - [B8.md](B8.md) — project open blocked by unreachable remote
 - [GH-47.md](GH-47.md) — unified bidirectional GitHub issue sync
+- [GH-128.md](GH-128.md) — issue sync action in the project header above the Work board
 
 ### Costs, environment, and diagnostics
 

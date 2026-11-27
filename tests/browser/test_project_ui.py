@@ -1058,13 +1058,15 @@ class GithubParityTest(AP22ProjectBrowserTest):
         select[data-nv-github-push-target]           Push: Ziel
         [data-nv-action="github-push"]               Push ausführen
         [data-nv-action="github-pull"]               Pull (--ff-only)
-        [data-nv-action="issues-sync"]               einen Issues-Sync
-                                                    (GH-47: kein
-                                                    github-issues/import)
         [data-nv-action="github-pr"]                 Merge-Request anfragen
         [data-nv-github-pr-confirm]                  Bestätigungsbereich
         [data-nv-action="github-pr-confirm"]         Merge-Request bestätigen
         [data-nv-github-pr-result]                   Ergebnis des Versuchs
+
+    GH-128: ``[data-nv-action="issues-sync"]`` liegt genau einmal in der
+    Header-Aktionszeile ``[data-nv-hero] .nv-hero-actions`` und nicht mehr
+    in ``[data-nv-psection='github']``; die Einstellung behält nur den
+    Opt-in-Schalter und den Erklärtext.
 
     Alle Git-Aufrufe laufen gegen ein lokales Bare-Repository (``file://``),
     die GitHub-REST-Ebene gegen eine Attrappe auf 127.0.0.1. Ein echter
@@ -1083,6 +1085,29 @@ class GithubParityTest(AP22ProjectBrowserTest):
             box.check()
         self.wait_until(lambda: box.is_checked(), timeout=20,
                         message="Der Feature-Schalter github blieb aus")
+
+    def set_github_feature(self, enabled):
+        """Schaltet den Feature-Schalter ``github`` gezielt auf ``enabled``."""
+        self.boot()
+        self.page.locator("nav[data-nv-navs] [data-nv-nav='settings']").click()
+        self.page.locator("main#nv-main[data-nv-view='settings']").wait_for(
+            state="visible", timeout=25000)
+        box = self.page.locator("input[data-nv-feature='github']")
+        box.wait_for(state="visible", timeout=20000)
+        if box.is_checked() != enabled:
+            box.check() if enabled else box.uncheck()
+        self.wait_until(lambda: box.is_checked() == enabled, timeout=20,
+                        message="Der Feature-Schalter github blieb auf "
+                                + str(box.is_checked()))
+
+    def open_work(self):
+        """Öffnet den Work-Tab der Projektansicht."""
+        self.boot()
+        self.page.goto(self.base + "/#/project/" + PROJECT + "/work")
+        self.page.locator("main#nv-main[data-nv-view='project']").wait_for(
+            state="visible", timeout=25000)
+        self.page.locator("section[data-nv-ppanel='work']").wait_for(
+            state="visible", timeout=20000)
 
     def reload_github_section(self):
         self.page.goto(self.base + "/#/project/proj/settings")
@@ -1147,9 +1172,9 @@ class GithubParityTest(AP22ProjectBrowserTest):
         Erwartung (GH-47/q6cbba05d8ca9): Der Projektbereich
         ``[data-nv-psection="github"]`` bietet Aktivierung, Token
         speichern/löschen, Verbindungstest, Branch-Zeilen mit Auschecken,
-        Pull, Push mit Quelle/Ziel, genau einen Issues-Sync und den
-        Merge-Request samt Bestätigung; die getrennten Aktionen
-        ``github-issues``/``github-import`` fehlen.
+        Pull, Push mit Quelle/Ziel und den Merge-Request samt Bestätigung;
+        der Issues-Sync steht seit GH-128 im Header, die getrennten
+        Aktionen ``github-issues``/``github-import`` fehlen.
         """
         self.activate_github()
         self.enable_issue_sync_env()
@@ -1165,7 +1190,6 @@ class GithubParityTest(AP22ProjectBrowserTest):
             "select[data-nv-github-push-target]",
             "[data-nv-action='github-push']",
             "[data-nv-action='github-pull']",
-            "[data-nv-action='issues-sync']",
             "[data-nv-action='github-pr']",
         ]
         for selector in controls:
@@ -1175,11 +1199,13 @@ class GithubParityTest(AP22ProjectBrowserTest):
                     f"GitHub-Bedienelement {selector!r} fehlt")
         for selector in ("[data-nv-action='github-issues']",
                          "[data-nv-action='github-import']",
-                         "[data-nv-field='github-issue-label']"):
+                         "[data-nv-field='github-issue-label']",
+                         "[data-nv-action='issues-sync']"):
             with self.subTest(removed=selector):
                 self.assertEqual(
                     0, section.locator(selector).count(),
-                    f"Entfallenes Bedienelement {selector!r} ist noch da")
+                    f"Entfallenes Bedienelement {selector!r} ist noch da "
+                    "(GH-128: der Sync gehört in den Header)")
         main_row = section.locator("[data-nv-github-branch='main']")
         self.assertEqual(
             1, main_row.count(),
@@ -1388,21 +1414,35 @@ class GithubParityTest(AP22ProjectBrowserTest):
                     "Spitze gebracht")
         self.assert_clean_page()
 
-    def test_github_issues_section_offers_only_the_unified_sync(self):
+    def test_github_settings_keep_issue_opt_in_but_no_sync_button(self):
         """Vorbedingung: aktive Verknüpfung, Issues-Sync aktiv.
 
-        Erwartung (GH-47/q6cbba05d8ca9): Die Issues-Sektion bietet genau
-        einen Sync-Button; die früheren Aktionen „Issues laden“,
-        „Issues importieren“ und der Label-Filter fehlen. Es findet kein
-        REST-Aufruf statt, weil nichts geklickt wird.
+        Erwartung (GH-47/GH-128): Die Einstellungen behalten den Opt-in
+        ``github-issues-enabled`` und den Erklärtext, aber keinen
+        Sync-Button. Der eine Sync-Button liegt im Header; die früheren
+        Aktionen „Issues laden“, „Issues importieren“ und der Label-Filter
+        fehlen überall. Es findet kein REST-Aufruf statt, weil nichts
+        geklickt wird.
         """
         self.activate_github()
         self.enable_issue_sync_env()
         section = self.reload_github_section()
 
         self.assertEqual(
-            1, section.locator("[data-nv-action='issues-sync']").count(),
-            "Der eine Sync-Button fehlt")
+            1, section.locator(
+                "input[data-nv-field='github-issues-enabled']").count(),
+            "Der Opt-in-Schalter fehlt in den Einstellungen")
+        self.assertRegex(
+            section.inner_text(), r"(?i)synchroni[sz]",
+            "Der Erklärtext zum Sync fehlt in den Einstellungen")
+        self.assertEqual(
+            0, section.locator("[data-nv-action='issues-sync']").count(),
+            "Der Sync-Button steht noch in den Einstellungen (GH-128)")
+        self.wait_until(
+            lambda: self.page.locator(
+                "[data-nv-action='issues-sync']").count() == 1,
+            timeout=20,
+            message="Es gibt nicht genau einen Sync-Button auf der Seite")
         for selector in ("[data-nv-action='github-issues']",
                          "[data-nv-action='github-import']",
                          "[data-nv-field='github-issue-label']"):
@@ -1412,21 +1452,128 @@ class GithubParityTest(AP22ProjectBrowserTest):
                     f"Entfallenes Bedienelement {selector!r} ist noch da")
         self.assert_clean_page()
 
+    def test_issues_sync_sits_in_hero_actions_on_the_work_tab(self):
+        """Vorbedingung: GitHub-Feature an, Issues-Sync aktiv.
+
+        Aktion: Work-Tab der Projektansicht öffnen.
+        Erwartung (GH-128/GH-108): Der eine Sync-Button steht sichtbar in
+        ``[data-nv-hero] .nv-hero-actions`` neben den Ticket-Aktionen, vor
+        der Filterleiste und nicht in der Work-Aktionsleiste.
+        """
+        self.activate_github()
+        self.enable_issue_sync_env()
+        self.open_work()
+
+        hero = self.page.locator("[data-nv-hero] .nv-hero-actions")
+        hero.wait_for(state="visible", timeout=20000)
+        self.wait_until(
+            lambda: hero.locator(
+                "[data-nv-action='issues-sync']").count() == 1,
+            timeout=20,
+            message="Der Sync-Button fehlt in der Header-Aktionszeile")
+        self.assertEqual(
+            1, self.page.locator("[data-nv-action='issues-sync']").count(),
+            "Es gibt mehr oder weniger als einen Sync-Button")
+        for hook in ("new-package", "new-bug", "new-feedback"):
+            with self.subTest(neighbour=hook):
+                self.assertEqual(
+                    1, hero.locator(f"[data-nv-action='{hook}']").count(),
+                    hook + " fehlt neben dem Sync-Button im Header")
+        self.assertTrue(
+            self.page.evaluate("""() => {
+              const hero = document.querySelector('[data-nv-hero] .nv-hero-actions [data-nv-action="issues-sync"]');
+              const bar = document.querySelector('[data-nv-filter-bar]');
+              return !!hero && !!bar && !!(hero.compareDocumentPosition(bar) & 4);
+            }"""),
+            "Der Sync-Button steht nicht vor der Filterleiste")
+        # GH-128 review F1: Präsenz und Position allein genügen nicht — bei
+        # aktivem Opt-in muss der Knopf tatsächlich sichtbar sein.
+        hook = hero.locator("[data-nv-action='issues-sync']")
+        hook.wait_for(state="visible", timeout=20000)
+        self.assertTrue(hook.is_visible(),
+                        "Der Sync-Button ist im Header nicht sichtbar")
+        self.assertEqual(
+            0, self.page.locator(
+                "section[data-nv-ppanel='work'] div.nv-work-actions").count(),
+            "Die entfernte Work-Aktionsleiste existiert noch")
+        self.assert_clean_page()
+
+    def test_issues_sync_button_requires_github_feature(self):
+        """Vorbedingung: Issues-Sync im Projekt aktiv, GitHub-Feature aber
+        aus. Erwartung (GH-128): kein sichtbarer Sync-Button.
+        """
+        self.write_project_env(enabled=True)
+        env_path = self.project / ".vibe" / "project.env"
+        env_path.write_text(
+            env_path.read_text(encoding="utf-8")
+            + 'GITHUB_ISSUES_ENABLED="1"\n',
+            encoding="utf-8")
+        self.set_github_feature(False)
+        self.open_work()
+        self.wait_until(
+            lambda: self.page.locator("[data-nv-hero]").count() == 1,
+            timeout=20)
+        hook = self.page.locator("[data-nv-action='issues-sync']")
+        self.assertTrue(
+            hook.count() == 0 or not hook.first.is_visible(),
+            "Der Sync-Button ist ohne GitHub-Feature sichtbar")
+        self.assert_clean_page()
+
+    def test_issues_sync_button_requires_project_opt_in(self):
+        """Vorbedingung: GitHub-Feature an, ``issues_enabled`` aber aus.
+        Erwartung (GH-128): kein sichtbarer Sync-Button. Danach eingeschaltet:
+        genau ein Button im Header.
+        """
+        self.activate_github()
+        self.write_project_env(enabled=True)
+        self.page.reload()
+        self.open_work()
+        self.wait_until(
+            lambda: self.page.locator(
+                "[data-nv-action='new-package']").count() == 1,
+            timeout=20)
+        hook = self.page.locator("[data-nv-action='issues-sync']")
+        self.assertTrue(
+            hook.count() == 0 or not hook.first.is_visible(),
+            "Der Sync-Button ist ohne den Projekt-Opt-in sichtbar")
+        self.enable_issue_sync_env()
+        self.open_work()
+        self.wait_until(
+            lambda: self.page.locator(
+                "[data-nv-action='issues-sync']").count() == 1,
+            timeout=20)
+        hero = self.page.locator("[data-nv-hero] .nv-hero-actions")
+        hook = hero.locator("[data-nv-action='issues-sync']")
+        self.assertEqual(
+            1, hook.count(),
+            "Der Sync-Button fehlt nach dem Opt-in im Header")
+        # GH-128 review F1: der freigeschaltete Knopf muss sichtbar sein,
+        # nicht nur im DOM liegen.
+        hook.wait_for(state="visible", timeout=20000)
+        self.assertTrue(hook.is_visible(),
+                        "Der Sync-Button ist nach dem Opt-in nicht sichtbar")
+        self.assert_clean_page()
+
     def test_issues_sync_pulls_open_issues_into_the_store(self):
         """Vorbedingung: lokale GitHub-Attrappe liefert GH-7 (Label vibe) und
         GH-8 (Label bug); der Ticketspeicher ist leer.
 
-        Aktion: ``[data-nv-action="issues-sync"]`` klicken.
-        Erwartung (GH-47/q6cbba05d8ca9): Beide offenen Issues werden als
-        GH-Tickets in den Speicher übernommen; GH-8 erhält type=bug.
+        Aktion: ``[data-nv-action="issues-sync"]`` im Header klicken.
+        Erwartung (GH-47/q6cbba05d8ca9/GH-128): Beide offenen Issues werden
+        als GH-Tickets in den Speicher übernommen; GH-8 erhält type=bug.
+        Der Button ist trotz der Verschiebung weiterhin auslösbar.
         """
         self.activate_github()
         self.enable_issue_sync_env()
         (self.project / ".vibe" / "tickets.json").write_text(
             json.dumps({"version": 1, "tickets": []}) + "\n",
             encoding="utf-8")
-        section = self.reload_github_section()
-        section.locator("[data-nv-action='issues-sync']").first.click()
+        self.open_work()
+        hook = self.page.locator("[data-nv-action='issues-sync']")
+        hook.wait_for(state="visible", timeout=20000)
+        self.assertEqual(1, hook.count(),
+                         "Es gibt nicht genau einen Sync-Button")
+        hook.first.click()
         store = self.project / ".vibe" / "tickets.json"
 
         def records():
@@ -2813,12 +2960,13 @@ class SettingsTabTest(F33ProjectBrowserTest):
             "Die Wiederherstellung wurde ohne Bestätigung ausgeführt")
         self.assert_clean_page()
 
-    def test_github_explains_branches_and_puts_mr_above_issues(self):
+    def test_github_explains_branches_and_keeps_issue_settings(self):
         """Vorbedingung: Feature ``github`` an, Issues-Sync aktiv.
 
         Erwartung: ``small[data-nv-github-help-source]`` und
         ``small[data-nv-github-help-target]`` erklären Quell-/Ziel-Branch;
-        der Merge-Request-Block steht über dem einen Issue-Sync-Block
+        der Merge-Request bleibt in den Einstellungen, der eine
+        Issue-Sync-Button steht seit GH-128 im Header
         (GH-47/q6cbba05d8ca9: ``github-issues`` ist entfallen).
         """
         env_path = self.project / ".vibe" / "project.env"
@@ -2838,10 +2986,18 @@ class SettingsTabTest(F33ProjectBrowserTest):
                         "Die Erklärung des Quell-Branches ist leer")
         self.assertTrue((target.inner_text() or "").strip(),
                         "Die Erklärung des Ziel-Branches ist leer")
-        self.assert_before(
-            "[data-nv-psection='github'] [data-nv-action='github-pr']",
-            "[data-nv-psection='github'] [data-nv-action='issues-sync']",
-            "Der Merge-Request-Block steht nicht über dem Issue-Block")
+        self.assertEqual(
+            1, section.locator("[data-nv-action='github-pr']").count(),
+            "Der Merge-Request fehlt in den Einstellungen")
+        self.assertEqual(
+            0, section.locator("[data-nv-action='issues-sync']").count(),
+            "Der Sync-Button steht noch in den Einstellungen (GH-128)")
+        self.wait_until(
+            lambda: self.page.locator(
+                "[data-nv-hero] .nv-hero-actions "
+                "[data-nv-action='issues-sync']").count() == 1,
+            timeout=20,
+            message="Der eine Sync-Button fehlt im Header")
         self.assert_clean_page()
 
     def test_auto_merge_is_a_switch_row(self):
