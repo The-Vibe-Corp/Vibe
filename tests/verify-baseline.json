@@ -7,12 +7,17 @@
         {
           "module": "tests.unit.test_repository_hygiene",
           "class": "AssertionError",
-          "signature": "sha256:01c712428c51dcb51aa962bbc27bb5e4f1711d0930daf4281ee91a7d92e249aa"
+          "signature": "sha256:9a40be07cae226a9b24905853c3bca72984c0c33078e236e77669d2a040ef279"
         },
         {
           "module": "tests.unit.test_github_issues",
           "class": "AssertionError",
-          "signature": "sha256:bb6c57ab410441919edf9fb9ee66b437ebf0cd82416fadd4be21da25a1b0df19"
+          "signature": "sha256:05d45da93c4fb248cda2d6762db77f114cc70f49644010a07c5f3e0d98c886b5"
+        },
+        {
+          "module": "tests.unit.test_license",
+          "class": "AssertionError",
+          "signature": "sha256:b50b11f01e1ecdb1b57c71d2600b8e11ec511f3cc86e5960adadc87ac91899c1"
         },
         {
           "module": "tests.unit.test_work_packages",
@@ -72,7 +77,7 @@
         {
           "module": "tests.unit.test_release",
           "class": "AssertionError",
-          "signature": "sha256:a90166200bb4f8cb48c788f82e23957837fadf3e3a49e6fa6b51466e80a1fac7"
+          "signature": "sha256:43897cf9cddc26093f24e90f765d5c4d10ce131780294d1203c6b751090a1691"
         },
         {
           "module": "tests.unit.test_bazzite_starter",

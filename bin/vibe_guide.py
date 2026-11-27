@@ -52,7 +52,7 @@ STEPS = [
     {
         "id": "ziel",
         "title": "Produktziel",
-        "heading": "Produktziel",
+        "heading": "Product goal",
         "question": "Welches Problem löst das Projekt und welchen Nutzen stiftet es?",
         "help": "Ein bis drei Sätze. Keine technische Lösung, sondern der fachliche Zweck.",
         "required": True,
@@ -60,7 +60,7 @@ STEPS = [
     {
         "id": "nutzer",
         "title": "Zielgruppe und Nutzung",
-        "heading": "Zielgruppe und Nutzung",
+        "heading": "Audience and use",
         "question": "Wer nutzt das Produkt und in welcher Situation?",
         "help": "Rollen, typische Aufgaben und der Ort der Nutzung.",
         "required": True,
@@ -68,7 +68,7 @@ STEPS = [
     {
         "id": "umfang",
         "title": "Funktionsumfang",
-        "heading": "Funktionsumfang",
+        "heading": "Functional scope",
         "question": "Welche Funktionen gehören zum Produkt?",
         "help": "Als Liste. Jede Zeile eine überprüfbare Funktion.",
         "required": True,
@@ -76,7 +76,7 @@ STEPS = [
     {
         "id": "nicht_umfang",
         "title": "Nicht im Umfang",
-        "heading": "Nicht im Umfang",
+        "heading": "Out of scope",
         "question": "Was gehört ausdrücklich nicht dazu?",
         "help": "Grenzen verhindern, dass Agenten den Umfang selbst erweitern.",
         "required": True,
@@ -84,7 +84,7 @@ STEPS = [
     {
         "id": "umgebung",
         "title": "Zielumgebung",
-        "heading": "Zielumgebung",
+        "heading": "Target environment",
         "question": "Wo läuft das Produkt?",
         "help": "Betriebssystem, Container, Geräte, Sprachen und Laufzeitumgebung.",
         "required": True,
@@ -92,7 +92,7 @@ STEPS = [
     {
         "id": "qualitaet",
         "title": "Qualität und Abnahme",
-        "heading": "Qualität und Abnahme",
+        "heading": "Quality and acceptance",
         "question": "Woran erkennt man, dass eine Änderung fertig und gut ist?",
         "help": "Tests, Prüfbefehle und fachliche Abnahmekriterien.",
         "required": True,
@@ -100,7 +100,7 @@ STEPS = [
     {
         "id": "entscheidungen",
         "title": "Decisions Locked",
-        "heading": "Decisions Locked",
+        "heading": "Locked decisions",
         "question": "Welche Entscheidungen sind bereits fixiert?",
         "help": "Nur Entscheidungen, die nicht mehr zur Disposition stehen.",
         "required": False,
@@ -108,7 +108,7 @@ STEPS = [
     {
         "id": "offene_fragen",
         "title": "Offene Fragen",
-        "heading": "Offene Fragen",
+        "heading": "Open questions",
         "question": "Welche fachlichen Fragen sind noch offen?",
         "help": "Offene Fragen bleiben sichtbar, bis sie entschieden sind.",
         "required": False,

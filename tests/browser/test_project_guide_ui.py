@@ -196,7 +196,7 @@ class ProjectGuideBrowserTest(unittest.TestCase):
         )
         self.assertTrue((self.project / "SPEC.md").is_file())
         spec = (self.project / "SPEC.md").read_text(encoding="utf-8")
-        self.assertIn("## Produktziel", spec)
+        self.assertIn("## Product goal", spec)
         self.assertIn("Das Projekt prüft Rechnungen.", spec)
         self.assertTrue((self.project / "AGENTS.md").is_file())
         self.assertTrue((self.project / "README.md").is_file())
@@ -216,7 +216,7 @@ class ProjectGuideBrowserTest(unittest.TestCase):
 
     def test_existing_filled_section_is_not_replaced_when_only_another_step_is_answered(self):
         (self.project / "SPEC.md").write_text(
-            "# proj — Produktspezifikation\n\n## Produktziel\n\nBestehendes Ziel.\n",
+            "# proj — Produktspezifikation\n\n## Product goal\n\nBestehendes Ziel.\n",
             encoding="utf-8",
         )
         self.open_detail()
@@ -237,7 +237,7 @@ class ProjectGuideBrowserTest(unittest.TestCase):
         )
         spec = (self.project / "SPEC.md").read_text(encoding="utf-8")
         self.assertIn("Bestehendes Ziel.", spec)
-        self.assertIn("## Produktziel", spec)
+        self.assertIn("## Product goal", spec)
 
     def test_agent_draft_is_only_applied_on_explicit_request(self):
         folder = self.project / ".vibe" / "guide"
