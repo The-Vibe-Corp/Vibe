@@ -110,6 +110,85 @@
           "signature": "sha256:3128be920cd0e000c42e1a8ab5c910366f2464cc835baec6f2df12613ad2eb5e"
         }
       ]
+    },
+    "head_of_vibe": {
+      "failures": [
+        {
+          "module": "tests.unit.test_bazzite_starter",
+          "class": "vibe_starter_v017.StarterError",
+          "signature": "sha256:01feccf60df821c0c08252d25f33c7588924902e06b4f7f3a8933c981406dda9"
+        },
+        {
+          "module": "tests.unit.test_code_quality",
+          "class": "AssertionError",
+          "signature": "sha256:937aa3628461fce436ee4fc7eb47062bc3b496e3b7022cab837c0fae6195e067"
+        },
+        {
+          "module": "tests.unit.test_github_issues",
+          "class": "AssertionError",
+          "signature": "sha256:05d45da93c4fb248cda2d6762db77f114cc70f49644010a07c5f3e0d98c886b5"
+        },
+        {
+          "module": "tests.unit.test_github_runner",
+          "class": "AssertionError",
+          "signature": "sha256:530eef00e6f7a4e8a706f94cb7b40cd310a39be3710270424f354719ee214b46"
+        },
+        {
+          "module": "tests.unit.test_install_lifecycle",
+          "class": "setup_vibe_b17.SetupError",
+          "signature": "sha256:320f89d7703a71488364647af8f3cb831ae3986a7196c5edc2988b6677a103d5"
+        },
+        {
+          "module": "tests.unit.test_license",
+          "class": "AssertionError",
+          "signature": "sha256:b50b11f01e1ecdb1b57c71d2600b8e11ec511f3cc86e5960adadc87ac91899c1"
+        },
+        {
+          "module": "tests.unit.test_private_server",
+          "class": null,
+          "signature": "sha256:140ad7a05b5d917e1358d601e59e2d66ac538d3c877e24668221d1b4f08de555"
+        },
+        {
+          "module": "tests.unit.test_project_guide",
+          "class": "AssertionError",
+          "signature": "sha256:00df2859e24cd4e39b2bdf020dc399805e5f05c1c472107aa524c650b767294d"
+        },
+        {
+          "module": "tests.unit.test_project_management",
+          "class": "FileNotFoundError",
+          "signature": "sha256:9c8a9d2f8da2fb1abb52cce4b0fb7247f9eaae582508025a93db0bc5fafe7a0f"
+        },
+        {
+          "module": "tests.unit.test_rebuild_profile",
+          "class": "AssertionError",
+          "signature": "sha256:973a559f9d0f71bf180e9d79b9350258914875be44db17b116eae9f7dae5bd18"
+        },
+        {
+          "module": "tests.unit.test_release",
+          "class": "AssertionError",
+          "signature": "sha256:a232e95fc3947d5f88f0cef2451e8d8b675145ba94338696e8a9fcadb8e72126"
+        },
+        {
+          "module": "tests.unit.test_repository_hygiene",
+          "class": "AssertionError",
+          "signature": "sha256:baeaed07806a77a88ff29327690dcf32d640f9f989759ec7720f8fd7b9a0eec6"
+        },
+        {
+          "module": "tests.unit.test_run_autostop",
+          "class": "FileNotFoundError",
+          "signature": "sha256:2164d81fd0fc9325e8affb1526e537121df966ad3711c1bedc9f2387b660c6e3"
+        },
+        {
+          "module": "tests.unit.test_sandbox",
+          "class": "FileNotFoundError",
+          "signature": "sha256:3128be920cd0e000c42e1a8ab5c910366f2464cc835baec6f2df12613ad2eb5e"
+        },
+        {
+          "module": "tests.unit.test_work_packages",
+          "class": "AssertionError",
+          "signature": "sha256:153a4113bdbd7b1d618594bfc310fc6ac9ca2891974f6b230cf38b4060c166f0"
+        }
+      ]
     }
   }
 }
