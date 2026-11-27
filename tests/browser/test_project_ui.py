@@ -4004,11 +4004,13 @@ class WorkTest(F34ProjectBrowserTest):
         self.assert_clean_page()
 
     def test_hide_done_toggle(self):
-        """Vorbedingung: F2 erledigt (ausgeblendet).
+        """Vorbedingung: F2 (Paket) und FB-1 (Feedback) sind erledigt.
 
-        Erwartung: Standard ``aria-pressed="true"``, F2 unsichtbar, Label
-        „Erledigte anzeigen (1)“; nach Klick ``aria-pressed="false"``, F2
-        sichtbar, Label „Erledigte ausblenden“.
+        Erwartung: Standard ``aria-pressed="true"``, beide erledigten Karten
+        unsichtbar, Label „Erledigte anzeigen (2)“ — ein erledigtes Paket
+        plus ein erledigtes Feedback, nicht die Anzahl der Pakete allein.
+        Nach Klick ``aria-pressed="false"``, beide Karten sichtbar, Label
+        „Erledigte ausblenden“.
         """
         panel = self.open_work()
         toggle = panel.locator("button[data-nv-work-hide-done]")
@@ -4016,27 +4018,146 @@ class WorkTest(F34ProjectBrowserTest):
         self.assertEqual(
             "true", toggle.get_attribute("aria-pressed"),
             "„Erledigte anzeigen“ ist nicht standardmäßig aktiv")
-        f2 = self.page.locator("div[data-nv-board] [data-nv-ticket='F2']")
+        # GH-82: erledigte Karten liegen im Erledigt-Raster, nicht im Board.
+        f2 = self.page.locator(
+            "[data-nv-work-done-grid] [data-nv-ticket='F2']")
+        fb1 = self.page.locator(
+            "[data-nv-work-done-grid] [data-nv-feedback-item='FB-1']")
+        self.assertEqual(1, f2.count(), "Das erledigte Paket F2 fehlt")
+        self.assertEqual(1, fb1.count(), "Das erledigte Feedback FB-1 fehlt")
         self.assertFalse(f2.is_visible(),
                          "Die erledigte Karte F2 ist trotz Standardfilter sichtbar")
+        self.assertFalse(fb1.is_visible(),
+                         "Das erledigte Feedback FB-1 ist trotz Standardfilter sichtbar")
         label = toggle.inner_text() or ""
         self.assertRegex(
             label, re.compile(r"(?i)show done|erledigte anzeigen"),
             "Der Knopf bietet nicht „Erledigte anzeigen“ an: " + repr(label))
-        self.assertIn("1", label,
-                      "Der Knopf meldet nicht die Anzahl 1: " + repr(label))
+        # GH-121: die gemischte Zahl aus Paket UND Feedback muss stimmen.
+        self.assertRegex(
+            label,
+            re.compile(r"(?i)\b(?:show done|erledigte anzeigen)\s*\(2\)"),
+            "Der Knopf meldet nicht die gemischte Anzahl 2 (F2 + FB-1): "
+            + repr(label))
         toggle.click()
         self.wait_until(
             lambda: toggle.get_attribute("aria-pressed") == "false",
             timeout=15,
             message="Der Klick setzt aria-pressed nicht auf false")
-        self.wait_until(lambda: f2.is_visible(), timeout=15,
-                        message="Die erledigte Karte F2 erscheint nicht")
+        self.wait_until(
+            lambda: f2.is_visible() and fb1.is_visible(), timeout=15,
+            message="Die erledigten Karten F2 und FB-1 erscheinen nicht")
         label = toggle.inner_text() or ""
         self.assertRegex(
             label, re.compile(r"(?i)hide done|erledigte ausblenden"),
             "Der Knopf bietet nach dem Einblenden kein „Erledigte ausblenden“ "
             "an: " + repr(label))
+        self.assert_clean_page()
+
+    def test_show_done_count_covers_packages_and_feedback(self):
+        """GH-121: „Show done“ zählt erledigte Pakete UND Feedback.
+
+        Vorbedingung: F34-Fixture mit erledigtem Paket F2, erledigtem
+        Feedback FB-1 und acht nicht erledigten Einträgen.
+        Aktion: Work öffnen, Label lesen, Umschalter hin und zurück klicken,
+        dazwischen nach dem erledigten Feedback suchen.
+        Erwartung: Die Labelzahl entspricht genau der Zahl erledigter Karten
+        beider Arten, bleibt nach dem Zurückschalten erhalten und schließt
+        die nicht erledigten Einträge nicht ein. Beide erledigten Karten
+        werden gemeinsam ein-/ausgeblendet; aria-pressed, Hooks und die
+        Verknüpfung mit der Suche bleiben dabei erhalten.
+        """
+        panel = self.open_work()
+        toggle = panel.locator("button[data-nv-work-hide-done]")
+        toggle.wait_for(state="visible", timeout=20000)
+        done_f2 = self.page.locator(
+            "[data-nv-work-done-grid] [data-nv-ticket='F2']")
+        done_fb1 = self.page.locator(
+            "[data-nv-work-done-grid] [data-nv-feedback-item='FB-1']")
+        open_cards = self.page.locator(
+            "div[data-nv-board] [data-nv-ticket], "
+            "div[data-nv-board] [data-nv-feedback-item]")
+        self.assertEqual(1, done_f2.count(), "Vorbedingung: F2 ist erledigt")
+        self.assertEqual(1, done_fb1.count(), "Vorbedingung: FB-1 ist erledigt")
+        self.assertEqual(8, open_cards.count(),
+                         "Vorbedingung: acht Einträge sind nicht erledigt")
+
+        def label_count():
+            label = toggle.inner_text() or ""
+            match = re.search(r"\((\d+)\)", label)
+            self.assertIsNotNone(
+                match, "Das Show-done-Label nennt keine Zahl: " + repr(label))
+            return int(match.group(1))
+
+        self.assertEqual(2, label_count(),
+                         "Die Startzahl zählt F2 und FB-1 nicht gemeinsam")
+        self.assertLess(label_count(), open_cards.count(),
+                        "Die Startzahl zählt auch nicht erledigte Einträge")
+        self.assertFalse(done_f2.is_visible(), "F2 ist anfangs nicht verborgen")
+        self.assertFalse(done_fb1.is_visible(),
+                         "FB-1 ist anfangs nicht verborgen")
+        self.assertTrue(
+            all(card.is_visible() for card in open_cards.all()),
+            "Nicht erledigte Karten sind anfangs nicht sichtbar")
+
+        # Die Suche allein darf erledigte Treffer nicht einblenden.
+        search = panel.locator("input[data-nv-work-search]")
+        search.fill("FB-1")
+        self.wait_until(
+            lambda: not done_fb1.is_visible(), timeout=15,
+            message="Die Suche blendet erledigtes Feedback ohne Show-done ein")
+        search.fill("")
+        self.wait_until(
+            lambda: all(card.is_visible() for card in open_cards.all()),
+            timeout=15, message="Nach Reset der Suche fehlen offene Karten")
+
+        toggle.click()
+        self.wait_until(
+            lambda: toggle.get_attribute("aria-pressed") == "false"
+            and done_f2.is_visible() and done_fb1.is_visible(),
+            timeout=15,
+            message="Show done blendet nicht beide erledigten Karten ein")
+        toggle.click()
+        self.wait_until(
+            lambda: toggle.get_attribute("aria-pressed") == "true"
+            and not done_f2.is_visible() and not done_fb1.is_visible(),
+            timeout=15,
+            message="Zurückschalten verbirgt die erledigten Karten nicht wieder")
+        self.assertEqual(2, label_count(),
+                         "Die Zahl nach dem Zurückschalten ist nicht mehr 2")
+        self.assert_clean_page()
+
+    def test_show_done_count_includes_done_bug(self):
+        """GH-121: Ein erledigter Bug zählt wie Paket und Feedback.
+
+        Vorbedingung: F34-Fixture plus zusätzlicher erledigter Bug BUG-9.
+        Aktion: Ticketspeicher ergänzen, Work öffnen, Umschalter klicken.
+        Erwartung: „Show done (3)“ für F2 (Paket), FB-1 (Feedback) und BUG-9
+        (Bug); der Bug liegt im Erledigt-Raster und wird mit ein-/ausgeblendet.
+        """
+        rows = TICKETS_f34 + feedback_fixture(self.proof_hash)
+        rows.append(ticket("BUG-9", "Erledigter Bug", type="bug", state="done",
+                           description="Behoben.", commit=self.proof_hash,
+                           test="test_done_bug"))
+        (self.project / ".vibe" / "tickets.json").write_text(
+            json.dumps({"version": 1, "tickets": rows},
+                       ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+
+        panel = self.open_work()
+        toggle = panel.locator("button[data-nv-work-hide-done]")
+        toggle.wait_for(state="visible", timeout=20000)
+        label = toggle.inner_text() or ""
+        self.assertRegex(
+            label,
+            re.compile(r"(?i)\b(?:show done|erledigte anzeigen)\s*\(3\)"),
+            "Der erledigte Bug fehlt in der Show-done-Zahl: " + repr(label))
+        bug = self.page.locator(
+            "[data-nv-work-done-grid] [data-nv-feedback-item='BUG-9']")
+        self.assertEqual(1, bug.count(), "Der erledigte Bug fehlt im Raster")
+        self.assertFalse(bug.is_visible(), "Der erledigte Bug ist anfangs sichtbar")
+        toggle.click()
+        self.wait_until(lambda: bug.is_visible(), timeout=15,
+                        message="Show done blendet den erledigten Bug nicht ein")
         self.assert_clean_page()
 
     def test_work_chips_filter_by_kind(self):

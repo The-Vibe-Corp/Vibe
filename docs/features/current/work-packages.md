@@ -76,7 +76,9 @@ current.
   the board/list instead of the `ready` column and stay behind the
   `Show done` toggle (GH-82). The `Show done` toggle now sits directly to the
   right of the search field; quick filters are in a row above the search
-  (GH-108).
+  (GH-108). Its number counts closed tickets of every type — packages, bugs,
+  and feedback — while the separate `Erledigt` overview tile remains a
+  package-only metric (GH-121).
 
 ## Records
 
@@ -94,3 +96,4 @@ current.
   ticket proof back without versioning it
 - [GH-108](../GH-108.md) — project detail controls and In Progress return paths
 - [GH-115](../GH-115.md) — status precedence in the implementation order and mobile prioritization strip
+- [GH-121](../GH-121.md) — closed-ticket count in the `Show done` toggle covers all ticket types
