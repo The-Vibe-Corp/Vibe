@@ -1,6 +1,14 @@
 {
  "aenderungen": [
   {
+   "arbeitspaket": "GH-122",
+   "dateien": [
+    "scripts/setup-vibe.py"
+   ],
+   "datum": "2026-11-27",
+   "grund": "Web-UI-Start nach Update: Das von GH-117 eingefuehrte Modul bin/vibe_settings.py wird von bin/vibe-web.py beim Start importiert, fehlte aber in PROGRAM_FILES des Setups. Ein Update kopierte dadurch zwar die neue vibe-web.py, nicht aber das benoetigte Modul; das Dashboard endete mit ModuleNotFoundError. PROGRAM_FILES enthaelt vibe_settings.py jetzt, und Regressionstests pruefen die Importe beider installierter Einstiegspunkte sowie den Start des installierten Dashboards. Groesse und SHA-256 von scripts/setup-vibe.py wurden aktualisiert."
+  },
+  {
    "arbeitspaket": "GH-117",
    "dateien": [
     "bin/vibe_settings.py",
@@ -1966,9 +1974,9 @@
    "sha256": "9cfa27971f1d08d8f87ff46cefc7d927f49b27e22f2b24a6eade954da4b8a3ec"
   },
   {
-   "bytes": 76964,
+   "bytes": 76988,
    "path": "scripts/setup-vibe.py",
-   "sha256": "15c71cda6e173c86c282950740e5edbac6e586fb89b24b8ed341fafc18568616"
+   "sha256": "31ec220252b3ac14aebe90d3e5116b97c890fdb3e1df55ad49f2d16bf25d2bc2"
   },
   {
    "bytes": 377,
@@ -2117,6 +2125,6 @@
   "setup-vibe.cmd",
   "VERSION"
  ],
- "stand": "2026-11-26",
+ "stand": "2026-11-27",
  "version": 1
 }

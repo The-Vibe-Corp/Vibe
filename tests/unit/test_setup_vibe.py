@@ -25,17 +25,22 @@ def setUpModule():
 
 import ast
 import contextlib
+import http.client
 import importlib.machinery
 import importlib.util
 import io
 import json
 import os
 import re
+import socket
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
+
+from tests.unit import env_support
 
 REPO = Path(__file__).resolve().parents[2]
 SETUP = REPO / "scripts" / "setup-vibe.py"
@@ -72,6 +77,10 @@ PROGRAM_FILES = (
     # GH-99: Nachfolger des entfernten vibe_limits.py; Reihenfolge wie in
     # scripts/setup-vibe.py (direkt nach vibe_tickets.py).
     "vibe_usage.py",
+    # GH-122: bin/vibe-web.py importiert das Einstellungsmodul aus GH-117.
+    # Der Spiegel muss den vollständigen Programmsatz abbilden, sonst fehlt
+    # die Datei im Testabbild und make_kit() deckt den Fehler nicht auf.
+    "vibe_settings.py",
 )
 WEB_FILES = (
     "index.html", "styles.css", "app.js", "i18n.js",
@@ -86,9 +95,12 @@ WEB_FILES = (
 )
 
 
-def launcher_sibling_modules():
-    """Module, die ``bin/vibe`` beim Start aus demselben Ordner importiert."""
-    tree = ast.parse((REPO / "bin" / "vibe").read_text(encoding="utf-8"))
+ENTRY_POINTS = ("vibe", "vibe-web.py")
+
+
+def entry_point_sibling_modules(script):
+    """Module, die ``bin/<script>`` beim Start aus demselben Ordner importiert."""
+    tree = ast.parse((REPO / "bin" / script).read_text(encoding="utf-8"))
     modules = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
@@ -101,6 +113,14 @@ def launcher_sibling_modules():
             if (REPO / "bin" / (name + ".py")).is_file():
                 modules.add(name)
     return sorted(modules)
+
+
+def free_loopback_port():
+    """Reserviert einen freien Loopback-Port für einen Testserver."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        return sock.getsockname()[1]
+
 
 setup = None
 
@@ -324,6 +344,24 @@ class InstallFilesTest(unittest.TestCase):
                          "WEB_FILES stimmt nicht mit den Dateien von bin/web überein: "
                          + repr((shipped, WEB_FILES)))
 
+    def test_program_files_cover_all_shipped_program_files(self):
+        """PROGRAM_FILES installiert sämtliche Programmdateien aus ``bin``.
+
+        GH-122: ``vibe_settings.py`` fehlte im Installationssatz, obwohl
+        ``bin/vibe-web.py`` es beim Start importiert. Der Vergleich mit dem
+        Verzeichnisinhalt verhindert, dass ein neues Programmodul erneut
+        vergessen wird. ``__pycache__`` ist kein Programm und bleibt außen vor.
+        """
+        shipped = sorted(
+            path.name for path in (REPO / "bin").iterdir()
+            if path.is_file() and path.name != "__pycache__"
+        )
+        self.assertEqual(
+            shipped, sorted(setup.PROGRAM_FILES),
+            "PROGRAM_FILES stimmt nicht mit den Dateien von bin/ überein: "
+            + repr((shipped, setup.PROGRAM_FILES)),
+        )
+
     def test_fresh_install_copies_programs_templates_and_catalog(self):
         result = setup.install_program_files(self.kit, self.vibe / "_toolchain", mode="update", timestamp="20261026-120000")
         toolchain = self.vibe / "_toolchain"
@@ -338,13 +376,19 @@ class InstallFilesTest(unittest.TestCase):
         self.assertIn("bin/vibe", result["copied"])
         self.assertEqual(result["skipped"], [])
 
-    def test_every_module_imported_by_the_launcher_is_installed(self):
-        """Der Startbefehl darf nach einer Installation kein Modul vermissen."""
-        launcher = launcher_sibling_modules()
+    def test_every_module_imported_by_the_installed_entry_points_is_installed(self):
+        """Beide Startbefehle dürfen nach einer Installation kein Modul vermissen."""
+        launcher = entry_point_sibling_modules("vibe")
         self.assertIn("vibe_autonomous", launcher)
-        expected = {name + ".py" for name in launcher}
-        missing = sorted(expected - set(setup.PROGRAM_FILES))
-        self.assertEqual(missing, [], "Setup installiert nicht: " + ", ".join(missing))
+        self.assertIn("vibe_settings", entry_point_sibling_modules("vibe-web.py"))
+        installed = set(setup.PROGRAM_FILES)
+        for script in ENTRY_POINTS:
+            expected = {name + ".py" for name in entry_point_sibling_modules(script)}
+            missing = sorted(expected - installed)
+            self.assertEqual(
+                missing, [],
+                f"Setup installiert für bin/{script} nicht: " + ", ".join(missing),
+            )
 
     def test_installed_launcher_starts_with_all_options(self):
         """Reproduziert den Startfehler nach einem Update mit dem echten Quellstand."""
@@ -368,6 +412,103 @@ class InstallFilesTest(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("generic", result.stdout)
+
+    def test_installed_web_entry_point_starts_without_missing_modules(self):
+        """GH-122: Das installierte Dashboard startet ohne ModuleNotFoundError.
+
+        ``bin/vibe-web.py`` importiert ``vibe_settings``. Fehlt das Modul im
+        Installationssatz, endet der Prozess sofort beim Import und das
+        Dashboard ist nach einem Update nicht erreichbar. Der Test installiert
+        den echten Quellstand in einen Temp-Ordner und wartet auf
+        ``/api/health``; erst der laufende Server beweist den vollständigen
+        Satz installierter Programmodule.
+        """
+        setup.install_program_files(
+            REPO, self.vibe / "_toolchain", mode="update",
+            timestamp="20261026-120000",
+        )
+        installed = self.vibe / "_toolchain" / "bin"
+        home = self.root / "home"
+        home.mkdir()
+        runtime = self.vibe / "_logs"
+        runtime.mkdir(parents=True, exist_ok=True)
+        port = free_loopback_port()
+        # Ausschließlich Temp-Pfade: kein Produktiv-HOME, keine produktive
+        # Konfiguration, kein geerbter Port und kein Container-Eintritt.
+        env = env_support.isolated_environ(
+            HOME=str(home),
+            XDG_CONFIG_HOME=str(home / ".config"),
+            VIBE=str(self.vibe),
+            VIBE_INSTALL=str(self.vibe / "_toolchain"),
+            VIBE_STATE=str(self.vibe / "_toolchain"),
+            VIBE_RUNTIME=str(runtime),
+            VIBE_UI_PORT=str(port),
+            VIBE_UI_BIND="127.0.0.1",
+            VIBE_NO_CONTAINER="1",
+            PYTHONDONTWRITEBYTECODE="1",
+            # Kein Rückfall auf das Quell-``bin`` über eine geerbte Suchliste:
+            # der Test muss die installierten Dateien prüfen.
+            PYTHONPATH=None,
+            PYTHONHOME=None,
+        )
+        process = subprocess.Popen(
+            [sys.executable, str(installed / "vibe-web.py")],
+            cwd=str(installed),
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+
+        def stop():
+            if process.poll() is None:
+                process.terminate()
+                try:
+                    process.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait(timeout=5)
+            if process.stdout is not None:
+                process.stdout.close()
+
+        self.addCleanup(stop)
+
+        deadline = time.time() + 30
+        health = None
+        while time.time() < deadline:
+            if process.poll() is not None:
+                output = process.communicate(timeout=5)[0]
+                self.assertNotIn(
+                    "ModuleNotFoundError", output,
+                    "Das installierte Dashboard beendet sich wegen eines "
+                    "fehlenden Moduls:\n" + output,
+                )
+                self.fail(
+                    "Das installierte Dashboard endete vor dem Health-Check "
+                    f"(Code {process.returncode}):\n{output}"
+                )
+            try:
+                connection = http.client.HTTPConnection(
+                    "127.0.0.1", port, timeout=1
+                )
+                connection.request("GET", "/api/health")
+                response = connection.getresponse()
+                body = response.read()
+                connection.close()
+            except OSError:
+                time.sleep(0.1)
+                continue
+            if response.status == 200:
+                health = json.loads(body)
+                break
+            time.sleep(0.1)
+
+        self.assertIsNotNone(
+            health, "Das installierte Dashboard wurde nicht erreichbar"
+        )
+        self.assertEqual(health.get("app"), "vibe")
+        self.assertEqual(health.get("port"), port)
+        self.assertTrue((runtime / "web.token").is_file())
 
     def test_missing_catalog_is_a_warning_not_an_abort(self):
         kit = make_kit(self.root / "kit_ohne_katalog", models=False)
