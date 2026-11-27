@@ -61,6 +61,9 @@ PROGRAM_FILES = (
     "vibe_services.py",
     "vibe_github.py",
     "vibe_issues.py",
+    # GH-122: bin/vibe-web.py importiert das Einstellungsmodul; das
+    # Testabbild muss den Programmstand von setup-vibe.py kennen.
+    "vibe_settings.py",
 )
 WEB_FILES = (
     "index.html", "styles.css", "app.js", "i18n.js",

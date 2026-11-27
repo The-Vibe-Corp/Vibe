@@ -1,6 +1,6 @@
 # Trilium-Index
 
-Zuordnung der Projekt-Dokumentation zu den Notizen in Trilium (Stand 2026-11-26).
+Zuordnung der Projekt-Dokumentation zu den Notizen in Trilium (Stand 2026-11-27).
 
 | Projekt | Bereich | Notiz | Notiz-ID |
 | --- | --- | --- | --- |
@@ -26,6 +26,7 @@ Zuordnung der Projekt-Dokumentation zu den Notizen in Trilium (Stand 2026-11-26)
 | vibe | Features | V-019 Frontend und Backend schrittweise modularisieren | `FM5vVshvuXzR` |
 | vibe | Features | V-020 Browserabnahme, Dokumentation und Releasebasis | `3IwzW6WLnBeU` |
 | vibe | Features | V-021 Installationsvollständigkeit und Aufräumregeln | `TNxOZ5jYhTfI` |
+| vibe | Features | GH-122 Web-UI startet nach Update nicht | `Nlwh8REdKhzP` |
 | vibe | Features | V-022 Ordnung im Git als allgemeine Projektregel | `0nTTx7KSysUQ` |
 | vibe | Features | F1 Feedback-Erfassung: nur Titel und Beschreibung | `4gZSOc9wxivN` |
 | vibe | Features | F2 Projektdetail: Feedback bearbeiten, Ausgabe steuern | `4etfKlTUj9ah` |

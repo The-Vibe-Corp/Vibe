@@ -1,6 +1,6 @@
 # Installation, update, and release
 
-Status: current as of 2026-11-25 (vibe 0.18.0, repository state). Authority: [SPEC.md](../../../SPEC.md).
+Status: current as of 2026-11-27 (vibe 0.18.0, repository state). Authority: [SPEC.md](../../../SPEC.md).
 History: see the ticket records linked at the end.
 
 Installation changes program files only. Runtime data, personal configuration,
@@ -16,6 +16,12 @@ runtime remain separate paths (`V-006`).
   tools, offers installation through the present package manager, and writes
   the program files. It does not run project commands, model calls, or router
   actions.
+- The installed program set must cover every sibling module imported by either
+  entry point, `bin/vibe` and `bin/vibe-web.py`. `PROGRAM_FILES` is checked
+  against both AST-derived import lists and against all regular files shipped
+  in `bin/`; an installed-dashboard test starts the copied `vibe-web.py` and
+  waits for `/api/health` (GH-122). This prevents a new module from being
+  imported by the dashboard but omitted from an update.
 - Modes include install/reuse, `--update`, `--rollback`, and `--uninstall`;
   `--preview` (alias `--dry-run`) prints the plan without writing, and
   `--version` prints the source version.
@@ -37,7 +43,7 @@ runtime remain separate paths (`V-006`).
 
 - `docs/import-manifest.json` lists SHA-256 hashes for the imported program
   files and metadata. `scripts/check-import-manifest.py` verifies them as part
-  of `quick`; the current manifest covers 70 files.
+  of `quick`; the current manifest covers 71 files.
 - `docs/baseline-installation.sha256` is the snapshot of the active
   installation produced with `scripts/active-install.py snapshot`. Its `verify`
   mode checks that the installation still matches; runtime data and caches are
@@ -78,3 +84,4 @@ runtime remain separate paths (`V-006`).
 - [V-018](../V-018.md) — install, update, and rollback
 - [V-020](../V-020.md) — browser acceptance, documentation, release base
 - [V-021](../V-021.md) — install completeness and cleanup rules
+- [GH-122](../GH-122.md) — dashboard module missing after update
